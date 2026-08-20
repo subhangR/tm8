@@ -80,6 +80,7 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
+import { PgDurableSeqSource } from '../events/seq.js';
 import { DbAgentCredentialHome } from '../credentials/agent-credential-injection.js';
 import { DbGitHubCredentialStore } from '../credentials/github-credential-store.js';
 import type { ServerConfig } from '../http/config.js';
@@ -2208,11 +2209,20 @@ function registerHandlers(
       'select internal.live_work_session_count(null) as used',
     );
     const capacity = capacityRows?.[0];
+    // The durable event high-water mark, read AS THE CALLER — the same bound
+    // read the WS `subscribe` path already does (main.ts's `highWaterMark`),
+    // through the same class, so there is exactly one implementation of "no
+    // row is not zero". It rides this response because a client that is
+    // opening a space needs the mark and `nodeBootId` together and already
+    // awaits this read: carrying it costs no extra round trip, and without it
+    // the client's only way to find the end of the log is to page all of it.
+    const eventHwm = await db.tx(claims, (q) => new PgDurableSeqSource(q).latest(spaceId));
     const result: ExecutionLiveness = {
       liveEntityIds: rows.map((r) => r.id),
       nodeBootId: NODE_BOOT_ID,
       checkedAt: new Date().toISOString(),
       capacity: { used: Number(capacity?.used ?? 0), total: sessionCap },
+      eventHwm,
     };
     return json(result);
   });

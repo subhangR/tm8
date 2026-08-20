@@ -140,6 +140,80 @@ describe('seam-real: openSpace', () => {
     expect(eventPolls).toBe(2);
   });
 
+  /**
+   * One cold open, counting round trips. `hwm` is spread into the liveness
+   * reply, so `{}` reproduces a node that has no such field at all.
+   */
+  async function coldOpen(hwm: Record<string, unknown>): Promise<{
+    eventPolls: number; livenessReads: number; frames: Array<Record<string, unknown>>;
+    delivered: number[];
+  }> {
+    let eventPolls = 0;
+    let livenessReads = 0;
+    const delivered: number[] = [];
+    const { seam, pool } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        livenessReads += 1;
+        return ok({
+          liveEntityIds: [], nodeBootId: 'boot-A',
+          checkedAt: '2026-07-28T12:00:00.000Z', ...hwm,
+        });
+      }
+      if (url.includes('/events')) {
+        eventPolls += 1;
+        return ok({
+          items: [{
+            type: 'entity.upsert', spaceId: 'sp-1', seq: 37,
+            occurredAt: '2026-07-28T12:00:00.000Z', schemaVersion: 1,
+            entity: { id: 'old' },
+          }],
+          nextCursor: '37',
+        });
+      }
+      return ok({});
+    });
+    seam.onEvent((event) => delivered.push(event.seq));
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    return { eventPolls, livenessReads, frames: pool.last().frames(), delivered };
+  }
+
+  it('seeds the cursor from the liveness eventHwm — ZERO bootstrap pages, ZERO extra round trips', async () => {
+    // The point of the mark: `openSpace` is TOLD where the log ends instead of
+    // paging 500 rows at a time until it finds out. At ~108k retained events
+    // the walk was ~217 sequential round trips to compute one integer.
+    const seeded = await coldOpen({ eventHwm: 4242 });
+    const walked = await coldOpen({ eventHwm: null });
+
+    expect(seeded.eventPolls).toBe(0);
+    expect(walked.eventPolls).toBeGreaterThan(0);
+    // ...and the mark rides a read `openSpace` already awaited, so the saving
+    // is not paid for elsewhere: the two paths make the SAME liveness reads.
+    expect(seeded.livenessReads).toBe(walked.livenessReads);
+    // History still never reaches Zustand/React — the property the walk
+    // existed to protect, now held by starting live delivery AT the mark.
+    expect(seeded.delivered).toEqual([]);
+    expect(seeded.frames).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 4242 },
+    ]);
+  });
+
+  it.each([
+    ['null — the node cannot establish the mark', { eventHwm: null }],
+    ['absent — an older node has no such field', {}],
+    ['not a seq — a string is not a mark', { eventHwm: '4242' }],
+  ])('does NOT read a missing eventHwm as zero: %s ⇒ the walk still runs', async (_label, hwm) => {
+    // Seeding 0 here would replay the entire retained log through React. The
+    // fallback is the expensive-but-correct answer, and it must survive.
+    const { eventPolls, frames } = await coldOpen(hwm);
+    expect(eventPolls).toBeGreaterThan(0);
+    expect(frames).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 37 },
+    ]);
+  });
+
   it('SURVIVES a liveness read that fails — today every one of them 404s', async () => {
     // execution.liveness has no server route yet (LLD §13). If openSpace
     // awaited the snapshot, every openSpace would reject against a real node.

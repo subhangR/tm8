@@ -3853,6 +3853,26 @@ export interface ExecutionLiveness {
   checkedAt: string;
   /** Node-wide admission truth used by execution.spawn's concurrency gate. */
   capacity: { used: number; total: number };
+  /**
+   * The durable event high-water mark for this space — `space_event_seq
+   * .last_seq`, read under the CALLER's claims, exactly as the WS `subscribe`
+   * path already reads it.
+   *
+   * It rides this read rather than getting its own because a client opening a
+   * space needs the mark and `nodeBootId` together (the mark is only meaningful
+   * within one boot, which is what `nodeBootId` identifies), and this read is
+   * already on that path — so carrying it here costs ZERO extra round trips.
+   * Without it a client has no way to ASK where the log ends, and the only
+   * remaining way to find out is to page the whole retained log and throw every
+   * payload away.
+   *
+   * `null` means the mark CANNOT BE ESTABLISHED, never "this space has no
+   * events" — the `space_event_seq` row is member-readable, so an unbound or
+   * non-member identity simply gets no row. A consumer must fall back to an
+   * explicit cursor-carrying scan on null; treating it as 0 would replay the
+   * entire retained log. See `DurableSeqSource.latest` for the full argument.
+   */
+  eventHwm: number | null;
 }
 
 // --- execution.journal — the session CLI command journal --------------------

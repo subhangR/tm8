@@ -47,7 +47,24 @@ describe('ops: execution.liveness — catalog row A21 (Delta 2, dd41e89)', () =>
       liveEntityIds: ['ws-1'],
       nodeBootId: 'boot-A',
       checkedAt: '2026-07-28T12:00:00.000Z',
+      // An older node omits the mark. Normalized to null HERE so no consumer
+      // ever has to decide what `undefined` means — and none can read it as 0.
+      eventHwm: null,
     });
+  });
+
+  it.each([
+    ['a real mark passes through', 4242, 4242],
+    ['null stays null — "cannot establish", not "no events"', null, null],
+    ['a stringified seq is NOT a mark', '4242', null],
+    ['a negative seq is NOT a mark', -1, null],
+    ['a fractional seq is NOT a mark', 1.5, null],
+  ])('normalizes eventHwm at the wire boundary: %s', async (_label, wire, expected) => {
+    const { ops } = harness({
+      liveEntityIds: [], nodeBootId: 'boot-A',
+      checkedAt: '2026-07-28T12:00:00.000Z', eventHwm: wire,
+    });
+    await expect(ops.liveness('sp-9')).resolves.toMatchObject({ eventHwm: expected });
   });
 });
 

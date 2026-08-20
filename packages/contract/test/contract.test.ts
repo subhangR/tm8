@@ -163,10 +163,19 @@ describe('DTO schemas', () => {
       nodeBootId: 'boot-1',
       checkedAt: '2026-07-28T12:00:00.000Z',
       capacity: { used: 1, total: 8 },
+      eventHwm: 108477,
     };
     expect(ExecutionLivenessSchema.safeParse(liveness).success).toBe(true);
     expect(ExecutionLivenessSchema.safeParse({ ...liveness, extra: 1 }).success).toBe(false);
     expect(ExecutionLivenessSchema.safeParse({ ...liveness, checkedAt: 'yesterday' }).success).toBe(false);
+    // The event mark is NULLABLE — "I cannot establish it" is an answer this
+    // read has to give — but never OPTIONAL and never a string: an absent
+    // field is the shape a consumer reads as zero, i.e. "replay everything".
+    expect(ExecutionLivenessSchema.safeParse({ ...liveness, eventHwm: null }).success).toBe(true);
+    const { eventHwm: _omitted, ...withoutMark } = liveness;
+    expect(ExecutionLivenessSchema.safeParse(withoutMark).success).toBe(false);
+    expect(ExecutionLivenessSchema.safeParse({ ...liveness, eventHwm: '108477' }).success).toBe(false);
+    expect(ExecutionLivenessSchema.safeParse({ ...liveness, eventHwm: -1 }).success).toBe(false);
 
     // A22 — each filter alone is legal…
     const base = { spaceId: '019f9896-928d-79b6-ba1c-1cdcc1d30a6f' };

@@ -138,6 +138,30 @@ describe('connection: connect — subscribe is ALWAYS followed by resume', () =>
     expect(h.polls.map((call) => call.since)).toEqual([0, 1, 2]);
   });
 
+  it('seedCursor reaches the same barrier as a scan, with no poll at all', async () => {
+    const h = mk();
+    expect(h.conn.seedCursor('sp-1', 4242)).toBe(4242);
+    expect(h.polls).toEqual([]);
+    expect(h.conn.cursorOf('sp-1')).toBe(4242);
+    expect(h.cursorUpdates).toEqual([{ spaceId: 'sp-1', cursor: 4242 }]);
+    h.conn.openSpace('sp-1');
+    h.pool.last().openIt();
+    expect(h.pool.last().frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 4242 },
+    ]);
+    expect(h.events).toEqual([]);
+  });
+
+  it('seedCursor never rewinds a cursor that has already moved past the mark', async () => {
+    // A mark is read over the network; a WS frame or a poll can advance this
+    // space while it is in flight. Rewinding would redeliver applied events.
+    const h = mk();
+    h.conn.seedCursor('sp-1', 90);
+    expect(h.conn.seedCursor('sp-1', 12)).toBe(90);
+    expect(h.conn.cursorOf('sp-1')).toBe(90);
+  });
+
   it('discards a first page response that lands after cancellation', async () => {
     const h = mk();
     let resolvePage: ((page: DurableEventPage) => void) | undefined;

@@ -759,7 +759,15 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       );
       // The read is per-space and the response shape C-1 fixed does not echo
       // the id, so it is stamped from the request rather than trusted absent.
-      return { ...raw, spaceId };
+      //
+      // `eventHwm` is normalized HERE, at the wire boundary, because it is the
+      // one field whose absence has a wrong-but-plausible reading: an older
+      // node omits it, and a consumer that let `undefined` become 0 would seed
+      // the event cursor at the start of the retained log. Anything that is
+      // not a non-negative safe integer becomes null — "cannot establish".
+      const hwm = raw.eventHwm;
+      const eventHwm = typeof hwm === 'number' && Number.isSafeInteger(hwm) && hwm >= 0 ? hwm : null;
+      return { ...raw, spaceId, eventHwm };
     },
 
     // -- commands ------------------------------------------------------------

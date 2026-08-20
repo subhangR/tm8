@@ -2756,6 +2756,10 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
     used: z.number().int().nonnegative(),
     total: z.number().int().positive(),
   }).strict(),
+  // Nullable, never optional: "the mark cannot be established" is an ANSWER
+  // this read has to be able to give, and an absent field is the shape a
+  // consumer reads as zero — which means "replay the entire retained log".
+  eventHwm: z.number().int().nonnegative().nullable(),
 }).strict();
 
 /**
