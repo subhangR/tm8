@@ -15,8 +15,9 @@
  * from the entity cache, never from this read (C-1).
  *
  * Cadence (LLD §9): on `openSpace` · on `entity.upsert` whose entity is a
- * `work_session` · on WS reconnect · on a 30s slow interval while a session
- * surface is visible. Read-on-demand only — there is deliberately NO
+ * `work_session` · on `entity.activity_touched` whose `kind` is `work_session`
+ * · on WS reconnect · on a 30s slow interval while a session surface is
+ * visible. Read-on-demand only — there is deliberately NO
  * liveness-change event (R3), so nothing here waits for a push.
  *
  * A `nodeBootId` change between snapshots means the node process restarted and
@@ -195,6 +196,21 @@ export function createLivenessManager(deps: LivenessDeps): LivenessManager {
     },
 
     noteEvent(event) {
+      // TWO branches, and the second one is not optional.
+      //
+      // Migration 165 stopped emitting a full `entity.upsert` for a row whose
+      // only mover was `activity_at`, and a work_session's activity is exactly
+      // that shape: a message lands on it, an edge is written to it. Measured
+      // on the live graph, 19,708 of the 25,149 work_session events were
+      // recency-only against 26 semantic ones — so without this branch the
+      // cadence collapses from near-instant to the 30s slow interval, and a
+      // session reads 'unknown' for 90s. The thin event has no `.entity`,
+      // which is why `kind` is on its payload.
+      if (event.type === 'entity.activity_touched') {
+        if (event.kind !== 'work_session') return;
+        nudge(event.spaceId);
+        return;
+      }
       if (event.type !== 'entity.upsert') return;
       if (event.entity.state.kind !== 'work_session') return;
       nudge(event.spaceId);

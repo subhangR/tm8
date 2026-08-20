@@ -1131,6 +1131,18 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     entity: EntitySummarySchema,
     clientMutationId: z.string().optional(),
   }).strict(),
+  // Recency-only touch (migration 165). Strict, like every other arm: an
+  // `entity` key smuggled onto this event would mean a producer emitted a full
+  // snapshot down the cheap path, which is the one thing this event exists to
+  // prevent.
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('entity.activity_touched'),
+    id: EntityIdSchema,
+    kind: EntityKindSchema,
+    activityAt: IsoTimestamp,
+    clientMutationId: z.string().optional(),
+  }).strict(),
   z.object({
     ...workspaceEventEnvelopeShape,
     type: z.enum(['edge.upsert', 'edge.deleted']),

@@ -1052,6 +1052,23 @@ export interface WorkspaceEventEnvelope {
  */
 export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'entity.upsert'|'entity.deleted'; entity: EntitySummary; clientMutationId?: string }
+ /**
+  * The entity's recency hint moved and NOTHING ELSE did — an edge was written
+  * to it, a message landed on it. It is deliberately NOT an `EntitySummary`:
+  * carrying one would defeat the point, which is that 34% of all entity events
+  * were full 462-byte snapshots of a row whose only mover was a timestamp
+  * (migration 165 has the census).
+  *
+  * A consumer that folds this must guard on `activityAt`, NOT on `version` —
+  * the whole class of events is defined by `version` NOT having changed, so a
+  * version guard compares a field this event never moves.
+  *
+  * `kind` rides along so a consumer can act without a lookup; the client's
+  * session-liveness cadence keys on `work_session` and holds no entity cache
+  * at that layer.
+  */
+ | { type: 'entity.activity_touched'; id: EntityId; kind: EntityKind; activityAt: string;
+     clientMutationId?: string }
  | { type: 'edge.upsert'|'edge.deleted'; edge: EdgeView; clientMutationId?: string }
  | { type: 'message.created'|'message.updated'|'message.deleted'; anchorId: EntityId;
      // ENVELOPE provenance, sitting next to `anchorId` (the target): the SENDER

@@ -5,6 +5,8 @@
  * not around a happy path: 'live' must require a snapshot that is both present
  * AND fresh, and the two ways of losing that must both land on 'unknown'.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { DurableWorkspaceEvent, SpaceId } from '@tm8/contract';
 import { createLivenessManager, type LivenessManager } from './liveness';
@@ -223,6 +225,62 @@ describe('liveness: the LLD §9 cadence', () => {
     expect(h.reads).toEqual(['sp-1']);
   });
 
+  /**
+   * Migration 165 stopped emitting a full `entity.upsert` for a row whose only
+   * mover was `activity_at` — which is the shape a live session's activity
+   * takes. Measured on the live graph, 19,708 of 25,149 work_session events
+   * were recency-only against 26 semantic ones, so WITHOUT this branch the
+   * cadence silently degrades to the 30s slow interval and a running session
+   * renders 'unknown' for 90s. Nothing else would go red.
+   */
+  it('reads on an entity.activity_touched whose kind is work_session — and ONLY then', async () => {
+    const h = mk();
+    h.mgr.noteSpaceOpened('sp-1');
+    await flush();
+    h.reads.length = 0;
+
+    h.mgr.noteEvent(touched('sp-1', 'task'));
+    expect(h.reads).toEqual([]);
+
+    h.mgr.noteEvent(touched('sp-1', 'work_session'));
+    expect(h.reads).toEqual(['sp-1']);
+  });
+
+  /**
+   * The thin event has no `.entity`. A branch that reached for
+   * `event.entity.state.kind` would throw inside the socket's dispatch loop
+   * rather than merely failing to nudge.
+   */
+  it('does not reach for an .entity the thin event does not carry', () => {
+    const h = mk();
+    h.mgr.noteSpaceOpened('sp-1');
+    const thin = touched('sp-1', 'work_session');
+    expect('entity' in (thin as unknown as Record<string, unknown>)).toBe(false);
+    expect(() => h.mgr.noteEvent(thin)).not.toThrow();
+  });
+
+  /**
+   * The LLD is the normative statement of this cadence, and prose cannot fail a
+   * behavioural test — so it gets a source one. Without this, "update §9 or the
+   * next person re-breaks it" is a hope rather than a check: the doc could drop
+   * back to the single `entity.upsert` sentence with every runtime test still
+   * green, and the next reader would implement exactly what it says.
+   */
+  it('§9 of the LLD names both entity branches this module implements', () => {
+    // `process.cwd()`, not `import.meta.url`: under jsdom the latter resolves
+    // against the DOCUMENT base and lands nowhere near this file.
+    const data = join(process.cwd(), 'src', 'data');
+    const source = readFileSync(join(data, 'real', 'liveness.ts'), 'utf8');
+    const lld = readFileSync(join(data, 'LLD.md'), 'utf8');
+    // Guard the guard: if the module ever stops keying on the thin event this
+    // assertion must stop demanding the doc mention it.
+    expect(source).toContain(`'entity.activity_touched'`);
+    const section = lld.slice(lld.indexOf('## 9. Liveness'), lld.indexOf('## 10.'));
+    expect(section).not.toBe('');
+    expect(section).toContain('entity.activity_touched');
+    expect(section).toContain('entity.upsert');
+  });
+
   it('reads every tracked space on reconnect', async () => {
     const h = mk();
     h.mgr.noteSpaceOpened('sp-1');
@@ -311,6 +369,20 @@ describe('liveness: dispose', () => {
     expect(h.mgr.statusOf(running('ws-1'))).toBe('unknown');
   });
 });
+
+/** The thin recency event (migration 165): `kind` on the payload, no `entity`. */
+function touched(spaceId: SpaceId, kind: string): DurableWorkspaceEvent {
+  return {
+    type: 'entity.activity_touched',
+    spaceId,
+    seq: 1,
+    occurredAt: T0,
+    schemaVersion: 1,
+    id: 'e-1',
+    kind,
+    activityAt: T0,
+  } as unknown as DurableWorkspaceEvent;
+}
 
 function upsert(spaceId: SpaceId, kind: string): DurableWorkspaceEvent {
   return {

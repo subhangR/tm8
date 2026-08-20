@@ -403,6 +403,71 @@ describe('WorkspaceEventMapper', () => {
     });
   });
 
+  /**
+   * Migration 165's thin event. The arm has to EXIST at all: `bodyOf`'s default
+   * throws `UnprojectableEventError`, which is loud in the server log and
+   * completely invisible to a client — the whole class would simply never
+   * arrive, and nothing would say so.
+   */
+  describe('entity.activity_touched (migration 165)', () => {
+    const TOUCH = {
+      event_type: 'entity.activity_touched',
+      payload: { id: TASK, kind: 'task', activity_at: '2026-07-25T14:53:52.583962+05:30' },
+    };
+
+    it('projects the thin body and nothing else', () => {
+      const event = mapper.mapRow(row(TOUCH), entities);
+      if (event.type !== 'entity.activity_touched') throw new Error('unreachable');
+      expect(event.id).toBe(TASK);
+      expect(event.kind).toBe('task');
+      // Same UTC normalization every other arm gets — the payload arrives with
+      // a session-zone offset.
+      expect(event.activityAt).toBe('2026-07-25T09:23:52.583Z');
+      expect(WorkspaceEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    /**
+     * The point of the event is that it is NOT a snapshot. A hydrated summary
+     * is available here and must not leak onto the wire, or the 462-byte
+     * payload this replaces comes straight back.
+     */
+    it('carries no EntitySummary', () => {
+      const event = mapper.mapRow(row(TOUCH), entities);
+      expect('entity' in event).toBe(false);
+      expect(Object.keys(event).sort()).toEqual(
+        ['activityAt', 'id', 'kind', 'occurredAt', 'schemaVersion', 'seq', 'spaceId', 'type'],
+      );
+    });
+
+    /**
+     * RLS parity. The full-payload arm got its access check for free from
+     * `need()`; a thin event that skipped hydration would hand every subscriber
+     * the id and kind of an entity they cannot read.
+     */
+    it('is skipped when the entity is not readable by the viewer', () => {
+      expect(() => mapper.mapRow(row(TOUCH), new Map())).toThrow(UnprojectableEventError);
+    });
+
+    it('is skipped when the payload has no activity_at', () => {
+      expect(() =>
+        mapper.mapRow(row({ ...TOUCH, payload: { id: TASK, kind: 'task' } }), entities),
+      ).toThrow(UnprojectableEventError);
+    });
+
+    /** `referencedEntityIds` must ask for the id, or hydration never happens. */
+    it('requests its entity for hydration', async () => {
+      const asked: string[] = [];
+      const spy: EntityProjector = {
+        entitySummaries: (_q: Querier, ids: readonly string[]) => {
+          asked.push(...ids);
+          return Promise.resolve(entities);
+        },
+      };
+      await new WorkspaceEventMapper(spy).mapRows(NO_QUERIER, [row(TOUCH)]);
+      expect(asked).toContain(TASK);
+    });
+  });
+
   it('maps an empty page without touching the projector', async () => {
     const exploding: EntityProjector = {
       entitySummaries: () => {

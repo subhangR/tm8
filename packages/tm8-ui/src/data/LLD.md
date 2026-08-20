@@ -299,8 +299,16 @@ same `clientMutationId` also reconciles (idempotent; seq-dedupe makes double-app
 ## 9. Liveness (`real/liveness.ts`) — Delta 2, shape C-1
 
 `GET /v2/spaces/:spaceId/execution/liveness` (op `execution.liveness`). Cadence: on `openSpace` · on
-`entity.upsert` where the entity is a `work_session` · on WS reconnect · 30s slow interval while any
+`entity.upsert` where the entity is a `work_session` · **on `entity.activity_touched` where the
+event's own `kind` is `work_session`** · on WS reconnect · 30s slow interval while any
 session surface is visible. One in-flight call max; snapshot carries `nodeBootId` + `checkedAt`.
+
+**Both entity branches are load-bearing — do not collapse them to `entity.upsert`.** Migration 165
+stopped emitting a full `entity.upsert` for a row whose only mover was `activity_at`, and that is the
+shape a live session's activity takes (a message lands on it, an edge is written to it). Measured on
+the live graph: 19,708 of 25,149 work_session events were recency-only against 26 semantic. Dropping
+the thin branch degrades this cadence to the 30s slow interval and leaves a running session rendering
+`unknown` for 90s. The thin event carries no `.entity`, which is why `kind` is on its payload.
 
 Predicate (R-UI-5, the ONLY place liveness truth is computed):
 
