@@ -199,6 +199,16 @@ export interface ConnectionManager {
    * never enter Zustand or React.
    */
   prepareSpace(spaceId: SpaceId, since?: number): Promise<number>;
+  /**
+   * The same barrier as `prepareSpace`, reached by being TOLD where the log
+   * ends instead of paging to the end to find out. `cursor` must be a mark the
+   * node just answered for this space within the current boot; everything at
+   * or below it is history this client is deliberately not replaying.
+   *
+   * Never moves a cursor backward (the high-water law is the manager's, not
+   * the caller's), and returns the cursor actually in force.
+   */
+  seedCursor(spaceId: SpaceId, cursor: number): number;
   openSpace(spaceId: SpaceId): void;
   closeSpace(spaceId: SpaceId): void;
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
@@ -767,6 +777,18 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       });
       preparing.set(spaceId, { epoch, promise: task });
       return task;
+    },
+
+    seedCursor(spaceId, cursor) {
+      const current = cursors.get(spaceId) ?? 0;
+      if (disposed) return current;
+      // MAX, not assignment: a poll or a WS frame may already have advanced
+      // this space past the mark while the liveness read was in flight, and
+      // rewinding to the mark would redeliver what has already been applied.
+      const next = Math.max(cursor, current);
+      cursors.set(spaceId, next);
+      deps.onCursor?.(spaceId, next);
+      return next;
     },
 
     openSpace(spaceId) {

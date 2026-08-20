@@ -225,8 +225,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     // -- lifecycle -----------------------------------------------------------
 
     /**
-     * Resolves once the retained cursor has been scanned off-React, the space
-     * is subscribed, and the liveness cadence has STARTED:
+     * Resolves once the event cursor sits at the tail of the retained log, the
+     * space is subscribed, and the liveness cadence has STARTED:
      *
      *  - the socket protocol has no positive ack, so there is nothing to await
      *    (a refusal arrives later, via `realControls.onSpaceRefused`);
@@ -242,9 +242,12 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     async openSpace(spaceId: SpaceId): Promise<void> {
       const refusal = connection.refusalOf(spaceId);
       if (refusal !== undefined) throw refusal;
-      // No read endpoint currently carries the event HWM. Scan the existing
-      // poll cursor to its tail without dispatching payloads, then resume from
-      // that barrier. Historical events therefore never enter Zustand/React.
+      // Historical events must never enter Zustand/React, so the space opens
+      // at the tail of the retained log. `execution.liveness` carries that
+      // tail (`eventHwm`) as of this boot, so ASK for it — this read is
+      // awaited here anyway, and its `nodeBootId` is the very thing that makes
+      // a seq meaningful. When the node cannot establish the mark, fall back
+      // to scanning the poll cursor to its tail without dispatching payloads.
       const snapshot = await liveness.refresh(spaceId).catch(() => undefined);
       const previousBootId = bootIds.get(spaceId);
       const invalidated = invalidatedSpaces.delete(spaceId);
@@ -261,7 +264,15 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         const persisted = !invalidated && snapshot
           ? cursorCache?.read(snapshot.nodeBootId, spaceId) ?? 0
           : 0;
-        const cursor = await connection.prepareSpace(spaceId, persisted);
+        // A mark the node just answered IS the barrier — the walk exists only
+        // to discover the same number the hard way, one 500-row page at a
+        // time, and it discards every row it reads to get there. `null` (or an
+        // older node's absent field) means the mark could not be established,
+        // which is NOT zero: walk instead. Never seed from a null.
+        const mark = snapshot?.eventHwm ?? null;
+        const cursor = mark !== null
+          ? connection.seedCursor(spaceId, Math.max(mark, persisted))
+          : await connection.prepareSpace(spaceId, persisted);
         if (snapshot) cursorCache?.schedule(snapshot.nodeBootId, spaceId, cursor);
         preparedSpaces.add(spaceId);
       }

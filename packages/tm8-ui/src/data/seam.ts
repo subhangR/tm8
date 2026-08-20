@@ -249,6 +249,18 @@ export interface LivenessSnapshot {
   nodeBootId: string;
   checkedAt: string;
   capacity?: { used: number; total: number };
+  /**
+   * The durable event high-water mark for this space WITHIN THIS BOOT, or null
+   * when the node could not establish it (unbound identity, non-member). A
+   * node that predates the field omits it, which means exactly the same thing
+   * — `ops.liveness` normalizes absence to null so consumers see one shape.
+   *
+   * `openSpace` seeds the event cursor from this instead of paging the whole
+   * retained log to arrive at the same number. NEVER read a missing value as
+   * 0: 0 means "the start of the log", which is the one place this exists to
+   * avoid going.
+   */
+  eventHwm?: number | null;
 }
 
 /**
