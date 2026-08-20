@@ -761,7 +761,44 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 151
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 151
     //   (origin/main is 150, now that #451 has made its pin agree with itself.)
-    expect(server.appliedMigrations.length).toBe(151);
+    // 151 -> 152 (2026-08-20): 162_set_session_done_grants.sql — a REPAIR, not
+    // a feature. 156 created `public.set_session_done` SECURITY DEFINER with
+    // neither a revoke nor a grant, so Postgres left it EXECUTE-to-PUBLIC and it
+    // appeared as a FOURTH function on the delivery role's surface, reddening
+    // `w2-execution.pg.test.ts` on every PR branched after it.
+    //
+    // NUMBERED 162 ON THE SECOND ATTEMPT. This file was 160, then 161, and each
+    // time it was "the next number above main's highest" measured against a main
+    // that moved before it could land — 160_menu_help_view, then
+    // 161_space_summary_drops_unread_total. That is not carelessness twice; it
+    // is what a number GUESSED about a tree that does not exist yet does under
+    // any concurrency at all, which is why the assertion two lines below this
+    // one now exists. 162 also leaves 163 for the fan-out branch that reviewed
+    // this one, so whichever lands first does not force the other to move again.
+    // MEASURED on this tree, rebased onto origin/main at caf9b2ce:
+    //   ls db/migrations/*.sql | wc -l                             -> 152
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 152
+    //   (origin/main is 151; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(152);
+
+    // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
+    // it is structurally incapable of catching the failure that has now happened
+    // twice on these two branches in one afternoon, because that failure is two
+    // branches making the IDENTICAL edit to this number about a merged tree
+    // neither of them can see. Git does not conflict on an identical edit, so
+    // the merge is silent and main inherits duplicate prefixes with a count that
+    // is quietly one short.
+    //
+    // `db/migrate.mjs:146` already refuses a duplicate at DEPLOY time, and that
+    // is the wrong end: by then it is on main. This says it in the suite that
+    // owns the chain's invariants, where it is a named red rather than a
+    // `fail()` in another job — and it also covers the scratch-database path,
+    // which reaches `migrationFiles()` directly and never runs the runner at all.
+    // Unlike the count, it needs no guess about the future and cannot be
+    // merged away by agreement between two branches that are both wrong.
+    const prefixes = server.appliedMigrations.map((file) => file.slice(0, 3));
+    expect(new Set(prefixes).size, `duplicate migration prefix in ${prefixes.length} files`)
+      .toBe(prefixes.length);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
