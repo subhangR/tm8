@@ -5,10 +5,23 @@ import './styles/canvas-extra.css';
 import './styles/app.css';
 import './kit/kit.css';
 import './panels/panels.css';
+/* `panels/index.ts` is what imports this in the app, and this harness reaches
+   past the index for `panels.css` alone — so the refused-attach control in the
+   composer foot rendered UNSTYLED here and measured 50px against a 44px floor
+   that is not actually broken. A deep-path import drops the sheet; the module's
+   own index is the only thing that carries it. */
+import './panels/honesty/honesty.css';
 import './rich-input/rich-input.css';
+/* THE PHONE'S ZOOM GATE. `app.css` puts `zoom: 1.1` on `.cv2-root` and
+   `mobile-chrome.css` declines it for `[data-shell='mobile']` — so a harness
+   that sets the attribute but never loads that file renders the phone at 1.1
+   and every rect it reports is 10% too big (44px controls measured 48.4). The
+   rest of the file names `.mobile-*` classes this harness does not mount. */
+import './mobile/mobile-chrome.css';
 import './chat-home/chat-home.css';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './chat-home/ChatHomeScreen';
+import { MobileSurfaceProvider } from './mobile';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './chat-home/fixtures';
 import type { ChatModelOption, ChatThreadDetail } from './chat-home/types';
 import type { CockpitStage } from './routes/types';
@@ -86,6 +99,7 @@ function Harness() {
     [empty, turns],
   );
   const [ready, setReady] = useState(false);
+  const [host, setHost] = useState<HTMLElement | null>(null);
   const [stage, setStage] = useState<CockpitStage | null>(
     params.get('stage') === 'fleet' ? 'fleet' : params.get('stage') === 'graph' ? 'graph' : null,
   );
@@ -112,18 +126,68 @@ function Harness() {
          CONTENT — the transcript would never overflow, `scrollHeight` would
          equal `clientHeight`, and every scroll question would read as "fine"
          on a surface that has no scroller at all. That is the exact trap
-         `.mobile-frame__content` documents one layer down in chat-home.css. */
-      style={{ background: 'var(--pn-paper)', height: '100vh', display: 'flex' }}
+         `.mobile-frame__content` documents one layer down in chat-home.css.
+
+         THE TOUCH TOKENS ARE PUBLISHED HERE, and without them this harness
+         quietly lies. `--mobile-touch-min` is declared on `.mobile-frame`
+         (mobile/mobile.css), which a one-surface harness does not mount — so
+         every DEF-026 rule in chat-home.css resolves its `var()` to nothing and
+         is DROPPED. Measured before this line: the pick triggers read 23.4px
+         against a 44px floor the stylesheet plainly sets. The attribute alone
+         is not the phone; the attribute plus the frame's tokens is. */
+      style={{
+        background: 'var(--pn-paper)',
+        height: '100vh',
+        display: 'flex',
+        ...(mobile
+          ? ({
+              '--mobile-touch-min': '44px',
+              '--mobile-keyboard-inset': '0px',
+              '--mobile-safe-bottom': '0px',
+            } as React.CSSProperties)
+          : {}),
+      }}
+      ref={setHost}
     >
-      <ChatHomeScreen
-        port={port}
-        spaceId={SPACE_ID}
-        models={MODELS}
-        viewerName="Sam"
-        stage={stage}
-        onStageChange={setStage}
-        {...(mobile ? { soloConversation: true as const } : {})}
-      />
+      {/* THE PHONE'S SURFACE CONTEXT, and this harness was wrong without it.
+          `oneSurface` is what `ComposerSelect` reads to draw its options in a
+          sheet rather than the desktop's anchored popover, and what
+          `EntityTray` reads to draw no chips — so `?shell=mobile` alone was
+          rendering the DESKTOP arrangement of both, under the phone's CSS.
+          `MobileShell` is the only production provider; this stands in for it
+          and for nothing else. `sheetHost` is this root, which is what the
+          frame's sheet host is a stand-in for too.
+
+          MOUNTED ONLY ON THE PHONE BRANCH, and the provider's own docblock is
+          why: `oneSurface` is hard-coded `true` there, deliberately, so
+          wrapping the desktop tree in it "to keep one shape" hands the desktop
+          the phone's arrangement. It did, for one run — the desktop tray
+          measured 0 chips. */}
+      {mobile ? (
+        <MobileSurfaceProvider sheetHost={host}>
+          <ChatHomeScreen
+            port={port}
+            spaceId={SPACE_ID}
+            models={MODELS}
+            viewerName="Sam"
+            /* THE STAGES ARE A DESKTOP SEAM. `MobileShell` mounts
+               `ChatHomeSurface` with no `onStageChange` and no `onShowChat`, so
+               a harness that passes them draws Fleet/Graph tabs the phone has
+               never had — and any measurement of the tray then describes a row
+               no reader sees. */
+            soloConversation
+          />
+        </MobileSurfaceProvider>
+      ) : (
+        <ChatHomeScreen
+          port={port}
+          spaceId={SPACE_ID}
+          models={MODELS}
+          viewerName="Sam"
+          stage={stage}
+          onStageChange={setStage}
+        />
+      )}
     </div>
   );
 }

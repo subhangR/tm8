@@ -1428,10 +1428,75 @@ button.tch-entity-chip:hover {
 /* The three thread-setting triggers (mode / teammate / model), 24px tall.
    `max-width` stays at 150px: these ellipsise their value, and the row this
    defect is about is the HEIGHT. Widening them as well would put the foot's
-   natural width past 390 and trade a tap-target row for an overflow one. */
+   natural width past 390 and trade a tap-target row for an overflow one.
+
+   AMENDED 2026-08-20 (user report, task 01a01c91: "ask / plan widget … its too
+   height"). 44px on a pill holding one 12px word is mostly empty pill, and the
+   three of them set the visual weight of the whole row. They come down to 36,
+   which is a NARROW AND DELIBERATE DEPARTURE from the ledger's 44 floor rather
+   than an oversight, on three grounds that do not generalise:
+
+     - The floor is about the thumb REACHING a control. These three sit in a
+       full-bleed strip with 36px of clear height and nothing above or below
+       them to hit by mistake — the miss the census guards against is a control
+       crowded by neighbours, and this row has three items in 366px.
+     - They are not the row's actions. Attach and Send keep 44 exactly, and
+       they are what the census's R2 reading is for: the primary action of the
+       primary screen, and the one control a misfire costs a message.
+     - The foot's own height is set by Send, so this buys the pills their
+       proportion back WITHOUT changing what the row costs the transcript. The
+       height reduction is bought separately, below.
+
+   `--mobile-touch-min` is deliberately not used here: a `calc()` off the floor
+   would read as "the floor, adjusted" when the point is that this is a second,
+   smaller number with its own reason.
+
+   AND THE WIDTH CAP COMES DOWN WITH IT, for the "no overflows" half of the
+   same report. The roster is variable-length by construction — a node can
+   publish a model called `claude-opus-4-6-20260101` — and the base rule's
+   150px was written for a 760px desktop pane, where one trigger at 150 is a
+   fifth of the row. On a 366px card it is 41% of it, and three of those cannot
+   fit however hard the strip scrolls. At 112 the three fit the width they are
+   given at 390 and above, and ellipsise honestly below it. */
 .cv2-root[data-shell='mobile'] .tch-pick__trigger {
-  min-block-size: var(--mobile-touch-min);
+  min-block-size: 36px;
+  max-width: 112px;
   padding-inline: var(--pn-space-2);
+}
+
+/* THE NAME COMES OFF THE TEAMMATE TRIGGER (user report: "the teammate name
+   should not be shown only the icon and drop down").
+
+   The desktop already does exactly this, and has since #442 — it is the
+   `.tch-pick--faced` rule in the container query above, guarded
+   `:not([data-shell='mobile'])` because the phone answered the same squeeze by
+   SCROLLING instead. The scroll is still right for the strip as a whole; what
+   it was not is a reason to keep spending 101px of a 366px row on a word the
+   avatar beside it already says. Measured: the strip's overflow falls from
+   152px to 51px on this change alone.
+
+   `--faced` and not `[data-testid='tch-teammate']` for the reason
+   `ComposerSelect` states — the trigger that carries a FACE is the one that can
+   stand without a label, so a fourth faced setting gets this for free and a
+   mode or model picker can never accidentally lose its subject.
+
+   Nothing is lost to assistive tech: `aria-label` carries the control's name
+   and always did, `title` carries the current selection, and the value span
+   never contributed to either. */
+.cv2-root[data-shell='mobile'] .tch-pick--faced .tch-pick__value { display: none; }
+.cv2-root[data-shell='mobile'] .tch-pick--faced .tch-pick__trigger {
+  padding-inline: var(--pn-space-1);
+  /* WITHOUT THIS IT COLLAPSES TO A 36x36 SQUARE — a 15px avatar and a 6px
+     caret and nothing else, and the one control in this row that is smallest
+     on BOTH axes. The block axis is 36 by the ruling above; the inline axis has
+     no such argument, and the floor's own rule is that it applies to the
+     SMALLER side. 44 wide keeps the thumb's reach where the ledger wants it and
+     costs the strip nothing — it fits its 222px with 30 to spare. */
+  min-inline-size: var(--mobile-touch-min);
+  justify-content: center;
+  /* The cap above is for a trigger that still spends width on a word. This one
+     does not, so there is nothing left to ellipsise and nothing to cap. */
+  max-width: none;
 }
 
 /* SEND — 57x29, and the primary action of the primary screen. `.tch-stop`
@@ -1446,13 +1511,13 @@ button.tch-entity-chip:hover {
   padding-inline: var(--pn-space-3);
 }
 
-/* The picks wrap among themselves once they are 44 tall, so three triggers
-   that no longer fit one line stack instead of compressing to their
-   ellipsis. */
-.cv2-root[data-shell='mobile'] .tch-picks {
-  flex-wrap: wrap;
-  row-gap: var(--pn-space-1);
-}
+/* THE WRAPPING PICKS RULE THAT USED TO SIT HERE IS GONE, and it had been dead
+   since the foot was re-laid as a scrolling row further down this file — the
+   later rule sets `flex-wrap: nowrap` on the same selector and wins on order.
+   Two rules for one selector saying opposite things is also how a source guard
+   goes green on a regression: a reader (or a test) that finds the FIRST match
+   reads the arrangement that lost. One rule per selector, and the live one is
+   in "THE FOOT IS ONE ROW". */
 
 
 /* --- the thread-setting sheet (shell contract §4) ------------------------- */
@@ -1702,7 +1767,33 @@ button.tch-entity-chip:hover {
      border was cut a pixel from Send's edge and the two read as one broken
      control; 8px makes the clip legible as "there is more this way". */
   gap: var(--pn-space-2);
-  padding: var(--pn-space-1) var(--pn-space-2);
+  /* THE ROW'S OWN HEIGHT, and the second half of the "too height" report. The
+     foot measured 58px against a 44px Send, so 14 of it was chrome: 8px of
+     block padding here and 6px the refused-attach control was carrying over
+     the floor (below). 3px of padding still separates Send's pill from the
+     field above it and from the card's edge, and the row lands at 50. */
+  padding: 3px var(--pn-space-2);
+  /* Nothing in this row may ever set the height by growing taller than the
+     controls in it — an image, a longer phase label or a future control would
+     otherwise silently reintroduce the same 14px. */
+  align-items: center;
+}
+
+/* THE REFUSED-ATTACH CONTROL WAS THE TALLEST THING IN THE ROW, at 50px against
+   a 44px floor — `rich-input.css` gives `.ri-card__foot .hon-disabled` a
+   `min-height` and the `DisabledIconControl` inside it adds its own box on top.
+   It is a `＋` in the same slot as `.tch-attach`, so the two must measure the
+   same or the row's height depends on whether this surface happens to have an
+   attachment port wired. Pinned to the floor exactly, both axes, the way
+   `.tch-attach` is. */
+.cv2-root[data-shell='mobile'] .ri-card__foot .hon-disabled {
+  /* BORDER-BOX EXPLICITLY — this package has no border-box reset, and
+     `honesty.css` gives `.hon-disabled` its own padding and border. Without
+     this the pin below is a CONTENT height and the control measures 50 again,
+     which is exactly how the 6px got there in the first place. */
+  box-sizing: border-box;
+  block-size: var(--mobile-touch-min);
+  inline-size: var(--mobile-touch-min);
 }
 
 .cv2-root[data-shell='mobile'] .tch-picks {
@@ -1714,9 +1805,39 @@ button.tch-entity-chip:hover {
   /* The strip is scrolled by the same finger that taps it; a scrollbar over a
      44px control would eat part of the target. */
   scrollbar-width: none;
+  /* SMOOTH, AND THAT IS THREE SEPARATE PROPERTIES DOING THREE JOBS.
+
+     `overscroll-behavior-x: contain` is the one that matters most: without it a
+     horizontal flick that reaches either end CHAINS to the ancestor, so a
+     finger that overshoots the model pill starts dragging the transcript — the
+     two scrollers are perpendicular but a real thumb swipe is never exactly
+     one axis. Containing it also stops the browser's back-navigation gesture
+     firing off the left edge of this strip, which on a chat composer costs the
+     writer their draft.
+
+     `scroll-snap-type: x proximity` settles the strip ON a pill instead of
+     halfway through one. PROXIMITY and not `mandatory`: mandatory would fight
+     a deliberate small nudge and re-centre the strip every time the finger
+     lifted, and with three items it would make the last one hard to rest on.
+
+     `scroll-behavior: smooth` is for the programmatic case — focusing a
+     trigger with a keyboard scrolls it into view, and a jump-cut there reads
+     as the row redrawing itself. */
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-behavior: smooth;
+  /* The snap ports need somewhere to land that is not flush against Send. */
+  scroll-padding-inline: var(--pn-space-1);
 }
 .cv2-root[data-shell='mobile'] .tch-picks::-webkit-scrollbar { display: none; }
-.cv2-root[data-shell='mobile'] .tch-pick { flex: none; }
+.cv2-root[data-shell='mobile'] .tch-pick {
+  flex: none;
+  scroll-snap-align: start;
+}
+
+/* The trigger's own geometry is set once, in the DEF-026 block above — one rule
+   per selector, so a guard that reads "the first rule matching this selector"
+   cannot be reading a rule that a later one overrides. */
 
 /* Attach loses its box. At 24px the border was what made a 24px glyph findable;
    at 44px the target is its own affordance, and a bordered square beside a

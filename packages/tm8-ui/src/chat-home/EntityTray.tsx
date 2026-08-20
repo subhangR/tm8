@@ -21,9 +21,27 @@
  *
  * Renders NOTHING for a thread with no entities — the zero state keeps its
  * clean centred pair, and an empty tray row would be a dashboard's cladding.
+ *
+ * AND NOTHING AT ALL ON THE PHONE (user report 2026-08-20, task 01a01c91:
+ * "many chips in horizontal scroll … remove those chips completely"). This is
+ * not a taste trim, and the measurement is what settles it: `MobileShell`
+ * mounts `ChatHomeSurface` with no `onStageChange`, no `onShowChat` and no
+ * entity-open handler, so on that surface the tray has no Chat tab, no Fleet or
+ * Graph tab, and `EntityChip` falls to its `<span>` branch — the strip is
+ * INERT. What shipped was ~24px of chrome and a sideways scroll gesture
+ * competing with the transcript's, in return for nothing a tap can do. The
+ * honesty rule this file already states for the stage tabs ("absent handler ⇒
+ * no tabs, never dead ones") reaches the chips too; it had only never been
+ * asked about a host that wires none of them.
+ *
+ * SCOPED OFF, NOT DELETED. On the desktop the same tray IS wired — it carries
+ * the Chat tab that is the way back from a stage, and chips that open panels.
+ * Deleting it outright would take a working navigation surface away to fix a
+ * phone that never had one.
  */
 import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
+import { useMobileSurface } from '../mobile';
 import type { CockpitStage } from '../routes/types';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { foldGraphSeeds } from './graph-seeds';
@@ -64,18 +82,24 @@ export function EntityTray({
   chatBusy?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const { oneSurface } = useMobileSurface();
   const stageActive = activeEntityId != null || activeStage != null;
   const seeds = useMemo(() => {
     const { seeds: all } = foldGraphSeeds(turns, suppressEntityIds);
     return [...all.filter((s) => s.mutated), ...all.filter((s) => !s.mutated)];
   }, [turns, suppressEntityIds]);
 
+  /* The phone takes no chips at all — see the docblock. The fold above still
+     runs and is still cheap; gating it would put the hook call behind a
+     condition for nothing. */
+  const chips = oneSurface ? [] : seeds;
+
   /* The stage tabs are ALWAYS worth drawing once a thread exists: a fleet is
      most interesting exactly when the conversation has just delegated and the
      entity chips have not resolved yet. */
-  if (seeds.length === 0 && !stageActive && !onStage) return null;
-  const visible = expanded ? seeds : seeds.slice(0, TRAY_VISIBLE_LIMIT);
-  const hidden = seeds.length - visible.length;
+  if (chips.length === 0 && !stageActive && !onStage) return null;
+  const visible = expanded ? chips : chips.slice(0, TRAY_VISIBLE_LIMIT);
+  const hidden = chips.length - visible.length;
 
   return (
     <nav className="tch-tray" aria-label="Entities in this thread" data-testid="chat-entity-tray">
@@ -116,7 +140,7 @@ export function EntityTray({
           >
             {`+${hidden} more`}
           </button>
-        ) : expanded && seeds.length > TRAY_VISIBLE_LIMIT ? (
+        ) : expanded && chips.length > TRAY_VISIBLE_LIMIT ? (
           <button
             type="button"
             className="tch-tray__more"
