@@ -85,7 +85,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
    *
    * It asserts NO rail deliberately. Every group in the default owns exactly
    * one childless view item, so `isRaillessGroup` (shell/menu-resolve.ts:240)
-   * answers true for all seven and the shell renders each screen full-bleed
+   * answers true for every menu group and the shell renders each screen full-bleed
    * beside the tab row. A rail here would be the "fourth column repeating the
    * tab's own name" that `menu-resolve.ts:220-226` exists to prevent.
    */
@@ -93,15 +93,10 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const { container, getByRole } = renderGate();
     const tabs = await waitFor(() => getByRole('tablist', { name: 'Screens' }));
 
-    // Seven groups from the shipped default, plus 'Board v2' — which is NOT a
-    // menu group: GateApp.tsx:1425-1433 splices it in right after `board`,
-    // deliberately bought as a bare tab rather than a menu ref because it is
-    // scheduled to REPLACE that group. It belongs in this list precisely
-    // because it is the one tab the default constant does not explain.
+    // Six groups from the shipped default plus route-only Board v2 in the
+    // single Board seat. Files and legacy Board are absent; Help is last.
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
-    expect(labels).toEqual([
-      'Home', 'Work', 'Board', 'Board v2', 'Craft', 'Graph', 'Files', 'Settings',
-    ]);
+    expect(labels).toEqual(['Home', 'Work', 'Board', 'Craft', 'Graph', 'Settings', 'Help']);
 
     // The rail is absent as a matter of design, so none of its furniture is
     // half-rendered either — a stray group or divider would mean a rail came

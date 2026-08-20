@@ -1549,28 +1549,19 @@ export function GateApp(props: GateAppProps = {}) {
     setPaletteOpen(false);
   }, [channelEntities, navigateTo]);
 
-  /*
-   * THE FIVE-TAB ROW (ruling R2, 2026-08-15): the resolved menu's GROUPS are
-   * the top-level tabs — home | work | graph | channels | files | settings in
-   * the shipped default — and the rail below renders only the ACTIVE group's
-   * contents. Data-driven throughout: a legacy hand-edited menu (the seeder
-   * only upgrades byte-matching defaults) simply shows ITS groups as tabs.
-   */
+  /* The resolved menu's groups are the tabs, with one route-only seat for the
+     new Board. The shipped result is exactly:
+       Home | Work | Board | Craft | Graph | Settings | Help
+     Customized menus remain data-driven and are never rewritten client-side. */
   const shellTabs = useMemo<ShellTab[]>(
     () => {
       const tabs: ShellTab[] = data.menu.config.groups.map((group) => ({ id: group.id, label: group.label }));
-      /* BOARD V2's CLIENT-APPENDED SEAT (Kind/Status/Category/Workflow). The
-         v2 board runs BESIDE the shipping Board until a later decision
-         replaces it, so its tab deliberately does not come from the menu
-         config — a real menu group costs a `MenuViewRef` widening plus a
-         `menu_view_registry` migration, bought now for a tab that is
-         scheduled to REPLACE another one. Appended right after the group it
-         will replace (or at the end when no board group exists), and matched
-         on the ROUTE below, the same posture as its screen mount. */
-      const boardIndex = tabs.findIndex((tab) => tab.id === 'board');
-      const v2: ShellTab = { id: BOARD_V2_TAB_ID, label: 'Board v2' };
-      if (boardIndex >= 0) tabs.splice(boardIndex + 1, 0, v2);
-      else tabs.push(v2);
+      /* BOARD V2 owns the single visible Board seat. It remains route-only so
+         the legacy `board` MenuViewRef can stay compatible without widening
+         the contract for a screen that already has a canonical route. */
+      const workIndex = tabs.findIndex((tab) => tab.id === 'work');
+      const v2: ShellTab = { id: BOARD_V2_TAB_ID, label: 'Board' };
+      tabs.splice(workIndex >= 0 ? workIndex + 1 : Math.min(1, tabs.length), 0, v2);
       return tabs;
     },
     [data.menu.config],
@@ -1822,9 +1813,6 @@ export function GateApp(props: GateAppProps = {}) {
              tab it replaces was retired in the same change. */
           onGoHome={() => navigateTo(HOME_TARGET)}
           onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
-          /* Help's door. A bar control rather than an eighth tab — see
-             `SpaceTabBar`'s `onOpenHelp` for the ruling. */
-          onOpenHelp={() => navigateTo({ type: 'view', ref: 'help' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenPrompts={() => setPromptsOpen(true)}

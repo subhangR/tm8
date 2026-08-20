@@ -84,12 +84,21 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // — side panel, center entity, side panel. Home offers no such layout, so
 // this is a new arrangement rather than a repeated door, and it is railless
 // by the same shape rule as Home/Board/Craft.
-export const SHIPPED_DEFAULT_MENU_REVISION = 19;
+// 19 → 20 (2026-08-20, Help library ruling / migration 164): Help joins as
+// the final tab. Files and the legacy Board group leave the shipped tab spine
+// but keep their refs, routes and menu-editor eligibility. Board v2 occupies
+// the visible Board seat client-side because it is a route-only screen rather
+// than a MenuViewRef.
+export const SHIPPED_DEFAULT_MENU_REVISION = 20;
 
 /**
- * The tab shell (revision 17, 2026-08-16 — task 01a00932), encoded literally
- * — the GROUPS are the top-row TABS and the rail renders only the active
- * group's contents:
+ * The menu half of the revision-20 tab shell. These GROUPS become top-row
+ * tabs, and GateApp inserts the route-only Board v2 seat after Work, yielding:
+ *
+ *   Home | Work | Board | Craft | Graph | Settings | Help
+ *
+ * Revision 17's earlier shell is retained below as design history for the
+ * routes and railless shapes that still survive:
  *
  *   Home     → the unified surface (view ref `dashboard`): the root column
  *              (chat threads OR any collection kind's list, picked through
@@ -98,9 +107,9 @@ export const SHIPPED_DEFAULT_MENU_REVISION = 19;
  *              right panel. No MENU rail — see below.
  *              (Group id `chats`; 15 renamed the label to Collab, 17 to
  *              Home. Ids are wire-stable; labels move.)
- *   Board    → the task kanban, full-bleed (no rail)
+ *   Board    → the legacy task kanban, now retained off the shipped spine
  *   Graph    → the space picture (no rail)
- *   Files    → the File browser view (no rail)
+ *   Files    → the File browser view, now retained off the shipped spine
  *   Settings → Space settings (no rail)
  *
  * WORK AND CHANNELS RETIRED HERE (revision 17). Home's root column lists
@@ -149,15 +158,19 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // false, and a menu rail would appear left of the split — a fourth
     // column, which is the arrangement this revision exists to prevent.
     { id: 'work', label: 'Work', items: [{ type: 'view', ref: 'workspace' }] },
-    // The task kanban (revision 16). Railless for the same reason as Home:
-    // one childless view item — the board's own columns are the navigation.
-    { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },
+    // RETIRED FROM THE SHIPPED TAB SPINE (revision 20). The legacy Board view
+    // remains registered, routable and menu-editor eligible; Board v2 now owns
+    // the visible Board tab through GateApp's route-only seat.
+    // { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },
     // The blueprint studio (revision 18). Railless like Board and Home: one
     // childless view item — the chat and the canvas are the navigation.
     { id: 'craft', label: 'Craft', items: [{ type: 'view', ref: 'craft' }] },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
-    { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
+    // RETIRED FROM THE SHIPPED TAB SPINE (revision 20). The Files explorer,
+    // route, palette row and menu-editor eligibility remain intact.
+    // { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
     { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+    { id: 'help', label: 'Help', items: [{ type: 'view', ref: 'help' }] },
   ],
 };
 

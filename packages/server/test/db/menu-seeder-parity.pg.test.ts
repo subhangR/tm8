@@ -145,16 +145,17 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(kinds[0]?.refs).toEqual([]);
   });
 
-  it('serves Work, Board, Craft and Graph as single-view tab groups (130/134/137/140 posture)', async () => {
+  it('serves Work, Craft, Graph, Settings and Help as single-view menu groups (164 posture)', async () => {
     for (const [id, ref] of [
       // 140: Work is the three-panel workspace, and the childless single-item
       // shape is the entire guarantee — restore the eight caret children the
       // pre-134 group carried and tm8-ui's `isRaillessGroup` answers false, a
       // menu rail returns beside the split, and the tab draws four columns.
       ['work', 'workspace'],
-      ['board', 'board'],
       ['craft', 'craft'],
       ['graph', 'graph'],
+      ['settings', 'settings'],
+      ['help', 'help'],
     ] as const) {
       const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(
         `select jsonb_agg(jsonb_build_object('type', item->>'type', 'ref', item->>'ref') order by item_ord) as items
@@ -167,14 +168,15 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     }
   });
 
-  it('serves the File browser as its own tab group (125 — user amendment)', async () => {
-    const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(
-      `select jsonb_agg(jsonb_build_object('type', item->>'type', 'ref', item->>'ref') order by item_ord) as items
-         from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
-              jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
-        where g->>'id' = 'files'`,
+  it('omits legacy Board and Files while placing Help last', async () => {
+    const rows = await db.query<{ ids: string[] }>(
+      `select array_agg(g->>'id' order by ord) as ids
+         from jsonb_array_elements(internal.w1_default_menu_payload()->'groups')
+              with ordinality as t(g, ord)`,
     );
-    expect(rows[0]?.items).toEqual([{ type: 'view', ref: 'files' }]);
+    expect(rows[0]?.ids).toEqual(['chats', 'work', 'craft', 'graph', 'settings', 'help']);
+    expect(rows[0]?.ids).not.toContain('board');
+    expect(rows[0]?.ids).not.toContain('files');
   });
 
   it('the guard ACCEPTS the new default — the registry row exists, so the seeder cannot refuse its own payload', async () => {
@@ -609,6 +611,81 @@ describeDb('140 upgrade — existing default menus gain the Work tab, customized
       [CUSTOM_SPACE],
     );
     expect(rows[0]?.revision).toBe(51);
+    expect(rows[0]?.payload).toEqual(customPayloadBefore);
+  });
+});
+
+describeDb('164 upgrade — Help joins untouched defaults; customized menus do not move', () => {
+  let db: W1ScratchDatabase;
+  const DEFAULT_SPACE = '00000000-0000-4000-8000-000000000164';
+  const CUSTOM_SPACE = '00000000-0000-4000-8000-000000000165';
+  let customPayloadBefore: unknown;
+
+  beforeAll(async () => {
+    db = await createW1ScratchDatabase('menu-help-spine-upgrade');
+    const files = migrationFiles();
+    const migration = files.find((file) => file === '164_menu_help_tab_spine.sql');
+    if (!migration) throw new Error('164_menu_help_tab_spine.sql is missing from the chain');
+    const index = files.indexOf(migration);
+    db.apply(files.slice(0, index));
+
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name)
+         values ('help-spine-default', 'Help spine default'),
+                ('help-spine-custom', 'Help spine custom')`,
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Untouched help default', 'help-spine-default'),
+                ($2, 'Customized help menu', 'help-spine-custom')`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 20, internal.w1_default_menu_payload()),
+                ($2, 1, 77,
+                 jsonb_set(internal.w1_default_menu_payload(),
+                           '{groups,0,label}', '"Mission Control"'))`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+    });
+
+    customPayloadBefore = (await db.query<{ payload: unknown }>(
+      `select payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    ))[0]?.payload;
+    db.apply([migration]);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.destroy();
+  }, 30_000);
+
+  it('upgrades the untouched payload exactly once to the current seeder', async () => {
+    const rows = await db.query<{ revision: number; ids: string[]; payload: unknown }>(
+      `select revision,
+              (select array_agg(g->>'id' order by ord)
+                 from jsonb_array_elements(payload->'groups') with ordinality t(g, ord)) as ids,
+              payload
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(21);
+    expect(rows[0]?.ids).toEqual(['chats', 'work', 'craft', 'graph', 'settings', 'help']);
+    const seeded = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+    expect(rows[0]?.payload).toEqual(seeded);
+  });
+
+  it('leaves an authored menu byte-identical with its revision unmoved', async () => {
+    const rows = await db.query<{ revision: number; payload: unknown }>(
+      `select revision, payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(77);
     expect(rows[0]?.payload).toEqual(customPayloadBefore);
   });
 });

@@ -804,7 +804,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 153
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 153
     //   (origin/main is 152; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(153);
+    // 153 -> 154 (2026-08-20): 164_menu_help_tab_spine.sql — Help joins the
+    // shipped menu, while legacy Board and Files leave its default payload.
+    // Measured on this tree; never inferred from the migration prefix.
+    expect(server.appliedMigrations.length).toBe(154);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

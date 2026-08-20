@@ -197,7 +197,7 @@ describe('add', () => {
     expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels', 'craft', 'help']);
   });
 
-  it('the revision-19 shipped default frees the whole retired set — unrouted, not deleted', () => {
+  it('the revision-20 shipped default frees Files and legacy Board without deleting either', () => {
     // Task 01a00932: Work and Channels retired from the tab row, so their
     // view refs joined the free set. A viewer who wants a Work group back
     // can author one — this is the editor-side proof the flip deleted
@@ -211,8 +211,7 @@ describe('add', () => {
     // that it was deleted. `git` and `messages`, the other two refs the old
     // Work group carried, are still free and still authorable.
     expect([...availableViewRefs(startDraft(SHIPPED_DEFAULT_MENU))].sort()).toEqual(
-      // 'help' rides along: no group places it, so it is free here too.
-      ['channels', 'feed', 'git', 'inbox', 'messages', 'help'].sort(),
+      ['board', 'channels', 'feed', 'files', 'git', 'inbox', 'messages'].sort(),
     );
   });
 

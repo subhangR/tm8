@@ -2464,7 +2464,7 @@ export const DEFAULT_MENU_LIBRARY_SPINE = [
  * The default menu's group spine — ONE shared truth for its two twins.
  *
  * The server seeder (`internal.w1_default_menu_payload()`, last redefined in
- * db/migrations/093) and the client shipped default (tm8-ui
+ * db/migrations/164) and the client shipped default (tm8-ui
  * `SHIPPED_DEFAULT_MENU`) each carry a hand-written copy of the default
  * menu's groups, and the ids DIFFER in one place for historical reasons
  * (`work` server-side, `workspace` client-side). Until 2026-07-31 nothing
@@ -2561,7 +2561,11 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // same posture as graph/files/chats. It PRESENTS the task collection; the
   // `task` kind stays a Home root, so this is a second door to tasks, not a
   // move (the R9 two-doors posture files set).
-  { serverId: 'board', clientId: 'board' },
+  // 2026-08-20 (Help library ruling, migration 164): the legacy Board menu
+  // group leaves the shipped spine. Its MenuViewRef, route and registry row
+  // remain; tm8-ui inserts the route-only Board v2 screen into this position
+  // and labels that tab exactly "Board".
+  // { serverId: 'board', clientId: 'board' },
   // 2026-08-16 (Craft P1, migration 137): the blueprint studio joins beside
   // Board — a railless group holding the single `craft` VIEW (chat + canvas
   // over one `graph` entity's row). Placed between Board and Graph: it sits
@@ -2569,8 +2573,12 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // edit here if the pending position ruling says otherwise.
   { serverId: 'craft', clientId: 'craft' },
   { serverId: 'graph', clientId: 'graph' },
-  { serverId: 'files', clientId: 'files' },
+  // Files is no longer a shipped tab, but remains a legal customized-menu ref.
+  // { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
+  // Help is a first-class final tab. Migration 160 already registered the
+  // view; 164 places it in the default spine.
+  { serverId: 'help', clientId: 'help' },
 ] as const;
 
 export interface MenuConfigPayload {
