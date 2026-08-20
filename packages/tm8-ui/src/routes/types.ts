@@ -164,10 +164,25 @@ export type NavView =
   | { view: 'board' }
   /* The Craft studio (2026-08-16): whole-centre split pane, flat segment. */
   | { view: 'craft' }
-  /* The Help shelf (2026-08-19): whole-centre contents + reader, flat segment.
-     Addressable even though Help is not in the default tab spine — its door is
-     a bar control, and a screen without a URL could not be linked to at all. */
-  | { view: 'help' }
+  /*
+   * The Help shelf (2026-08-19): whole-centre contents + reader. Addressable
+   * even though Help is not in the default tab spine — its door is a bar
+   * control, and a screen without a URL could not be linked to at all.
+   *
+   * `plate` (2026-08-20, the static Help library): WHICH of the 55 plates is
+   * open, as its registry slug. Shaped exactly like `settings/{section}` — an
+   * optional trailing segment, absent when the reader is on the contents.
+   *
+   * A SEGMENT AND NOT COMPONENT STATE, for the reason every other screen-level
+   * selection here is one: a plate is the unit people SEND each other. Held in
+   * `useState` it could not be linked to, could not be reloaded into, and Back
+   * would leave Help entirely instead of returning to the previous plate.
+   *
+   * LOSSY-TOLERANT: an unknown slug decodes to `null` rather than failing the
+   * route, so a link to a plate that has since been renumbered or retired opens
+   * the contents instead of a broken screen.
+   */
+  | { view: 'help'; plate: string | null }
   /*
    * BOARD V2 (2026-08-18, Kind/Status/Category/Workflow program): the
    * universal board — any entity kind, columns = the four status categories

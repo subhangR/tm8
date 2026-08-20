@@ -362,8 +362,13 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
         case 'messages':
         case 'board':
         case 'craft':
-        case 'help':
           return { view };
+        case 'help':
+          /* The rail seat opens the LIBRARY, never a particular plate — same
+             posture as `settings`, whose section this function also leaves
+             null. Which plate is open is read from the route by the Help shell
+             itself; a menu click is "go to Help", not "go to plate 07". */
+          return { view: 'help', plate: null };
         case 'settings':
           return { view: 'settings', section: null };
         default:

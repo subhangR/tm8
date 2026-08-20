@@ -1,35 +1,32 @@
 /**
- * HELP — a graph-driven field guide and the shared artifact reader.
+ * HELP — the field guide, and the reader that opens its plates.
  *
- * Artifact ids never appear here. The Space's `tm8 Help` collection chooses
- * the pages; ordered `contains` edges choose their chapter and sequence. The
- * shell provides the editorial map around that graph truth and hands the page
- * itself to `HostedEntityColumn`, preserving the app's existing sandboxed
- * artifact-preview path, revision switcher and expiring-preview refresh.
+ * THE LIBRARY IS STATIC (owner ruling, 2026-08-20). `HELP_SET` is built from
+ * `help-plates.ts` at module scope, so this screen has all 55 plates on its
+ * first paint with no seam, no fetch, no loading state and no way for an
+ * unreachable graph to leave a reader without a manual. The plate itself is a
+ * vendored artifact bundle in a sandboxed frame — see `HelpPlate.tsx` for why
+ * that is the port, and why it is safe.
+ *
+ * WHICH PLATE IS OPEN IS THE URL'S. `navStore` holds it as `view.plate`, so a
+ * plate is linkable, reloadable and Back-able: every open is a history push,
+ * which makes the browser's Back button the reader's "previous page" and makes
+ * a Help link something you can send someone. The one route this screen writes
+ * with `replace` is the desktop landing — see the effect below.
  */
 import {
   useCallback,
   useEffect,
   useMemo,
-  useState,
   type CSSProperties,
   type KeyboardEvent,
 } from 'react';
 
-import type { EntityId, SpaceId } from '@tm8/contract';
-
-import type { Seam } from '../data/seam';
 import { PanelResizer, VectorIcon, usePanelWidth } from '../kit';
 import { KIND_ART } from '../domain';
-import { HostedEntityColumn, type HostedColumnBundle } from '../views/hostedEntityColumn';
-import {
-  EMPTY_HELP_SET,
-  HELP_COLLECTION_TITLE,
-  loadHelpSet,
-  type HelpChapter,
-  type HelpPage,
-  type HelpSet,
-} from './help-set';
+import { navStore, useNavStore } from '../stores/navStore';
+import { HelpPlate } from './HelpPlate';
+import { HELP_SET, type HelpChapter, type HelpPage, type HelpSet } from './help-set';
 import './help.css';
 
 const CONTENTS_DEFAULT = 376;
@@ -38,64 +35,65 @@ const READER_MIN = 420;
 const PANE_CHROME = 8 + 1;
 
 export interface HelpScreenProps {
-  seam: Seam;
-  spaceId: SpaceId;
-  panelHost?: HostedColumnBundle;
-  /** On a phone, the shelf and the selected page occupy one surface each. */
+  /** On a phone, the shelf and the open plate occupy one surface each. */
   stacked?: boolean;
 }
 
-export function HelpScreen({ seam, spaceId, panelHost, stacked = false }: HelpScreenProps) {
-  const [set, setSet] = useState<HelpSet>(EMPTY_HELP_SET);
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [selectedId, setSelectedId] = useState<EntityId | null>(null);
+export function HelpScreen({ stacked = false }: HelpScreenProps) {
+  const set = HELP_SET;
+  const view = useNavStore((state) => state.view);
+  const openSlug = view.view === 'help' ? view.plate : null;
   const contentsPref = usePanelWidth('help.contents', CONTENTS_DEFAULT, CONTENTS_MIN);
 
-  useEffect(() => {
-    let alive = true;
-    setPhase('loading');
-    loadHelpSet(seam, spaceId).then(
-      (next) => {
-        if (!alive) return;
-        setSet(next);
-        setPhase('ready');
-        if (!stacked) setSelectedId((current) => current ?? next.pages[0]?.id ?? null);
-      },
-      () => {
-        if (alive) setPhase('error');
-      },
-    );
-    return () => {
-      alive = false;
-    };
-  }, [seam, spaceId, stacked]);
-
   const selectedIndex = useMemo(
-    () => set.pages.findIndex((page) => page.id === selectedId),
-    [set.pages, selectedId],
+    () => set.pages.findIndex((page) => page.slug === openSlug),
+    [set.pages, openSlug],
   );
   const selected = selectedIndex >= 0 ? set.pages[selectedIndex] ?? null : null;
   const selectedChapter = selected
     ? set.chapters.find((chapter) => chapter.id === selected.sectionId) ?? null
     : null;
-  const close = useCallback(() => setSelectedId(null), []);
+
+  /** Opening a plate is USER navigation: a push, so Back returns to the last one. */
+  const open = useCallback((slug: string | null) => {
+    navStore.getState().navigate({ view: 'help', plate: slug });
+  }, []);
+
+  /*
+   * THE DESKTOP LANDING, and the one `replace` this screen writes.
+   *
+   * Two panes are up and the right one has nothing else to hold, so a bare
+   * `/help` opens plate 01. Written into the ROUTE rather than kept as a local
+   * default, because a URL reading `/help` while plate 01 is on screen is a URL
+   * that shares the wrong thing — and `replace` rather than `push` because the
+   * reader did not navigate here, so Back must still leave Help instead of
+   * bouncing between two spellings of the same screen.
+   *
+   * A slug naming no plate lands here too and is corrected the same way: a
+   * retired or mistyped link opens the guide at its first page.
+   */
+  useEffect(() => {
+    if (stacked || view.view !== 'help' || selected) return;
+    const first = set.pages[0];
+    if (!first) return;
+    navStore.setState((state) => ({
+      view: { view: 'help', plate: first.slug },
+      history: 'replace',
+      revision: state.revision + 1,
+    }));
+  }, [stacked, view.view, selected, set.pages]);
+
   const selectRelative = useCallback(
     (delta: number) => {
       if (selectedIndex < 0) return;
       const next = set.pages[selectedIndex + delta];
-      if (next) setSelectedId(next.id);
+      if (next) open(next.slug);
     },
-    [selectedIndex, set.pages],
+    [selectedIndex, set.pages, open],
   );
 
   const contents = (
-    <HelpContents
-      set={set}
-      phase={phase}
-      selectedId={selectedId}
-      onSelect={setSelectedId}
-      stacked={stacked}
-    />
+    <HelpContents set={set} selectedSlug={openSlug} onSelect={open} stacked={stacked} />
   );
 
   if (stacked) {
@@ -108,11 +106,11 @@ export function HelpScreen({ seam, spaceId, panelHost, stacked = false }: HelpSc
               chapter={selectedChapter}
               pageCount={set.pages.length}
               stacked
-              onBack={close}
+              onBack={() => open(null)}
               onPrevious={selectedIndex > 0 ? () => selectRelative(-1) : undefined}
               onNext={selectedIndex < set.pages.length - 1 ? () => selectRelative(1) : undefined}
             />
-            <HelpReader page={selected} panelHost={panelHost} onOpen={setSelectedId} onClose={close} />
+            <HelpReader page={selected} />
           </section>
         ) : (
           <nav className="hlp-contents" aria-label="Help contents">{contents}</nav>
@@ -153,23 +151,20 @@ export function HelpScreen({ seam, spaceId, panelHost, stacked = false }: HelpSc
               onPrevious={selectedIndex > 0 ? () => selectRelative(-1) : undefined}
               onNext={selectedIndex < set.pages.length - 1 ? () => selectRelative(1) : undefined}
             />
-            <HelpReader page={selected} panelHost={panelHost} onOpen={setSelectedId} onClose={close} />
+            <HelpReader page={selected} />
           </>
         ) : (
-          <p className="hlp-empty" role="status">
-            {phase === 'loading' ? 'Reading the Help library…' : 'Choose a plate from the contents.'}
-          </p>
+          <p className="hlp-empty" role="status">Choose a plate from the contents.</p>
         )}
       </section>
     </div>
   );
 }
 
-function HelpContents({ set, phase, selectedId, onSelect, stacked }: {
+function HelpContents({ set, selectedSlug, onSelect, stacked }: {
   set: HelpSet;
-  phase: 'loading' | 'ready' | 'error';
-  selectedId: EntityId | null;
-  onSelect(id: EntityId): void;
+  selectedSlug: string | null;
+  onSelect(slug: string): void;
   stacked: boolean;
 }) {
   const openChapters = set.chapters.filter((chapter) => chapter.pages.length > 0).length;
@@ -179,39 +174,23 @@ function HelpContents({ set, phase, selectedId, onSelect, stacked }: {
         <div className="hlp-masthead__kicker"><span>tm8</span><span aria-hidden>◆</span><span>Field guide</span></div>
         <h1 className="hlp-masthead__title">Help</h1>
         <p className="hlp-masthead__lede">A practical library for understanding the graph, finding your footing, and working well together.</p>
-        {phase === 'ready' && set.pages.length > 0 ? (
-          <p className="hlp-masthead__measure" aria-label={`${set.pages.length} pages across ${openChapters} populated chapters`}>
-            {set.pages.length} {set.pages.length === 1 ? 'plate' : 'plates'} <span aria-hidden>·</span> {openChapters} {openChapters === 1 ? 'chapter' : 'chapters'} open
-          </p>
-        ) : null}
+        <p className="hlp-masthead__measure" aria-label={`${set.pages.length} plates across ${openChapters} populated chapters`}>
+          {set.pages.length} {set.pages.length === 1 ? 'plate' : 'plates'} <span aria-hidden>·</span> {openChapters} {openChapters === 1 ? 'chapter' : 'chapters'} open
+        </p>
       </header>
 
-      {phase === 'loading' ? (
-        <p className="hlp-empty" role="status">Reading the Help library…</p>
-      ) : phase === 'error' ? (
-        <p className="hlp-empty" data-testid="help-error">
-          The Help library could not be read from this node. Nothing is missing from the Space — this screen simply could not reach it.
-        </p>
-      ) : set.pages.length === 0 ? (
-        <p className="hlp-empty" data-testid="help-none">
-          This Space has no Help library yet. Help is a <code>collection</code> named “{HELP_COLLECTION_TITLE}” with ordered <code>contains</code> edges to its published plates.
-        </p>
-      ) : (
-        <>
-          <ChapterMap chapters={set.chapters} />
-          <div className="hlp-library" data-testid="help-library">
-            {set.chapters.filter((chapter) => chapter.pages.length > 0).map((chapter) => (
-              <HelpChapterSection
-                key={chapter.id}
-                chapter={chapter}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                stacked={stacked}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      <ChapterMap chapters={set.chapters} />
+      <div className="hlp-library" data-testid="help-library">
+        {set.chapters.filter((chapter) => chapter.pages.length > 0).map((chapter) => (
+          <HelpChapterSection
+            key={chapter.id}
+            chapter={chapter}
+            selectedSlug={selectedSlug}
+            onSelect={onSelect}
+            stacked={stacked}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -221,7 +200,7 @@ function ChapterMap({ chapters }: { chapters: readonly HelpChapter[] }) {
     <section className="hlp-map" aria-labelledby="hlp-map-title">
       <div className="hlp-rule"><span id="hlp-map-title">Reading map</span></div>
       <ol className="hlp-map__list">
-        {chapters.filter((chapter) => chapter.id !== 'unfiled').map((chapter) => (
+        {chapters.map((chapter) => (
           <li
             key={chapter.id}
             className={chapter.pages.length > 0 ? 'hlp-map__item hlp-map__item--open' : 'hlp-map__item'}
@@ -238,10 +217,10 @@ function ChapterMap({ chapters }: { chapters: readonly HelpChapter[] }) {
   );
 }
 
-function HelpChapterSection({ chapter, selectedId, onSelect, stacked }: {
+function HelpChapterSection({ chapter, selectedSlug, onSelect, stacked }: {
   chapter: HelpChapter;
-  selectedId: EntityId | null;
-  onSelect(id: EntityId): void;
+  selectedSlug: string | null;
+  onSelect(slug: string): void;
   stacked: boolean;
 }) {
   const headingId = `hlp-chapter-${chapter.id}`;
@@ -258,23 +237,23 @@ function HelpChapterSection({ chapter, selectedId, onSelect, stacked }: {
       <p className="hlp-chapter__summary">{chapter.summary}</p>
       <ol className="hlp-list">
         {chapter.pages.map((page) => {
-          const active = !stacked && page.id === selectedId;
+          const active = !stacked && page.slug === selectedSlug;
           return (
-            <li key={page.id}>
+            <li key={page.slug}>
               <button
                 type="button"
                 className={`hlp-row ${active ? 'hlp-row--active' : ''}`}
                 data-testid="help-row"
                 data-help-page
                 aria-current={active ? 'page' : undefined}
-                onClick={() => onSelect(page.id)}
+                onClick={() => onSelect(page.slug)}
                 onKeyDown={moveHelpFocus}
               >
-                <span className="hlp-row__n" aria-hidden>{String(page.sequence).padStart(2, '0')}</span>
+                <span className="hlp-row__n" aria-hidden>{String(page.number).padStart(2, '0')}</span>
                 <VectorIcon paths={KIND_ART.artifact} className="hlp-row__mark" />
                 <span className="hlp-row__text">
                   <span className="hlp-row__title">{page.title}</span>
-                  {page.excerpt ? <span className="hlp-row__excerpt">{page.excerpt}</span> : null}
+                  <span className="hlp-row__excerpt">{page.excerpt}</span>
                 </span>
                 <span className="hlp-row__arrow" aria-hidden>→</span>
               </button>
@@ -321,33 +300,21 @@ function ReaderHeader({ page, chapter, pageCount, stacked = false, onBack, onPre
       <div className="hlp-reader__identity">
         <p className="hlp-reader__crumb"><span>Section {chapter.number}</span><span aria-hidden>◆</span><span>{chapter.title}</span></p>
         <h1 id="hlp-reader-title" className="hlp-reader__title">{page.title}</h1>
-        <p className="hlp-reader__progress">Plate {page.sequence} of {pageCount}</p>
+        <p className="hlp-reader__progress">Plate {page.number} of {pageCount}</p>
       </div>
       <div className="hlp-reader__steps" aria-label="Page navigation">
         <button type="button" className="hlp-step" disabled={!onPrevious} onClick={onPrevious} aria-label="Previous Help page"><span aria-hidden>←</span></button>
         <button type="button" className="hlp-step" disabled={!onNext} onClick={onNext} aria-label="Next Help page"><span aria-hidden>→</span></button>
       </div>
-      <div className="hlp-progress-track" aria-hidden><span style={{ width: `${(page.sequence / pageCount) * 100}%` }} /></div>
+      <div className="hlp-progress-track" aria-hidden><span style={{ width: `${(page.number / pageCount) * 100}%` }} /></div>
     </header>
   );
 }
 
-function HelpReader({ page, panelHost, onOpen, onClose }: {
-  page: HelpPage;
-  panelHost: HostedColumnBundle | undefined;
-  onOpen(id: EntityId): void;
-  onClose(): void;
-}) {
-  if (!panelHost) {
-    return (
-      <p className="hlp-empty" data-testid="help-no-host">
-        “{page.title}” is in the library, but this mount has no shell data behind it, so the plate cannot be rendered here.
-      </p>
-    );
-  }
+function HelpReader({ page }: { page: HelpPage }) {
   return (
     <div className="hlp-reader__body" data-testid="help-page">
-      <HostedEntityColumn {...panelHost} entityId={page.id} onOpenEntity={onOpen} onClose={onClose} />
+      <HelpPlate plate={page.plate} />
     </div>
   );
 }
