@@ -1,11 +1,17 @@
 /**
  * SpaceTabBar — the top row: product mark, the server⋄space switcher slot,
- * the top-level TABS, palette hint, the Help `?`, the inbox bell, copy-link
+ * the top-level TABS, palette hint, the inbox bell, copy-link
  * slot, account avatar.
  *
- * REVISION 12 (five-tab ruling R1/R2, 2026-08-15): the identity block moved
+ * REVISION 20 (Help/top-tab ruling, 2026-08-20): the shipped row is exactly
+ * Home | Work | Board | Craft | Graph | Settings | Help. Board is the client-
+ * owned Board v2 route tab; legacy Board and Files remain valid views without
+ * shipping in the default spine. Help is the final tab, so the old dedicated
+ * `?` control is retired below.
+ *
+ * REVISION 12 (top-tab ruling R1/R2, 2026-08-15): the identity block moved
  * HERE from the rail head, and the menu's GROUPS render as top-level tabs —
- * home | work | graph | channels | files | settings. The single-home rule
+ * the exact group set has evolved since. The single-home rule
  * survives with a new address: identity is still ONE control (`switcherSlot`,
  * occupied by `SpaceSwitcher`), never a server chip beside a space list — the
  * old read-only server label is NOT restored. The rail below stops listing
@@ -80,18 +86,6 @@ export interface SpaceTabBarProps {
   onGoHome?(): void;
   /** Opens the Inbox screen — the bell. Absent, the bell renders disabled. */
   onOpenInbox?(): void;
-  /**
-   * Opens the Help shelf — the `?`. Same posture as the bell: absent, it
-   * renders disabled with the reason on it rather than vanishing.
-   *
-   * A BAR CONTROL AND NOT A TAB, deliberately. Help is a full `MenuViewRef`
-   * with its own route and its own screen, so an operator can put it in their
-   * menu; what it is NOT is a member of the shipped default spine. Every tab
-   * there is a surface you INHABIT — Home, Work, Board, Craft, Graph, Files,
-   * Settings — and Help is a reference you CONSULT and leave. Inbox made the
-   * same trade for the same reason and is the precedent this follows.
-   */
-  onOpenHelp?(): void;
   /** Account menu — theme's home per D1. */
   onOpenAccount?(): void;
   onOpenPalette?(): void;
@@ -182,19 +176,9 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
         / palette · ⌘K
       </button>
 
-      {/* Help's one chrome door, and the reason Help takes no tab seat. Same
-          D28 posture as the bell beside it. */}
-      <button
-        type="button"
-        className="shell-tabbar__help"
-        data-testid="open-help"
-        aria-disabled={props.onOpenHelp ? undefined : 'true'}
-        aria-label="Help"
-        title={props.onOpenHelp ? 'Help — how tm8 works' : 'Help is unavailable without a host'}
-        onClick={props.onOpenHelp ?? ((event) => event.preventDefault())}
-      >
-        <span aria-hidden="true">?</span>
-      </button>
+      {/* RETIRED 2026-08-20: Help now owns the final tab in the shipped menu.
+          Keep no duplicate `?` door in chrome. The view, route and palette
+          eligibility remain; only this dedicated control is gone. */}
 
       {/* The bell keeps the D28 posture when no host wired it: focusable,
           aria-disabled, with the reason on it — never hidden. */}

@@ -18,7 +18,7 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-19 tab row', () => {
+  it('encodes the shipped group spine — the revision-20 menu-backed tabs', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       // Revision 17 (2026-08-16, unified Home — task 01a00932): the Work and
       // Channels groups retired and the conversation tab is renamed HOME.
@@ -35,13 +35,12 @@ describe('the shipped default menu', () => {
       // the tab opens is a LAYOUT — side panel · center · side panel — that
       // Home has no equivalent for. The railless assertion below covers it.
       'Work',
-      'Board',
       // Revision 18 (2026-08-16, Craft P1 — task 01a00a31): the blueprint
       // studio joins between Board and Graph, railless like both.
       'Craft',
       'Graph',
-      'Files',
       'Settings',
+      'Help',
     ]);
   });
 
@@ -142,9 +141,7 @@ describe('the shipped default menu', () => {
     // same additive R4 widening as the two above. `board` joined 2026-08-16
     // (the task kanban tab), same posture; `craft` the same day (the
     // blueprint studio, Craft P1), same posture again. `help` joined
-    // 2026-08-19 (the Help shelf) — and it is the first ref to join this table
-    // WITHOUT joining the shipped default spine: it is here so the menu editor
-    // can offer it, not because any group places it.
+    // 2026-08-19 and entered the shipped spine in revision 20.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
       ['board', 'channels', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );

@@ -116,14 +116,9 @@ const DESTINATION_REFS: readonly MenuViewRef[] = [
 /** The foot's destinations. Beside the account, per ruling 3. */
 const SETTINGS_REF: MenuViewRef = 'settings';
 /**
- * Help sits in the foot with Settings, not in the destination spine above it.
- *
- * The phone's counterpart to the desktop's `?` bar control, and the same
- * ruling: the spine lists surfaces you INHABIT, and Help is a reference you
- * consult and leave. The foot is where the phone already puts exactly that
- * class of row. It is at the TOP of the foot because a reader looking for help
- * is often lost, and the two rows below it are the ones they are not looking
- * for.
+ * The phone has no top-tab row, so its Help destination remains in the foot
+ * with Settings and account. This is the mobile expression of desktop's final
+ * Help tab, not a second Help door in the desktop chrome.
  */
 const HELP_REF: MenuViewRef = 'help';
 

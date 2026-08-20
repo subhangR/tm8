@@ -33,7 +33,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(unrenderableKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
   });
 
-  it('encodes the revision-19 tab row, pinned to the contract spine', () => {
+  it('encodes the revision-20 tab row, pinned to the contract spine', () => {
     // DEFAULT_MENU_GROUP_SPINE is the ONE truth this default and the server
     // seeder (db/migrations/140, tested by
     // packages/server/test/db/menu-seeder-parity.pg.test.ts) are both pinned
@@ -96,6 +96,24 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(refs).toContain('settings');
   });
 
+  it('retires Files and legacy Board from the default without deleting their menu capability', () => {
+    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((group) => group.items.map((item) => item.ref));
+    expect(refs).not.toContain('files');
+    expect(refs).not.toContain('board');
+    expect(refs.at(-1)).toBe('help');
+    expect(
+      MenuConfigSchema.safeParse({
+        schemaVersion: 1,
+        revision: 7,
+        groups: [
+          { id: 'legacy-board', label: 'My board', items: [{ type: 'view', ref: 'board' }] },
+          { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
+          { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
   /**
    * Revision 17 (task 01a00932): the tab is named HOME and the pair 14 pinned
    * — the group exists AND it is railless — still holds, now for a stronger
@@ -122,7 +140,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(chats?.items[0]?.type === 'view' && chats.items[0].children).toBeUndefined();
   });
 
-  it('keeps Work, Board, Graph, Files and Settings as railless single-view tabs', () => {
+  it('keeps every shipped menu group as a railless single-view tab', () => {
     for (const [id, ref] of [
       // Revision 19: Work is the three-panel workspace, and it holds the
       // `workspace` VIEW alone. The childless single-item shape is the whole
@@ -130,10 +148,10 @@ describe('SHIPPED_DEFAULT_MENU', () => {
       // carried and `isRaillessGroup` answers false, a menu rail appears left
       // of the split, and the tab draws FOUR columns instead of three.
       ['work', 'workspace'],
-      ['board', 'board'],
+      ['craft', 'craft'],
       ['graph', 'graph'],
-      ['files', 'files'],
       ['settings', 'settings'],
+      ['help', 'help'],
     ] as const) {
       const group = SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === id);
       expect(group?.items).toEqual([{ type: 'view', ref }]);
@@ -158,7 +176,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(19);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(20);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

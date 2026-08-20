@@ -30,6 +30,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import axe from 'axe-core';
 import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { GateApp } from '../views/GateApp';
@@ -78,9 +79,9 @@ const SHELF = summary('col-help', 'collection', HELP_COLLECTION_TITLE);
 
 /** Three pages wired out of order, so the sort has something to do. */
 const SCRAMBLED = [
-  { position: 3, target: summary('art-3', 'artifact', 'Tasks & work') },
+  { position: 205, target: summary('art-3', 'artifact', 'Tasks & work') },
   { position: 1, target: summary('art-1', 'artifact', 'The concepts map') },
-  { position: 2, target: summary('art-2', 'artifact', 'Entities & the graph') },
+  { position: 105, target: summary('art-2', 'artifact', 'Entities & the graph') },
 ];
 
 beforeEach(() => {
@@ -100,6 +101,9 @@ describe('the help set', () => {
       'The concepts map',
       'Entities & the graph',
       'Tasks & work',
+    ]);
+    expect(set.chapters.filter((chapter) => chapter.pages.length > 0).map((chapter) => chapter.id)).toEqual([
+      '0', 'A', '1',
     ]);
   });
 
@@ -128,12 +132,14 @@ describe('the help set', () => {
       }),
       SPACE,
     );
-    expect(set.pages.map((page) => page.kind)).toEqual(['artifact', 'artifact', 'artifact']);
+    expect(set.pages.map((page) => page.entity.kind)).toEqual(['artifact', 'artifact', 'artifact']);
   });
 
   it('answers empty — not an error — for a space with no shelf', async () => {
     const set = await loadHelpSet(shelfSeam({ collections: [summary('c', 'collection', 'Reading')] }), SPACE);
-    expect(set).toEqual({ collectionId: null, pages: [] });
+    expect(set.collectionId).toBeNull();
+    expect(set.pages).toEqual([]);
+    expect(set.chapters.map((chapter) => chapter.id)).toEqual(['0', 'A', '1', '2', '3', '4', '5', '6', '7', '8']);
   });
 });
 
@@ -143,6 +149,7 @@ describe('the help screen', () => {
       <HelpScreen seam={shelfSeam({ collections: [SHELF], edges: SCRAMBLED })} spaceId={SPACE} />,
     );
     await waitFor(() => expect(view.getAllByTestId('help-row')).toHaveLength(3));
+    expect(view.getAllByTestId('help-chapter').map((chapter) => chapter.getAttribute('data-section'))).toEqual(['0', 'A', '1']);
     expect(view.getAllByTestId('help-row').map((row) => row.textContent)).toEqual([
       expect.stringContaining('The concepts map'),
       expect.stringContaining('Entities & the graph'),
@@ -153,6 +160,38 @@ describe('the help screen', () => {
        of the window. `help-no-host` is the reader saying it has no shell
        bundle behind it, which is TRUE of this mount: it is still the reader. */
     await waitFor(() => view.getByTestId('help-no-host'));
+    expect(view.getByText('Plate 1 of 3')).toBeTruthy();
+    view.unmount();
+  });
+
+  it('supports arrow, Home and End navigation through the reading order', async () => {
+    const view = render(
+      <HelpScreen seam={shelfSeam({ collections: [SHELF], edges: SCRAMBLED })} spaceId={SPACE} />,
+    );
+    const rows = await waitFor(() => view.getAllByTestId('help-row'));
+    rows[0]!.focus();
+    fireEvent.keyDown(rows[0]!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(rows[1]);
+    fireEvent.keyDown(rows[1]!, { key: 'End' });
+    expect(document.activeElement).toBe(rows[2]);
+    fireEvent.keyDown(rows[2]!, { key: 'Home' });
+    expect(document.activeElement).toBe(rows[0]);
+    view.unmount();
+  });
+
+  it('has no critical or serious automated accessibility findings', async () => {
+    const view = render(
+      <main>
+        <HelpScreen seam={shelfSeam({ collections: [SHELF], edges: SCRAMBLED })} spaceId={SPACE} />
+      </main>,
+    );
+    await waitFor(() => expect(view.getAllByTestId('help-row')).toHaveLength(3));
+    const results = await axe.run(view.container, {
+      rules: { 'color-contrast': { enabled: false } },
+    });
+    const blocking = results.violations.filter((violation) =>
+      violation.impact === 'critical' || violation.impact === 'serious');
+    expect(blocking, blocking.map((violation) => `${violation.id}: ${violation.help}`).join('\n')).toEqual([]);
     view.unmount();
   });
 
@@ -208,23 +247,19 @@ describe('the help route', () => {
     view.unmount();
   });
 
-  it('is reached from the tab bar’s ? — the door that replaces an eighth tab', async () => {
-    /* THE RULING, PINNED. Help takes no seat in the tab spine: the seven
-       groups there are surfaces you inhabit and Help is a reference you
-       consult, so its door is a bar control beside the bell — the posture
-       Inbox has held since its own rail row retired. A test that only proved
-       the ROUTE works would leave the door itself unasserted, and a door
-       nobody can find is the failure this whole surface is recovering from. */
+  it('is the final tab, owns current state, and has no duplicate ? control', async () => {
     const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/home`)} />);
-    const door = await waitFor(() => view.getByTestId('open-help'));
-    expect(door.getAttribute('aria-disabled')).toBeNull();
-    /* And it is NOT a tab: the tablist must not have grown one. */
-    expect(
-      view.getAllByRole('tab').map((tab) => tab.textContent),
-    ).not.toContain('Help');
+    await waitFor(() => view.getByTestId('space-tab-bar'));
+    const tablist = view.getByRole('tablist', { name: 'Screens' });
+    const tabs = [...tablist.querySelectorAll<HTMLElement>('[role="tab"]')];
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'Home', 'Work', 'Board', 'Craft', 'Graph', 'Settings', 'Help',
+    ]);
+    expect(view.queryByTestId('open-help')).toBeNull();
 
-    fireEvent.click(door);
+    fireEvent.click(view.getByRole('tab', { name: 'Help' }));
     await waitFor(() => view.getByTestId('help-screen'));
+    expect(view.getByRole('tab', { name: 'Help' }).getAttribute('aria-selected')).toBe('true');
     view.unmount();
   });
 });

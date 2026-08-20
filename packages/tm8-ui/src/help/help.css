@@ -1,240 +1,316 @@
-/* HELP — the shelf and the reader. Tokens only; no raw hex (§14). */
+/* Help — Classical / Letterpress field guide. App tokens only; no raw hex. */
 
-/* `flex: 1` as well as `height: 100%`, because the screen is mounted in both
-   kinds of parent: a block content area (the gate's view slot) and a flex row
-   (the shell, and the phone frame). Height alone leaves it at its content
-   width inside a flex parent, which parks the shelf in the left third of the
-   window and leaves a dead band down the right — the same trap `.crf-root`
-   documents. */
 .hlp-root {
   display: flex;
   flex: 1;
   min-width: 0;
   height: 100%;
   min-height: 0;
+  color: var(--pn-ink-1);
   background: var(--pn-paper);
 }
 
-/* The phone is ONE column, and it is a column: the reader stacks its own head
-   above its body. */
-.hlp-root--stacked {
-  flex-direction: column;
-}
+.hlp-root--stacked { flex-direction: column; }
 
-/* -- the contents ---------------------------------------------------------- */
-
-/* SIZED, while the reader takes the remainder. Only one of the two can own the
-   width or the drag would have to move both; the reader keeping the rest is
-   what makes a Help page grow when the window does. */
 .hlp-contents {
-  flex: 0 0 var(--hlp-contents, 300px);
+  flex: 0 0 var(--hlp-contents, 376px);
   min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--pn-surface);
   border-right: 1px solid var(--pn-line);
+  scrollbar-color: var(--pn-line-2) transparent;
 }
 
-/* On the phone the contents ARE the screen, so they take everything. The rule
-   is scoped to the stacked root rather than written as a media query: the shell
-   already knows which device it is. */
-.hlp-root--stacked > .hlp-contents__body {
+.hlp-root--stacked > .hlp-contents {
   flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  background: var(--pn-surface);
+  border-right: 0;
 }
 
 .hlp-contents__body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 16px 12px 24px;
+  min-height: 100%;
+  padding: 26px 20px 40px;
 }
 
-.hlp-contents__head {
-  margin: 0 0 10px;
-  padding: 0 6px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--pn-ink-3);
+.hlp-masthead {
+  position: relative;
+  padding: 0 2px 24px;
+  border-bottom: 1px solid var(--pn-line-2);
 }
 
-.hlp-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.hlp-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-  /* The 44px floor is the touch target, and it is a MINIMUM rather than a
-     height: a two-line title must grow the row, not clip it. */
-  min-block-size: 44px;
-  padding: 9px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--pn-ink-1);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.hlp-row:hover {
-  background: var(--pn-card);
-}
-
-/* The active row is marked by GROUND, not by a left bar: a bar would shift the
-   text of one row out of alignment with its neighbours. */
-.hlp-row--active {
-  background: var(--pn-card);
-  color: var(--pn-ink-1);
-}
-
-/* Keyboard focus only. A tap NEVER matches `:focus-visible`, so a pressed row
-   on a phone does not keep a ring after the finger leaves. */
-.hlp-row:focus-visible {
-  outline: 2px solid var(--pn-brand);
-  outline-offset: -2px;
-}
-
-/* The ordinal carries the curation: these pages build on each other. Tabular
-   figures so 1 and 4 occupy the same width and the titles stay in one column. */
-.hlp-row__n {
-  flex: 0 0 auto;
-  min-width: 14px;
-  padding-top: 1px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--pn-ink-3);
-}
-
-.hlp-row__mark {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: var(--pn-ink-3);
-}
-
-.hlp-row--active .hlp-row__mark {
+.hlp-masthead::after {
+  content: '◆';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  padding: 0 8px;
   color: var(--pn-brand);
+  background: var(--pn-surface);
+  font-size: 8px;
+  transform: translateX(-50%);
 }
 
-.hlp-row__text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.hlp-row__title {
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.hlp-row--active .hlp-row__title {
-  font-weight: 600;
-}
-
-/* Two lines of excerpt, then an ellipsis — enough to tell two pages apart,
-   short enough that the contents stay a list rather than becoming prose. */
-.hlp-row__excerpt {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: var(--pn-ink-3);
-}
-
-/* -- the reader ------------------------------------------------------------ */
-
-.hlp-reader {
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* The stacked head exists only on the phone, where the shelf is not on screen
-   beside the page and the reader owes a way back to it. */
-.hlp-reader__head {
+.hlp-masthead__kicker,
+.hlp-reader__crumb {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--pn-line);
-  background: var(--pn-surface);
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .13em;
+  line-height: 1.4;
+  text-transform: uppercase;
 }
 
+.hlp-masthead__kicker span:nth-child(2),
+.hlp-reader__crumb span:nth-child(2) { color: var(--pn-brand); font-size: 7px; }
+
+.hlp-masthead__title {
+  margin: 12px 0 6px;
+  color: var(--pn-ink-1);
+  font-family: var(--pn-serif);
+  font-size: 42px;
+  font-weight: 400;
+  letter-spacing: -.035em;
+  line-height: .98;
+}
+
+.hlp-masthead__lede {
+  max-width: 31ch;
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-serif);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.hlp-masthead__measure {
+  margin: 14px 0 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.hlp-masthead__measure span { padding: 0 4px; color: var(--pn-brand); }
+
+.hlp-map { margin: 24px 2px 30px; }
+
+.hlp-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.hlp-rule::before,
+.hlp-rule::after { content: ''; flex: 1; height: 1px; background: var(--pn-line); }
+
+.hlp-map__list {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.hlp-map__item {
+  display: grid;
+  place-items: center;
+  min-height: 24px;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line);
+  border-radius: 2px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hlp-map__item--open { color: var(--pn-brand); border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+
+.hlp-library { display: flex; flex-direction: column; gap: 34px; }
+
+.hlp-chapter { scroll-margin-block: 20px; }
+
+.hlp-chapter__head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--pn-line-2);
+}
+
+.hlp-chapter__number {
+  color: var(--pn-brand);
+  font-family: var(--pn-serif);
+  font-size: 23px;
+  font-style: italic;
+  line-height: 1;
+}
+
+.hlp-chapter__words { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+
+.hlp-chapter__eyebrow,
+.hlp-chapter__count {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.hlp-chapter__title {
+  margin: 0;
+  color: var(--pn-ink-1);
+  font-family: var(--pn-serif);
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -.015em;
+  line-height: 1.15;
+}
+
+.hlp-chapter__count { align-self: center; font-variant-numeric: tabular-nums; }
+
+.hlp-chapter__summary {
+  margin: 9px 0 12px 44px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-serif);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.hlp-list { display: flex; flex-direction: column; gap: 3px; list-style: none; margin: 0; padding: 0; }
+
+.hlp-row {
+  display: grid;
+  grid-template-columns: 24px 16px minmax(0, 1fr) 18px;
+  gap: 9px;
+  align-items: start;
+  width: 100%;
+  min-block-size: 48px;
+  padding: 10px 9px;
+  color: var(--pn-ink-1);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-out), border-color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-row:hover { background: var(--pn-card); border-color: var(--pn-line); transform: translateX(2px); }
+.hlp-row--active { background: var(--pn-brand-soft); border-color: var(--pn-brand); }
+.hlp-row:focus-visible,
+.hlp-back:focus-visible,
+.hlp-step:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+.hlp-row__n {
+  padding-top: 2px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+}
+
+.hlp-row__mark { margin-top: 1px; color: var(--pn-ink-3); }
+.hlp-row--active .hlp-row__mark,
+.hlp-row--active .hlp-row__n,
+.hlp-row:hover .hlp-row__arrow { color: var(--pn-brand); }
+.hlp-row__text { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.hlp-row__title { font-family: var(--pn-serif); font-size: 14.5px; font-weight: 500; line-height: 1.3; }
+.hlp-row__excerpt { display: -webkit-box; overflow: hidden; color: var(--pn-ink-3); font-size: 11px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.hlp-row__arrow { padding-top: 1px; color: var(--pn-ink-4); font-size: 13px; transition: color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out); }
+.hlp-row:hover .hlp-row__arrow { transform: translateX(2px); }
+
+.hlp-reader { position: relative; display: flex; flex: 1 1 0; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; background: var(--pn-paper); }
+
+.hlp-reader__head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 78px;
+  padding: 11px 18px 13px;
+  border-bottom: 1px solid var(--pn-line-2);
+  background: var(--pn-surface);
+  animation: hlp-arrive var(--pn-dur-slow) var(--pn-ease-out) both;
+}
+
+.hlp-reader__identity { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.hlp-reader__crumb { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.hlp-reader__title { overflow: hidden; margin: 1px 0 0; color: var(--pn-ink-1); font-family: var(--pn-serif); font-size: 21px; font-weight: 500; letter-spacing: -.015em; line-height: 1.2; white-space: nowrap; text-overflow: ellipsis; }
+.hlp-reader__progress { margin: 0; color: var(--pn-ink-3); font-family: var(--pn-mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.hlp-reader__steps { display: flex; flex: 0 0 auto; gap: 5px; }
+
+.hlp-step,
 .hlp-back {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  /* Square 44px: this is the phone's only way out of a page. */
   min-block-size: 44px;
   min-inline-size: 44px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
+  align-items: center;
+  justify-content: center;
   color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-paper);
   font: inherit;
-  font-size: 13px;
   cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out), color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-.hlp-back:focus-visible {
-  outline: 2px solid var(--pn-brand);
-  outline-offset: -2px;
+.hlp-step:hover:not(:disabled), .hlp-back:hover { color: var(--pn-brand); border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.hlp-step:disabled { cursor: default; opacity: .38; }
+.hlp-back { gap: 5px; padding: 0 10px; }
+
+.hlp-progress-track { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; overflow: hidden; }
+.hlp-progress-track span { display: block; height: 100%; background: var(--pn-brand); transition: width var(--pn-dur-slow) var(--pn-ease-out); }
+.hlp-reader__body { display: flex; flex: 1; min-height: 0; flex-direction: column; animation: hlp-page-in var(--pn-dur-base) var(--pn-ease-out) both; }
+.hlp-reader__body > * { flex: 1; min-height: 0; }
+
+.hlp-empty { max-width: 52ch; margin: 0; padding: 30px 24px; color: var(--pn-ink-3); font-family: var(--pn-serif); font-size: 14px; line-height: 1.6; }
+.hlp-empty code { color: var(--pn-ink-2); font-family: var(--pn-mono); font-size: .86em; }
+.hlp-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+.hlp-root--stacked .hlp-contents__body { padding: 24px 18px 44px; }
+.hlp-root--stacked .hlp-masthead__lede { max-width: 35ch; }
+.hlp-root--stacked .hlp-reader__head { align-items: flex-start; gap: 9px; min-height: 94px; padding: 8px 10px 12px; }
+.hlp-root--stacked .hlp-reader__identity { align-self: center; }
+.hlp-root--stacked .hlp-reader__title { max-width: 38vw; font-size: 16px; }
+.hlp-root--stacked .hlp-reader__crumb { max-width: 38vw; }
+.hlp-root--stacked .hlp-reader__steps { margin-left: auto; }
+
+@keyframes hlp-arrive { from { opacity: .68; } to { opacity: 1; } }
+@keyframes hlp-page-in { from { opacity: .72; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 720px) {
+  .hlp-masthead__title { font-size: 38px; }
+  .hlp-chapter__summary { margin-left: 0; }
 }
 
-.hlp-reader__title {
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--pn-ink-1);
-}
-
-.hlp-reader__body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.hlp-reader__body > * {
-  flex: 1;
-  min-height: 0;
-}
-
-.hlp-empty {
-  margin: 0;
-  padding: 24px 20px;
-  max-width: 48ch;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--pn-ink-3);
-}
-
-.hlp-empty code {
-  font-size: 12px;
-  color: var(--pn-ink-2);
+@media (prefers-reduced-motion: reduce) {
+  .hlp-reader__head,
+  .hlp-reader__body { animation: none; }
+  .hlp-row,
+  .hlp-row__arrow,
+  .hlp-progress-track span,
+  .hlp-step,
+  .hlp-back { transition-duration: 0.01ms; }
+  .hlp-row:hover,
+  .hlp-row:hover .hlp-row__arrow { transform: none; }
 }

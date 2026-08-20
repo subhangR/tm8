@@ -458,12 +458,15 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
 
   it('renders the shipped default when the seam resolves null (the Phase-1 path)', () => {
     // createFixtureSeam ships no menu row, so this IS the gate rendering.
-    // Revision 17: the shipped default is five railless single-view tabs.
+    // Revision 20: Files and legacy Board are retained as valid views but no
+    // longer ship in the menu spine; Help is the final graph-driven group.
     const { container, getByText } = renderResolved(null);
     const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
     expect(labels).toContain('Home');
     expect(labels).toContain('Settings');
-    getByText('Board');
+    expect(labels).not.toContain('Board');
+    expect(labels).not.toContain('File browser');
+    getByText('Help');
   });
 
   it('renders the shipped default for a future schemaVersion instead of nothing', () => {
