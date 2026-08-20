@@ -119,7 +119,14 @@ export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
   pollLimit: 500,
   idleProbeAfterMs: 90_000,
   idleCheckIntervalMs: 45_000,
-  bootstrapPageBudget: 256,
+  // 256 pages x 500 rows was a HARD CEILING on the retained log, not a rate
+  // limit: at 108,500 events and ~9,400/day (measured 2026-08-21) the main
+  // space was ~2 days from `prepareSpace` throwing, which `openSpace` awaits —
+  // so the space would not open AT ALL. Raising it costs nothing in the normal
+  // case (the loop exits when the cursor stops advancing, and checkpoints
+  // `cursors.set` per completed page), and buys years of headroom against a
+  // failure whose symptom is a blank screen.
+  bootstrapPageBudget: 1024,
   resumeMinIntervalMs: 1_000,
 };
 
