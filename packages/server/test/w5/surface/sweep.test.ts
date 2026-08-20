@@ -807,7 +807,30 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 153 -> 154 (2026-08-20): 164_menu_help_tab_spine.sql — Help joins the
     // shipped menu, while legacy Board and Files leave its default payload.
     // Measured on this tree; never inferred from the migration prefix.
-    expect(server.appliedMigrations.length).toBe(154);
+    //
+    // 154 -> 155 (2026-08-20): 165_entity_events_only_for_real_changes.sql —
+    // the capture trigger on public.entities splits so the UPDATE half can
+    // carry a `WHEN (old.* IS DISTINCT FROM new.*)` guard, and a recency-only
+    // touch thins to `entity.activity_touched`.
+    //
+    // THIS ROW IS A REPAIR, NOT A LANDING. 165 merged as part of #471 and the
+    // pin was never bumped with it, so main went red the moment the merge
+    // commit built: `expected 155 to be 154`. Note which half caught it — the
+    // `migrations apply clean` job passed, because the chain itself is fine;
+    // only the pin was stale. That is the count pin doing exactly its job, one
+    // merge too late to stop the red.
+    //
+    // The reason the bump can be forgotten at all is that it lives in a file no
+    // migration author has any reason to open. Nothing here fixes that; this
+    // row just restates the rule the block above already states three times —
+    // a branch that ADDS a migration owns this pin, and owns it in the same
+    // commit.
+    //
+    // MEASURED on origin/main at 91ce09e1, never derived by adding one:
+    //   ls db/migrations/*.sql | wc -l                             -> 155
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 155
+    //   (this branch adds no migration; it is main's own count.)
+    expect(server.appliedMigrations.length).toBe(155);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
