@@ -214,8 +214,14 @@ describe('what the phone action menu contains is derived, not typed out', () => 
      * primary in the registry produces a row without this file being touched.
      *
      * `processControlFor` may SWAP a ref (terminate → resume on a session that
-     * has ended), so the assertion is on the COUNT and on the tabs and the end
-     * group being present alongside, not on the declared ids surviving verbatim.
+     * has ended), so the assertion is on the COUNT and on the tabs being
+     * present alongside, not on the declared ids surviving verbatim.
+     *
+     * THE COUNT IS EXACT, and that is what makes it the guard against a row
+     * being invented here. The `+ 1` it carried until 2026-08-20 was `⤢ Open
+     * full view` — a row this function typed out itself, refused on every mount
+     * that exists, and the one thing in the menu the registry could not account
+     * for. It is gone; the arithmetic says so.
      */
     const aux = PANEL_TABS.filter((t) => t.id !== 'content').length;
     for (const config of allKinds()) {
@@ -226,11 +232,9 @@ describe('what the phone action menu contains is derived, not typed out', () => 
         onAction: () => {},
       });
       const declared = (config.panel.primaries ?? []).length;
-      expect(
-        items.length,
-        `${config.kind}: ${aux} tabs + ${declared} primaries + 1 end group`,
-      ).toBe(aux + declared + 1);
-      expect(items.filter((i) => i.group === 'end')).toHaveLength(1);
+      expect(items.length, `${config.kind}: ${aux} tabs + ${declared} primaries`).toBe(
+        aux + declared,
+      );
     }
   });
 
@@ -340,17 +344,33 @@ describe('what the phone action menu contains is derived, not typed out', () => 
     }
   });
 
-  it('Open full view is in the lower group, and refuses when the host never wired it', () => {
-    const [end] = menu().filter((i) => i.group === 'end');
-    expect(end?.id).toBe('open-full-view');
-    expect(end?.onSelect).toBeUndefined();
-    expect(end?.reason).toBeTruthy();
-
-    const onPromote = vi.fn();
-    const [wired] = menu({ onPromote }).filter((i) => i.group === 'end');
-    expect(wired?.reason).toBeUndefined();
-    wired?.onSelect?.();
-    expect(onPromote).toHaveBeenCalled();
+  /**
+   * `⤢ OPEN FULL VIEW` IS NOT IN THIS MENU — owner ruling 2026-08-20, on seeing
+   * it: "who asked for full screen — if it's not there, don't show it".
+   *
+   * It was typed out here rather than derived, it was refused-with-reason on
+   * every phone mount that exists (`EntityView` never wired `onPromote`, and
+   * this shell has no second panel slot to promote a panel into), and the
+   * refusal drew a four-line caption across the menu to say so. Disabled-with-
+   * reason is the honest treatment of a verb the viewer cannot reach RIGHT NOW;
+   * a verb with no implementation on this shell at all is a different thing,
+   * and it belongs off the surface.
+   *
+   * ASSERTED ACROSS EVERY KIND, not just task: the row was unconditional, so a
+   * check on one kind would pass again the moment it was reintroduced under any
+   * gate at all.
+   */
+  it('offers no ⤢ Open full view row on any kind — the phone cannot promote a panel', () => {
+    for (const config of allKinds()) {
+      const items = panelMenuItems({
+        config,
+        ctx: panelActionContext({ ...TASK, kind: config.kind } as EntityDetail, ctx),
+        onSelectTab: () => {},
+        onAction: () => {},
+      });
+      expect(items.map((i) => i.id), config.kind).not.toContain('open-full-view');
+      expect(items.some((i) => i.label.includes('full view')), config.kind).toBe(false);
+    }
   });
 
   it('a session that has ended offers Resume, not a refused Terminate', () => {
