@@ -71,6 +71,75 @@ describe('entity family', () => {
   });
 });
 
+/**
+ * Migration 165. `reduceEvent`'s docblock says unknown types are "skipped
+ * silently (forward compatibility across contract additions)" — which means a
+ * MISSING arm here looks exactly like a deliberate one, and the row's
+ * `activityAt` would just quietly stop advancing while every list that orders
+ * by it went stale. These tests are the thing that says otherwise.
+ */
+describe('entity.activity_touched (migration 165)', () => {
+  const LATER = '2026-07-28T00:05:00.000Z';
+
+  it('advances activityAt on the cached summary and its detail overlay', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestDetail(s, detail('t1')) };
+    s = apply(s, event('entity.activity_touched', { id: 't1', kind: 'task', activityAt: LATER }));
+    expect(s.entities.t1.activityAt).toBe(LATER);
+    expect(s.details.t1.activityAt).toBe(LATER);
+  });
+
+  it('changes nothing else about the row', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestSummaries(s, [summary('t1', { title: 'keep me', version: 7 })]) };
+    s = apply(s, event('entity.activity_touched', { id: 't1', kind: 'task', activityAt: LATER }));
+    expect(s.entities.t1).toEqual(summary('t1', { title: 'keep me', version: 7, activityAt: LATER }));
+  });
+
+  /**
+   * THE GUARD IS ON `activityAt`, NOT ON `version`. A copied version guard
+   * (`current.version > e.version`) is the natural mistake and would drop the
+   * whole class: the event is DEFINED by `version` not having moved, and the
+   * contract member does not even carry one.
+   */
+  it('folds even though the event carries no version at all', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestSummaries(s, [summary('t1', { version: 99 })]) };
+    s = apply(s, event('entity.activity_touched', { id: 't1', kind: 'task', activityAt: LATER }));
+    expect(s.entities.t1.activityAt).toBe(LATER);
+    expect(s.entities.t1.version).toBe(99);
+  });
+
+  it('ignores an older or equal timestamp, so out-of-order arrival is harmless', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestSummaries(s, [summary('t1', { activityAt: LATER })]) };
+    expect(
+      reduceEvent(s, event('entity.activity_touched', {
+        id: 't1', kind: 'task', activityAt: '2026-07-28T00:00:00.000Z',
+      })),
+    ).toEqual({});
+  });
+
+  it('is a no-op for an uncached entity — a touch is not a reason to invent a row', () => {
+    const s = initialDomainState();
+    expect(
+      reduceEvent(s, event('entity.activity_touched', { id: 'ghost', kind: 'task', activityAt: LATER })),
+    ).toEqual({});
+  });
+
+  it('folds identically in the batched path', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestDetail(s, detail('t1')) };
+    const events: DurableWorkspaceEvent[] = [
+      event('entity.activity_touched', { id: 't1', kind: 'task', activityAt: LATER }),
+      event('entity.activity_touched', { id: 'ghost', kind: 'doc', activityAt: LATER }),
+    ];
+    let sequential = s;
+    for (const item of events) sequential = apply(sequential, item);
+    expect({ ...s, ...reduceEvents(s, events) }).toEqual(sequential);
+  });
+});
+
 describe('edge family', () => {
   it('edge.upsert stores the edge and indexes both endpoints without duplicates', () => {
     let s = initialDomainState();

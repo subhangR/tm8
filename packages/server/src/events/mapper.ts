@@ -183,6 +183,13 @@ function referencedEntityIds(row: WorkspaceEventRow): string[] {
   switch (row.event_type) {
     case 'entity.upsert':
     case 'entity.deleted':
+    // `entity.activity_touched` hydrates its entity even though it projects
+    // NONE of it. The hydration IS the RLS check: without it the thin event
+    // would hand every subscriber the id and kind of a restricted entity they
+    // cannot read, which is a disclosure the full-payload arm never had. The
+    // read is batched per page, so requiring it costs nothing on a page that
+    // already contains any event for the same entity.
+    case 'entity.activity_touched':
       return [str(p['id'])].filter((v): v is string => v !== null);
     case 'edge.upsert':
     case 'edge.deleted':
@@ -505,6 +512,20 @@ export class WorkspaceEventMapper {
           type: row.event_type,
           entity: this.need(entities, str(p['id']), seq, 'event entity'),
         };
+
+      // Migration 165: the entity's recency hint moved and nothing else did.
+      // `need` is called for its readability check and its result is
+      // deliberately discarded — see `referencedEntityIds`. `kind` comes from
+      // the hydrated summary rather than the payload so the wire value is the
+      // contract's `EntityKind`, not whatever text the row happened to hold.
+      case 'entity.activity_touched': {
+        const summary = this.need(entities, str(p['id']), seq, 'touched entity');
+        const activityAt = iso(p['activity_at']);
+        if (activityAt === null) {
+          throw new UnprojectableEventError(seq, 'activity_at is missing from the captured payload');
+        }
+        return { type: row.event_type, id: summary.id, kind: summary.kind, activityAt };
+      }
 
       case 'edge.upsert':
       case 'edge.deleted': {

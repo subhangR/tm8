@@ -390,6 +390,29 @@ export function reduceEntityEvent(
   return next;
 }
 
+/**
+ * `entity.activity_touched`: move ONE field on a cached summary (migration 165).
+ *
+ * GUARDED ON `activityAt`, NOT ON `version`. Copying the version guard from
+ * `reduceEntityEvent` above would be the natural thing to do and would drop
+ * every one of these events on the floor: this whole event class is DEFINED by
+ * `version` not having moved, so `current.version > e.version` compares a field
+ * the event does not carry and does not change.
+ *
+ * No-op when the entity is not cached — a touch is not a reason to invent a row
+ * we have no summary for — and no-op when the timestamp is not newer, which
+ * makes out-of-order arrival harmless.
+ */
+export function reduceActivityTouched(
+  state: DomainState,
+  entityId: EntityId,
+  activityAt: string,
+): Partial<DomainState> {
+  const current = state.entities[entityId];
+  if (!current || current.activityAt >= activityAt) return {};
+  return mergeSummary(state, { ...current, activityAt });
+}
+
 /** `counter.changed`: fold into the cached summary; no-op if the entity is not cached. */
 export function reduceCounterChanged(
   state: DomainState,
@@ -726,6 +749,8 @@ export function reduceEvent(state: DomainState, e: DurableWorkspaceEvent): Parti
       return reduceEntityEvent(state, e.entity, false);
     case 'entity.deleted':
       return reduceEntityEvent(state, e.entity, true);
+    case 'entity.activity_touched':
+      return reduceActivityTouched(state, e.id, e.activityAt);
     case 'edge.upsert':
       return reduceEdgeUpsert(state, e.edge);
     case 'edge.deleted':
@@ -820,6 +845,20 @@ export function reduceEvents(
         } else if (detail) {
           details ??= { ...state.details };
           details[e.entity.id] = { ...detail, ...e.entity };
+        }
+        break;
+      }
+      // Migration 165. GUARDED ON `activityAt`, NOT ON `version` — see
+      // `reduceActivityTouched`, which this mirrors inside the batched fold.
+      case 'entity.activity_touched': {
+        const row = (entities ?? state.entities)[e.id];
+        if (!row || row.activityAt >= e.activityAt) break;
+        entities ??= { ...state.entities };
+        entities[e.id] = { ...row, activityAt: e.activityAt };
+        const touchedDetail = (details ?? state.details)[e.id];
+        if (touchedDetail) {
+          details ??= { ...state.details };
+          details[e.id] = { ...touchedDetail, activityAt: e.activityAt };
         }
         break;
       }
