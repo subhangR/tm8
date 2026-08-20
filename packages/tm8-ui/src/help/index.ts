@@ -1,2 +1,17 @@
 export { HelpScreen, type HelpScreenProps } from './HelpScreen';
-export { HELP_COLLECTION_TITLE, loadHelpSet, EMPTY_HELP_SET, type HelpSet } from './help-set';
+export { HelpPlate, type HelpPlateProps } from './HelpPlate';
+export {
+  HELP_CHAPTERS,
+  HELP_SET,
+  buildHelpSet,
+  type HelpChapter,
+  type HelpPage,
+  type HelpSet,
+} from './help-set';
+export {
+  HELP_PLATES,
+  plateBySlug,
+  plateFileName,
+  type HelpPlateDefinition,
+  type HelpSectionId,
+} from './help-plates';

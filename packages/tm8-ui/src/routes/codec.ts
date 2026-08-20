@@ -356,9 +356,15 @@ function parseTarget(
     case 'craft':
       /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
       return { view: 'craft' };
-    case 'help':
-      /* The Help shelf (2026-08-19) — same flat whole-centre posture. */
-      return { view: 'help' };
+    case 'help': {
+      /* The Help shelf (2026-08-19), with an optional open plate (2026-08-20)
+         in the `settings/{section}` shape. The slug is NOT checked against the
+         plate registry here: the codec owns the grammar and the screen is the
+         one place that knows which plates exist, so an unknown slug arrives
+         intact and Help falls back to its contents. */
+      const plate = rest[1];
+      return { view: 'help', plate: plate && plate.length > 0 ? plate : null };
+    }
     case 'board-v2':
       /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
          `new-session` precedent. */
@@ -463,7 +469,7 @@ function pathOf(route: Route): string {
     case 'craft':
       return `${base}/craft`;
     case 'help':
-      return `${base}/help`;
+      return t.plate ? `${base}/help/${enc(t.plate)}` : `${base}/help`;
     case 'boardV2':
       return `${base}/board-v2`;
     case 'newSession':
