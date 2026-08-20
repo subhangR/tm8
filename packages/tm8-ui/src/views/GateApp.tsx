@@ -2079,30 +2079,13 @@ export function GateApp(props: GateAppProps = {}) {
               }
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'help' ? (
-            /* ? Help (2026-08-19) — the curated shelf of Help artifacts and a
-               reader for one of them. The SET comes from the graph (a `tm8
-               Help` collection and its ordered `contains` edges), never from
-               ids written down here: publishing a Help page is a graph write,
-               not a release. The page itself is drawn by the SAME detail-panel
-               path Craft's region C uses, so no entity component is added. */
-            <HelpScreen
-              seam={data.seam}
-              spaceId={data.spaceId as SpaceId}
-              panelHost={{
-                data,
-                reasons,
-                serverBaseUrl: activeServer.routeBaseUrl,
-                viewerMemberId,
-                onNotice: (text) =>
-                  notices.push({
-                    id: `hlp:${Date.now()}`,
-                    tone: 'info',
-                    title: 'Help',
-                    body: text,
-                    ttlMs: 6000,
-                  }),
-              }}
-            />
+            /* ? Help (2026-08-19; STATIC since 2026-08-20) — the field guide.
+               Its 55 plates ship WITH the app as vendored artifact bundles, so
+               this branch needs no seam, no space id and no panel host: the
+               reader whose graph is unreachable is exactly the reader who needs
+               the manual. `help/help-set.ts` carries the ruling that reversed
+               the original graph-driven design. */
+            <HelpScreen />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'inbox' ? (
             /* ◹ Inbox — the finished screen that was never mounted. Nothing
                was built for this branch; `src/inbox/` has been complete and

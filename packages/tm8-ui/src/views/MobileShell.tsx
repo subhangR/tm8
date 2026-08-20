@@ -904,21 +904,7 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
          a DOCUMENT, which is the one shape a narrow column suits.
          `stacked` makes it one column: the contents, then a page over them
          with a back verb. */
-      return (
-        <HelpScreen
-          seam={data.seam}
-          spaceId={props.spaceId}
-          stacked
-          panelHost={{
-            data,
-            reasons,
-            ...(props.serverBaseUrl ? { serverBaseUrl: props.serverBaseUrl } : {}),
-            ...(props.viewerMemberId ? { viewerMemberId: props.viewerMemberId } : {}),
-            onNotice: (text: string) =>
-              onNotice({ id: `hlp:${Date.now()}`, tone: 'info', title: 'Help', body: text, ttlMs: 6000 }),
-          }}
-        />
-      );
+      return <HelpScreen stacked />;
     case 'dashboard':
       return (
         <ChatHomeSurface
