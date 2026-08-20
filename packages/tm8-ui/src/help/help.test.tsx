@@ -1,91 +1,57 @@
 // @vitest-environment jsdom
 /**
- * THE HELP SHELF — the graph resolver and the screen it feeds.
+ * THE HELP SHELF — the static guide, the reader, and the address of a plate.
  *
  * WHAT THESE CASES EXIST TO PIN, in the order they matter:
  *
- *  · THE SET COMES FROM THE GRAPH. The failure this whole surface is
- *    recovering from is five Help artifacts published and orphaned because
- *    nothing could name them; the failure it would be easy to ship in its
- *    place is a hardcoded list, which makes every future Help page a DEPLOY.
- *    So the resolver is tested through a seam that answers a collection and
- *    its edges, and the screen is tested to list exactly what came back.
+ *  · THE GUIDE SHIPS WITH THE APP. This suite once tested a seam that answered
+ *    a collection and its edges, because the failure being recovered from was
+ *    five Help artifacts orphaned in a graph nothing could name. The owner then
+ *    ruled the other way, for the reason that outranks it: a reader whose graph
+ *    is unreachable is exactly the reader who needs the manual. So the screen
+ *    is rendered with NO seam and NO space, and is expected to be complete.
  *
- *  · ORDER IS THE EDGE'S. `contains` carries `props.position`, and the
- *    reading order is a property of the CURATION rather than of when an
- *    artifact happened to be published. The out-of-order fixture below would
- *    pass a test that trusted arrival order, which is why it is out of order.
+ *  · THE PLATE IS SANDBOXED, EXACTLY. `allow-scripts` and nothing else — an
+ *    added `allow-same-origin` would hand 55 documents of third-party-shaped
+ *    HTML this app's cookies, storage and DOM. The assertion is on the exact
+ *    string, so a widened sandbox cannot pass as "still sandboxed".
  *
- *  · THE EMPTY STATE IS A REAL ANSWER. A Space with no shelf is told what the
- *    collection is called, because the fix is a graph write somebody can
- *    perform. A screen that spun forever would be the same bug in a nicer
- *    costume.
+ *  · A PLATE IS AN ADDRESS. It lives in the route, so it can be linked,
+ *    reloaded and Back-ed. A bare `/help` on a wide screen opens plate 01 and
+ *    says so in the URL; an unknown slug degrades to that rather than to a
+ *    broken screen.
  *
  *  · THE PHONE IS ONE COLUMN AND HAS A WAY BACK. `stacked` opens on the
  *    contents (never inside a page nobody chose) and a page opened over them
  *    carries a back verb — the only exit on a phone.
  *
- * jsdom loads no stylesheets (the recurring law of this suite), so nothing
- * here claims colour, width or geometry — presence, order and text only.
+ * jsdom loads no stylesheets (the recurring law of this suite), so nothing here
+ * claims colour, width or geometry — presence, order and text only.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import axe from 'axe-core';
-import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
-import type { Seam } from '../data/seam';
+import type { SpaceId } from '@tm8/contract';
 import { GateApp } from '../views/GateApp';
-import { resetNav } from '../stores/navStore';
+import { navStore, resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
-import { createMemoryTarget } from '../routes';
+import { build, createMemoryTarget, parse } from '../routes';
 import { FIXTURE_SPACE_ID } from '../fixtures';
-import { HELP_COLLECTION_TITLE, loadHelpSet } from './help-set';
+import { HELP_CHAPTERS, HELP_SET } from './help-set';
+import { HELP_PLATES } from './help-plates';
 import { HelpScreen } from './HelpScreen';
 
 const SPACE = FIXTURE_SPACE_ID as SpaceId;
+const FIRST = HELP_PLATES[0]!;
+const SECOND = HELP_PLATES[1]!;
 
-function summary(id: string, kind: string, title: string): EntitySummary {
-  return { id: id as EntityId, kind, title } as unknown as EntitySummary;
+/** Land on Help the way the router does, so the screen reads a real route. */
+function onHelp(plate: string | null = null) {
+  resetNav(SPACE, { view: 'help', plate });
 }
-
-/**
- * A seam that answers ONE collection scan and ONE edge read.
- *
- * `edges` arrive DELIBERATELY OUT OF READING ORDER: the resolver must sort by
- * `props.position`, and a fixture already in order could not tell a real sort
- * from a passthrough.
- */
-function shelfSeam(options: {
-  collections?: readonly EntitySummary[];
-  edges?: readonly { position?: number; target: EntitySummary }[];
-  fail?: boolean;
-}): Seam {
-  return {
-    query: async () => {
-      if (options.fail) throw new Error('unreachable');
-      return { page: { items: options.collections ?? [] } };
-    },
-    connections: async () => ({
-      items: (options.edges ?? []).map((edge, index) => ({
-        id: `edge-${index}`,
-        type: 'contains',
-        target: edge.target,
-        props: edge.position === undefined ? {} : { position: edge.position },
-      })),
-    }),
-  } as unknown as Seam;
-}
-
-const SHELF = summary('col-help', 'collection', HELP_COLLECTION_TITLE);
-
-/** Three pages wired out of order, so the sort has something to do. */
-const SCRAMBLED = [
-  { position: 205, target: summary('art-3', 'artifact', 'Tasks & work') },
-  { position: 1, target: summary('art-1', 'artifact', 'The concepts map') },
-  { position: 105, target: summary('art-2', 'artifact', 'Entities & the graph') },
-];
 
 beforeEach(() => {
-  resetNav();
+  onHelp();
   screenStackStore.getState().clearAll();
 });
 
@@ -94,87 +60,130 @@ afterEach(() => {
 });
 
 describe('the help set', () => {
-  it('reads the collection by title and orders its pages by edge position', async () => {
-    const set = await loadHelpSet(shelfSeam({ collections: [SHELF], edges: SCRAMBLED }), SPACE);
-    expect(set.collectionId).toBe('col-help');
-    expect(set.pages.map((page) => page.title)).toEqual([
-      'The concepts map',
-      'Entities & the graph',
-      'Tasks & work',
-    ]);
-    expect(set.chapters.filter((chapter) => chapter.pages.length > 0).map((chapter) => chapter.id)).toEqual([
-      '0', 'A', '1',
-    ]);
-  });
-
-  it('appends an unpositioned page instead of promoting it to the front', async () => {
-    /* An edge wired with no position is a curation somebody left incomplete.
-       Sinking it is the honest reading — silently making it page one would
-       hand it the "start here" seat nobody gave it. */
-    const set = await loadHelpSet(
-      shelfSeam({
-        collections: [SHELF],
-        edges: [{ target: summary('art-x', 'artifact', 'Unwired') }, ...SCRAMBLED],
-      }),
-      SPACE,
+  it('is the whole library, in plate order, with no fetch', () => {
+    expect(HELP_SET.pages).toHaveLength(HELP_PLATES.length);
+    expect(HELP_SET.pages.map((page) => page.number)).toEqual(
+      HELP_PLATES.map((plate) => plate.number).sort((a, b) => a - b),
     );
-    expect(set.pages.map((page) => page.title).at(-1)).toBe('Unwired');
   });
 
-  it('drops a non-artifact member rather than handing it to the preview path', async () => {
-    /* `contains` may point at anything (`destinationKinds: ['*']`), and this
-       screen renders through the artifact preview block. Rejection here beats
-       a viewer that has no way to draw what it was given. */
-    const set = await loadHelpSet(
-      shelfSeam({
-        collections: [SHELF],
-        edges: [{ position: 1, target: summary('t-1', 'task', 'Not a page') }, ...SCRAMBLED],
-      }),
-      SPACE,
+  it('groups plates into the content tree, keeping every chapter declared', () => {
+    /* Every chapter is present in `chapters` even when empty — the screen
+       decides what to draw, and a resolver that dropped empties would make an
+       empty chapter indistinguishable from one that does not exist. */
+    expect(HELP_SET.chapters.map((chapter) => chapter.id)).toEqual(
+      HELP_CHAPTERS.map((chapter) => chapter.id),
     );
-    expect(set.pages.map((page) => page.entity.kind)).toEqual(['artifact', 'artifact', 'artifact']);
+    const grouped = HELP_SET.chapters.flatMap((chapter) => chapter.pages);
+    expect(grouped).toHaveLength(HELP_SET.pages.length);
+    for (const chapter of HELP_SET.chapters) {
+      for (const page of chapter.pages) expect(page.sectionId).toBe(chapter.id);
+    }
   });
 
-  it('answers empty — not an error — for a space with no shelf', async () => {
-    const set = await loadHelpSet(shelfSeam({ collections: [summary('c', 'collection', 'Reading')] }), SPACE);
-    expect(set.collectionId).toBeNull();
-    expect(set.pages).toEqual([]);
-    expect(set.chapters.map((chapter) => chapter.id)).toEqual(['0', 'A', '1', '2', '3', '4', '5', '6', '7', '8']);
+  it('carries the plate’s own lede as its shelf line', () => {
+    /* The contents needs a sentence under each title and the truth floor
+       forbids inventing one: every excerpt is the artifact's own `<p class=
+       "lede">`, lifted at vendor time. */
+    for (const page of HELP_SET.pages) {
+      expect(page.excerpt, page.slug).toBe(page.plate.lede);
+      expect(page.excerpt.length, page.slug).toBeGreaterThan(20);
+    }
   });
 });
 
 describe('the help screen', () => {
-  it('lists the curated pages in order and opens page one on a wide screen', async () => {
-    const view = render(
-      <HelpScreen seam={shelfSeam({ collections: [SHELF], edges: SCRAMBLED })} spaceId={SPACE} />,
-    );
-    await waitFor(() => expect(view.getAllByTestId('help-row')).toHaveLength(3));
-    expect(view.getAllByTestId('help-chapter').map((chapter) => chapter.getAttribute('data-section'))).toEqual(['0', 'A', '1']);
-    expect(view.getAllByTestId('help-row').map((row) => row.textContent)).toEqual([
-      expect.stringContaining('The concepts map'),
-      expect.stringContaining('Entities & the graph'),
-      expect.stringContaining('Tasks & work'),
-    ]);
-    /* Page one is selected without a press — the wide screen has room for the
-       reader beside the shelf, and an empty pane there would be a wasted half
-       of the window. `help-no-host` is the reader saying it has no shell
-       bundle behind it, which is TRUE of this mount: it is still the reader. */
-    await waitFor(() => view.getByTestId('help-no-host'));
-    expect(view.getByText('Plate 1 of 3')).toBeTruthy();
+  it('lists the whole guide and opens plate one on a wide screen', async () => {
+    const view = render(<HelpScreen />);
+    expect(view.getAllByTestId('help-row')).toHaveLength(HELP_PLATES.length);
+    expect(view.getAllByTestId('help-chapter').map((chapter) => chapter.getAttribute('data-section')))
+      .toEqual(HELP_CHAPTERS.map((chapter) => chapter.id));
+
+    /* Plate one opens without a press — the wide screen has room for the reader
+       beside the shelf, and an empty pane there would waste half the window. */
+    await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(FIRST.slug));
+    expect(view.getByText(`Plate 1 of ${HELP_PLATES.length}`)).toBeTruthy();
     view.unmount();
   });
 
-  it('supports arrow, Home and End navigation through the reading order', async () => {
-    const view = render(
-      <HelpScreen seam={shelfSeam({ collections: [SHELF], edges: SCRAMBLED })} spaceId={SPACE} />,
-    );
-    const rows = await waitFor(() => view.getAllByTestId('help-row'));
+  it('writes the opened plate into the route, and reads it back', async () => {
+    const view = render(<HelpScreen />);
+    /* The landing is a REPLACE — the reader did not navigate here, so Back must
+       still leave Help rather than bounce between two spellings of it. */
+    await waitFor(() => expect(navStore.getState().view).toEqual({ view: 'help', plate: FIRST.slug }));
+    expect(navStore.getState().history).toBe('replace');
+
+    fireEvent.click(view.getAllByTestId('help-row')[1]!);
+    /* Opening a plate IS navigation: a push, so Back is "previous plate". */
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: SECOND.slug });
+    expect(navStore.getState().history).toBe('push');
+    await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(SECOND.slug));
+    view.unmount();
+  });
+
+  it('opens the plate a deep link addresses', async () => {
+    const target = HELP_PLATES[30]!;
+    onHelp(target.slug);
+    const view = render(<HelpScreen />);
+    await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(target.slug));
+    expect(view.getByText(`Plate ${target.number} of ${HELP_PLATES.length}`)).toBeTruthy();
+    view.unmount();
+  });
+
+  it('degrades a retired or mistyped slug to plate one instead of breaking', async () => {
+    onHelp('a-plate-that-was-renumbered');
+    const view = render(<HelpScreen />);
+    await waitFor(() => expect(navStore.getState().view).toEqual({ view: 'help', plate: FIRST.slug }));
+    expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(FIRST.slug);
+    view.unmount();
+  });
+
+  it('renders the plate in a frame sandboxed to scripts and nothing else', async () => {
+    const view = render(<HelpScreen />);
+    const frame = await waitFor(() => {
+      const found = view.container.querySelector('iframe');
+      if (!found) throw new Error('no frame yet');
+      return found;
+    });
+    /* EXACT equality, never `toContain`: `allow-scripts allow-same-origin`
+       contains `allow-scripts` and is the one combination that undoes the
+       sandbox entirely. */
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
+    expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
+    expect(frame.getAttribute('title')).toContain(FIRST.title);
+    view.unmount();
+  });
+
+  it('shows where the plate came from, by artifact and revision', async () => {
+    const view = render(<HelpScreen />);
+    const colophon = await waitFor(() => view.getByTestId('help-plate-provenance'));
+    expect(colophon.textContent).toContain(FIRST.provenance.artifactId);
+    expect(colophon.textContent).toContain(String(FIRST.provenance.revision));
+    view.unmount();
+  });
+
+  it('steps forward and back through the reading order', async () => {
+    const view = render(<HelpScreen />);
+    await waitFor(() => view.getByTestId('help-plate'));
+    /* Plate one has no previous: the first step control is refused rather than
+       silently wrapping to the end of the guide. */
+    const [previous, next] = view.getAllByRole('button', { name: /Help page$/ }) as HTMLButtonElement[];
+    expect(previous!.disabled).toBe(true);
+
+    fireEvent.click(next!);
+    await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(SECOND.slug));
+    view.unmount();
+  });
+
+  it('supports arrow, Home and End navigation through the reading order', () => {
+    const view = render(<HelpScreen />);
+    const rows = view.getAllByTestId('help-row');
     rows[0]!.focus();
     fireEvent.keyDown(rows[0]!, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(rows[1]);
     fireEvent.keyDown(rows[1]!, { key: 'End' });
-    expect(document.activeElement).toBe(rows[2]);
-    fireEvent.keyDown(rows[2]!, { key: 'Home' });
+    expect(document.activeElement).toBe(rows.at(-1));
+    fireEvent.keyDown(rows.at(-1)!, { key: 'Home' });
     expect(document.activeElement).toBe(rows[0]);
     view.unmount();
   });
@@ -182,56 +191,42 @@ describe('the help screen', () => {
   it('has no critical or serious automated accessibility findings', async () => {
     const view = render(
       <main>
-        <HelpScreen seam={shelfSeam({ collections: [SHELF], edges: SCRAMBLED })} spaceId={SPACE} />
+        <HelpScreen />
       </main>,
     );
-    await waitFor(() => expect(view.getAllByTestId('help-row')).toHaveLength(3));
+    await waitFor(() => view.getByTestId('help-plate'));
+    /* `iframes: false` — axe cannot reach into a plate from here and should
+       not try: jsdom never loads the frame's document, and each plate was
+       independently axe-checked at publish time against the same floor. What
+       is under test is the SHELL around it. */
     const results = await axe.run(view.container, {
+      iframes: false,
       rules: { 'color-contrast': { enabled: false } },
     });
     const blocking = results.violations.filter((violation) =>
       violation.impact === 'critical' || violation.impact === 'serious');
     expect(blocking, blocking.map((violation) => `${violation.id}: ${violation.help}`).join('\n')).toEqual([]);
     view.unmount();
-  });
-
-  it('names the collection that would fix an empty shelf', async () => {
-    const view = render(<HelpScreen seam={shelfSeam({})} spaceId={SPACE} />);
-    const none = await waitFor(() => view.getByTestId('help-none'));
-    expect(none.textContent).toContain(HELP_COLLECTION_TITLE);
-    view.unmount();
-  });
-
-  it('says the shelf could not be READ, distinctly from having none', async () => {
-    /* Two different statements about the graph, and a reader is owed the right
-       one: "this Space has no Help" is repairable by a graph write, "this node
-       could not answer" is not. */
-    const view = render(<HelpScreen seam={shelfSeam({ fail: true })} spaceId={SPACE} />);
-    await waitFor(() => view.getByTestId('help-error'));
-    expect(view.queryByTestId('help-none')).toBeNull();
-    view.unmount();
-  });
+    /* 20s, not the 5s default: axe walks the WHOLE guide — 55 rows, ten
+       chapters and the reader — and this file runs alongside 320 others. The
+       old three-row fixture fit in the default; a real library does not. */
+  }, 20_000);
 
   it('opens on the contents on a phone, and a page carries a way back', async () => {
-    const view = render(
-      <HelpScreen
-        seam={shelfSeam({ collections: [SHELF], edges: SCRAMBLED })}
-        spaceId={SPACE}
-        stacked
-      />,
-    );
-    await waitFor(() => expect(view.getAllByTestId('help-row')).toHaveLength(3));
-    /* NOT auto-opened: a stacked shell that selected page one would land a
+    const view = render(<HelpScreen stacked />);
+    expect(view.getAllByTestId('help-row')).toHaveLength(HELP_PLATES.length);
+    /* NOT auto-opened: a stacked shell that selected plate one would land a
        reader inside a page they never chose, with the shelf they came for one
        back-press away. */
     expect(view.queryByTestId('help-back')).toBeNull();
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: null });
 
     fireEvent.click(view.getAllByTestId('help-row')[0]!);
     const back = await waitFor(() => view.getByTestId('help-back'));
     expect(view.queryAllByTestId('help-row')).toHaveLength(0);
 
     fireEvent.click(back);
-    await waitFor(() => expect(view.getAllByTestId('help-row')).toHaveLength(3));
+    await waitFor(() => expect(view.getAllByTestId('help-row')).toHaveLength(HELP_PLATES.length));
     view.unmount();
   });
 });
@@ -239,12 +234,20 @@ describe('the help screen', () => {
 describe('the help route', () => {
   it('mounts the shelf at #/s/{s}/help', async () => {
     /* The tab-mount wiring end to end: contract ref → route codec →
-       `landingOfRoute` → GateApp's branch. The fixture space has no Help
-       collection, so the screen answers `help-none` — which is the screen,
-       correctly mounted, telling the truth about that space. */
+       `landingOfRoute` → GateApp's branch. */
     const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/help`)} />);
     await waitFor(() => view.getByTestId('help-screen'));
     view.unmount();
+  });
+
+  it('round-trips a plate as a trailing segment', () => {
+    const parsed = parse(`#/s/${SPACE}/help/${SECOND.slug}`).route;
+    expect(parsed?.target).toEqual({ view: 'help', plate: SECOND.slug });
+    expect(build(parsed!).hash).toBe(`#/s/${SPACE}/help/${SECOND.slug}`);
+
+    const bare = parse(`#/s/${SPACE}/help`).route;
+    expect(bare?.target).toEqual({ view: 'help', plate: null });
+    expect(build(bare!).hash).toBe(`#/s/${SPACE}/help`);
   });
 
   it('is the final tab, owns current state, and has no duplicate ? control', async () => {

@@ -1,49 +1,30 @@
 /**
- * WHERE HELP COMES FROM — a `collection` entity and its ordered `contains`
- * edges, read from the graph at run time.
+ * WHERE HELP COMES FROM — this repository, and nothing else.
  *
- * THE ONE RULE THIS FILE EXISTS TO ENFORCE: no artifact id is ever written
- * down in the client. Help is a curated set in the Space's own graph, so
- * publishing a new Help page is a `tm8 edge create` — a GRAPH WRITE — and never
- * a release. A hardcoded list would have made every future Help page a
- * deploy, which is the exact failure this program is recovering from: five
- * artifacts were published on 2026-08-18 and orphaned because nothing in the
- * product could name them.
+ * Help was read from a `collection` entity and its ordered `contains` edges at
+ * run time until 2026-08-20, so that publishing a new page was a graph write
+ * rather than a release. The owner has now ruled the other way, for the reason
+ * that outranks it: **the field guide ships with the application.** A node
+ * whose graph is unreachable, a fresh install, a Space that never curated a
+ * shelf — all three used to get an empty Help screen, and Help is exactly what
+ * a reader in that position needs. The reading path here touches no seam, no
+ * network and no collection.
  *
- * THE HANDLE IS THE TITLE, and that is a deliberate, stated compromise rather
- * than an oversight. tm8 has no "system entity" marker and no well-known-id
- * concept today (both are named open blockers on the Help v2 design), and
- * `CollectionQuery` carries no text predicate — so the only thing a client can
- * match a curated set on is what a human named it. The consequences are honest
- * and small: rename the collection and Help reports that the Space has no Help
- * set (it says so in words, with the title it looked for), rather than silently
- * rendering an empty shelf.
+ * THE COLLECTION IS STILL THE AUTHORING SURFACE. `tm8 Help`
+ * (`01a01b1b-ff3d-7aa7-8f1e-b7da35eda726`) remains where plates are drafted,
+ * reviewed, ordered and published; `help-plates.ts` records which immutable
+ * revision of each was vendored, so the graph stays the provenance of record.
+ * What changed is only where a READER's bytes come from.
  *
- * ORDER IS THE EDGE'S, NOT THE ENTITY'S. `contains` carries `props.position`
- * (the edge type's own description says so), and reading order is a property of
- * the CURATION, not of when an artifact happened to be published. `sort` on the
- * collection query cannot express it — `sort: 'position'` orders entities by
- * their position under a PARENT, and artifacts cannot be reparented at all
- * (the artifact lifecycle owns moves; `entity move` refuses). So the edges are
- * read and sorted here. An edge with no position sinks below the ones that have
- * one instead of jumping to the front, so a page wired without a position is
- * appended rather than silently promoted to Start Here.
+ * ORDER AND CHAPTER ARE THE REGISTRY'S. `HelpPlateDefinition.number` is the
+ * guide's global reading order and `.section` its chapter — both written down,
+ * neither derived. The old position-band heuristic (1–99 ⇒ Section 0, 100–199
+ * ⇒ Section A, …) is gone: it could not survive the flat 1–55 renumbering,
+ * under which every plate in the guide would have landed in Section 0.
  */
-import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
-import type { Seam } from '../data/seam';
+import { HELP_PLATES, type HelpPlateDefinition, type HelpSectionId } from './help-plates';
 
-/**
- * The collection a Space's Help shelf is read from.
- *
- * Exported so the empty state can NAME it: a reader who sees "no Help in this
- * Space" is owed the string that would fix it.
- */
-export const HELP_COLLECTION_TITLE = 'tm8 Help';
-
-/** How many collections are scanned for the title before giving up. */
-const COLLECTION_SCAN_LIMIT = 200;
-
-export type HelpSectionId = '0' | 'A' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | 'unfiled';
+export type { HelpSectionId };
 
 export interface HelpChapterDefinition {
   readonly id: HelpSectionId;
@@ -54,9 +35,9 @@ export interface HelpChapterDefinition {
 }
 
 /**
- * The editorial structure from the binding Help content tree. These are
- * chapter labels, never artifact addresses: membership remains entirely a
- * graph decision expressed by each `contains.props.position` range.
+ * The editorial structure from the binding Help content tree
+ * (`01a01ba8-ddb7-7207-bb3f-ada5542e67f2`). Chapter labels only — membership is
+ * each plate's own `section`.
  */
 export const HELP_CHAPTERS: readonly HelpChapterDefinition[] = [
   { id: '0', number: '00', eyebrow: 'Orientation', title: 'What tm8 does', summary: 'One conversation, one graph, and the three shapes that hold the work.' },
@@ -71,21 +52,15 @@ export const HELP_CHAPTERS: readonly HelpChapterDefinition[] = [
   { id: '8', number: '08', eyebrow: 'Together', title: 'Collaboration', summary: 'Working across humans, teammates, sessions, and shared spaces.' },
 ] as const;
 
-const UNFILED_CHAPTER: HelpChapterDefinition = {
-  id: 'unfiled',
-  number: '—',
-  eyebrow: 'Unfiled',
-  title: 'Awaiting a place',
-  summary: 'Published pages whose collection edge has no recognized chapter position.',
-};
-
 export interface HelpPage {
-  readonly entity: EntitySummary;
-  readonly id: EntityId;
+  readonly plate: HelpPlateDefinition;
+  /** URL-safe address; the deep-link segment and the React key. */
+  readonly slug: string;
   readonly title: string;
-  readonly excerpt?: string | null;
-  readonly position: number;
-  readonly sequence: number;
+  /** The plate's own opening sentence — see `HelpPlateDefinition.lede`. */
+  readonly excerpt: string;
+  /** Global plate number — 1-based, and the index into `HelpSet.pages` plus 1. */
+  readonly number: number;
   readonly sectionId: HelpSectionId;
 }
 
@@ -94,87 +69,38 @@ export interface HelpChapter extends HelpChapterDefinition {
 }
 
 export interface HelpSet {
-  /** The curating collection, or `null` when this Space has no Help shelf. */
-  readonly collectionId: EntityId | null;
-  /** The pages, in curated reading order. Empty is a legitimate answer. */
+  /** Every plate, in the canonical reading order. */
   readonly pages: readonly HelpPage[];
-  /** Every defined chapter, in the binding content-tree order. */
+  /** Every chapter, in content-tree order, each carrying its own plates. */
   readonly chapters: readonly HelpChapter[];
 }
 
-export const EMPTY_HELP_SET: HelpSet = {
-  collectionId: null,
-  pages: [],
-  chapters: HELP_CHAPTERS.map((chapter) => ({ ...chapter, pages: [] })),
-};
-
 /**
- * Resolve the Space's Help shelf: find the collection, then read its ordered
- * members.
+ * Build the guide.
  *
- * Two reads, not one, because there is no query that spans them — the edge
- * filter on `collections.query` needs the collection's id, which is what the
- * first read is for.
- *
- * REJECTION, NOT FILTERING, on kind: a `contains` edge may point at anything
- * (`destinationKinds: ['*']`), and the Help screen renders through the artifact
- * preview path. A non-artifact member is dropped here rather than handed to a
- * viewer that has no way to draw it.
+ * Synchronous and pure, which is the point of the ruling: there is no loading
+ * state, no failure state and no empty state to design for, because there is no
+ * fetch. `HelpScreen` has plates on its first paint.
  */
-export async function loadHelpSet(seam: Seam, spaceId: SpaceId): Promise<HelpSet> {
-  const collections = await seam.query({
-    spaceId,
-    kinds: ['collection'],
-    limit: COLLECTION_SCAN_LIMIT,
-  });
-  const shelf = collections.page.items.find((row) => row.title === HELP_COLLECTION_TITLE);
-  if (!shelf) return EMPTY_HELP_SET;
+export function buildHelpSet(plates: readonly HelpPlateDefinition[] = HELP_PLATES): HelpSet {
+  const pages: HelpPage[] = [...plates]
+    .sort((a, b) => a.number - b.number)
+    .map((plate) => ({
+      plate,
+      slug: plate.slug,
+      title: plate.title,
+      excerpt: plate.lede,
+      number: plate.number,
+      sectionId: plate.section,
+    }));
 
-  const edges = await seam.connections(shelf.id, { types: ['contains'], direction: 'outgoing' });
-  const ordered = edges.items
-    .filter((edge) => edge.type === 'contains' && edge.target.kind === 'artifact')
-    .map((edge) => ({ position: positionOf(edge.props), target: edge.target }))
-    .sort((a, b) =>
-      a.position - b.position ||
-      a.target.title.localeCompare(b.target.title) ||
-      String(a.target.id).localeCompare(String(b.target.id)),
-    );
-
-  const pages: HelpPage[] = ordered.map((row, index) => ({
-    entity: row.target,
-    id: row.target.id as EntityId,
-    title: row.target.title,
-    excerpt: row.target.excerpt,
-    position: row.position,
-    sequence: index + 1,
-    sectionId: sectionOf(row.position),
-  }));
-
-  const definitions = pages.some((page) => page.sectionId === 'unfiled')
-    ? [...HELP_CHAPTERS, UNFILED_CHAPTER]
-    : HELP_CHAPTERS;
-  const chapters = definitions.map((chapter) => ({
+  const chapters = HELP_CHAPTERS.map((chapter) => ({
     ...chapter,
     pages: pages.filter((page) => page.sectionId === chapter.id),
   }));
 
-  return { collectionId: shelf.id, pages, chapters };
+  return { pages, chapters };
 }
 
-/** `props.position`, or +∞ so an unpositioned edge lands last rather than first. */
-function positionOf(props: Record<string, unknown> | undefined): number {
-  const raw = props?.['position'];
-  return typeof raw === 'number' && Number.isFinite(raw) ? raw : Number.POSITIVE_INFINITY;
-}
-
-/**
- * Position bands are the graph's content-tree vocabulary:
- * 1–99 → Section 0, 100–199 → Section A, 200–299 → Section 1 … 900–999 →
- * Section 8. Anything else remains visible in an honest Unfiled chapter.
- */
-function sectionOf(position: number): HelpSectionId {
-  if (!Number.isFinite(position) || position < 1 || position >= 1000) return 'unfiled';
-  if (position < 100) return '0';
-  if (position < 200) return 'A';
-  return String(Math.floor(position / 100) - 1) as HelpSectionId;
-}
+/** The one guide, built once — the registry cannot change at run time. */
+export const HELP_SET: HelpSet = buildHelpSet();

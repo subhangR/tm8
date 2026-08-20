@@ -283,6 +283,54 @@
 .hlp-reader__body { display: flex; flex: 1; min-height: 0; flex-direction: column; animation: hlp-page-in var(--pn-dur-base) var(--pn-ease-out) both; }
 .hlp-reader__body > * { flex: 1; min-height: 0; }
 
+/* --- The plate ------------------------------------------------------------
+   The frame is the page: an artifact bundle is a whole document with its own
+   scroll, so it FILLS the reader and scrolls internally rather than growing the
+   pane. `border: 0` because the plate draws its own edges; a bordered frame
+   would double every plate's chrome. */
+.hlp-plate { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+
+.hlp-plate__frame {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: var(--pn-paper);
+}
+
+.hlp-plate__wait {
+  flex: 1;
+  margin: 0;
+  padding: 30px 24px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hlp-plate__colophon {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: baseline;
+  overflow: hidden;
+  margin: 0;
+  padding: 6px 14px;
+  color: var(--pn-ink-4);
+  border-top: 1px solid var(--pn-line-2);
+  background: var(--pn-surface);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+
+.hlp-plate__colophon span:nth-child(2) { color: var(--pn-brand); font-size: 7px; }
+.hlp-plate__colophon span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.hlp-plate__colophon code { font-family: inherit; font-size: inherit; }
+
 .hlp-empty { max-width: 52ch; margin: 0; padding: 30px 24px; color: var(--pn-ink-3); font-family: var(--pn-serif); font-size: 14px; line-height: 1.6; }
 .hlp-empty code { color: var(--pn-ink-2); font-family: var(--pn-mono); font-size: .86em; }
 .hlp-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
