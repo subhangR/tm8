@@ -74,13 +74,14 @@ export interface EntityFabItem {
   /** A count beside the label, e.g. Discussion's message count. 0 renders. */
   readonly count?: number;
   /**
-   * Present ⇒ the row is REFUSED. It renders dimmed and non-activating, with
-   * this string as its caption. It is NEVER omitted. See house rule 1.
+   * Present ⇒ the row is REFUSED. It renders dimmed, non-activating, and it
+   * sorts ABOVE every live row. It is NEVER omitted — see house rule 1.
+   *
+   * THE STRING IS NOT DRAWN. It is carried as the row's accessible description
+   * and nothing else; see `FabRow` for the ruling and what it costs.
    */
   readonly reason?: string;
   readonly onSelect?: () => void;
-  /** `'end'` draws a hairline above the row — the Transfer / ⤢ lower group. */
-  readonly group?: 'main' | 'end';
 }
 
 export interface EntityFabProps {
@@ -158,18 +159,45 @@ export function EntityFab({ items, label, slot = 'primary', face, testId }: Enti
   }, [open, close]);
 
   /*
-   * MAIN ROWS FIRST, END ROWS AFTER, order preserved inside each group.
+   * REFUSED ROWS AT THE TOP, LIVE ROWS UNDER THEM, order preserved inside each
+   * half. Owner ruling 2026-08-20: "if something ain't there, or disabled, it
+   * should be at top".
    *
-   * The hairline that separates the two groups is drawn by the FIRST end row
-   * (`entity-fab.css`), so an end row that arrived in the middle of the list
-   * would draw a divider across the middle of the stack. Partitioning here makes
-   * the arrangement independent of the order a caller happens to build its list
-   * in, rather than making that order a rule the caller has to know.
+   * The stack is bottom-anchored and rises out of the trigger, so "top" is the
+   * end FURTHEST from the thumb — which is the arrangement the ruling is really
+   * about. A refusal is something you read once and then stop reaching for; a
+   * live verb is something you press. Interleaving them puts dead rows inside
+   * the arc the thumb sweeps, and every press has to be aimed past one. This is
+   * also why the sort is HERE rather than left to each caller: it is a property
+   * of a bottom-anchored menu, not of any one list.
    */
   const rows = useMemo(
-    () => [...items.filter((i) => i.group !== 'end'), ...items.filter((i) => i.group === 'end')],
+    () => [
+      ...items.filter((i) => i.reason !== undefined),
+      ...items.filter((i) => i.reason === undefined),
+    ],
     [items],
   );
+
+  /*
+   * ONE TEXT EDGE FOR THE WHOLE STACK — measured in a browser, invisible to
+   * every test in this package.
+   *
+   * `panelMenuItems` fills glyphs from the registry's `def.icon`, and the two
+   * aux tabs have none: the real menu is Connections and Discussion with no
+   * mark, then ▶ Run and ✎ Edit with one. Rendered literally, the first two
+   * labels start at the pill's padding and the rest start 1em further in, so a
+   * column of chips that is otherwise perfectly aligned has its words on two
+   * different left edges. It reads as a rendering fault, and it was: the
+   * screenshot on this PR is what showed it.
+   *
+   * SO THE SLOT IS RESERVED FOR THE WHOLE MENU OR FOR NONE OF IT. Per-row would
+   * be no fix at all — the empty slot has to be there on the rows that LACK a
+   * glyph, which is exactly the case a `item.glyph ?`-style guard skips. An
+   * all-glyphless menu keeps its tighter pill rather than paying for a gutter
+   * nothing will ever sit in.
+   */
+  const gutter = useMemo(() => rows.some((item) => item.glyph != null), [rows]);
 
   const activate = useCallback(
     (item: EntityFabItem) => {
@@ -204,7 +232,7 @@ export function EntityFab({ items, label, slot = 'primary', face, testId }: Enti
           <div className="efab__menu">
             <ul className="efab__list" id={menuId} role="menu" aria-label={label}>
               {rows.map((item) => (
-                <FabRow key={item.id} item={item} onActivate={activate} />
+                <FabRow key={item.id} item={item} gutter={gutter} onActivate={activate} />
               ))}
             </ul>
           </div>
@@ -229,29 +257,60 @@ export function EntityFab({ items, label, slot = 'primary', face, testId }: Enti
 }
 
 /**
- * ONE ROW. The pill is the control; the reason, when there is one, is a caption
- * BELOW it.
+ * ONE ROW — the chip, and nothing beside it.
  *
- * That split is what lets a refusal keep its explanation without the pill
- * changing size — the shape `DisabledAction` already ships (`hon-disabled-group`
- * wrapping the control and its caption as siblings). A refusal that is a
- * different size from the live control it stands in for makes the stack jump as
- * an entity changes state, which `panel-bar-phone.css:220-227` states as a rule
- * for the panel bar and which is worse here, under a thumb. The stack is
- * bottom-anchored, so a caption's extra line grows AWAY from the trigger rather
- * than shifting the rows nearest it.
+ * ── THE REFUSAL SAYS NOTHING OUT LOUD, AND THAT IS A RULING ────────────────
+ *
+ * Until 2026-08-20 a refused row drew its reason as a wrapped mono caption
+ * under the pill. Owner ruling, on seeing it on a real phone: "with no extra
+ * text, just disabled, icon". The screenshots on this PR are the measurement —
+ * one refusal carried ~100 characters, which at this column width is three
+ * lines of 11px mono hanging off the side of the menu, over a dimmed page, in a
+ * stack the reader opened in order to press something. The furniture was taller
+ * than the verbs it sat beside.
+ *
+ * THE REASON IS STILL IN THE DOM AND STILL WIRED TO THE ROW, because the half
+ * of disabled-with-reason that actually costs something to lose is the
+ * ANNOUNCEMENT: a screen reader lands on the row, hears "dimmed", and without
+ * `aria-describedby` has no way at all to learn why. It renders inside
+ * `.efab__reason`, which `entity-fab.css` clips to a 1px box.
+ *
+ * TWO THINGS ABOUT THAT SPAN THAT ARE NOT INTERCHANGEABLE WITH THE OBVIOUS
+ * ALTERNATIVES:
+ *
+ *   · It is the button's SIBLING, not its child. A button with no `aria-label`
+ *     takes its accessible name from its content, so a reason moved inside
+ *     would stop being a description and become part of the name — the row
+ *     would announce as "Run, this action isn't connected yet", and the
+ *     description would then be a second copy of the same sentence.
+ *   · The clipping rule lives in THIS file rather than borrowing `panels.css`'s
+ *     `.sr-only`. This component imports its own stylesheet on purpose, and a
+ *     class defined in a stylesheet it does not import fails OPEN: the span
+ *     renders full-size and visible on any screen where the other sheet has not
+ *     loaded, which is the exact defect the ruling removes.
+ *
+ * WHAT WE GIVE UP, SAID PLAINLY: a sighted reader can no longer learn from this
+ * menu why a row is dimmed. The desktop action bar still says it in full, and
+ * that is where the sentence now lives.
+ *
+ * `aria-disabled`, never the `disabled` attribute: a natively disabled button
+ * leaves the tab order, which would make the description above unreachable by
+ * the one reader it is still there for.
  */
 function FabRow({
   item,
+  gutter,
   onActivate,
 }: {
   item: EntityFabItem;
+  /** Some row in this menu has a glyph, so every row reserves the slot. */
+  gutter: boolean;
   onActivate: (item: EntityFabItem) => void;
 }) {
   const reasonId = useId();
   const refused = item.reason !== undefined;
   return (
-    <li className={`efab__row${item.group === 'end' ? ' efab__row--end' : ''}`} role="none">
+    <li className="efab__row" role="none">
       <button
         type="button"
         role="menuitem"
@@ -261,9 +320,9 @@ function FabRow({
         aria-describedby={refused ? reasonId : undefined}
         onClick={() => onActivate(item)}
       >
-        {item.glyph ? (
+        {gutter ? (
           <span className="efab__glyph" aria-hidden>
-            {item.glyph}
+            {item.glyph ?? ''}
           </span>
         ) : null}
         <span className="efab__label">{item.label}</span>

@@ -815,17 +815,20 @@ export interface PanelMenuItem {
   readonly glyph?: string;
   /** A count beside the label. `0` is a measured answer and renders. */
   readonly count?: number;
-  /** Present ⇒ REFUSED: drawn dimmed, non-activating, with this as its caption. */
+  /**
+   * Present ⇒ REFUSED: the row is drawn dimmed and non-activating, and sorts to
+   * the top of the menu. The string is NOT drawn — `EntityFab` carries it for
+   * assistive technology only (owner ruling 2026-08-20). It is still required,
+   * because a refusal with no reason recorded anywhere is a dead control.
+   */
   readonly reason?: string;
   readonly onSelect?: () => void;
-  /** `'end'` draws a hairline above the row — the lower group. */
-  readonly group?: 'main' | 'end';
 }
 
 /**
- * A refusal reason as the menu's one-line caption. The same join
- * `DisabledAction` makes for its inline caption, so a verb refused in the bar
- * and the same verb refused in the menu read as the same sentence.
+ * A refusal reason, as one sentence. The same join `DisabledAction` makes for
+ * its inline caption, so a verb refused in the bar and the same verb refused in
+ * the menu read as the same sentence to whoever reaches it.
  */
 function captionOf(reason: UnavailableReason): string {
   return reason.remedy ? `${reason.cause} — ${reason.remedy}` : reason.cause;
@@ -863,14 +866,12 @@ export interface PanelMenuInput {
   readonly wiredActions?: readonly ActionRef[];
   readonly onOpenLaunch?: (entityId: string) => void;
   readonly launchSubjectId?: string;
-  /** Wires `⤢ Open full view`. Absent ⇒ the row is refused, never hidden. */
-  readonly onPromote?: () => void;
 }
 
 /**
  * WHAT THE PHONE'S ACTION MENU CONTAINS — derived, never typed out.
  *
- * Three sources, in this order:
+ * Two sources, in this order:
  *
  *   1. THE TWO NAVIGATIONAL TABS the phone no longer has a strip for. They keep
  *      `onTabChange`, which already routes both to a `MobileSheet` through
@@ -879,16 +880,29 @@ export interface PanelMenuInput {
  *   2. `config.panel.primaries`, through the SAME `processControlFor` swap
  *      `ActionBar` makes, so a session that has ended offers Resume rather than
  *      a refused Terminate.
- *   3. `⤢ Open full view`, in the lower group.
+ *
+ * ── AND NOT `⤢ OPEN FULL VIEW`, WHICH THIS MENU CARRIED UNTIL 2026-08-20 ───
+ *
+ * Owner ruling, on seeing it: "who asked for full screen — if it's not there,
+ * don't show it". It was a THIRD source, in a lower group of one, and it was
+ * refused-with-reason on every phone mount that exists, because `EntityView`
+ * never wired `onPromote` and there is nowhere on this shell for it to promote
+ * a panel INTO. Disabled-with-reason is the honest treatment of a verb the
+ * product HAS and this viewer cannot reach right now; it is the wrong treatment
+ * of a verb that has no phone implementation at all, where it reduces to a
+ * permanent row apologising for a feature nobody was promised. The verb is
+ * untouched on the desktop, where `PanelWindowControls` owns it and it works.
  *
  * REGISTRY-DRIVEN THROUGHOUT (§15.2). No kind is named, no action id is named:
  * a kind that declares a new primary gains a row here the moment the registry
  * says so, and this function does not change.
  *
- * A REFUSED VERB IS IN THE LIST, dimmed, carrying its reason (house rule 1) —
- * `reason` present is the whole of that signal, and it is never omission. The
- * refusal comes from `actionRefusal`, which is also what the action bar asks, so
- * the two surfaces cannot disagree about whether a verb can be pressed.
+ * A REFUSED VERB IS STILL IN THE LIST, dimmed and carrying its reason (house
+ * rule 1) — `reason` present is the whole of that signal, and it is never
+ * omission. The refusal comes from `actionRefusal`, which is also what the
+ * action bar asks, so the two surfaces cannot disagree about whether a verb can
+ * be pressed. What the ruling above removes is a row for a verb this shell does
+ * not implement, which is a different thing from a verb it cannot perform yet.
  */
 export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
   const { config, ctx, counts, onSelectTab, onAction, wiredActions } = input;
@@ -942,26 +956,7 @@ export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
       };
     });
 
-  /*
-   * ⤢ IS THE ONE WINDOW VERB THE PHONE KEEPS — `PanelWindowControls` states why:
-   * ✕ closes a panel out of a stack this shell does not have, and ⤢ names
-   * something the phone genuinely has. Refused-with-reason where the host never
-   * wired it, which on `EntityView` today is always, and that refusal is the
-   * honest report of a control that has been enabled-inert in that mount.
-   */
-  const end: PanelMenuItem[] = [
-    {
-      id: 'open-full-view',
-      label: 'Open full view',
-      glyph: '⤢',
-      group: 'end',
-      ...(input.onPromote
-        ? { onSelect: input.onPromote }
-        : { reason: captionOf(NOT_WIRED_REASON) }),
-    },
-  ];
-
-  return [...tabs, ...primaries, ...end];
+  return [...tabs, ...primaries];
 }
 
 // ---------------------------------------------------------------------------

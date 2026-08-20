@@ -138,6 +138,51 @@ describe('EntityFab / menu', () => {
     expect(counts).toEqual(['0']);
   });
 
+  /**
+   * ONE TEXT EDGE. The real menu is glyphless tabs above glyphed primaries —
+   * Connections and Discussion carry no `def.icon`, ▶ Run and ✎ Edit do — and
+   * rendered literally their labels start 1em apart. This is the fix's seam,
+   * asserted on the SLOT rather than on a pixel: jsdom lays nothing out, so the
+   * alignment itself is a browser question and lives in the PR's screenshot.
+   *
+   * The empty slot is what the assertion is FOR. `item.glyph ? …` renders three
+   * spans here and looks right in a diff, and it is precisely the version that
+   * leaves the two glyphless labels unindented.
+   */
+  it('reserves the glyph slot on every row once any row has one', () => {
+    const { getByTestId, container } = mount(
+      <EntityFab
+        items={[
+          { id: 'connections', label: 'Connections' },
+          { id: 'run', label: 'Run', glyph: '▶' },
+        ]}
+        label="Task actions"
+      />,
+    );
+    fireEvent.click(getByTestId('entity-fab'));
+
+    expect(Array.from(container.querySelectorAll('.efab__glyph')).map((el) => el.textContent)).toEqual(
+      ['', '▶'],
+    );
+  });
+
+  /* And a menu with no glyphs at all pays for no gutter — the two aux tabs on a
+     kind that declares no primaries are the whole of that case. */
+  it('reserves nothing when no row has a glyph', () => {
+    const { getByTestId, container } = mount(
+      <EntityFab
+        items={[
+          { id: 'connections', label: 'Connections' },
+          { id: 'discussion', label: 'Discussion' },
+        ]}
+        label="Task actions"
+      />,
+    );
+    fireEvent.click(getByTestId('entity-fab'));
+
+    expect(container.querySelectorAll('.efab__glyph')).toHaveLength(0);
+  });
+
   it('selects a live row, then closes', () => {
     const onSelect = vi.fn();
     const { getByTestId, container } = mount(
@@ -151,19 +196,29 @@ describe('EntityFab / menu', () => {
   });
 
   /**
-   * MAIN ROWS FIRST, END ROWS AFTER — asserted on the order rather than on the
-   * hairline, because the hairline is a border and jsdom has no borders. The
-   * component partitions rather than trusting the caller's order, so the
-   * divider the stylesheet draws on the first end row is always the boundary
-   * between the groups.
+   * REFUSED ROWS RISE TO THE TOP — owner ruling 2026-08-20, "if something ain't
+   * there, or disabled, it should be at top".
+   *
+   * The stack is bottom-anchored, so the top of the list is the end furthest
+   * from the thumb: dead rows are pushed out of the arc a thumb sweeps and the
+   * live verbs sit against the trigger that opened them. The component sorts
+   * rather than trusting the caller's order — this list arrives interleaved on
+   * purpose, because `panelMenuItems` builds tabs-then-primaries and a refusal
+   * can appear at either end of that.
+   *
+   * ORDER IS PRESERVED WITHIN EACH HALF. A stable partition is what keeps the
+   * registry's declared order of primaries meaningful; a sort that reordered
+   * the live rows too would make a kind's verb list rearrange itself whenever
+   * an unrelated verb became available.
    */
-  it('sinks the end group below the main one whatever order it arrives in', () => {
+  it('lifts every refused row above the live ones, keeping each half in order', () => {
     const { getByTestId, container } = mount(
       <EntityFab
         items={[
-          { id: 'transfer', label: 'Transfer', group: 'end' },
+          { id: 'connections', label: 'Connections' },
+          { id: 'merge', label: 'Merge', reason: 'No phone arrangement' },
           { id: 'run', label: 'Run' },
-          { id: 'expand', label: 'Open full view', group: 'end' },
+          { id: 'terminate', label: 'Terminate', reason: 'Nothing to terminate' },
           { id: 'edit', label: 'Edit' },
         ]}
         label="Task actions"
@@ -173,23 +228,22 @@ describe('EntityFab / menu', () => {
 
     expect(Array.from(container.querySelectorAll('[data-fab-item]')).map((el) =>
       el.getAttribute('data-fab-item'),
-    )).toEqual(['run', 'edit', 'transfer', 'expand']);
-    expect(container.querySelectorAll('.efab__row--end')).toHaveLength(2);
+    )).toEqual(['merge', 'terminate', 'connections', 'run', 'edit']);
   });
 });
 
 describe('EntityFab / refusal', () => {
   /**
-   * DISABLED-WITH-REASON, NEVER ENABLED-INERT, NEVER HIDDEN (house rule 1, and
-   * `chrome.tsx`'s R5 #9). A verb that cannot be performed is present, dimmed,
-   * carrying its reason — and this menu may not be the one surface in the
-   * product that disagrees.
+   * DISABLED, NEVER ENABLED-INERT, NEVER HIDDEN (house rule 1, and `chrome.tsx`'s
+   * R5 #9). A verb that cannot be performed is present and dimmed, and this menu
+   * may not be the one surface in the product that quietly drops it.
    *
    * `aria-disabled` and not the `disabled` attribute: a natively disabled
    * button leaves the tab order, so a keyboard reader can never reach it and
-   * therefore never learns WHY, which defeats the treatment entirely.
+   * therefore never learns WHY — which is the whole of what the reason below is
+   * still here for.
    */
-  it('renders a refused verb, dimmed, carrying its reason, and refuses to fire it', () => {
+  it('renders a refused verb, dimmed, and refuses to fire it', () => {
     const onSelect = vi.fn();
     const { getByTestId, container } = mount(
       <EntityFab
@@ -203,19 +257,64 @@ describe('EntityFab / refusal', () => {
     expect(row.getAttribute('aria-disabled')).toBe('true');
     expect(row.getAttribute('role')).toBe('menuitem');
 
-    /* The reason is IN THE DOM and wired to the row, so it is announced on
-       focus rather than only drawn. */
-    const described = row.getAttribute('aria-describedby');
-    expect(described).toBeTruthy();
-    /* `getElementById`, not a selector: `useId` mints ids like `:r3:`, which are
-       not valid CSS identifiers and would need escaping to be queried at all. */
-    expect(document.getElementById(described!)?.textContent).toBe('This action isn’t connected yet');
-
     fireEvent.click(row);
     expect(onSelect).not.toHaveBeenCalled();
     /* And it did not close either — a refusal that dismissed the menu would
        read as an action that had been taken. */
     expect(container.querySelector('[role="menu"]')).not.toBeNull();
+  });
+
+  /**
+   * THE REASON IS ANNOUNCED AND NOT DRAWN (owner ruling 2026-08-20, "no extra
+   * text, just disabled, icon").
+   *
+   * Two halves, and BOTH are needed because neither is worth much alone:
+   *
+   *   · Here: the node exists, carries the sentence, and is wired to the row —
+   *     so a screen reader that lands on a dimmed row can still learn why.
+   *   · `entity-fab-style.test.ts`: the class that node carries is actually
+   *     clipped in the stylesheet. jsdom loads no CSS, so this file cannot tell
+   *     a hidden span from a visible one; without that second test the caption
+   *     could come back tomorrow and every case in this file would stay green.
+   *
+   * THE SPAN IS THE BUTTON'S SIBLING, and the last assertion is what keeps it
+   * one. Moved inside, the sentence would join the button's accessible NAME —
+   * name-from-content — and the row would announce as "Run, this action isn't
+   * connected yet" before the description said it again.
+   */
+  it('carries the reason for assistive technology only, outside the row’s name', () => {
+    const { getByTestId, container } = mount(
+      <EntityFab
+        items={[{ id: 'run', label: 'Run', reason: 'This action isn’t connected yet' }]}
+        label="Task actions"
+      />,
+    );
+    fireEvent.click(getByTestId('entity-fab'));
+
+    const row = container.querySelector('[data-fab-item="run"]')!;
+    const described = row.getAttribute('aria-describedby');
+    expect(described).toBeTruthy();
+    /* `getElementById`, not a selector: `useId` mints ids like `:r3:`, which are
+       not valid CSS identifiers and would need escaping to be queried at all. */
+    const reason = document.getElementById(described!);
+    expect(reason?.textContent).toBe('This action isn’t connected yet');
+    expect(reason?.className).toBe('efab__reason');
+
+    expect(row.contains(reason)).toBe(false);
+    expect(row.textContent).toBe('Run');
+  });
+
+  /* A live row has nothing to describe, so it must not mint a dangling
+     `aria-describedby` — and no reason node may exist to be styled back into
+     view by a rule that forgot to check the state. */
+  it('leaves a live row undescribed', () => {
+    const { getByTestId, container } = mount(
+      <EntityFab items={[LIVE]} label="Task actions" />,
+    );
+    fireEvent.click(getByTestId('entity-fab'));
+
+    expect(container.querySelector('[data-fab-item="connections"]')!.getAttribute('aria-describedby')).toBeNull();
+    expect(container.querySelector('.efab__reason')).toBeNull();
   });
 });
 
