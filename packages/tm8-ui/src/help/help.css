@@ -236,7 +236,24 @@
 .hlp-row__arrow { padding-top: 1px; color: var(--pn-ink-4); font-size: 13px; transition: color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out); }
 .hlp-row:hover .hlp-row__arrow { transform: translateX(2px); }
 
-.hlp-reader { position: relative; display: flex; flex: 1 1 0; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; background: var(--pn-paper); }
+/* THE READER IS THE SCROLLER, not the plate. A frame sized to the pane scrolls
+   internally, which pins the header above it forever — two stacked headers and
+   a plate reading through a letterbox. Scrolling out here lets the header leave
+   with the rest of the document. `overscroll-behavior` keeps a plate's last
+   scroll from chaining out to the shell. */
+.hlp-reader {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  background: var(--pn-paper);
+  scrollbar-color: var(--pn-line-2) transparent;
+}
 
 .hlp-reader__head {
   position: relative;
@@ -280,24 +297,33 @@
 
 .hlp-progress-track { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; overflow: hidden; }
 .hlp-progress-track span { display: block; height: 100%; background: var(--pn-brand); transition: width var(--pn-dur-slow) var(--pn-ease-out); }
-.hlp-reader__body { display: flex; flex: 1; min-height: 0; flex-direction: column; animation: hlp-page-in var(--pn-dur-base) var(--pn-ease-out) both; }
-.hlp-reader__body > * { flex: 1; min-height: 0; }
+/* `flex: 1 0 auto`, not `flex: 1`: the shorthand's `flex-basis: 0` would size
+   this to the pane and hand the plate a letterbox again. It grows to fill a
+   short plate and is its own height for a tall one. */
+.hlp-reader__body { display: flex; flex: 1 0 auto; min-height: 0; flex-direction: column; animation: hlp-page-in var(--pn-dur-base) var(--pn-ease-out) both; }
+.hlp-reader__body > * { flex: 1 0 auto; min-height: 0; }
 
 /* --- The plate ------------------------------------------------------------
    The frame is the page: an artifact bundle is a whole document with its own
    scroll, so it FILLS the reader and scrolls internally rather than growing the
    pane. `border: 0` because the plate draws its own edges; a bordered frame
    would double every plate's chrome. */
-.hlp-plate { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.hlp-plate { display: flex; flex: 1 0 auto; min-height: 0; flex-direction: column; }
 
+/* BEFORE ITS HEIGHT IS KNOWN the frame fills the pane, so a plate never opens
+   as a sliver; once `data-measured` lands it is exactly its content's height
+   and the pane above scrolls it. `flex` must stop growing at that point or the
+   column would stretch it straight back to the pane. */
 .hlp-plate__frame {
   display: block;
-  flex: 1;
+  flex: 1 0 auto;
   min-height: 0;
   width: 100%;
   border: 0;
   background: var(--pn-paper);
 }
+
+.hlp-plate__frame[data-measured] { flex: 0 0 auto; }
 
 .hlp-plate__wait {
   flex: 1;
@@ -344,7 +370,12 @@
 .hlp-root--stacked .hlp-reader__steps { margin-left: auto; }
 
 @keyframes hlp-arrive { from { opacity: .68; } to { opacity: 1; } }
-@keyframes hlp-page-in { from { opacity: .72; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+/* OPACITY ONLY. This used to lift 4px, which is a `transform` on an element
+   inside a scroll container — it made the plate a containing block, offset the
+   colophon past the pane's bottom edge, and clipped it by exactly those 4px in
+   any frame where the animation had not settled. A page arriving does not need
+   to move. */
+@keyframes hlp-page-in { from { opacity: .72; } to { opacity: 1; } }
 
 @media (max-width: 720px) {
   .hlp-masthead__title { font-size: 38px; }

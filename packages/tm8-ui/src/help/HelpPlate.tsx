@@ -9,33 +9,36 @@
  * design system, throw away the provenance chain, and guarantee visual drift
  * the first time one of them is revised. The frame keeps the shipped bytes
  * BYTE-IDENTICAL to the published revision, which is what makes
- * `help-plates.provenance.test.ts`'s hash pin meaningful at all.
+ * `help-plates.test.ts`'s hash pin meaningful at all.
  *
  * WHY THAT IS SAFE — the sandbox, not trust. `sandbox="allow-scripts"` WITHOUT
  * `allow-same-origin` is exact and deliberate: the document gets an opaque
  * origin, so its scripts cannot reach this app's DOM, cookies, storage, tokens
  * or `fetch` credentials, cannot navigate the top frame, and cannot submit
  * forms. This is the same posture the app's existing artifact preview takes
- * (`GenericBody.tsx`'s `ArtifactPreviewBlock`), and it is why "vendor the HTML"
- * is not "inject the HTML": nothing here goes through `innerHTML` or
- * `dangerouslySetInnerHTML`, and the bytes are never parsed by this document.
+ * (`GenericBody.tsx`'s `ArtifactPreviewBlock`).
  *
- * WHY IT DOES NOT WEIGH ON BOOT. The bundle is an ASSET URL resolved by a
- * dynamic `import.meta.glob` at open time, so the 3.6 MB library is 55
- * separately-hashed files that only the plate a reader actually opens is ever
- * fetched from. `src` rather than `srcdoc` for the same reason: `srcdoc` would
- * mean pulling every byte through JS to hand it back to the parser.
+ * THE PLATE IS NOT THE SCROLLER — THE PANE IS. The frame is sized to the
+ * plate's own height and `.hlp-reader` scrolls, so the reader's header scrolls
+ * off the top like the head of a document and a plate gets the entire pane. The
+ * height arrives over `postMessage` from a reporter appended at load; see
+ * `plate-frame.ts` for why that is the only channel an opaque origin has, and
+ * why it is preferred over granting `allow-same-origin`.
  *
- * THEME rides the CSS cascade rather than a message channel. `color-scheme` is
- * an inherited property and `.cv2-root[data-theme="dark"]` sets it, so the
- * embedded document's `prefers-color-scheme` resolves dark inside a dark app —
- * which is exactly what every plate's own dark rules key off. A sandboxed
- * opaque-origin frame has no channel we could push a theme through anyway, so
- * inheritance is not a shortcut here, it is the only correct mechanism.
+ * `srcdoc` RATHER THAN `src`, as the cost of the above. The bytes are fetched
+ * and handed to the frame's parser with the reporter appended; nothing goes
+ * through `innerHTML` or `dangerouslySetInnerHTML`, and this document never
+ * parses a plate. The file on disk is untouched, so its hash still holds.
+ *
+ * THEME rides the CSS cascade rather than a message. `color-scheme` is an
+ * inherited property and `.cv2-root[data-theme="dark"]` sets it, so the embedded
+ * document's `prefers-color-scheme` resolves dark inside a dark app — which is
+ * what every plate's own dark rules key off.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { loadPlateAsset, type HelpPlateDefinition } from './help-plates';
+import { heightFromMessage, withPlateReporter } from './plate-frame';
 
 export interface HelpPlateProps {
   plate: HelpPlateDefinition;
@@ -43,30 +46,50 @@ export interface HelpPlateProps {
 
 type Phase =
   | { phase: 'loading' }
-  | { phase: 'ready'; url: string }
+  | { phase: 'ready'; doc: string }
   | { phase: 'failed' };
 
 export function HelpPlate({ plate }: HelpPlateProps) {
   const [state, setState] = useState<Phase>({ phase: 'loading' });
+  const [height, setHeight] = useState<number | null>(null);
+  const frame = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     let alive = true;
     setState({ phase: 'loading' });
-    loadPlateAsset(plate).then(
-      (url) => {
-        if (alive) setState({ phase: 'ready', url });
-      },
-      () => {
-        // The only realistic cause is a chunk fetch that could not be served —
-        // an offline reader on a build whose assets are not cached. Say that,
-        // rather than leaving a blank frame that looks like an empty plate.
-        if (alive) setState({ phase: 'failed' });
-      },
-    );
+    /* Reset with the plate, not on first mount only: a stale height from the
+       previous plate would size the new one wrong until its first report. */
+    setHeight(null);
+    loadPlateAsset(plate)
+      .then((url) => fetch(url))
+      .then((response) => {
+        if (!response.ok) throw new Error(`plate ${plate.slug}: ${response.status}`);
+        return response.text();
+      })
+      .then(
+        (html) => {
+          if (alive) setState({ phase: 'ready', doc: withPlateReporter(html) });
+        },
+        () => {
+          // The realistic cause is an asset that could not be served — an
+          // offline reader on a build whose chunks are not cached. Say that,
+          // rather than leaving a blank frame that looks like an empty plate.
+          if (alive) setState({ phase: 'failed' });
+        },
+      );
     return () => {
       alive = false;
     };
   }, [plate]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const next = heightFromMessage(event, frame.current);
+      if (next !== null) setHeight(next);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   if (state.phase === 'failed') {
     return (
@@ -86,11 +109,17 @@ export function HelpPlate({ plate }: HelpPlateProps) {
       ) : (
         <iframe
           key={plate.slug}
+          ref={frame}
           className="hlp-plate__frame"
           title={`${plate.title} — Help plate ${plate.number}`}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
-          src={state.url}
+          srcDoc={state.doc}
+          /* Until the first report the frame fills the pane, so a plate never
+             opens as a sliver. `data-measured` is what the shell's CSS uses to
+             stop stretching it once its real height is known. */
+          data-measured={height === null ? undefined : 'true'}
+          style={height === null ? undefined : { height: `${height}px` }}
         />
       )}
       <PlateProvenance plate={plate} />
@@ -104,7 +133,7 @@ export function HelpPlate({ plate }: HelpPlateProps) {
  * A reader who wants to know where a page came from can read the artifact id
  * and revision and go get the same bytes with `tm8 artifact export`. It is one
  * hairline row rather than a panel because the plate is the product and this is
- * a colophon.
+ * a colophon — and it sits at the END of the scroll, where a colophon belongs.
  */
 function PlateProvenance({ plate }: { plate: HelpPlateDefinition }) {
   const { artifactId, revision } = plate.provenance;

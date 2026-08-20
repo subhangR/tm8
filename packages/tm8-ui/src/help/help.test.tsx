@@ -28,7 +28,7 @@
  * jsdom loads no stylesheets (the recurring law of this suite), so nothing here
  * claims colour, width or geometry — presence, order and text only.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import axe from 'axe-core';
 import type { SpaceId } from '@tm8/contract';
@@ -39,6 +39,7 @@ import { build, createMemoryTarget, parse } from '../routes';
 import { FIXTURE_SPACE_ID } from '../fixtures';
 import { HELP_CHAPTERS, HELP_SET } from './help-set';
 import { HELP_PLATES } from './help-plates';
+import { PLATE_MAX_HEIGHT, PLATE_MESSAGE_SOURCE, PLATE_MIN_HEIGHT, heightFromMessage, withPlateReporter } from './plate-frame';
 import { HelpScreen } from './HelpScreen';
 
 const SPACE = FIXTURE_SPACE_ID as SpaceId;
@@ -50,13 +51,29 @@ function onHelp(plate: string | null = null) {
   resetNav(SPACE, { view: 'help', plate });
 }
 
+/*
+ * THE PLATE BYTES ARE STUBBED HERE, and that is the right seam. `HelpPlate`
+ * fetches the vendored bundle and hands it to the frame; jsdom serves no assets
+ * and renders no frame document, so a real fetch would only prove that jsdom
+ * cannot fetch. What THIS file tests is the shell around the plate — which one
+ * is addressed, how the frame is sandboxed, what the colophon says. The bytes
+ * themselves are pinned by `help-plates.test.ts`, against the real files, in a
+ * node environment that can read them.
+ */
+const STUB_PLATE = '<!doctype html><html><body><h1>stub plate</h1></body></html>';
+
 beforeEach(() => {
   onHelp();
   screenStackStore.getState().clearAll();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(STUB_PLATE, {
+    status: 200,
+    headers: { 'content-type': 'text/html' },
+  })));
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe('the help set', () => {
@@ -154,12 +171,42 @@ describe('the help screen', () => {
     view.unmount();
   });
 
+  it('hands the frame the published bytes with the reporter appended, never an edit', () => {
+    /* The plate's own markup is untouched and the shim goes AFTER it, which is
+       what keeps `help-plates.test.ts`'s SHA-256 pin meaningful: the file on
+       disk is still the published revision, byte for byte. */
+    const published = '<!doctype html><html><body>plate</body></html>';
+    const doc = withPlateReporter(published);
+    expect(doc.startsWith(published)).toBe(true);
+    expect(doc.slice(published.length)).toContain(PLATE_MESSAGE_SOURCE);
+  });
+
   it('shows where the plate came from, by artifact and revision', async () => {
     const view = render(<HelpScreen />);
     const colophon = await waitFor(() => view.getByTestId('help-plate-provenance'));
     expect(colophon.textContent).toContain(FIRST.provenance.artifactId);
     expect(colophon.textContent).toContain(String(FIRST.provenance.revision));
     view.unmount();
+  });
+
+  it('accepts a height only from the plate\u2019s own window, and clamps it', () => {
+    /* EVERY sandboxed frame reports origin `"null"`, so origin cannot tell one
+       plate from another \u2014 or from any other opaque frame on the page. The
+       sending WINDOW is the only usable identity, which is why this is the
+       check and not `event.origin`. */
+    const frame = { contentWindow: {} } as unknown as HTMLIFrameElement;
+    const message = (data: unknown, source: unknown) =>
+      ({ data, source } as unknown as MessageEvent);
+
+    expect(heightFromMessage(message({ source: PLATE_MESSAGE_SOURCE, height: 900 }, frame.contentWindow), frame)).toBe(900);
+    /* An impostor window is refused even with a perfectly-shaped payload. */
+    expect(heightFromMessage(message({ source: PLATE_MESSAGE_SOURCE, height: 900 }, {}), frame)).toBeNull();
+    expect(heightFromMessage(message({ source: 'something-else', height: 900 }, frame.contentWindow), frame)).toBeNull();
+    expect(heightFromMessage(message('not-an-object', frame.contentWindow), frame)).toBeNull();
+    expect(heightFromMessage(message({ source: PLATE_MESSAGE_SOURCE, height: 'tall' }, frame.contentWindow), frame)).toBeNull();
+    /* A buggy or hostile plate cannot ask for a two-million-pixel element. */
+    expect(heightFromMessage(message({ source: PLATE_MESSAGE_SOURCE, height: 9e9 }, frame.contentWindow), frame)).toBe(PLATE_MAX_HEIGHT);
+    expect(heightFromMessage(message({ source: PLATE_MESSAGE_SOURCE, height: 1 }, frame.contentWindow), frame)).toBe(PLATE_MIN_HEIGHT);
   });
 
   it('steps forward and back through the reading order', async () => {
