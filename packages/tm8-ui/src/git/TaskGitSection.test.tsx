@@ -53,7 +53,7 @@ describe('tracked artifacts', () => {
     mount({ onOpen: (id) => opened.push(id) });
     await screen.findByTestId('task-git-commits');
     fireEvent.click(screen.getByTitle('produced by forge · tm8-ui kit'));
-    expect(opened).toContain('ws-forge-live');
+    expect(opened).toContain('019f0000-0000-7000-8000-000000000031');
   });
 
   it('a task tracking nothing renders the explained empty, never a blank section', async () => {

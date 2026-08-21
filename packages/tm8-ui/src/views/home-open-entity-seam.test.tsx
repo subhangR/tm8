@@ -76,6 +76,30 @@ describe('the entity-open seam lands in the right panel', () => {
     view.unmount();
   });
 
+  it('a ledger-panel session row opens ITS TERMINAL in the aside — S5, the whole path through the real host', async () => {
+    /* The fixture thread delegates once (execution.spawn → the entity
+       fixtures' live session), so the sticky panel has a sessions row to
+       follow: expand the panel, click the row, and the terminal must be
+       standing in region C. Every hop is real — LedgerPanel → the screen's
+       onOpenEntity → the gate's openRight → AuxEntityPanel → the registry's
+       terminal archetype. Rows stay view-only: opening navigates; the
+       composer keeps addressing the conversation it always did. */
+    const target = createMemoryTarget(`#/s/${SPACE}/home`);
+    const view = render(<GateApp routerTarget={target} />);
+    await view.findByTestId('chat-home-screen', {}, { timeout: 5000 });
+
+    fireEvent.click(await view.findByTestId('ledger-panel-toggle', {}, { timeout: 5000 }));
+    const row = await view.findByTestId('ledger-panel-session', {}, { timeout: 5000 });
+    fireEvent.click(row);
+
+    const aside = await waitFor(() => view.getByTestId('hp-aside'));
+    await waitFor(() => expect(within(aside).getByTestId('terminal-body')).toBeTruthy());
+    /* View-only, observably: the conversation region is still mounted beside
+       the terminal — the row navigated, it did not retarget or evict. */
+    expect(view.getByTestId('chat-home-screen')).toBeTruthy();
+    view.unmount();
+  });
+
   it('a work_session on that route gets the TERMINAL — kind routing is the host’s, not the row’s', async () => {
     const target = createMemoryTarget(`#/s/${SPACE}/home`);
     const view = render(<GateApp routerTarget={target} />);

@@ -386,7 +386,11 @@ export const taskTombstone = summary({
 // ---------------------------------------------------------------------------
 
 export const sessionLive = summary({
-  id: 'ws-forge-live',
+  /* UUIDv7-shaped, unlike its slug-id neighbours, and that is load-bearing:
+     the chat surface's payload walk only recognises real graph ids (UUIDv7 —
+     payload-walk.ts), so THIS session is the one a chat fixture thread can
+     spawn and a host-level test can follow from ledger row to terminal. */
+  id: '019f0000-0000-7000-8000-000000000031',
   kind: 'work_session',
   title: 'forge · tm8-ui kit',
   parentId: taskGuideLines.id,
