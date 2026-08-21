@@ -384,6 +384,14 @@ const SET_DELIVERY_CLAIMS = `
    */
 export async function verifyDeliveryPrincipal(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString, max: 1 });
+  // An 'error' event with no listener is rethrown by EventEmitter and takes the
+  // process down, and that is true however short-lived the pool is. This one
+  // runs during boot, where a dead process is indistinguishable from a failed
+  // verification: the operator sees an exit, not the assertion this function
+  // exists to make. Mirrors the guard in db/client.ts.
+  pool.on('error', (err) => {
+    console.error(`[w2-delivery] idle client error on the principal-check pool: ${err.message}`);
+  });
   try {
     const rows = (await pool.query<{ who: string; is_super: boolean | null }>(
       'select session_user as who, (select rolsuper from pg_roles where rolname = session_user) as is_super',
@@ -406,6 +414,23 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
 
   constructor(private readonly pool: Pool, ownsPool = false) {
     this.ownsPool = ownsPool;
+    // `fromConnectionString` arms `idle_in_transaction_session_timeout`, so
+    // Postgres WILL terminate a wedged delivery transaction — that is the
+    // point of it, and the comment there says so. The termination arrives as
+    // SQLSTATE 25P03 on an 'error' event on this pool, and an unhandled 'error'
+    // on an EventEmitter takes the whole node down, killing every running agent
+    // session with it. A node that arms a timeout on itself and then dies of it
+    // is a node that cannot stay up under its own design.
+    //
+    // Guarded in the constructor rather than beside the `new Pool` in
+    // `fromConnectionString`, so a caller-supplied pool is covered by
+    // construction and no future call site can reintroduce the hole.
+    //
+    // The pool discards the broken client either way; we only have to not die
+    // about it — the same reasoning, and the same shape, as db/client.ts.
+    this.pool.on('error', (err) => {
+      console.error(`[w2-delivery] idle client error: ${err.message}`);
+    });
   }
 
   /** Build a port over its own pool, authenticating as the delivery worker. */
