@@ -965,12 +965,21 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    * mid-append would leave the appended page with no rows before it.
    */
   const pagesInFlight = useRef(new Set<string>());
+  /**
+   * THE COORDINATES OF EVERY LIVE ROW KEY, kept so a cached read can be ASKED
+   * AGAIN. `pending` cannot serve this — the drain effect clears it before it
+   * dispatches — and the key is a pure identity function, so it cannot be
+   * parsed back into a read (that is exactly what `PendingRead`'s docblock
+   * refuses to do). Read by the total re-probe below.
+   */
+  const rowReads = useRef(new Map<string, PendingRead>());
 
   /** An evicted key must take its claim with it, or `rowsFor` returns
       `EMPTY_ROWS` for it forever — the claim is what suppresses the re-read. */
   const releaseRowKey = useCallback((key: string) => {
     claimedReads.current.delete(key);
     pending.current.delete(key);
+    rowReads.current.delete(key);
   }, []);
 
   /** Bound the row-query cache on every write. See `row-cache.ts`. */
@@ -1353,7 +1362,9 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         const result = await seam.query(query);
         // Same key shape rowsFor reads: an unfiltered, unsorted read is the
         // all-defaults key.
-        absorb(rowsKey(kind, undefined, undefined), result.page, false, generation);
+        const key = rowsKey(kind, undefined, undefined);
+        rowReads.current.set(key, { kind, filter: undefined });
+        absorb(key, result.page, false, generation);
         return result.page.items;
       };
       // BOUNDED, not `Promise.all`: these are the collections.query calls that
@@ -1765,6 +1776,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     // clearing only the claim would reintroduce duplicate in-flight reads.
     claimedReads.current.clear();
     pending.current.clear();
+    rowReads.current.clear();
     inFlight.current.clear();
     pagesInFlight.current.clear();
     pulledDetails.current.clear();
@@ -2167,6 +2179,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       inFlight.current.add(kind);
       const generation = spaceGeneration.current;
       const query = { spaceId, kinds: [kind] } as unknown as CollectionQuery;
+      rowReads.current.set(key, { kind, filter: undefined });
       void seam
         .query(query)
         .then((result) => absorb(key, result.page, false, generation))
@@ -2501,6 +2514,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
           if (!claimedReads.current.has(key)) {
             claimedReads.current.add(key);
             pending.current.set(key, { kind, filter, sort });
+            rowReads.current.set(key, { kind, filter, sort });
             queueMicrotask(() => setPendingTick((n) => n + 1));
           }
           return EMPTY_ROWS;
@@ -2600,6 +2614,73 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         });
     }
   }, [ready, spaceId, seam, pendingTick, absorb, boundRows]);
+
+  /**
+   * KEEP `total` LIVE — the half of a list the event stream could not reach.
+   *
+   * `projectRows` keeps a list's ROWS current: `category` rides every
+   * `entity.upsert` (projector.ts mirrors `ENTITY_COLUMNS` for exactly this
+   * reason), so a session going `running -> exited` leaves the In Progress tab
+   * and joins Done without a read. `total` had no such path. It is written in
+   * ONE place — `absorb`, i.e. only when a page is FETCHED — and `countLabel`
+   * returns `String(page.total)` VERBATIM, ignoring the projected rows. So
+   * every tab number, the footer line and the kind-selector total were a
+   * snapshot of the moment the panel first loaded, frozen until a resync or a
+   * space switch.
+   *
+   * That is the reported defect: the session list's In Progress tab kept
+   * saying 2 while the rows under it emptied out. Boards (below) and the rail
+   * counters (above) were both given this re-arm; lists were left out, and the
+   * miss is invisible in any test that does not let a row CHANGE CATEGORY
+   * after the first page has landed.
+   *
+   * `limit: 1`, NOT a page refetch. `queryTotal` runs `count(*)` over the
+   * query's WHERE with the cursor clause and the limit both excluded, so a
+   * one-row request returns the identical number for one row's worth of
+   * assembly. It also cannot disturb paging: this writes `total` and NOTHING
+   * else, so a key the user has scrolled 200 rows into keeps all 200 ids and
+   * its `nextCursor`. Re-absorbing a fresh page 1 would have thrown them away.
+   *
+   * Debounced and trailing, exactly like its two siblings and for the same
+   * reason: a spawn or an agent's run of writes is a BURST, and one count per
+   * event per open list is a self-inflicted flood for numbers read at a glance.
+   */
+  useEffect(() => {
+    if (!spaceId) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = seam.onEvent(() => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        const generation = spaceGeneration.current;
+        // Only keys that actually HOLD a page. A key still in flight has no
+        // total to correct, and its own response is about to write a fresh one.
+        for (const [key, read] of rowReads.current) {
+          if (rowsRef.current[key] === undefined) continue;
+          void seam
+            .query({ ...queryFor(spaceId, read), limit: 1 } as CollectionQuery)
+            .then((result) => {
+              if (generation !== spaceGeneration.current) return;
+              const total = result.page.total;
+              if (total === undefined) return;
+              setRows((current) => {
+                const live = current[key];
+                // Identity is load-bearing: `projected` is memoised on `rows`,
+                // so writing an equal total would rebuild every list's row
+                // array on every event burst.
+                if (!live || live.total === total) return current;
+                return { ...current, [key]: { ...live, total } };
+              });
+            })
+            .catch(() => undefined);
+        }
+      }, COUNTS_DEBOUNCE_MS);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [seam, spaceId]);
 
   // -- Board reads (A2) -------------------------------------------------------
   //
