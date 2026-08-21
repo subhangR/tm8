@@ -57,13 +57,28 @@ describe('chat launch composition', () => {
 
   it('gives every mode the same native surface and prefers it over duplicate MCP tools', () => {
     for (const mode of MODES) {
-      // Every mode now sees the SAME built-ins, Bash included. Bash is visible
-      // but still never pre-approved in this slice — the runtime posture change
-      // (dontAsk → bypassPermissions) is a separate slice.
+      // Every mode sees the SAME built-ins, Bash included. THIS ARRAY IS THE
+      // ONLY REAL GATE, which is why it is pinned exactly rather than probed
+      // with `.toContain`: `--tools` decides which tools exist at all, and
+      // nothing downstream re-narrows it.
       expect([mode, chatProviderToolPolicy(mode).availableTools]).toEqual([mode, [
         'Read', 'Glob', 'Grep', 'Bash',
         'WebFetch', 'WebSearch', 'Edit', 'Write', 'TodoWrite', 'Skill',
       ]]);
+      // `allowedTools` IS NOT A PERMISSION BOUNDARY HERE, and the comment this
+      // replaces said it was. It read: "Bash is visible but still never
+      // pre-approved in this slice — the runtime posture change (dontAsk →
+      // bypassPermissions) is a separate slice." That slice already landed.
+      // `ClaudeHeadlessAdapter.ts` passes `--permission-mode bypassPermissions`
+      // unconditionally, and under that mode `--allowed-tools` is not consulted
+      // — the adapter says so itself four lines above the flag ("no interactive
+      // approvals, Bash unrestricted, workspace trusted").
+      //
+      // So the two assertions below pin the SHAPE OF THE LIST WE EMIT, not a
+      // restriction on what chat may run. Keeping them is still worth it — an
+      // unexpected entry means the composer changed — but read as a safety
+      // property they are a green light over a door with no lock, which is
+      // exactly how the old comment read them. Review finding F4 on #479.
       expect(chatAllowedTools(mode)).not.toContain('Bash');
       expect(chatAllowedTools(mode)).not.toContain('Write(/**)');
       // Claude's built-ins own repo and web; the duplicate MCP tools stay
