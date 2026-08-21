@@ -93,8 +93,18 @@ const READ_GUIDES = [
 ] as const satisfies readonly OperationGuide[];
 
 const ACT_GUIDES = [
-  guide('entities.create', 'Create a graph entity (including a task).', {
-    body: { spaceId: '<space-id>', kind: 'task', title: '<title>', content: {} },
+  /* `parentId` is advertised DELIBERATELY, and its absence was a real defect.
+     The field has always been accepted (`CreateEntityInput`), but a template
+     that never showed it is a field the model never sets — so every entity a
+     conversation created landed flat at the root, and every surface that draws
+     hierarchy from creates (the chat ledger's tree, its scope picker) had
+     nothing to draw. A capability the schema has and the guide hides does not
+     exist in practice.
+     Hierarchy is homogeneous — a parent and its direct children share one kind
+     and one Space — so the summary says so rather than letting a model discover
+     it by rejection. */
+  guide('entities.create', 'Create a graph entity (including a task). Pass parentId to nest it under an existing entity of the SAME kind — a parent and its direct children share one kind and one Space.', {
+    body: { spaceId: '<space-id>', kind: 'task', title: '<title>', parentId: '<optional-parent-id>', content: {} },
   }),
   guide('entities.patch', 'Patch an entity under an expected-version guard.', {
     params: { id: '<entity-id>' }, body: { expectedVersion: 1, title: '<title>' },
