@@ -352,8 +352,11 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         reply_count: number;
         created_at: string;
         last_reply_at: string | null;
+        project_id: string | null;
+        workdir_mode: 'project' | 'scratch';
       }>(
         `select ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model, ct.chat_mode,
+                ct.project_id, ct.workdir_mode,
                 left(root_msg.body, 240) as title,
                 count(reply.entity_id)::int as reply_count,
                 to_char(ct.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
@@ -362,7 +365,8 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
            join public.messages root_msg on root_msg.entity_id = ct.root_message_id
            left join public.messages reply on reply.root_message_id = ct.root_message_id
           where ct.space_id = $1
-          group by ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model, ct.chat_mode, ct.created_at, root_msg.body
+          group by ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model, ct.chat_mode,
+                   ct.project_id, ct.workdir_mode, ct.created_at, root_msg.body
           order by coalesce(max(reply.created_at), ct.created_at) desc, ct.root_message_id desc`,
         [spaceId],
       );
@@ -374,6 +378,12 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         mode: thread.chat_mode,
         createdAt: thread.created_at,
         lastReplyAt: thread.last_reply_at,
+        // The binding, so a list row can say WHERE the thread works. Only the
+        // id travels: the client already holds `projects.working_dir` for every
+        // project it can see, so it renders the name and directory from a row
+        // it was authorised to read rather than from a path we hand it.
+        projectId: thread.project_id,
+        workdirMode: thread.workdir_mode,
         // PR188 review F4: a list of rows all reading "Conversation" is not a
         // thread list. The root body is the only honest title a chat has.
         title: thread.title,

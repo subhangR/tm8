@@ -130,7 +130,7 @@ async function postWithMode(identityId: string, body: string, mode: string): Pro
 async function configure(identityId: string, authKind: 'browser' | 'agent', mutationId: string) {
   return asIdentity(identityId, authKind, async (client) => (
     await client.query<{ result: Record<string, unknown> }>(
-      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9) result`,
+      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) result`,
       [
         rootMessageId,
         fixture.teammateId,
@@ -141,6 +141,8 @@ async function configure(identityId: string, authKind: 'browser' | 'agent', muta
         randomUUID(),
         `/tmp/tm8-chat-${rootMessageId}`,
         mutationId,
+        null,
+        'scratch',
       ],
     )
   ).rows[0]!.result);
@@ -374,13 +376,21 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     const summary = home.chatThreads?.find((thread) => thread.rootMessageId === rootMessageId);
     expect(Object.keys(summary ?? {}).sort()).toEqual([
       // + title/replyCount: PR188 review F4 — the list needs a readable row.
-      'anchorId', 'createdAt', 'lastReplyAt', 'mode', 'model', 'replyCount', 'rootMessageId', 'teammateId', 'title',
+      // + projectId/workdirMode (166): the list needs to say WHERE each thread
+      //   works, and this exact-key assertion is what makes that an explicit
+      //   surface change rather than a field that appeared unannounced.
+      'anchorId', 'createdAt', 'lastReplyAt', 'mode', 'model', 'projectId', 'replyCount',
+      'rootMessageId', 'teammateId', 'title', 'workdirMode',
     ]);
     expect(summary).toMatchObject({
       anchorId: fixture.anchorId,
       teammateId: fixture.teammateId,
       model: 'gpt-5.6-sol',
       mode: 'explain',
+      // This fixture configures a scratch thread, so the binding is the honest
+      // "nowhere in particular" rather than a project it never named.
+      projectId: null,
+      workdirMode: 'scratch',
     });
   });
 

@@ -133,7 +133,7 @@ beforeAll(async () => {
   rootMessageId = await post(fixture.identityA, 'root prompt from A', null);
   await asIdentity(fixture.identityA, async (client) => (
     await client.query<{ result: Record<string, unknown> }>(
-      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9) result`,
+      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) result`,
       [
         rootMessageId,
         fixture.teammateId,
@@ -144,6 +144,8 @@ beforeAll(async () => {
         randomUUID(),
         `/tmp/tm8-chat-${rootMessageId}`,
         `chat-config-${randomUUID()}`,
+        null,
+        'scratch',
       ],
     )
   ).rows[0]!);

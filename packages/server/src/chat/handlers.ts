@@ -51,8 +51,15 @@ function startChatThread(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationH
     // binding commits. A replay may mint throwaway candidates, but the ledger
     // returns the original binding and never overwrites them.
     const nativeSessionId = randomUUID();
-    const cwd = pathResolve(chat.dataDir, 'chat-threads', input.rootMessageId);
-    await mkdir(cwd, { recursive: true, mode: 0o700 });
+    // Only a scratch thread gets a server-built directory, and only a scratch
+    // thread sends one. For `project` the RPC reads `projects.working_dir`
+    // itself and ignores anything passed here — creating a directory for that
+    // case would mkdir a path we are about to discard, and (worse) would make
+    // this handler look like the authority on a path it does not choose.
+    const scratchCwd = input.workdirMode === 'scratch'
+      ? pathResolve(chat.dataDir, 'chat-threads', input.rootMessageId)
+      : null;
+    if (scratchCwd) await mkdir(scratchCwd, { recursive: true, mode: 0o700 });
     const stored = await facade.db.rpc<StartRpcResult>(requestClaims, 'start_chat_thread', [
       input.rootMessageId,
       input.teammateId,
@@ -61,8 +68,10 @@ function startChatThread(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationH
       model.agentTool,
       input.mode,
       nativeSessionId,
-      cwd,
+      scratchCwd,
       input.clientMutationId,
+      input.projectId ?? null,
+      input.workdirMode,
     ]);
     const result: StartChatThreadResult = {
       // Explicitly strip the ledger-only request hash and every native runtime

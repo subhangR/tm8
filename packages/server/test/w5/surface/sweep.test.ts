@@ -807,7 +807,19 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 153 -> 154 (2026-08-20): 164_menu_help_tab_spine.sql — Help joins the
     // shipped menu, while legacy Board and Files leave its default payload.
     // Measured on this tree; never inferred from the migration prefix.
-    expect(server.appliedMigrations.length).toBe(154);
+    //
+    // 154 -> 156 (2026-08-21): TWO steps in one edit, and the reason matters
+    // more than the number. THIS PIN WAS ALREADY RED ON origin/main — a
+    // migration landed there without the bump, so main measured 155 against a
+    // pin of 154 before this branch existed. Measured, both before and after,
+    // exactly as the block above demands:
+    //   origin/main @ 69526832: ls db/migrations/*.sql | wc -l   -> 155  (pin said 154, RED)
+    //   this branch:            ls db/migrations/*.sql | wc -l   -> 156
+    // The +1 this branch owns is 166_chat_thread_project_binding.sql. The other
+    // +1 is a pre-existing red being paid off here rather than left for whoever
+    // next has to tell their own failure apart from it — which is the exact
+    // cost the comment above is written to prevent.
+    expect(server.appliedMigrations.length).toBe(156);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

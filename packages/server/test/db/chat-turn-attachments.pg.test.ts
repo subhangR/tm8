@@ -123,10 +123,11 @@ beforeAll(async () => {
   rootMessageId = await post('root prompt, no files', null, []);
   await asIdentity(fixture.identityA, async (client) => (
     await client.query<{ result: Record<string, unknown> }>(
-      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9) result`,
+      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) result`,
       [
         rootMessageId, fixture.teammateId, 'gpt-5.6-sol', 'openai', 'codex', 'ask',
         randomUUID(), `/tmp/tm8-chat-${rootMessageId}`, `chat-attach-config-${randomUUID()}`,
+        null, 'scratch',
       ],
     )
   ).rows[0]!);
