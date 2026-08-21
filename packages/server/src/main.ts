@@ -17,7 +17,7 @@ import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
-import { bootDesktopSidecar, desktopServerConfig, isDesktopProfile, report } from './desktop.js';
+import { bootDesktopSidecar, desktopNodeId, desktopServerConfig, isDesktopProfile, report } from './desktop.js';
 import { SidecarError } from './sidecar/errors.js';
 import type { SidecarManager } from './sidecar/manager.js';
 import {
@@ -240,7 +240,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * compounds. Hence `createExecutionRuntime` rather than a symmetrical
    * `registerExecutionHandlers` here.
    */
-  const execution = db ? createExecutionRuntime({ db, config, dataDir, owner }) : undefined;
+  const execution = db
+    ? createExecutionRuntime({
+        db,
+        config,
+        dataDir,
+        owner,
+        // The default is `<host>:<port>`, which the desktop app's ephemeral
+        // port would change on every launch — orphaning its own worktree
+        // allocations and its own ghost sessions. See `desktopNodeId`.
+        ...(isDesktopProfile() && dataDir ? { nodeId: desktopNodeId(dataDir) } : {}),
+      })
+    : undefined;
 
   if (db && config.launchBootstrap) {
     const seeded = await ensureLaunchResources({
@@ -900,7 +911,7 @@ export async function main(): Promise<void> {
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
     const { server, url, db, delivery, preview, scheduler, claimUrl } = await bootstrap({
       startBackgroundJobs: true,
-      ...(sidecar ? { config: desktopServerConfig() } : {}),
+      ...(sidecar ? { config: await desktopServerConfig() } : {}),
       // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
       // launch-config resolver. Without this line the chat ships dead — the
       // orchestrator only exists when a runtime is injected (see compose.ts).

@@ -20,6 +20,7 @@
  * dlopen/exec reason and is 125 Mach-O files' worth of the same mistake.
  */
 
+import { spawnSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -74,6 +75,45 @@ function main() {
     check(`${tool} is executable`, (statSync(p).mode & 0o111) !== 0);
   }
   check('include/ was dropped', !existsSync(join(resources, 'pg', PG_PIN.version, 'include')));
+
+  /**
+   * The agent CLI, which is the failure this whole script is really about.
+   *
+   * `cliBinDir()` resolves `../../../cli/dist` relative to
+   * `packages/execution/dist/spawn/` and RETURNS NULL rather than throwing when
+   * it misses — so a bundle without it spawns agents that can never
+   * `tm8 message send` and never `tm8 task link-pr`, with no error anywhere.
+   * That is the hardest failure in this system to notice and it reads as a
+   * model problem rather than a packaging one.
+   *
+   * Existence is not the assertion. `packages/cli/dist/tm8` is a SYMLINK to
+   * `index.js`, `cliBinDir()`'s repair path is `symlinkSync` (which cannot
+   * write into a read-only ASAR), and a dangling symlink passes every
+   * "does the file exist" check ever written. So: resolve it, then RUN it.
+   */
+  const cliDir = join(unpacked, 'packages', 'cli', 'dist');
+  check('packages/cli/dist is unpacked from the ASAR', existsSync(cliDir), cliDir);
+  check('cli entry is present', existsSync(join(cliDir, 'index.js')));
+
+  const tm8 = join(cliDir, 'tm8');
+  // `existsSync` follows symlinks, so this is already a dangling-link check.
+  check('the `tm8` bin resolves (not a dangling symlink)', existsSync(tm8));
+  if (existsSync(tm8)) {
+    const probe = spawnSync(process.execPath, [tm8, '--version'], {
+      encoding: 'utf8',
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      timeout: 30_000,
+    });
+    check(
+      'the packaged `tm8` actually EXECUTES',
+      probe.status === 0,
+      probe.status === 0 ? undefined : `exit ${probe.status}: ${(probe.stderr || '').trim().slice(0, 200)}`,
+    );
+  }
+
+  for (const pkg of ['contract', 'prompt', 'execution', 'mcp', 'server']) {
+    check(`packages/${pkg}/dist is packaged`, existsSync(join(unpacked, 'packages', pkg, 'dist')) || existsSync(join(resources, 'app.asar')));
+  }
 
   const server = join(resources, 'app.asar');
   check('server bundle is packaged', existsSync(server));
