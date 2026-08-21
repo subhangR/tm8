@@ -338,9 +338,16 @@ describe('Chat Home entity chip suppression', () => {
        ruling 2 counts only full summaries in RESULTS, and the own message id
        appeared only in the call's args. One foreign task read ⇒ 'Read 1
        task', and the own id surfaces nowhere. */
+    /* The sentence stays exact; S3b's aria-hidden expansion caret is
+       affordance chrome and is stripped before comparing. */
+    const sentenceOf = (line: HTMLElement): string => {
+      const clone = line.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
+      return clone.textContent ?? '';
+    };
     await waitFor(() =>
       expect(
-        view.getAllByTestId('chat-ledger-reads').some((line) => line.textContent === 'Read 1 task'),
+        view.getAllByTestId('chat-ledger-reads').some((line) => sentenceOf(line) === 'Read 1 task'),
       ).toBe(true),
     );
     expect(view.container.textContent).not.toContain('000000000011');
