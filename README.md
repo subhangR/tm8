@@ -2,7 +2,7 @@
 
 Unified entity-graph rebuild of Maestro. Phase 1 (v1: the node) — one from-contract build (graph engine + facade) + one transplant (execution), shipping a full local-maestro replacement that is natively a collab space.
 
-**Execution bible:** `docs/architecture/09-IMPLEMENTATION-PLAN.md`. Architecture is FINAL (`docs/architecture/00-08`) — implement, do not relitigate. Amendments in `STATE.md` (AM-1: **no Tauri — server + web only**; user-directed 2026-07-25).
+**Execution bible:** `docs/architecture/09-IMPLEMENTATION-PLAN.md`. Architecture is FINAL (`docs/architecture/00-08`) — implement, do not relitigate. Amendments in `STATE.md` (AM-1: **no Tauri**, user-directed 2026-07-25 — its "server + web only" half was reversed by **AM-7/T-D24**, 2026-08-21, which adds a macOS **Electron** app at `apps/desktop/` while keeping server-side PTY as the only spawn path and the UI as a pure browser bundle).
 
 **Documentation:** [`docs/README.md`](docs/README.md) is the map — ten sections, each with its own index. Paths changed on 2026-08-02; [`docs/MOVED-PATHS.md`](docs/MOVED-PATHS.md) translates the old ones.
 

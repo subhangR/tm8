@@ -3353,8 +3353,14 @@ export type LaunchCredentialSources = Partial<Record<LaunchCredentialProvider, L
  * SpawnService (R27) reads the graph through this contract, creates the
  * work_session entity + `working_on` edges + manifest in one transaction, and
  * emits the spawn request to the server-hosted PTY (AM-1: server PTY is the
- * ONLY spawn path — there is no desktop shell). Result: `CommandResult` whose
- * `entity` is the new work_session detail.
+ * ONLY spawn path). Result: `CommandResult` whose `entity` is the new
+ * work_session detail.
+ *
+ * AM-7/T-D24 (2026-08-21) added a desktop shell (Electron, `apps/desktop/`)
+ * and deliberately did NOT relax this rule: the shell forks the same server
+ * and owns no spawn surface of its own. "There is no desktop shell" used to
+ * be the reason this path was the only one; the rule now stands on its own,
+ * so do not read the shell's existence as licence for a second spawn path.
  *
  * Governance minimums (AM-2 §4):
  * - The server enforces a session concurrency cap (per node and per space);
