@@ -1027,6 +1027,8 @@ export const ChatThreadSummarySchema: z.ZodType<ChatThreadSummary> = z.object({
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
   createdAt: IsoTimestamp,
   lastReplyAt: IsoTimestamp.nullable(),
+  projectId: EntityIdSchema.nullable(),
+  workdirMode: z.enum(['project', 'scratch']),
   title: z.string().nullable().optional(),
   replyCount: z.number().int().nonnegative().optional(),
 }).strict();
@@ -1037,7 +1039,19 @@ export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.obj
   model: z.string().min(1),
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
   clientMutationId: z.string().min(1),
-}).strict();
+  projectId: EntityIdSchema.nullable().optional(),
+  workdirMode: z.enum(['project', 'scratch']),
+})
+  .strict()
+  // The pairing is refused HERE as well as in SQL, because a mismatch that only
+  // the database catches surfaces as a 500-shaped error with a Postgres message
+  // in it. Same rule, stated where the caller can read it.
+  .refine(
+    (input) => (input.workdirMode === 'project'
+      ? typeof input.projectId === 'string'
+      : input.projectId === undefined || input.projectId === null),
+    { message: 'projectId is required for workdirMode "project" and refused for "scratch"' },
+  ) as z.ZodType<StartChatThreadInput>;
 
 export const StartChatThreadResultSchema: z.ZodType<StartChatThreadResult> = z.object({
   thread: ChatThreadSummarySchema,

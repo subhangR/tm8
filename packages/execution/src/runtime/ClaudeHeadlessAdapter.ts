@@ -6,6 +6,7 @@ import { isAbsolute } from 'node:path';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type { Logger } from '../pty/types.js';
 import { redactSecretTokens } from '../spawn/secret-redaction.js';
+import { composeChatEnv } from './chat-env.js';
 import { AsyncTurnQueue } from './AsyncTurnQueue.js';
 import {
   AgentRuntimeError,
@@ -161,7 +162,13 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     };
 
     const args = this.buildArgs(config);
-    const childEnv: NodeJS.ProcessEnv = { ...this.env, ...config.env };
+    // ALLOW-LIST, never a wholesale copy. `{ ...this.env }` here handed the
+    // chat child the server's own environment, which on a deployed node
+    // carries `TM8_DATABASE_URL` — a SUPERUSER connection string, for which
+    // every RLS policy is advisory. That was inert only while chat had no way
+    // to read an environment variable; the full tool set is what makes it
+    // live. See chat-env.ts for the measurement and the argument.
+    const childEnv: NodeJS.ProcessEnv = { ...composeChatEnv(this.env), ...config.env };
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawnChild(this.command, args, {
@@ -396,9 +403,33 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       '--strict-mcp-config',
       // Chat is the human's orchestrating main thread and runs full-power,
       // full-trust Claude Code (ruled): no interactive approvals, Bash
-      // unrestricted, workspace trusted. The exfiltration surface this opens on
-      // the per-thread token file is covered by secret redaction of the tm8
-      // token shape, not by withholding the shell.
+      // unrestricted, workspace trusted.
+      //
+      // THIS COMMENT USED TO CLAIM the exfiltration surface on the per-thread
+      // token file was "covered by secret redaction of the tm8 token shape".
+      // That was FALSE AS WRITTEN and is removed rather than softened, because
+      // a false safety claim in the one place a future reader will look is
+      // worse than no claim. `redactSecretTokens` runs on exactly three paths
+      // in this file — provider error text, stderr, and spawn-failure detail —
+      // all of them ERROR paths. Assistant `text`, `thinking`, `tool_call.args`
+      // and `tool_result.content` are queued raw, and the output of
+      // `cat <thread>.mcp.json` is a tool_result.
+      //
+      // Nor would redaction be a control if it did run everywhere: it prevents
+      // accidental DISPLAY. With Bash and WebFetch both present under
+      // bypassPermissions, content injected through a repository file or a web
+      // page exfiltrates without the bytes crossing a channel redaction
+      // touches.
+      //
+      // What actually bounds this today: the child's environment is now an
+      // allow-list (chat-env.ts), so the node's own secrets are not in the
+      // process to begin with. What does NOT bound it: the `agent_runtime`
+      // token in that file is a general-purpose credential for the requesting
+      // human — the thread/Space/mode scope lives in the MCP client process,
+      // not in the server's authorization — so a stolen token is not confined
+      // by anything the server checks. Scoping it server-side off
+      // `runtimeThreadRootId` (already on the row, already resolved) is the fix
+      // and is deliberately NOT in this change.
       '--permission-mode',
       'bypassPermissions',
       ...(input.availableTools.length > 0

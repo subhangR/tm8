@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import type { ChatMode } from '@tm8/contract';
 import type { Db } from '../../src/db/types.js';
@@ -15,7 +13,6 @@ import {
 } from '../../src/chat/compose.js';
 import type { ChatLaunchConfigInput } from '../../src/chat/runtime.js';
 
-const execFileAsync = promisify(execFile);
 const ROOT = '019f0000-0000-7000-8000-000000000401';
 const SPACE = '019f0000-0000-7000-8000-000000000402';
 const TEAMMATE = '019f0000-0000-7000-8000-000000000403';
@@ -36,9 +33,14 @@ function launch(mode: ChatMode, rootMessageId = ROOT): ChatLaunchConfigInput {
   };
 }
 
-function fakeDb(workingDir?: string, trust = 'trusted'): Db {
+/**
+ * The resolver no longer queries anything; `query` remains only so a
+ * reintroduced project lookup has something to hit (and be caught by) rather
+ * than throwing an unrelated TypeError.
+ */
+function fakeDb(): Db {
   return {
-    query: async () => workingDir ? [{ id: 'project-1', working_dir: workingDir, trust }] : [],
+    query: async () => [],
     rpc: async () => ({
       id: 'runtime-session',
       expires_at: new Date(Date.now() + 60_000).toISOString(),
@@ -55,13 +57,28 @@ describe('chat launch composition', () => {
 
   it('gives every mode the same native surface and prefers it over duplicate MCP tools', () => {
     for (const mode of MODES) {
-      // Every mode now sees the SAME built-ins, Bash included. Bash is visible
-      // but still never pre-approved in this slice — the runtime posture change
-      // (dontAsk → bypassPermissions) is a separate slice.
+      // Every mode sees the SAME built-ins, Bash included. THIS ARRAY IS THE
+      // ONLY REAL GATE, which is why it is pinned exactly rather than probed
+      // with `.toContain`: `--tools` decides which tools exist at all, and
+      // nothing downstream re-narrows it.
       expect([mode, chatProviderToolPolicy(mode).availableTools]).toEqual([mode, [
         'Read', 'Glob', 'Grep', 'Bash',
         'WebFetch', 'WebSearch', 'Edit', 'Write', 'TodoWrite', 'Skill',
       ]]);
+      // `allowedTools` IS NOT A PERMISSION BOUNDARY HERE, and the comment this
+      // replaces said it was. It read: "Bash is visible but still never
+      // pre-approved in this slice — the runtime posture change (dontAsk →
+      // bypassPermissions) is a separate slice." That slice already landed.
+      // `ClaudeHeadlessAdapter.ts` passes `--permission-mode bypassPermissions`
+      // unconditionally, and under that mode `--allowed-tools` is not consulted
+      // — the adapter says so itself four lines above the flag ("no interactive
+      // approvals, Bash unrestricted, workspace trusted").
+      //
+      // So the two assertions below pin the SHAPE OF THE LIST WE EMIT, not a
+      // restriction on what chat may run. Keeping them is still worth it — an
+      // unexpected entry means the composer changed — but read as a safety
+      // property they are a green light over a door with no lock, which is
+      // exactly how the old comment read them. Review finding F4 on #479.
       expect(chatAllowedTools(mode)).not.toContain('Bash');
       expect(chatAllowedTools(mode)).not.toContain('Write(/**)');
       // Claude's built-ins own repo and web; the duplicate MCP tools stay
@@ -88,12 +105,26 @@ describe('chat launch composition', () => {
     }
   });
 
-  it('withholds only the repository half when no trusted project is linked', () => {
+  it('has no project-less tool surface left to fall into', () => {
+    // REPLACES 'withholds only the repository half when no trusted project is
+    // linked'. That test pinned a second, smaller tool set reached whenever the
+    // old inference failed — and on the production node the inference failed
+    // for EVERY thread ever started, so the four-tool surface it describes was
+    // not a fallback, it was the only surface chat ever had. The human now
+    // names the directory, so there is exactly one surface and no branch that
+    // can silently select a lesser one.
+    //
+    // `chatProviderToolPolicy` takes one argument now; the deleted second
+    // parameter is why this is a rewrite rather than a deletion. A test that
+    // merely stopped asserting the old behaviour would not notice a `hasProject`
+    // branch being reintroduced.
+    expect(chatProviderToolPolicy.length).toBe(1);
     for (const mode of MODES) {
-      expect([mode, chatProviderToolPolicy(mode, false).availableTools])
-        .toEqual([mode, ['WebFetch', 'WebSearch', 'TodoWrite', 'Skill']]);
-      expect(chatProviderToolPolicy(mode, false).allowedTools).not.toContain('Read(/**)');
-      expect(chatProviderToolPolicy(mode, false).allowedTools).not.toContain('Edit(/**)');
+      const policy = chatProviderToolPolicy(mode);
+      expect([mode, policy.availableTools.includes('Read')]).toEqual([mode, true]);
+      expect([mode, policy.availableTools.includes('Bash')]).toEqual([mode, true]);
+      expect([mode, policy.allowedTools.includes('Read(/**)')]).toEqual([mode, true]);
+      expect([mode, policy.allowedTools.includes('Edit(/**)')]).toEqual([mode, true]);
     }
   });
 
@@ -101,10 +132,17 @@ describe('chat launch composition', () => {
     // The launched prompt no longer depends on the thread's mode — a per-turn
     // [mode: X] line selects which guidance applies, which is what lets a mode
     // switch cost no relaunch.
-    const base = chatSystemPrompt(launch('ask'), true);
+    const base = chatSystemPrompt(launch('ask'));
     for (const mode of MODES) {
-      expect([mode, chatSystemPrompt(launch(mode), true)]).toEqual([mode, base]);
+      expect([mode, chatSystemPrompt(launch(mode))]).toEqual([mode, base]);
     }
+    // The prompt NAMES the directory now instead of describing how it was
+    // guessed. The old text ("does not have exactly one trusted linked
+    // project…") described an inference the human never made and could not see.
+    expect(base).toContain('/server/fallback');
+    expect(base).toContain('chosen by the human when this thread started');
+    expect(base).toContain('may or may not be a Git repository');
+    expect(base).not.toContain('project_unavailable');
     // The shared rules and the per-turn mode mechanism.
     expect(base).toContain('every mode carries the full tool surface');
     expect(base).toContain('[mode: <name>]');
@@ -129,105 +167,82 @@ describe('chat launch composition', () => {
     expect(chatModeLine('craft')).toBe('[mode: craft]');
   });
 
-  it('provisions one persistent isolated Git clone per thread without mutating or running hooks in the source', async () => {
-    const source = await mkdtemp(join(tmpdir(), 'tm8-chat-source-'));
+  it('works in the directory the thread was bound to, and provisions nothing', async () => {
+    // REPLACES four tests at once: the clone-provisioning test and the three
+    // "runs project-less when ..." tests. All four described the same vanished
+    // machinery - infer the Space's one trusted project, test it for a git
+    // root, clone it, and degrade quietly when any step failed. The human names
+    // the directory now, so there is nothing to infer, nothing to clone, and no
+    // degraded path to characterise.
     const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
-    const hookMarker = join(dataDir, 'source-hook-ran');
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: source });
-    await execFileAsync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: source });
-    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: source });
-    await writeFile(join(source, 'README.md'), 'source\n', 'utf8');
-    await execFileAsync('git', ['add', 'README.md'], { cwd: source });
-    await execFileAsync('git', ['commit', '-m', 'seed'], { cwd: source });
-    await execFileAsync('git', [
-      'remote', 'add', 'origin', 'https://token:secret@github.com/subhangR/tm8.git',
-    ], { cwd: source });
-    await writeFile(
-      join(source, '.git', 'hooks', 'post-checkout'),
-      `#!/bin/sh\nprintf unsafe > '${hookMarker}'\n`,
-      { encoding: 'utf8', mode: 0o755 },
-    );
-
-    const resolver = createChatLaunchConfigResolver({
-      db: fakeDb(source), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
-    });
-    const first = await resolver(launch('build'));
-    expect(first.cwd).toBe(join(dataDir, 'chat', 'checkouts', ROOT));
-    expect(first.cwd).not.toBe(source);
-    expect(await readFile(join(first.cwd!, 'README.md'), 'utf8')).toBe('source\n');
-    expect((await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: first.cwd })).stdout.trim())
-      .toBe('https://github.com/subhangR/tm8.git');
-    await expect(readFile(hookMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
-    await expect(execFileAsync('git', ['show-ref', '--verify', `refs/heads/tm8/chat/${ROOT}`], { cwd: source })).rejects.toBeDefined();
-    expect(JSON.parse(await readFile(first.mcpConfigPath, 'utf8'))).toMatchObject({
-      mcpServers: { tm8: { env: {
-        TM8_CHAT_MODE: 'build', TM8_CHAT_PROJECT_ROOT: first.cwd, TM8_CHAT_SPACE_ID: SPACE,
-        TM8_CHAT_HIDDEN_TOOLS: expect.stringContaining('repo_read_file'),
-      } } },
-    });
-    expect(first.availableTools).toContain('Edit');
-    expect(first.allowedTools).toContain('Edit(/**)');
-
-    const resumed = await resolver({ ...launch('build'), mode: 'resume-after-interrupt' });
-    expect(resumed.cwd).toBe(first.cwd);
-  });
-
-  it('never falls back to a process directory when project resolution is ambiguous', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
+    const bound = await mkdtemp(join(tmpdir(), 'tm8-chat-bound-'));
+    await writeFile(join(bound, 'README.md'), 'bound\n', 'utf8');
     const resolver = createChatLaunchConfigResolver({
       db: fakeDb(), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
     });
-    const resolved = await resolver(launch('ask'));
+    const resolved = await resolver({ ...launch('build'), cwd: bound });
+
+    // NO cwd OVERRIDE. The launch config deliberately returns none: the bound
+    // path already reached the orchestrator as `turn.cwd`, and returning one
+    // here is exactly how the clone used to redirect the runtime AWAY from the
+    // directory the thread was bound to. `launch.cwd ?? turn.cwd` therefore
+    // resolves to the binding.
     expect(resolved.cwd).toBeUndefined();
+
+    // The confinement root is the bound directory, ALWAYS. This used to be
+    // omitted whenever no clone existed, which is why every MCP repo tool on
+    // the production node answered `project_unavailable`.
     const config = JSON.parse(await readFile(resolved.mcpConfigPath, 'utf8')) as {
       mcpServers: { tm8: { env: Record<string, string> } };
     };
-    expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBeUndefined();
-    expect(resolved.systemPrompt).toContain('does not have exactly one trusted linked project');
-    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite', 'Skill']);
-    expect(resolved.allowedTools).not.toContain('Read(/**)');
+    expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBe(bound);
+
+    // Full surface in a plain, non-git directory - the case that produced four
+    // tools and no filesystem before.
+    expect(resolved.availableTools).toContain('Read');
+    expect(resolved.availableTools).toContain('Bash');
+    expect(resolved.allowedTools).toContain('Edit(/**)');
+    expect(resolved.systemPrompt).toContain(bound);
+
+    // Nothing was created beside the config: no clone, no branch, no checkout
+    // area. `<dataDir>/chat/checkouts` never existed on the production node and
+    // must not start existing now.
+    await expect(stat(join(dataDir, 'chat', 'checkouts'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(bound, '.git'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('runs project-less instead of failing the turn when the linked project is not a Git checkout', async () => {
-    // The prod shape this came from: a trusted project whose working_dir is a
-    // plain workspace directory holding several checkouts. `git rev-parse
-    // --show-toplevel` exits non-zero there, and that used to reject out of
-    // launch resolution and kill every turn in the Space with a raw
-    // "Command failed: git -C … rev-parse --show-toplevel".
-    const source = await mkdtemp(join(tmpdir(), 'tm8-chat-source-'));
-    await writeFile(join(source, 'README.md'), 'not a repo\n', 'utf8');
+  it('does not read the project tables at all when resolving a launch', async () => {
+    // The inference is gone, not merely bypassed. If a future change reaches
+    // for "the Space's project" again during launch resolution it will run a
+    // query here, and this fails - which is the only way to keep a deleted
+    // behaviour deleted.
     const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
+    const queries: string[] = [];
+    const db = {
+      ...fakeDb(),
+      query: async (_claims: unknown, sql: string) => { queries.push(sql); return []; },
+    } as unknown as Db;
     const resolver = createChatLaunchConfigResolver({
-      db: fakeDb(source), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
+      db, dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
     });
-    const resolved = await resolver(launch('build'));
-    expect(resolved.cwd).toBeUndefined();
-    const config = JSON.parse(await readFile(resolved.mcpConfigPath, 'utf8')) as {
+    await resolver(launch('ask'));
+    expect(queries).toEqual([]);
+  });
+
+  it('keeps the same bound directory across a post-interrupt resume', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
+    const bound = await mkdtemp(join(tmpdir(), 'tm8-chat-bound-'));
+    const resolver = createChatLaunchConfigResolver({
+      db: fakeDb(), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
+    });
+    const first = await resolver({ ...launch('build'), cwd: bound });
+    const resumed = await resolver({ ...launch('build'), cwd: bound, mode: 'resume-after-interrupt' });
+    // Both decline to override, so both resolve to the binding. The credential
+    // inside is re-minted on each start; the directory is not re-decided.
+    expect([first.cwd, resumed.cwd]).toEqual([undefined, undefined]);
+    const config = JSON.parse(await readFile(resumed.mcpConfigPath, 'utf8')) as {
       mcpServers: { tm8: { env: Record<string, string> } };
     };
-    expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBeUndefined();
-    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite', 'Skill']);
-    expect(resolved.systemPrompt).toContain('is a Git checkout');
-  });
-
-  it('runs project-less when the linked project working_dir does not exist', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
-    const resolver = createChatLaunchConfigResolver({
-      db: fakeDb(join(dataDir, 'gone')), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
-    });
-    const resolved = await resolver(launch('ask'));
-    expect(resolved.cwd).toBeUndefined();
-    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite', 'Skill']);
-  });
-
-  it('refuses repository provisioning for an untrusted linked project', async () => {
-    const source = await mkdtemp(join(tmpdir(), 'tm8-chat-source-'));
-    const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
-    const resolver = createChatLaunchConfigResolver({
-      db: fakeDb(source, 'untrusted'), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
-    });
-    const resolved = await resolver(launch('ask'));
-    expect(resolved.cwd).toBeUndefined();
-    expect(resolved.systemPrompt).toContain('trusted linked project');
+    expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBe(bound);
   });
 });

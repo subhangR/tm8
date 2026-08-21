@@ -956,6 +956,22 @@ export interface MessageDonePart extends MessagePartBase {
  *  a graph entity's row, never the real graph; style-only like every mode. */
 export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'craft';
 
+/**
+ * WHERE a chat thread works, named rather than inferred (2026-08-21).
+ *
+ * The same vocabulary `work_sessions.workdir_mode` has always used, minus
+ * `worktree`: that lane exists in the schema and has zero rows on any live
+ * node, so chat does not offer what nobody has exercised. Widening this union
+ * later costs one forward migration and one option in the composer.
+ *
+ *  * `project` — the linked project's `working_dir` AS IT STANDS, including
+ *    anything uncommitted. No clone, no branch, and no requirement that the
+ *    directory be a git repository at all.
+ *  * `scratch` — a server-owned empty per-thread directory. Chosen explicitly,
+ *    or defaulted to only when the Space links no project whatsoever.
+ */
+export type ChatWorkdirMode = 'project' | 'scratch';
+
 export interface ChatThreadSummary {
   rootMessageId: EntityId;
   anchorId: EntityId;
@@ -964,6 +980,9 @@ export interface ChatThreadSummary {
   mode: ChatMode;
   createdAt: string;
   lastReplyAt: string | null;
+  /** The project this thread works in; null exactly when `workdirMode` is `scratch`. */
+  projectId: EntityId | null;
+  workdirMode: ChatWorkdirMode;
   /**
    * Root message body excerpt (PR188 review F4): without it every list row
    * reads "Conversation" and threads are indistinguishable. Optional so the
@@ -980,6 +999,13 @@ export interface StartChatThreadInput {
   model: string;
   mode: ChatMode;
   clientMutationId: string;
+  /**
+   * Required when `workdirMode` is `project`, refused otherwise. The server
+   * resolves the actual path from `projects.working_dir` — a caller never names
+   * a directory for a project thread, so the id and the path cannot disagree.
+   */
+  projectId?: EntityId | null;
+  workdirMode: ChatWorkdirMode;
 }
 
 export interface StartChatThreadResult {

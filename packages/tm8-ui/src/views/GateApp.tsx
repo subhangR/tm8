@@ -1397,7 +1397,17 @@ export function GateApp(props: GateAppProps = {}) {
       rootMessageId: string; teammateId: string; model: string;
       mode: ChatMode; clientMutationId: string;
     }) => {
-      const result = await data.seam.commands.startChatThread(input);
+      const result = await data.seam.commands.startChatThread({
+        ...input,
+        // Held at today's behaviour ON PURPOSE. The picker and its default
+        // ladder (last-used project → the Space's most-recently-linked one →
+        // scratch only when the Space links nothing) are the follow-up UI
+        // change; sending anything else from here would pick a directory on
+        // the human's behalf through a control they cannot yet see or change.
+        // What this PR does give every thread, scratch included, is the full
+        // tool set in whatever directory it is bound to.
+        workdirMode: 'scratch',
+      });
       return {
         threadRootId: result.thread.rootMessageId,
         teammateId: result.thread.teammateId,

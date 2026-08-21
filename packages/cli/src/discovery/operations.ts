@@ -978,6 +978,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'post the human-authored root first with message send; this operation creates no message',
       'configuration is write-once and this call is the sole trigger for turn one',
+      'workdirMode picks where the thread works: `project` (requires projectId, and the server resolves the path from the project itself) or `scratch` (a server-owned empty directory). Like every other part of the configuration it is pinned for the thread\'s life',
       'v1 exposes this through the browser composer; exact-operation help remains available to CLI users',
     ],
   },

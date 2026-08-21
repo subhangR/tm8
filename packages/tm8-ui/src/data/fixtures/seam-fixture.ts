@@ -3569,6 +3569,11 @@ export function createFixtureSeam(): FixtureSeam {
             mode: input.mode,
             createdAt: new Date().toISOString(),
             lastReplyAt: null,
+            // Echoed rather than invented: the real RPC refuses a projectId
+            // that does not pair with the mode, so a fixture that normalised
+            // the pair here would be the one place the rule does not hold.
+            projectId: input.projectId ?? null,
+            workdirMode: input.workdirMode,
           },
         };
       },
