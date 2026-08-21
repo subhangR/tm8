@@ -49,7 +49,14 @@ import {
   workflowTypeOf,
   workflowVocabularyOf,
 } from '../domain';
-import { Avatar, Timestamp, ancestorPath, useTreeDisclosure, type PillTone } from '../kit';
+import {
+  Avatar,
+  Timestamp,
+  ancestorPath,
+  usePanelChoice,
+  useTreeDisclosure,
+  type PillTone,
+} from '../kit';
 import {
   CheckingPermission,
   DisabledAction,
@@ -494,30 +501,37 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const list = config.list;
 
   /**
-   * The open category tab, RESOLVED PER KIND rather than remembered across a
-   * kind change.
+   * The open category tab, REMEMBERED PER KIND (user ruling, task 01a02470:
+   * "when i switch back from entity to entity, it always falls back to TO DO
+   * status filter which is annoying… remembering entity level view selection").
    *
-   * THE BUG THIS FIXES (sub-doc 6, "known bug to fix while in here"): the id
-   * was seeded once from the mounting kind's first tab and `onKindChange`
-   * swapped `props.kind` UNDER IT. The old tab ids overlapped between kinds —
-   * every kind had `open`, `done`, `archived` — so the stale id kept resolving
-   * to *a* tab and the panel degraded silently instead of breaking loudly.
-   * Under the closed four every kind's ids overlap ALWAYS, so the resolution
-   * can never fail and the silence would be permanent.
+   * PER KIND, NOT PER SURFACE AND NOT GLOBAL. Home's column A, the workspace
+   * list and an entity screen's list are three places to look at one kind's
+   * rows, and the tab is a statement about the rows — the same scoping
+   * `useTreeDisclosure` uses one screen down (`list:${kind}`), for the same
+   * reason. Global would be worse than the reset it replaces: picking Done on
+   * Sessions would land you in Done on Tasks, which is not what was asked.
    *
-   * Held as a nullable OVERRIDE that the kind resets, not as the value itself:
-   * `null` means "whatever this kind opens on", which is the first tab. A
-   * `useEffect` reset would paint the wrong tab for one frame first.
+   * WHAT THIS MUST NOT UNDO (sub-doc 6, "known bug to fix while in here"): the
+   * id used to be seeded once from the MOUNTING kind's first tab while
+   * `onKindChange` swapped `props.kind` under it, so Tasks' tab silently became
+   * Docs' tab. That is a bug about the id being resolved against the WRONG
+   * kind's vocabulary, not about remembering, and the per-kind storage key plus
+   * `usePanelChoice`'s required `valid` predicate keep it fixed: what comes
+   * back is always one of THIS kind's tabs or this kind's default. The hook is
+   * key-aware for the same reason `usePanelWidth` is — a kind switch on a
+   * mounted panel re-reads during render, so no wrong tab is ever painted.
    */
-  const [categoryTabOverride, setCategoryTabOverride] = useState<string | null>(null);
-  const [tabbedKind, setTabbedKind] = useState<string>(props.kind);
-  if (tabbedKind !== props.kind) {
-    setTabbedKind(props.kind);
-    setCategoryTabOverride(null);
-  }
-  const categoryTabId =
-    (tabbedKind === props.kind ? categoryTabOverride : null) ?? list.categories?.[0]?.id ?? null;
-  const setCategoryTabId = setCategoryTabOverride;
+  const defaultTabId = list.categories?.[0]?.id ?? '';
+  const isCategoryTab = useCallback(
+    (candidate: string) => (list.categories ?? []).some((tab) => tab.id === candidate),
+    [list.categories],
+  );
+  const [categoryTabId, setCategoryTabId] = usePanelChoice(
+    `list-category.${config.kind}`,
+    defaultTabId,
+    isCategoryTab,
+  );
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set((list.sections ?? []).filter((s) => s.collapsedByDefault).map((s) => s.id)),
   );

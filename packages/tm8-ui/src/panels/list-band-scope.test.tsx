@@ -33,7 +33,7 @@
  * band gets every row and the composition is unobservable. The helper HERE
  * honours the filter, which is the only reason any of this is measurable.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import type { EntitySummary, QueryFilter, StatusCategory } from '@tm8/contract';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
@@ -113,6 +113,17 @@ function titles(container: HTMLElement): string[] {
 }
 
 describe('the category tab and the archive chip compose, never contradict', () => {
+  /**
+   * THE OPEN TAB IS NOW REMEMBERED PER KIND (task 01a02470), which makes it
+   * viewer state that OUTLIVES A MOUNT — so a test that clicks a tab seeds the
+   * next test's panel unless the slot is cleared. `test-setup.ts` installs
+   * storage per FILE and deliberately does not clear between tests (files that
+   * seed at module scope own their slot); this file seeds nothing at module
+   * scope, so clearing here is free and it is what keeps each `it` reading the
+   * kind's own default the way it says it does.
+   */
+  beforeEach(() => localStorage.clear());
+
   it('the task registry really does declare the four tabs and the archive chip', () => {
     // If either is dropped the composition below stops meaning anything, so
     // the premise is asserted rather than assumed.
@@ -193,20 +204,27 @@ describe('the category tab and the archive chip compose, never contradict', () =
     expect(titles(container)).toEqual(['Open one', 'Archived and open']);
   });
 
-  it('THE OPEN TAB RESETS WHEN THE KIND CHANGES — the bug sub-doc 6 named', () => {
+  it('THE OPEN TAB IS PER KIND — remembered on its own, never bled onto another', () => {
     /**
-     * `tierId` was seeded ONCE from the mounting kind's first tab and
-     * `onKindChange` swapped the kind under it. The old ids overlapped between
-     * kinds — every kind had `open`, `done`, `archived` — so a stale id kept
-     * resolving to *a* tab and the panel degraded quietly instead of breaking
-     * loudly. Under the closed four the ids overlap ALWAYS, so the resolution
-     * can never fail and the silence would have been permanent: switch from
-     * Tasks-on-Cancelled to Docs and you land on Docs' Cancelled tab, having
-     * asked for neither.
+     * TWO RULES IN ONE TEST, because they are the same rule read from both
+     * sides, and holding one without the other is how this control has failed
+     * before.
      *
-     * `to_do` is the first tab, so "reset" and "the kind's own default" are
-     * the same assertion — which is the point. The panel holds an OVERRIDE,
-     * not a value, so there is no frame in which the wrong tab is painted.
+     * THE BUG SUB-DOC 6 NAMED (still guarded, middle assertion): `tierId` was
+     * seeded ONCE from the mounting kind's first tab while `onKindChange`
+     * swapped the kind under it. The old ids overlapped between kinds — every
+     * kind had `open`, `done`, `archived` — so a stale id kept resolving to *a*
+     * tab and the panel degraded quietly. Under the closed four the ids overlap
+     * ALWAYS, so the silence would be permanent: Tasks-on-Cancelled → Docs
+     * would land on Docs' Cancelled tab, asked for by nobody.
+     *
+     * THE USER RULING (task 01a02470, last assertion): the fix for that was to
+     * clear the selection on every kind change, and clearing is what Subhang
+     * reported as the annoyance — "when i switch back from entity to entity, it
+     * always falls back to TO DO status filter". Switching BACK is a return to
+     * something you were already looking at, not the arrival the reset was
+     * written for. Remembering PER KIND satisfies both: Docs never inherits
+     * Tasks' tab, and Tasks still knows where you left it.
      */
     const view = render(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
     const openTab = () =>
@@ -221,12 +239,48 @@ describe('the category tab and the archive chip compose, never contradict', () =
 
     // The host answers `onKindChange` by re-rendering with a different kind.
     view.rerender(<EntityListPanel kind="doc" rowsFor={rowsFor} ctx={ctx} />);
-    expect(openTab(), 'a new kind opens on its own first tab').toBe('To Do');
+    expect(openTab(), 'a kind never inherits another kind’s tab').toBe('To Do');
 
-    // …and switching BACK does not resurrect the old selection either: the
-    // override is cleared, not stashed per kind.
+    // …and coming back lands where this kind was left, not on its default.
     view.rerender(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
-    expect(openTab()).toBe('To Do');
+    expect(openTab(), 'switching back restores the kind’s own selection').toBe('Cancelled');
+  });
+
+  it('THE REMEMBERED TAB SURVIVES A REMOUNT — Home unmounts the list on every Chats hop', () => {
+    /**
+     * The reported gesture is not only a kind swap. Home's column A drops the
+     * panel ENTIRELY while the Chats root is up (`ChatHomeScreen`'s
+     * `hostedList` goes null), so returning to Tasks mounts a fresh component —
+     * and a memory held in React state alone would be gone with the old one.
+     * Storage-backed is what makes this survive; this is the assertion that
+     * says so, and the reason the fix is not a `useRef`.
+     */
+    const first = render(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
+    tab(first.getByRole, 'In Progress');
+    first.unmount();
+
+    const second = render(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
+    expect(titles(second.container)).toEqual(['Open two']);
+  });
+
+  it('A TAB ID THIS BUILD NO LONGER OFFERS reads as nothing remembered', () => {
+    /**
+     * The stored string is written by whichever build wrote it, and tab ids
+     * have already been renamed once (`open`/`done`/`archived` → the closed
+     * four). A retired id must fall to the kind's default rather than come back
+     * as a selection no tab can show — the panel would draw a tab row with
+     * nothing selected and a body filtered by a category the server does not
+     * know.
+     */
+    localStorage.setItem('tm8ui.panel-choice.list-category.task', 'archived');
+    const view = list();
+    expect(
+      view
+        .getAllByRole('tab')
+        .find((t) => t.getAttribute('aria-selected') === 'true')
+        ?.textContent?.replace(/\s*\d+\+?$/, ''),
+    ).toBe('To Do');
+    expect(titles(view.container)).toEqual(['Open one']);
   });
 
   it('an archived task is REACHABLE — the way back is not a dead end', () => {

@@ -1,4 +1,5 @@
 export { HelpScreen, type HelpScreenProps } from './HelpScreen';
+export { HelpHome, type HelpHomeProps } from './HelpHome';
 export { HelpPlate, type HelpPlateProps } from './HelpPlate';
 export { heightFromMessage, withPlateReporter } from './plate-frame';
 export {

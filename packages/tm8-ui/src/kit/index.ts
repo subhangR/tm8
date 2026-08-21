@@ -45,6 +45,7 @@ export {
   RESIZE_STEP,
   usePanelWidth,
   usePanelFlag,
+  usePanelChoice,
   useElementWidth,
   type PanelResizerProps,
   type PanelWidth,
