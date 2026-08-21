@@ -1966,6 +1966,18 @@ export function createFixtureSeam(): FixtureSeam {
         if (input.kinds && !input.kinds.includes(s.kind)) return false;
         if (input.parentId !== undefined && s.parentId !== input.parentId) return false;
         if (subtree && !subtree.has(s.id)) return false;
+        /* A CREDENTIAL LOGIN TERMINAL IS NOT WORK (082, Ruling 16), and the
+           query is where that rule lives — `collections.ts` pushes
+           `ws.session_kind is distinct from 'credential'` into the same WHERE
+           its `count(*)` runs over.
+
+           This fixture used to seed `ws-credential-login` as `running` and
+           COUNT it, while `projectRows` refused to render it. Every test that
+           read a session band therefore saw `total: 3` over two rows and
+           nobody noticed, because no assertion compared the two. That is the
+           production defect in miniature: the live node's session list read
+           "To Do 1" over an empty tab. */
+        if ((s.state as { sessionKind?: unknown }).sessionKind === 'credential') return false;
         const f = input.filters;
         /* Empty lists are NO constraint — the server guards every arm with
            `length > 0` (collections.ts), so `priority: []` must not read as

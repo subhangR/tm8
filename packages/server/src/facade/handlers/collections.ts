@@ -320,6 +320,29 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     where.push(`ws.status = any(${p.add(f.sessionStatus)}::text[])`);
   }
 
+  // A CREDENTIAL LOGIN TERMINAL IS NOT WORK (082, architect Ruling 16) and the
+  // rule belongs HERE, not only in the client.
+  //
+  // `projectRows` (tm8-ui/src/data/project/domain-store.ts) has dropped
+  // `sessionKind === 'credential'` from every list for as long as the rule has
+  // existed, but this query never knew about it — so `page.items` and
+  // `page.total` counted rows the list then refused to render, and the two
+  // could not agree by construction. Measured on the launch node: the session
+  // list's To Do tab read `1` and rendered ZERO rows (the row was an eight-day
+  // old `spawning` credential terminal) while Done was inflated by eight more.
+  //
+  // It also contains a residual `credential-sessions.ts` states outright:
+  // nothing writes a credential session's status after its process dies —
+  // `reconcileNodeGhosts` cannot reap one, because 083 leaves `node_id` NULL by
+  // construction precisely so it cannot. That file's own instruction is that a
+  // READ MODEL must never derive from a credential work session's status. A
+  // count is a read model; this is that instruction applied.
+  //
+  // `is distinct from` and NOT `<> 'credential'`: `ws.session_kind` is NULL on
+  // every row that is not a work_session at all, and a plain `<>` would drop
+  // the entire graph.
+  where.push(`ws.session_kind is distinct from 'credential'`);
+
   if (f.axes) {
     for (const [axis, values] of Object.entries(f.axes)) {
       if (!values || values.length === 0) continue;
