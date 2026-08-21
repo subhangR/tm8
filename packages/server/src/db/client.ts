@@ -262,6 +262,36 @@ export class PgDb implements Db {
 
   async tx<T>(claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
+    // THE POOL GUARD IN THE CONSTRUCTOR DOES NOT COVER THIS CLIENT.
+    //
+    // `pool.on('error')` is only consulted for clients sitting IDLE in the pool.
+    // A client that has been checked out emits on itself, and pg says so in the
+    // shape of the report: "Emitted 'error' event on Client instance ... at
+    // Client._handleErrorEvent". Nothing listens there, and an unhandled
+    // 'error' on an EventEmitter is rethrown out of the socket callback — not
+    // into the `await` below, where the catch is, but at the top of the stack,
+    // which exits the process.
+    //
+    // This is not hypothetical and it is not rare: `idleInTransactionTimeoutMillis`
+    // above ARMS Postgres to terminate exactly this client, by design, whenever a
+    // transaction stalls for 30s. So the one failure the pool deliberately
+    // provokes is the one failure nothing catches. Measured on a live node:
+    // three process deaths (2026-08-17, 08-18, 08-21), each `SQLSTATE 25P03`
+    // reaching `throw er`, each taking every running agent session down with it
+    // — nine `claude` processes on one of them — while `Restart=on-failure`
+    // brought the node back so cleanly that the loss left no trace in the
+    // service record.
+    //
+    // A stalled transaction is recoverable: the query rejects, `catch` rolls
+    // back, `release()` evicts the poisoned client and the next caller gets a
+    // fresh one. Every part of that already works. It is only reachable if the
+    // process is still alive to run it.
+    const absorbClientError = (err: Error): void => {
+      console.error(
+        `[db] checked-out client error (request ${claims.requestId ?? 'unknown'}): ${err.message}`,
+      );
+    };
+    client.on('error', absorbClientError);
     // Captured BEFORE any await so the trace names the caller, not the pool
     // internals. When Postgres kills a wedged transaction (see
     // `idleInTransactionTimeoutMillis`) the error surfaces wherever the NEXT
@@ -305,6 +335,13 @@ export class PgDb implements Db {
       throw translateDbError(err);
     } finally {
       clearTimeout(watchdog);
+      // BEFORE `release()`, and always. A pooled client is reused, so a listener
+      // left attached would accumulate one per checkout on every long-lived
+      // connection until Node warns about a leak and the log gains a duplicate
+      // line per past transaction. Removing it also hands the client back in the
+      // state the pool expects: unlistened, and covered again by the pool guard
+      // for as long as it is idle.
+      client.off('error', absorbClientError);
       client.release();
     }
   }
