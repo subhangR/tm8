@@ -443,6 +443,22 @@ export function foldChatLedger(turns: readonly ChatTurn[]): ChatLedger {
 }
 
 /**
+ * The kind vocabulary, humanised and pluralised for a rendered sentence. Core
+ * kinds get their English; a custom `c:*` kind sheds its prefix rather than
+ * shipping `Read 3 c:invoices` (design §4.1). ONE copy — the transcript lines
+ * and the ledger tree both speak through it.
+ */
+export function kindWord(kind: string, count: number): string {
+  const base = kind.startsWith('c:') ? kind.slice(2) : kind;
+  const word =
+    base === 'work_session' ? 'session' : base === 'entity' ? 'entity' : base.replace(/_/g, ' ');
+  if (count === 1) return word;
+  if (word.endsWith('y')) return `${word.slice(0, -1)}ies`;
+  if (word.endsWith('s')) return word;
+  return `${word}s`;
+}
+
+/**
  * The counted read sentence's DATA — "3 tasks, 4 docs, 5 memories" as ordered
  * pairs, largest bucket first, `entity` last however big it is (an unknown-kind
  * bucket leading the sentence reads as the headline, which it never is).

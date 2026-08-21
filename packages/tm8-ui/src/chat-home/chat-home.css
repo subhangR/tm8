@@ -1912,3 +1912,100 @@ button.tch-entity-chip:hover {
    rows kept their properties in the move: real `min-block-size` padding, never
    a pseudo-element hit area (CONTRACT.md §7 — the audit measures the ELEMENT).
    See `mobile/mobile-drawer.css`. */
+
+/* --- THE LEDGER TREE (SW, task 01a023fa-f35b) ----------------------------- */
+
+/* One component for the ledger's two tree surfaces — the sticky panel's body
+   and the transcript's expanded read line (ruling 7 as amended). Same visual
+   family as the fleet rows and the entity chips: kind mark + title + status
+   pill, mono, quiet. The graph stage shares the MODEL, not these rules. */
+.tch-ledger-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  min-width: 0;
+}
+
+/* Kind chips: a VIEW filter, not a host verb — drawn only when there is more
+   than one kind to discriminate, and counts never renumber under their own
+   toggling. */
+.tch-ledger-tree__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+}
+
+.tch-ledger-tree__kind {
+  padding: 1px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-tick) var(--pn-mono);
+  cursor: pointer;
+}
+
+.tch-ledger-tree__kind:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.tch-ledger-tree__kind:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.tch-ledger-tree__kind[aria-pressed='true'] {
+  border-color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink-1);
+}
+
+.tch-ledger-tree__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+/* The indent IS the parentId — one step per nesting level, drawn as a left
+   rule so a deep chain reads as a chain and not as a ragged margin. */
+.tch-ledger-tree__list--nested {
+  margin-left: var(--pn-space-2);
+  padding-left: var(--pn-space-2);
+  border-left: 1px solid var(--pn-line-2);
+}
+
+.tch-ledger-tree__branch { display: flex; flex-direction: column; min-width: 0; }
+
+.tch-ledger-tree__row {
+  display: inline-flex;
+  gap: var(--pn-space-1);
+  align-items: center;
+  min-width: 0;
+  padding: 2px var(--pn-space-1);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-2);
+  font: var(--pn-fs-fine) var(--pn-mono);
+  text-align: left;
+}
+
+/* A row is a button only where the press can land (the tray's honesty rule);
+   only the button form takes hover affordances. */
+button.tch-ledger-tree__row { cursor: pointer; }
+button.tch-ledger-tree__row:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
+button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.tch-ledger-tree__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--pn-brand-2);
+}
+
+.tch-ledger-tree__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A title still standing in for a name we do not have reads quieter — the
+   same treatment the chips give an unresolved id. */
+.tch-ledger-tree__title[data-placeholder] { color: var(--pn-ink-3); }
