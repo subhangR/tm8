@@ -83,8 +83,13 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
 
     const lines = view.getAllByTestId('chat-ledger-reads');
     expect(lines).toHaveLength(1);
+    /* The SENTENCE stays exact. The line carries one aria-hidden glyph beside
+       it (S3b's expansion caret) — affordance chrome, not part of the count,
+       so it is stripped before the sentence is compared. */
+    const line = lines[0]!.cloneNode(true) as HTMLElement;
+    line.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
     // Ties order alphabetically (readCountPairs: count desc, then kind).
-    expect(lines[0]!.textContent).toBe('Read 1 doc, 1 task');
+    expect(line.textContent).toBe('Read 1 doc, 1 task');
     expect(view.queryByTestId('chat-touched-entities')).toBeNull();
   });
 

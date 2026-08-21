@@ -512,6 +512,28 @@
   font: var(--pn-fs-fine) var(--pn-mono);
 }
 
+/* The read line is a BUTTON (S3b): the expansion is its press destination.
+   Same sentence anatomy as its siblings above — the reset strips the button
+   chrome so the three line types keep reading as one family. */
+button.tch-ledger__reads {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+button.tch-ledger__reads:hover { color: var(--pn-ink-2); }
+
+.tch-ledger__caret { color: var(--pn-ink-4); }
+
+/* The expanded tree, inline under its line — indented into the sentence's
+   flow, never a card (the box stays gone). */
+.tch-ledger__readtree {
+  margin: 2px 0 4px;
+  padding-left: var(--pn-space-4);
+}
+
 .tch-ledger__entity {
   max-width: 260px;
   overflow: hidden;
@@ -974,6 +996,11 @@ button.tch-entity-chip:hover {
   border-radius: 50%;
   background: var(--pn-wait);
   animation: tch-dot-pulse 1.1s ease-in-out infinite;
+}
+/* The pip both fades AND travels, so reduced motion cannot keep a slower
+   version of it — the dot holds still and its colour is the whole signal. */
+@media (prefers-reduced-motion: reduce) {
+  .tch-thread__live { animation: none; opacity: 1; }
 }
 
 @media (max-width: 760px) {

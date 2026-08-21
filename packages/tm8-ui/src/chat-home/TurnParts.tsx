@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { Markdown } from '../kit';
 import { type ChatEntityResolver } from './EntityChip';
 import { truncateEntityId } from './entity-refs';
 import { ExplanationToolCard } from './ExplanationToolCard';
+import { LedgerTree } from './ledger-tree';
 import { durableOutputToolName, explanationToolName } from './explanation-tools';
 import {
   buildChatLedger,
@@ -158,7 +159,15 @@ export function TurnParts({
           if (!create && !transition && !readsHere) return null;
           return (
             <div className="tch-ledger" key={part.seq}>
-              {readsHere ? <ReadLine pairs={readPairs} /> : null}
+              {readsHere && turnLedger ? (
+                <ReadLine
+                  pairs={readPairs}
+                  ledger={threadLedger}
+                  turnMessageId={turnLedger.messageId}
+                  onOpenEntity={onOpenEntity}
+                  resolveEntity={resolveEntity}
+                />
+              ) : null}
               {create ? (
                 <CreateLine
                   create={create}
@@ -192,18 +201,60 @@ export function TurnParts({
 
 /**
  * `Read 3 tasks, 4 docs, 5 memories` — the whole surviving trace of every
- * plain read in the turn. A SPAN for now, by the honesty rule: a button that
- * does nothing on press is a dead control, and the expansion that will give
- * the press somewhere to land is the next slice's work.
+ * plain read in the turn, and the door to it: activating the line expands,
+ * in place, the shared `LedgerTree` filtered to THIS turn's reads (design
+ * ruling 7 — same component as the sticky panel, different filter).
+ *
+ * A BUTTON now, where S3 shipped a span, by the same honesty rule read
+ * forwards: the expansion is the press's destination, and it exists on every
+ * host — including one that cannot open entities, where the tree's rows fall
+ * to spans and the view stays view-only. Collapse state lives HERE, one line
+ * one toggle, so no turn's expansion can leak into another's. Not a
+ * `<details>`: that shape is banned with the payload dumps it used to carry
+ * (no-tool-boxes.test.tsx), and the ban stays honest by never being resembled.
  */
-function ReadLine({ pairs }: { pairs: readonly { kind: string; count: number }[] }) {
+function ReadLine({
+  pairs,
+  ledger,
+  turnMessageId,
+  onOpenEntity,
+  resolveEntity,
+}: {
+  pairs: readonly { kind: string; count: number }[];
+  ledger: ChatLedger;
+  turnMessageId: string;
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+  resolveEntity?: ChatEntityResolver | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const regionId = useId();
   const sentence = pairs
     .map(({ kind, count }) => `${count} ${kindWord(kind, count)}`)
     .join(', ');
   return (
-    <span className="tch-ledger__reads" data-testid="chat-ledger-reads">
-      Read {sentence}
-    </span>
+    <>
+      <button
+        type="button"
+        className="tch-ledger__reads"
+        data-testid="chat-ledger-reads"
+        aria-expanded={open}
+        aria-controls={open ? regionId : undefined}
+        onClick={() => setOpen((v) => !v)}
+      >
+        Read {sentence}
+        <span className="tch-ledger__caret" aria-hidden>{open ? '▴' : '▾'}</span>
+      </button>
+      {open ? (
+        <div id={regionId} className="tch-ledger__readtree" data-testid="chat-ledger-readtree">
+          <LedgerTree
+            model={ledger}
+            filter={{ readsOnly: true, turnMessageId }}
+            onOpenEntity={onOpenEntity}
+            resolveEntity={resolveEntity}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

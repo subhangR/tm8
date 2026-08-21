@@ -121,7 +121,10 @@ describe('Chat Home', () => {
 
     // The tool call itself draws nothing; only its ledger line, and the usage.
     await waitFor(() => expect(view.getAllByTestId('chat-ledger-reads')).toHaveLength(1));
-    expect(view.getByTestId('chat-ledger-reads').textContent).toBe('Read 1 task');
+    /* Exact sentence, minus the line's aria-hidden expansion caret (S3b). */
+    const readLine = view.getByTestId('chat-ledger-reads').cloneNode(true) as HTMLElement;
+    readLine.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
+    expect(readLine.textContent).toBe('Read 1 task');
     expect(view.queryByTestId('chat-tool-card')).toBeNull();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
     // A configured thread still SAYS what it runs as; it just cannot be edited.
