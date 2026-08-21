@@ -497,6 +497,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           skillOptions={data.skillOptions}
           onResumeSession={() => handleSessionResume(id)}
           resumingSession={resumingId === id}
+          /* The stale card's "mark exited" chip, wired to the SAME executor as
+             the session tile's ✕ — `usePanelPrimaries.terminate` exists so the
+             two controls cannot drift into meaning different things. Until now
+             the chip called nothing at all, which mattered most in exactly the
+             case it is drawn for: after a node restart, when every killed
+             session claims to be running and only an operator at a shell could
+             clear them. */
+          onMarkSessionExited={() => handleSessionTerminate(id)}
           /* GAP-2 (data-wiring handover): hand the seam commands down so the
              save path is live in the workspace panels too. */
           commands={data.seam.commands}

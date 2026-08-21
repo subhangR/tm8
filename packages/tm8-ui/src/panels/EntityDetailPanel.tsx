@@ -287,6 +287,13 @@ export interface EntityDetailPanelProps {
   onResumeSession?: () => void;
   /** True while that resume is in flight. */
   resumingSession?: boolean;
+  /**
+   * Record a STALE session as exited — the record says running, liveness says
+   * no PTY. Absent ⇒ the stale card renders its chip DISABLED with a reason,
+   * on the same L6 grounds as `onResumeSession`: a hidden chip would claim the
+   * session cannot be cleared rather than that this surface cannot clear it.
+   */
+  onMarkSessionExited?: () => void;
   streaming?: boolean;
   needsAttention?: boolean;
   attentionDetail?: string;
@@ -1372,6 +1379,9 @@ function PanelBody(
               : {})}
             {...(props.onResumeSession ? { onResume: props.onResumeSession } : {})}
             {...(props.resumingSession ? { resuming: props.resumingSession } : {})}
+            {...(props.onMarkSessionExited
+              ? { onMarkExited: props.onMarkSessionExited }
+              : {})}
           />
         }
         transcript={props.conversationSurface ?? (
