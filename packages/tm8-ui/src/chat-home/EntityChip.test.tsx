@@ -90,18 +90,16 @@ describe('EntityChip', () => {
     expect(onOpenEntity).toHaveBeenCalledWith(BARE_ID);
   });
 
-  it('renders chips from the fixture thread inside ChatHomeScreen', async () => {
+  it('renders NO chips anywhere for the fixture thread — the chip era is over', async () => {
+    /* S3 replaced the transcript's chip row with the ledger's counted line;
+       S4 replaced the tray's chip strip with the ledger panel. The chip
+       survives only where a payload IS content (ExplanationToolCard's
+       durable-entity row), which the fixture thread does not exercise. */
     const { port } = createChatHomeFixturePort();
-    const onOpenEntity = vi.fn();
     const view = render(
-      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={onOpenEntity} />,
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={vi.fn()} />,
     );
-    // The thread's two entities render ONCE now — only in the docked entity
-    // tray. The transcript's touched row is gone; its calls fold to the
-    // ledger's counted line instead (design 01a023e1, ruling 1).
-    await waitFor(() => expect(view.getAllByTestId('chat-entity-chip')).toHaveLength(2));
-    const tray = view.getByTestId('chat-entity-tray');
-    fireEvent.click(within(tray).getByText('Unblock the storage lane'));
-    expect(onOpenEntity).toHaveBeenCalledWith(TASK_ID);
+    await waitFor(() => expect(view.getAllByTestId('chat-ledger-reads')).toHaveLength(1));
+    expect(view.queryAllByTestId('chat-entity-chip')).toHaveLength(0);
   });
 });

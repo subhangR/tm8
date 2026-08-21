@@ -1,78 +1,39 @@
 /**
- * THE ENTITY TRAY (Cockpit ruling 2026-08-18) — the thread's entities, docked
- * to the top of the composer's control panel so everything the conversation
- * created or touched stays one click away without leaving the chat.
+ * THE ENTITY TRAY, after the ledger panel (S4, design 01a023e1) — a TABS
+ * STRIP and nothing else: the Chat tab that is the way back from a stage
+ * (Cockpit ruling 2026-08-18, standing), and the Graph stage tab.
  *
- * Scope is CREATED + TOUCHED: the same `foldGraphSeeds` walk the entity graph
- * draws from, so the tray and the graph can never disagree about what this
- * thread references. Write-touched seeds (`mutated`) lead, in first-reference
- * order within each group — creation is the strongest claim to a berth, and
- * first-seen order is the one order streaming never reshuffles.
+ * WHAT LEFT, AND WHERE IT WENT:
+ *  · The entity chips are gone from this row. The thread's entities live in
+ *    the LEDGER PANEL below (`LedgerPanel`), projected from the same fold the
+ *    transcript lines render — a tree with a scope picker, not a chip strip.
+ *    The chips' CSS left with them (css-coverage holds both directions).
+ *  · The FLEET TAB is absorbed (ruling 11): a sessions-scoped ledger panel IS
+ *    the fleet, so a tab that opened the same list twice is redundant. The
+ *    `?stage=fleet` address keeps working for links already in the wild; only
+ *    the tab is gone. Graph stays a stage — a canvas is not a tree.
  *
- * Overflow is a COUNT, not silence: beyond `TRAY_VISIBLE_LIMIT` a `+N more`
- * control expands the tray in place (wrap, not menu — a drop-up here would
- * fight the composer's own popovers for the same airspace).
- *
- * THE TWO PINNED STAGES sit at the tray's right edge — Fleet and Graph, the
- * Cockpit stages that are not entities. They are TABS like the rest, not
- * doors to a dialog: the graph's fullscreen overlay is retired and both are
- * ordinary occupants of region B, addressed by `?stage=`. Absent handler ⇒ no
- * tabs, never dead ones.
- *
- * Renders NOTHING for a thread with no entities — the zero state keeps its
- * clean centred pair, and an empty tray row would be a dashboard's cladding.
- *
- * AND NOTHING AT ALL ON THE PHONE (user report 2026-08-20, task 01a01c91:
- * "many chips in horizontal scroll … remove those chips completely"). This is
- * not a taste trim, and the measurement is what settles it: `MobileShell`
- * mounts `ChatHomeSurface` with no `onStageChange`, no `onShowChat` and no
- * entity-open handler, so on that surface the tray has no Chat tab, no Fleet or
- * Graph tab, and `EntityChip` falls to its `<span>` branch — the strip is
- * INERT. What shipped was ~24px of chrome and a sideways scroll gesture
- * competing with the transcript's, in return for nothing a tap can do. The
- * honesty rule this file already states for the stage tabs ("absent handler ⇒
- * no tabs, never dead ones") reaches the chips too; it had only never been
- * asked about a host that wires none of them.
- *
- * SCOPED OFF, NOT DELETED. On the desktop the same tray IS wired — it carries
- * the Chat tab that is the way back from a stage, and chips that open panels.
- * Deleting it outright would take a working navigation surface away to fix a
- * phone that never had one.
+ * The honesty rule is unchanged and now gates the whole strip: absent
+ * handlers ⇒ nothing renders, never a dead control. `MobileShell` wires no
+ * handlers, so the phone draws nothing here — the 01a01c91 revert holds with
+ * no device special-case.
  */
-import { useMemo, useState } from 'react';
-import type { EntityId } from '@tm8/contract';
-import { useMobileSurface } from '../mobile';
 import type { CockpitStage } from '../routes/types';
-import { EntityChip, type ChatEntityResolver } from './EntityChip';
-import { foldGraphSeeds } from './graph-seeds';
-import type { ChatTurn } from './types';
-
-export const TRAY_VISIBLE_LIMIT = 6;
 
 export function EntityTray({
-  turns,
-  suppressEntityIds,
-  resolveEntity,
-  onOpenEntity,
   onStage,
   activeStage = null,
   activeEntityId = null,
   onShowChat,
   chatBusy = false,
 }: {
-  turns: readonly ChatTurn[];
-  suppressEntityIds?: ReadonlySet<string> | undefined;
-  resolveEntity?: ChatEntityResolver | undefined;
-  /** Opening an entity tab. On the Home host this swaps the STAGE
-   *  (`onSelectEntity` → centerOverride); elsewhere it opens the panel. */
-  onOpenEntity?: ((id: EntityId) => void) | undefined;
   /** Swap to a non-entity stage, or back to the chat with `null`. Absent ⇒
-   *  no stage tabs — never a dead control. */
+   *  no stage tab — never a dead control. */
   onStage?: ((next: CockpitStage | null) => void) | undefined;
   /** Which stage is up, so its tab draws active and the Chat tab does not. */
   activeStage?: CockpitStage | null | undefined;
-  /** The entity currently occupying the stage — its tab draws active and the
-   *  Chat tab does not. */
+  /** The entity currently occupying the stage — the Chat tab then reads
+   *  inactive and is the way back. */
   activeEntityId?: string | null | undefined;
   /** The way back (Cockpit ruling 2026-08-18): a Chat tab, always first.
    *  Absent ⇒ this host has no stage to come back from, no tab drawn. */
@@ -81,29 +42,12 @@ export function EntityTray({
    *  the Chat tab pulses so an answer never lands unseen. */
   chatBusy?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const { oneSurface } = useMobileSurface();
   const stageActive = activeEntityId != null || activeStage != null;
-  const seeds = useMemo(() => {
-    const { seeds: all } = foldGraphSeeds(turns, suppressEntityIds);
-    return [...all.filter((s) => s.mutated), ...all.filter((s) => !s.mutated)];
-  }, [turns, suppressEntityIds]);
-
-  /* The phone takes no chips at all — see the docblock. The fold above still
-     runs and is still cheap; gating it would put the hook call behind a
-     condition for nothing. */
-  const chips = oneSurface ? [] : seeds;
-
-  /* The stage tabs are ALWAYS worth drawing once a thread exists: a fleet is
-     most interesting exactly when the conversation has just delegated and the
-     entity chips have not resolved yet. */
-  if (chips.length === 0 && !stageActive && !onStage) return null;
-  const visible = expanded ? chips : chips.slice(0, TRAY_VISIBLE_LIMIT);
-  const hidden = chips.length - visible.length;
+  if (!onShowChat && !onStage) return null;
 
   return (
-    <nav className="tch-tray" aria-label="Entities in this thread" data-testid="chat-entity-tray">
-      <div className="tch-tray__tabs" data-expanded={expanded || undefined}>
+    <nav className="tch-tray" aria-label="Chat stages" data-testid="chat-entity-tray">
+      <div className="tch-tray__tabs">
         {onShowChat ? (
           <button
             type="button"
@@ -118,58 +62,14 @@ export function EntityTray({
             ) : null}
           </button>
         ) : null}
-        {visible.map((seed) => (
-          <span
-            key={seed.id}
-            className="tch-tray__tab"
-            data-active={seed.id === activeEntityId || undefined}
-          >
-            <EntityChip
-              refInfo={{ id: seed.id, kind: seed.kind, title: seed.title }}
-              resolve={resolveEntity}
-              onOpen={onOpenEntity}
-            />
-          </span>
-        ))}
-        {hidden > 0 ? (
-          <button
-            type="button"
-            className="tch-tray__more"
-            aria-expanded={false}
-            onClick={() => setExpanded(true)}
-          >
-            {`+${hidden} more`}
-          </button>
-        ) : expanded && chips.length > TRAY_VISIBLE_LIMIT ? (
-          <button
-            type="button"
-            className="tch-tray__more"
-            aria-expanded
-            onClick={() => setExpanded(false)}
-          >
-            fewer
-          </button>
-        ) : null}
       </div>
       {onStage ? (
         <div className="tch-tray__stages">
           <button
             type="button"
-            /* ONE VISUAL FAMILY (visual lane's handoff note): the stage tabs
-               ARE the Chat tab's anatomy — same pill, same active treatment,
-               same focus ring — with a marker class for nothing but the
-               tests. Giving them a lookalike of their own is how two tabs in
-               one row start drifting apart. */
-            className="tch-tray__chat tch-tray__stage"
-            data-active={activeStage === 'fleet' || undefined}
-            aria-current={activeStage === 'fleet' || undefined}
-            title="The worker sessions and tasks this conversation delegated"
-            onClick={() => onStage(activeStage === 'fleet' ? null : 'fleet')}
-          >
-            <span aria-hidden>⛭</span> Fleet
-          </button>
-          <button
-            type="button"
+            /* ONE VISUAL FAMILY (visual lane's handoff note): the stage tab IS
+               the Chat tab's anatomy — same pill, same active treatment, same
+               focus ring — with a marker class for nothing but the tests. */
             className="tch-tray__chat tch-tray__stage"
             data-active={activeStage === 'graph' || undefined}
             aria-current={activeStage === 'graph' || undefined}

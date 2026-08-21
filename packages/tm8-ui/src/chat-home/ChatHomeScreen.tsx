@@ -25,6 +25,7 @@ import type { FleetRowInput } from './fleet/fleet-rows';
 import type { ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
 import { EntityTray } from './EntityTray';
+import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
 import { TurnParts } from './TurnParts';
 import { composeThreadColumn } from './thread-column';
@@ -1479,24 +1480,33 @@ export function ChatHomeScreen({
         {centre != null ? null : (
           <div className="tch-composer-wrap" data-phase={phase} ref={composerWrapRef}>
             {detail && !newThread ? (
-              <EntityTray
-                turns={detail.turns}
-                suppressEntityIds={ownMessageIds}
-                resolveEntity={resolveEntity}
-                /* On this host an entity tab swaps the STAGE when the host
-                   wired selection; a host without one falls back to its plain
-                   entity-open. */
-                onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
-                /* The two stages that are not entities. Absent handler ⇒ no
-                   tab, never a dead one. */
-                {...(onStageChange ? { onStage: onStageChange, activeStage: stage } : {})}
-                /* Always null here by construction: `centre` is
-                   `centerOverride ?? stagePane`, so reaching this branch means
-                   BOTH are null and no tab can be the active one. */
-                activeEntityId={null}
-                onShowChat={onShowChat}
-                chatBusy={thinking || phase === 'streaming'}
-              />
+              <>
+                <EntityTray
+                  /* The Graph stage tab. Fleet's tab is absorbed by the
+                     ledger panel's scope picker (ruling 11); the ?stage=fleet
+                     address keeps working for links already in the wild. */
+                  {...(onStageChange ? { onStage: onStageChange, activeStage: stage } : {})}
+                  /* Always null here by construction: `centre` is
+                     `centerOverride ?? stagePane`, so reaching this branch
+                     means BOTH are null and no tab can be the active one. */
+                  activeEntityId={null}
+                  onShowChat={onShowChat}
+                  chatBusy={thinking || phase === 'streaming'}
+                />
+                <LedgerPanel
+                  turns={detail.turns}
+                  suppressEntityIds={ownMessageIds}
+                  resolveEntity={resolveEntity}
+                  /* THE SCREEN'S OPENER, DELIBERATELY — never the
+                     `onSelectEntity ?? onOpenEntity` expression the fleet
+                     stage uses. Rows open in the RIGHT PANEL (ruling 8);
+                     the stage-swap would evict the conversation under its
+                     own composer (S5's seam tests pin this). */
+                  onOpenEntity={onOpenEntity}
+                  readEntity={readEntity}
+                  livenessOf={livenessOf}
+                />
+              </>
             ) : null}
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
             {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}

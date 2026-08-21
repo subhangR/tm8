@@ -703,7 +703,6 @@ button.tch-entity-chip:hover {
   gap: var(--pn-space-1);
   overflow: hidden;
 }
-.tch-tray__tabs[data-expanded] { flex-wrap: wrap; overflow: visible; }
 
 /* The pinned stage tabs, at the tray's right edge. They wear
    `.tch-tray__chat` for their anatomy (see EntityTray) — this only groups
@@ -751,25 +750,8 @@ button.tch-entity-chip:hover {
   .tch-tray__pulse { animation: none; }
 }
 
-.tch-tray__tab { display: inline-flex; min-width: 0; }
-.tch-tray__tab[data-active] .tch-entity-chip {
-  background: var(--pn-active);
-  border-color: var(--pn-line-2);
-}
-
-.tch-tray__more {
-  flex: none;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
-  background: var(--pn-surface);
-  color: var(--pn-ink-3);
-  padding: 2px 8px;
-  font: var(--pn-fs-micro, 11px) var(--pn-mono);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.tch-tray__more:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
-.tch-tray__more:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+/* The chip tabs and the +N overflow left with the tray's chips (S4) —
+   the ledger panel below is where the thread's entities live now. */
 
 .tch-refusal {
   margin: 0 4px 5px;
@@ -1595,7 +1577,7 @@ button.tch-entity-chip:hover {
 
 /* THE BUILD SERVICE FAILED chat-home@390 ON THIS: `overflowCount` 0 -> 2,
    `worstRightEdge` 390 -> 401, offender
-   `nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > span.tch-entity-chip`.
+   `nav.tch-tray > div (tabs strip) > chip` (historical anatomy — the chips left in S4).
    11px past a frame that is `overflow: hidden`, so clipped rather than
    scrolled to. 430 was clean — it has the slack to absorb it — which is the
    argument for measuring both widths made concrete: the defect exists at both
@@ -1628,19 +1610,12 @@ button.tch-entity-chip:hover {
    wrong direction, and it is the trade this file has been burned by before.
 
    Shrinking costs nothing vertically. The chain was one link short of already
-   working: `.tch-tray__tabs` and `.tch-tray__tab` both carry `min-width: 0`
+   working: the tabs strip and its chip slots both carried `min-width: 0`
    and `.tch-entity-chip__title` already ellipsises — but the chip itself is a
    flex item with the default `min-width: auto`, which refuses to shrink below
    its content and so passes the overflow straight through the two ancestors
    that were built to absorb it. */
-.cv2-root[data-shell='mobile'] .tch-tray__tabs .tch-entity-chip {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.cv2-root[data-shell='mobile'] .tch-tray__tabs .tch-entity-chip__title {
-  min-width: 0;
-}
+/* (The mobile chip-shrink pair for the tray died with the tray's chips.) */
 
 
 /* --- THE COLUMN COLLECTS ON §3's PROMISE — task 2, composer visibility ----- */
@@ -2009,3 +1984,126 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 /* A title still standing in for a name we do not have reads quieter — the
    same treatment the chips give an unresolved id. */
 .tch-ledger-tree__title[data-placeholder] { color: var(--pn-ink-3); }
+
+/* --- THE LEDGER PANEL (S4, task 01a023fb-1575) ---------------------------- */
+
+/* The sticky projection: one collapsed row welded above the composer, an
+   optional capped-height body above it. Same elevated-card language as the
+   composer's control panel; the TREE inside keeps its own tch-ledger-tree
+   family. */
+.tch-lpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  min-width: 0;
+  padding: var(--pn-space-1) var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-surface);
+}
+
+.tch-lpanel__bar {
+  display: flex;
+  gap: var(--pn-space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+/* The scope trigger — the `[sessions ⌃]` half of the collapsed row. A real
+   drop-up trigger, portalled menu (audit a6: an in-flow menu would clip
+   against the body's internal scroll). */
+.tch-lpanel__scope {
+  display: inline-flex;
+  gap: var(--pn-space-1);
+  align-items: center;
+  padding: 1px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: var(--pn-fs-tick) var(--pn-mono);
+  cursor: pointer;
+}
+
+.tch-lpanel__scope:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
+.tch-lpanel__scope:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+/* The scope's summary — `5 live ·` / `3 tasks, 2 docs`. A statement, not a
+   control. */
+.tch-lpanel__summary {
+  flex: 1;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-fine) var(--pn-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ONE persistent expand/collapse toggle — aria-expanded flips in place
+   (audit a6: the tray's two-button swap dropped keyboard focus to body). */
+.tch-lpanel__toggle {
+  flex: none;
+  padding: 1px var(--pn-space-1);
+  border: none;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-tick) var(--pn-mono);
+  cursor: pointer;
+}
+
+.tch-lpanel__toggle:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
+.tch-lpanel__toggle:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+/* Capped height with internal scroll (§7.5): a tree N deep must not eat the
+   transcript it accompanies. */
+.tch-lpanel__body {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.tch-lpanel__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tch-lpanel__rowitem { display: flex; min-width: 0; }
+
+/* A session row — view-only navigation (ruling 8): the press opens the
+   terminal in the right panel, never retargets the composer. */
+.tch-lpanel__row {
+  display: inline-flex;
+  gap: var(--pn-space-2);
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  padding: 2px var(--pn-space-1);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-2);
+  font: var(--pn-fs-fine) var(--pn-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-lpanel__row:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
+.tch-lpanel__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.tch-lpanel__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-lpanel__title[data-placeholder] { color: var(--pn-ink-3); }
+
+.tch-lpanel__empty {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-fine) var(--pn-mono);
+}

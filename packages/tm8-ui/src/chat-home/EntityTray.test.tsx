@@ -1,127 +1,68 @@
 // @vitest-environment jsdom
 /**
- * THE ENTITY TRAY — created-first ordering, honest overflow, and honest
- * absence (no entities ⇒ no row, no Graph door without a handler).
+ * THE ENTITY TRAY, post-ledger-panel (S4) — a tabs strip: the Chat tab that
+ * is the way back, and the Graph stage tab. The chips left for the ledger
+ * panel; the FLEET TAB IS ABSORBED by the panel's scope picker (ruling 11)
+ * and must never come back — a sessions-scoped panel IS the fleet, and a tab
+ * that opens the same list twice is redundant. The honesty rule survives its
+ * third host: absent handlers ⇒ nothing renders, never a dead control.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import type { EntityId } from '@tm8/contract';
-import { EntityTray, TRAY_VISIBLE_LIMIT } from './EntityTray';
-import type { ChatTurn, ChatTurnPart } from './types';
-
-const id = (n: number): string => `01900000-00dd-7000-8000-${String(n).padStart(12, '0')}`;
-
-let seq = 0;
-const call = (name: string, args: unknown, result?: unknown): ChatTurnPart[] => {
-  const toolCallId = `tc-${(seq += 1)}`;
-  const parts: ChatTurnPart[] = [
-    { kind: 'tool_call', seq: (seq += 1), toolCallId, name, args, state: 'completed' },
-  ];
-  if (result !== undefined) {
-    parts.push({ kind: 'tool_result', seq: (seq += 1), toolCallId, content: result });
-  }
-  return parts;
-};
-
-const turn = (parts: ChatTurnPart[]): ChatTurn => ({
-  messageId: `msg-${(seq += 1)}` as EntityId,
-  role: 'assistant',
-  author: null,
-  createdAt: '2026-08-18T10:00:00.000Z',
-  body: '',
-  parts,
-});
+import { EntityTray } from './EntityTray';
 
 describe('EntityTray', () => {
-  it('renders nothing for a thread with no entities', () => {
-    const view = render(<EntityTray turns={[turn([])]} />);
+  it('renders nothing when no handler is wired — never a dead control', () => {
+    const view = render(<EntityTray />);
     expect(view.queryByTestId('chat-entity-tray')).toBeNull();
   });
 
-  it('write-touched entities lead; a read-only reference follows', () => {
-    const READ = id(1);
-    const WRITTEN = id(2);
-    const view = render(
-      <EntityTray
-        turns={[turn([
-          ...call('tm8_read_entity', { id: READ }, { id: READ, kind: 'doc', title: 'Read me' }),
-          ...call('tm8_create_entity', { id: WRITTEN }, { id: WRITTEN, kind: 'task', title: 'Made me' }),
-        ])]}
-      />,
-    );
-    const chips = view.getAllByTestId('chat-entity-chip');
-    expect(chips.map((c) => c.getAttribute('title'))).toEqual([WRITTEN, READ]);
-  });
-
-  it('caps the row and counts the rest; +N expands in place', () => {
-    const many = turn(
-      Array.from({ length: TRAY_VISIBLE_LIMIT + 3 }, (_, i) =>
-        call('tm8_read_entity', { id: id(10 + i) }, { id: id(10 + i), kind: 'task', title: `T${i}` }),
-      ).flat(),
-    );
-    const view = render(<EntityTray turns={[many]} />);
-    expect(view.getAllByTestId('chat-entity-chip')).toHaveLength(TRAY_VISIBLE_LIMIT);
-    fireEvent.click(view.getByText('+3 more'));
-    expect(view.getAllByTestId('chat-entity-chip')).toHaveLength(TRAY_VISIBLE_LIMIT + 3);
-  });
-
-  it('the Chat tab is the way back: first, active with the stage empty, pulsing when the thread works off-stage', () => {
-    const HAS = id(7);
-    const turns = [turn(call('tm8_read_entity', { id: HAS }, { id: HAS, kind: 'task', title: 'X' }))];
+  it('the Chat tab is the way back: active with the stage empty, pulsing when the thread works off-stage', () => {
     const onShowChat = vi.fn();
     // Stage empty: chat tab active, no pulse.
-    const idle = render(<EntityTray turns={turns} onShowChat={onShowChat} />);
+    const idle = render(<EntityTray onShowChat={onShowChat} />);
     const chatTab = idle.getByText('Chat').closest('button')!;
     expect(chatTab.hasAttribute('data-active')).toBe(true);
     expect(idle.container.querySelector('.tch-tray__pulse')).toBeNull();
     idle.unmount();
-    // Stage occupied + thread busy: entity tab active, chat tab pulses, click returns.
+    // Stage occupied + thread busy: chat tab inactive, pulses, click returns.
     const busy = render(
-      <EntityTray turns={turns} onShowChat={onShowChat} activeEntityId={HAS} chatBusy />,
+      <EntityTray onShowChat={onShowChat} activeEntityId="01900000-00dd-7000-8000-000000000007" chatBusy />,
     );
     const busyChat = busy.getByText('Chat').closest('button')!;
     expect(busyChat.hasAttribute('data-active')).toBe(false);
     expect(busy.container.querySelector('.tch-tray__pulse')).not.toBeNull();
-    expect(busy.container.querySelector('.tch-tray__tab[data-active]')).not.toBeNull();
     fireEvent.click(busyChat);
     expect(onShowChat).toHaveBeenCalledTimes(1);
   });
 
-  it('with the stage occupied and no seeds, the tray still offers the way back', () => {
-    const view = render(<EntityTray turns={[turn([])]} onShowChat={vi.fn()} activeEntityId={id(9)} />);
-    expect(view.getByText('Chat')).toBeTruthy();
-  });
-
-  it('the stage tabs render only with a handler, and each swaps its stage', () => {
-    const HAS = id(1);
-    const turns = [turn(call('tm8_read_entity', { id: HAS }, { id: HAS, kind: 'task', title: 'X' }))];
-    const without = render(<EntityTray turns={turns} />);
+  it('the Graph tab renders only with a handler and swaps its stage', () => {
+    const without = render(<EntityTray onShowChat={vi.fn()} />);
     expect(without.queryByText('Graph')).toBeNull();
-    expect(without.queryByText('Fleet')).toBeNull();
 
     const onStage = vi.fn();
-    const view = render(<EntityTray turns={turns} onStage={onStage} />);
-    fireEvent.click(view.getByText('Fleet'));
-    expect(onStage).toHaveBeenLastCalledWith('fleet');
+    const view = render(<EntityTray onStage={onStage} />);
     fireEvent.click(view.getByText('Graph'));
     expect(onStage).toHaveBeenLastCalledWith('graph');
   });
 
+  it('there is NO Fleet tab — absorbed by the ledger panel scope picker (ruling 11)', () => {
+    const view = render(<EntityTray onStage={vi.fn()} onShowChat={vi.fn()} />);
+    expect(view.queryByText('Fleet')).toBeNull();
+  });
+
   it('clicking the ACTIVE stage leaves it — a tab is a toggle, not a trap', () => {
-    /* The stage occupies the transcript's berth, so a viewer who clicks Fleet
-       while already on Fleet means "put the conversation back". Sending
-       'fleet' again would be a no-op that reads as a dead control. */
+    /* The stage occupies the transcript's berth, so a viewer who clicks Graph
+       while already on Graph means "put the conversation back". */
     const onStage = vi.fn();
-    const view = render(
-      <EntityTray turns={[turn([])]} onStage={onStage} activeStage="fleet" />,
-    );
-    fireEvent.click(view.getByText('Fleet'));
+    const view = render(<EntityTray onStage={onStage} activeStage="graph" />);
+    fireEvent.click(view.getByText('Graph'));
     expect(onStage).toHaveBeenCalledWith(null);
   });
 
-  it('a stage occupying the berth makes the Chat tab the way back', () => {
+  it('a stage occupying the berth keeps the Chat tab as the way back', () => {
     const view = render(
-      <EntityTray turns={[turn([])]} onShowChat={vi.fn()} onStage={vi.fn()} activeStage="graph" />,
+      <EntityTray onShowChat={vi.fn()} onStage={vi.fn()} activeStage="graph" />,
     );
     expect(view.getByText('Chat')).toBeTruthy();
   });

@@ -27,7 +27,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 
@@ -56,8 +56,8 @@ describe("the gate answers the chat-home screen's stage request", () => {
     render(<GateApp />);
     await screen.findByTestId('chat-home-screen');
 
-    const fleet = await screen.findByText('Fleet');
-    fireEvent.click(fleet);
+    const tray = await screen.findByTestId('chat-entity-tray');
+    fireEvent.click(within(tray).getByText('Graph'));
 
     /*
      * The screen deliberately renders NOTHING on click — it asks the host and
@@ -68,10 +68,10 @@ describe("the gate answers the chat-home screen's stage request", () => {
     await waitFor(() => {
       expect(
         window.location.hash,
-        'clicking Fleet did not reach the address. The screen asks via onStageChange '
+        'clicking Graph did not reach the address. The screen asks via onStageChange '
           + '(HomeView.tsx:653-659 navigates with root.stage); if the hash never gains '
-          + 'stage=fleet, the gate is not answering — the mount is stale or the verb is misrouted',
-      ).toContain('stage=fleet');
+          + 'stage=graph, the gate is not answering — the mount is stale or the verb is misrouted',
+      ).toContain('stage=graph');
     });
   });
 
@@ -79,8 +79,8 @@ describe("the gate answers the chat-home screen's stage request", () => {
     const { container } = render(<GateApp />);
     await screen.findByTestId('chat-home-screen');
 
-    fireEvent.click(await screen.findByText('Fleet'));
-    await waitFor(() => expect(window.location.hash).toContain('stage=fleet'));
+    fireEvent.click(within(await screen.findByTestId('chat-entity-tray')).getByText('Graph'));
+    await waitFor(() => expect(window.location.hash).toContain('stage=graph'));
 
     /*
      * Esc leaves a stage by NAVIGATING, not by resetting local state
