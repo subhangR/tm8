@@ -9,12 +9,16 @@ describe('rich turn projection', () => {
     const projected = projectTurnParts(assistant.parts);
     const tools = projected.filter((part) => part.kind === 'tool');
 
-    expect(tools).toHaveLength(1);
+    /* Two calls in the fixture turn — the read (three append-only state
+       parts folding to ONE card, the projection under test) and the spawn
+       (call + result). Still one PROJECTED part per toolCallId. */
+    expect(tools).toHaveLength(2);
     expect(tools[0]).toMatchObject({
       toolCallId: 'tool-1',
       state: 'completed',
       result: { tasks: 7, blocked: 1 },
     });
+    expect(tools[1]).toMatchObject({ toolCallId: 'tool-2', state: 'completed' });
   });
 
   it('deduplicates a replayed delta by durable sequence', () => {

@@ -109,7 +109,7 @@ describe('URL → screen', () => {
     /* `selectAutoOpenSession` was written, tested and never called, so a link
        to a live session parsed cleanly, round-tripped faithfully, and landed
        the recipient on an EMPTY workspace. The param meant nothing. */
-    const session = 'ws-forge-live' as EntityId;
+    const session = '019f0000-0000-7000-8000-000000000031' as EntityId;
     const target = createMemoryTarget(`#/s/${SPACE}/workspace?session=${session}`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('workspace-grid'));
@@ -120,7 +120,7 @@ describe('URL → screen', () => {
   it('lets a link that names its panels outrank the ?session= shorthand', async () => {
     /* §2.2: `session` auto-opens ONLY when `p` and `pin` are both absent. An
        explicit panel list is the sender being specific, and specificity wins. */
-    const session = 'ws-forge-live' as EntityId;
+    const session = '019f0000-0000-7000-8000-000000000031' as EntityId;
     const target = createMemoryTarget(`#/s/${SPACE}/workspace?p=${TASK}&session=${session}`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('workspace-grid'));

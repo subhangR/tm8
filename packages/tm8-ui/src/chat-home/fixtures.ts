@@ -103,13 +103,32 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
           args: { view: 'task_tree' },
           state: 'completed',
         },
+        /* A delegation — the most consequential write a chat performs, and
+           what makes the ledger's sticky panel (sessions scope) and the
+           `Session Created` line real on the demo thread. The session id is
+           the entity fixtures' live session, so a host-level test can follow
+           the row all the way into the terminal. */
         {
           seq: 4,
+          kind: 'tool_call',
+          toolCallId: 'tool-2',
+          name: 'mcp__tm8__tm8_delegate',
+          args: { operation: 'execution.spawn', body: {} },
+          state: 'completed',
+        },
+        {
+          seq: 5,
+          kind: 'tool_result',
+          toolCallId: 'tool-2',
+          content: { entity: { id: '019f0000-0000-7000-8000-000000000031', kind: 'work_session', title: 'forge · tm8-ui kit' } },
+        },
+        {
+          seq: 6,
           kind: 'text',
           text: 'I mapped the work into three dependency-safe lanes. The storage lane is the only current blocker.',
         },
         {
-          seq: 5,
+          seq: 7,
           kind: 'usage',
           usage: {
             input_tokens: 842,
@@ -119,7 +138,7 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
             provider: 'Anthropic',
           },
         },
-        { seq: 6, kind: 'done' },
+        { seq: 8, kind: 'done' },
       ],
     },
   ],
