@@ -114,14 +114,45 @@ describe('the help set', () => {
 });
 
 describe('the help screen', () => {
-  it('lists the whole guide and opens plate one on a wide screen', async () => {
+  it('lists the whole guide and opens on the home, never inside a plate', () => {
     const view = render(<HelpScreen />);
     expect(view.getAllByTestId('help-row')).toHaveLength(HELP_PLATES.length);
     expect(view.getAllByTestId('help-chapter').map((chapter) => chapter.getAttribute('data-section')))
       .toEqual(HELP_CHAPTERS.map((chapter) => chapter.id));
 
-    /* Plate one opens without a press — the wide screen has room for the reader
-       beside the shelf, and an empty pane there would waste half the window. */
+    /* The reader pane holds the FRONT PAGE — what tm8 is, then the map — and
+       the URL still reads a bare `/help`: nothing was opened on the reader's
+       behalf, so there is nothing to correct or to Back out of. */
+    expect(view.getByTestId('help-home')).toBeTruthy();
+    expect(view.getByRole('heading', { level: 1, name: 'What is tm8?' })).toBeTruthy();
+    expect(view.queryByTestId('help-plate')).toBeNull();
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: null });
+    view.unmount();
+  });
+
+  it('maps the whole guide on the home, and a chapter card opens its first plate', async () => {
+    const view = render(<HelpScreen />);
+    /* Every declared chapter is on the map, in content-tree order — the home
+       is the master page, so an absent chapter here is an unreachable one. */
+    const cards = view.getAllByTestId('help-home-chapter');
+    expect(cards.map((card) => card.getAttribute('data-section')))
+      .toEqual(HELP_CHAPTERS.map((chapter) => chapter.id));
+
+    const second = HELP_SET.chapters.find((chapter) => chapter.pages.length > 0 && chapter.id !== FIRST.section)!;
+    fireEvent.click(cards[HELP_SET.chapters.indexOf(second)]!);
+    const entry = second.pages[0]!;
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: entry.slug });
+    expect(navStore.getState().history).toBe('push');
+    await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(entry.slug));
+    view.unmount();
+  });
+
+  it('begins the guide at plate one from the hero, as a push', async () => {
+    const view = render(<HelpScreen />);
+    fireEvent.click(view.getByTestId('help-home-begin'));
+    /* Opening a plate IS navigation: a push, so Back is the home. */
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: FIRST.slug });
+    expect(navStore.getState().history).toBe('push');
     await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(FIRST.slug));
     expect(view.getByText(`Plate 1 of ${HELP_PLATES.length}`)).toBeTruthy();
     view.unmount();
@@ -129,11 +160,6 @@ describe('the help screen', () => {
 
   it('writes the opened plate into the route, and reads it back', async () => {
     const view = render(<HelpScreen />);
-    /* The landing is a REPLACE — the reader did not navigate here, so Back must
-       still leave Help rather than bounce between two spellings of it. */
-    await waitFor(() => expect(navStore.getState().view).toEqual({ view: 'help', plate: FIRST.slug }));
-    expect(navStore.getState().history).toBe('replace');
-
     fireEvent.click(view.getAllByTestId('help-row')[1]!);
     /* Opening a plate IS navigation: a push, so Back is "previous plate". */
     expect(navStore.getState().view).toEqual({ view: 'help', plate: SECOND.slug });
@@ -151,15 +177,19 @@ describe('the help screen', () => {
     view.unmount();
   });
 
-  it('degrades a retired or mistyped slug to plate one instead of breaking', async () => {
+  it('degrades a retired or mistyped slug to the home instead of breaking', async () => {
     onHelp('a-plate-that-was-renumbered');
     const view = render(<HelpScreen />);
-    await waitFor(() => expect(navStore.getState().view).toEqual({ view: 'help', plate: FIRST.slug }));
-    expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(FIRST.slug);
+    /* The correction is a REPLACE — the reader did not navigate to the home,
+       so Back must leave Help rather than revisit the dead address. */
+    await waitFor(() => expect(navStore.getState().view).toEqual({ view: 'help', plate: null }));
+    expect(navStore.getState().history).toBe('replace');
+    expect(view.getByTestId('help-home')).toBeTruthy();
     view.unmount();
   });
 
   it('renders the plate in a frame sandboxed to scripts and nothing else', async () => {
+    onHelp(FIRST.slug);
     const view = render(<HelpScreen />);
     const frame = await waitFor(() => {
       const found = view.container.querySelector('iframe');
@@ -186,6 +216,7 @@ describe('the help screen', () => {
   });
 
   it('shows where the plate came from, by artifact and revision', async () => {
+    onHelp(FIRST.slug);
     const view = render(<HelpScreen />);
     const colophon = await waitFor(() => view.getByTestId('help-plate-provenance'));
     expect(colophon.textContent).toContain(FIRST.provenance.artifactId);
@@ -214,6 +245,7 @@ describe('the help screen', () => {
   });
 
   it('steps forward and back through the reading order', async () => {
+    onHelp(FIRST.slug);
     const view = render(<HelpScreen />);
     await waitFor(() => view.getByTestId('help-plate'));
     /* Plate one has no previous: the first step control is refused rather than
@@ -245,7 +277,9 @@ describe('the help screen', () => {
         <HelpScreen />
       </main>,
     );
-    await waitFor(() => view.getByTestId('help-plate'));
+    /* The landing IS the home — the master page is what a new reader meets
+       first, so it is what this floor is held against, alongside the shelf. */
+    await waitFor(() => view.getByTestId('help-home'));
     /* `iframes: false` — axe cannot reach into a plate from here and should
        not try: jsdom never loads the frame's document, and each plate was
        independently axe-checked at publish time against the same floor. What
@@ -263,8 +297,11 @@ describe('the help screen', () => {
        old three-row fixture fit in the default; a real library does not. */
   }, 20_000);
 
-  it('opens on the contents on a phone, and a page carries a way back', async () => {
+  it('opens on the home and contents on a phone, and a page carries a way back', async () => {
     const view = render(<HelpScreen stacked />);
+    /* One surface, read top to bottom: the front page first — what tm8 is,
+       then the map — with the whole shelf on the same scroll below it. */
+    expect(view.getByTestId('help-home')).toBeTruthy();
     expect(view.getAllByTestId('help-row')).toHaveLength(HELP_PLATES.length);
     /* NOT auto-opened: a stacked shell that selected plate one would land a
        reader inside a page they never chose, with the shelf they came for one
@@ -279,6 +316,24 @@ describe('the help screen', () => {
     fireEvent.click(back);
     await waitFor(() => expect(view.getAllByTestId('help-row')).toHaveLength(HELP_PLATES.length));
     view.unmount();
+  });
+
+  it('a chapter card on the phone scrolls to that chapter’s shelf, not into a page', () => {
+    /* jsdom implements no scrolling; the assertion is that the card's verb IS
+       a scroll on the one surface — the route must still read a bare `/help`,
+       because showing the reader where a chapter sits is not navigation. */
+    const scrolls = vi.fn();
+    const hadScroll = 'scrollIntoView' in window.HTMLElement.prototype;
+    (window.HTMLElement.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView = scrolls;
+    try {
+      const view = render(<HelpScreen stacked />);
+      fireEvent.click(view.getAllByTestId('help-home-chapter')[0]!);
+      expect(scrolls).toHaveBeenCalled();
+      expect(navStore.getState().view).toEqual({ view: 'help', plate: null });
+      view.unmount();
+    } finally {
+      if (!hadScroll) delete (window.HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+    }
   });
 });
 
