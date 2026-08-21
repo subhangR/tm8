@@ -91,8 +91,11 @@
   gap: 2px;
   width: 100%;
   min-width: 0;
-  margin: 0 0 3px;
-  padding: 9px;
+  margin: 0 0 2px;
+  /* Two lines, not three, since the duplicate preview line came out — so the
+     box is trimmed to match rather than keeping three lines' worth of air
+     around two. */
+  padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: var(--pn-r-sm);
   background: transparent;
@@ -108,20 +111,18 @@
   background: var(--pn-active);
 }
 
-.tch-thread__title,
-.tch-thread__preview {
+.tch-thread__title {
   overflow: hidden;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tch-thread__title { font-size: var(--pn-fs-label); font-weight: 600; }
-.tch-thread__preview { color: var(--pn-ink-3); font-size: var(--pn-fs-fine); }
-
 .tch-thread__meta {
   display: flex;
   gap: 4px;
-  margin-top: 3px;
+  margin-top: 1px;
   color: var(--pn-ink-4);
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-tick);

@@ -1232,7 +1232,13 @@ export function ChatHomeScreen({
                         ) : null}
                         {thread.title}
                       </span>
-                      <span className="tch-thread__preview">{thread.preview}</span>
+                      {/* NO PREVIEW LINE. `listThreads` has no message body to
+                          preview — `real-port` fills `preview` from the very
+                          same root title (F4), so the second line was the first
+                          line again, in grey, on every real row. A duplicate
+                          costs a row of height and reads as a rendering bug.
+                          Craft's picker already lists title + meta only; this
+                          makes the two conversation lists one shape. */}
                       <span className="tch-thread__meta">
                         <span className="tch-mode-chip">{thread.config.mode}</span>
                         <span>{thread.config.teammateLabel}</span>
