@@ -512,6 +512,28 @@
   font: var(--pn-fs-fine) var(--pn-mono);
 }
 
+/* The read line is a BUTTON (S3b): the expansion is its press destination.
+   Same sentence anatomy as its siblings above — the reset strips the button
+   chrome so the three line types keep reading as one family. */
+button.tch-ledger__reads {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+button.tch-ledger__reads:hover { color: var(--pn-ink-2); }
+
+.tch-ledger__caret { color: var(--pn-ink-4); }
+
+/* The expanded tree, inline under its line — indented into the sentence's
+   flow, never a card (the box stays gone). */
+.tch-ledger__readtree {
+  margin: 2px 0 4px;
+  padding-left: var(--pn-space-4);
+}
+
 .tch-ledger__entity {
   max-width: 260px;
   overflow: hidden;

@@ -50,22 +50,24 @@ beforeEach(() => {
 });
 
 describe('the entity-open seam lands in the right panel', () => {
-  it('a transcript entity chip opens the aside — the chat surface asks, the gate answers with region C', async () => {
+  it('an expanded read-line row opens the aside — the ledger asks, the gate answers with region C', async () => {
+    /* Originally this case clicked a transcript entity CHIP; S3 retired the
+       chips for the ledger lines, so the ledger's own route is what gets
+       pinned now: expand the counted read line (S3b) and click a row inside.
+       The row is a BUTTON only because the gate wired `onOpenEntity` — the
+       same span/button honesty split, one handler for every ledger surface. */
     const target = createMemoryTarget(`#/s/${SPACE}/home`);
     const view = render(<GateApp routerTarget={target} />);
-    await waitFor(() => view.getByTestId('chat-home-screen'));
+    /* First mount in the file pays the whole module graph's init — give the
+       boot the same allowance the gate suites give it. */
+    await view.findByTestId('chat-home-screen', {}, { timeout: 5000 });
 
-    /* The fixture thread's tool result carries a real graph entity; the chip
-       is a BUTTON only because the gate wired `onOpenEntity` (EntityChip's
-       span/button split — the same honesty rule the ledger rows inherit). */
-    const chip = await waitFor(() => {
-      const chips = view.getAllByTestId('chat-entity-chip');
-      const hit = chips.find((c) => c.textContent?.includes('Unblock the storage lane'));
-      expect(hit, 'the fixture thread no longer renders its entity chip').toBeTruthy();
-      return hit!;
-    });
-    expect(chip.tagName, 'the chip rendered inert — the gate stopped wiring onOpenEntity').toBe('BUTTON');
-    fireEvent.click(chip);
+    const line = await view.findByTestId('chat-ledger-reads', {}, { timeout: 5000 });
+    fireEvent.click(line);
+    const region = await waitFor(() => view.getByTestId('chat-ledger-readtree'));
+    const row = within(region).getByText('Unblock the storage lane');
+    expect(row.closest('button'), 'the row rendered inert — the gate stopped wiring onOpenEntity').toBeTruthy();
+    fireEvent.click(row);
 
     /* The observable consequence: the aside opens, and the address carries it
        (`r=` is the right trail — a reload reproduces the arrangement). */
