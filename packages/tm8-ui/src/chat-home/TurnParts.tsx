@@ -8,6 +8,7 @@ import { durableOutputToolName, explanationToolName } from './explanation-tools'
 import {
   buildChatLedger,
   foldChatLedger,
+  kindWord,
   readCountPairs,
   type ChatLedger,
   type LedgerCreate,
@@ -301,21 +302,6 @@ function createDepth(id: string, ledger: ChatLedger): number {
     cursor = ledger.parentOf.get(cursor) ?? null;
   }
   return depth;
-}
-
-/**
- * The kind vocabulary, humanised and pluralised for the sentence. Core kinds
- * get their English; a custom `c:*` kind sheds its prefix rather than shipping
- * `Read 3 c:invoices` (design §4.1).
- */
-function kindWord(kind: string, count: number): string {
-  const base = kind.startsWith('c:') ? kind.slice(2) : kind;
-  const word =
-    base === 'work_session' ? 'session' : base === 'entity' ? 'entity' : base.replace(/_/g, ' ');
-  if (count === 1) return word;
-  if (word.endsWith('y')) return `${word.slice(0, -1)}ies`;
-  if (word.endsWith('s')) return word;
-  return `${word}s`;
 }
 
 function UsageCard({ usage }: { usage: ChatUsage }) {
