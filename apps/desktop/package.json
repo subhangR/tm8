@@ -34,6 +34,32 @@
       {
         "from": "../../db",
         "to": "db"
+      },
+      {
+        "//": "Reached through @tm8/* workspace links from packages/server/dist.",
+        "from": "../../packages/contract/dist",
+        "to": "packages/contract/dist"
+      },
+      {
+        "from": "../../packages/prompt/dist",
+        "to": "packages/prompt/dist"
+      },
+      {
+        "from": "../../packages/mcp/dist",
+        "to": "packages/mcp/dist"
+      },
+      {
+        "from": "../../packages/execution/dist",
+        "to": "packages/execution/dist"
+      },
+      {
+        "//": "NOT optional, and its absence is SILENT. `cliBinDir()` resolves",
+        "//2": "`../../../cli/dist` relative to packages/execution/dist/spawn/ and",
+        "//3": "returns null rather than throwing when it misses, so a bundle",
+        "//4": "without this spawns agents that can never `tm8 message send` and",
+        "//5": "never `tm8 task link-pr` — they simply go quiet.",
+        "from": "../../packages/cli/dist",
+        "to": "packages/cli/dist"
       }
     ],
     "extraResources": [
@@ -43,7 +69,8 @@
       }
     ],
     "asarUnpack": [
-      "**/node_modules/node-pty/**"
+      "**/node_modules/node-pty/**",
+      "packages/cli/dist/**"
     ],
     "mac": {
       "target": [
