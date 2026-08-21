@@ -183,8 +183,20 @@ export function StaleFallback({
    * rather than restated so the honesty copy has exactly one home.
    */
   reason?: string;
+  /**
+   * Record this session as exited. Absent ⇒ the chip renders DISABLED with a
+   * reason, exactly as `ExitedFallback` treats an unwired `onResume` — see the
+   * L6 note there, which this now obeys too.
+   */
   onMarkExited?: () => void;
 }) {
+  // L6, the same ruling `ExitedFallback` applies to Resume. This chip had been
+  // rendering ENABLED with `onClick={undefined}` since it was written, which is
+  // the enabled-inert control `no-op-handler-ban.test.ts` bans as a package law
+  // — and it is the one control this screen exists to offer, on the one screen
+  // a user reaches after a node restart killed their work.
+  const markDisabled = !onMarkExited;
+
   return (
     <div className="term-fallback" data-testid="session-stale-fallback">
       <div className="term-fallback__inner">
@@ -195,9 +207,23 @@ export function StaleFallback({
           This session reported running, but its process is gone. Liveness never lies.
         </span>
         {reason ? <span className="term-fallback__meta">{reason}</span> : null}
-        <button type="button" className="term-fallback__chip" onClick={onMarkExited}>
+        <button
+          type="button"
+          className="term-fallback__chip"
+          data-testid="session-mark-exited"
+          onClick={onMarkExited}
+          disabled={markDisabled}
+          {...(markDisabled
+            ? { title: 'Marking exited is not wired on this surface yet.' }
+            : {})}
+        >
           mark exited
         </button>
+        {markDisabled ? (
+          <span className="term-fallback__meta" data-testid="session-stale-mark-unwired">
+            Marking exited is not wired on this surface yet.
+          </span>
+        ) : null}
       </div>
     </div>
   );

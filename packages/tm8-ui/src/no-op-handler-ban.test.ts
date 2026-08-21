@@ -38,6 +38,8 @@ const HONEST_ABSENCE_PROPS: readonly { prop: string; readBy: string }[] = [
   { prop: 'onOpenEntity', readBy: 'EntityChip / LiveGraphStrip — inert badge and unpressable node' },
   { prop: 'onOpenNotification', readBy: 'InboxScreen — rows disabled WITH REASON' },
   { prop: 'onResumeSession', readBy: 'SessionFallback — "not wired on this surface"' },
+  { prop: 'onMarkExited', readBy: 'StaleFallback — chip disabled WITH REASON' },
+  { prop: 'onMarkSessionExited', readBy: 'EntityDetailPanel — forwards the above' },
 ];
 
 function walk(dir: string): string[] {

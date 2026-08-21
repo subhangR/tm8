@@ -404,4 +404,37 @@ describe('copy has ONE home — no second authored sentence', () => {
     expect(el.textContent).toContain('stale');
     expect(el.textContent).not.toContain('node restarted');
   });
+
+  /*
+   * "mark exited" is the ONE remedy this screen offers, and it is drawn on the
+   * one screen a user reaches after a node restart killed their sessions. It
+   * shipped ENABLED with `onClick={undefined}` — the enabled-inert control this
+   * package bans by law — so the chip absorbed every press and the record kept
+   * claiming the dead session was running. Measured on a live node 2026-08-21:
+   * 23 sessions stale, and clearing them needed the CLI.
+   *
+   * These pin L6 on this chip the way it is already pinned on Resume.
+   */
+  it('the stale chip is disabled WITH A REASON when no host wired it', () => {
+    const { getByTestId } = render(<StaleFallback />);
+    const chip = getByTestId('session-mark-exited') as HTMLButtonElement;
+
+    // Never hidden — a missing chip would claim the session cannot be cleared.
+    expect(chip).toBeTruthy();
+    expect(chip.disabled).toBe(true);
+    expect(getByTestId('session-stale-fallback').textContent).toContain('not wired');
+  });
+
+  it('the stale chip fires exactly once when a host DID wire it', () => {
+    const onMarkExited = vi.fn();
+    const { getByTestId } = render(<StaleFallback onMarkExited={onMarkExited} />);
+    const chip = getByTestId('session-mark-exited') as HTMLButtonElement;
+
+    expect(chip.disabled).toBe(false);
+    // The unwired reason must not survive alongside a live handler.
+    expect(getByTestId('session-stale-fallback').textContent).not.toContain('not wired');
+
+    fireEvent.click(chip);
+    expect(onMarkExited).toHaveBeenCalledTimes(1);
+  });
 });

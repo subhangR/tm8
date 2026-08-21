@@ -94,6 +94,12 @@ export interface TerminalBodyProps {
   resuming?: boolean;
   resumeDisabledReason?: string;
   /**
+   * Record a STALE session as exited — the recovery path after a node restart,
+   * where the record says running and no PTY exists. Absent = the host has not
+   * wired it, and the stale canvas says so rather than offering a dead chip.
+   */
+  onMarkExited?: () => void;
+  /**
    * THE POST-MORTEM for an ended session, host-wired like `debugSurface`.
    *
    * It reads `execution.transcript` and this layer holds no seam — the panel is
@@ -119,6 +125,7 @@ export function TerminalBody({
   onResume,
   resuming,
   resumeDisabledReason,
+  onMarkExited,
   statsSurface,
 }: TerminalBodyProps) {
   const row = toSessionRow(detail);
@@ -248,6 +255,7 @@ export function TerminalBody({
           {...(onResume ? { onResume } : {})}
           {...(resuming ? { resuming } : {})}
           {...(resumeDisabledReason ? { resumeDisabledReason } : {})}
+          {...(onMarkExited ? { onMarkExited } : {})}
           liveTerminalRef={liveTerminalRef}
           {...(onPhone
             ? {
@@ -318,6 +326,7 @@ function SessionCanvas({
   onResume,
   resuming,
   resumeDisabledReason,
+  onMarkExited,
   liveTerminalRef,
   fontSize,
   onGeometry,
@@ -335,6 +344,7 @@ function SessionCanvas({
   onResume?: () => void;
   resuming?: boolean;
   resumeDisabledReason?: string;
+  onMarkExited?: () => void;
   liveTerminalRef?: React.Ref<LiveTerminalHandle>;
   /** Phone only — the modifier bar's font control. Absent everywhere else, so
       the desktop terminal keeps `TERMINAL_FONT_SIZE` untouched. */
@@ -366,7 +376,13 @@ function SessionCanvas({
       );
 
     case 'stale':
-      return <StaleFallback label={livenessLabel} reason={livenessReason} />;
+      return (
+        <StaleFallback
+          label={livenessLabel}
+          reason={livenessReason}
+          {...(onMarkExited ? { onMarkExited } : {})}
+        />
+      );
 
     case 'unknown':
       return <UnverifiedFallback label={livenessLabel} reason={livenessReason} />;
