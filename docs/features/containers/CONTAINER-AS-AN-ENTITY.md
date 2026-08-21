@@ -38,12 +38,19 @@ Three tiers, marked inline:
 > this container as entity is not just for spawning agents inside the container, it's also for the
 > agents to *run* these containers and run some tests or something against them.
 
+**OWNER**, added third — and this is what the feature is *for* (§4B):
+
+> the idea is we create some environments like `tm8-web-dev`, `tm8-mobile-dev` or something like
+> that where we already have installed mobile things or browsers or whatever, tools, and for a
+> task we can run it on a specific container.
+
 **DESIGNED** — the resulting shape in one line:
 
-> A **container** is a project's *declared environment*, pinned to an image digest. A **worktree**
-> is a checkout mounted into it. A **session** is a PTY exec'd inside it. And an agent can also
-> *operate* containers it does not live in — start them, run a suite against them, read the exit
-> code, tear them down.
+> A **container** is a *declared environment* pinned to an image digest — either a project's own,
+> or a **named entry in a shared catalog** (`tm8-web-dev`, `tm8-mobile-dev`). A **worktree** is a
+> checkout mounted into it. A **session** is a PTY exec'd inside it. A **task** can name the
+> environment it needs. And an agent can also *operate* containers it does not live in — start
+> them, run a suite against them, read the exit code, tear them down.
 
 Layering: `container ⊃ worktree ⊃ session`. Only the container is new. **Worktrees do not
 change** — they stay host-side `git worktree add`, because bind-mounting a host path into a
@@ -144,6 +151,105 @@ per-lane service instances is the fix, and it falls out of this model for free.
 
 ---
 
+## 4B. Named environments — the catalog
+
+**OWNER**, and this is the shape the feature is *for*:
+
+> the idea is we create some environments like `tm8-web-dev`, `tm8-mobile-dev` or something like
+> that where we already have installed mobile things or browsers or whatever, tools, and for a
+> task we can run it on a specific container.
+
+**DESIGNED.** A catalog of named, reusable environments — and it **overturns the `project_id not
+null` decision** made in §5.1 below, which is recorded there rather than quietly edited away.
+
+### 4B.1 Two flavours, distinguished by whether they belong to a repo
+
+| | **Project container** | **Catalog container** |
+|---|---|---|
+| Example | this repo's own devcontainer | `tm8-web-dev`, `tm8-mobile-dev`, `tm8-db` |
+| `project_id` | not null | **null** |
+| Spec | `.devcontainer/devcontainer.json` in the repo | a Dockerfile in a designated infra location, or a bare image ref |
+| `input_digest` covers | spec + lockfile (+ migration chain) | the spec only — without a repo there is no lockfile |
+| Tracks | the codebase | the toolchain |
+
+The catalog is where *"already installed"* lives, and it is the half of the feature that a
+per-project container cannot deliver:
+
+- **`tm8-web-dev`** — node, pnpm, a real Chrome with the CDP plumbing, Playwright
+- **`tm8-mobile-dev`** — the device toolchain, emulators, the mobile-audit harness
+- **`tm8-db`** — a Postgres at the current migration chain, used as a *target* (§10)
+
+`tm8-web-dev` is worth calling out because it converts a recurring, expensive problem into a
+provisioning detail: browser verification currently depends on whatever Chrome happens to be on
+the machine, past whatever auth wall happens to be up. A named environment with a known browser
+is a reproducible answer to that.
+
+### 4B.2 The uniqueness constraint this forces
+
+**Postgres treats NULLs as distinct in a UNIQUE constraint**, so the `unique (project_id, name)`
+in §5.1 does *not* prevent two catalog containers both named `tm8-web-dev`. Two partial indexes
+are required:
+
+```sql
+create unique index containers_project_name_uq
+  on public.containers(project_id, name) where project_id is not null;
+create unique index containers_catalog_name_uq
+  on public.containers(name)             where project_id is null;
+```
+
+**VERIFIED** — the tree already uses exactly this idiom for exactly this reason. `057:43` seeds
+the kind registry with `on conflict (kind) where space_id is null do nothing`, because a null
+scope column is not a value.
+
+### 4B.3 Name versus digest — the reproducibility split
+
+A catalog name is a moving reference; an image digest is not. **That distinction already has a
+ruling in this repo, one level down** — **VERIFIED** `057:57-58`:
+
+> `base_commit_oid` is the reproducibility anchor: refs move, a resolved OID does not.
+
+**DESIGNED**, exactly parallel:
+
+- a task or session points at the container **entity** — the *name* — so dispatch always gets the
+  current catalog build;
+- every `container_instances` and `container_runs` row records the **digest that actually ran**.
+
+Neither half is sufficient alone. Pin only the name and an old run becomes unreproducible; pin
+only the digest and the catalog can never be updated. `base_ref` + `base_commit_oid` is the
+same pair of facts about a checkout, and it is already load-bearing.
+
+### 4B.4 Inheritance belongs in the spec, not the schema
+
+`tm8-web-dev` and `tm8-mobile-dev` will share a base. **DESIGNED — do not model that with an
+`extends` edge or a `base_container_id` column.** A Dockerfile's `FROM` already expresses it and
+the layer cache already exploits it; a second declaration in the graph is a second source of truth
+that will drift from the first. The UI may *display* the relationship by reading the resolved
+image's parent digests. It must not *own* it.
+
+### 4B.5 Which container does a task run in?
+
+**OWNER** — *"for a task we can run it on a specific container."*
+
+**DESIGNED — an edge, `runs_in` (task → container)**, resolved at spawn through a four-step
+precedence ladder:
+
+1. an explicit `--container <id>` on the spawn call;
+2. the task's `runs_in` edge;
+3. the project's default container;
+4. none → today's native spawn, unchanged.
+
+This is deliberately the same shape as the spawn defaults that already exist — **VERIFIED**
+`contract.ts:2923` describes `ProjectDefaults` as *"Per-project spawn defaults, overridable per
+`execution.spawn` call"* — so it introduces no new precedence vocabulary to learn.
+
+**An edge rather than a column**, for two reasons. A task may legitimately need more than one
+environment (build in `tm8-web-dev`, verify against `tm8-db`, screenshot in `tm8-mobile-dev`);
+and it is the house rule — **VERIFIED** `db/migrations/005_custom_kinds.sql:12`: *"If a relation
+matters, it is an edge, full stop (R8)."* A new row in `public.edge_types` (`001:900`) declares
+it, with `src_kinds = {task}` and `dst_kinds = {container}`.
+
+---
+
 ## 5. Data model
 
 **DESIGNED.** Structure copied deliberately from `057_worktrees.sql`.
@@ -155,28 +261,40 @@ Entity-backed. **Has** the `snapshot_entity_version` trigger, so one semantic tr
 
 ```
 entity_id        uuid pk → public.entities(id) on delete cascade
-project_id       uuid not null → public.projects(id) on delete restrict
+project_id       uuid null → public.projects(id) on delete restrict   -- null = catalog (§4B)
 name             text not null
 spec_kind        text check in ('devcontainer','compose','dockerfile','image-ref')
-spec_path        text            -- repo-relative, e.g. .devcontainer/devcontainer.json
+spec_source      text            -- repo-relative path, infra path, or a registry ref
 input_digest     text            -- sha256 over spec + the files it declares as inputs
 resolved_image   text            -- sha256:… (or a per-service map, for 'compose')
 built_at         timestamptz
 workspace_service text           -- which service the PTY execs into; null = single-container
 env_var_names    text[] not null default '{}'   -- NAMES only
-network_policy   jsonb           -- reuse CommandNetworkPolicy's shape (types.ts)
+network_policy   jsonb           -- reuse CommandNetworkPolicy's shape (types.ts:51)
 status           text check in ('active','stale','retired')
 status_changed_at timestamptz not null default now()
-unique (project_id, name)
+-- uniqueness is TWO partial indexes, not one constraint — see §4B.2
 ```
 
-**`project_id` is `not null` / `on delete restrict`**, for the same reason worktrees are —
-**VERIFIED** `057:53-58`, *"a worktree without a project is meaningless — it is a checkout OF
-something."* The same holds one level up, and there is a sharper reason: **the spec file lives in
-the repo.** A container with no codebase has no spec.
+### `project_id` is nullable — a decision reversed, on purpose
 
-Immutability follows 057: `spec_kind`/`spec_path`/`project_id` are accepted by no update door and
-the table carries no UPDATE grant. `status` gets an **R29 single-writer guard**, modelled on
+The first pass of this design made `project_id` **`not null`**, reasoning from **VERIFIED**
+`057:53-58` (*"a worktree without a project is meaningless — it is a checkout OF something"*) plus
+a sharper-sounding argument: the spec file lives in the repo, so a container with no codebase has
+no spec.
+
+**That argument is wrong, and §4B is why.** It holds for a *project* container and fails for a
+*catalog* container: `tm8-mobile-dev` is a toolchain, not a checkout, and its spec lives wherever
+the infra keeps it. Making `project_id` `not null` would have forced every named environment to
+be adopted by an arbitrary repo — the single most useful thing containers can do, modelled as an
+accident.
+
+The `not null` reasoning is left here rather than deleted because the *worktree* precedent it
+came from is still correct, and a later reader is otherwise likely to re-derive it and "fix" the
+column back. **`on delete restrict` is kept**: a project container must not outlive its project.
+
+Immutability follows 057: `spec_kind`/`spec_source`/`project_id` are accepted by no update door
+and the table carries no UPDATE grant. `status` gets an **R29 single-writer guard**, modelled on
 `internal.guard_worktree_status` (**VERIFIED** `057:103`).
 
 ### 5.2 `container_instances` — operational, NOT entity-backed
@@ -211,6 +329,9 @@ started_at, ended_at, log_ref   -- points at a file/artifact entity, not inline
 ### 5.4 Graph wiring
 
 - **Edge `in_container`** (work_session → container), mirroring `in_worktree`.
+- **Edge `runs_in`** (task → container) — the catalog routing of §4B.5. Both need a row in
+  `public.edge_types` (**VERIFIED** `db/migrations/001_core_graph.sql:900`), which is where
+  `src_kinds`/`dst_kinds` are declared and enforced.
 - **Column `work_sessions.container_id uuid null`.** **Nullable is the entire back-compat story:**
   `null` means today's native spawn, completely unchanged. **VERIFIED (survey §6)** the sibling
   `workdir_mode` shows the hazard to avoid — its TS union admits `'scratch'` while the CHECK
@@ -226,9 +347,10 @@ started_at, ended_at, log_ref   -- points at a file/artifact entity, not inline
 |---|---|---|
 | OS + toolchain (node, pnpm, git, `psql`) | **image layer** | changes monthly; content-addressed; shareable |
 | Deps, keyed on lockfile hash | **image layer** | this *is* the warm environment — the whole payoff |
-| **The agent CLI** (`claude-code`/`codex`) | **image layer** | must land where `resolveAgentBinary` looks |
+| **The agent CLI** (`claude-code`/`codex`) | **image layer**, at `/usr/local/bin` | must land where `resolveAgentBinary` looks — §6.2 |
+| **The `tm8` CLI** | **bind mount from the server's checkout — NEVER baked** | version-coupled to the running server — §6.3 |
 | Repo / worktree | **bind mount**, host → `/workspace` | baking it makes every container a stale fork |
-| Credential home (`~/.claude`, `gh` config dir) | **bind mount, read-only** | see below |
+| Credential home (`~/.claude`, `gh` config dir) | **bind mount, read-only** | §6.1 |
 | Env *values* | **injected at exec** | preserves the S15 guarantee |
 
 ### 6.1 Credentials must never enter a layer
@@ -247,16 +369,80 @@ every push and pull.** This is a well-known way tokens leak out of published ima
 > any layer.** Same spirit as the S15 trigger, extended from manifests to images. The precedent
 > exists; reuse the regex.
 
-### 6.2 The agent binary
+### 6.2 The agent binary — a packaging convention, not a code change
 
-**VERIFIED (survey §3)** `manifest.ts:1128` `resolveAgentBinary(binary, path)` and `:1110`
-`withAgentBinDirs(path, parentEnv)` compose the PATH the PTY sees; this workspace's incident notes
-record that the lookup consults a **hardcoded candidate list and ignores ambient `PATH`**
-(`manifest.ts:1089` `agentBinDirCandidates`).
+**VERIFIED** `manifest.ts:1128` `resolveAgentBinary(binary, path)` and `:1110`
+`withAgentBinDirs(path, parentEnv)` compose the PATH the PTY sees, from a **hardcoded candidate
+list that ignores ambient `PATH`** — **VERIFIED** `manifest.ts:1089-1096`:
 
-Consequence: **the image must install the agent CLI at a path that list already knows, or that
-resolver is the one piece of existing code this feature genuinely has to change.** Decide which
-before P1; do not discover it during P1.
+```ts
+function agentBinDirCandidates(parentEnv: NodeJS.ProcessEnv): string[] {
+  const home = parentEnv['HOME'];
+  const dirs = ['/opt/homebrew/bin', '/usr/local/bin'];
+  if (home) {
+    dirs.push(join(home, '.local', 'bin'), join(home, '.bun', 'bin'), join(home, '.volta', 'bin'));
+  }
+  return dirs;
+}
+```
+
+**This resolves cheaply, and better than the first pass assumed.** `/opt/homebrew/bin` is
+macOS-only, but **`/usr/local/bin` is on the list and is the natural install location inside a
+Linux image**. So:
+
+> **DESIGNED — install the agent CLI at `/usr/local/bin` in the image. `agentBinDirCandidates`
+> needs no change.**
+
+That downgrades what §17 listed as "the one piece of existing code this feature forces a decision
+about" into a documented packaging convention. **VERIFIED** `manifest.ts:1103-1108` confirms the
+list is shared with `composeCredentialEnv` precisely because *"the PATH problem is genuinely
+identical for both"* — so a convention that satisfies one satisfies both.
+
+### 6.3 The `tm8` CLI must be MOUNTED, never installed into the image
+
+Every workspace container needs the `tm8` CLI, because the CLI *is* the reporting loop. But
+**installing it in the image is the one thing the existing code explicitly defends against.**
+
+**VERIFIED** `manifest.ts:1042-1054`:
+
+> Put the `tm8` binary on the agent's PATH. The system prompt instructs the agent to report
+> durably with `tm8 message send --to <anchor-entity-id>` — that IS the reporting loop […] and it
+> is the only way its work becomes visible in the graph. `@tm8/cli` is a workspace package with a
+> `bin` entry that **nothing ever installs globally**, so without this every one of those commands
+> dies with "command not found" **and the agent looks broken while believing it reported**.
+> PREPENDED so a **stale globally-installed `tm8` cannot shadow the build this server actually
+> shipped with**.
+
+**VERIFIED** `manifest.ts:1172-1188` — `cliBinDir()` resolves
+`fileURLToPath(new URL('../../../cli/dist', import.meta.url))`, i.e. **`packages/cli/dist` inside
+the server's own checkout**, and symlinks `tm8 → index.js` there if the link is missing.
+
+Three consequences, all load-bearing:
+
+1. **A baked `tm8` is exactly the "stale globally-installed `tm8`" that `composeEnv` prepends its
+   own bin dir to shadow.** Baking it re-creates, inside the image, the failure the current code
+   goes out of its way to prevent — and the failure mode named in that comment is the worst kind:
+   *the agent looks broken while believing it reported.*
+2. **The coupling is to the server's catalog, not just its version.** `tm8 help` returns a
+   `catalogDigest`; a CLI built from a different commit can disagree with the running server about
+   which operations exist. An image is rebuilt on a toolchain cadence (§4B.1) and the server moves
+   on every merge — guaranteed drift.
+3. **The mount cannot be read-only, or must be pre-warmed.** `cliBinDir()` *writes* the
+   `tm8 → index.js` symlink when absent and **returns `null` if it cannot** — which silently
+   yields a container with no `tm8` on `PATH`. Either mount read-write, or guarantee the symlink
+   exists on the host first (any prior native spawn creates it). **This is a real trap: the
+   failure is silent and looks like a broken agent.**
+
+> **DESIGNED — mount `packages/cli/dist` from the server's checkout into every workspace
+> container and prepend it to `PATH`, exactly as `composeEnv` does today. The image supplies the
+> `node` runtime that executes it; it must not supply the CLI.**
+
+The image therefore owes the workspace three things and no more: a `node` able to run the CLI
+bundle, the agent CLI at `/usr/local/bin`, and the toolchain the environment is *named* for.
+Everything identity-bearing — the CLI, credentials, the checkout — arrives as a mount.
+
+`TM8_BASE_URL` must also resolve from inside the container; see §12, and note the Codex
+loopback-proxy precedent solves the same problem for a different confinement.
 
 ---
 
@@ -267,9 +453,19 @@ ports, and — critically for §4 — `dockerComposeFile` + `service`. Cursor an
 repos that already carry one work on day one, and a developer can run the same environment without
 tm8 at all.
 
-**Store the *path*, not the contents.** The spec is versioned by git; duplicating it into the
-graph creates a second source of truth that will drift. The entity's job is to record *which* spec,
-*what digest it resolved to*, and *whether that is still current*.
+**Store the *reference*, not the contents.** A project container's spec is versioned by git;
+duplicating it into the graph creates a second source of truth that will drift. The entity's job is
+to record *which* spec, *what digest it resolved to*, and *whether that is still current*.
+
+**A catalog container's spec has no repo to live in** (§4B.1), which is why the column is
+`spec_source` rather than `spec_path`: it holds a repo-relative path for a project container, and
+for a catalog container either a path in a designated infra location or a bare registry ref. The
+rule is unchanged — the graph stores a reference and a resolved digest, never the spec body.
+
+**Open, and worth deciding early:** where the catalog's Dockerfiles live. A dedicated infra repo
+keeps them reviewable and versioned, which is what makes `input_digest` computable for a catalog
+container at all. Inline spec text on the entity would make `tm8-mobile-dev` editable from the UI
+and simultaneously destroy its provenance. This design assumes the former.
 
 ---
 
@@ -403,9 +599,9 @@ consequences:
 
 | Phase | Contents | Gate |
 |---|---|---|
-| **P1 — model + local docker** | the kind, detail table, doors, `container_instances`, `in_container`, `--container` on spawn, `docker run` / `exec`, panel showing spec + digest + staleness + live instances. Native spawn untouched (`container_id` null). | one session runs inside a container and one runs natively, from the same task |
-| **P2 — the digest loop and targets** | `input_digest` computation, rebuild-on-stale, `container.up/down/run`, `container_runs`, per-container networks | a lane gets its own Postgres; two lanes run suites concurrently without port contention |
-| **P3 — portability** | `node_id` points at another machine; the image pulls from a registry | **no data-model change required** |
+| **P1 — model + local docker + the first catalog entry** | the kind, detail tables, doors, `container_instances`, `in_container`, `--container` on spawn, `docker run` / `exec`, the CLI mount of §6.3, panel showing spec + digest + staleness + live instances. **One catalog container, `tm8-web-dev`, built and used.** Native spawn untouched (`container_id` null). | one session runs inside `tm8-web-dev` and one runs natively, from the same task |
+| **P2 — the digest loop, routing and targets** | `input_digest` computation, rebuild-on-stale, the `runs_in` edge and its precedence ladder (§4B.5), `container.up/down/run`, `container_runs`, per-container networks, `tm8-mobile-dev` and `tm8-db` | a task routed to `tm8-mobile-dev` runs there without being told twice; a lane gets its own Postgres; two lanes run suites concurrently without port contention |
+| **P3 — portability** | `node_id` points at another machine; catalog images pull from a registry | **no data-model change required** |
 
 **P3 requiring no schema change is the reason to build P1 as containers rather than as a "named
 local recipe".** A recipe abstraction would have to be rewritten to reach P3; this does not. Said
@@ -462,9 +658,9 @@ Postgres; this feature should not add a third instance of that.
 
 ## 17. Open questions for the owner
 
-1. **`resolveAgentBinary`** — install the agent CLI at a path its hardcoded candidate list already
-   knows, or change the resolver? (§6.2) This is the only pre-existing code the design forces a
-   decision about.
+1. ~~**`resolveAgentBinary`** — change the resolver?~~ **ANSWERED (§6.2): no.** `/usr/local/bin`
+   is already in `agentBinDirCandidates` and is the natural install path in a Linux image, so this
+   is a packaging convention rather than a code change.
 2. **Rebuild policy on stale** — refuse and ask, or rebuild automatically? (§8) Automatic is
    friendlier and can burn minutes at spawn time.
 3. **Does a container survive a node restart?** `--restart unless-stopped` versus re-provision on
@@ -472,5 +668,13 @@ Postgres; this feature should not add a third instance of that.
 4. **Scope of `input_digest`** — is the migration chain an input for a container that provisions a
    database? (§10) Says yes; wants confirmation, because it makes the digest churn with every
    migration.
-5. **Is `project_id` really `not null`?** (§5.1) It forecloses a general-purpose scratch container
-   that belongs to no repo. The argument for `not null` is that the spec file lives in a repo.
+5. ~~**Is `project_id` really `not null`?**~~ **ANSWERED by the owner (§4B): no, it must be
+   nullable** — a catalog of named environments is the point, and those belong to no repo.
+6. **Where do the catalog's Dockerfiles live?** (§7) A dedicated infra repo is assumed, because
+   `input_digest` needs a versioned spec to hash. Inline spec text would make the catalog
+   UI-editable and destroy its provenance.
+7. **Is the `tm8` CLI mount read-write?** (§6.3) `cliBinDir()` writes a symlink and returns `null`
+   if it cannot, which silently produces a container with no `tm8` on `PATH` — the failure looks
+   like a broken agent. Either mount read-write or guarantee the symlink is pre-warmed.
+8. **How does a catalog container get built the first time, and by whom?** P1 assumes a human
+   builds `tm8-web-dev`; nothing here designs a build queue.
