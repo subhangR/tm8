@@ -400,19 +400,35 @@ TM8_UI_DIR=${TM8_ENV_CHECKOUT}/packages/tm8-ui/dist
 TM8_LAUNCH_BOOTSTRAP=1
 TM8_SESSION_CAP=unlimited
 
-# Two switches every working tm8 instance sets, for reasons that are not obvious:
+# The one switch every working tm8 instance sets, for a reason that is not
+# obvious:
 #
 # TM8_IDEMPOTENCY_ENABLED=0 — the ledger gate refuses saves from the authoring
 #   lane's \`au-<n>\` clientMutationIds, which reset on every page load and walk
 #   back onto ids already bound to a different operation. This also re-hides the
 #   silent-replay path; the real fix is unique ids upstream.
-# TM8_PREVIEW_ENABLED=0 — TM8_PREVIEW_PORT is a fixed 4613 that another instance
-#   holds, so the listener dies with EADDRINUSE anyway. Worse, setting
-#   config.preview makes http/security.ts DELETE \`localhost\` from this node's own
-#   host allowlist, and every browser reaching the UI as localhost is then
-#   refused with \`Host "localhost:PORT" is not this node\`.
 TM8_IDEMPOTENCY_ENABLED=0
-TM8_PREVIEW_ENABLED=0
+
+# ARTIFACT PREVIEWS ARE ON, and this file deliberately does not say otherwise.
+#
+# It used to write TM8_PREVIEW_ENABLED=0, for two reasons that both expired
+# with the same-origin default (2026-08-16): the fixed 4613 listener that died
+# with EADDRINUSE against another instance, and http/security.ts DELETING
+# \`localhost\` from this node's own host allowlist, which refused every browser
+# reaching the UI as localhost. Neither happens now — previews are a \`/p/\`
+# route on the app socket, so there is no second listener and no allowlist
+# partition — but the stale \`=0\` outlived them, and an installed node's
+# artifact panel stayed an empty box forever. It also contradicted
+# deploy/prod/env.sh, which has carried previews ON since that change.
+#
+# The flag itself is NOT gone and must not be: it is one of the two remedies
+# loadConfig names when it refuses to boot a PUBLISHED https prod node with
+# same-origin previews (TM8-ARTIFACTS-DESIGN §9.2). A node published under a
+# public TLS name — TM8_PUBLIC_ORIGIN or TM8_ALLOWED_ORIGINS, set in a systemd
+# drop-in rather than here — must pick a preview origin
+# (TM8_PREVIEW_PUBLIC_ORIGIN, see deploy/utho/systemd/) or set
+# TM8_PREVIEW_ENABLED=0. It will refuse to start otherwise, which is the point.
+# A loopback-only slot, which is what this installer produces, needs neither.
 ENVFILE
 }
 

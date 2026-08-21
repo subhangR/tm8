@@ -231,9 +231,10 @@ Each of these was actually run:
 - Neither staging process has a supervisor. If one dies it stays dead. Prod has
   `supervise.sh` for exactly this reason — other lanes pattern-kill every
   process matching `packages/server/dist/index.js`, which matches staging too.
-- `TM8_IDEMPOTENCY_ENABLED=0` and `TM8_PREVIEW_ENABLED=0` are set on staging for
-  the same documented reasons as prod (see the comments in `env.sh`). Artifact
-  preview therefore does **not** work on staging.
+- `TM8_IDEMPOTENCY_ENABLED=0` is set on staging for the same documented reason
+  as prod (see the comments in `env.sh`). `TM8_PREVIEW_ENABLED=0` is **not**:
+  since the same-origin `/p/` route landed (2026-08-16) previews default on and
+  need no second listener, so artifact preview works on staging.
 - Staging runs the *uncommitted* working tree, including other lanes' in-flight
   migrations. `run-server.sh` does not migrate the DB; if a lane adds a
   migration, run `TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_staging

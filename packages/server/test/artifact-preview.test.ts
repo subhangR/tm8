@@ -264,6 +264,37 @@ describe('§9.2 — boot resolution: same-origin default, second-origin refusals
     expect(loadConfig({ ...prod, TM8_PREVIEW_PUBLIC_ORIGIN: 'https://artifacts.tm8.sh' }).preview?.sameOrigin).toBe(false);
   });
 
+  /**
+   * The half of that refusal it did not have. `TM8_PUBLIC_ORIGIN` is not the
+   * only way a node states its public name — the second-origin refusals below
+   * already read `TM8_ALLOWED_ORIGINS` as one — and a drop-in this repo ships
+   * declares the browser origin with that key alone
+   * (deploy/utho/systemd/tm8-prod-public-wss.conf, taken on its own). A prod
+   * node serving untrusted bundle HTML from an https origin is the exact
+   * condition the test above refuses; which env var the operator used to name
+   * that origin cannot be what decides it.
+   */
+  it('refuses that same shape when the https identity comes from TM8_ALLOWED_ORIGINS alone', () => {
+    const wss = { ...BASE_ENV, TM8_ENV: 'prod', TM8_ALLOWED_ORIGINS: 'https://tm8.sh' };
+    expect(() => loadConfig({ ...wss })).toThrow(ConfigError);
+    try {
+      loadConfig({ ...wss });
+    } catch (err) {
+      // Names the origin AND the key that declared it, so the operator can
+      // find the drop-in that armed this.
+      expect((err as Error).message).toContain('https://tm8.sh');
+      expect((err as Error).message).toContain('TM8_ALLOWED_ORIGINS');
+      expect((err as Error).message).toContain('TM8_PREVIEW_PUBLIC_ORIGIN');
+      expect((err as Error).message).toContain('TM8_PREVIEW_ENABLED=0');
+    }
+    // Both exits still work from this shape too — including the one the
+    // installer no longer writes by default (install.sh).
+    expect(loadConfig({ ...wss, TM8_PREVIEW_ENABLED: '0' }).preview).toBeUndefined();
+    expect(
+      loadConfig({ ...wss, TM8_PREVIEW_PUBLIC_ORIGIN: 'https://artifacts.tm8.sh' }).preview?.sameOrigin,
+    ).toBe(false);
+  });
+
   it('nothing LOCAL changes shape because that refusal exists', () => {
     // The default-config node, the http-published node, and the non-prod
     // https node all keep the ratified same-origin mount. This is the
@@ -272,6 +303,16 @@ describe('§9.2 — boot resolution: same-origin default, second-origin refusals
     expect(loadConfig({ ...BASE_ENV, TM8_PUBLIC_ORIGIN: 'http://127.0.0.1:7777' }).preview?.sameOrigin).toBe(true);
     expect(loadConfig({ ...BASE_ENV, TM8_PUBLIC_ORIGIN: 'https://staging.example' }).preview?.sameOrigin).toBe(true);
     expect(loadConfig({ ...BASE_ENV, TM8_ENV: 'prod' }).preview?.sameOrigin).toBe(true);
+    // ...and the widening to TM8_ALLOWED_ORIGINS carries the same scoping: an
+    // https allowlist off prod is still a same-origin node (a loud boot line
+    // in main.ts, not a refusal), and an http one is not a published TLS name
+    // at all. Only the prod+https pair refuses.
+    expect(
+      loadConfig({ ...BASE_ENV, TM8_ALLOWED_ORIGINS: 'https://staging.example' }).preview?.sameOrigin,
+    ).toBe(true);
+    expect(
+      loadConfig({ ...BASE_ENV, TM8_ALLOWED_ORIGINS: 'http://127.0.0.1:7777' }).preview?.sameOrigin,
+    ).toBe(true);
   });
 
   it('the proxied public origin is what frames and what the bundle may talk to', () => {

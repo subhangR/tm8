@@ -50,6 +50,7 @@ import {
 } from './facade/services/w2/message-dispatch.js';
 import {
   loadConfig,
+  publishedHttpsOrigins,
   resolveClipboardDir,
   resolveServerDataDir,
   type ServerConfig,
@@ -911,13 +912,14 @@ export async function main(): Promise<void> {
     // The prod version of this is a boot refusal (config.ts). Off prod it is
     // this line, because the failure is otherwise INVISIBLE: the node boots,
     // previews render, and the only thing standing between an agent-authored
-    // bundle and the session cookie is one CSP directive.
-    if (
-      server.config.preview?.sameOrigin
-      && server.config.publicOrigin?.startsWith('https:')
-    ) {
+    // bundle and the session cookie is one CSP directive. Same published-name
+    // derivation as the refusal, from the same function, so the warning cannot
+    // go quiet on the nodes that declare their https identity through
+    // TM8_ALLOWED_ORIGINS rather than TM8_PUBLIC_ORIGIN.
+    const publishedHttps = publishedHttpsOrigins(server.config.publicOrigin, server.config.allowedOrigins);
+    if (server.config.preview?.sameOrigin && publishedHttps.length > 0) {
       console.warn(
-        `  WARNING: previews are served SAME-ORIGIN from ${server.config.publicOrigin} — untrusted ` +
+        `  WARNING: previews are served SAME-ORIGIN from ${publishedHttps.join(', ')} — untrusted ` +
           `bundle HTML on the origin that holds the session cookie, contained by the response CSP's ` +
           `sandbox alone. Set TM8_PREVIEW_PUBLIC_ORIGIN to a separate hostname (design §9.2).`,
       );

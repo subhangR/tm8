@@ -342,6 +342,32 @@ function parseBareOrigin(
   return parsed;
 }
 
+/**
+ * Every origin at which this node is PUBLISHED under TLS — the answer to "is
+ * agent-authored bundle HTML about to run on an origin a real browser trusts?"
+ *
+ * Two keys declare that identity and neither can be derived from the other:
+ * `TM8_PUBLIC_ORIGIN` is the name the node mints into URLs, and
+ * `TM8_ALLOWED_ORIGINS` is the exact set the transport checks admit — a node
+ * behind nginx can be published with only the second
+ * (deploy/utho/systemd/tm8-prod-public-wss.conf is exactly that shape on its
+ * own). Reading one of the two is what let the same-origin preview guard pass
+ * on a node shaped like the one it was written to refuse, so the refusal
+ * (resolvePreview) and the off-prod warning (main.ts) share this function
+ * rather than each re-deriving it.
+ *
+ * http origins are excluded on purpose: the guard is about the cookie jar a
+ * public TLS name owns, not about every value an operator may have listed.
+ */
+export function publishedHttpsOrigins(
+  publicOrigin: string | undefined,
+  allowedOrigins: readonly string[] | undefined,
+): readonly string[] {
+  return Array.from(
+    new Set([...(publicOrigin ? [publicOrigin] : []), ...(allowedOrigins ?? [])]),
+  ).filter((value) => value.startsWith('https:'));
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const host = env.TM8_BIND?.trim() || '127.0.0.1';
   const port = Number.parseInt(env.TM8_PORT?.trim() || '4610', 10);
@@ -583,12 +609,23 @@ function resolvePreview(
   const explicitPublicRaw = env.TM8_PREVIEW_PUBLIC_ORIGIN?.trim() || undefined;
   if (explicitHost === undefined && explicitPort === undefined && explicitPublicRaw === undefined) {
     // The same-origin default is safe on a node nobody else can route to, and
-    // that is the node it was ratified for (2026-08-16). `TM8_PUBLIC_ORIGIN`
-    // naming an https origin says the opposite out loud: this node is
-    // published under a public TLS name, so "same origin" means
-    // agent-authored bundle HTML executing on the origin that holds
-    // `__Host-tm8-session`, with the response CSP's `sandbox allow-scripts`
-    // as the SINGLE control between that and session takeover.
+    // that is the node it was ratified for (2026-08-16). An https origin in
+    // this node's PUBLISHED identity says the opposite out loud: this node is
+    // reached under a public TLS name, so "same origin" means agent-authored
+    // bundle HTML executing on the origin that holds `__Host-tm8-session`,
+    // with the response CSP's `sandbox allow-scripts` as the SINGLE control
+    // between that and session takeover.
+    //
+    // Read from BOTH keys that declare that identity, for the same reason the
+    // second-origin refusals below do — and they already do: the appOrigins
+    // and appHostnames sets built there treat `TM8_ALLOWED_ORIGINS` as a name
+    // this node is reached by. A node fronted by nginx and locked to its
+    // browser origin with `TM8_ALLOWED_ORIGINS=https://…` and no
+    // `TM8_PUBLIC_ORIGIN` is published just as publicly, and the transport
+    // checks already treat that value as authoritative. Keying this one
+    // refusal on TM8_PUBLIC_ORIGIN alone therefore measured a different fact
+    // than the file's other refusals do, and passed on a config shape this
+    // repo ships (tm8-prod-public-wss.conf, taken on its own).
     //
     // Refused in PROD only, and that scoping is deliberate rather than timid.
     // Same-origin-behind-https is a shape this repo ships and tests (the
@@ -598,17 +635,15 @@ function resolvePreview(
     // that this node is the real one — the same trigger the https rule on
     // TM8_ALLOWED_ORIGINS above already uses. Off prod this is a loud boot
     // line instead (main.ts), never silence.
-    if (
-      publicOrigin !== undefined
-      && publicOrigin.startsWith('https:')
-      && (env.TM8_ENV ?? '').trim() === 'prod'
-    ) {
+    const publishedHttps = publishedHttpsOrigins(publicOrigin, allowedOrigins);
+    if (publishedHttps.length > 0 && (env.TM8_ENV ?? '').trim() === 'prod') {
       throw new ConfigError(
-        `refusing to start: this is a production node published at ${publicOrigin} ` +
-          `(TM8_ENV=prod, TM8_PUBLIC_ORIGIN) and artifact previews would be served SAME-ORIGIN from ` +
-          `it. Untrusted bundle content must never share the origin that holds the session cookie ` +
-          `(TM8-ARTIFACTS-DESIGN §9.2). Set TM8_PREVIEW_PUBLIC_ORIGIN to a separate hostname you ` +
-          `publish to this node's preview listener, or TM8_PREVIEW_ENABLED=0 to keep previews dark.`,
+        `refusing to start: this is a production node published at ${publishedHttps.join(', ')} ` +
+          `(TM8_ENV=prod, TM8_PUBLIC_ORIGIN/TM8_ALLOWED_ORIGINS) and artifact previews would be ` +
+          `served SAME-ORIGIN from it. Untrusted bundle content must never share the origin that ` +
+          `holds the session cookie (TM8-ARTIFACTS-DESIGN §9.2). Set TM8_PREVIEW_PUBLIC_ORIGIN to a ` +
+          `separate hostname you publish to this node's preview listener, or TM8_PREVIEW_ENABLED=0 ` +
+          `to keep previews dark.`,
       );
     }
     const host = appHost.toLowerCase();
