@@ -8,11 +8,17 @@
  * vendored artifact bundle in a sandboxed frame — see `HelpPlate.tsx` for why
  * that is the port, and why it is safe.
  *
+ * THE GUIDE OPENS ON ITS OWN FRONT PAGE. A bare `/help` shows `HelpHome` — what
+ * tm8 IS, then the map of the whole guide — rather than auto-opening plate 01,
+ * which taught HOW tm8 works to a reader who had not yet been told what it is.
+ * The home is the `plate: null` spelling of the route, so it is linkable and
+ * Back returns to it after any plate.
+ *
  * WHICH PLATE IS OPEN IS THE URL'S. `navStore` holds it as `view.plate`, so a
  * plate is linkable, reloadable and Back-able: every open is a history push,
  * which makes the browser's Back button the reader's "previous page" and makes
  * a Help link something you can send someone. The one route this screen writes
- * with `replace` is the desktop landing — see the effect below.
+ * with `replace` is the correction of a dead slug — see the effect below.
  */
 import {
   useCallback,
@@ -25,6 +31,7 @@ import {
 import { PanelResizer, VectorIcon, usePanelWidth } from '../kit';
 import { KIND_ART } from '../domain';
 import { navStore, useNavStore } from '../stores/navStore';
+import { HelpHome } from './HelpHome';
 import { HelpPlate } from './HelpPlate';
 import { HELP_SET, type HelpChapter, type HelpPage, type HelpSet } from './help-set';
 import './help.css';
@@ -60,28 +67,22 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
   }, []);
 
   /*
-   * THE DESKTOP LANDING, and the one `replace` this screen writes.
-   *
-   * Two panes are up and the right one has nothing else to hold, so a bare
-   * `/help` opens plate 01. Written into the ROUTE rather than kept as a local
-   * default, because a URL reading `/help` while plate 01 is on screen is a URL
-   * that shares the wrong thing — and `replace` rather than `push` because the
-   * reader did not navigate here, so Back must still leave Help instead of
+   * A DEAD SLUG DEGRADES TO THE FRONT PAGE, and this is the one `replace` this
+   * screen writes. A retired or mistyped link opens the guide at its home —
+   * where the map is — rather than a broken reader, and the URL is corrected to
+   * say so, because `/help/a-plate-that-is-gone` while the home is on screen is
+   * a URL that shares the wrong thing. `replace` rather than `push` because the
+   * reader did not navigate here: Back must still leave Help instead of
    * bouncing between two spellings of the same screen.
-   *
-   * A slug naming no plate lands here too and is corrected the same way: a
-   * retired or mistyped link opens the guide at its first page.
    */
   useEffect(() => {
-    if (stacked || view.view !== 'help' || selected) return;
-    const first = set.pages[0];
-    if (!first) return;
+    if (view.view !== 'help' || view.plate === null || selected) return;
     navStore.setState((state) => ({
-      view: { view: 'help', plate: first.slug },
+      view: { view: 'help', plate: null },
       history: 'replace',
       revision: state.revision + 1,
     }));
-  }, [stacked, view.view, selected, set.pages]);
+  }, [view, selected]);
 
   const selectRelative = useCallback(
     (delta: number) => {
@@ -90,6 +91,15 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
       if (next) open(next.slug);
     },
     [selectedIndex, set.pages, open],
+  );
+
+  /** A chapter card in the reader-pane home opens that chapter's first plate. */
+  const openChapter = useCallback(
+    (chapter: HelpChapter) => {
+      const first = chapter.pages[0];
+      if (first) open(first.slug);
+    },
+    [open],
   );
 
   const contents = (
@@ -138,8 +148,7 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
       />
       <section
         className="hlp-reader"
-        aria-labelledby={selected ? 'hlp-reader-title' : undefined}
-        aria-label={selected ? undefined : 'Help page'}
+        aria-labelledby={selected ? 'hlp-reader-title' : 'hlp-home-title'}
         data-testid="help-reader"
       >
         {selected && selectedChapter ? (
@@ -154,7 +163,7 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
             <HelpReader page={selected} />
           </>
         ) : (
-          <p className="hlp-empty" role="status">Choose a plate from the contents.</p>
+          <HelpHome set={set} onOpen={open} onChapter={openChapter} />
         )}
       </section>
     </div>
@@ -170,16 +179,25 @@ function HelpContents({ set, selectedSlug, onSelect, stacked }: {
   const openChapters = set.chapters.filter((chapter) => chapter.pages.length > 0).length;
   return (
     <div className="hlp-contents__body">
-      <header className="hlp-masthead">
-        <div className="hlp-masthead__kicker"><span>tm8</span><span aria-hidden>◆</span><span>Field guide</span></div>
-        <h1 className="hlp-masthead__title">Help</h1>
-        <p className="hlp-masthead__lede">A practical library for understanding the graph, finding your footing, and working well together.</p>
-        <p className="hlp-masthead__measure" aria-label={`${set.pages.length} plates across ${openChapters} populated chapters`}>
-          {set.pages.length} {set.pages.length === 1 ? 'plate' : 'plates'} <span aria-hidden>·</span> {openChapters} {openChapters === 1 ? 'chapter' : 'chapters'} open
-        </p>
-      </header>
+      {stacked ? (
+        /* The phone has ONE surface, so the front page and the shelf share it:
+           the home reads first — what tm8 is, then the map — and a chapter card
+           scrolls to that chapter's shelf section below, where the plates are. */
+        <HelpHome set={set} onOpen={onSelect} onChapter={scrollToChapterShelf} />
+      ) : (
+        <>
+          <header className="hlp-masthead">
+            <div className="hlp-masthead__kicker"><span>tm8</span><span aria-hidden>◆</span><span>Field guide</span></div>
+            <h1 className="hlp-masthead__title">Help</h1>
+            <p className="hlp-masthead__lede">A practical library for understanding the graph, finding your footing, and working well together.</p>
+            <p className="hlp-masthead__measure" aria-label={`${set.pages.length} plates across ${openChapters} populated chapters`}>
+              {set.pages.length} {set.pages.length === 1 ? 'plate' : 'plates'} <span aria-hidden>·</span> {openChapters} {openChapters === 1 ? 'chapter' : 'chapters'} open
+            </p>
+          </header>
 
-      <ChapterMap chapters={set.chapters} />
+          <ChapterMap chapters={set.chapters} />
+        </>
+      )}
       <div className="hlp-library" data-testid="help-library">
         {set.chapters.filter((chapter) => chapter.pages.length > 0).map((chapter) => (
           <HelpChapterSection
@@ -193,6 +211,11 @@ function HelpContents({ set, selectedSlug, onSelect, stacked }: {
       </div>
     </div>
   );
+}
+
+/** The stacked home's chapter verb: the shelf is on the same surface, below. */
+function scrollToChapterShelf(chapter: HelpChapter) {
+  document.getElementById(`hlp-shelf-${chapter.id}`)?.scrollIntoView({ block: 'start' });
 }
 
 function ChapterMap({ chapters }: { chapters: readonly HelpChapter[] }) {
@@ -225,7 +248,7 @@ function HelpChapterSection({ chapter, selectedSlug, onSelect, stacked }: {
 }) {
   const headingId = `hlp-chapter-${chapter.id}`;
   return (
-    <section className="hlp-chapter" aria-labelledby={headingId} data-testid="help-chapter" data-section={chapter.id}>
+    <section id={`hlp-shelf-${chapter.id}`} className="hlp-chapter" aria-labelledby={headingId} data-testid="help-chapter" data-section={chapter.id}>
       <header className="hlp-chapter__head">
         <span className="hlp-chapter__number" aria-hidden>{chapter.number}</span>
         <span className="hlp-chapter__words">

@@ -16,14 +16,18 @@
  *    HTML this app's cookies, storage and DOM. The assertion is on the exact
  *    string, so a widened sandbox cannot pass as "still sandboxed".
  *
- *  · A PLATE IS AN ADDRESS. It lives in the route, so it can be linked,
- *    reloaded and Back-ed. A bare `/help` on a wide screen opens plate 01 and
- *    says so in the URL; an unknown slug degrades to that rather than to a
- *    broken screen.
+ *  · THE GUIDE OPENS ON ITS OWN FRONT PAGE. A bare `/help` shows the home —
+ *    what tm8 IS, then the map of the whole guide — never a plate nobody
+ *    chose: plate 01 teaches HOW tm8 works, which is the wrong first page for
+ *    a reader who has not been told what it is.
  *
- *  · THE PHONE IS ONE COLUMN AND HAS A WAY BACK. `stacked` opens on the
- *    contents (never inside a page nobody chose) and a page opened over them
- *    carries a back verb — the only exit on a phone.
+ *  · A PLATE IS AN ADDRESS. It lives in the route, so it can be linked,
+ *    reloaded and Back-ed. An unknown slug degrades to the home — where the
+ *    map is — rather than to a broken screen.
+ *
+ *  · THE PHONE IS ONE COLUMN AND HAS A WAY BACK. `stacked` opens on the home
+ *    and contents in one scroll (never inside a page nobody chose) and a page
+ *    opened over them carries a back verb — the only exit on a phone.
  *
  * jsdom loads no stylesheets (the recurring law of this suite), so nothing here
  * claims colour, width or geometry — presence, order and text only.
