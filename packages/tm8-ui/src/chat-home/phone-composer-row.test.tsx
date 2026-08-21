@@ -100,15 +100,6 @@ const turn = (parts: ChatTurnPart[]): ChatTurn => ({
   parts,
 });
 
-/** A thread that has touched three entities — enough that a tray would draw. */
-const TOUCHED = [
-  turn([
-    ...call('tm8_read_entity', { id: id(1) }, { id: id(1), kind: 'doc', title: 'A doc' }),
-    ...call('tm8_create_entity', { id: id(2) }, { id: id(2), kind: 'task', title: 'A task' }),
-    ...call('tm8_read_entity', { id: id(3) }, { id: id(3), kind: 'channel', title: 'A channel' }),
-  ]),
-];
-
 describe('the stylesheet these guards read is actually parseable', () => {
   /**
    * THIS ONE EXISTS BECAUSE IT CAUGHT ME, and the failure it catches is one no
@@ -148,54 +139,37 @@ describe('the stylesheet these guards read is actually parseable', () => {
 
 describe('the entity tray is absent on the phone', () => {
   /**
-   * HINGES ON: `const chips = oneSurface ? [] : seeds` in `EntityTray`. Make it
-   * `seeds` unconditionally and this reds.
-   *
-   * The reporter's words: "on top of the chat there are entity chips, many
-   * chips in horizontal scroll ... remove those chips completely". What made it
-   * a defect rather than a preference is that `MobileShell` wires no
-   * entity-open handler, so `EntityChip` falls to its `<span>` branch and every
-   * one of those chips was INERT.
+   * The 01a01c91 ruling ("many chips in horizontal scroll ... remove those
+   * chips completely") is now enforced STRUCTURALLY: S4 removed the chips
+   * from the tray on every surface — the thread's entities live in the
+   * ledger panel, which is handler-gated (D1) and so also absent on a
+   * MobileShell that wires no opener. What remains phone-relevant here is
+   * the tray's own honesty rule: no handlers ⇒ no row at all, never an
+   * empty band or a dead control.
    */
-  it('renders no chips at all inside the phone surface', () => {
+  it('renders no tray row at all when the phone wires nothing', () => {
     const view = render(
       <MobileSurfaceProvider sheetHost={null}>
-        <EntityTray turns={TOUCHED} />
-      </MobileSurfaceProvider>,
-    );
-    expect(view.queryAllByTestId('chat-entity-chip')).toHaveLength(0);
-  });
-
-  /** With no stage tabs to draw either — which is what the phone passes — the
-   *  whole row goes, rather than leaving an empty 24px band. */
-  it('renders no tray row at all when the phone wires no stages', () => {
-    const view = render(
-      <MobileSurfaceProvider sheetHost={null}>
-        <EntityTray turns={TOUCHED} />
+        <EntityTray />
       </MobileSurfaceProvider>,
     );
     expect(view.queryByTestId('chat-entity-tray')).toBeNull();
+    expect(view.queryAllByTestId('chat-entity-chip')).toHaveLength(0);
   });
 
-  /** THE OTHER HALF OF THE RULING, and the one a blanket delete would have
-   *  broken: on the desktop the same tray is wired and stays. */
-  it('still renders the chips off the phone', () => {
-    const view = render(<EntityTray turns={TOUCHED} />);
-    expect(view.queryAllByTestId('chat-entity-chip').length).toBeGreaterThan(0);
-  });
-
-  /** It is the CHIPS that are gone and not the component: a phone host that
-   *  did wire the stages would still get its tabs. Without this, replacing the
-   *  gate with an unconditional `return null` would pass every test above. */
-  it('keeps a phone host stage tabs while still drawing no chips', () => {
+  /** A phone host that DID wire the stages would still get its tabs — the
+   *  gate is handlers, not the device. (Fleet's tab is absorbed by the
+   *  ledger panel's scope picker — ruling 11 — so Graph is the one stage.) */
+  it('keeps a phone host its stage tab while still drawing no chips', () => {
     const view = render(
       <MobileSurfaceProvider sheetHost={null}>
-        <EntityTray turns={TOUCHED} onStage={() => {}} />
+        <EntityTray onStage={() => {}} />
       </MobileSurfaceProvider>,
     );
     expect(view.queryAllByTestId('chat-entity-chip')).toHaveLength(0);
     expect(view.getByTestId('chat-entity-tray')).toBeTruthy();
-    expect(view.getByRole('button', { name: /Fleet/ })).toBeTruthy();
+    expect(view.getByRole('button', { name: /Graph/ })).toBeTruthy();
+    expect(view.queryByRole('button', { name: /Fleet/ })).toBeNull();
   });
 });
 

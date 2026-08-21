@@ -333,16 +333,23 @@ describe('Chat Home entity chip suppression', () => {
       });
     });
 
-    // Scoped to the chips: the live graph draws the same titles, so a bare
-    // getByText would now match the graph node too and say nothing about chips.
+    /* The chips are gone (S3/S4) — the surviving surface is the ledger's
+       counted read line, and the suppression rule survives by CONSTRUCTION:
+       ruling 2 counts only full summaries in RESULTS, and the own message id
+       appeared only in the call's args. One foreign task read ⇒ 'Read 1
+       task', and the own id surfaces nowhere. */
+    /* The sentence stays exact; S3b's aria-hidden expansion caret is
+       affordance chrome and is stripped before comparing. */
+    const sentenceOf = (line: HTMLElement): string => {
+      const clone = line.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
+      return clone.textContent ?? '';
+    };
     await waitFor(() =>
       expect(
-        view
-          .getAllByTestId('chat-entity-chip')
-          .some((chip) => chip.textContent?.includes('Foreign task')),
+        view.getAllByTestId('chat-ledger-reads').some((line) => sentenceOf(line) === 'Read 1 task'),
       ).toBe(true),
     );
-    const chips = view.getAllByTestId('chat-entity-chip');
-    expect(chips.some((chip) => chip.textContent?.includes('000000000011'))).toBe(false);
+    expect(view.container.textContent).not.toContain('000000000011');
   });
 });

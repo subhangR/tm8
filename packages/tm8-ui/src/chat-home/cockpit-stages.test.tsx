@@ -44,19 +44,22 @@ function mount(over: Partial<Parameters<typeof ChatHomeScreen>[0]> = {}) {
 
 describe('the stage tabs', () => {
   it('are absent without a host verb — the tray never draws a dead control', async () => {
-    mount();
+    mount({ onShowChat: vi.fn() });
     await screen.findByTestId('chat-entity-tray');
+    expect(screen.queryByText('Graph')).toBeNull();
+    // The Fleet tab is absorbed by the ledger panel's scope picker (S4,
+    // ruling 11) and must not return under ANY wiring.
     expect(screen.queryByText('Fleet')).toBeNull();
   });
 
   it('ask the HOST to change the address rather than swapping locally', async () => {
     const onStageChange = vi.fn();
     mount({ onStageChange });
-    fireEvent.click(await screen.findByText('Fleet'));
-    expect(onStageChange).toHaveBeenCalledWith('fleet');
+    fireEvent.click(await screen.findByText('Graph'));
+    expect(onStageChange).toHaveBeenCalledWith('graph');
     // Nothing rendered yet: the stage follows the address coming back down,
     // so Back and a reload land on the same screen the click produced.
-    expect(screen.queryByTestId('cockpit-fleet')).toBeNull();
+    expect(screen.queryByTestId('cockpit-graph')).toBeNull();
   });
 });
 
@@ -102,7 +105,7 @@ describe('the conversation header belongs to the conversation', () => {
    * surface (a terminal) where vertical space is the whole point.
    */
   it('is drawn while the conversation itself is in the berth', async () => {
-    const { container } = mount();
+    const { container } = mount({ onShowChat: vi.fn() });
     await screen.findByTestId('chat-entity-tray');
     expect(container.querySelector('.tch-conversation__head')).not.toBeNull();
   });
@@ -159,7 +162,7 @@ describe('the WHOLE bottom berth belongs to the conversation', () => {
   const berth = (container: HTMLElement) => container.querySelector('.tch-composer-wrap');
 
   it('is drawn while the conversation itself is in the berth', async () => {
-    const { container } = mount();
+    const { container } = mount({ onShowChat: vi.fn() });
     await screen.findByTestId('chat-entity-tray');
     expect(composer(container)).not.toBeNull();
     expect(berth(container)).not.toBeNull();
