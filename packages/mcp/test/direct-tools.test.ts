@@ -204,6 +204,41 @@ describe('direct repository tools', () => {
     });
   });
 
+  it('strips credentials from the origin URL it reports back to the model', async () => {
+    // PORTED, not written fresh. This assertion lived in the chat clone test in
+    // packages/server (`provisions one persistent isolated Git clone per
+    // thread`), which #479 deleted along with the clone machinery — and it was
+    // the ONLY place a remote that actually carried credentials was asserted to
+    // come back stripped. `safeGitRemote` still exists and still runs here,
+    // feeding `git_branch` and `git_pr` output back to the model, so deleting
+    // its only real exercise would have left a security-relevant sanitiser
+    // covered by nothing. Review finding F10 on #479.
+    //
+    // The existing test above sets origin to a local path and asserts
+    // `remote: null` — that proves the REJECTION arm. This proves the
+    // STRIPPING arm, which is the one the function exists for.
+    const root = await mkdtemp(join(tmpdir(), 'tm8-mcp-remote-'));
+    await execFileAsync('git', ['init', '-b', 'main'], { cwd: root });
+    await execFileAsync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: root });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: root });
+    await writeFile(join(root, 'README.md'), 'seed\n', 'utf8');
+    await execFileAsync('git', ['add', 'README.md'], { cwd: root });
+    await execFileAsync('git', ['commit', '-m', 'seed'], { cwd: root });
+    await execFileAsync('git', [
+      'remote', 'add', 'origin', 'https://token:secret@github.com/subhangR/tm8.git',
+    ], { cwd: root });
+
+    const router = new Tm8ToolRouter(transport, { mode: 'ask', projectRoot: root });
+    const result = await router.call('git_branch', {});
+    expect(result.structuredContent).toMatchObject({
+      remote: 'https://github.com/subhangR/tm8.git',
+    });
+    // Belt and braces: the secret must not survive anywhere in the payload the
+    // model sees, not merely be absent from the field we happened to check.
+    expect(JSON.stringify(result)).not.toContain('secret');
+    expect(JSON.stringify(result)).not.toContain('token:');
+  });
+
   it('constrains docs and sessions to the thread Space and entity kind', async () => {
     const scopedTransport: CatalogTransport = {
       invoke: async (operation, options) => {

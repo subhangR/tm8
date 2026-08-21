@@ -285,14 +285,48 @@ describe.sequential('start_chat_thread project binding', () => {
       .toMatchObject({ projectId: fixture.linkedProjectId, workdirMode: 'project' });
   });
 
-  it('leaves pre-166 threads as scratch when the column is backfilled', async () => {
+  it('defaults an insert that names neither column to scratch/null', async () => {
     // Every thread written before this migration ran in a server-owned scratch
     // directory, so the column default is the honest description of them — not
     // a guess. A backfill that claimed `project` would retroactively tell the
     // runtime to work somewhere those threads have never been.
+    //
+    // THE EARLIER VERSION OF THIS TEST DID NOT TEST THAT. It called
+    // `configure(root, 'scratch', null)` — passing 'scratch' EXPLICITLY — and
+    // asserted it came back 'scratch', which is the assertion the
+    // "keeps the caller-owned path for scratch" case above already makes. It
+    // exercised the argument, never `default 'scratch'`, while standing where
+    // the backfill's verification was supposed to be and reading as though it
+    // covered it. Review finding F5 on #479.
+    //
+    // The insert below omits BOTH columns, which is the exact shape of every
+    // row 166 had to migrate, and it goes in as the owner because a pre-166 row
+    // was written by a function, not by this RPC.
     const root = await freshRoot();
-    await configure(root, 'scratch', null);
-    const row = await storedRow(root);
+    const row = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.chat_threads(
+           root_message_id, space_id, anchor_id,
+           configured_by_identity_id, configured_by_member_id, teammate_id,
+           model, provider, agent_tool, chat_mode, native_session_id, cwd,
+           client_mutation_id
+         ) values ($1,$2,$3,$4,$5,$6,'claude-opus-5','anthropic','claude-code',
+                   'ask', gen_random_uuid(), $7, $8)`,
+        [
+          root, fixture.spaceId, fixture.anchorId, fixture.identityA,
+          fixture.memberA, fixture.teammateId, `/tmp/tm8-chat-${root}`,
+          `binding-default-${randomUUID()}`,
+        ],
+      );
+      return (await client.query<{ project_id: string | null; workdir_mode: string }>(
+        'select project_id, workdir_mode from public.chat_threads where root_message_id = $1',
+        [root],
+      )).rows[0]!;
+    });
+    // The default landed, AND the pairing constraint accepted the pair it
+    // produced — which is the half that would have failed had the default been
+    // 'project', and the half no explicit-argument test can reach.
     expect(row.workdir_mode).toBe('scratch');
     expect(row.project_id).toBeNull();
   });

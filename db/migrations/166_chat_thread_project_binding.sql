@@ -23,12 +23,38 @@
 --     unexercised. Chat ships `project | scratch` and stays honest about it;
 --     widening the check constraint later is a one-line forward migration.
 --
---   * NO TRUST GATE. `execution_spawn` refuses an untrusted project; chat
---     deliberately does not (ruled 2026-08-21). Chat runs headless under
---     `bypassPermissions`, which already implies workspace trust, so the CLI
---     trust dialog that `workspace-trust.ts` exists to pre-empt is not
---     reachable from this path. Chat is therefore MORE permissive than spawn,
+--   * NO TRUST GATE (ruled 2026-08-21). Chat is MORE permissive than spawn,
 --     on purpose and in writing.
+--
+--     AN EARLIER VERSION OF THIS PARAGRAPH JUSTIFIED IT CIRCULARLY, and the
+--     replacement is here rather than a quiet edit because the bad argument is
+--     the kind that gets copied. It said: chat runs headless under
+--     `bypassPermissions`, so the CLI trust dialog `workspace-trust.ts` exists
+--     to pre-empt is unreachable, so the gate is unnecessary. Both facts are
+--     true and the inference is backwards. `workspace-trust.ts:30-34` states
+--     the dependency in the other direction: "tm8's own authorization is
+--     unchanged and is what makes this legitimate: `execution_spawn` refuses to
+--     launch into an untrusted project, so by the time this runs, an operator
+--     has explicitly vouched for this working directory. This records a
+--     decision a human already made; it does not make one." The dialog was
+--     never the control; its legitimacy DERIVED from the tm8 vouch. Removing
+--     the vouch and citing the dialog's absence is the same fact used twice, in
+--     opposite directions.
+--
+--     THE ACTUAL JUSTIFICATION, which is checkable and survives the picker
+--     landing: `project` mode is reachable only by a Space member, on a project
+--     a NODE ADMIN created (021: `require_node_admin` guards `working_dir` and
+--     `trust`) and a SPACE ADMIN linked (021: `require_space_admin`). We take
+--     that chain as the vouch and accept that chat does not ask again.
+--
+--     Two corrections to the framing while we are here. "execution_spawn
+--     refuses an untrusted project" overstates it — 007_rpc_catalog.sql:2081
+--     requires `p_confirm_untrusted`, a caller-supplied boolean, which is a
+--     CONSENT MOMENT rather than a refusal. Chat has no consent moment at all,
+--     which is the smaller and more honest statement of the gap. And
+--     `projects.trust` is about CONTENT trust — whether a human vouched for
+--     what an agent will read in that directory, i.e. the prompt-injection
+--     surface — which answering a dialog never addressed.
 --
 --   * NO GIT REQUIREMENT. Nothing in `projects` has ever required a working_dir
 --     to be a repository -- `repo_url` is nullable and null on every project on
@@ -101,6 +127,7 @@ declare
   root_entity public.entities;
   member_id uuid;
   request_hash text;
+  legacy_request_hash text;
   stored_hash text;
   last_reply timestamptz;
   configured_at timestamptz;
@@ -142,10 +169,41 @@ begin
     'projectId', p_project_id,
     'workdirMode', p_workdir_mode
   ));
+  -- The 9-argument hash: the same object WITHOUT the two new keys. Computed
+  -- unconditionally so the deploy-window fallback below has it.
+  legacy_request_hash := internal.w2_sha256(jsonb_build_object(
+    'identityId', internal.identity_id(),
+    'rootMessageId', p_root_message_id,
+    'teammateId', p_teammate_id,
+    'model', p_model,
+    'provider', p_provider,
+    'agentTool', p_agent_tool,
+    'mode', p_chat_mode
+  ));
+
   replay := internal.ledger_replay(p_client_mutation_id, 'chat.threads.start');
   if replay is not null then
     stored_hash := replay ->> '_requestHash';
-    if stored_hash is distinct from request_hash then
+    -- DEPLOY-WINDOW FALLBACK (review finding F6 on #479). Every ledger row
+    -- written by the 9-argument function holds a hash computed without
+    -- `projectId`/`workdirMode`. A client retrying that same
+    -- clientMutationId across the deploy recomputes with the new keys and
+    -- mismatches — for a request that is byte-for-byte the one it sent.
+    --
+    -- There is no way back for that caller: the thread was already inserted
+    -- and configuration is write-once, so retrying under a fresh mutation id
+    -- raises 23505 instead. It would never learn its own thread's start
+    -- result. Accepting the legacy hash closes a window that is narrow but
+    -- has no recovery inside it.
+    --
+    -- This is NOT a general weakening. It admits exactly one shape — a
+    -- pre-166 row whose other seven fields match — and a post-166 row can
+    -- never match it, because every row written from here on stores the
+    -- 9-key form only if it predates this function. DELETE THIS BRANCH one
+    -- release after 166 ships; by then no 9-argument row can still be
+    -- in-flight.
+    if stored_hash is distinct from request_hash
+       and stored_hash is distinct from legacy_request_hash then
       raise exception 'chat thread start replay does not match the original request'
         using errcode = '23514', detail = 'chat_thread_start_identity_mismatch';
     end if;
