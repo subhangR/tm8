@@ -492,15 +492,54 @@
 .tch-durable__state[data-state='error'] { color: var(--pn-block); }
 .tch-durable__state[data-state='running'] { color: var(--pn-wait); }
 
-/* Entity chips — the graph entities a turn touched, and now the ONLY surviving
-   trace of its plain tool calls. Standing free in the transcript instead of
-   inside a card, they carry no border and no card padding: the chips ARE the
-   object. Same visual family as list rows: kind mark + title + kind word. */
-.tch-touched {
+/* The ledger lines — what a turn DID to the graph, as sentences (design
+   ruling 1): one counted read line, one line per create (tree-indented via
+   inline padding), one line per transition. They stand free in the transcript
+   like the chip row they replace: no border, no card, no tool chrome. */
+.tch-ledger {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--pn-space-1);
+  flex-direction: column;
+  gap: 2px;
 }
+
+.tch-ledger__reads,
+.tch-ledger__create,
+.tch-ledger__transition {
+  display: flex;
+  gap: var(--pn-space-2);
+  align-items: baseline;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-fine) var(--pn-mono);
+}
+
+.tch-ledger__entity {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A real button only when the host can open entities — same split, same
+   affordance family as the entity chip it replaces. */
+button.tch-ledger__open {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--pn-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.tch-ledger__open:hover {
+  color: var(--pn-brand-2);
+  text-decoration: underline;
+}
+
+.tch-ledger__verb { color: var(--pn-ink-4); }
+
+.tch-ledger__arrow { color: var(--pn-ink-3); }
 
 .tch-entity-chip {
   display: inline-flex;
@@ -1568,8 +1607,10 @@ button.tch-entity-chip:hover {
    fixed the three I had touched. So, enumerated now — every non-column flex
    strip in this file that carries variable-width children:
 
-     .tch-touched, .tch-durable__entities, .tch-usage, .tch-thread__badges,
+     .tch-durable__entities, .tch-usage, .tch-thread__badges,
      .tch-xgraph__legend .......... already `flex-wrap: wrap`. Safe.
+     (the transcript chip row was in this set until the ledger lines
+     replaced it.)
      .ri-card__foot, .tch-picks, .tch-rootbar ... wrapped by this branch.
      .tch-tray__tabs .............. THE MISS. `overflow: hidden`, no wrap.
      the rest (.tch-conversation__head, .tch-turn__byline, .tch-code__head,
