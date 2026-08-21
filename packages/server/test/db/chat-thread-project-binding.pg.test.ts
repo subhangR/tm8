@@ -1,4 +1,4 @@
-// 166: a chat thread names its working directory, and the DATABASE is what
+// 167: a chat thread names its working directory, and the DATABASE is what
 // resolves it. Every rule below is enforced in SQL rather than in the handler
 // because the handler is not the only caller a `security definer` function can
 // ever have — the contract-level `.refine` in front of it is a courtesy that
@@ -300,7 +300,7 @@ describe.sequential('start_chat_thread project binding', () => {
     // covered it. Review finding F5 on #479.
     //
     // The insert below omits BOTH columns, which is the exact shape of every
-    // row 166 had to migrate, and it goes in as the owner because a pre-166 row
+    // row 167 had to migrate, and it goes in as the owner because a pre-167 row
     // was written by a function, not by this RPC.
     const root = await freshRoot();
     const row = await database.transaction(async (client) => {

@@ -1,4 +1,12 @@
--- 166 -- a chat thread names its working directory, the way a work session does.
+-- 167 -- a chat thread names its working directory, the way a work session does.
+--
+-- NUMBERED 167, NOT 166. This file was written as 166 and `166_link_project_
+-- member_attribution.sql` landed on main first, so both existed at that prefix
+-- on the merge. Three separate guards caught it rather than one -- the
+-- migration gate, and the `slice(0, 3)` prefix-uniqueness assertions in
+-- w2-migration-order, w2-feed-context and w2-sec1-replay -- which is why the
+-- collision surfaced as a red CI rather than as one of two migrations silently
+-- not applying on a live node.
 --
 -- THE DEFECT THIS CLOSES. `chat_threads` carried one `cwd` text column and
 -- nothing else, so a thread had no idea WHICH project it was working in. The
@@ -197,10 +205,10 @@ begin
     -- has no recovery inside it.
     --
     -- This is NOT a general weakening. It admits exactly one shape — a
-    -- pre-166 row whose other seven fields match — and a post-166 row can
+    -- pre-167 row whose other seven fields match — and a post-167 row can
     -- never match it, because every row written from here on stores the
     -- 9-key form only if it predates this function. DELETE THIS BRANCH one
-    -- release after 166 ships; by then no 9-argument row can still be
+    -- release after 167 ships; by then no 9-argument row can still be
     -- in-flight.
     if stored_hash is distinct from request_hash
        and stored_hash is distinct from legacy_request_hash then

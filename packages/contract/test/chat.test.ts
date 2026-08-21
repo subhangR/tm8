@@ -38,7 +38,7 @@ describe('TM8 Chat v1 contract', () => {
   });
 
   it('refuses a workdir mode and project id that disagree', () => {
-    // The pairing is enforced in SQL too (166) — that is the boundary, and it
+    // The pairing is enforced in SQL too (167) — that is the boundary, and it
     // is what a non-browser caller meets. This refinement exists so the
     // BROWSER's mistake comes back as a readable contract error instead of a
     // Postgres exception surfacing through a 500-shaped response.

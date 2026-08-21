@@ -815,11 +815,19 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // exactly as the block above demands:
     //   origin/main @ 69526832: ls db/migrations/*.sql | wc -l   -> 155  (pin said 154, RED)
     //   this branch:            ls db/migrations/*.sql | wc -l   -> 156
-    // The +1 this branch owns is 166_chat_thread_project_binding.sql. The other
+    // The +1 this branch owns is 167_chat_thread_project_binding.sql. The other
     // +1 is a pre-existing red being paid off here rather than left for whoever
     // next has to tell their own failure apart from it — which is the exact
     // cost the comment above is written to prevent.
-    expect(server.appliedMigrations.length).toBe(156);
+    //
+    // 156 -> 157 (2026-08-21, at merge): origin/main landed
+    // 166_link_project_member_attribution.sql while this branch was open, so the
+    // merged tree carries both it and this branch's own file. Re-measured on the
+    // merged tree, not adjusted by arithmetic:
+    //   merge of origin/main into this branch: ls db/migrations/*.sql | wc -l -> 157
+    // This branch's file moved 166 -> 167 in the same edit, because main's 166
+    // landed first and two files cannot share a prefix.
+    expect(server.appliedMigrations.length).toBe(157);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

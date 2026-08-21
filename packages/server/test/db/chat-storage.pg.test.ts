@@ -376,7 +376,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     const summary = home.chatThreads?.find((thread) => thread.rootMessageId === rootMessageId);
     expect(Object.keys(summary ?? {}).sort()).toEqual([
       // + title/replyCount: PR188 review F4 — the list needs a readable row.
-      // + projectId/workdirMode (166): the list needs to say WHERE each thread
+      // + projectId/workdirMode (167): the list needs to say WHERE each thread
       //   works, and this exact-key assertion is what makes that an explicit
       //   surface change rather than a field that appeared unannounced.
       'anchorId', 'createdAt', 'lastReplyAt', 'mode', 'model', 'projectId', 'replyCount',
