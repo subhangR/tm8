@@ -98,9 +98,52 @@ export interface DispatchOptions {
   readonly delivery: MessageDeliveryPort;
 }
 
+/**
+ * WHAT ONE ROUTE'S COPY ACTUALLY DID, per target, for the caller to report.
+ *
+ * This type exists because the loop below used to return `void`, and a `void`
+ * loop cannot distinguish "handed to the terminal" from "threw before writing a
+ * single row" — so `messages.post` answered 200 for both, and a human who
+ * steered a running worker had no way to learn that nothing was steered.
+ * `execution.dispatch` has always reported this fact (`delivery: 'undelivered'`
+ * — execution-handlers.ts), because `sendDispatchRequest` returns a boolean
+ * instead of swallowing. The two paths now agree.
+ *
+ * `accepted` is deliberately NOT `delivered`. Only `reserve()` is awaited here
+ * (see the header), so what this loop can honestly assert at return time is
+ * that a durable reservation exists and the PTY write is in flight — the real
+ * terminal outcome settles later, on the delivery row, and is read from there.
+ * Claiming `delivered` would replace one lie with a smaller one.
+ */
+export type DeliveryDispositionStatus =
+  /** Reserved and handed to the adapter; the durable row now owns the outcome. */
+  | 'accepted'
+  /** Deliberately not attempted: this session may not be injected, or authored it. */
+  | 'skipped'
+  /** Refused before or during reservation, with a reason and no live copy. */
+  | 'undelivered';
+
+export interface DeliveryDisposition {
+  readonly targetMessageId: string;
+  readonly targetWorkSessionId: string;
+  readonly status: DeliveryDispositionStatus;
+  /** Present on `skipped` and `undelivered`; a stable slug, never raw error text. */
+  readonly reason?: string;
+  /** Present on `accepted`, so a caller can follow the row to its settlement. */
+  readonly deliveryId?: string;
+}
+
 const PREVIEW_DELIVERY_ID = '00000000-0000-4000-8000-000000000000';
 const ENVELOPE_BUDGET_EXCEEDED = 'delivery_envelope_budget_exceeded';
 const ENVELOPE_RENDER_FAILED = 'delivery_envelope_render_failed';
+/** The target's interaction profile forbids `tm8.session-input`. */
+const INJECTION_NOT_ALLOWED = 'session_input_not_allowed';
+/** A session is never handed back its own message. */
+const SELF_DELIVERY = 'self_delivery';
+/** `reserve()` threw. The message is stored; no copy exists. */
+const RESERVE_REFUSED = 'delivery_reserve_refused';
+/** SQL wrote a terminal refusal at reservation time and returned nothing to send. */
+const REFUSED_AT_RESERVATION = 'refused_at_reservation';
 
 function logDispatchFailure(
   route: Pick<DispatchableRoute, 'targetMessageId' | 'targetWorkSessionId'>,
@@ -119,7 +162,9 @@ function logDispatchFailure(
   }));
 }
 
-export async function dispatchSessionMessages(options: DispatchOptions): Promise<void> {
+export async function dispatchSessionMessages(
+  options: DispatchOptions,
+): Promise<DeliveryDisposition[]> {
   const {
     routes,
     parentsById,
@@ -129,8 +174,33 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
     delivery,
   } = options;
 
+  const dispositions: DeliveryDisposition[] = [];
+  const record = (
+    route: Pick<DispatchableRoute, 'targetMessageId' | 'targetWorkSessionId'>,
+    status: DeliveryDispositionStatus,
+    extra?: { reason?: string; deliveryId?: string },
+  ): void => {
+    dispositions.push({
+      targetMessageId: route.targetMessageId,
+      targetWorkSessionId: route.targetWorkSessionId,
+      status,
+      ...(extra?.reason ? { reason: extra.reason } : {}),
+      ...(extra?.deliveryId ? { deliveryId: extra.deliveryId } : {}),
+    });
+  };
+
   for (const route of routes) {
-    if (!route.sessionInputAllowed || route.targetWorkSessionId === sourceWorkSessionId) continue;
+    // Both of these are correct silences, not failures — but they are still
+    // REPORTED, because "the route existed and nothing was sent" is exactly the
+    // fact a caller was previously unable to see.
+    if (!route.sessionInputAllowed) {
+      record(route, 'skipped', { reason: INJECTION_NOT_ALLOWED });
+      continue;
+    }
+    if (route.targetWorkSessionId === sourceWorkSessionId) {
+      record(route, 'skipped', { reason: SELF_DELIVERY });
+      continue;
+    }
     const parent = route.threadParentMessageId
       ? parentsById.get(route.threadParentMessageId)
       : undefined;
@@ -204,10 +274,12 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
         if (!(error instanceof BudgetExceededError)) {
           logDispatchFailure(route, 'delivery envelope render failed', error);
         }
+        record(route, 'undelivered', { reason });
         continue;
       }
       if (utf8Bytes(preview) > route.rollingControlMaxBytes) {
         await rejectBeforeWrite(ENVELOPE_BUDGET_EXCEEDED);
+        record(route, 'undelivered', { reason: ENVELOPE_BUDGET_EXCEEDED });
         continue;
       }
       const reservation = await delivery.reserve({
@@ -217,7 +289,10 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
         mode: 'send',
         requestId,
       });
-      if (!reservation) continue;
+      if (!reservation) {
+        record(route, 'undelivered', { reason: REFUSED_AT_RESERVATION });
+        continue;
+      }
       const content = render(reservation.deliveryId);
       void delivery.adapter
         .dispatch({
@@ -232,10 +307,23 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
           // adapter outage cannot roll back or disguise the message command.
           logDispatchFailure(route, 'delivery dispatch failed', error);
         });
+      // `accepted`, not `delivered`: the reservation is durable and the write is
+      // in flight. The terminal outcome settles on the row, and the row id is
+      // handed back so a caller can follow it there.
+      record(route, 'accepted', { deliveryId: reservation.deliveryId });
     } catch (error) {
       // `reserve()` itself failing is the one case caught synchronously here;
       // dispatch()'s own failures are caught on its own promise above.
+      //
+      // THIS CATCH IS WHY THE BUG WAS INVISIBLE. It used to log and move on, so
+      // a throw from `reserve()` — for years, every Teammate message with no
+      // authoring session (migration 168) — left a stored message, a recorded
+      // route, ZERO delivery rows, and a 200. The log line was the only trace,
+      // and nothing in the response path read it. The disposition below is that
+      // same fact, returned to the caller instead of only printed.
       logDispatchFailure(route, 'delivery reserve or rejection failed', error);
+      record(route, 'undelivered', { reason: RESERVE_REFUSED });
     }
   }
+  return dispositions;
 }

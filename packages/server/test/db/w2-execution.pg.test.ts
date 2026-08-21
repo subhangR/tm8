@@ -666,23 +666,26 @@ describe('W2 delivery principal without wake-pair machinery, over the real deliv
   }, 120_000);
 
   /**
-   * KNOWN-BAD half, and it SURVIVES `040` — which is the property the coordinator
-   * required and the reason this guard is worth anything.
+   * 168 — THE REPAIR. This assertion used to be its exact inverse: a
+   * `team_member`-authored message with no `authored_from` edge was REFUSED at
+   * reservation, and the test asserted the refusal and zero rows.
    *
-   * A detector that loses its red at the moment of the fix cannot demonstrate it
-   * would still catch a regression; it can only demonstrate that today is fine.
-   * So the red is taken from a DIFFERENT, still-live guard on the same function:
-   * a `team_member`-authored message with NO `authored_from` edge.
+   * That guard was written in 019, when the only Teammate that could speak WAS
+   * a work session, so a missing edge meant provenance had been lost. It stopped
+   * meaning that. TM8 Chat teammates (104/105) and 103's forge watcher are
+   * authenticated Teammates that do not speak from a session and never carry the
+   * edge — so on the live node every message they addressed to a session was
+   * dropped here: stored, routed, 200, and zero delivery rows. 19 routes, 19
+   * drops, no exceptions, since the class first appeared.
    *
-   * MEASURED on the landed 37-file chain via `pg_get_functiondef`, not read off a
-   * migration: that raise sits at the top of `reserve_session_message_delivery`,
-   * BEFORE the `target_status in ('exited','failed')` branch `040` rewrote, so
-   * `040` does not touch it. It is a real production guard producing a real
-   * refusal — not a synthetic mutation — which is why it can prove the harness
-   * still detects a refusal at all.
+   * The message now reserves with `source_work_session_id` NULL, which is what a
+   * Member author has always done, and the envelope renders that null as
+   * `attribution="recorded_only"` — it never claims a session that did not
+   * speak. The `verified` attribution still requires the edge, and the edge
+   * still has exactly one writer.
    */
-  it('...and the detector keeps a live known-bad: a Teammate message with no provenance is refused', async () => {
-    const target = await newSession(database, fx, 'G11 no-provenance target', 'exited');
+  it('168: a Teammate message with no source session is DELIVERED, attributed recorded_only', async () => {
+    const target = await newSession(database, fx, 'G11 no-provenance target');
     // Deliberately NOT newTeammateMessage(): that helper writes the
     // `authored_from` edge, which is exactly the provenance being withheld here.
     const message = await database.transaction(async (client) => {
@@ -704,15 +707,63 @@ describe('W2 delivery principal without wake-pair machinery, over the real deliv
     });
 
     const proc = boot(deliveryUrl, [target]);
+    try {
+      const attempt = await deliver(proc, message, target, 'a steer with no session behind it');
+      expect(attempt.reserved).toBe(true);
+      expect(attempt.outcome).toBe('delivered');
+      // The bytes reached the terminal, which is the whole point: a stored
+      // message that never enters the PTY is the defect this file now pins.
+      expect(proc.pty.deliveries).toHaveLength(1);
+      expect(proc.pty.deliveries[0]!.sessionId).toBe(target);
+    } finally {
+      await proc.shutdown();
+    }
+
+    const rows = await database.query<{
+      status: string; source_work_session_id: string | null;
+    }>(
+      `select status, source_work_session_id::text
+         from public.session_message_deliveries where message_id = $1`,
+      [message],
+    );
+    // ZERO rows was the defect. Exactly one, with a NULL source, is the repair.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('delivered');
+    expect(rows[0]!.source_work_session_id).toBeNull();
+  }, 120_000);
+
+  /**
+   * KNOWN-BAD half, and it SURVIVES both `040` and `168` — which is the property
+   * the coordinator required and the reason this guard is worth anything.
+   *
+   * A detector that loses its red at the moment of the fix cannot demonstrate it
+   * would still catch a regression; it can only demonstrate that today is fine.
+   * The red used to be taken from the no-provenance refusal — which `168` has
+   * now deliberately removed, so it can no longer serve. It is taken instead
+   * from another still-live guard on the same function: SELF-CONTACT, where a
+   * message's `authored_from` session IS the delivery target.
+   *
+   * That raise sits between the provenance branch `168` rewrote and the
+   * `target_status in ('exited','failed')` branch `040` rewrote, so neither file
+   * touches it. It is a real production guard producing a real refusal — not a
+   * synthetic mutation — which is why it can still prove the harness detects a
+   * refusal at all.
+   */
+  it('...and the detector keeps a live known-bad: a session may not be handed its own message', async () => {
+    const session = await newSession(database, fx, 'G11 self-contact session');
+    // WITH provenance this time, and pointing at the delivery target itself.
+    const message = await newTeammateMessage(database, fx, session, 'talking to myself');
+
+    const proc = boot(deliveryUrl, [session]);
     let error: string | null = null;
     try {
-      await deliver(proc, message, target, 'into the void');
+      await deliver(proc, message, session, 'into the void');
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       await proc.shutdown();
     }
-    expect(error).toMatch(/Teammate delivery requires immutable source-session provenance/);
+    expect(error).toMatch(/self-contact is forbidden/);
 
     const rows = await database.query<{ n: string }>(
       `select count(*)::text n from public.session_message_deliveries where message_id = $1`,

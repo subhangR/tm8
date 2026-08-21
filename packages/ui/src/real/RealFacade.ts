@@ -101,9 +101,19 @@ interface FileUploadGrant {
   maxSizeBytes: number;
 }
 
+export interface MessageDeliveryDisposition {
+  targetMessageId: string;
+  targetWorkSessionId: string;
+  status: 'accepted' | 'skipped' | 'undelivered';
+  reason?: string;
+  deliveryId?: string;
+}
+
 export interface MessageBatchResult {
   messageBatchId: string;
   messages: MessageView[];
+  /** Per-target live-copy outcome; absent when the batch named no session. */
+  delivery?: MessageDeliveryDisposition[];
 }
 
 /** Canonical tm8 multi-anchor message command used by Channel @Tags. */

@@ -64,7 +64,8 @@ import type {
   InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
   InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkedPullRequestBadge, LinkPrInput,
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
-  Mention, MessageBatchResult, MessageDeliveryQuery, MessageDeliveryRecord,
+  Mention, MessageBatchResult, MessageDeliveryDisposition,
+  MessageDeliveryQuery, MessageDeliveryRecord,
   MessageDeliveryView, MessagePart, MessageView, MoveEntityInput, NavChannelNode,
   NotificationItem, Page, PaletteAction, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
@@ -1086,9 +1087,21 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   turnInFlight: z.boolean().optional(),
 }).strict());
 
+export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>
+  z.object({
+    targetMessageId: z.string().min(1),
+    targetWorkSessionId: z.string().min(1),
+    status: z.enum(['accepted', 'skipped', 'undelivered']),
+    reason: z.string().min(1).optional(),
+    deliveryId: z.string().min(1).optional(),
+  }).strict());
+
 export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(() => z.object({
   messageBatchId: z.string().min(1),
   messages: z.array(MessageViewSchema).min(1).max(16),
+  // Optional, not nullable: absent means the batch named no session. An empty
+  // array would read as "every target failed" and is therefore never emitted.
+  delivery: z.array(MessageDeliveryDispositionSchema).min(1).optional(),
 }).strict());
 
 export const ActivityItemSchema: z.ZodType<ActivityItem> = z.lazy(() => z.object({

@@ -369,12 +369,224 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
 
     expect(MessageBatchResultSchema.safeParse(result).success).toBe(true);
     expect(result).toMatchObject({ messageBatchId: 'batch-1', messages: [{ id: IDS.message }] });
+    // The route named a session and the copy was reserved and handed on, so the
+    // result SAYS so. `accepted`, not `delivered`: only reserve() is awaited
+    // here, and the terminal outcome settles later on the delivery row.
+    expect(result).toMatchObject({
+      delivery: [{
+        targetMessageId: IDS.message,
+        targetWorkSessionId: IDS.targetSession,
+        status: 'accepted',
+        deliveryId: IDS.delivery,
+      }],
+    });
     expect(order).toEqual([
       'w2_post_message_batch:true',
       'w2_record_session_message_routes:true',
       'reserve:false',
       'dispatch:false',
     ]);
+  });
+
+  /**
+   * THE SILENT SUCCESS, which is the defect this group exists to make
+   * impossible.
+   *
+   * Reproduced live on 2026-08-21: a message anchored to a RUNNING work session
+   * was stored, routed, and answered 200 with a durable message entity — while
+   * `reserve()` threw, zero delivery rows were written, and nothing entered the
+   * PTY. The throw was logged and dropped on the floor by
+   * `dispatchSessionMessages`, and the response path never read the log. A human
+   * steered a worker twice and was told it worked twice.
+   *
+   * `execution.dispatch` has always been honest about the identical failure —
+   * `sendDispatchRequest` returns a boolean and the result carries
+   * `delivery: 'undelivered'`. These tests pin the other two paths to the same
+   * standard: the message still stores (stored-first is deliberate and
+   * unchanged), and the caller is told, per target, that nothing landed.
+   */
+  describe('a copy that cannot be delivered is reported, never swallowed', () => {
+    function routedSetup(reserve: () => Promise<never> | Promise<null>) {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          attachments: [],
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          sessionInputAllowed: true,
+        }] as T;
+      };
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve,
+          principalFor: (reservation) => ({ reserved: reservation.deliveryId }),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+      return registry;
+    }
+
+    function post(registry: HandlerRegistry) {
+      return handler(registry, 'messages.post')(request('messages.post', {
+        body: {
+          clientMutationId: 'batch-1',
+          actorId: IDS.author,
+          anchorIds: [IDS.anchor],
+          body: 'stored body',
+        },
+      }));
+    }
+
+    it('reports undelivered when reserve() throws — the exact live failure', async () => {
+      // What migration 168 removed, and what any future reservation-time
+      // refusal will look like from here: a throw, before any row exists.
+      const registry = routedSetup(async () => {
+        throw new Error('Teammate delivery requires immutable source-session provenance');
+      });
+
+      const result = await post(registry);
+
+      // STORED-FIRST IS UNCHANGED. The message is durable and the command
+      // succeeded; what changed is that the response no longer implies the copy
+      // landed when it did not.
+      expect(result).toMatchObject({ messageBatchId: 'batch-1', messages: [{ id: IDS.message }] });
+      expect(result).toMatchObject({
+        delivery: [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          status: 'undelivered',
+          reason: 'delivery_reserve_refused',
+        }],
+      });
+      expect(MessageBatchResultSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('reports undelivered when SQL refuses at reservation and returns nothing to send', async () => {
+      const registry = routedSetup(async () => null);
+
+      expect(await post(registry)).toMatchObject({
+        delivery: [{ status: 'undelivered', reason: 'refused_at_reservation' }],
+      });
+    });
+
+    it('omits the field entirely when the batch named no session', async () => {
+      // An unrouted post owes nobody a live copy. Absent must not read as
+      // failure, which is why this is optional rather than an empty array.
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => (name === 'w2_post_message_batch'
+        ? { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T
+        : [] as T);
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve: async () => { throw new Error('never reached: there are no routes'); },
+          principalFor: () => ({}),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+
+      const result = await post(registry);
+      expect(result).not.toHaveProperty('delivery');
+      expect(MessageBatchResultSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('reports undelivered when the node has routes but no delivery runtime at all', async () => {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          attachments: [],
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          sessionInputAllowed: true,
+        }] as T;
+      };
+      const registry = new HandlerRegistry();
+      // No `messageDelivery` — the honest degraded mode a node without an
+      // execution runtime takes. It used to be indistinguishable from success.
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+      });
+
+      expect(await post(registry)).toMatchObject({
+        delivery: [{ status: 'undelivered', reason: 'no_delivery_runtime' }],
+      });
+    });
+
+    it('reports a skip, with its reason, when the target may not be injected', async () => {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          attachments: [],
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          // The target's interaction profile forbids `tm8.session-input`.
+          sessionInputAllowed: false,
+        }] as T;
+      };
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve: async () => { throw new Error('never reached: the route is skipped'); },
+          principalFor: () => ({}),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+
+      // A correct silence is still a REPORTED silence: the caller learns the
+      // route existed and deliberately sent nothing, rather than inferring it.
+      expect(await post(registry)).toMatchObject({
+        delivery: [{ status: 'skipped', reason: 'session_input_not_allowed' }],
+      });
+    });
   });
 
   // D1b — the parent-message excerpt. The route carries the thread parent as

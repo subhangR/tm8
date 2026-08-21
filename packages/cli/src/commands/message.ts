@@ -588,6 +588,23 @@ function renderBatch(dto: unknown): string {
     const pending = (row as { pending?: unknown }).pending === true ? '  delivery: pending' : '';
     lines.push(`${idOf(row)}${pending}`);
   }
+
+  // THE LINE THAT USED TO BE MISSING. Without it, `tm8 message send --to
+  // <sessionId>` printed a batch id and exited 0 whether the steer reached the
+  // worker's terminal or was refused before a single durable row existed — and
+  // on 2026-08-21 it was the latter, twice, with nothing on stdout to say so.
+  // Storage and delivery stay separate facts: the batch line above is still
+  // the stored one, and this is only ever about the live copy.
+  const delivery = (dto as { delivery?: unknown })?.delivery;
+  for (const entry of Array.isArray(delivery) ? delivery : []) {
+    const row = entry as { targetWorkSessionId?: unknown; status?: unknown; reason?: unknown };
+    const status = String(row.status ?? 'unknown');
+    const reason = typeof row.reason === 'string' ? ` (${row.reason})` : '';
+    // `undelivered` is called out rather than merely listed: it is the one
+    // value a caller must not skim past.
+    const label = status === 'undelivered' ? 'NOT DELIVERED' : status;
+    lines.push(`  ${String(row.targetWorkSessionId ?? '')}  ${label}${reason}`.trimEnd());
+  }
   return lines.join('\n');
 }
 
