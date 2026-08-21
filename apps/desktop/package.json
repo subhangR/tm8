@@ -1,0 +1,63 @@
+{
+  "name": "@tm8/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "tm8 as a macOS desktop app — an Electron shell around the unmodified tm8 server.",
+  "main": "src/main.cjs",
+  "scripts": {
+    "vendor:pg": "node scripts/vendor-pg.mjs",
+    "start": "node scripts/vendor-pg.mjs && electron .",
+    "package": "node scripts/vendor-pg.mjs && electron-builder --mac --arm64 --dir",
+    "verify:package": "node scripts/verify-package.mjs"
+  },
+  "devDependencies": {
+    "electron": "41.5.0"
+  },
+  "build": {
+    "appId": "dev.tm8.desktop",
+    "productName": "tm8",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "!**/*.map",
+      {
+        "from": "../../packages/server/dist",
+        "to": "packages/server/dist"
+      },
+      {
+        "from": "../../packages/tm8-ui/dist",
+        "to": "packages/tm8-ui/dist"
+      },
+      {
+        "from": "../../db",
+        "to": "db"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "resources/pg",
+        "to": "pg"
+      }
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-pty/**"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": ["arm64"]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "binaries": [
+        "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+      ]
+    },
+    "npmRebuild": false
+  }
+}

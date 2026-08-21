@@ -363,7 +363,13 @@ export class PostgresSidecarManager implements SidecarManager {
       return;
     }
 
-    if (await isTcpPortOpen(this.config.pgPort)) {
+    // Only meaningful when we are actually going to bind TCP. Under the
+    // socket-only profile (`listen_addresses = ''`) the port number names a
+    // socket FILE inside our own 0700 data dir, so someone else holding that
+    // TCP port is not a conflict — and treating it as one would refuse to boot
+    // the desktop app on any machine already running a Postgres on 5442, which
+    // is every developer's.
+    if (this.config.listenAddresses !== '' && (await isTcpPortOpen(this.config.pgPort))) {
       throw new SidecarError(
         'PortInUse',
         `tm8: TCP port ${this.config.pgPort} is already in use by a process that is not this data dir's ` +
@@ -384,6 +390,7 @@ export class PostgresSidecarManager implements SidecarManager {
       pgPort: this.config.pgPort,
       superuser: this.config.superuser,
       logDir: this.config.logDir,
+      listenAddresses: this.config.listenAddresses,
     };
   }
 
