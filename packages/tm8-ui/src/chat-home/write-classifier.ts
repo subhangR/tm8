@@ -37,6 +37,58 @@
 const WRITE_VERB =
   /(create|update|delete|remove|patch|send|post|complete|assign|unlink|link|move|write|edit|spawn|terminate|attach|upload|cancel|start|stop|rename|archive|restore|grant|revoke|dispatch|launch|set_|_set\b)/i;
 
+/**
+ * EVERY WRITE OPERATION THE CHAT SURFACE CAN CALL — the closed set, named.
+ *
+ * The verb regex above MISCLASSIFIED EIGHT OF THESE AS READS (measured
+ * 2026-08-21 over the full `@tm8/mcp` guide list): `entities.react`,
+ * `entities.points.add`, `entities.commands.work`, `entities.commands.pull`,
+ * `placements.apply`, `attentionRequests.resolveEntity`,
+ * `collections.addItem`, `execution.resume` — none of whose verbs ("react",
+ * "add", "work", "pull", "apply", "resolve", "resume") appear in the pattern.
+ * That is the same defect class this module was created to fix, one layer
+ * down: on every shipped surface a turn that only reacted to or pulled a task
+ * filed it as merely read, so the graph's "edited here" emphasis and the
+ * tray's created-first ordering under-claimed.
+ *
+ * So a call that names an operation is answered by this set FIRST, with the
+ * verb regex as a secondary for operations added after this was written whose
+ * names do carry a verb. An operation in neither still counts as a READ —
+ * the conservative direction is load-bearing: a false "edited here" is a lie
+ * about authorship, while a false "read" is only an understatement.
+ *
+ * ONE COPY. The ledger fold (`ledger.ts`) imports this set rather than owning
+ * a twin — two write-op lists that agree today drift tomorrow, which is this
+ * file's founding lesson.
+ */
+export const WRITE_OPS: ReadonlySet<string> = new Set([
+  'entities.create',
+  'entities.patch',
+  'entities.move',
+  'entities.delete',
+  'entities.restore',
+  'entities.react',
+  'entities.points.add',
+  'entities.commands.work',
+  'entities.commands.complete',
+  'entities.commands.pull',
+  'entities.commands.linkPr',
+  'entities.commands.linkCommit',
+  'edges.create',
+  'edges.patch',
+  'edges.delete',
+  'placements.apply',
+  'attentionRequests.create',
+  'attentionRequests.resolveEntity',
+  'collections.addItem',
+  'collections.removeItem',
+  'execution.dispatch',
+  'execution.spawn',
+  'execution.terminate',
+  'execution.resume',
+  'messages.post',
+]);
+
 /** Strip any MCP server prefix: `mcp__tm8__tm8_delegate` → `tm8_delegate`. */
 export function bareToolName(name: string): string {
   return name.includes('__') ? name.slice(name.lastIndexOf('__') + 2) : name;
@@ -55,10 +107,10 @@ export function operationOf(args: unknown): string | null {
   return typeof operation === 'string' ? operation : null;
 }
 
-/** Write-ness of one tool call, from its args' operation where there is one
- *  and from its name otherwise. */
+/** Write-ness of one tool call: the closed operation set first, the verb
+ *  regex second, the tool name only when no operation is present at all. */
 export function isWriteCall(name: string, args: unknown): boolean {
   const operation = operationOf(args);
-  if (operation !== null) return WRITE_VERB.test(operation);
+  if (operation !== null) return WRITE_OPS.has(operation) || WRITE_VERB.test(operation);
   return WRITE_VERB.test(bareToolName(name));
 }

@@ -141,62 +141,11 @@ const PLACEMENT_OPS = new Set(['placements.apply']);
 const COMPLETE_OPS = new Set(['entities.commands.complete']);
 const WORK_OPS = new Set(['entities.commands.work']);
 
-/**
- * EVERY WRITE OPERATION THE CHAT SURFACE CAN CALL — the closed set, named.
- *
- * This exists because `isWriteCall`'s verb regex MISCLASSIFIES EIGHT OF THEM AS
- * READS (measured 2026-08-21 over the full `@tm8/mcp` guide list):
- * `entities.react`, `entities.points.add`, `entities.commands.work`,
- * `entities.commands.pull`, `placements.apply`,
- * `attentionRequests.resolveEntity`, `collections.addItem`, `execution.resume`
- * — none of whose verbs ("react", "add", "work", "pull", "apply", "resolve",
- * "resume") appear in the pattern. That is the same defect class the classifier
- * itself was written to fix, and it is filed separately because it also affects
- * the graph's "edited here" emphasis and the tray's created-first ordering,
- * which are shipped surfaces this slice must not quietly change.
- *
- * The ledger cannot wait for that fix, because for IT the misclassification is
- * not an understatement — a write folded as a read gets its payload COUNTED,
- * so "Read 3 tasks" would silently include a task the turn only reacted to.
- *
- * So the ledger asks a closed question against a closed set, and falls back to
- * `isWriteCall` only for what is genuinely open: direct tools (`Edit`, `Bash`)
- * and any operation added after this was written. An unknown operation still
- * counts as a read, which keeps the original conservative direction.
- */
-const WRITE_OPS = new Set([
-  'entities.create',
-  'entities.patch',
-  'entities.move',
-  'entities.delete',
-  'entities.restore',
-  'entities.react',
-  'entities.points.add',
-  'entities.commands.work',
-  'entities.commands.complete',
-  'entities.commands.pull',
-  'entities.commands.linkPr',
-  'entities.commands.linkCommit',
-  'edges.create',
-  'edges.patch',
-  'edges.delete',
-  'placements.apply',
-  'attentionRequests.create',
-  'attentionRequests.resolveEntity',
-  'collections.addItem',
-  'collections.removeItem',
-  'execution.dispatch',
-  'execution.spawn',
-  'execution.terminate',
-  'execution.resume',
-  'messages.post',
-]);
-
-/** Did this call write? Closed set first, generic classifier for the open tail. */
-function wrote(name: string, args: unknown, operation: string | null): boolean {
-  if (operation !== null) return WRITE_OPS.has(operation);
-  return isWriteCall(name, args);
-}
+/* The closed write-op set lives in `write-classifier.ts` now (one copy — two
+   lists that agree today drift tomorrow). `isWriteCall` answers operations
+   against it first, so a write the verb regex cannot see (`entities.react`,
+   `placements.apply`, …) can no longer fold as a read and get its payload
+   COUNTED — "Read 3 tasks" never includes a task the turn only reacted to. */
 
 /**
  * Fold a thread's turns into the ledger.
@@ -239,7 +188,7 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
          status — that is how a transition later gets its `from` side. */
       absorbSummaries(part, learn, statusNow);
 
-      if (!wrote(part.name, part.args, operation)) {
+      if (!isWriteCall(part.name, part.args)) {
         tallyReads(part, readSeen, readIds);
         continue;
       }
