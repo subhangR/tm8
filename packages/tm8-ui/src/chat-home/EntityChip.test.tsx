@@ -3,11 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
-import { resetChatEntityResolutionCache, type ChatEntityResolver } from './EntityChip';
+import { EntityChip, resetChatEntityResolutionCache, type ChatEntityResolver } from './EntityChip';
 import { extractEntityRefs, truncateEntityId } from './entity-refs';
 import { createChatHomeFixturePort } from './fixtures';
-import { TurnParts } from './TurnParts';
-import type { ChatModelOption, ChatTurnPart } from './types';
+import type { ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
@@ -16,13 +15,6 @@ const MODELS: ChatModelOption[] = [
 
 const TASK_ID = '019f0000-0000-7000-8000-000000000021';
 const BARE_ID = '019f0000-0000-7000-8000-000000000022';
-
-function toolParts(result: unknown, args: unknown = {}): ChatTurnPart[] {
-  return [
-    { seq: 0, kind: 'tool_call', toolCallId: 't1', name: 'tm8_read', args, state: 'completed' },
-    { seq: 1, kind: 'tool_result', toolCallId: 't1', content: result },
-  ];
-}
 
 beforeEach(() => resetChatEntityResolutionCache());
 
@@ -54,13 +46,16 @@ describe('entity reference extraction', () => {
   });
 });
 
-describe('EntityChip in the transcript', () => {
-  it('renders title and kind from a tool result and opens the entity on click', () => {
+describe('EntityChip', () => {
+  /* The transcript stopped rendering chips (the ledger lines replaced them —
+     no-tool-boxes.test.tsx owns that surface now). The chip itself survives
+     in the entity tray, so these cover it directly. */
+  it('renders title and kind and opens the entity on click', () => {
     const onOpenEntity = vi.fn();
     const view = render(
-      <TurnParts
-        parts={toolParts({ items: [{ id: TASK_ID, kind: 'task', title: 'Unblock the storage lane' }] })}
-        onOpenEntity={onOpenEntity}
+      <EntityChip
+        refInfo={{ id: TASK_ID, kind: 'task', title: 'Unblock the storage lane' }}
+        onOpen={onOpenEntity}
       />,
     );
     const chip = view.getByTestId('chat-entity-chip');
@@ -74,9 +69,7 @@ describe('EntityChip in the transcript', () => {
     const resolve: ChatEntityResolver = vi
       .fn()
       .mockResolvedValue({ id: BARE_ID, kind: 'work_session', title: 'Nightly sweep' });
-    const view = render(
-      <TurnParts parts={toolParts({ blockerId: BARE_ID })} resolveEntity={resolve} />,
-    );
+    const view = render(<EntityChip refInfo={{ id: BARE_ID }} resolve={resolve} />);
     const chip = view.getByTestId('chat-entity-chip');
     expect(chip.textContent).toContain(truncateEntityId(BARE_ID));
     await waitFor(() => expect(within(chip).getByText('Nightly sweep')).toBeTruthy());
@@ -88,11 +81,7 @@ describe('EntityChip in the transcript', () => {
     const onOpenEntity = vi.fn();
     const resolve: ChatEntityResolver = vi.fn().mockRejectedValue(new Error('refused'));
     const view = render(
-      <TurnParts
-        parts={toolParts({ blockerId: BARE_ID })}
-        resolveEntity={resolve}
-        onOpenEntity={onOpenEntity}
-      />,
+      <EntityChip refInfo={{ id: BARE_ID }} resolve={resolve} onOpen={onOpenEntity} />,
     );
     const chip = view.getByTestId('chat-entity-chip');
     await waitFor(() => expect(chip.getAttribute('data-resolved')).toBe('unresolved'));
@@ -107,10 +96,10 @@ describe('EntityChip in the transcript', () => {
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={onOpenEntity} />,
     );
-    // The thread's two entities render TWICE by design: the transcript's
-    // touched row, and the docked entity tray above the composer (Cockpit
-    // ruling 2026-08-18) — both fold from the same extraction.
-    await waitFor(() => expect(view.getAllByTestId('chat-entity-chip')).toHaveLength(4));
+    // The thread's two entities render ONCE now — only in the docked entity
+    // tray. The transcript's touched row is gone; its calls fold to the
+    // ledger's counted line instead (design 01a023e1, ruling 1).
+    await waitFor(() => expect(view.getAllByTestId('chat-entity-chip')).toHaveLength(2));
     const tray = view.getByTestId('chat-entity-tray');
     fireEvent.click(within(tray).getByText('Unblock the storage lane'));
     expect(onOpenEntity).toHaveBeenCalledWith(TASK_ID);

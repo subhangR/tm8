@@ -119,8 +119,9 @@ describe('Chat Home', () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
 
-    // The tool call itself draws nothing; only what it touched, and the usage.
-    await waitFor(() => expect(view.getAllByTestId('chat-touched-entities')).toHaveLength(1));
+    // The tool call itself draws nothing; only its ledger line, and the usage.
+    await waitFor(() => expect(view.getAllByTestId('chat-ledger-reads')).toHaveLength(1));
+    expect(view.getByTestId('chat-ledger-reads').textContent).toBe('Read 1 task');
     expect(view.queryByTestId('chat-tool-card')).toBeNull();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
     // A configured thread still SAYS what it runs as; it just cannot be edited.
@@ -326,7 +327,7 @@ describe('Chat Home', () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
 
-    await waitFor(() => expect(view.getAllByTestId('chat-touched-entities')).toHaveLength(1));
+    await waitFor(() => expect(view.getAllByTestId('chat-ledger-reads')).toHaveLength(1));
     expect(
       view.getAllByText(/I mapped the work into three dependency-safe lanes/, {
         selector: '.tch-transcript *',

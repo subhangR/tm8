@@ -25,6 +25,7 @@ import type { FleetRowInput } from './fleet/fleet-rows';
 import type { ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
 import { EntityTray } from './EntityTray';
+import { foldChatLedger, type ChatLedger } from './ledger';
 import { TurnParts } from './TurnParts';
 import { composeThreadColumn } from './thread-column';
 import type {
@@ -1389,6 +1390,11 @@ export function ChatHomeScreen({
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
                   assetHref={assetHref}
+                  /* One fold for the whole thread (cached on the turns array),
+                     so a transition's from-side and a create's parent survive
+                     turn boundaries — the same model the sticky projection
+                     will render. */
+                  ledger={foldChatLedger(detail.turns)}
                 />
               ))}
               {thinking ? (
@@ -1754,6 +1760,7 @@ function Turn({
   resolveEntity,
   suppressEntityIds,
   assetHref,
+  ledger,
 }: {
   turn: ChatThreadDetail['turns'][number];
   mode: ChatMode;
@@ -1764,6 +1771,8 @@ function Turn({
   resolveEntity?: ChatEntityResolver | undefined;
   suppressEntityIds?: ReadonlySet<string> | undefined;
   assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
+  /** The whole thread's ledger fold, for cross-turn memory in the lines. */
+  ledger?: ChatLedger | undefined;
 }) {
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
@@ -1839,6 +1848,8 @@ function Turn({
         resolveEntity={resolveEntity}
         suppressEntityIds={suppressEntityIds}
         assetHref={assetHref}
+        ledger={ledger}
+        turnMessageId={turn.messageId}
       />
     </article>
   );
