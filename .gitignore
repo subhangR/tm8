@@ -9,3 +9,7 @@ target/
 coverage/
 test-results/
 playwright-report/
+
+# tm8 desktop: vendored Postgres and packaged app bundles are build outputs.
+apps/desktop/resources/pg/
+apps/desktop/release/
