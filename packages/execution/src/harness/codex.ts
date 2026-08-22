@@ -39,6 +39,38 @@ export function mapCodexApprovalPolicy(mode: PermissionMode): string {
   }
 }
 
+/**
+ * Turn OFF Codex's start-up self-update. NOT a preference — without it a codex
+ * session on this deployment cannot survive its own boot.
+ *
+ * WHAT IT DOES WHEN LEFT ON. Codex checks GitHub releases and the npm registry
+ * on TUI start, caches the answer in `$CODEX_HOME/version.json`, and — if the
+ * running binary is behind — spawns `npm install @openai/codex` AS A DIRECT
+ * CHILD and tears its own TUI down. tm8's PTY sees its child exit and records
+ * the session `failed`. The agent never reads its brief.
+ *
+ * MEASURED 2026-08-22 (codex 0.146.0 installed, 0.149.0 on npm): session
+ * 01a028e2 died `failed` in 1.686s having rewritten `version.json` with
+ * `"latest_version":"0.149.0"`; `ps -eo pid=,ppid=,args=` caught
+ * `npm install @openai/codex` with ppid = the codex process. With this override
+ * the same spawn was still alive and `idle` at 141s.
+ *
+ * WHY THIS KEY AND NOT `--disable in_app_updates`. That feature flag looked like
+ * the gate and is not: a session spawned with it reporting `false` STILL forked
+ * the updater and STILL died (session 01a02948, 6.3s).
+ *
+ * WHY IT LIVES HERE. This is per-harness flag knowledge, which is exactly what
+ * the registry exists to hold — the fix originally landed inside the old
+ * `buildCodexArgs`, the function this file replaced. Re-exported from
+ * `../spawn/manifest.js` so the public surface is unchanged.
+ */
+export const CODEX_DISABLE_STARTUP_UPDATE_CHECK = 'check_for_update_on_startup=false';
+
+/** Expand the start-up self-update kill switch into its exact CLI argv. */
+export function codexUpdateCheckConfigArgs(): string[] {
+  return ['-c', CODEX_DISABLE_STARTUP_UPDATE_CHECK];
+}
+
 /** tm8 postures → Codex's `--sandbox` mode. */
 export function mapCodexSandboxMode(mode: PermissionMode): string {
   switch (mode) {
@@ -116,6 +148,13 @@ export const codexHarness: Harness = {
   buildArgv(launch: ResolvedLaunchConfig, opts: BuildArgvOptions): ArgToken[] {
     const args: ArgToken[] = [];
     if (launch.model) args.push('--model', quoted(launch.model));
+
+    // FIRST, and in EVERY posture. The start-up self-update is not gated on the
+    // approval or sandbox policy chosen below — the bypass branch skips that
+    // `else` entirely — so a bypass session is exactly as dead as a confined one
+    // without this. See the constant's own comment for the measurement.
+    const updateCheck = codexUpdateCheckConfigArgs();
+    args.push(updateCheck[0] as string, quoted(updateCheck[1] as string));
 
     // Codex's approval prompts are the SAME unattended-hang hazard the Claude
     // branch documents. tm8's project trust gate is the human authorization, so

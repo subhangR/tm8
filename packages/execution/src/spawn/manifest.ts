@@ -505,6 +505,13 @@ export function shellQuote(value: string): string {
  */
 export { AGENT_TOOL_BINARIES } from '../harness/registry.js';
 export { buildAgentCommand, withAgentPrompt, withAgentResume } from '../harness/command.js';
+/** Re-exported: the Codex start-up self-update kill switch is per-harness flag
+ *  knowledge and lives with the rest of it in `../harness/codex.ts`. Kept on
+ *  this module's surface because that is where it was first exported from. */
+export {
+  CODEX_DISABLE_STARTUP_UPDATE_CHECK,
+  codexUpdateCheckConfigArgs,
+} from '../harness/codex.js';
 
 /**
  * Codex's exact logical argv before any shell joining or quoting.

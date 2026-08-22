@@ -10,7 +10,23 @@
  * makes it evidence.
  *
  * If this file fails, the refactor changed a command line. There is no case
- * where the correct fix is to regenerate the fixture.
+ * where the correct fix is to regenerate the fixture. That rule is why the two
+ * things below are a NORMALISATION and a DECLARED DELTA rather than a rewrite:
+ * the recording stays the recording, and everything since is stated in code a
+ * reviewer can read in one screen instead of in a 2627-line diff.
+ *
+ * NORMALISATION — `<ECHO_AGENT_MJS>`. The fixture as first committed had the
+ * generating machine's ABSOLUTE path in it
+ * (`/home/tm8/prod-workspace/wt-harness-registry/…/echo-agent.mjs`), in 600 of
+ * its 2625 keys, because `echoAgentPath()` resolves against `import.meta.url`.
+ * That made the gate unrunnable anywhere but the one worktree that produced it:
+ * it failed in GitHub CI (`/home/runner/work/tm8/tm8/…`) and in every fresh
+ * clone, and it failed for a reason that has nothing to do with the refactor it
+ * was guarding. Both sides are tokenised, so the assertion is now about the
+ * command shape — which is what it was always trying to be about.
+ *
+ * DECLARED DELTA — the Codex start-up self-update kill switch. See
+ * `CODEX_DELTAS`.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -19,6 +35,8 @@ import { fileURLToPath } from 'node:url';
 
 import { buildAgentCommand, withAgentResume } from '../src/spawn/manifest.js';
 import { withAgentPrompt } from '../src/spawn/manifest.js';
+import { echoAgentPath } from '../src/harness/echo-agent.js';
+import { CODEX_DISABLE_STARTUP_UPDATE_CHECK } from '../src/harness/codex.js';
 import {
   commandMatrix,
   PROMPT_CASES,
@@ -27,7 +45,45 @@ import {
 } from './harness-command-matrix.js';
 
 const goldenPath = join(fileURLToPath(new URL('.', import.meta.url)), 'harness-command-golden.json');
-const golden = JSON.parse(readFileSync(goldenPath, 'utf8')) as Record<string, string>;
+const recorded = JSON.parse(readFileSync(goldenPath, 'utf8')) as Record<string, string>;
+
+/** Replace this checkout's absolute echo-agent path with the fixture's token. */
+function normalise(command: string): string {
+  return command.split(echoAgentPath()).join('<ECHO_AGENT_MJS>');
+}
+
+/**
+ * Every INTENTIONAL change to a codex command line since the 3edf470f
+ * recording, applied to the recording so the comparison stays exact.
+ *
+ * Adding an entry here is a deliberate, reviewable act. Regenerating the
+ * fixture would hide the same change in 2627 lines of noise and — worse —
+ * would turn the file from a recording of the OLD behaviour into a restatement
+ * of the NEW one, which is the only property that makes it evidence at all.
+ *
+ * `check_for_update_on_startup=false` — carried from the codex-autoupdate fix.
+ * Codex forks `npm install @openai/codex` on TUI start and tears its own TUI
+ * down; the session dies `failed` in ~1.7s having never read its brief. The
+ * flag is emitted FIRST and in every posture, so on the recorded line it lands
+ * immediately before whichever posture flag that case chose — the bypass branch
+ * emits no `--ask-for-approval` at all, which is exactly why the fix cannot
+ * live inside that branch.
+ */
+const CODEX_DELTAS: ReadonlyArray<(command: string) => string> = [
+  (command) =>
+    command.replace(
+      /(--ask-for-approval |--dangerously-bypass-approvals-and-sandbox)/,
+      `-c '${CODEX_DISABLE_STARTUP_UPDATE_CHECK}' $1`,
+    ),
+];
+
+/** The recording, plus the declared deltas. What current code must equal. */
+const golden: Record<string, string> = Object.fromEntries(
+  Object.entries(recorded).map(([key, command]) => [
+    key,
+    key.includes('codex |') ? CODEX_DELTAS.reduce((acc, delta) => delta(acc), command) : command,
+  ]),
+);
 
 /** Recompute the matrix against the CURRENT code, in the fixture's key shape. */
 export function renderAll(): Record<string, string> {
@@ -40,27 +96,27 @@ export function renderAll(): Record<string, string> {
       out[`command :: ${testCase.key}`] = `THROWS ${(error as Error).message}`;
       continue;
     }
-    out[`command :: ${testCase.key}`] = base;
+    out[`command :: ${testCase.key}`] = normalise(base);
 
     for (const prompt of PROMPT_CASES) {
-      out[`prompt(${prompt.key}) :: ${testCase.key}`] = withAgentPrompt(
+      out[`prompt(${prompt.key}) :: ${testCase.key}`] = normalise(withAgentPrompt(
         base,
         { system: prompt.system, task: prompt.task },
         testCase.launch,
         testCase.env,
-      );
+      ));
     }
 
     for (const system of RESUME_SYSTEM) {
       const key = `resume(system=${system === '' ? 'empty' : 'set'}) :: ${testCase.key}`;
       try {
-        out[key] = withAgentResume(
+        out[key] = normalise(withAgentResume(
           base,
           system,
           testCase.launch,
           RESUME_NATIVE_ID,
           testCase.env,
-        );
+        ));
       } catch (error) {
         out[key] = `THROWS ${(error as Error).message}`;
       }
