@@ -712,6 +712,8 @@ export class DbGraphPort implements GraphPort {
       input.error ?? null,
       null, // p_transcript_doc_id — transcripts are post-G1A
       null, // p_client_mutation_id — an exit is not a client mutation
+      input.endedKind ?? null, // p_ended_kind (169)
+      input.endedReason ?? null, // p_ended_reason (169) — plain English
     ]);
   }
 
