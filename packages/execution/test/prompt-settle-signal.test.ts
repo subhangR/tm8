@@ -9,6 +9,11 @@ import { describe, expect, it, afterEach } from 'vitest';
 
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 
+// The interpreter running this suite. `spawn` is given `env: {}`, so the shell
+// has only its compiled-in default PATH and a bare `node` resolves only when it
+// happens to sit in `/usr/bin` or `/usr/local/bin`. See prompt-fidelity.test.ts.
+const NODE = JSON.stringify(process.execPath);
+
 const quiet = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -80,7 +85,7 @@ describe('PtyHostService onPromptSettled -- two-signal prompt delivery', () => {
       // sees it, advancing the cursor to a fresh row and defeating the whole
       // point of this fixture (verification would then find the token gone,
       // same as a real, working submit).
-      command: `node -e "process.stdin.setRawMode(true); process.stdin.on('data', d => process.stdout.write(d))"`,
+      command: `${NODE} -e "process.stdin.setRawMode(true); process.stdin.on('data', d => process.stdout.write(d))"`,
       cwd: '/tmp',
       env: {},
     });
