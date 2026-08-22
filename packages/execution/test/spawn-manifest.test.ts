@@ -9,6 +9,7 @@ import {
   agentToolForModel,
   buildAgentCommand,
   buildCodexArgs,
+  CODEX_DISABLE_STARTUP_UPDATE_CHECK,
   CODEX_LOOPBACK_CONFIG_OVERRIDES,
   composeEnv,
   composeManifest,
@@ -17,6 +18,7 @@ import {
   resolveLaunchConfig,
   resolveWorkdir,
   withAgentPrompt,
+  withAgentResume,
 } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 
@@ -507,9 +509,11 @@ describe('buildAgentCommand', () => {
       'features.network_proxy.allow_local_binding=false',
     ]);
     const loopback = CODEX_LOOPBACK_CONFIG_OVERRIDES.flatMap((value) => ['-c', value]);
+    const noUpdate = ['-c', CODEX_DISABLE_STARTUP_UPDATE_CHECK];
     const expected = (approval: 'never' | 'untrusted') => [
       '--model',
       'gpt-5.6-sol',
+      ...noUpdate,
       '--ask-for-approval',
       approval,
       '--sandbox',
@@ -533,9 +537,57 @@ describe('buildAgentCommand', () => {
     expect(buildCodexArgs({ ...codexLaunch, permissionMode: 'bypassPermissions' })).toEqual([
       '--model',
       'gpt-5.6-sol',
+      ...noUpdate,
       '--dangerously-bypass-approvals-and-sandbox',
       '--no-alt-screen',
     ]);
+  });
+
+  /**
+   * Codex 0.146.0 on this node, 0.149.0 on npm: on TUI start Codex forked
+   * `npm install @openai/codex` as a direct child and tore its own TUI down.
+   * tm8's PTY saw its child exit and wrote `failed`. Session 01a028e2 lived
+   * 1.686 seconds and never read its brief; the harness was silently dead and
+   * work was being re-routed to claude-code to cover for it.
+   *
+   * This pins the ONE override that actually stops it. `--disable
+   * in_app_updates` is the plausible-looking alternative and it does not work:
+   * a session spawned with the feature reported `false` still forked the
+   * updater and still died.
+   */
+  it('disables the Codex start-up self-update in EVERY posture', () => {
+    const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5.6-sol' };
+    expect(CODEX_DISABLE_STARTUP_UPDATE_CHECK).toBe('check_for_update_on_startup=false');
+
+    for (const permissionMode of [
+      'auto',
+      'acceptEdits',
+      'interactive',
+      'readOnly',
+      'bypassPermissions',
+    ] as const) {
+      const args = buildCodexArgs({ ...codexLaunch, permissionMode });
+      const at = args.indexOf(CODEX_DISABLE_STARTUP_UPDATE_CHECK);
+      expect(at).toBeGreaterThan(0);
+      expect(args[at - 1]).toBe('-c');
+      // Rendered, quoted, and reaching the actual command line — not just the
+      // argv builder. The value carries no shell metacharacters, but the
+      // renderer quotes every `-c` payload and the command line is what runs.
+      expect(buildAgentCommand({ ...codexLaunch, permissionMode }, {})).toContain(
+        `-c '${CODEX_DISABLE_STARTUP_UPDATE_CHECK}'`,
+      );
+    }
+
+    // Resume retains these arguments verbatim, so a resumed session must be as
+    // protected as a fresh one — the updater fires on every TUI start.
+    const resumed = withAgentResume(
+      buildAgentCommand(codexLaunch, {}),
+      'SYS',
+      codexLaunch,
+      'rollout-id',
+      {},
+    );
+    expect(resumed).toContain(`-c '${CODEX_DISABLE_STARTUP_UPDATE_CHECK}'`);
   });
 
   it('resolves command networking independently from filesystem and approval posture', () => {
