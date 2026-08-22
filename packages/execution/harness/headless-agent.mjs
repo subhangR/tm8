@@ -30,7 +30,13 @@ if (process.env.TM8_FAKE_HEADLESS_MODE === 'boot-crash') {
 }
 
 if (process.env.TM8_FAKE_HEADLESS_MODE === 'idle-crash') {
-  setTimeout(() => process.exit(19), 180);
+  // AFTER boot, never during it — that ordering IS the subject of the case this
+  // mode exists for ("reports an IDLE process death"). The delay is therefore
+  // coupled to the adapter's boot-settlement window, and the caller must set
+  // both together: a crash that lands INSIDE the window is a boot failure,
+  // `startThread` rejects, and the exit callback under test never fires at all.
+  // 180 ms stays the default only because it is what this file has always used.
+  setTimeout(() => process.exit(19), Number(process.env.TM8_FAKE_IDLE_CRASH_MS ?? 180));
 }
 
 const send = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
