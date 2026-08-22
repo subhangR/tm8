@@ -825,9 +825,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   }
 
   if (execution) {
-    const retired = await execution.reconcileGhosts();
-    if (retired > 0) {
-      console.log(`  reconciled: retired ${retired} ghost session(s) left by a previous run`);
+    const ghosts = await execution.reconcileGhosts();
+    if (ghosts.retired > 0) {
+      console.log(`  reconciled: retired ${ghosts.retired} ghost session(s) left by a previous run`);
+    }
+    // Printed for the same reason the worktree errors below are, and it is the
+    // omission of exactly this that hid a node reconciling nothing on every boot:
+    // a refusal here leaves rows claiming to be running with no process, which
+    // the UI paints as live agents and the concurrency cap counts forever.
+    for (const problem of ghosts.errors) {
+      console.log(`  ghost reconciliation could not finish: ${problem.message}`);
     }
     // Worktree allocations, same posture, same place in the sequence. Kept
     // separate from the ghost sweep because they answer different questions: a

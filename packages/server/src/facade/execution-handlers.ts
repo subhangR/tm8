@@ -53,6 +53,7 @@ import {
   WorktreeManager,
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
+  type GhostReconcileReport,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
@@ -1245,7 +1246,7 @@ export interface ExecutionRuntime {
    * the ordering (and so tests can drive it deliberately). Resolves to the count
    * retired and NEVER rejects — see `SpawnService.reconcileNodeGhosts`.
    */
-  reconcileGhosts(): Promise<number>;
+  reconcileGhosts(): Promise<GhostReconcileReport>;
   /**
    * §6 — reconcile this node's worktree ALLOCATIONS. A sibling of
    * `reconcileGhosts`, called at the same point and with the same posture: the
@@ -1356,10 +1357,15 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           requestId: 'startup-reconcile',
         });
       } catch (error) {
-        deps.logger?.warn?.('execution: ghost reconciliation skipped', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return 0;
+        // RETURNED, not only logged. `deps.logger` is optional and commonly
+        // unwired, and a swallowed failure here is indistinguishable at the call
+        // site from a clean boot — both were `0`. The worktree sibling has
+        // always returned its errors, which is why its identical refusal
+        // ("not a member of this space") printed at startup while this one did
+        // not.
+        const message = error instanceof Error ? error.message : String(error);
+        deps.logger?.warn?.('execution: ghost reconciliation skipped', { error: message });
+        return { retired: 0, errors: [{ message }] };
       }
     },
     reconcileWorktrees: async () => {
@@ -1483,8 +1489,11 @@ export function registerExecutionHandlers(
           nodeAdmin: o.isNodeAdmin,
           requestId: 'startup-reconcile',
         });
-      } catch {
-        return 0;
+      } catch (error) {
+        return {
+          retired: 0,
+          errors: [{ message: error instanceof Error ? error.message : String(error) }],
+        };
       }
     },
     reconcileWorktrees: async () => {

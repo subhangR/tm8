@@ -72,6 +72,7 @@ import type {
   TransitionInput,
   WorkSessionStatus,
   WorktreeAllocationRow,
+  GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
 
@@ -2019,21 +2020,23 @@ export class SpawnService {
    *
    * @returns how many sessions were retired.
    */
-  async reconcileNodeGhosts(auth: GraphAuth): Promise<number> {
-    if (!this.nodeId) return 0;
+  async reconcileNodeGhosts(auth: GraphAuth): Promise<GhostReconcileReport> {
+    if (!this.nodeId) return { retired: 0, errors: [] };
 
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
       candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       this.logger?.warn?.('SpawnService: ghost reconciliation could not list sessions', {
         nodeId: this.nodeId,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
-      return 0;
+      return { retired: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
     }
 
     let retired = 0;
+    const errors: Array<{ message: string }> = [];
     for (const { sessionId, status } of candidates) {
       // Defensive, and what makes this safe to call at any time rather than
       // only at boot: a session with a LIVE PTY on this node is not a ghost.
@@ -2048,9 +2051,23 @@ export class SpawnService {
         retired += 1;
         this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
       } catch (error) {
+        // COLLECTED, not merely logged. This catch fires once per ghost, and on
+        // a node whose owner is not a member of the ghost's space it fires for
+        // EVERY one — `work_session_transition` goes through
+        // `require_space_member` with no node-admin bypass. Reported only to an
+        // optional logger, a total failure is indistinguishable from a clean
+        // boot with nothing to do, and the caller's `retired: 0` says the same
+        // thing either way.
+        //
+        // Measured on a live node 2026-08-22: reconciliation had been refused on
+        // every boot since the space was created, silently, while its worktree
+        // sibling printed the identical refusal at startup — because that one
+        // returns its errors and this one dropped them.
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push({ message: `session ${sessionId} (${status}): ${message}` });
         this.logger?.warn?.('SpawnService: failed to retire ghost session', {
           sessionId,
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
         });
       }
     }
@@ -2061,7 +2078,7 @@ export class SpawnService {
         retired,
       });
     }
-    return retired;
+    return { retired, errors };
   }
 
   /**

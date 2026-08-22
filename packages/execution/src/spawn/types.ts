@@ -438,6 +438,17 @@ export interface ResumeRequest {
  * single GraphPort instance serves every request on the node — a port that
  * captured claims at construction would hand one caller's identity to the next.
  */
+/**
+ * What a ghost sweep did, and what it could not do — the shape its worktree
+ * sibling (`WorktreeReconcileReport`) already has, for the reason that sibling's
+ * failures reach the operator at boot and this one's did not.
+ */
+export interface GhostReconcileReport {
+  readonly retired: number;
+  /** Empty on a clean sweep. Non-empty means rows were left claiming to be alive. */
+  readonly errors: readonly { readonly message: string }[];
+}
+
 export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;

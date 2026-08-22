@@ -47,7 +47,7 @@ describe('startup ghost reconciliation', () => {
 
     const retired = await service.reconcileNodeGhosts(AUTH);
 
-    expect(retired).toBe(1);
+    expect(retired).toEqual({ retired: 1, errors: [] });
     expect(graph.statusesFor('ghost-1')).toEqual(['exited']);
     // Retirement goes through the ordinary terminate path, so the ledger records
     // it like any other terminate rather than a status mutating from nowhere.
@@ -62,7 +62,7 @@ describe('startup ghost reconciliation', () => {
       { sessionId: 'g-idle', status: 'idle' },
     ];
 
-    expect(await service.reconcileNodeGhosts(AUTH)).toBe(2);
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 2, errors: [] });
     expect(graph.statusesFor('g-spawning')).toEqual(['exited']);
     expect(graph.statusesFor('g-idle')).toEqual(['exited']);
   });
@@ -83,19 +83,25 @@ describe('startup ghost reconciliation', () => {
       { sessionId: 'ghost', status: 'running' },
     ];
 
-    expect(await service.reconcileNodeGhosts(AUTH)).toBe(1);
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 1, errors: [] });
     expect(graph.statusesFor('alive')).toEqual([]);
     expect(graph.statusesFor('ghost')).toEqual(['exited']);
   });
 
   it('does nothing, quietly, when there are no ghosts', async () => {
-    expect(await service.reconcileNodeGhosts(AUTH)).toBe(0);
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 0, errors: [] });
     expect(graph.transitions).toHaveLength(0);
   });
 
   it('NEVER throws when the graph cannot be read — boot must not depend on cleanup', async () => {
     graph.listNodeActiveSessionsError = new Error('graph unreachable');
-    await expect(service.reconcileNodeGhosts(AUTH)).resolves.toBe(0);
+    // Still never rejects — boot must not depend on cleanup. But a total failure
+    // is no longer reported as a clean sweep: "nothing to do" and "could not read
+    // the graph at all" were the same answer before.
+    const unreadable = await service.reconcileNodeGhosts(AUTH);
+    expect(unreadable.retired).toBe(0);
+    expect(unreadable.errors).toHaveLength(1);
+    expect(unreadable.errors[0]?.message).toMatch(/could not list this node's sessions/);
   });
 
   it('keeps sweeping when ONE session fails to retire', async () => {
@@ -107,7 +113,14 @@ describe('startup ghost reconciliation', () => {
       { sessionId: 'good', status: 'running' },
     ];
 
-    expect(await service.reconcileNodeGhosts(AUTH)).toBe(1);
+    // The swept one is still swept, AND the one that refused is now named. This
+    // is the case that mattered in production: on a node whose owner is not a
+    // member of the session's space EVERY terminate refuses, and the caller saw
+    // only `0` — indistinguishable from a clean boot.
+    const partial = await service.reconcileNodeGhosts(AUTH);
+    expect(partial.retired).toBe(1);
+    expect(partial.errors).toHaveLength(1);
+    expect(partial.errors[0]?.message).toContain('bad');
     expect(graph.statusesFor('good')).toEqual(['exited']);
   });
 
@@ -123,7 +136,7 @@ describe('startup ghost reconciliation', () => {
     });
     graph.nodeActiveSessions = [{ sessionId: 'ghost', status: 'running' }];
 
-    expect(await anonymous.reconcileNodeGhosts(AUTH)).toBe(0);
+    expect(await anonymous.reconcileNodeGhosts(AUTH)).toEqual({ retired: 0, errors: [] });
     expect(graph.nodeSessionQueries).toHaveLength(0);
     expect(graph.transitions).toHaveLength(0);
   });
