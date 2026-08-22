@@ -257,6 +257,55 @@ function titleOf(activeTarget: MenuTarget | null, nameOfEntity?: (target: { ref:
   return activeTarget.ref;
 }
 
+/**
+ * ── THE HOSTED CHAT COLUMN'S STATE, AND IT BELONGS TO ONE PROJECT ──────────
+ *
+ * Reported by Subhang: "when project is switched chat list doesn't get
+ * updated". Two of the three causes were on the chat screen; this is the
+ * third, and it is the one this shell owns.
+ *
+ * `threads` and `threadId` are SPACE-SCOPED — a row's `rootId` is an entity id
+ * and entity ids mean nothing outside the space that minted them — but nothing
+ * reset them on a switch, so the drawer went on drawing the previous project's
+ * conversations and `routeThreadId` went on naming one of its roots, which the
+ * screen would then try to open in a space that has never heard of it.
+ *
+ * `leaveSpaceContext()` (`GateApp.tsx`) is the one path a space switch takes
+ * and its docblock is explicit about the failure — "it does not throw, it
+ * shows you somebody else's rows". It resets the two MODULE-LEVEL stores it
+ * knows about, and this state is neither, so it cannot reach here. Its
+ * INVARIANT is what applies: no state from the old Space survives.
+ *
+ * RESET DURING RENDER, not in an effect, and not as a preference: an effect
+ * would let one frame commit and PAINT the old project's rows under the new
+ * project's header before correcting itself — the visible half of the very bug
+ * being fixed. React re-runs this hook's owner immediately on a render-phase
+ * set, before children render and before anything reaches the screen, so those
+ * rows are never drawn at all. (React's own documented shape for adjusting
+ * state when a prop changes.)
+ *
+ * A HOOK RATHER THAN FOUR LINES INLINE because the invariant is the point and
+ * an invariant that cannot be tested is a comment. `MobileShell` needs a whole
+ * seam to render, so the shell itself is not a thing a unit test stands up —
+ * this is, and `views/mobile-space-switch.test.tsx` holds it to the rule.
+ */
+export function useSpaceScopedChat(spaceId: SpaceId): {
+  threads: readonly ChatThreadSummary[];
+  setThreads: (next: readonly ChatThreadSummary[]) => void;
+  threadId: EntityId | null;
+  setThreadId: (next: EntityId | null) => void;
+} {
+  const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
+  const [threadId, setThreadId] = useState<EntityId | null>(null);
+  const [chatSpaceId, setChatSpaceId] = useState<SpaceId>(spaceId);
+  if (chatSpaceId !== spaceId) {
+    setChatSpaceId(spaceId);
+    setThreads([]);
+    setThreadId(null);
+  }
+  return { threads, setThreads, threadId, setThreadId };
+}
+
 export function MobileShell(props: MobileShellProps) {
   const { data, activeTarget, navigateTo, spaceId } = props;
 
@@ -394,8 +443,10 @@ export function MobileShell(props: MobileShellProps) {
    * settle in one round rather than ringing.
    */
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
-  const [threadId, setThreadId] = useState<EntityId | null>(null);
+  /* THE CONVERSATION INVENTORY, SCOPED TO THE PROJECT IT CAME FROM. The hook
+     above this component owns the invariant and says why it is a hook; the
+     shell's only job is to hold nothing else. */
+  const { threads, setThreads, threadId, setThreadId } = useSpaceScopedChat(spaceId);
   const onChatScreen = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
 
   /*

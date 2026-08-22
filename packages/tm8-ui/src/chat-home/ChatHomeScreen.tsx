@@ -396,6 +396,48 @@ export function ChatHomeScreen({
    *  another member started a thread and the list must re-read. */
   const knownRootsRef = useRef<Set<string>>(new Set());
   const refreshingThreadsRef = useRef(false);
+  /** The space this screen is mounted for as of the last COMMIT. Every
+   *  space-scoped read is checked against it before it writes — a read is
+   *  issued for one project and can land after the viewer moved to another. */
+  const spaceRef = useRef(spaceId);
+
+  /**
+   * ── SWITCHING PROJECT LEAVES NOTHING OF THE OLD ONE BEHIND ────────────────
+   *
+   * Reported by Subhang: "when project is switched chat list doesn't get
+   * updated". Entity ids are SPACE-SCOPED, and `leaveSpaceContext`
+   * (`views/GateApp.tsx`) states the invariant in full for the stores it
+   * owns — "no state from the old Space survives". It cannot reach this
+   * screen's refs, so the screen keeps the same invariant for itself here.
+   *
+   * `knownRootsRef` is the one that bit. It answers "is this root new?" for
+   * the frame handler below, and carrying the previous project's roots across
+   * the switch makes it answer for a project the viewer has LEFT — which is
+   * precisely the mis-answer that fires the list re-read whose result then
+   * lands on top of the new project's list.
+   *
+   * `useLayoutEffect`, NOT `useEffect`, and not as a preference: passive
+   * effects are scheduled, and a frame arriving in that gap would consult refs
+   * still describing a space this screen is no longer showing. A layout effect
+   * runs in the same synchronous commit as the render that changed `spaceId`,
+   * so there is no such gap.
+   *
+   * It runs BEFORE the adopt effect below (layout before passive), so a host
+   * that addresses a conversation in the space being entered still wins — this
+   * clears, adoption then re-applies, in that order, in the one commit.
+   *
+   * A SWITCH, NOT A MOUNT. The early return is not a micro-optimisation: on
+   * first mount this state is already empty, and setting it again would be a
+   * second render before the opening read has even been issued.
+   */
+  useLayoutEffect(() => {
+    if (spaceRef.current === spaceId) return;
+    spaceRef.current = spaceId;
+    knownRootsRef.current = new Set();
+    setThreads([]);
+    setSelectedRootId(null);
+    setDetail(null);
+  }, [spaceId]);
 
   useEffect(() => {
     detailRef.current = detail;
@@ -433,8 +475,16 @@ export function ChatHomeScreen({
     onSelectionChange?.(selectedRootId);
   }, [selectedRootId, onSelectionChange]);
 
+  /** Re-read the space's thread list. SPACE-SCOPED IN BOTH DIRECTIONS: the
+   *  read is issued for the space this closure was built for, and a result
+   *  that lands after the viewer switched projects is DROPPED rather than
+   *  written. Without that second half a list read started in the old project
+   *  finishes into the new one and overwrites it — the switch-doesn't-update
+   *  report. Callers get a promise that resolves either way; nothing depends
+   *  on distinguishing "read the list" from "read a list we then discarded". */
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
+    if (spaceRef.current !== spaceId) return;
     knownRootsRef.current = new Set(next.map((thread) => thread.rootId));
     setThreads(next);
     setSelectedRootId((current) => preferRoot ?? current ?? next[0]?.rootId ?? null);
@@ -486,6 +536,12 @@ export function ChatHomeScreen({
     void Promise.all([port.listThreads(spaceId), port.listTeammates(spaceId)])
       .then(([nextThreads, nextTeammates]) => {
         if (!alive) return;
+        /* SEED `knownRootsRef` FROM THE SAME READ that fills the list, so the
+           two never disagree about what the sidebar knows. This is the read
+           that repopulates the list after a project switch cleared it, and
+           leaving the ref empty here would leave the frame handler answering
+           "new root" for every root it has in fact just been given. */
+        knownRootsRef.current = new Set(nextThreads.map((thread) => thread.rootId));
         setThreads(nextThreads);
         setTeammates(nextTeammates);
         /* COLD START (ruled 2026-08-15): the most recent conversation opens
@@ -630,7 +686,19 @@ export function ChatHomeScreen({
           setPhase('idle');
         } else setPhase('streaming');
       }),
-    [port, refreshDetail],
+    /* `refreshThreads` IS A DEPENDENCY, and omitting it was the switch bug
+       rather than a lint nit. It closes over `spaceId`; nothing else in this
+       array ever changes when the project does — `port` is memoized on
+       [bridge, seam], the bridge on [seam], and the seam is a ref held for the
+       app's lifetime. So the subscription was created once and kept calling
+       `listThreads` for a project the viewer had left, writing that answer
+       straight over the one they had switched TO. Listing it re-subscribes on
+       the switch, which is what makes the handler's closure honest about which
+       project it is reading; `refreshThreads`' own guard then drops any read
+       that was already in flight when the switch happened. Both halves are
+       needed — the first stops a stale read being STARTED, the second stops a
+       started one LANDING. */
+    [port, refreshDetail, refreshThreads],
   );
 
   /** This thread's own message ids: never chip them — they are already the
