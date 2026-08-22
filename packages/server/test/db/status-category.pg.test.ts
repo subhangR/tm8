@@ -43,6 +43,12 @@ import type { Querier } from '../../src/db/types.js';
 vi.setConfig({ testTimeout: 60_000 });
 
 const MIGRATION = '147_entity_status_category.sql';
+/**
+ * Applied after 147 so the PRODUCTION reader this file exercises has the
+ * columns it selects. See the note in `beforeAll` for why this one file and
+ * not the whole remainder of the chain.
+ */
+const ENDED_REASON_MIGRATION = '171_session_ended_reason.sql';
 const SPACE = '00000000-0000-4000-8000-000000000001';
 const IDENTITY = '00000000-0000-4000-8000-00000000000f';
 /** A task that exists only to satisfy `entities.created_by`, which is an entity FK. */
@@ -170,6 +176,33 @@ describe.sequential('147 — entities.status_category', () => {
     eventsBeforeMigration = await upserts();
     database.apply([MIGRATION]);
     eventsAfterMigration = await upserts();
+
+    // ONE LATER MIGRATION, DELIBERATELY ALONE. The assertions below call
+    // PRODUCTION code (`queryCollection` -> `entity-read.ts`), and a production
+    // read moves forward with the schema while this fixture is pinned at 147:
+    // `entity-read.ts` selects `ws.ended_kind`/`ws.ended_reason`, which exist
+    // only from 171, so the suite fails with `column ws.ended_kind does not
+    // exist` — an out-of-date fixture, never a defect in 147 or in the handler.
+    //
+    // NOT `files.slice(index + 1)`. Applying the whole remainder was tried and
+    // is wrong: later migrations legitimately change what 147 left behind (152
+    // reworks status, 165 changes which edits emit events, phase 2 adds the
+    // `workflow_states` FK), so the whole-remainder form turns the twelve
+    // collection failures into four different ones in the tests that assert
+    // what was true AT 147 — "leaves a kind with no status NULL", "creates a
+    // non-task in one event", "adds status_id nullable and WITHOUT a foreign
+    // key". Those are 147-era facts and must keep a 147-era database.
+    //
+    // 171 is safe to apply alone here precisely because it touches nothing this
+    // file asserts on: two nullable columns on `work_sessions`, one CHECK, one
+    // trigger on `work_sessions`, and the `work_session_transition` signature.
+    // No task, no doc, no category, no event-emission rule. Verified applying
+    // clean directly onto the 147 tranche.
+    //
+    // Same à-la-carte shape `assignment-provenance.pg.test.ts` already uses,
+    // where a 129-era fixture applies `135_graph_kind.sql` and
+    // `147_entity_status_category.sql` by name for the same reason.
+    database.apply([ENDED_REASON_MIGRATION]);
   }, 180_000);
 
   afterAll(async () => {

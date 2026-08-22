@@ -227,6 +227,9 @@ export class FakeGraph implements GraphPort {
 
   async transition(auth: GraphAuth, input: TransitionInput): Promise<void> {
     this.authSeen.push(auth);
+    if (this.failTransitionFor.has(input.sessionId)) {
+      throw new Error(`injected transition failure for ${input.sessionId}`);
+    }
     this.transitions.push(input);
   }
 
@@ -248,6 +251,11 @@ export class FakeGraph implements GraphPort {
   /** Session ids whose `terminate` should blow up, to prove one bad row cannot
    *  stop the sweep. */
   failTerminateFor = new Set<string>();
+  /** Session ids whose `transition` should blow up. The sibling of
+   *  `failTerminateFor`, for paths that write a status WITHOUT going through
+   *  `terminate` — the shutdown sweep is the one that matters, and it must
+   *  still resolve so a failing write cannot hang the process exit. */
+  failTransitionFor = new Set<string>();
 
   async listNodeActiveSessions(
     auth: GraphAuth,
