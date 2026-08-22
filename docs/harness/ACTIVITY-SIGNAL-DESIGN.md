@@ -361,7 +361,22 @@ and — the part worth copying exactly — *"A `.gitignore` at the same path tha
 
 ## 6. Decision 4 — the degraded mode (the part that matters most)
 
-The requirement: **a harness whose liveness is guessed must be visibly distinguishable from one whose liveness is known.** Three pieces — the declaration, the wire, the words.
+The requirement: **a harness whose liveness is guessed must be visibly distinguishable from one whose liveness is known.**
+
+> ### The decision
+>
+> **Stream silence stops being an assumption and becomes a declared capability with a name, a default, and a rendering rule.**
+>
+> 1. **Every activity reading carries `confidence: 'reported' | 'derived' | 'guessed'` and `source`.** Not optional, not defaulted, not inferable — a reading without provenance is unrepresentable in the type. This is what moves `pty/types.ts`'s *"never upgrade it into a fabricated question"* out of a comment and onto the wire.
+> 2. **Every harness declares `HarnessActivitySignal` on its capability record, defaulting to `{ tier: 'none', states: [], verified: null }`.** A harness nobody has characterised declares that nobody has characterised it. Harnesses 3 through 26 therefore cannot arrive green.
+> 3. **`needsAttention` is reachable only from `confidence: 'reported'`.** A silence timer structurally cannot produce a pulsing "needs you".
+> 4. **A live session with no reading past its grace window renders `unknown` / "unverified"**, not `running`. This is AO's `no_signal`, reached through the vocabulary tm8 already ships.
+> 5. **The rendered string is fixed by tier** (§6.4's table), and a `guessed` reading may only state the measurement — "no output for 4m" — never a verb whose subject is the agent.
+> 6. **The distinction is machine-checkable**: `data-signal="reported|derived|guessed|none"` on the rendered element, so a regression is a failing assertion rather than a screenshot argument.
+>
+> Rules 1 and 3 are the load-bearing pair: 1 makes the distinction *exist*, 3 makes it *bind*. Rule 2 is what makes it hold as the harness count grows. None of the six requires a hook, a transcript, or any new signal to ship — they are implementable against exactly the evidence tm8 has today, which is why they are Phase 0 and ship alone.
+
+Three pieces — the declaration, the wire, the words.
 
 ### 6.1 The declaration, on the harness capability record
 
@@ -573,12 +588,116 @@ This is the actionable one, and three of the four are answerable with code that 
 
 | # | Fact | Answered by | Status today |
 |---|---|---|---|
-| 1 | No PTY at all; the record says `running` | `execution.liveness` → `liveEntityIds` → presentation `stale` | **Exists, correct, and unpolled.** The whole `stale` path is built; the gap is cadence. |
+| 1 | No PTY at all; the record says `running` | `execution.liveness` → `liveEntityIds` → presentation `stale` | **Exists, correct, and already on a cadence.** See below. |
 | 2 | Live PTY, no output for N | `DEFAULT_IDLE_AFTER_MS` → `status: 'idle'` | Ships today. Must be relabelled `guessed` (Phase 0), never rendered as a verdict. |
 | 3 | Live PTY, output moving, agent has produced no prose across many tool calls | `detectStuck` in `read-transcript.ts` | **Built and wired to nothing that anyone polls.** This is the 46-minute incident. Phase 1. |
 | 4 | Died seconds after boot, recorded as a normal exit | `bootSettlementMs = 150`; `exitCode === 0 → 'completed'` | **Not answered.** Minimum fix: surface elapsed run time (§8, out-of-scope note). |
 
 Fact 1 deserves emphasis for the chat UI specifically: the node restart case is already fully modelled. `nodeBootId` *"is stable for the life of the server process and rotates on restart: a client comparing it across reads can tell 'same node, session genuinely gone' from 'node restarted — recorded statuses are stale until reconciliation'."* A Crew Card that reads `nodeBootId` across polls gets correct staleness for free, before any of this design lands.
+
+**And the carrier is already driven.** `packages/tm8-ui/src/data/real/liveness.ts` implements the LLD §9 cadence: re-read *"on WS reconnect · on a 30s slow interval while a session surface is visible"*, plus an event-triggered `nudge` per space and an immediate re-read on becoming visible, with the interval *"Off by default — an invisible surface polls nothing."* An earlier draft of this section said the `stale` path was built but unpolled; that was wrong, and the correction matters in this design's favour — §6.2's decision to ride `execution.liveness` inherits a cadence that already exists, is already visibility-gated, and already survives reconnects. It needs no new timer.
+
+---
+
+## Impact
+
+What adopting this costs, concretely.
+
+### Packages that change
+
+| Package | Phase 0 (provenance) | Phase 1 (transcript) | Phase 2 (hooks) | Phase 3 (registry) |
+|---|---|---|---|---|
+| `packages/contract` | `SessionActivity`, `ActivityConfidence`, `SessionActivityState`; `ExecutionLiveness` + `ExecutionLivenessSchema` gain one `activity` key. **No new operation in the catalog.** | — | — | `HarnessActivitySignal` on the harness record (shape owned by the registry design) |
+| `packages/execution` | `SpawnService.handlePtyActivity` attaches `source`/`confidence`; `PtyActivity` and `PtyHostService` **unchanged** | a projection from `read-transcript.ts`'s existing `stuck` / `lastActivityAt` / `stats` into a `SessionActivity` | one hook-install module under `spawn/`, called from the worktree provisioning path | — |
+| `packages/server` | `facade/execution-handlers.ts`: the `execution.liveness` handler assembles the `activity` array. **No new route, no new authz module, no new audit writer.** | same handler reads the transcript projection | receives hook readings via the existing CLI dispatch path | reads the declaration |
+| `packages/tm8-ui` | `terminal/session-presentation.ts` gains two routing clauses; `data/seam.ts`'s `LivenessSnapshot` gains the field. **The 8-value presentation vocabulary does not grow.** | activity-line text | — | an operator-facing surface for `verified: null` |
+| `packages/cli` | — | — | one new command, `session activity` | — |
+
+### Migration: none
+
+No schema change. `work_sessions.status` keeps its five values, migration 043's transition rules are untouched, and the durable projection (`state === 'working' ? 'running' : 'idle'`) is byte-identical to what `handlePtyActivity` writes today. The rich record is a **read-time assembly**, never a stored column — which is why there is nothing to migrate and nothing to backfill. Sessions that predate the feature answer `reading: null`, which is a legal, meaningful value (§6.3), not a gap.
+
+### New network surface: none
+
+This is the decision with the largest cost avoided, so it is worth pricing what was declined. A hook HTTP endpoint on a shared host would need, at minimum, the apparatus `grant-token` + `attach-authz.ts` + `audit-logger.ts` already constitute for PTY attach:
+
+- a minted, delivered, single-use capability (`issuePtyGrantToken`, `hashPtyGrantToken`, the `tm8g_` wire shape);
+- a consume transaction that collapses *"invalid, expired, replayed, wrong-session, wrong-mode and wrong-identity"* into one indistinguishable 403 (`public.consume_stream_attach`);
+- an identity-binding rule for the case where a browser principal is also present, with the "do not let a valid capability override a conflicting browser principal" refusal;
+- a credential-free log allowlist (`audit-logger.ts` permits exactly `sessionId, mode, status, reason, gap, offset` and drops everything else, including error strings, because *"error messages/stacks may contain driver or SQL inputs"*);
+- a rate limit, since the endpoint is callable once per tool call by an agent tm8 does not control;
+- a story for a hook arriving after exit.
+
+**The authn/authz burden of the chosen design is zero net new.** `tm8 session activity` authenticates with `TM8_AGENT_TOKEN` — `tm8s_<sessionId>.<secret>`, minted per spawn by `graph.issueWorkSessionAgentToken`, dying with the session — over the dispatch path every other `tm8` command already uses. Authorization is inherent rather than checked: the token is pinned to one work session, so a hook **cannot** report for another one, and no per-request authorization rule has to be written or maintained to make that true. The last item on the list above (post-exit hooks) is the only one that still needs deciding, and §4.4 decides it by inheriting two rules that already exist: `handlePtyActivity`'s live-PTY guard and migration 043's refusal of transitions out of a terminal status.
+
+Two costs that are real and are not zero:
+
+- **Process churn.** Six hook invocations per session lifecycle, each a short-lived `tm8` process, on a host running many sessions under a concurrency cap. This is why §4.5 declines AO's `PreToolUse`/`PostToolUse`/`PostToolUseFailure` trio, which would make it per-tool-call instead of per-state-change. Unmeasured; item 6 in §10.
+- **Transcript file reads.** Phase 1 adds bounded tail reads (256 KiB window, byte-offset cursor, no full-file scan) on a cadence. It rides the existing 30s visibility-gated liveness cadence rather than adding a timer, but the per-read cost is new. Unmeasured; item 5 in §10.
+
+### The tuned quiescence constants: preserved, not replaced
+
+**Preserved, untouched, and out of scope by explicit rule.** The constants carrying the `3/3 on claude-code, 2/2 on codex` measurement — `PROMPT_IDLE_MS`, `PROMPT_COLD_IDLE_MS`, `PROMPT_COLD_READY_TIMEOUT_MS`, `PROMPT_WARM_READY_TIMEOUT_MS`, `PROMPT_PRE_SUBMIT_IDLE_TIMEOUT_MS`, `PROMPT_PRE_SUBMIT_MIN_MS`, `PROMPT_VERIFY_MS`, `PROMPT_SUBMIT_ATTEMPTS`, `PROMPT_SUBMIT_BACKOFF_MS`, `PROMPT_WRITE_CHUNK_BYTES` — belong to `writePromptToEntry`'s **write** path. Nothing in any phase of this design reads or writes them.
+
+The structural reason this holds, and is not merely an intention: the activity path and the delivery path share exactly one piece of state, `entry.lastOutputAt`, and the activity path only ever **reads** it. `markBusy` reschedules a timer; it does not touch the composer, the FIFO, the readiness gate, or the Enter-retry loop. Phase 0 does not modify `PtyHostService.ts` at all — it changes what `handlePtyActivity` attaches to a reading in `SpawnService`, one layer above.
+
+**One constant is replaced, deliberately:** `DEFAULT_IDLE_AFTER_MS = 10_000`. It is not part of the measured set, and its own docstring asks to be replaced — *"It is a DEFAULT, not a measurement … this one has not had that treatment yet and should get it before it is treated as settled."* §10 item 2 carries it.
+
+### The regression oracle, named
+
+Three, in order of what they protect:
+
+1. **The delivery measurement itself** — inject at spawn time exactly as `drainPendingPrompts` does, against real claude-code and real codex, and reproduce `3/3` and `2/2`. This is the oracle for the *write* path. **This design's correct relationship to it is that no phase should ever need to run it.** A PR in this workstream that touches `writePromptToEntry` or any `PROMPT_*` constant has, by that fact, left scope — running the oracle is the remediation, not the routine.
+2. **`packages/execution/test/pty-activity-detection.test.ts`** — the existing suite that pins the block detector (*"The block detector: what makes a session's `needs-you` state reachable"*). It must stay green **unmodified** through Phase 0. A phase that has to edit this file has changed detection behaviour while claiming to change only provenance.
+3. **A new golden test on the transition sequence.** Script a PTY lifecycle (spawn → output → silence → output → exit) and assert the exact ordered list of `graph.transition({ sessionId, status })` calls. Capture it before Phase 0, assert it after. This is what makes "byte-identical durable projection" a failing test rather than a claim in a design document, and it is the one new piece of oracle this work should add.
+
+For Phase 2 specifically, one more: with the harness capability flag **off**, behaviour must be byte-identical to Phase 1 under oracle 3. That is what makes the flag a real kill switch rather than a label.
+
+---
+
+## Self-critique
+
+### The strongest case for TUI interpretation, argued properly
+
+I refused it in §7. Here is the case I have to beat, made as well as I can make it.
+
+**1. It is the only source that sees what the human sees.** A permission dialog is a *rendered* object. It exists on the screen. It may exist before any hook fires, it may exist for harnesses that have no `PermissionRequest` event at all, and it leaves no trace in a transcript — the transcript records turns, and a modal waiting for a keystroke is the absence of a turn. If the question is "is this agent stopped on a decision", the screen holds the answer directly and both of my preferred tiers hold it only by proxy or not at all. §3.4 makes `awaiting_decision` reachable **only** at `confidence: 'reported'` — which means that for every harness without a permission hook, my design's answer to the most operationally important question is permanently "we don't know". A TUI parser would answer it.
+
+**2. It is the universal fallback, and universality is the actual requirement.** The stated fear is 24 more harnesses. Hooks require per-harness support that may not exist; transcripts require a documented on-disk format that may not exist. A rendered terminal always exists — it is the one thing every harness in the set has by definition, because tm8 runs them all in a PTY. AO chose it *because* it scales to the harnesses that support nothing else, and my three-tier ladder's bottom rung (`guessed`) is exactly the population where a TUI parser would add the most and where I have instead chosen to add nothing.
+
+**3. "It is brittle" is a weaker objection than it sounds.** A TUI parser that breaks on an upstream redesign produces a wrong answer — but under this design's own machinery that failure is *containable*: a parser reading is `derived` at best, never `reported`, so it could never light `needs-you`, and a staleness check against the transcript would catch a parser that had stopped tracking reality. I am declining a signal partly on a brittleness argument that my own provenance model is built to absorb.
+
+**4. tm8 already has most of the machinery.** `TerminalStateMirror.ts` exists. The scrollback ring exists with offset accounting. `PtyHostService` already does pattern-matching against rendered output in anger — `PASTE_PLACEHOLDER_RE` matches `[Pasted text #1 …]` on screen and treats it as *"POSITIVE evidence the prompt was not submitted"*, and the whole Enter-retry loop verifies submission by checking whether a tail token left the cursor. **tm8 is already interpreting the rendered terminal for control decisions.** My §7 argues the practice is architecturally wrong for a codebase that ships it today, in the most safety-critical loop it has.
+
+**Why I still refuse, having said that.** Point 4 is the sharpest and it is also the answer: the existing pattern-matching is *bounded, session-scoped, transient and self-correcting* — it looks for one token, in one delivery, and a wrong answer costs a retry. A durable `activity_state` derived from screen contents is none of those: it is per-session-continuous, it feeds a status other systems act on, and a wrong answer persists until something else contradicts it. Points 1 and 2 I concede outright and do not have a rebuttal for. **The honest summary is that I am trading a real capability — permission-dialog detection for hookless harnesses — for a maintenance and correctness posture, and §6 is designed so that the cost of that trade is *visible* (those harnesses declare a lower tier and render "unverified") rather than hidden.** If the operator would rather have a brittle answer than an honest absence, this decision is the one to revisit first, and revisiting it does not disturb anything else in the design — a parser would slot in as a fourth source at `confidence: 'derived'`.
+
+### The claim that, if false, collapses the design
+
+**That an agent's transcript is written promptly enough to be an activity signal.**
+
+Everything in the middle tier depends on it, and the middle tier is what makes the three-tier ladder better than AO's two rather than merely differently-shaped. If claude-code or codex buffers transcript writes — flushing at end of turn, or on a timer, or at process exit — then `lastActivityAt` lags reality by an unknown and variable amount, `detectStuck`'s silence measurement (which compares against `now`, deliberately) is measuring the flush interval rather than the agent, and the `derived` tier is a `guessed` tier wearing a better label. That would be the same lie this document exists to end, one layer up.
+
+I have **not** verified flush behaviour. `read-transcript.ts` reads the file and reports what is there; nothing in it, and nothing I found elsewhere in the tree, characterises write latency. The consequences if it is false are bounded but real: §7.1's tier ordering survives (transcripts are still strictly better than silence for *content*), but the staleness claims in §9 fact 3 do not, Phase 1 stops being a useful intermediate step, and the design's value collapses back to Phase 0's provenance fix plus Phase 2's hooks — which is still worth having, but is a materially smaller result than the document claims. **This belongs at the top of §10's measurement list and is not currently there; treat it as item 0.**
+
+Two further single points of failure, weaker but worth naming:
+
+- **That `needsAttention` has exactly one producer.** §6.4's gate is stated as a rule about who may set the flag. If more than one call site can set it, the gate is advisory and will be bypassed by the first caller who does not read this document. Making it structural — the flag becoming a `SessionActivity` rather than a boolean, so an un-provenanced `true` is unrepresentable — is the version I would actually build, and I did not say so plainly enough in §6.4.
+- **That adding a key to `ExecutionLivenessSchema` is non-breaking.** The schema is `.strict()`. I assert older clients ignore unknown keys; `.strict()` governs *parsing*, and a client that parses the response with its own strict schema would reject the enriched payload outright. This needs checking against the actual client-side parse before Phase 0, not assumed. If it is false, the field needs a version-gated read or its own operation — recoverable, but it moves work into Phase 0 that I have costed at zero.
+
+### AO details I could not reproduce, labelled unverified
+
+Everything in §1.1 I checked directly against the checkout. These I did not, and they are load-bearing to different degrees:
+
+- **[unverified] The precedence ladder itself.** I verified the fourteen-value status union, `noSignalGrace = 90s`, and the `SessionFacts`/`PRFacts` inputs to `contract.DeriveStatus`. I did **not** read `DeriveStatus`'s body, so my characterisation of the ladder's *ordering* is taken from the brief, not from the source. Nothing in this design depends on the ordering — I do not adopt it — but any future document that ports it should read the function.
+- **[unverified] How `ao hooks` authenticates to the AO daemon.** I read the hook *installation* (`claudecode/hooks.go`, `hooksjson.Manager`) and confirmed the command form `ao hooks claude-code <event>` with no token in the file. I did **not** read the `ao hooks` command implementation. My §4.1 argument stands on tm8's own facts — `TM8_AGENT_TOKEN` exists, is run-scoped, and is in the spawn env — so it does not depend on this. But the parallel I draw ("AO does not need a token in the file either") is inferred from the file's contents, not from AO's transport.
+- **[unverified] That the tm8 `guessed` incidents map onto AO's `no_signal` semantics.** I am confident about the tm8 side; the AO side rests on one code comment.
+- **[unverified, taken from the brief] The Windows ConPTY VT cell model.** I did not read AO's Windows path. §7's point 2 leans on it lightly; the argument survives without it, since the per-session server-side cost on Linux is the actual objection.
+- **[unverified] That `goose, qwen, agy, droid, kimchi` share the hooks file shape byte-for-byte.** This is `hooksjson.go`'s own package comment, which I read and quoted. I did not open the five adapters to confirm it. It matters because §7's point 4 uses it as the amortisation argument for hooks over screen-scraping — if the shape-sharing is looser than the comment claims, that argument weakens, though the maintenance asymmetry (a hook contract breaks loudly, a parser breaks silently) does not.
+- **[verified, but worth flagging as a judgement not a fact] That AO's `waiting_input`/`blocked` split is necessary for tm8.** The AO comment is verbatim and its reasoning is explicit. The step from there to "tm8 needs it *more* than AO does" is my inference from `deliverPrompt` being an unattended writer. It is an argument, not a measurement.
+
+### One thing I would change if I were building rather than designing
+
+§8's Phase 0 is described as a pure provenance change with byte-identical status writes, and that is what makes it safe to ship alone. But it is also the phase that changes what the UI is *allowed* to say, and the removal of a confident "idle" from surfaces where operators have learned to read it will be experienced as a regression by people who did not know it was a guess. That is the correct outcome and it will still generate complaints. Phase 0 should ship with the explanation attached — the "no output for 4m" string is doing double duty as both the honest reading and the argument for why the old one is gone — and I have not designed that communication anywhere in this document.
 
 ---
 
@@ -586,6 +705,7 @@ Fact 1 deserves emphasis for the chat UI specifically: the node restart case is 
 
 Nothing below is a nice-to-have; each is a number or a fact this design currently assumes.
 
+0. **Do claude-code and codex flush their transcripts promptly enough to be an activity signal?** Added from the self-critique, and it belongs first: this is the claim that, if false, collapses the `derived` tier and with it most of what this design offers over AO's two tiers. Measure write latency from turn boundary to bytes-on-disk, for both dialects, under load. Not currently characterised anywhere in the tree.
 1. **Does a redirected `CLAUDE_CONFIG_DIR` still read project-local `.claude/settings.local.json`?** The hook tier for claude-code rests entirely on this. Verify by running the CLI, both directions, with a positive control — the standard `agent-credentials.ts` set. If false, §5.2 needs a different file location.
 2. **`DEFAULT_IDLE_AFTER_MS = 10_000`** — the one constant whose own docstring asks for the measurement it never received. Derive it.
 3. **`STUCK_TOOL_CALL_THRESHOLD = 5` / `STUCK_SILENCE_MS = 30_000`** — inherited from maestro, never re-derived for tm8, and demonstrably would not have fired on the 46-minute incident at 4 tool calls.
