@@ -410,6 +410,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // gitCherryPick, gitStash join the rail's verbs.
       'gitBranch', 'gitCheckpoint', 'gitCherryPick', 'gitCommit', 'gitMerge', 'gitRollback',
       'gitStash',
+      // `chat.threads.interrupt` — stopping the turn a chat thread is running.
+      // A chat thread has no work_session for `terminate` to target, so this is
+      // an operation of its own rather than a reuse of one.
+      'interruptChatThread',
       'markRead',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
       // the counterpart to `gitMerge`'s deliberate exclusion from the tracking

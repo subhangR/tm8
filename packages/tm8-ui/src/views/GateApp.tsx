@@ -1415,6 +1415,19 @@ export function GateApp(props: GateAppProps = {}) {
         mode: result.thread.mode,
       };
     },
+    /**
+     * The third seam call: `chat.threads.interrupt`. Without it the chat port
+     * carries no `interrupt`, and the composer's Stop renders as the disabled
+     * "Working" loader — which is what every real chat did until this bridge
+     * existed. The result's `stopped` flag is deliberately dropped: whether a
+     * live runtime was found is not news the composer acts on, and the screen
+     * re-reads the thread straight after to show what actually happened.
+     */
+    interruptThread: async (rootMessageId: string) => {
+      await data.seam.commands.interruptChatThread(rootMessageId as EntityId, {
+        clientMutationId: `chat-stop-${rootMessageId}-${Date.now()}`,
+      });
+    },
   }), [data.seam]);
 
   const homeSlots = useMemo(

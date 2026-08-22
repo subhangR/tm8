@@ -70,7 +70,7 @@ import type {
   NotificationItem, Page, PaletteAction, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatThreadInput,
-  StartChatThreadResult,
+  StartChatThreadResult, InterruptChatThreadInput, InterruptChatThreadResult,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   CommitSessionAttribution,
   ProjectBlameHunk, ProjectBranch, ProjectBranchTopology,
@@ -1058,6 +1058,11 @@ export const StartChatThreadResultSchema: z.ZodType<StartChatThreadResult> = z.o
   thread: ChatThreadSummarySchema,
 }).strict();
 
+export const InterruptChatThreadResultSchema: z.ZodType<InterruptChatThreadResult> = z.object({
+  rootMessageId: EntityIdSchema,
+  stopped: z.boolean(),
+}).strict();
+
 export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('chat.turn.delta'),
@@ -1430,6 +1435,17 @@ export const ServerConnectionCreateInputSchema: z.ZodType<ServerConnectionCreate
 }).strict();
 
 export const ServerConnectionDeleteInputSchema: z.ZodType<ServerConnectionDeleteInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
+/**
+ * chat.threads.interrupt. The thread is named in the path, so the body carries
+ * only the mutation id — there is nothing to configure about stopping.
+ * (Declared here rather than beside the other chat schemas because
+ * `commandContextShape` is defined further down this file.)
+ */
+export const InterruptChatThreadInputSchema: z.ZodType<InterruptChatThreadInput> = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
 }).strict();
@@ -1967,6 +1983,12 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   attachmentIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']).optional(),
+  // Bounded, not enumerated — the shape the column accepts (170) and nothing
+  // more. WHICH models are runnable is the launch catalog's question and it is
+  // answered by the chat service, which is the only layer that knows both the
+  // catalog and the thread. A `z.enum` of model ids here would be a second
+  // hardcoded list to go stale, on the wire, where it is hardest to change.
+  model: z.string().trim().min(1).max(100).optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =

@@ -3590,6 +3590,18 @@ export function createFixtureSeam(): FixtureSeam {
         };
       },
 
+      /**
+       * Fixture echo of `chat.threads.interrupt`. A fixture seam runs no agent,
+       * so there is never anything live to stop — `stopped: false` is the true
+       * answer here, and it is the same answer the real op gives for a turn
+       * that already finished. Answering `true` would make the fixture the one
+       * place where stopping always appears to have worked.
+       */
+      async interruptChatThread(rootMessageId) {
+        requireSummary(rootMessageId);
+        return { rootMessageId, stopped: false };
+      },
+
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {
         if (input.anchorIds.length === 0) throw new CollabError('invalid_input', 'anchorIds must not be empty');
         const anchors = input.anchorIds.map(requireSummary);

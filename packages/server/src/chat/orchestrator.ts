@@ -196,6 +196,17 @@ export class ChatOrchestrator {
     readonly threadId: string;
     readonly authorizationIdentityId: string;
     readonly authorizationAuthKind: string | null;
+    /**
+     * The model this runtime was STARTED on — not the thread's default.
+     *
+     * A running agent process cannot change model, so this is what makes a
+     * per-turn override (170) real rather than decorative: `ensureRuntime`
+     * compares it against the incoming turn's resolved model and, when they
+     * differ, takes the same close-and-resume path an authorization change
+     * already takes. Without it the override would be recorded on the turn,
+     * shown in the composer, and quietly ignored by the process that answers.
+     */
+    readonly model: string;
   }>();
 
   constructor(private readonly options: ChatOrchestratorOptions) {}
@@ -276,6 +287,29 @@ export class ChatOrchestrator {
       });
     this.drains.set(rootMessageId, drain);
     return drain;
+  }
+
+  /**
+   * Stop the turn this thread is running, because a person asked it to.
+   *
+   * THE ONLY THING THIS TOUCHES IS THE RUNTIME. It does not write the turn row
+   * and it does not mark the thread stopped — the drain already does both when
+   * the interrupted turn ends (169 makes that a `stopped` turn rather than an
+   * `error` one, and the existing `interrupted` branch marks the runtime).
+   * Doing either here would race the drain for the same rows and could report a
+   * stop that the still-running turn then overwrote with its own outcome. So
+   * this asks, and the loop that owns the turn records what happened.
+   *
+   * NOT AN ERROR WHEN NOTHING IS RUNNING. A turn can finish between the person
+   * deciding to stop it and the request arriving; a thread on a restarted node
+   * has no in-process runtime at all. Both answer `false` — the request
+   * succeeded, and there was nothing to stop. The caller says that in plain
+   * words rather than raising.
+   */
+  async interrupt(rootMessageId: string): Promise<boolean> {
+    const live = this.liveThreads.get(rootMessageId);
+    if (!live) return false;
+    return this.options.runtime.interrupt(live.threadId);
   }
 
   /**
@@ -380,12 +414,28 @@ export class ChatOrchestrator {
 
     const finalUsage = usage as ChatTurnUsage | null;
     const totalCost = finalUsage?.total_cost_usd ?? null;
+    /**
+     * THREE TERMINAL STATES, NOT TWO (169).
+     *
+     * This used to be `success || closed ? 'completed' : 'error'`, which folded
+     * `interrupted` in with a crash — so a person who stopped their own turn
+     * was told it had failed, and the transcript kept saying so. Stopping is
+     * not failing, and it is not finishing either: it is its own outcome, and
+     * only the person who did it can produce it.
+     *
+     * `failure` stays NULL for a stop, because there is no failure to describe.
+     */
+    const turnState = terminal.reason === 'success' || terminal.reason === 'closed'
+      ? 'completed'
+      : terminal.reason === 'interrupted'
+        ? 'stopped'
+        : 'error';
     await this.options.db.rpc(
       claims(turn.requesterIdentityId),
       'complete_chat_turn',
       [
         turn.turnId,
-        terminal.reason === 'success' || terminal.reason === 'closed' ? 'completed' : 'error',
+        turnState,
         text,
         finalUsage,
         totalCost,
@@ -452,11 +502,18 @@ export class ChatOrchestrator {
     const authorizationAuthKind = turn.requestedByAuthKind
       ?? (authorizationIdentityId === turn.requesterIdentityId ? turn.requesterAuthKind ?? null : null);
     const live = this.liveThreads.get(turn.rootMessageId);
+    /**
+     * A live runtime is REUSED only when nothing it was started with has
+     * changed. The model joins authorization in that test (170): a process
+     * already talking to one model cannot be asked to answer on another, so an
+     * override is honoured by restarting rather than by hoping.
+     */
     if (
       live?.authorizationIdentityId === authorizationIdentityId
       && live.authorizationAuthKind === authorizationAuthKind
+      && live.model === turn.model
     ) return live.threadId;
-    let authorizationChanged = false;
+    let restarted = false;
     if (live) {
       await this.options.runtime.close(live.threadId);
       this.liveThreads.delete(turn.rootMessageId);
@@ -465,9 +522,12 @@ export class ChatOrchestrator {
         'mark_chat_runtime_state',
         [turn.rootMessageId, 'stopped'],
       );
-      authorizationChanged = true;
+      restarted = true;
     }
-    const mode = authorizationChanged || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
+    /* A restart RESUMES rather than starts fresh, whatever forced it — the
+       conversation so far is the whole reason a person switched model in the
+       middle of it rather than opening a new thread. */
+    const mode = restarted || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
     const launch = await this.options.resolveLaunchConfig({
       rootMessageId: turn.rootMessageId,
       requesterIdentityId: authorizationIdentityId,
@@ -501,6 +561,7 @@ export class ChatOrchestrator {
       threadId: started.threadId,
       authorizationIdentityId,
       authorizationAuthKind,
+      model: turn.model,
     });
     await this.options.db.rpc(
       claims(turn.requesterIdentityId),

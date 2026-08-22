@@ -982,6 +982,20 @@ const ROWS: Record<OperationName, Row> = {
       'v1 exposes this through the browser composer; exact-operation help remains available to CLI users',
     ],
   },
+  'chat.threads.interrupt': {
+    cmd: null,
+    sum: 'Stop the turn a TM8 Chat thread is running right now',
+    authz: 'entity',
+    input: 'bound',
+    reason: 'browser_chat_composer_only',
+    tags: ['chat', 'thread', 'stop', 'interrupt', 'agent'],
+    notes: [
+      'stops what the agent is DOING; the thread and everything already said survive, and the next turn resumes the same conversation',
+      'stopping is not failing: the turn is recorded as stopped, attributed to the person who stopped it, and never as an error',
+      'succeeds when nothing is running — `stopped: false` says so, because a turn can finish between the decision and the request',
+      'v1 exposes this through the browser composer; exact-operation help remains available to CLI users',
+    ],
+  },
 
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {

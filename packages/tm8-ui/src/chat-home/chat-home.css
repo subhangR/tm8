@@ -1437,6 +1437,20 @@ button.tch-entity-chip:hover {
   font-weight: 400;
   line-height: 1.35;
 }
+/* A ROW THAT CANNOT BE PICKED, AND SAYS SO.
+
+   Dimmed, not hidden — the reason on the second line is the whole point of
+   drawing it (see `ComposerSelectOption.unavailable`). `cursor: default`
+   rather than `not-allowed`: the row is not a mistake to be scolded for
+   hovering, it is information.
+
+   The dimming is on the NAME, not on the row, so the reason keeps its
+   contrast. Fading the sentence that explains the fade would leave the least
+   readable text on the row carrying the only news on it. */
+.tch-pickmenu__opt[data-unavailable] { cursor: default; }
+.tch-pickmenu__opt[data-unavailable] .tch-pickmenu__name { color: var(--pn-ink-4); }
+.tch-pickmenu__opt[data-unavailable]:hover { background: transparent; }
+.tch-pickmenu__hint--out { color: var(--pn-ink-3); }
 .tch-pickmenu__mark { color: var(--pn-brand); font-size: var(--pn-fs-fine); }
 
 
