@@ -643,18 +643,42 @@ export class W2ProjectsAssociationsService {
     const workingDir = input.ensureWorkingDir
       ? await ensureProjectWorkingDirectory(input.workingDir)
       : input.workingDir;
-    const raw = await this.deps.db.rpc<ProjectMutationResult>(
-      claims,
-      'create_project',
-      [
-        input.name,
-        workingDir,
-        input.repoUrl ?? null,
-        input.trust ?? 'untrusted',
-        JSON.stringify(input.defaults ?? {}),
-        envelope.clientMutationId ?? null,
-      ],
-    );
+    let raw: ProjectMutationResult;
+    try {
+      raw = await this.deps.db.rpc<ProjectMutationResult>(
+        claims,
+        'create_project',
+        [
+          input.name,
+          workingDir,
+          input.repoUrl ?? null,
+          input.trust ?? 'untrusted',
+          JSON.stringify(input.defaults ?? {}),
+          envelope.clientMutationId ?? null,
+        ],
+      );
+    } catch (error) {
+      // `projects.working_dir` is UNIQUE — one ProjectResource per directory, by
+      // design. Reaching it means the caller is registering a directory that
+      // already has a project, which is the ordinary "put this repo in another
+      // Space" move; the answer is projects.link, not a second row. Without this
+      // the generic 23505 -> invariant_violation mapping in http/errors.ts sends
+      // `duplicate key value violates unique constraint "projects_working_dir_key"`
+      // to the UI verbatim — a debugging artifact, and one the operator cannot
+      // act on. Every other mutation in this service already normalizes; create
+      // was the only one that did not.
+      if (
+        isCollabError(error) &&
+        error.code === 'invariant_violation' &&
+        error.message.includes('projects_working_dir_key')
+      ) {
+        throw new CollabError(
+          'conflict',
+          `a project is already registered for ${workingDir} — link that existing project into this Space instead of creating a second one`,
+        );
+      }
+      throw error;
+    }
     return toProjectResource(raw.project);
   };
 
