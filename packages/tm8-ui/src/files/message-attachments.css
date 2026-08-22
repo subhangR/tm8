@@ -1,0 +1,72 @@
+/**
+ * MessageAttachments — the attachment row under a message body.
+ *
+ * The chip rules are the channel feed's former `.chs-attachment` verbatim
+ * (border, pill radius, hover, mono mime), moved here rather than restyled, so
+ * adopting the shared component changed nothing about how that surface looks.
+ * The a11y rules travel WITH the component — its focus ring and its
+ * forced-colors border are not the host stylesheet's business, and leaving
+ * them behind is how a shared control loses them on the second surface.
+ */
+
+.fa-attachments {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 5px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fa-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+}
+
+.fa-attachment:hover { background: var(--pn-hover); border-color: var(--pn-line); }
+
+.fa-attachment__mime {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+}
+
+/* The image face. The cap is on the ELEMENT, so the row's height is decided
+   before the bytes arrive and a late-loading picture cannot push the rest of
+   the transcript down. `contain` rather than `cover`: a screenshot read at a
+   glance must not be cropped. */
+.fa-attachment--image {
+  padding: 0;
+  border-radius: var(--pn-r-md, 8px);
+  overflow: hidden;
+  background: var(--pn-surface-2, var(--pn-surface));
+  line-height: 0;
+}
+
+.fa-attachment__thumb {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 220px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.fa-attachment:focus-visible {
+  outline: 3px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .fa-attachment { border-color: CanvasText; }
+}

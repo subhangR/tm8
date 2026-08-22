@@ -32,6 +32,10 @@ export { NodeRoom, useNodeFacts, connectionRow, type NodeRoomProps, type Provide
 
 /* ── the attachment strip: files on ONE entity, inside its panel body ───── */
 export { AttachmentStrip, canThumbnail, type AttachmentStripProps } from './AttachmentStrip';
+/* The attachments UNDER A MESSAGE — a different fact from the strip's "files
+   on this entity", and shared by both chat surfaces. See the component header
+   for why it is this lane's and not either surface's. */
+export { MessageAttachments, type MessageAttachmentsProps } from './MessageAttachments';
 /* The picker markup, shared by every surface that adopted the rich input —
    see the component's header for why this lane owns it. */
 export { ChooseFilesControl } from './ChooseFilesControl';

@@ -5,6 +5,7 @@ import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
 import { ChooseFilesControl } from '../files/ChooseFilesControl';
+import { MessageAttachments } from '../files/MessageAttachments';
 import type { FileUploadTask } from '../files/upload';
 import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import {
@@ -2257,6 +2258,22 @@ function Turn({
           testId="chat-user-body"
         />
       ) : null}
+      {/*
+        THE FILES THE MESSAGE CARRIES, under the body it was sent with. They
+        belong to the durable message, not to the streamed parts, so they sit
+        outside `TurnParts` and render on a turn that has no parts at all —
+        which is exactly the reporter's case: a human turn that is an image and
+        one line of text. `assetHref` is already the transcript's bytes
+        resolver (`ChatHomeSurface` hands it `seam.files.downloadHref`); no
+        second prop, and no URL built here.
+      */}
+      <MessageAttachments
+        attachments={turn.attachments ?? []}
+        downloadHref={assetHref}
+        onOpenEntity={onOpenEntity}
+        className="tch-turn__attachments"
+        testId="chat-turn-attachments"
+      />
       <TurnParts
         parts={turn.parts}
         onOpenEntity={onOpenEntity}
