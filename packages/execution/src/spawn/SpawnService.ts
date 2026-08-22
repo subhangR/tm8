@@ -1930,6 +1930,23 @@ export class SpawnService {
        * to a human action that never happened.
        */
       reason?: string;
+      /**
+       * The terminal status to record. Defaults to 'exited' — an operator
+       * cancelling a session is an ordinary end, not a failure.
+       *
+       * `'failed'` exists for the one caller that knows the session did NOT
+       * end on its own terms: ghost reconciliation. A row retired at startup
+       * belonged to an agent killed alongside its host, and recording that as
+       * 'exited' makes it byte-identical, in every read model, to an agent
+       * that finished its work — `exit_code` is NULL either way, and the
+       * contract's `work_session` state projects neither `exit_code` nor
+       * `error`, so `status` is the ONLY field a client can discriminate on.
+       * Measured 2026-08-22: a deploy SIGKILLed the server with four live
+       * agents; all four were retired here as 'exited', and the incident was
+       * invisible in the graph until someone read `exited_at` by hand and
+       * noticed four unrelated sessions sharing a timestamp to the millisecond.
+       */
+      terminalStatus?: 'exited' | 'failed';
     } = {},
   ): Promise<{ outcome: string; commandResult: unknown }> {
     const commandResult = await this.graph.recordCommand(auth, {
@@ -1986,9 +2003,10 @@ export class SpawnService {
         : opts.force
           ? 'terminated by request (force) — exit code not observed, kill does not wait for the real exit event'
           : 'terminated by request — exit code not observed, kill does not wait for the real exit event');
-    await this.graph.transition(auth, { sessionId, status: 'exited', error });
+    const status = opts.terminalStatus ?? 'exited';
+    await this.graph.transition(auth, { sessionId, status, error });
 
-    this.logger?.info('SpawnService: session terminated', { sessionId, outcome });
+    this.logger?.info('SpawnService: session terminated', { sessionId, outcome, status });
     return { outcome, commandResult };
   }
 
@@ -2043,6 +2061,11 @@ export class SpawnService {
       if (this.pty.hasSession(sessionId)) continue;
       try {
         await this.terminate(auth, sessionId, {
+          // 'failed', not 'exited': this agent did not finish, it was killed
+          // with its host. See the `terminalStatus` docstring on terminate() —
+          // 'exited' here is indistinguishable from a clean finish to every
+          // client, because the contract projects neither exit_code nor error.
+          terminalStatus: 'failed',
           reason:
             `retired at node startup: this node still recorded status '${status}' with no live ` +
             'PTY for it — the process almost certainly died with a prior instance of this node ' +
