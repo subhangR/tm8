@@ -84,5 +84,34 @@ export default defineConfig({
     // failed by which neighbour ran first in their worker.
     environmentOptions: { jsdom: { url: 'http://localhost' } },
     setupFiles: ['./test-setup.ts'],
+    /**
+     * THE DEADLINE IS A CLAIM ABOUT THE MACHINE, AND THE DEFAULT ONE IS FALSE
+     * HERE.
+     *
+     * vitest's default `testTimeout` is 5000 ms. That is generous for a test
+     * that computes something and ample on an idle laptop; it is not ample for
+     * a jsdom mount of a React shell on a box where the CPU is shared. MEASURED
+     * on this repo's build node — 4 cores, load average 15-24, up to eight agent
+     * sessions running suites at once — a full-suite run of this package on
+     * clean `origin/main` produced 22 failures across 13 files, and TEN of them
+     * were literally `Test timed out in 5000ms`, in files with no defect: the
+     * gate suite, home-trails, share-a-link, panel-resize, server-signin, the
+     * board screen. The same commit is green on CI.
+     *
+     * A timeout that fires on a slow machine does not report a slow machine. It
+     * reports a FAILURE, indistinguishable in the log from a real one, and that
+     * is the whole disease this file's package has been suffering from: a red
+     * baseline in which no green means anything. Raising the deadline weakens no
+     * assertion — a wrong expectation still fails, it just gets to finish first.
+     *
+     * 30 s is chosen to be far outside the load the node actually reaches, not
+     * finely tuned to it: a value tuned to load average 17 is a new false claim
+     * the day the node reaches 30. Files that need MORE still say so locally
+     * (`panels.test.tsx` and `board.test.tsx` set 20 s of their own, which this
+     * now exceeds; `settings.test.tsx` sets 60 s, which still wins). Override
+     * with `TM8_TEST_TIMEOUT_MS` — set it to 5000 to reproduce the default.
+     */
+    testTimeout: Number(process.env['TM8_TEST_TIMEOUT_MS'] ?? 30_000),
+    hookTimeout: Number(process.env['TM8_TEST_TIMEOUT_MS'] ?? 30_000),
   },
 });

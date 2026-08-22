@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import { ALL_MODES, allKinds, getKind, resolveAction, type ActionContext, type QueryFilter } from '../domain';
@@ -328,6 +328,117 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       rows;
 
   const sessions = fixtureSummaries.filter((s) => s.state.kind === 'work_session');
+
+  /**
+   * REGRESSION — "I'm not able to see sessions when I click on sessions entity,
+   * doesn't show me live sessions." (Tarkesh, 2026-08-22)
+   *
+   * WHAT WAS ACTUALLY WRONG, and it is not what the report was filed against.
+   * The lead was that `collections.query`'s status vocabulary is task-only, so
+   * the API could not express "live". It can: `filters.sessionStatus` has
+   * existed since A22 and the node answers it. Measured against the running
+   * server while writing this — `sessionStatus: ['running']` returned five live
+   * sessions, `category: ['in_progress']` returned six. The query layer was
+   * never the defect.
+   *
+   * The defect was the LANDING TAB. `CATEGORY_TABS[0]` is To Do, the panel
+   * seeded its tab from position 0, and migration 155 maps a session's category
+   * off the PROCESS: only the sub-second `spawning` transient lands in To Do,
+   * and `running` never does. So the sessions surface opened on the one band a
+   * live session is structurally incapable of appearing in. 477 sessions on the
+   * launch node: To Do 0, In Progress 6, Done 471.
+   *
+   * WHY THE SUITE AROUND THIS COULD NOT CATCH IT, and why this block does not
+   * reuse its helper. `rowsFor` above takes `_filter` and returns its rows
+   * whatever the band asks for — so every sessions test renders a tile no
+   * matter which tab is open, and a permanently-empty tab is invisible from
+   * inside one. A test for a filtering bug has to honour the filter.
+   */
+  describe('REGRESSION: a live session is visible the moment the surface opens', () => {
+    /**
+     * The seam's category predicate, mirrored: `category` NARROWS, and a row
+     * carrying none matches no band at all (`NULL = any(...)`, as
+     * `collections.ts` and the fixture seam's `query()` both have it). An
+     * absent filter is NO constraint, which is what the `● N live` bar reads
+     * through.
+     */
+    const bandedRowsFor =
+      (rows: readonly EntitySummary[]) =>
+      (filter: QueryFilter): readonly EntitySummary[] => {
+        const bands = filter.category;
+        if (!bands || bands.length === 0) return rows;
+        return rows.filter((r) => r.category !== undefined && bands.includes(r.category));
+      };
+
+    const running = {
+      ...sessionLive,
+      id: 'ws-regression-running',
+      title: 'regression · a session that is running',
+      parentId: null,
+      category: 'in_progress',
+      state: { ...sessionLive.state, status: 'running' },
+    } as EntitySummary;
+
+    const exited = {
+      ...sessionLive,
+      id: 'ws-regression-exited',
+      title: 'regression · a session that has ended',
+      parentId: null,
+      category: 'done',
+      state: { ...sessionLive.state, status: 'exited' },
+    } as EntitySummary;
+
+    /* The assertion is about the FIRST open — the state a viewer who has never
+       picked a tab is in — and `usePanelChoice` persists per kind in
+       localStorage, which jsdom shares across every case in this file. Clearing
+       it is what makes "first open" the condition actually under test rather
+       than whatever ran before it. */
+    beforeEach(() => window.localStorage.clear());
+
+    it('draws the RUNNING session with no tab click, and not the ended one', () => {
+      const { container } = render(
+        <EntityListPanel
+          kind="work_session"
+          rowsFor={bandedRowsFor([running, exited])}
+          ctx={ctx}
+          livenessOf={() => 'live'}
+        />,
+      );
+
+      /* Before the fix this was an empty list: the panel opened on To Do, the
+         band predicate kept neither row, and the surface rendered nothing —
+         the reported symptom, exactly. */
+      expect(container.textContent).toContain(running.title);
+      expect(container.textContent).not.toContain(exited.title);
+    });
+
+    it('opens on In Progress because the REGISTRY says so, not because the panel knows about sessions', () => {
+      /* The panel must not have learned a kind name. `defaultCategory` is
+         registry DATA (§15.2: a kind literal outside `domain/` is a build
+         failure), and this is the assertion that keeps the fix declarative — a
+         later edit that hardcodes `work_session` inside EntityListPanel passes
+         the test above and fails this one. */
+      expect(getKind('work_session').list.defaultCategory).toBe('in_progress');
+
+      const { getByRole } = render(
+        <EntityListPanel kind="work_session" rowsFor={bandedRowsFor([running])} ctx={ctx} />,
+      );
+      expect(getByRole('tab', { selected: true }).textContent).toContain('In Progress');
+    });
+
+    it('leaves every AUTHORED kind on To Do — the shared tab array is untouched', () => {
+      /* The blast-radius guard. `CATEGORY_TABS` is one array shared by twenty
+         kinds; this fix changes WHERE ONE KIND OPENS, not what the four bands
+         mean. A task is born `open` → To Do, so landing there is landing on the
+         backlog and must stay that way. */
+      expect(getKind('task').list.defaultCategory).toBeUndefined();
+
+      const { getByRole } = render(
+        <EntityListPanel kind="task" rowsFor={bandedRowsFor([taskGuideLines])} ctx={ctx} />,
+      );
+      expect(getByRole('tab', { selected: true }).textContent).toContain('To Do');
+    });
+  });
 
   it('does not insert an unavailable launch block above the Sessions search', () => {
     const { container, getByTestId } = render(

@@ -18,6 +18,7 @@ import type {
 import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
 import { composePrompt } from '@tm8/prompt';
 
+import { oomKillObserved, readOomKillCount } from './oom-witness.js';
 import { trustWorkspaceForHarness } from './workspace-trust.js';
 import {
   preflightCodexNetworkPolicy,
@@ -74,6 +75,7 @@ import type {
   SpawnResult,
   Tm8Manifest,
   TransitionInput,
+  WorkSessionEndedKind,
   WorkSessionStatus,
   WorktreeAllocationRow,
   GhostReconcileReport,
@@ -273,6 +275,57 @@ function describePtyExit(exitInfo: PtyExitInfo): string {
   return 'agent process exited; neither an exit code nor a signal was reported';
 }
 
+/**
+ * The same PTY exit, said to a PERSON (171).
+ *
+ * `describePtyExit` above is the technical diagnostic and keeps its job. This
+ * is the other half: one sentence, no signal numbers, no exit codes, no jargon.
+ * The reader is someone looking at a list of sessions wondering why one of
+ * theirs stopped, and "terminated by signal 9" tells them nothing they can act
+ * on. It is a separate function rather than a rewrite because BOTH are wanted —
+ * `error` for whoever is debugging, `ended_reason` for whoever is working.
+ *
+ * `killedForMemory` is the caller's kernel evidence, never inferred here: a
+ * deploy's SIGKILL and the OOM killer's SIGKILL are identical at this layer,
+ * and guessing between them would launder a deploy bug as an infrastructure
+ * fact. See `oom-witness.ts`.
+ */
+function endingFromPtyExit(
+  status: PtySessionStatus,
+  exitInfo: PtyExitInfo,
+  killedForMemory: boolean,
+): { endedKind: WorkSessionEndedKind; endedReason: string } {
+  if (killedForMemory) {
+    return {
+      endedKind: 'out_of_memory',
+      endedReason:
+        'Stopped because the machine ran out of memory. This session was using too much, ' +
+        'and the system shut it down to stay alive.',
+    };
+  }
+  if (status === 'completed') {
+    return { endedKind: 'completed', endedReason: 'Finished on its own.' };
+  }
+  // A signal death that was NOT a memory kill. This is the deploy/restart
+  // shape — but from here it is genuinely indistinguishable from an operator
+  // running `kill` by hand, so the sentence says what is known and stops.
+  // `reconcileNodeGhosts` is where a restart CAN be named, because a whole
+  // node's worth of sessions dying at once is itself the evidence.
+  if (exitInfo.signal !== null) {
+    return {
+      endedKind: 'crashed',
+      endedReason: 'Stopped by the system before it finished. It can be resumed to try again.',
+    };
+  }
+  return {
+    endedKind: 'crashed',
+    endedReason:
+      exitInfo.exitCode === null
+        ? 'Stopped unexpectedly, and no reason was reported. It can be resumed to try again.'
+        : 'Stopped because it hit an error and could not continue. It can be resumed to try again.',
+  };
+}
+
 export class SpawnService {
   private readonly graph: GraphPort;
   private readonly pty: PtyHostService;
@@ -309,6 +362,17 @@ export class SpawnService {
    * the actor who started it.
    */
   private readonly sessionAuth = new Map<string, GraphAuth>();
+  /**
+   * The cgroup OOM-kill counter as it stood when each session's PTY was
+   * spawned (171). The exit path compares against it: an ADVANCE across a
+   * session's lifetime is kernel evidence that a memory kill happened, which
+   * is the only thing that can separate the OOM killer's SIGKILL from a
+   * deploy's — they are identical at the process level.
+   *
+   * Keyed by session id and deleted on exit, exactly as `sessionAuth` is, so a
+   * long-lived node does not accumulate one integer per session it ever ran.
+   */
+  private readonly oomKillAtSpawn = new Map<string, number | null>();
   /** Failed spawn terminal writes retried for this process lifetime. Startup
    * ghost reconciliation is the second line of defence after a node restart. */
   private readonly failedTransitionRetries = new Map<string, ReturnType<typeof setTimeout>>();
@@ -933,6 +997,9 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    // The OOM baseline, captured with the claims because it is the same kind
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
+    this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
 
     try {
       // Step 7 (§4.8) — publish. The lease and the association need the session
@@ -1305,6 +1372,9 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    // The OOM baseline, captured with the claims because it is the same kind
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
+    this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
     let launchedPty = false;
     try {
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
@@ -1600,6 +1670,9 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    // The OOM baseline, captured with the claims because it is the same kind
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
+    this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
 
     try {
       // §3.4 — one write-capable live session per worktree, re-asserted for the
@@ -2029,6 +2102,16 @@ export class SpawnService {
        * noticed four unrelated sessions sharing a timestamp to the millisecond.
        */
       terminalStatus?: 'exited' | 'failed';
+      /**
+       * The ending facts (171), for a caller that knows more than "an operator
+       * asked". Default to a cancellation, which is what a bare terminate is.
+       *
+       * `endedReason` is read by a PERSON, and by a person who is not a
+       * developer. One sentence, plain English, no signal names and no exit
+       * codes — those belong in `reason`/`error`, which stay technical.
+       */
+      endedKind?: WorkSessionEndedKind;
+      endedReason?: string;
     } = {},
   ): Promise<{ outcome: string; commandResult: unknown }> {
     const commandResult = await this.graph.recordCommand(auth, {
@@ -2086,7 +2169,19 @@ export class SpawnService {
           ? 'terminated by request (force) — exit code not observed, kill does not wait for the real exit event'
           : 'terminated by request — exit code not observed, kill does not wait for the real exit event');
     const status = opts.terminalStatus ?? 'exited';
-    await this.graph.transition(auth, { sessionId, status, error });
+    // The ending facts (171). `endedReason` is the sentence a person reads, so
+    // it never mentions PTYs, kill outcomes or exit events — all of which are
+    // already in `error` above, which is unchanged and stays technical. The
+    // default reads as a cancellation because that is what an unqualified
+    // terminate IS; a caller who knows better (ghost reconciliation, the
+    // shutdown sweep) passes its own.
+    await this.graph.transition(auth, {
+      sessionId,
+      status,
+      error,
+      endedKind: opts.endedKind ?? 'stopped_by_operator',
+      endedReason: opts.endedReason ?? 'Stopped by request.',
+    });
 
     this.logger?.info('SpawnService: session terminated', { sessionId, outcome, status });
     return { outcome, commandResult };
@@ -2135,6 +2230,29 @@ export class SpawnService {
       return { retired: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
     }
 
+    // WAS THE KERNEL INVOLVED? Asked ONCE, before the sweep, because it is a
+    // property of the window we are reconciling, not of any one row.
+    //
+    // Every ghost here died with a previous instance of this node, and this
+    // process cannot see how. The one thing it can still check is whether the
+    // kernel OOM-killed anything in this cgroup — and under the standing policy
+    // that is the difference between the single death that is allowed to happen
+    // and every death that is not.
+    //
+    // The honesty bound from `readOomKillCount` applies with full force: the
+    // counter is per-cgroup, so a positive says "a memory kill happened here",
+    // NOT "this session was the one killed". With several ghosts that is not
+    // enough to accuse any particular one, so a positive only ever WEAKENS the
+    // claim to 'unknown' with a hedged sentence — it never asserts
+    // `out_of_memory` for a row it cannot pin. A single ghost with a positive
+    // counter is the one case where the attribution is unambiguous.
+    //
+    // The NEGATIVE is what carries most of the value, and it is unambiguous in
+    // every case: the counter did not move, so the kernel killed nothing for
+    // memory, so this was a restart and can be said so plainly.
+    const oomSinceBoot = await readOomKillCount();
+    const memoryKillHappened = (oomSinceBoot ?? 0) > 0;
+
     let retired = 0;
     const errors: Array<{ message: string }> = [];
     for (const { sessionId, status } of candidates) {
@@ -2152,6 +2270,33 @@ export class SpawnService {
             `retired at node startup: this node still recorded status '${status}' with no live ` +
             'PTY for it — the process almost certainly died with a prior instance of this node ' +
             '(crash or restart) before it could record its own exit',
+          // Attribution rule, per the honesty bound above: assert
+          // `out_of_memory` ONLY when a memory kill happened AND this is the
+          // single ghost, because only then does the per-cgroup counter point
+          // at exactly one session. With several ghosts we know a memory kill
+          // occurred but not to whom, so the kind drops to 'unknown' and the
+          // sentence says both halves out loud rather than picking a victim.
+          ...(memoryKillHappened
+            ? candidates.length === 1
+              ? {
+                  endedKind: 'out_of_memory' as const,
+                  endedReason:
+                    'Stopped because the machine ran out of memory. This session was using ' +
+                    'too much, and the system shut it down to stay alive.',
+                }
+              : {
+                  endedKind: 'unknown' as const,
+                  endedReason:
+                    'Stopped when the server restarted. The machine also ran out of memory ' +
+                    'around that time, so this session may have been shut down for memory ' +
+                    'rather than by the restart — there is no way to tell which.',
+                }
+            : {
+                endedKind: 'server_restart' as const,
+                endedReason:
+                  'Stopped when the server restarted. Nothing was wrong with this session — ' +
+                  'it can be resumed to pick up where it left off.',
+              }),
         });
         retired += 1;
         this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
@@ -2184,6 +2329,67 @@ export class SpawnService {
       });
     }
     return { retired, errors };
+  }
+
+  /**
+   * SHUTDOWN SWEEP — say why, while there is still someone to say it.
+   *
+   * Called from the server's SIGTERM/SIGINT handler, BEFORE the process exits.
+   * Every PTY this process holds is about to die with it, and this is the only
+   * moment at which the truthful reason is known FIRST-HAND: the server is
+   * stopping, deliberately, and nothing is wrong with the agents.
+   *
+   * WHY THIS IS NOT JUST reconcileNodeGhosts RUNNING EARLIER. The reconciler
+   * runs in the NEXT process and can only ever infer — it finds rows with no
+   * live PTY and reasons backwards to "the previous instance must have died".
+   * That inference is sound but weak, and it cannot tell a deploy from a crash.
+   * Here we are the process that is being asked to stop, so the reason is
+   * observed rather than deduced, and it is recorded before the evidence is
+   * destroyed. Reconciliation stays as the backstop for the case this cannot
+   * cover — a SIGKILL, where no handler runs at all.
+   *
+   * ORDERING. Must complete before the process exits, so the caller has to
+   * await it. It is bounded: one transition per live session, and the caller
+   * should still cap the total shutdown window rather than trust this.
+   *
+   * NEVER THROWS, per-session or overall. A shutdown that hangs or crashes
+   * because it could not annotate a row is strictly worse than one that exits
+   * having annotated fewer — the process is going away either way, and the
+   * reconciler will still catch whatever this missed.
+   *
+   * @returns how many sessions were annotated.
+   */
+  async recordShutdown(auth: GraphAuth, signal: string): Promise<number> {
+    const live = this.pty.liveSessionIds();
+    if (live.length === 0) return 0;
+
+    // Deliberately NOT the OOM path. Reaching this handler means the process
+    // was asked to stop politely; the OOM killer sends SIGKILL and no handler
+    // runs. So a session ending here ended because of a restart, full stop —
+    // and saying so plainly is the entire point of doing it here.
+    let annotated = 0;
+    for (const sessionId of live) {
+      const sessionAuth = this.sessionAuth.get(sessionId) ?? auth;
+      try {
+        await this.graph.transition(sessionAuth, {
+          sessionId,
+          status: 'failed',
+          error: `node received ${signal} and is shutting down; this session's PTY dies with it`,
+          endedKind: 'server_restart',
+          endedReason:
+            'Stopped because the server was restarted. Nothing was wrong with this session — ' +
+            'it can be resumed to pick up where it left off.',
+        });
+        annotated += 1;
+      } catch (error) {
+        this.logger?.warn?.('SpawnService: could not record shutdown for session', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    this.logger?.info('SpawnService: recorded shutdown', { signal, annotated, live: live.length });
+    return annotated;
   }
 
   /**
@@ -2263,6 +2469,16 @@ export class SpawnService {
       );
       return;
     }
+    // This is the ONE path with real evidence: node-pty observed the actual
+    // exit and told us the code and the signal. So the OOM question is asked
+    // here too — a signal death whose cgroup counter advanced is a memory kill,
+    // and a signal death whose counter did not is something else. Unlike the
+    // ghost path, the window here is one specific process's death, so a
+    // positive attributes cleanly.
+    const oomBefore = this.oomKillAtSpawn.get(sessionId) ?? null;
+    this.oomKillAtSpawn.delete(sessionId);
+    const killedForMemory =
+      exitInfo.signal !== null && oomKillObserved(oomBefore, await readOomKillCount());
     try {
       await this.graph.transition(auth, {
         sessionId,
@@ -2273,6 +2489,7 @@ export class SpawnService {
         // actually reported (see describePtyExit) — never left for `error` to
         // stay NULL by default.
         ...(status === 'failed' ? { error: describePtyExit(exitInfo) } : {}),
+        ...endingFromPtyExit(status, exitInfo, killedForMemory),
       });
     } catch (error) {
       // LOUD, always, even with no logger injected.

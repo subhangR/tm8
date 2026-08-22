@@ -522,7 +522,28 @@ export function EntityListPanel(props: EntityListPanelProps) {
    * key-aware for the same reason `usePanelWidth` is — a kind switch on a
    * mounted panel re-reads during render, so no wrong tab is ever painted.
    */
-  const defaultTabId = list.categories?.[0]?.id ?? '';
+  /**
+   * THE LANDING TAB IS REGISTRY DATA (`list.defaultCategory`), NOT `[0]`.
+   *
+   * `[0]` is `to_do` for every kind, because `CATEGORY_TABS` is one shared
+   * array — and that array is right. What was wrong was reading a POSITION in
+   * it as "where this kind's rows are". For an AUTHORED kind the two coincide;
+   * for an OBSERVED one they do not, and work_session is the case that proves
+   * it: migration 155 maps `running`/`idle` to `in_progress` and only the
+   * sub-second `spawning` transient to `to_do`, so the sessions list opened on
+   * a band a live session is structurally incapable of being in. Measured on
+   * the launch node: 477 sessions, zero of them in To Do.
+   *
+   * Resolved against the kind's OWN `categories` so a stale or mistaken
+   * declaration degrades to the first tab rather than to no tab at all — the
+   * same posture `usePanelChoice`'s `valid` predicate takes for the persisted
+   * value on the line below.
+   */
+  const declaredDefault = list.defaultCategory;
+  const defaultTabId =
+    (declaredDefault && list.categories?.some((tab) => tab.id === declaredDefault)
+      ? declaredDefault
+      : list.categories?.[0]?.id) ?? '';
   const isCategoryTab = useCallback(
     (candidate: string) => (list.categories ?? []).some((tab) => tab.id === candidate),
     [list.categories],
