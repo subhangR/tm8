@@ -263,6 +263,17 @@
 .cv2-root .md-root.tch-user-body > :first-child { margin-top: 0; }
 .cv2-root .md-root.tch-user-body > :last-child { margin-bottom: 0; }
 
+/* The attachment row under a body. Placement only — the chips and the
+   thumbnail are `files/message-attachments.css`, shared with the channel feed.
+   It takes the bubble's own 26px avatar gutter and its own sidedness, so a
+   file you sent lands under your bubble on your side rather than drifting to
+   the opposite margin. */
+.tch-turn__attachments { margin: 6px 0 0 26px; max-width: 80%; }
+.cv2-root .tch-turn[data-self='true'] .tch-turn__attachments {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
 .tch-parts {
   display: flex;
   flex-direction: column;

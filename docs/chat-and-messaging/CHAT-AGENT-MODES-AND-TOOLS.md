@@ -128,6 +128,17 @@ at `ask` or `deny`.
 `session_followup` deliberately uses the public durable-message composite; it
 does not expose the Server-internal `execution.prompt` transport.
 
+`artifact_create` accepts the bundle as plain source files — `{path, content}`
+for text, `{path, contentBase64}` for binary — and builds the strict
+`tm8.web-artifact/1` manifest itself: media type from the path extension, `size`
+and `sha256` from the exact bytes it ships, paths sorted ascending by UTF-8
+bytes, and `entrypoint` defaulting to `index.html`. The manifest contract
+(`ARTIFACTS-DESIGN` §4) is unchanged and still model-agnostic; the derivation
+lives in the MCP adapter because per-file hashing and byte-ordering are
+mechanical work a model cannot do reliably by hand, and requiring it of the
+caller meant chat artifacts were never successfully created. A caller that
+already holds a manifest (the CLI, a CI build) still passes it through verbatim.
+
 ### Web
 
 `web_fetch` accepts one HTTP(S) URL and returns extracted, capped text with the

@@ -3,7 +3,9 @@ import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { ArtifactManifestSchema } from '@tm8/contract';
 import type { CatalogTransport } from '../src/catalog-client.js';
 import { Tm8ToolRouter } from '../src/tools.js';
 
@@ -261,6 +263,67 @@ describe('direct repository tools', () => {
     await expect(build.call('session_transcript', { sessionId: 'session-b' })).resolves.toMatchObject({
       isError: true, structuredContent: { error: { code: 'forbidden' } },
     });
+  });
+
+  it('builds a contract-valid artifact manifest from plain model-authored files', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const recording: CatalogTransport = {
+      invoke: async (operation, options) => {
+        if (operation === 'artifacts.create') bodies.push(options.body as Record<string, unknown>);
+        return { id: 'artifact-1' };
+      },
+    };
+    const router = new Tm8ToolRouter(recording, { mode: 'build', spaceId: 'space-a' });
+
+    const created = await router.call('artifact_create', {
+      spaceId: 'space-a',
+      name: 'Harness registry prototype',
+      files: [
+        { path: 'styles/app.css', content: 'body{margin:0}' },
+        { path: 'index.html', content: '<!doctype html><h1>hi</h1>' },
+      ],
+    });
+    expect(created.isError).toBeUndefined();
+
+    const body = bodies.at(-1)!;
+    const manifest = ArtifactManifestSchema.parse(body.manifest);
+    expect(manifest.entrypoint).toBe('index.html');
+    // Byte-sorted, not author-supplied order — the server refuses to re-sort.
+    expect(manifest.files.map((file) => file.path)).toEqual(['index.html', 'styles/app.css']);
+    expect(manifest.files.map((file) => file.mediaType)).toEqual(['text/html', 'text/css']);
+
+    // Every declared hash/size must describe the bytes actually shipped.
+    const inline = body.files as { path: string; contentBase64: string }[];
+    for (const file of manifest.files) {
+      const bytes = Buffer.from(inline.find((f) => f.path === file.path)!.contentBase64, 'base64');
+      expect(file.size).toBe(bytes.byteLength);
+      expect(file.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+    }
+  });
+
+  it('rejects artifact bundles it cannot describe honestly', async () => {
+    const router = new Tm8ToolRouter(transport, { mode: 'build', spaceId: 'space-a' });
+    const base = { spaceId: 'space-a', name: 'probe' };
+
+    // No inferable entrypoint.
+    await expect(router.call('artifact_create', {
+      ...base, files: [{ path: 'app.js', content: 'x' }],
+    })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } });
+
+    // Traversal path.
+    await expect(router.call('artifact_create', {
+      ...base, files: [{ path: '../escape.html', content: 'x' }],
+    })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } });
+
+    // Un-inferable media type.
+    await expect(router.call('artifact_create', {
+      ...base, files: [{ path: 'index.html', content: 'x' }, { path: 'data.bin', content: 'x' }],
+    })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } });
+
+    // Both bodies, or neither.
+    await expect(router.call('artifact_create', {
+      ...base, files: [{ path: 'index.html', content: 'x', contentBase64: 'eA==' }],
+    })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } });
   });
 
   it('blocks reserved IPv4/IPv6 destinations and revalidates redirects', async () => {

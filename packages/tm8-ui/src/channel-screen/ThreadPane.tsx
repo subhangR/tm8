@@ -6,6 +6,7 @@ import { HollowInline } from '../panels/honesty/HollowValue';
 import { Composer, type ComposerProps } from './Composer';
 import type { ComposerMentionOption } from './channel-tags';
 import { FeedRowGroup, type FeedRowHandlers } from './FeedRow';
+import type { DownloadHref } from '../files/FilesScreen';
 import type { ChannelPostInput } from './feed-model';
 
 /**
@@ -54,6 +55,9 @@ export interface ThreadPaneProps {
   onLoadMore?: (cursor: Cursor) => Promise<void> | void;
   onClose?: () => void;
   onOpenEntity?: (id: EntityId) => void;
+  /** Resolves attached-file bytes so an attached image renders inline in the
+   *  branch too. Absent ⇒ chips, exactly as before. */
+  downloadHref?: DownloadHref | undefined;
   onStartAttachmentUpload?: ComposerProps['onStartAttachmentUpload'];
   mentionOptions?: readonly ComposerMentionOption[];
   skillOptions?: ComposerProps['skillOptions'];
@@ -75,6 +79,7 @@ export function ThreadPane({
   onLoadMore,
   onClose,
   onOpenEntity,
+  downloadHref,
   onStartAttachmentUpload,
   mentionOptions,
   skillOptions,
@@ -95,6 +100,7 @@ export function ThreadPane({
   ]);
   const rowHandlers: FeedRowHandlers = {
     onOpenEntity,
+    downloadHref,
     onReply: setReplyTo,
     loadedMessages,
     pinnedParentId: root.id,

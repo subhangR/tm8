@@ -147,6 +147,13 @@ export function createChatHomePortFromSeam(
           parts: message.parts
             ? message.parts.map(turnPartFromMessagePart)
             : bridge.readParts ? [...await bridge.readParts(message.id)] : [],
+          // The server has returned these on every message read all along
+          // (`contentOf` → `content.attachments`); this adapter was the one
+          // place that dropped them, so an uploaded image reached the agent
+          // and the durable graph but never the transcript that sent it. `??
+          // []` because a node older than the attachments slice omits the
+          // field entirely, and an absent list is not a malformed message.
+          attachments: message.content.attachments ?? [],
           ...(message.turnInFlight ? { turnInFlight: true } : {}),
         })),
       );

@@ -1,0 +1,322 @@
+/* THE CREW CARD + THE LIVE DOCK — chrome only.
+
+   NO STATUS COLOUR IS RESTATED HERE. Every tone reaches the screen through
+   the kit's pill (`pillToneOf`), so this sheet never learns that "amber means
+   needs-you". A second source for that is how two surfaces end up disagreeing
+   about what red means — fleet-pane.css makes the same refusal for the same
+   reason.
+
+   The one exception is deliberate and narrow: the URGENCY tint on a card or
+   strip that has a helper asking a question. It reads `--pn-wait-soft`, the
+   pill's own token, so there is still exactly one place the colour is chosen.
+
+   Type resolves through `--pn-fs-*` and spacing through `--pn-space-*`; no
+   raw hex, per the package's §14 hex ban. */
+
+/* --- The Crew Card ------------------------------------------------------- */
+
+.tch-crew {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-card);
+  overflow: hidden;
+}
+
+/* THE ONLY URGENCY IN THE COMPONENT. A left edge, not a fill, not a flash:
+   the prototype's rule is that "needs you" may be noticed, not that it may
+   shout. */
+.tch-crew[data-urgent='true'] {
+  border-color: var(--pn-wait);
+  box-shadow: inset 3px 0 0 0 var(--pn-wait-soft);
+}
+
+.tch-crew__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.tch-crew__lead-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tch-crew__lead {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.tch-crew__sub {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+
+.tch-crew__stack {
+  display: flex;
+  flex: none;
+}
+
+.tch-crew__stack .kit-avatar + .kit-avatar {
+  margin-left: -6px;
+}
+
+.tch-crew__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tch-crew__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+
+.tch-crew__row:first-child {
+  border-top: none;
+}
+
+.tch-crew__row[data-tone='needs-you'] {
+  background: var(--pn-wait-soft);
+}
+
+.tch-crew__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tch-crew__who {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+/* One line, and it truncates rather than wrapping the card into a paragraph.
+   The full sentence is the row's own `title` nowhere — a truncated activity
+   line is still a true one, and a tooltip that repeats it adds nothing a
+   person can act on. */
+.tch-crew__what {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tch-crew__track {
+  position: relative;
+  height: 4px;
+  margin-top: var(--pn-space-1);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-line);
+  overflow: hidden;
+}
+
+.tch-crew__track-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-ink-4);
+}
+
+/* An INDETERMINATE track claims motion and no amount: the fill is zero-width
+   and a sweep runs across it. A determinate one does the opposite. */
+.tch-crew__track[data-track='indeterminate']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 38%;
+  border-radius: var(--pn-r-pill);
+  background: linear-gradient(90deg, transparent, var(--pn-ink-4), transparent);
+  animation: tchCrewSweep 1.9s ease-in-out infinite;
+}
+
+@keyframes tchCrewSweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(300%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-crew__track[data-track='indeterminate']::after {
+    animation: none;
+    width: 100%;
+    background: var(--pn-line-2);
+  }
+}
+
+.tch-crew__recovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-1);
+}
+
+/* Visually hidden, still read aloud. The dock's one live region — see the
+   header note in LiveDock.tsx on why it is not in the card. */
+.tch-dock__announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.tch-crew__recovery-action,
+.tch-crew__answer,
+.tch-crew__more,
+.tch-dock__open {
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 3px var(--pn-space-2);
+  cursor: pointer;
+}
+
+.tch-crew__recovery-action:disabled,
+.tch-crew__answer:disabled {
+  color: var(--pn-ink-4);
+  border-color: var(--pn-line);
+  cursor: not-allowed;
+}
+
+.tch-crew__more {
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--pn-line);
+  border-radius: 0;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  text-align: left;
+  color: var(--pn-ink-2);
+  font-weight: 500;
+}
+
+.tch-crew__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.tch-crew__summary {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+
+/* --- The Live Dock ------------------------------------------------------- */
+
+.tch-dock {
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  overflow: hidden;
+}
+
+.tch-dock[data-urgent='true'] {
+  border-color: var(--pn-wait);
+}
+
+.tch-dock__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.tch-dock[data-state='settled'] .tch-dock__head {
+  cursor: default;
+}
+
+.tch-dock__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tch-dock__caret {
+  flex: none;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+.tch-dock__body {
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.tch-dock__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tch-dock__row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+
+.tch-dock__row:first-child {
+  border-top: none;
+}
+
+.tch-dock__who {
+  flex: none;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.tch-dock__what {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tch-dock__open {
+  margin: var(--pn-space-2) var(--pn-space-3);
+}

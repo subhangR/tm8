@@ -148,6 +148,13 @@ export function SessionChatSurface({
     });
   }, [actions.canAttach, seam.files, sessionId, spaceId]);
 
+  /* The READ-side twin of the upload above: resolves the bytes of a file
+     already attached to a message so it can render inline. Deliberately NOT
+     gated on `canAttach` — being unable to add a file says nothing about
+     seeing one that is already there. No files seam ⇒ chips, never a URL this
+     surface invented. */
+  const attachmentHref = seam.files?.downloadHref;
+
   if (feed.error) {
     return (
       <div className="chs-host-error" role="alert">
@@ -180,6 +187,7 @@ export function SessionChatSurface({
       onPost={actions.canPost ? feed.post : undefined}
       onLoadEarlier={() => feed.loadOlder()}
       onOpenEntity={onOpenEntity}
+      downloadHref={attachmentHref}
       turnGraphs
       onSwitchToTerminal={onSwitchToTerminal}
       needsAttention={needsAttention}
