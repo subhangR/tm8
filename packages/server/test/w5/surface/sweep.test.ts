@@ -827,7 +827,37 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   merge of origin/main into this branch: ls db/migrations/*.sql | wc -l -> 157
     // This branch's file moved 166 -> 167 in the same edit, because main's 166
     // landed first and two files cannot share a prefix.
-    expect(server.appliedMigrations.length).toBe(157);
+    //
+    // 157 -> 159 (2026-08-22): TWO steps again, and again only one of them is
+    // this branch's. 171_session_ended_reason.sql is the +1 this branch owns.
+    // The other +1 is main RED ON THIS LINE BEFORE THIS BRANCH EXISTED — the
+    // third time, after #447 and after the row above. #504 is the standalone
+    // repair for it (157 -> 158, no migration of its own); this branch would be
+    // red on main's arrears whether or not #504 lands first, so it carries the
+    // measured number rather than a number that is only right after someone
+    // else merges. MEASURED, never derived:
+    //   origin/main @ d681023f: ls db/migrations/*.sql | wc -l -> 158  (pin said 157, RED)
+    //   pr504:                  ls db/migrations/*.sql | wc -l -> 158  (pin says 158, correct)
+    //   this branch:            ls db/migrations/*.sql | wc -l -> 159
+    //   this branch:            git ls-tree --name-only HEAD db/migrations/ | grep -c sql -> 159
+    //
+    // RENUMBERED 169 -> 171 BEFORE LANDING, and this is the row the assertion
+    // below was written for. #517 (feat/chat-run-controls) independently
+    // authored 169_chat_turn_stopped_state.sql and 170_chat_per_turn_model.sql
+    // against the same main. Both branches were correct in isolation and each
+    // had a unique prefix WITHIN ITSELF, so neither branch's CI could see the
+    // other: `pull_request` builds the merge of ONE pr into its base, and the
+    // duplicate exists only in a merged tree that no run ever constructs. Git
+    // does not conflict on two different filenames, so the second to land would
+    // have put a duplicate 169 on main silently. 171 was chosen by checking
+    // every open PR for a db/migrations addition, not by adding one to main's
+    // highest — 169 and 170 are spoken for and 171 was the first free prefix
+    // above them.
+    //
+    // THIS NUMBER ASSUMES THIS BRANCH IS THE NEXT MIGRATION TO LAND. If #517
+    // lands first it adds two files and the merged tree is 161, not 159.
+    // Re-measure on the merged tree; do not adjust by arithmetic.
+    expect(server.appliedMigrations.length).toBe(159);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
