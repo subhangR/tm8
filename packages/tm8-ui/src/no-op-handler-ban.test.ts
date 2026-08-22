@@ -40,6 +40,9 @@ const HONEST_ABSENCE_PROPS: readonly { prop: string; readBy: string }[] = [
   { prop: 'onResumeSession', readBy: 'SessionFallback — "not wired on this surface"' },
   { prop: 'onMarkExited', readBy: 'StaleFallback — chip disabled WITH REASON' },
   { prop: 'onMarkSessionExited', readBy: 'EntityDetailPanel — forwards the above' },
+  { prop: 'onRespond', readBy: 'CrewCard — "Answer" disabled WITH REASON' },
+  { prop: 'onHelperAction', readBy: "CrewCard — a stuck row's one button, disabled WITH REASON" },
+  { prop: 'onOpenCrew', readBy: 'LiveDock — no link rather than a dead one' },
 ];
 
 function walk(dir: string): string[] {
