@@ -10,9 +10,28 @@ import {
   type CodePresentation,
   type GraphPresentation,
 } from './explanation-tools';
+import { toolFailureReason } from './tool-error';
 import type { ProjectedTurnPart } from './turn-model';
 
 type ToolPart = Extract<ProjectedTurnPart, { kind: 'tool' }>;
+
+/**
+ * The reason line under a failed card's status.
+ *
+ * Rendered ONLY on error, and only when the payload actually carried a reason
+ * — an empty reason line would be worse than none, implying the surface knows
+ * something it does not. See `tool-error.ts` for why this exists at all.
+ */
+function FailureReason({ result }: { result: unknown }) {
+  const reason = toolFailureReason(result);
+  if (!reason) return null;
+  return (
+    <p className="tch-explain__failure" data-testid="tool-failure-reason">
+      {reason.code ? <code className="tch-explain__failure-code">{reason.code}</code> : null}
+      <span>{reason.message}</span>
+    </p>
+  );
+}
 
 export interface ExplanationToolCardProps {
   part: ToolPart;
@@ -65,6 +84,7 @@ export function ExplanationToolCard(props: ExplanationToolCardProps) {
               : explainName === 'explain_asset'
                 ? 'Resolving the file preview…'
                 : 'Preparing the presentation…'}
+          {part.state === 'error' ? <FailureReason result={part.result} /> : null}
         </div>
       )}
     </ExplanationFrame>
@@ -334,6 +354,7 @@ function DurableOutputCard({
               ? name === 'doc_update' ? 'Document was not updated.' : 'Output was not created.'
               : name === 'doc_update' ? 'Document updated.' : 'Durable output created.'}
         </span>
+        {part.state === 'error' ? <FailureReason result={part.result} /> : null}
         {refs.length > 0 ? (
           <div className="tch-durable__entities">
             {refs.map((ref) => (

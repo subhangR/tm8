@@ -123,3 +123,67 @@ describe('Explain-mode presentation tools', () => {
     expect(docView.getAllByText('Mode guide').length).toBe(2);
   });
 });
+
+/**
+ * A FAILED CALL SAYS WHY.
+ *
+ * The regression these guard against is precise and it shipped: on 2026-08-22
+ * an `artifact_create` call was rejected with `manifest.files needs objects`
+ * and the card rendered the words "Output was not created." and nothing more.
+ * The agent, reading its own transcript, could not tell a malformed call from
+ * a dead backend, so it abandoned the artifact instead of retrying — and the
+ * human only learned the reason because it happened to appear in prose.
+ */
+describe('a failed tool call renders the reason, not only the failure', () => {
+  function failedParts(name: string, args: unknown, result: unknown): ChatTurnPart[] {
+    return [
+      { seq: 0, kind: 'tool_call', toolCallId: 'call-1', name, args, state: 'error' },
+      { seq: 1, kind: 'tool_result', toolCallId: 'call-1', content: result, isError: true },
+    ];
+  }
+
+  it('shows the code and message under a failed artifact_create — the live failure', () => {
+    const view = render(<TurnParts parts={failedParts(
+      'mcp__tm8__artifact_create',
+      { name: 'Harness registry — UI prototype', spaceId: 'space-a' },
+      { schemaVersion: 'tm8.mcp.error.v1', error: { code: 'invalid_input', message: 'manifest.files needs objects' } },
+    )} />);
+
+    // The existing verdict is unchanged — it was never wrong, only incomplete.
+    expect(view.getByText('Output was not created.')).toBeTruthy();
+    // ...and now the card also carries the fact that makes it actionable.
+    const reason = view.getByTestId('tool-failure-reason');
+    expect(reason.textContent).toContain('manifest.files needs objects');
+    expect(reason.textContent).toContain('invalid_input');
+  });
+
+  it('shows the reason on a failed explain_* presentation too', () => {
+    const view = render(<TurnParts parts={failedParts(
+      'explain_code',
+      { path: 'packages/mcp/src/direct-tools.ts', startLine: 1, endLine: 10 },
+      [{ type: 'text', text: '{"error":{"code":"not_found","message":"path is outside the project root"}}' }],
+    )} />);
+
+    expect(view.getByText('This presentation could not be prepared.')).toBeTruthy();
+    expect(view.getByTestId('tool-failure-reason').textContent)
+      .toContain('path is outside the project root');
+  });
+
+  it('draws no reason line when the payload carried none, rather than an empty one', () => {
+    const view = render(<TurnParts parts={failedParts(
+      'doc_update',
+      { docId: '019f0000-0000-7000-8000-000000000105', expectedVersion: 1, body: '# x' },
+      { ok: false },
+    )} />);
+
+    expect(view.getByText('Document was not updated.')).toBeTruthy();
+    expect(view.queryByTestId('tool-failure-reason')).toBeNull();
+  });
+
+  it('says nothing extra while the call is still running', () => {
+    const view = render(<TurnParts parts={[
+      { seq: 0, kind: 'tool_call', toolCallId: 'call-1', name: 'artifact_create', args: { name: 'Prototype' }, state: 'running' },
+    ]} />);
+    expect(view.queryByTestId('tool-failure-reason')).toBeNull();
+  });
+});

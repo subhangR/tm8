@@ -264,6 +264,44 @@ signed URL, author, timestamp, space id.
 The vocabulary test is deliberately blunt. Its purpose is to make a future well-meaning "just add
 `generatedBy` for analytics" patch fail CI instead of reaching production.
 
+### 4.5 The manifest is a WIRE format. Every authoring surface gets a builder.
+
+The strictness above is correct and stays. But it has a consequence that was learned the
+expensive way, and it is recorded here so it is not learned again.
+
+**What happened.** `artifact_create` was exposed to chat agents with `manifest` as an opaque
+`{type: 'object', additionalProperties: true}`. To succeed, a caller had to hand-produce every
+per-file `sha256` (64 lowercase hex chars of the file bytes), every exact UTF-8 `size`, a
+`mediaType` from the closed allowlist, and the `files` array **already sorted** by the UTF-8 byte
+sequence of `path` — because §4.1 forbids the server from re-sorting it.
+
+A language model cannot compute SHA-256 in its head. The tool was not merely awkward; it was
+**unsatisfiable by construction**. No agent ever created an artifact through it. The failure
+surfaced as `manifest.files needs objects`, which reads like a caller mistake and was not one.
+
+**The rule.** The manifest is the format that goes ON THE WIRE and into the hash. It is not an
+authoring format, and no surface should ask a human or a model to write one by hand.
+
+- Every authoring surface — CLI, MCP tool, UI, importer — takes **source files**
+  (`{path, content}` or `{path, contentBase64}`) and DERIVES the manifest: infer `mediaType`,
+  measure `size`, hash `sha256`, sort by UTF-8 bytes, all from the same buffer it transmits.
+- The derivation is validated locally against `parseArtifactManifest()` before the request goes
+  out, so a bad bundle is refused with a concrete reason rather than an opaque server 400.
+- An explicit `manifest` stays accepted as an **escape hatch**, for callers that already hold a
+  valid one (re-publish, CI build, import). Derive when it is absent; never silently rewrite one
+  that was supplied.
+
+**Nothing in §3 or §4 is relaxed by this.** The builder sits IN FRONT of the wire format and
+produces exactly the bytes the strict schema demands — identical input still yields an identical
+hash regardless of who or what assembled it. The invariant is untouched; only the ergonomics in
+front of it changed.
+
+**The corollary, for surfaces rather than schemas.** When a call against this format fails, the
+reason must reach the person watching. The same incident had a second half: the chat tool card
+rendered `Output was not created.` and dropped the server's message, so the one fact that made
+the failure fixable never appeared on screen. A strict format is only safe to expose when its
+refusals are legible.
+
 ---
 
 ## 5. Physical schema

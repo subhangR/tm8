@@ -827,7 +827,17 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   merge of origin/main into this branch: ls db/migrations/*.sql | wc -l -> 157
     // This branch's file moved 166 -> 167 in the same edit, because main's 166
     // landed first and two files cannot share a prefix.
-    expect(server.appliedMigrations.length).toBe(157);
+    // 157 -> 158 (2026-08-22): 168_teammate_delivery_without_a_source_session.sql
+    // landed on main in 14384ade WITHOUT this pin being bumped, so main's own CI
+    // went red on this assertion and STAYED red — every PR opened afterwards
+    // inherited a failure it did not cause. That is the cost this comment block
+    // keeps paying: the pin is the last edit of a migration lane and the easiest
+    // one to forget. MEASURED on origin/main, never arithmetic, and all three
+    // agree because nothing is in flight:
+    //   ls db/migrations/*.sql | wc -l                                  -> 158
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql       -> 158
+    //   git ls-tree --name-only origin/main db/migrations/ | grep -c sql -> 158
+    expect(server.appliedMigrations.length).toBe(158);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

@@ -319,6 +319,30 @@
 }
 .tch-explain__pending { padding: 18px 14px; color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
 
+/* THE REASON A CALL FAILED, under the status line that says it failed.
+   Quiet by default — this is a diagnostic, not an alarm — but monospaced so a
+   schema path like `manifest.files` reads as the literal token it is. The code
+   chip carries the block colour; the sentence stays in reading ink so a long
+   message does not become a wall of red. */
+.tch-explain__failure {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin: 6px 0 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  line-height: 1.5;
+}
+.tch-explain__failure-code {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--pn-block) 12%, transparent);
+  color: var(--pn-block);
+  font: var(--pn-fs-tick) var(--pn-mono);
+}
+
 .tch-explain__source {
   margin-top: 10px;
   color: var(--pn-ink-3);
