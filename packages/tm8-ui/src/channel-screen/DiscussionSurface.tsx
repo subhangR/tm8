@@ -83,6 +83,14 @@ export function DiscussionSurface({
       })
     : undefined;
 
+  /* The bytes resolver for files ALREADY attached to a message, gated on the
+     same optional files seam the upload path is. It is the read-side twin of
+     `startAttachmentUpload`: without it the feed renders every attachment as
+     the name chip it always did, which is the honest "these bytes are not
+     reachable from here" — never a broken image, and never a URL this surface
+     invented (`files/reasons.ts:DOWNLOAD_UNAVAILABLE`). */
+  const attachmentHref = seam.files?.downloadHref;
+
   /*
    * A READ FAILURE IS NOT AN EMPTY CONVERSATION, and this surface shipped for
    * one commit as though it were.
@@ -125,6 +133,7 @@ export function DiscussionSurface({
       /* The hook holds its own cursor; the screen has none to give. */
       onLoadEarlier={() => feed.loadOlder()}
       {...(onOpenEntity ? { onOpenEntity } : {})}
+      {...(attachmentHref ? { downloadHref: attachmentHref } : {})}
       draft={feed.draft}
       onDraftChange={feed.setDraft}
       replyState={{

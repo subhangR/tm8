@@ -55,6 +55,23 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
       createdAt: '2026-08-13T08:19:00.000Z',
       body: 'Plan the launch sequence and check what is already blocked.',
       parts: [],
+      /* The reporter's own gesture, in the fixture: a human turn that is a
+         pasted screenshot plus a line of text, and a second file that is not
+         an image. A fixture with no attached file could not have caught the
+         transcript dropping them — it rendered "correctly" precisely because
+         there was nothing to drop. */
+      attachments: [
+        {
+          fileEntityId: '019f0000-0000-7000-8000-000000000041' as EntityId,
+          name: 'launch-board.png',
+          mime: 'image/png',
+        },
+        {
+          fileEntityId: '019f0000-0000-7000-8000-000000000042' as EntityId,
+          name: 'launch-plan.pdf',
+          mime: 'application/pdf',
+        },
+      ],
     },
     {
       messageId: '019f0000-0000-7000-8000-000000000012' as EntityId,

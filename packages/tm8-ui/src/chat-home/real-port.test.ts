@@ -155,6 +155,56 @@ describe('real chat-home seam adapter', () => {
     expect(detail.turns.at(-1)?.turnInFlight).toBe(true);
   });
 
+  /**
+   * THE DROPPED FIELD. `messages.list` has returned `content.attachments` on
+   * every message since the attachments slice landed (`facade/handlers/
+   * messages.ts` → `contentOf`), and this adapter was the one place that read
+   * `content.body` and stopped — which is the whole reason an uploaded image
+   * reached the agent and the graph but never the transcript that sent it.
+   *
+   * The second half of the case matters as much as the first: a node that
+   * predates the field omits it entirely, and an absent list is a message with
+   * no files, not a malformed one. `?? []` is what keeps the read from
+   * throwing on an older node.
+   */
+  it('carries each message\'s attachments onto its turn, and tolerates a node that sends none', async () => {
+    const { seam } = seamStub();
+    const attachment = {
+      fileEntityId: '019f0000-0000-7000-8000-000000000041' as EntityId,
+      name: 'launch-board.png',
+      mime: 'image/png',
+    };
+    const message = (id: string, body: string, content: Record<string, unknown> = {}) => ({
+      id: id as EntityId,
+      kind: 'message',
+      createdAt: '2026-08-13T08:00:00.000Z',
+      createdBy: null,
+      state: { kind: 'message', author: null },
+      content: { kind: 'message', body, ...content },
+    });
+    (seam as { entity?: unknown }).entity = vi.fn(async () =>
+      message(ROOT, 'Look at this', { attachments: [attachment] }));
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({
+      // No `attachments` key at all — the older-node shape.
+      items: [message('019f0000-0000-7000-8000-000000000206', 'On it.')],
+    }));
+    const listThreads = vi.fn(async () => [{
+      rootMessageId: ROOT,
+      anchorId: ANCHOR,
+      teammateId: TEAMMATE,
+      model: 'claude-sonnet-4-5',
+      mode: 'ask' as const,
+      createdAt: '2026-08-13T08:00:00.000Z',
+      lastReplyAt: null,
+    }]);
+    const port = createChatHomePortFromSeam(seam, { listThreads });
+    await port.listThreads('space-1');
+
+    const detail = await port.readThread(ROOT);
+    expect(detail.turns[0]?.attachments).toEqual([attachment]);
+    expect(detail.turns[1]?.attachments).toEqual([]);
+  });
+
   it('seeds the caches at createRoot so a brand-new chat never races the home read', async () => {
     const { seam, postMessage } = seamStub();
     const configureThread = vi.fn(async () => ({ threadRootId: ROOT, teammateId: TEAMMATE, model: 'm', mode: 'ask' as const }));

@@ -13,6 +13,8 @@ import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels
  */
 import { TurnParts } from '../chat-home/TurnParts';
 import { turnPartFromMessagePart } from '../chat-home/wire';
+import { MessageAttachments } from '../files/MessageAttachments';
+import type { DownloadHref } from '../files/FilesScreen';
 import {
   accessibleDateTime,
   activityPresentation,
@@ -59,6 +61,13 @@ export interface FeedRowHandlers {
   onPost?: (body: string, parentMessageId: EntityId | null) => void;
   onReply?: (message: MessageView) => void;
   onOpenEntity?: (id: EntityId) => void;
+  /**
+   * Resolves the bytes URL for an attached file, so an attached image renders
+   * as a picture instead of only its name. Absent — a host with no files seam,
+   * or any of this file's own tests — degrades every attachment to the chip
+   * that was always here; it never produces a broken image.
+   */
+  downloadHref?: DownloadHref | undefined;
   /** Loaded-page index for bounded reply previews; no recursive fetches here. */
   loadedMessages?: ReadonlyMap<EntityId, MessageView>;
   onFocusMessage?: (id: EntityId) => void;
@@ -333,7 +342,11 @@ function MessageContent({
         />
       ) : null}
 
-      <MessageBody message={message} onOpenEntity={handlers.onOpenEntity} />
+      <MessageBody
+        message={message}
+        onOpenEntity={handlers.onOpenEntity}
+        downloadHref={handlers.downloadHref}
+      />
 
       {summary && delivery.length > 1 ? <TargetList summary={summary} rows={delivery} /> : null}
 
@@ -434,9 +447,11 @@ function ThreadFooter({
 function MessageBody({
   message,
   onOpenEntity,
+  downloadHref,
 }: {
   message: MessageView;
   onOpenEntity?: (id: EntityId) => void;
+  downloadHref?: DownloadHref | undefined;
 }) {
   /*
    * PARTS RENDER EVERYWHERE; ONLY CHAT CAN WRITE THEM.
@@ -517,32 +532,20 @@ function MessageBody({
               ))}
             </ul>
           ) : null}
-          {attachments.length > 0 ? (
-            <ul className="chs-attachments" aria-label="Attachments">
-              {attachments.map((attachment) => (
-                <li key={attachment.fileEntityId}>
-                  {onOpenEntity ? (
-                    <button
-                      type="button"
-                      className="chs-attachment"
-                      aria-label={`Open attachment ${attachment.name}`}
-                      onClick={() => onOpenEntity(attachment.fileEntityId)}
-                    >
-                      <span aria-hidden>▧</span>
-                      <span>{attachment.name}</span>
-                      <span className="chs-attachment__mime">{attachment.mime}</span>
-                    </button>
-                  ) : (
-                    <span className="chs-attachment">
-                      <span aria-hidden>▧</span>
-                      <span>{attachment.name}</span>
-                      <span className="chs-attachment__mime">{attachment.mime}</span>
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {/*
+            THE SAME COMPONENT THE CHAT TRANSCRIPT DRAWS. This row was a text
+            chip and nothing else, so an uploaded screenshot was never a
+            picture on either surface; sharing the implementation is what makes
+            the inline thumbnail land on both from one place. The chip face and
+            its styling are the ones that were here — moved, not restyled — and
+            a feed with no bytes resolver still renders exactly what it did.
+          */}
+          <MessageAttachments
+            attachments={attachments}
+            downloadHref={downloadHref}
+            onOpenEntity={onOpenEntity}
+            testId="chs-message-attachments"
+          />
         </div>
       ) : null}
     </>

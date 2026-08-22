@@ -401,8 +401,7 @@
 
 .chs-message-meta__part,
 .chs-references,
-.chs-mentions,
-.chs-attachments {
+.chs-mentions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -435,15 +434,18 @@ button.chs-session-chip { cursor: pointer; }
 button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-brand); }
 
 .chs-references { margin-top: 2px; }
-.chs-mentions,
-.chs-attachments {
+.chs-mentions {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.chs-ref-chip,
-.chs-attachment {
+/* The attachment row's own rules moved to `files/message-attachments.css` with
+   the component — the feed and the Chat transcript now draw the same one, and
+   a chip face that lives in one surface's stylesheet is only styled on that
+   surface. Nothing about this row's appearance changed here. */
+
+.chs-ref-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -457,12 +459,9 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   cursor: pointer;
 }
 
-.chs-ref-chip:hover,
-.chs-attachment:hover { background: var(--pn-hover); border-color: var(--pn-line); }
+.chs-ref-chip:hover { background: var(--pn-hover); border-color: var(--pn-line); }
 
 .chs-ref-chip { color: var(--pn-brand); }
-
-.chs-attachment__mime { color: var(--pn-ink-4); font-family: var(--pn-mono); font-size: var(--pn-fs-tick); }
 
 .chs-delivery { display: inline-flex; align-self: center; }
 
@@ -1163,7 +1162,6 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-mention-picker input,
   .chs-composer__input,
   .chs-ref-chip,
-  .chs-attachment,
   .chs-mention-inline,
   .chs-parent__jump,
   .chs-thread-footer__open,
@@ -1394,7 +1392,6 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .ri-attachment,
   .chs-mention-picker,
   .chs-ref-chip,
-  .chs-attachment,
   .chs-actions,
   .chs-parent__jump,
   .chs-tomb,

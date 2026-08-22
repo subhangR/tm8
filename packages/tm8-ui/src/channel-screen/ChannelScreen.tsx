@@ -8,6 +8,7 @@ import type { ComposerMentionOption } from './Composer';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
 import type { TriggerOption } from '../rich-input';
 import { FeedRowGroup } from './FeedRow';
+import type { DownloadHref } from '../files/FilesScreen';
 import { TurnGraph } from './LiveToolGraph';
 import { segmentTurnGraphs, type TurnSegment } from './live-graph-model';
 import { ThreadPane } from './ThreadPane';
@@ -102,6 +103,13 @@ export interface ChannelScreenProps {
   onLoadEarlier?: (cursor: Cursor) => Promise<void> | void;
   onOpenEntity?: (id: EntityId) => void;
   /**
+   * Resolves the bytes URL for an attached file, so a message's attached image
+   * renders inline instead of as its name alone. The host owns transport, as
+   * everywhere else on this screen: this component never builds a URL, and no
+   * resolver simply keeps every attachment a chip.
+   */
+  downloadHref?: DownloadHref | undefined;
+  /**
    * PER-TURN GRAPH MODE — Session Chat's presentation of activity. When true,
    * each maximal consecutive run of activity items between messages renders as
    * ONE compact inline entity graph at that position, and raw activity rows
@@ -186,6 +194,7 @@ export function ChannelScreen({
   onPost,
   onLoadEarlier,
   onOpenEntity,
+  downloadHref,
   turnGraphs = false,
   onSwitchToTerminal,
   threads = false,
@@ -462,6 +471,7 @@ export function ChannelScreen({
                     anchorId={anchorId}
                     onPost={onPost}
                     onOpenEntity={onOpenEntity}
+                    downloadHref={downloadHref}
                     onReply={setReplyTo}
                     onFocusMessage={focusMessage}
                     loadedMessages={loadedMessages}
@@ -520,6 +530,7 @@ export function ChannelScreen({
             onLoadMore={onLoadMoreReplies}
             onClose={onCloseThread}
             onOpenEntity={onOpenEntity}
+            downloadHref={downloadHref}
             onStartAttachmentUpload={onStartAttachmentUpload}
             mentionOptions={mentionOptions}
             skillOptions={skillOptions}
@@ -630,6 +641,7 @@ function FeedRowGroupWithMark({
   anchorId,
   onPost,
   onOpenEntity,
+  downloadHref,
   onReply,
   onFocusMessage,
   loadedMessages,
@@ -643,6 +655,7 @@ function FeedRowGroupWithMark({
   anchorId: EntityId;
   onPost?: (input: ChannelPostInput) => Promise<void> | void;
   onOpenEntity?: (id: EntityId) => void;
+  downloadHref?: DownloadHref | undefined;
   onReply: (m: MessageView) => void;
   onFocusMessage: (id: EntityId) => void;
   loadedMessages: ReadonlyMap<EntityId, MessageView>;
@@ -660,6 +673,7 @@ function FeedRowGroupWithMark({
         viewerActorId={viewerActorId}
         handlers={{
           onOpenEntity,
+          downloadHref,
           onReply,
           onFocusMessage,
           loadedMessages,

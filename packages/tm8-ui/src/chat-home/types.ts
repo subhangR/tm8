@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ActorSummary, ChatMode, EntityId, SpaceId } from '@tm8/contract';
+import type { ActorSummary, ChatMode, EntityId, FileAttachment, SpaceId } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -153,6 +153,19 @@ export interface ChatTurn {
   /** The ordinary durable message body. Rich assistant output may instead be in parts. */
   body: string;
   parts: ChatTurnPart[];
+  /**
+   * Files carried on this message — the server's own `content.attachments`,
+   * populated on every message read (`FileAttachment[]`, contract v1). The
+   * write path staged and posted them all along; the transcript simply never
+   * read them back, which is why an uploaded image was invisible on the one
+   * surface that uploaded it.
+   *
+   * OPTIONAL, like every other additive field on this shape: a port that
+   * predates this — or an optimistic turn built client-side before the server
+   * echo — supplies none, and absent renders exactly as empty does. It is
+   * never the marker for "this message has no files"; only a read is.
+   */
+  attachments?: readonly FileAttachment[];
   /** Server wire marker: this is a chat turn's agent message and the turn has
    *  not completed, so `body` is the claim placeholder, not content. */
   turnInFlight?: boolean;
