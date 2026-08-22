@@ -5,7 +5,7 @@
  * by RUNNING the thing. Each is preserved verbatim below because the comment is
  * the asset here, not the code: every one records a measured production defect.
  */
-import type { PermissionMode } from '@tm8/contract';
+import type { PermissionMode } from '../spawn/types.js';
 import type { ResolvedLaunchConfig } from '../spawn/manifest.js';
 import { codexLoopbackConfigArgs } from '../spawn/manifest.js';
 import { quoted, type ArgToken, type BuildArgvOptions, type Harness } from './types.js';
@@ -60,6 +60,7 @@ export function mapCodexSandboxMode(mode: PermissionMode): string {
 export const codexHarness: Harness = {
   id: 'codex',
   binary: 'codex',
+  exec: 'codex',
 
   capabilities: {
     credentialProvider: 'openai',

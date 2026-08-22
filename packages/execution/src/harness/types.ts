@@ -28,7 +28,7 @@
  * the whole point: every field below is a question the caller must ask rather
  * than assume.
  */
-import type { PermissionMode } from '@tm8/contract';
+import type { PermissionMode } from '../spawn/types.js';
 import type { ResolvedLaunchConfig } from '../spawn/manifest.js';
 import type { AgentCredentialProvider } from '../spawn/agent-credentials.js';
 
@@ -233,15 +233,30 @@ export interface Harness {
   /** The `agentTool` id — the registry key. Stable, lowercase-kebab. */
   readonly id: string;
   /**
-   * The default executable, and the head of the rendered command.
-   * `TM8_AGENT_CMD` still overrides this node-wide.
+   * The name this harness is SELECTED by — the value in `AGENT_TOOL_BINARIES`
+   * and the key `TM8_AGENT_CMD` is matched against. Usually the executable, but
+   * for `echo-agent` it is a sentinel (`'echo-agent'` is not a program).
    */
   readonly binary: string;
   /**
-   * Argv tokens emitted before any launch-derived argument. `echo-agent` uses
-   * this to carry its script path (`node <path>`).
+   * The executable actually placed at the head of the rendered command line.
+   * Equals `binary` for real CLIs; `echo-agent` runs under `node`.
+   *
+   * Kept SEPARATE from `binary` because the pre-registry code hardcoded the head
+   * (`['claude', ...args]`) rather than echoing back whatever `TM8_AGENT_CMD`
+   * supplied — so `TM8_AGENT_CMD=claude` and the default path both render
+   * `claude`, and collapsing the two fields would change that.
    */
-  readonly preludeArgv?: readonly ArgToken[];
+  readonly exec: string;
+  /**
+   * Argv tokens emitted before any launch-derived argument — `echo-agent`'s
+   * script path (`node <path>`).
+   *
+   * A FUNCTION, not an array, so it is evaluated on first use rather than at
+   * module-initialisation time. The registry and `manifest.ts` import each
+   * other, and an eagerly-evaluated prelude would run during that cycle.
+   */
+  preludeArgv?(): readonly ArgToken[];
   readonly capabilities: HarnessCapabilities;
   /**
    * Build the child's LOGICAL argv — no shell quoting, no joining. Content

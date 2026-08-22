@@ -4,7 +4,7 @@
  * Flags derive from the manifest the same way old maestro's
  * `ClaudeSpawner.buildBaseArgs` did.
  */
-import type { PermissionMode } from '@tm8/contract';
+import type { PermissionMode } from '../spawn/types.js';
 import type { ResolvedLaunchConfig } from '../spawn/manifest.js';
 import { quoted, type ArgToken, type BuildArgvOptions, type Harness } from './types.js';
 
@@ -35,6 +35,7 @@ export function mapClaudePermissionMode(mode: PermissionMode): string {
 export const claudeCodeHarness: Harness = {
   id: 'claude-code',
   binary: 'claude',
+  exec: 'claude',
 
   capabilities: {
     credentialProvider: 'anthropic',

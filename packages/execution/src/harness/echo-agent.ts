@@ -12,19 +12,42 @@
  * none of it. It went unnoticed because echo-agent DOES read the manifest, so
  * the loop passed on a path the product never takes.
  */
+import { fileURLToPath } from 'node:url';
+
 import type { ResolvedLaunchConfig } from '../spawn/manifest.js';
-import { echoAgentPath, ECHO_AGENT_CMD } from '../spawn/manifest.js';
 import { quoted, type ArgToken, type Harness } from './types.js';
+
+/**
+ * The sentinel that selects the built-in smoke agent.
+ *
+ * DEFINED HERE rather than in `manifest.ts` because it is echo-agent's own
+ * business, and because `manifest.ts` and the registry import each other: a
+ * `const` read across that cycle at module-initialisation time is a temporal
+ * dead zone away from a `ReferenceError`. `manifest.ts` re-exports it, so every
+ * existing importer is unaffected.
+ */
+export const ECHO_AGENT_CMD = 'echo-agent';
+
+/**
+ * Absolute path to the built-in echo agent, resolved relative to this module.
+ *
+ * `../../harness/echo-agent.mjs` lands on the same file from `src/harness/`
+ * (vitest, running TypeScript directly) and from `dist/harness/` (the built
+ * server) — both are two levels below the package root.
+ */
+export function echoAgentPath(): string {
+  return fileURLToPath(new URL('../../harness/echo-agent.mjs', import.meta.url));
+}
 
 export const echoAgentHarness: Harness = {
   id: 'echo-agent',
 
   /**
-   * The registry key for binary lookup is the sentinel `ECHO_AGENT_CMD`, not a
-   * real executable: the rendered head is `node`, and the script path is the
-   * prelude argument below.
+   * The selection key is the sentinel, not a real executable: the rendered head
+   * is `node`, and the script path is the prelude argument below.
    */
   binary: ECHO_AGENT_CMD,
+  exec: 'node',
 
   capabilities: {
     /** Authenticates with nothing, so per-member credential isolation does not
@@ -59,7 +82,9 @@ export const echoAgentHarness: Harness = {
   },
 
   /** `node <path-to-echo-agent.mjs>` — the path is content and is quoted. */
-  preludeArgv: [quoted(echoAgentPath())],
+  preludeArgv(): readonly ArgToken[] {
+    return [quoted(echoAgentPath())];
+  },
 
   buildArgv(_launch: ResolvedLaunchConfig): ArgToken[] {
     return [];
