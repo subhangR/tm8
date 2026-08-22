@@ -48,7 +48,7 @@ describe('startup ghost reconciliation', () => {
     const retired = await service.reconcileNodeGhosts(AUTH);
 
     expect(retired).toEqual({ retired: 1, errors: [] });
-    expect(graph.statusesFor('ghost-1')).toEqual(['exited']);
+    expect(graph.statusesFor('ghost-1')).toEqual(['failed']);
     // Retirement goes through the ordinary terminate path, so the ledger records
     // it like any other terminate rather than a status mutating from nowhere.
     expect(graph.commands.map((c) => c.operation)).toEqual(['execution.terminate']);
@@ -63,8 +63,8 @@ describe('startup ghost reconciliation', () => {
     ];
 
     expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 2, errors: [] });
-    expect(graph.statusesFor('g-spawning')).toEqual(['exited']);
-    expect(graph.statusesFor('g-idle')).toEqual(['exited']);
+    expect(graph.statusesFor('g-spawning')).toEqual(['failed']);
+    expect(graph.statusesFor('g-idle')).toEqual(['failed']);
   });
 
   it('scopes the query to THIS node', async () => {
@@ -85,7 +85,7 @@ describe('startup ghost reconciliation', () => {
 
     expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 1, errors: [] });
     expect(graph.statusesFor('alive')).toEqual([]);
-    expect(graph.statusesFor('ghost')).toEqual(['exited']);
+    expect(graph.statusesFor('ghost')).toEqual(['failed']);
   });
 
   it('does nothing, quietly, when there are no ghosts', async () => {
@@ -121,7 +121,7 @@ describe('startup ghost reconciliation', () => {
     expect(partial.retired).toBe(1);
     expect(partial.errors).toHaveLength(1);
     expect(partial.errors[0]?.message).toContain('bad');
-    expect(graph.statusesFor('good')).toEqual(['exited']);
+    expect(graph.statusesFor('good')).toEqual(['failed']);
   });
 
   it('is a no-op on a node with no id, rather than retiring everything', async () => {
@@ -139,5 +139,33 @@ describe('startup ghost reconciliation', () => {
     expect(await anonymous.reconcileNodeGhosts(AUTH)).toEqual({ retired: 0, errors: [] });
     expect(graph.nodeSessionQueries).toHaveLength(0);
     expect(graph.transitions).toHaveLength(0);
+  });
+
+  // INCIDENT 2026-08-22 11:04:16 UTC. A deploy SIGKILLed the prod server while
+  // four unrelated agents were live. The host died before any of them could
+  // record its own exit, so all four were retired here — and retirement wrote
+  // 'exited', the same terminal status a clean finish gets. `exit_code` is NULL
+  // on both paths (kill() cannot wait for node-pty's async exit event), and the
+  // contract's `work_session` state is `.strict()` with neither `exitCode` nor
+  // `error` in it. So `status` is the ONLY field any client can discriminate
+  // on, and it said the same thing for both. The four deaths were invisible in
+  // the graph until someone read `exited_at` by hand and noticed four unrelated
+  // sessions sharing a timestamp to the millisecond.
+  //
+  // A survey of this node's history the same day found 106 of 519 sessions
+  // (20%) retired this way across 28 separate restarts, every one recorded as
+  // an ordinary 'exited'.
+  it('records a ghost as FAILED, distinguishably from an operator terminate', async () => {
+    graph.nodeActiveSessions = [{ sessionId: 'killed-with-host', status: 'running' }];
+    await service.reconcileNodeGhosts(AUTH);
+
+    // The discrimination the incident needed and did not have.
+    expect(graph.statusesFor('killed-with-host')).toEqual(['failed']);
+
+    // ...and the ordinary cancellation path is untouched: an operator ending a
+    // session is a normal end, not a failure. If this ever also became 'failed'
+    // the new signal would be worthless — every terminal row would be 'failed'.
+    await service.terminate(AUTH, 'operator-cancelled');
+    expect(graph.statusesFor('operator-cancelled')).toEqual(['exited']);
   });
 });
