@@ -90,6 +90,17 @@ input.on('line', (line) => {
     session_id: text === 'session-mismatch' ? '00000000-0000-4000-8000-000000000000' : nativeSessionId,
   });
 
+  // A crash that SAYS WHY, which is the shape that matters: the real CLI writes
+  // its refusal to stderr and exits non-zero. The bare `crash` above stays
+  // silent on purpose, so the two cases can be told apart.
+  if (text === 'crash-loudly') {
+    process.stderr.write(
+      '--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons\n',
+    );
+    setTimeout(() => process.exit(1), 5);
+    return;
+  }
+
   if (text === 'crash') {
     setTimeout(() => process.exit(7), 5);
     return;

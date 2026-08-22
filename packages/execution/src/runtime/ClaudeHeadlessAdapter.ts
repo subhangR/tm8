@@ -28,6 +28,46 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const DEFAULT_BOOT_SETTLEMENT_MS = 150;
 const DEFAULT_CLOSE_GRACE_MS = 1_000;
 const MAX_STDERR_CHARS = 16_384;
+
+/**
+ * How much of a crashed process's stderr rides along with the failure MESSAGE.
+ *
+ * The whole buffer is up to `MAX_STDERR_CHARS`; a turn failure is rendered in a
+ * chat bubble and stored in a `chat_turns.failure` payload, so it carries the
+ * tail rather than all of it. The tail is the right end: a process that refuses
+ * to start says why on its last line.
+ */
+const EXIT_REASON_CHARS = 600;
+
+/**
+ * The reason a crash is worth reporting, appended to the exit description.
+ *
+ * WITHOUT THIS THE REASON IS DISCARDED. `state.stderr` is captured on every
+ * chunk and, below, redacted and handed to `this.logger?.error` — an OPTIONAL
+ * logger. Wire no logger and the diagnosis is collected, formatted, and thrown
+ * away, while the only thing that reaches a human is "exited (code 1)".
+ *
+ * Measured on a live node 2026-08-21: every Craft chat turn ever attempted there
+ * had failed since the day the node was configured, and the cause was one line
+ * the CLI prints and this adapter already had in hand —
+ * "--dangerously-skip-permissions cannot be used with root/sudo privileges for
+ * security reasons", because the service runs as root and chat asks for
+ * `--permission-mode bypassPermissions`. Eight days of "it just doesn't work"
+ * for a message that was in memory the whole time.
+ *
+ * Redacted on the way out by the same `redactSecretTokens` the log path uses —
+ * the per-thread token is passed through the MCP config and a crash can echo it.
+ * Blank stderr appends nothing rather than an empty separator, so a process that
+ * dies silently still reads as it did before.
+ */
+function explainExit(stderr: string): string {
+  const reason = redactSecretTokens(stderr.trim());
+  if (reason.length === 0) return '';
+  const tail = reason.length > EXIT_REASON_CHARS
+    ? `…${reason.slice(-EXIT_REASON_CHARS)}`
+    : reason;
+  return `: ${tail.replace(/\s*\n\s*/g, ' ')}`;
+}
 const CLAUDE_BUILTIN_TOOLS = [
   'Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch',
   'NotebookEdit', 'TodoWrite', 'Task', 'TaskOutput', 'AskUserQuestion',
@@ -676,13 +716,20 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
         this.failActiveTurn(
           state,
           'process_exit',
-          `Claude headless process exited (${this.exitDescription(code, signal)})`,
+          `Claude headless process exited (${this.exitDescription(code, signal)})` +
+            explainExit(state.stderr),
         );
       }
     }
     state.resolveExited();
 
     if (!expected) {
+      // Deliberately duplicates what `explainExit` just put on the failure
+      // message. This carries the FULL buffer and the ids for an operator
+      // reading logs; that one carries a bounded tail to the human whose turn
+      // failed. Removing either leaves one of those two blind — and it was this
+      // one, alone and optional, that let a fatal misconfiguration read as
+      // "code 1" for eight days.
       const stderr = redactSecretTokens(state.stderr.trim());
       this.logger?.error('Claude headless process exited unexpectedly', undefined, {
         threadId: state.input.threadId,

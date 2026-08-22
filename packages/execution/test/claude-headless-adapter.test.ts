@@ -338,6 +338,66 @@ describe('ClaudeHeadlessAdapter', () => {
     ).resolves.toContainEqual({ kind: 'text', text: 'echo:after-node-restart:1' });
   });
 
+  /**
+   * THE REASON REACHES THE HUMAN WHOSE TURN FAILED.
+   *
+   * `state.stderr` was captured on every chunk and then handed, redacted, to
+   * `this.logger?.error` — an OPTIONAL logger. Wire none and the diagnosis was
+   * collected, formatted and discarded, while the turn reported only
+   * "exited (code 1)".
+   *
+   * Measured on a live node 2026-08-21: every chat turn ever attempted there had
+   * failed since the day the node was configured, over one line the CLI prints
+   * and this adapter already held — the service runs as root and chat asks for
+   * `--permission-mode bypassPermissions`, which the CLI refuses. Eight days of
+   * "it just doesn't work" for a message that was in memory the whole time.
+   */
+  it('carries the crashed process\'s own reason into the failure, not just a code', async () => {
+    const runtime = adapter();
+    const thread = input();
+    await runtime.startThread(thread);
+
+    const items = await collect(runtime.sendTurn(thread.threadId, { text: 'crash-loudly' }));
+    const failure = items.find((item) => item.kind === 'error');
+
+    expect(failure).toMatchObject({ kind: 'error', code: 'process_exit' });
+    const message = (failure as { message: string }).message;
+    // Still says what it always said...
+    expect(message).toContain('Claude headless process exited (code 1)');
+    // ...and now also says WHY, which is the whole point.
+    expect(message).toContain('cannot be used with root/sudo privileges');
+  });
+
+  it('adds nothing when the process dies without a word', async () => {
+    // A silent crash must read exactly as it did before — no dangling separator,
+    // no empty reason. This is what keeps the assertion below unchanged.
+    const runtime = adapter();
+    const thread = input();
+    await runtime.startThread(thread);
+
+    const items = await collect(runtime.sendTurn(thread.threadId, { text: 'crash' }));
+    const failure = items.find((item) => item.kind === 'error') as { message: string };
+
+    expect(failure.message).toBe('Claude headless process exited (code 7)');
+  });
+
+  it('redacts a token the dying process echoed, and bounds what it carries', async () => {
+    // stderr is an untrusted blob on a path that carries a per-thread token
+    // through the MCP config, and it is rendered in a chat bubble. Neither the
+    // secret nor the whole 16KiB buffer may ride along.
+    const runtime = adapter();
+    const thread = input();
+    await runtime.startThread(thread);
+
+    const items = await collect(runtime.sendTurn(thread.threadId, { text: 'crash-loudly' }));
+    const failure = items.find((item) => item.kind === 'error') as { message: string };
+
+    expect(failure.message).not.toMatch(/tm8s_/);
+    expect(failure.message.length).toBeLessThan(1_000);
+    // One line: a multi-line tail must not break the surrounding rendering.
+    expect(failure.message).not.toContain('\n');
+  });
+
   it('turns a mid-turn process crash into error + exactly one done and evicts it', async () => {
     let exit: AgentThreadExit | undefined;
     const runtime = adapter({ onThreadExit: (event) => (exit = event) });
