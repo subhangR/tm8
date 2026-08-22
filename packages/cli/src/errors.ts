@@ -20,7 +20,7 @@
  * prototype's habit of filing it next to ECONNREFUSED is exactly what made
  * "the server isn't built yet" indistinguishable from "the server is down".
  */
-import type { CommandErrorCode, ErrorCode } from '@tm8/contract';
+import type { CommandErrorCode } from '@tm8/contract';
 import {
   CliError,
   EXIT_CONFLICT,
@@ -62,17 +62,6 @@ export const EXIT_BY_COMMAND_ERROR: Record<CommandErrorCode, ExitCode> = {
   limit_exceeded: EXIT_RETRYABLE,
   not_implemented: EXIT_NOT_IMPLEMENTED,
   upstream_unavailable: EXIT_RETRYABLE,
-};
-
-/** The 7-code W0 subset → §7.6. Exhaustive by type. */
-export const EXIT_BY_ERROR_CODE: Record<ErrorCode, ExitCode> = {
-  invalid_input: EXIT_USAGE,
-  forbidden: EXIT_FORBIDDEN,
-  not_found: EXIT_NOT_FOUND,
-  conflict: EXIT_CONFLICT,
-  invariant_violation: EXIT_CONFLICT,
-  limit_exceeded: EXIT_RETRYABLE,
-  not_implemented: EXIT_NOT_IMPLEMENTED,
 };
 
 export function exitCodeForCommandError(code: CommandErrorCode): ExitCode {

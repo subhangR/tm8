@@ -30,7 +30,7 @@
  * The composer FAILS CLOSED on every one of these. A launch that refuses is
  * attributable; a manifest that quietly carries a token is not.
  */
-import { assertWithinBudget, utf8Bytes } from '@tm8/prompt';
+import { assertWithinBudget } from '@tm8/prompt';
 
 export const MANIFEST_VERSION = '2';
 export const GRAMMAR_VERSION = '2';
@@ -344,10 +344,6 @@ export function serializeBootstrapManifest(manifest: BootstrapManifestV2): strin
   return assertWithinBudget('manifest', JSON.stringify(manifest));
 }
 
-/** Bytes of the serialized form, for logging a budget without re-serializing. */
-export function bootstrapManifestBytes(manifest: BootstrapManifestV2): number {
-  return utf8Bytes(JSON.stringify(manifest));
-}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);

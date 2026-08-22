@@ -10,8 +10,6 @@
 import { run } from './run.js';
 import { EXIT_INTERRUPTED, EXIT_PROTOCOL } from './exit.js';
 
-export const CLI_PACKAGE = '@tm8/cli';
-
 export { run, USAGE, VERSION } from './run.js';
 export type { CommandContext, CommandModule } from './run.js';
 // The command list moved out of run.ts into its own composition point so that
