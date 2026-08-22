@@ -34,7 +34,11 @@ import {
 } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { loadMessageViewsByIds } from '../../handlers/messages.js';
-import { dispatchSessionMessages, type MessageDeliveryPort } from './message-dispatch.js';
+import {
+  dispatchSessionMessages,
+  type DeliveryDisposition,
+  type MessageDeliveryPort,
+} from './message-dispatch.js';
 
 export interface ReservedMessageDelivery {
   readonly deliveryId: string;
@@ -480,6 +484,12 @@ export class W2MessagesHandoffsService {
       return { result, messages, routes, parentsById };
     }));
 
+    // Per-target delivery outcomes, reported on the result below. Declared out
+    // here rather than inside the branch because BOTH arms owe the caller an
+    // answer: a node with a delivery runtime reports what the loop did, and a
+    // node without one reports that it could not try.
+    let dispositions: DeliveryDisposition[] = [];
+
     // The transaction above has committed. Dispatch may block on a PTY write,
     // so it must never execute while graph row locks are held.
     //
@@ -501,7 +511,7 @@ export class W2MessagesHandoffsService {
       // The loop itself now lives in message-dispatch.ts — unchanged, but no
       // longer owned by this handler, because 084's forge watcher posts nudges
       // from a background job and a second copy of a delivery loop would drift.
-      await dispatchSessionMessages({
+      dispositions = await dispatchSessionMessages({
         routes: stored.routes,
         parentsById: stored.parentsById,
         requestId: ctx.requestId,
@@ -509,6 +519,17 @@ export class W2MessagesHandoffsService {
         senderAttribution: senderAttributionFor(sourceWorkSessionId),
         delivery: this.options.messageDelivery as unknown as MessageDeliveryPort,
       });
+    } else if (stored.routes.length > 0) {
+      // NO DELIVERY RUNTIME, BUT ROUTES EXIST. This node stored a message that
+      // named live sessions and has no way to reach any of them — the honest
+      // degraded mode main.ts documents for the forge watcher. It used to be
+      // reported as an unqualified success; it is now reported as what it is.
+      dispositions = stored.routes.map((route) => ({
+        targetMessageId: route.targetMessageId,
+        targetWorkSessionId: route.targetWorkSessionId,
+        status: 'undelivered' as const,
+        reason: 'no_delivery_runtime',
+      }));
     }
 
     this.options.onMessagesCommitted?.(viewerIdentityId, stored.messages);
@@ -516,6 +537,16 @@ export class W2MessagesHandoffsService {
     return {
       messageBatchId: stored.result.messageBatchId,
       messages: stored.messages,
+      // THE FIELD THAT MAKES A SILENT DROP IMPOSSIBLE. Absent when the batch
+      // named no session at all (a plain post on a doc or a channel owes
+      // nobody a live copy, and an empty array there would read as a failure).
+      // Present the moment any route existed — including when every one of them
+      // failed, which is precisely the case that used to return a bare 200.
+      // `execution.dispatch` has always answered this question with
+      // `delivery: 'delivered' | 'undelivered'`; this is the same answer, per
+      // target, because one post can name several sessions and they can
+      // disagree.
+      ...(dispositions.length > 0 ? { delivery: dispositions } : {}),
     };
   };
 

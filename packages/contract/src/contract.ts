@@ -2062,9 +2062,33 @@ export type PostMessageWireInput = Omit<PostMessageInput, 'anchorIds'> & {
   anchorId?: EntityId;
 };
 
+/**
+ * What one named session's live copy did. See `MessageBatchResult.delivery`.
+ *
+ * `accepted` is not `delivered`: the durable reservation exists and the write
+ * is in flight, and the terminal outcome settles later on the delivery row.
+ */
+export interface MessageDeliveryDisposition {
+  targetMessageId: string;
+  targetWorkSessionId: string;
+  status: 'accepted' | 'skipped' | 'undelivered';
+  /** Stable slug on `skipped` / `undelivered`; never raw error text. */
+  reason?: string;
+  /** Present on `accepted`, to follow the row to its settlement. */
+  deliveryId?: string;
+}
+
 export interface MessageBatchResult {
   messageBatchId: string;
   messages: MessageView[];
+  /**
+   * Per-target delivery outcome, present exactly when this batch named at least
+   * one work session. A stored message is NOT a delivered one: a post can route
+   * to a live agent and still put nothing on its terminal, and before this
+   * field existed that case was indistinguishable from success. Absent means
+   * the batch owed nobody a live copy — not that delivery failed.
+   */
+  delivery?: MessageDeliveryDisposition[];
 }
 
 export interface PatchMessageInput extends CommandContext {
