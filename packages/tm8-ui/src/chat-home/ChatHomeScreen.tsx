@@ -1026,12 +1026,33 @@ export function ChatHomeScreen({
   useEffect(() => {
     if (!selectedRootId || !activeConfig) {
       adoptedRootRef.current = null;
+      /**
+       * …AND HAND IT BACK WHEN LEAVING FOR A NEW CONVERSATION.
+       *
+       * Adopting is only half of it. A thread may legitimately be running a
+       * model the catalog no longer offers — that model stays sendable INSIDE
+       * that thread, because the server reads it from the binding — but a NEW
+       * conversation has no binding to read, so a selection carried over from
+       * the thread just closed would leave the composer refusing to send with
+       * no control the person could use to fix it. That is the exact sequence
+       * `craft-screen` walks: open a conversation, press ＋, type, send.
+       *
+       * A selection that IS offerable survives untouched, because switching
+       * away from a thread is not a reason to undo a deliberate choice.
+       */
+      setModelId((current) => (
+        modelChoices.some(
+          (choice) => choice.model === current && choice.suitability.unavailable === null,
+        )
+          ? current
+          : firstRunnableModel(modelChoices)?.model ?? current
+      ));
       return;
     }
     if (adoptedRootRef.current === selectedRootId) return;
     adoptedRootRef.current = selectedRootId;
     setModelId(activeConfig.model);
-  }, [selectedRootId, activeConfig]);
+  }, [selectedRootId, activeConfig, modelChoices]);
   const busy = isBusyPhase(phase);
   /** A thread being BORN — the two round trips between Send and a root that
    *  exists. There is no `detail` to hang a pulse off during either, which is

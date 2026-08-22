@@ -115,6 +115,57 @@ describe('changing the model of a conversation already under way', () => {
     expect(controls.posts[0]?.model).toBeUndefined();
   });
 
+  /**
+   * …AND HANDS IT BACK ON THE WAY OUT.
+   *
+   * Adopting the thread's model is only half the rule. That model stays
+   * sendable INSIDE its thread even when the catalog has dropped it — but a NEW
+   * conversation has no binding for the server to read it from, so a selection
+   * carried over from the thread just closed would leave the composer refusing
+   * to send with no control the person could use to fix it.
+   *
+   * Found by `craft-screen`, which walks exactly this: open a conversation,
+   * press ＋, type, send. Pinned here too, at the layer that owns the rule,
+   * rather than left to be re-discovered from two surfaces away.
+   */
+  it('drops an unofferable adopted model when starting a new conversation', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const withoutTheThreadsModel = MODELS.filter((m) => m.model !== 'claude-sonnet-4-5');
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={withoutTheThreadsModel} />,
+    );
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() =>
+      expect(view.getByLabelText('Chat model').textContent).toContain('Sonnet 4.5'),
+    );
+
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    await waitFor(() =>
+      expect(view.getByLabelText('Chat model').textContent).toContain('Opus 4.5'),
+    );
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Start something new.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(controls.configs).toHaveLength(1));
+    expect(controls.configs[0]?.model).toBe('claude-opus-4-5');
+  });
+
+  /** A deliberate, still-offerable choice is NOT undone by leaving a thread. */
+  it('keeps an offerable selection when starting a new conversation', async () => {
+    const { port } = createChatHomeFixturePort();
+    const view = await openThread(port);
+
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-5'));
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+
+    await waitFor(() =>
+      expect(view.getByLabelText('Chat model').textContent).toContain('Opus 4.5'),
+    );
+  });
+
   /** Teammate and mode are still the thread's for its whole life. */
   it('leaves the other two thread settings pinned', async () => {
     const { port } = createChatHomeFixturePort();
