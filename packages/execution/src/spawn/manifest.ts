@@ -412,6 +412,33 @@ export function resolveWorkdir(
     });
   }
 
+  // Project mode requires a project, for the same reason worktree mode does and
+  // scratch mode refuses one: the mode names where the agent works, and without
+  // a project there is no such place.
+  //
+  // THIS IS THE ONE COMBINATION THAT USED TO FALL THROUGH. The two guards above
+  // reject their impossible pairing; `mode: 'project'` with no project reached
+  // the projectless return at the bottom and got back
+  // `.../scratch/pending` — with `mode` still reported as `'project'`. Nothing
+  // failed, so the session spawned, the row recorded `project`, and the agent
+  // ran in a scratch directory instead of the repository it was asked for.
+  //
+  // Measured on a live node 2026-08-22: of the sessions active that day, every
+  // one whose row said `project` and whose path was scratch had a null
+  // `project_id`, and every one with a project was in the repository. The
+  // operator's report was "my sessions are not starting from /root/strykr".
+  //
+  // Safe to add because the DEFAULT already resolves correctly: an unspecified
+  // mode is `context.project ? 'project' : 'scratch'`, so a caller that simply
+  // does not know is unaffected. Only a caller that explicitly asked for project
+  // mode without one reaches here — and that caller is asking for something that
+  // does not exist.
+  if (mode === 'project' && !context.project) {
+    throw new SpawnError('workdir.mode "project" requires a project', 'invalid_input', {
+      reason: 'project_requires_project',
+    });
+  }
+
   if (context.project) {
     const dir = context.project.workingDir;
     if (!dir.startsWith('/') || dir.includes('..')) {

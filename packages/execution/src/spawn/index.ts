@@ -104,4 +104,5 @@ export type {
   WorkSessionStatus,
   WorktreeAllocationRow,
   WorktreeAllocationState,
+  GhostReconcileReport,
 } from './types.js';
