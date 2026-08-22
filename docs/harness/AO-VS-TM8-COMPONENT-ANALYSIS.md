@@ -450,12 +450,169 @@ change the shape and cost of the work proposed in the sibling document.
 
 ---
 
-## 12. What follows from this
+## 12. Impact
+
+**What executes if this document is adopted: nothing.** It is an analysis, not a
+plan, and saying so plainly is more useful than manufacturing a blast radius for a
+Markdown file. The concrete accounting:
+
+| Axis | Impact |
+|---|---|
+| Packages / files | **None.** Adds two files under `docs/harness/`, plus index rows in `docs/harness/README.md`. |
+| Contracts | **None.** No operation added, removed, or re-typed; no catalog revision. |
+| Migration | **None.** |
+| Existing callers | **Nothing breaks.** No runtime artefact reads these files. |
+| `claude-code` / `codex` | **Zero.** No spawn path, argv, credential path, or manifest field is touched. |
+
+**Where the real impact lands is downstream, and it is not zero.** Three things
+change once these findings are accepted:
+
+1. **Eleven prior figures are superseded (§11).** Anything that reused the old numbers
+   — a roadmap slide, a sizing estimate, another design doc — is now citing figures
+   this document contradicts. Five are harmless drift. **Four are substantive**, and
+   two of those (rows 10 and 11) directly re-size the sibling design: Phase 1 from
+   ~400 to ~150 LOC, Phase 2 from ~300 to ~200 LOC. Anyone who budgeted from the old
+   table budgeted ~450 LOC of work that does not exist.
+2. **Two gap-table rows must stop being quoted as "none".** Token accounting is
+   *partial* and multi-provider SCM is *one implemented behind a working seam*. Both
+   were used as evidence of absence; neither supports that weight any more. A plan
+   built on "tm8 has no forge observer at all" is built on the one claim §8 exists to
+   retract.
+3. **The `tracking/` correction changes what should be built next.** If tm8 had no
+   PR/CI observation surface, porting AO's 5.6k-LOC SCM observer would be a
+   priority. It is not — the surface exists, is smaller, and is better on four axes.
+   The honest remaining gap there is **provider breadth**, which is a much smaller and
+   differently-shaped job than "build an observer."
+
+**Cost of adopting it:** the review time to check the citations. Every tm8-side claim
+carries a `file:line` against `3edf470f` specifically so that this cost is bounded and
+the document can be re-verified rather than re-argued.
+
+**Cost of not adopting it:** the analysis stays in chat messages in a Space with no
+repo attached — undiffable, uncorrectable, and already carrying two substantive errors
+that nothing in that medium can retract.
+
+---
+
+## 13. Self-critique
+
+The strongest honest arguments against this document, in the order a reviewer is most
+likely to raise them.
+
+### 13.1 The AO half is unverified, and that is a real limit — not a caveat
+
+**This is the weakest thing here and it is structural.** The AO repository is not
+available on this node (checked; no local checkout, no vendored copy). **Every AO
+figure in this document is carried forward from a prior analysis I could not
+re-run:** 26 harnesses, ~2.4k LOC of reviewer agents and 24 reviewer panes,
+`modelcatalog` 607 + `authprobe` 134, `domain/usage.go` + migration
+`0102_canonical_usage`, 5.7k LOC across github + gitlab + multi, the 5s probe +
+`processalive` + `sessionguard`, `service/systemcheck`, fsnotify invalidation,
+`hooksjson` 465 + `hookutil` 116, `packages/cloud-client`, ~300k backend LOC, ~148k
+Electron/React LOC, and the ≈26k total.
+
+**That is roughly half of every comparison in this file.** The document is honest
+about it — §0 declares the two evidence classes and each figure is marked
+*(claimed)* — but labelling a number does not verify it. Concretely:
+
+- **A comparison is only as strong as its weaker half**, so §9's "verdict" column is
+  really "does the *tm8* side reproduce", not "is the comparison sound". The column is
+  named accurately but reads stronger than it is.
+- **The prior analysis has a demonstrated error rate.** §11 catches four substantive
+  mistakes and five drifts on the tm8 side. There is no reason to assume its AO side
+  was more careful — and unlike the tm8 side, nobody has checked. If ~2.4k LOC of
+  reviewer agents is really ~800, the §9 gap narrows and the ≈26k total is wrong.
+- **The one AO claim doing the most work is the least checkable:** "26 harnesses."
+  The entire framing of the sibling design's product question (§8 there) rests on it.
+  If AO's 26 includes aliases, deprecated entries, or thin wrappers over the same two
+  CLIs, the number that makes 26 sound ambitious is doing so on false pretences.
+
+**What would fix it:** a checkout of `d4ae9b3` and one re-grep pass. Until then, **no
+decision should rest on an AO figure alone.** The tm8-side absences in §6.2 are safe
+to act on — they were derived here, from this tree, by searching for behaviour.
+
+### 13.2 "The absence claims are proven" is the claim most likely to be wrong
+
+§8 names the failure mode — searching for the other system's nouns — and then asserts
+that every other absence was re-derived by behaviour instead. **That assertion is
+weaker than it sounds.** Proving a negative in a 9-package monorepo by grep is
+exactly the method that already failed once, on `tracking/`.
+
+The absence claims are not equally strong:
+
+- **Strong:** no `chokidar` / `fs.watch` / `watchFile` anywhere in `packages/` — a
+  file watcher must call one of them, so the negative is nearly closed.
+- **Weaker:** "no runtime reaper loop." I searched for `processalive`, `isProcessAlive`,
+  `kill(pid, 0)`. A liveness reaper implemented via PTY exit codes, a `setInterval`
+  over session rows, or an exit-classification path would not match any of those —
+  and `pty-exit-classification.test.ts` exists, so *something* in this area does. The
+  honest claim is "no AO-shaped reaper", not "no liveness handling".
+- **Weakest:** "no reviewer agents / auto-review." Searched for reviewer-pane
+  vocabulary. If tm8 spawns review sessions through the ordinary spawn path with a
+  reviewer persona, it would be invisible to that search and would arguably count.
+
+A reviewer who knows the tree will falsify one of these, and the reaper row is where
+I would put my money.
+
+### 13.3 The `tracking/` section may be too flattering
+
+§8 says tm8's 2,941 lines "out-design" AO's claimed 5.6k on four axes. **That framing
+is doing more than the evidence supports.** The four axes are real and verified in the
+SQL and the comments, but:
+
+- **They are the four axes on which tm8 is strong.** I found them by reading tm8's
+  code and noting what it does well. That is selection by construction, and a list
+  chosen that way will always favour the system it was read from. The axes AO might
+  win on — provider breadth, webhook ingestion vs. polling, rate-limit handling at
+  scale — are not in the comparison, and I did not look for them.
+- **"Out-designs" invites a scoreboard the document elsewhere refuses.** §3 correctly
+  declines to score AO's loopback threat model against tm8's RLS. §8 then scores the
+  observer. That is an inconsistency, and the §3 posture is the better one.
+- **Line counts are not design quality in either direction.** The document says
+  2,941 < 5,600 and calls it a win. It would have rejected that reasoning if the
+  numbers ran the other way.
+
+The defensible claim is narrower: **tm8's tracking makes four specific design choices
+that are correct and non-obvious, and their correctness does not depend on how AO's
+compares.** I would accept an edit to that.
+
+### 13.4 The base is fresh; the freshness argument is one-sided
+
+The document opens by rejecting a base 161 commits stale. Fair — but `3edf470f` will
+be stale too, and sooner than the document's tone implies. There is no mechanism here
+that makes the figures self-checking: the next reader gets a table of numbers with a
+commit hash and no way to re-derive them except by hand.
+
+**The mitigation that is missing:** the greps that produced §9 and §11 are described
+in prose but only one is written out as a runnable command. A short appendix of the
+exact commands would let any future reader re-run the whole table in a minute. I did
+not add one, and I think a reviewer should ask for it.
+
+### 13.5 What would falsify the document's central claim
+
+The central claim is: **AO's session-supervision depth is a component tm8 could adopt
+without moving its centre — "it is not a rewrite."**
+
+It is falsified if any §9 row turns out to require a change to a tm8 law. The nearest
+candidate is **activity hooks**: if reading a provider's hook output requires tm8 to
+treat harness-specific event shapes as first-class, that pushes against T-L12's
+canonical `WorkspaceEvent` as *"the only event shape any consumer sees."* I asserted
+that none of the nine rows fights a law **without designing any of them**, and for
+activity hooks specifically that assertion is being made about work that is explicitly
+out of scope here and owned by a sibling design. It is the row I am least confident
+about, and if `ACTIVITY-SIGNAL-DESIGN.md` concludes otherwise, this document's
+"it is not a rewrite" needs qualifying.
+
+---
+
+## 14. What follows from this
 
 1. **The harness registry is not on this list as a feature.** It is the one item the
    laws already require. → [`HARNESS-REGISTRY-DESIGN.md`](HARNESS-REGISTRY-DESIGN.md).
 2. **The activity-signal problem is real and separately owned.** tm8 infers activity
    from stream silence; AO reads hooks. → `ACTIVITY-SIGNAL-DESIGN.md` (sibling task).
+   See §13.5 — this is also the row most likely to falsify §9's closing claim.
 3. **The remaining seven rows of §9 are candidates, not commitments.** Each is a
    component that fits tm8's architecture; none is urgent on architectural grounds
    alone. Prioritising them is a product decision, and this document does not make it.
+4. **Verify AO before spending against an AO number.** §13.1.

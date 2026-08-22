@@ -579,7 +579,210 @@ one.
 
 ---
 
-## 11. Review checklist
+## 11. Impact
+
+Per phase, concretely. Costs are stated as costs; the reassuring version of this
+section would be shorter and less useful.
+
+### Phase 0 — registry (~800 LOC)
+
+| Axis | Impact |
+|---|---|
+| **New** | `packages/execution/src/harness/` — `types.ts`, `registry.ts`, one module per harness (`claude-code.ts`, `codex.ts`, `echo-agent.ts`), `harness-registry.test.ts`. |
+| **Rewritten** | `packages/execution/src/spawn/manifest.ts` (1,332 lines). `buildAgentCommand`, `buildCodexArgs`, `renderCodexCommand`, `withAgentPrompt`, `withAgentResume`, `AGENT_TOOL_BINARIES`, and the four `mapClaude*`/`mapCodex*` helpers move out. What stays: `shellQuote`, `echoAgentPath`, `resolveLaunchConfig`, `composeManifest`, `ResolvedLaunchConfig`. |
+| **Edited** | `SpawnService.ts` (2,292 lines) — **18 string-dispatch sites** become capability lookups, including `:752` (pre-minted id), `:1007-1011` (config-home selection), `:1024-1025` and `:1676-1677` (workspace trust), `:1368` (resume gate), `:1436` (codex nativeSessionId discovery), `:382`/`:548` (sandbox posture). `spawn/index.ts` re-exports. |
+| **Contracts** | **None.** No operation, DTO, event, or error added or re-typed. No catalog revision. |
+| **Migration** | **None.** |
+| **Breaks for existing callers** | `buildAgentCommand` / `withAgentPrompt` / `withAgentResume` are exported from `@tm8/execution` (`spawn/index.ts`). If they change signature, every caller moves. **Recommended: keep all three as thin shims** over the registry for Phase 0 so the exported surface is untouched, and retire them in a later phase. The shim is ~20 LOC and removes the only cross-package break in this phase. |
+| **`claude-code` / `codex` blast radius** | **Required to be zero, and it is the gate.** The rendered command string must be byte-identical for all three harnesses. Verified by `spawn-manifest.test.ts`, `session-resume.test.ts`, `spawn-sandbox-preflight.test.ts`, `spawn-secret-boundary.test.ts` (which asserts on `buildAgentCommand` output directly, `:119`), `prompt-fidelity.test.ts` — **passing unmodified**. |
+
+**The real cost of Phase 0 is not the LOC; it is the review.** ~800 LOC that must
+provably change nothing is harder to review than 800 LOC of new behaviour, because the
+reviewer has to hold the *old* behaviour in their head to check it survived. The 18
+`SpawnService` sites are the risk concentration: each is a small edit, several are in
+the spawn hot path, and two (`:1024`, `:1676`) write workspace trust into a
+credential home where a mistake is silent until an unattended session hangs on a
+first-run dialog nobody is watching.
+
+### Phase 1 — contract (~150 LOC)
+
+| Axis | Impact |
+|---|---|
+| **Edited** | `packages/contract/src/schemas.ts:2950` and `contract.ts:4215` — `SessionTranscriptPage.agentTool` from `'claude-code' \| 'codex'` to a registry-validated id. `packages/tm8-ui/src/domain/model-catalog.ts:30` — `KNOWN_AGENT_TOOLS` derives from the registry instead of being a literal. |
+| **Untouched** | `LaunchModelCatalogEntry.agentTool` **stays closed** (§8). The five `z.string().nullable()` sites (`schemas.ts:322, 371, 2273, 2416, 2626`) need no change — they are already open. |
+| **Contracts** | **Yes** — two response fields widen. Catalog revision required. Per §9.2 this phase lands **alone**. |
+| **Migration** | **None, and this is verified rather than assumed.** `agent_tool` is declared `text` with **no CHECK constraint** in both places it exists: `db/migrations/001_core_graph.sql:706` (work sessions) and `002_identity.sql:121` (team members). Every RPC takes `p_agent_tool text`. **The database has always been open; only TypeScript was closed.** |
+| **Breaks for existing callers** | **Widening a response field is source-compatible for readers and breaking for exhaustive `switch`.** A consumer with `case 'claude-code': case 'codex':` and no `default` stops compiling. `read-transcript.ts:750-775` is the one in-repo instance; `SessionDebugBody.tsx:469` and `SessionStatsPanel.tsx:304` only interpolate and are safe. |
+| **`claude-code` / `codex` blast radius** | **Zero at runtime.** Both keep producing the same transcript dialect values; the type that describes them merely stops being closed. |
+
+### Phase 2 — credentials (~200 LOC)
+
+| Axis | Impact |
+|---|---|
+| **Deleted** | The two drifted ternaries in `transcript/agent-config-dirs.ts:11-13` (§2.2). |
+| **Edited** | `agent-credentials.ts` — `AgentCredentialProvider` widens past `'anthropic' \| 'openai'`; `AGENT_TOOL_CREDENTIAL_PROVIDER` and `AGENT_CREDENTIAL_CONFIG_DIR_VAR` derive from `capabilities.credentialProvider`. `server/src/facade/services/w2/credential-catalog.ts:104-108` — `PROVIDER_AGENT_TOOLS` derives from the registry. `facade/execution-handlers.ts:2447` and `SpawnService.ts:1439` call sites. |
+| **Contracts** | **Probably.** `CredentialProviderName` is contract-side; adding a provider is a catalog revision. Not needed to *dedupe* — only to add the third provider. **Sequence the dedupe first and ship it alone.** |
+| **Migration** | **Likely yes, for a new provider.** Credential rows are stored per provider; a third provider needs its rows admitted. Deduplication alone needs none. |
+| **Breaks for existing callers** | `AgentCredentialProvider` widening breaks exhaustive `switch` on it, same shape as Phase 1. `credential-catalog.ts`'s `github → null` semantics (*"EVERY tool rather than… none"*) **must be preserved verbatim** — narrowing it *"would leave live sessions holding a token the member believes they just disconnected."* |
+| **`claude-code` / `codex` blast radius** | **Non-zero, and this is the riskiest phase.** It touches the code that decides which credential home a live session reads. A mistake does not throw — it silently points one member's agent at another member's login. Deduplication must be behaviour-identical and is covered by `agent-credentials.test.ts`, `credential-env.test.ts`, `credential-injection-live.test.ts`, `github-credential-injection.test.ts`. |
+
+### Phase 4 — per harness (~500 LOC each)
+
+Additive: one registry module, one credential-isolation story (§6), one confinement
+probe (§9.3). **No existing file changes**, which is the payoff for Phases 0–2. The
+ongoing cost is not the LOC — it is that each harness becomes a support commitment
+against a CLI whose flags change without warning, and tm8 finds out by a session
+failing in production.
+
+### Aggregate
+
+**Phases 0–2 total ~1,150 LOC, one catalog revision, no migration** (a migration
+appears only when a third credential provider is actually added), and are required to
+deliver **zero** observable change to `claude-code` and `codex`. If any of the three
+produces a behaviour difference in those two harnesses, it has failed.
+
+---
+
+## 12. Self-critique
+
+The strongest honest arguments against this design.
+
+### 12.1 The T-L4 argument is an extension, and a reviewer may simply decline it
+
+§1 concedes that T-L4 is written about entity kinds and that a literal reading does
+not reach `manifest.ts`. **That concession may be fatal rather than disarming.**
+
+The counter-argument is clean: *T-L4's subject is the `KindRegistry` and the
+`entity_kinds` table. Its point is that **users** create kinds at runtime without a
+release. `agentTool` is not user-created, it is not runtime-registered, and shipping a
+new harness requires a release regardless — so the law's purpose is absent even where
+its syntax matches.* Under that reading `buildAgentCommand` is not a violation at all;
+it is ordinary provider-adapter code with three providers, and three `if`s is a
+perfectly reasonable way to write that.
+
+**I think the extension holds**, on the §1 grounds — the forbidden shape is forbidden
+for a reason that applies here, tm8 already uses registries for non-kind vocabulary,
+and 35 dispatch sites is the cost being paid. But **this is the load-bearing claim of
+the entire document, and it is an argument rather than a citation.** If a reviewer
+rejects it, the document does not fall back to a weaker version of itself — it becomes
+a refactor proposal that has to justify ~800 LOC of zero-behaviour-change work on
+maintainability grounds alone, against a codebase where the current code demonstrably
+works. That is a much harder sell and this document does not make it.
+
+**This is the part I expect to be rejected first**, and item 1 of the §13 review
+checklist exists because of it.
+
+### 12.2 Phase 0 is ~800 LOC that changes nothing, and that is a genuine cost
+
+The honest framing of Phase 0: **take working, heavily-commented, defect-hardened code
+and move it, to enable harnesses nobody has committed to shipping (§8).**
+
+Three specific risks the design underplays:
+
+- **The comments are the asset, not the code.** `manifest.ts` carries measured
+  production defects in prose — the 2026-07-28 wrong-binary spawn, the 2026-07-30 idle
+  REPL, the 2026-08-02 bwrap failure. Refactors lose comments. If a hard-won *"…
+  `instructions` is reserved by Codex and silently ignored"* does not survive the move
+  to `codex.ts`, the refactor has destroyed more value than it created, and **no test
+  will catch it.**
+- **"Zero behaviour change" is only as good as the existing coverage.** The gate is 34
+  test files, but nothing proves they cover every branch of `buildAgentCommand` ×
+  five `PermissionMode` values × the `sandboxUnavailable` and `claudeSessionId`
+  options. **An untested combination that changes is a defect the gate passes.** I did
+  not measure that coverage, and I should have before asserting the gate is
+  sufficient.
+- **Argv arrays may be over-engineering at n=3.** §4's motivating example is one regex
+  (`command.replace(/^codex\b/, 'codex resume')`) that is correct today. A reviewer
+  can fairly say: convert to argv *when* the fourth harness arrives, and let its
+  concrete requirements shape the interface rather than guessing them now.
+
+### 12.3 `HarnessCapabilities` is designed against a sample of two
+
+Every field in §3 was derived from `claude-code` and `codex`. **A taxonomy induced
+from two examples usually describes those two examples.** Concretely, I would expect
+the third real harness to break at least one of:
+
+- `systemPromptDelivery: 'flag' | 'config-kv' | 'file' | 'none'` — a CLI that only
+  accepts a system prompt on stdin, or interleaved with the first user turn, has no
+  value here.
+- `taskPromptDelivery: 'positional' | 'stdin' | 'none'` — assumes prompt delivery is
+  a single act. A CLI requiring a handshake before accepting input does not fit.
+- `resume: HarnessResume | null` — assumes resume is binary. A CLI that resumes but
+  cannot guarantee exact-id semantics is neither Tier B nor Tier C, and §7 has
+  nowhere to put it.
+
+The A/B/C tiers have the same problem: they are `claude-code`, `codex`, and
+*everything else*. **Tier C is not a tier, it is a residual category**, and the moment
+two genuinely different unsupported-resume CLIs arrive it will need splitting.
+
+**Mitigation the design does not currently include:** write one Tier-A adapter as a
+throwaway spike *before* freezing `HarnessCapabilities`, and let a third real CLI
+falsify the taxonomy while it is still cheap to change.
+
+### 12.4 The two corrections in §2 are load-bearing and rest on greps
+
+§2 re-estimates Phases 1 and 2 downward by ~450 LOC on the strength of two findings.
+Both were verified by grep at `3edf470f`, and grep proves presence better than
+absence:
+
+- **§2.1** claims the union survives in exactly three contract sites. Found by
+  searching `'claude-code'` and `agentTool`. **A closed union expressed some other way
+  would not match** — a `z.enum` built from a const array, a branded type, a
+  `satisfies` clause, or a runtime validator in the facade layer. If one exists,
+  Phase 1 is larger than ~150 LOC.
+- **§2.2** claims the ternary in `agent-config-dirs.ts` is the only survivor. Same
+  method, same limitation.
+
+The migration claim in §11 is the strongest of the three, because `agent_tool text`
+with no CHECK is a positive fact read from the DDL rather than an absence.
+
+### 12.5 The scope boundary with activity signals is asserted, not verified
+
+§10 declares activity out of scope and defers to `ACTIVITY-SIGNAL-DESIGN.md`, owned by
+a sibling worker. **I have not read that document — it does not exist yet.** So the
+claim that the two designs compose is an assumption.
+
+The concrete risk: if activity signals need per-harness configuration — a hooks file,
+an env var, an output-parsing dialect — then `HarnessCapabilities` needs a field this
+design did not put there, and the sibling design will have to either add one (making
+§3 wrong) or route around the registry (recreating the exact string-dispatch problem
+one layer over). **Whoever reviews these two documents should review them together**,
+and §3's capability record should be treated as provisional until the sibling design
+has had a chance to demand a field from it.
+
+### 12.6 Carried-forward, unverified numbers used in this document
+
+Per the analysis document's §0, the AO repository is **not available on this node** and
+none of its figures were re-verified. This design leans on exactly one of them, and it
+is doing structural work:
+
+- **"26 harnesses"** *(claimed, unverified)* — the entire framing of §8's product
+  question. **If AO's 26 counts aliases, deprecated entries, or thin wrappers over the
+  same handful of CLIs, then "26 vs 2" is not the gap it appears to be**, and the
+  product reversal §8 warns about may be much smaller than stated. §8's structure
+  survives — separating "make N possible" from "choose N" is right at any N — but its
+  urgency does not.
+
+Every other figure in this document is tm8-side, read from `3edf470f`, and carries a
+`file:line`. The unverified AO numbers in the companion analysis (§9 there) are listed
+in its own §13.1.
+
+### 12.7 What would falsify this design
+
+- **A reviewer rejecting the T-L4 extension** (§12.1) — the argument has no fallback.
+- **A closed-union site found outside the three in §2.1** — Phase 1's estimate fails.
+- **Any existing spawn/manifest test requiring modification to pass Phase 0** — by
+  §5's own definition, that is the refactor changing behaviour, and the phase is
+  wrong.
+- **`ACTIVITY-SIGNAL-DESIGN.md` needing a per-harness capability field** (§12.5) —
+  `HarnessCapabilities` was frozen too early.
+- **A decision that tm8 will ship exactly two harnesses forever** — Phases 0–2 would
+  still be defensible on the §1 argument alone, but only if §12.1 holds. If both fail,
+  this design should not be built.
+
+---
+
+## 13. Review checklist
 
 Agreement is needed on these before Phase 0 starts:
 
