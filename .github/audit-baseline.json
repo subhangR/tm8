@@ -1,0 +1,76 @@
+{
+  "accepted": {
+    "vitest:GHSA-5xrq-8626-4rwp": {
+      "severity": "critical",
+      "title": "When Vitest UI server is listening, arbitrary file can be read and executed",
+      "url": "https://github.com/advisories/GHSA-5xrq-8626-4rwp",
+      "vulnerableVersions": "<3.2.6",
+      "reason": "Dev-only, and only reachable with `vitest --ui`, which this repo never starts (tools/ci/check.sh runs plain `vitest run`). The fix needs vitest >=3.2.6; eight workspaces are pinned at ^2.0.0 and ^4.0.18, so clearing it is a vitest 2 -> 4 migration across the whole test suite, not a lockfile bump. Tracked as its own upgrade.",
+      "acceptedOn": "2026-08-12",
+      "reviewBy": "2026-11-10"
+    },
+    "nanoid:GHSA-2v37-7h3g-55p8": {
+      "severity": "high",
+      "title": "nanoid: custom generators can loop indefinitely when size is zero",
+      "url": "https://github.com/advisories/GHSA-2v37-7h3g-55p8",
+      "vulnerableVersions": "<3.3.17",
+      "reason": "Reached only through vite`s dev server (workspace:tm8-ui > vite). Not in any shipped bundle, and the loop needs a caller-supplied custom generator, which no tm8 code passes. Cleared by the same vite 5 -> 6.4.3+ upgrade as the vite advisories below.",
+      "acceptedOn": "2026-08-12",
+      "reviewBy": "2026-11-10"
+    },
+    "vite:GHSA-fx2h-pf6j-xcff": {
+      "severity": "high",
+      "title": "vite: `server.fs.deny` bypass on Windows alternate paths",
+      "url": "https://github.com/advisories/GHSA-fx2h-pf6j-xcff",
+      "vulnerableVersions": "<=6.4.2",
+      "reason": "Dev server only, Windows only. tm8 dev and CI both run on Linux, and no vite dev server is ever exposed off localhost. Needs vite >=6.4.3; packages/ui and packages/tm8-ui are on ^5.4.8, so this is a major vite upgrade with a matching @vitejs/plugin-react bump.",
+      "acceptedOn": "2026-08-12",
+      "reviewBy": "2026-11-10"
+    },
+    "@babel/runtime:GHSA-968p-4wvh-cqc8": {
+      "severity": "moderate",
+      "title": "Babel has inefficient RegExp complexity in generated code with .replace when transpiling named capturing groups",
+      "url": "https://github.com/advisories/GHSA-968p-4wvh-cqc8",
+      "vulnerableVersions": "<7.26.10",
+      "reason": "Test-only: reached through @testing-library/react, @testing-library/jest-dom and react-mentions. The regex blowup needs attacker-controlled input through transpiled named capture groups; test fixtures are repo-authored. Waiting on those three packages to widen their @babel/runtime range.",
+      "acceptedOn": "2026-08-12",
+      "reviewBy": "2026-11-10"
+    },
+    "dompurify:GHSA-55q2-fjhq-7xh7": {
+      "severity": "moderate",
+      "title": "DOMPurify: IN_PLACE hook removal leaves a detached subtree executable, causing XSS",
+      "url": "https://github.com/advisories/GHSA-55q2-fjhq-7xh7",
+      "vulnerableVersions": "<=3.4.12",
+      "reason": "Reached through mermaid (already bumped to 11.16.1 here, which is the newest release). mermaid pins dompurify ^3.3.3 and no published mermaid yet depends on a fixed 3.4.13+. tm8 renders mermaid only from repo-authored diagram source, not user input. Re-check when mermaid ships the bump.",
+      "acceptedOn": "2026-08-12",
+      "reviewBy": "2026-11-10"
+    },
+    "esbuild:GHSA-67mh-4wv8-2f99": {
+      "severity": "moderate",
+      "title": "esbuild enables any website to send any requests to the development server and read the response",
+      "url": "https://github.com/advisories/GHSA-67mh-4wv8-2f99",
+      "vulnerableVersions": "<=0.24.2",
+      "reason": "Dev server only — esbuild arrives transitively through vite. Same vite 5 -> 6.4.3+ upgrade; esbuild cannot be bumped on its own without pinning an override that vite would then disagree with.",
+      "acceptedOn": "2026-08-12",
+      "reviewBy": "2026-11-10"
+    },
+    "vite:GHSA-4w7w-66w2-5vf9": {
+      "severity": "moderate",
+      "title": "Vite Vulnerable to Path Traversal in Optimized Deps `.map` Handling",
+      "url": "https://github.com/advisories/GHSA-4w7w-66w2-5vf9",
+      "vulnerableVersions": "<=6.4.1",
+      "reason": "Dev server only; same vite 5 -> 6.4.3+ upgrade as GHSA-fx2h-pf6j-xcff.",
+      "acceptedOn": "2026-08-12",
+      "reviewBy": "2026-11-10"
+    },
+    "vite:GHSA-v6wh-96g9-6wx3": {
+      "severity": "moderate",
+      "title": "launch-editor: NTLMv2 hash disclosure via UNC path handling on Windows",
+      "url": "https://github.com/advisories/GHSA-v6wh-96g9-6wx3",
+      "vulnerableVersions": "<=6.4.2",
+      "reason": "Dev server only, Windows only (UNC path handling in launch-editor). Same vite 5 -> 6.4.3+ upgrade as GHSA-fx2h-pf6j-xcff.",
+      "acceptedOn": "2026-08-12",
+      "reviewBy": "2026-11-10"
+    }
+  }
+}
