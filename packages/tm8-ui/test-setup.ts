@@ -102,8 +102,13 @@ if (typeof window !== 'undefined' && (window as unknown) !== globalThis) {
 const ASYNC_UTIL_TIMEOUT_MS = Number(process.env['TM8_TEST_ASYNC_TIMEOUT_MS'] ?? 10_000);
 
 /* jsdom only. This file also runs for the many `environment: 'node'` suites in
-   this package, and @testing-library/dom reaches for a document at import. */
+   this package, and the DOM testing library reaches for a document at import.
+   Imported through `@testing-library/react`, which re-exports the whole of
+   `@testing-library/dom` including `configure` — the DOM package is a
+   TRANSITIVE dependency here, not a declared one, and naming it directly fails
+   to resolve (measured: every jsdom suite died at collection with
+   `Failed to resolve import "@testing-library/dom" from "test-setup.ts"`). */
 if (typeof document !== 'undefined') {
-  const { configure } = await import('@testing-library/dom');
+  const { configure } = await import('@testing-library/react');
   configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
 }
