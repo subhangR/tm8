@@ -332,6 +332,33 @@ export function ChatHomeScreen({
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
   const [selectedRootId, setSelectedRootId] = useState<EntityId | null>(null);
+  /* "NOTHING HAS BEEN CHOSEN YET" IS A THIRD STATE, and it used to collide with
+     the second one. `selectedRootId === null` is exactly what New conversation
+     MEANS — the adopt effect below expresses it that way, and so does
+     MobileShell's `onNewThread` (`setThreadId(null)`) — so a `??` chain could
+     not tell a deliberately empty composer from a screen that had not chosen
+     anything yet, and every background `refreshThreads()` read the viewer's
+     composer as "unset" and filled it with whoever had spoken most recently.
+     On a phone the composer IS the screen, and the subscribe handler fires a
+     refresh for every frame from a root the list has not seen, so in a busy
+     space that was constant.
+
+     This ref carries the bit that was missing: the space the current selection
+     was RESOLVED for. Not equal to `spaceId` (`null` to begin with) means
+     nothing has been chosen here and the cold-start auto-open may run; equal
+     means the selection is an answer — `null` included — and only a caller
+     asking by name may move it. Space-keyed rather than a bare boolean so
+     entering a different space re-arms the cold start on its own, with no
+     reset write that would have to be ordered against the adopt effect.
+
+     NOT `spaceRef` BELOW, though both hold a space id. That one is where the
+     screen IS as of the last commit, and gates whether a read may write at
+     all; this one is what the selection is an answer TO. They differ for
+     exactly one commit — the space switch, where `spaceRef` has already
+     advanced and this has not — and that is the commit where the difference
+     is the whole point: the new space has been chosen in by nobody, so its
+     cold start runs. */
+  const selectionSpaceRef = useRef<SpaceId | string | null>(null);
   const [detail, setDetail] = useState<ChatThreadDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -443,6 +470,18 @@ export function ChatHomeScreen({
     detailRef.current = detail;
   }, [detail]);
 
+  /** ANSWER the question "which conversation?" — `null` is a real answer here
+   *  (the new-conversation composer), not the absence of one. Every deliberate
+   *  selection goes through this rather than `setSelectedRootId`, so that the
+   *  selection and the record of having made one can never drift apart. */
+  const chooseRoot = useCallback(
+    (next: EntityId | null) => {
+      selectionSpaceRef.current = spaceId;
+      setSelectedRootId(next);
+    },
+    [spaceId],
+  );
+
   /**
    * ADOPT the addressed conversation (D1): back/forward and shared links win
    * over the current selection; a bare address changes nothing. The select
@@ -480,13 +519,20 @@ export function ChatHomeScreen({
    * ref, and a render pass is not allowed to do any of that. It also does not
    * need to be early — it lands on the new-conversation composer, which is not
    * a thread whose turns could be shown under the wrong selection.
+   *
+   * AN ADDRESSED THREAD IS A CHOICE, so the adoption goes through `chooseRoot`
+   * — it is what stops the cold-start auto-open below from opening the most
+   * recent conversation over the top of a thread the host explicitly named.
+   * The ref it writes is not rolled back when React throws this render away,
+   * and does not need to be: `adopted` is discarded with the render too, so the
+   * pair re-runs on the next one and settles on the same answer either way.
    */
   const [adopted, setAdopted] = useState<{ readonly value: EntityId | null | undefined } | null>(
     null,
   );
   if (adopted === null || adopted.value !== routeThreadId) {
     setAdopted({ value: routeThreadId });
-    if (routeThreadId && routeThreadId !== selectedRootId) setSelectedRootId(routeThreadId);
+    if (routeThreadId && routeThreadId !== selectedRootId) chooseRoot(routeThreadId);
   }
 
   /* SOLO (Craft, the phone) READS `null` AS AN INSTRUCTION, not as silence.
@@ -496,12 +542,20 @@ export function ChatHomeScreen({
      column, and overriding the viewer's row click from it would be wrong. */
   useEffect(() => {
     if (!soloConversation || routeThreadId !== null) return;
-    setSelectedRootId(null);
+    /* A `null` FROM THE HOST IS THE VERB ONLY ONCE THERE IS SOMETHING TO
+       CLEAR. Before anything has been chosen it is merely the shell's initial
+       state — the host mounts holding `null` — and treating that as a choice
+       would settle the selection on the composer and starve the cold-start
+       auto-open below, which is the phone's only way in. After a selection
+       exists, the same `null` is the viewer pressing New conversation, and it
+       is recorded as an answer so no background refresh may take it back. */
+    if (selectionSpaceRef.current === spaceId) chooseRoot(null);
+    else setSelectedRootId(null);
     setDetail(null);
     stoppedRootRef.current = null;
     setPhase('idle');
     setSubmitError(null);
-  }, [routeThreadId, soloConversation]);
+  }, [chooseRoot, routeThreadId, soloConversation, spaceId]);
 
   /* Publish the list and the RESOLVED selection to a solo host — see the
      props' docblocks for why these are two callbacks and not one.
@@ -555,20 +609,39 @@ export function ChatHomeScreen({
     onSelectionChange?.(selectedRootId);
   }, [selectedRootId, onSelectionChange]);
 
-  /** Re-read the space's thread list. SPACE-SCOPED IN BOTH DIRECTIONS: the
-   *  read is issued for the space this closure was built for, and a result
-   *  that lands after the viewer switched projects is DROPPED rather than
-   *  written. Without that second half a list read started in the old project
-   *  finishes into the new one and overwrites it — the switch-doesn't-update
-   *  report. Callers get a promise that resolves either way; nothing depends
-   *  on distinguishing "read the list" from "read a list we then discarded". */
+  /**
+   * Re-read the space's thread list.
+   *
+   * SPACE-SCOPED IN BOTH DIRECTIONS: the read is issued for the space this
+   * closure was built for, and a result that lands after the viewer switched
+   * projects is DROPPED rather than written. Without that second half a list
+   * read started in the old project finishes into the new one and overwrites
+   * it — the switch-doesn't-update report. Callers get a promise that resolves
+   * either way; nothing depends on distinguishing "read the list" from "read a
+   * list we then discarded".
+   *
+   * IT DOES NOT MOVE THE SELECTION, and `preferRoot` is the only way a caller
+   * asks it to. Everything else here is a background re-read — the subscribe
+   * handler runs one for every frame from a root the list has not seen, so
+   * another member's turn, or any agent starting a thread anywhere in the
+   * space, arrives as one — and a background re-read must leave the viewer
+   * exactly where they are, mid-conversation or mid-draft on an empty composer.
+   * The auto-open at the bottom is the cold start's, not this function's: it
+   * can only fire while nothing has been chosen in this space, which is when a
+   * refresh happens to beat the opening read.
+   */
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
     if (spaceRef.current !== spaceId) return;
     knownRootsRef.current = new Set(next.map((thread) => thread.rootId));
     setThreads(next);
-    setSelectedRootId((current) => preferRoot ?? current ?? next[0]?.rootId ?? null);
-  }, [port, spaceId]);
+    if (preferRoot !== undefined) {
+      chooseRoot(preferRoot);
+      return;
+    }
+    if (selectionSpaceRef.current === spaceId) return;
+    chooseRoot(next[0]?.rootId ?? null);
+  }, [chooseRoot, port, spaceId]);
 
   /** Read a thread snapshot and replay every cached frame over it, so frames
    *  published after the read began are never lost. Phase is NOT derived here —
@@ -636,8 +709,18 @@ export function ChatHomeScreen({
            server exposes is KIND-level (`spaces.counts`), and `read_marks` is
            not written per thread. When per-thread unread lands, the accepted
            default is that this auto-open marks read like any other open — see
-           the panel's block comment. */
-        setSelectedRootId(nextThreads[0]?.rootId ?? null);
+           the panel's block comment.
+
+           COLD, meaning nothing has been chosen in this space — the guard is
+           what makes the word true. This effect re-runs on more than a first
+           mount (a space change, a new port), and unconditionally opening the
+           most recent conversation on each of those threw away whatever the
+           viewer had picked, the new-conversation composer and its typed draft
+           included. A space the viewer HAS chosen in fails the test on its own,
+           so entering a different space is still a cold start. */
+        if (selectionSpaceRef.current !== spaceId) {
+          chooseRoot(nextThreads[0]?.rootId ?? null);
+        }
         setTeammateId(nextTeammates[0]?.id ?? '');
       })
       .catch((error: unknown) => {
@@ -649,7 +732,7 @@ export function ChatHomeScreen({
     return () => {
       alive = false;
     };
-  }, [port, spaceId]);
+  }, [chooseRoot, port, spaceId]);
 
   useEffect(() => {
     activeRootRef.current = selectedRootId;
@@ -1236,7 +1319,7 @@ export function ChatHomeScreen({
       expectingRootRef.current = root.threadRootId;
       expectingMarkRef.current = frameSeqRef.current;
       preTurnIdsRef.current = new Set();
-      setSelectedRootId(root.threadRootId);
+      chooseRoot(root.threadRootId);
       onThreadSelected?.(root.threadRootId);
       setPhase('streaming');
       await refreshThreads(root.threadRootId);
@@ -1257,6 +1340,7 @@ export function ChatHomeScreen({
     anchorId,
     busy,
     chatMode,
+    chooseRoot,
     draft,
     loadDetail,
     newMutationId,
@@ -1379,7 +1463,7 @@ export function ChatHomeScreen({
             active: onChatsRoot,
             onSelect: () => setRoot(CHATS_ROOT),
             onCreate: () => {
-              setSelectedRootId(null);
+              chooseRoot(null);
               setDetail(null);
               stoppedRootRef.current = null;
               setPhase('idle');
@@ -1454,7 +1538,7 @@ export function ChatHomeScreen({
                       }
                       onClick={() => {
                         /* D7: selecting a chat puts the conversation in B. */
-                        setSelectedRootId(thread.rootId);
+                        chooseRoot(thread.rootId);
                         onShowChat?.();
                         onThreadSelected?.(thread.rootId);
                       }}
