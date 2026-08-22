@@ -26,6 +26,25 @@ export type AgentMode =
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
 
 /**
+ * work_sessions.ended_kind — the six classes 171's CHECK allows. Mirrored here
+ * rather than imported from the contract, exactly as WorkSessionStatus above
+ * is: this package states the database's vocabulary, and the contract states
+ * the wire's. They are kept identical deliberately, not by coupling.
+ *
+ * `out_of_memory` is kernel evidence (the cgroup oom_kill counter), never an
+ * inference from a signal number — a SIGKILL from a deploy and a SIGKILL from
+ * the OOM killer look identical at the process level, and only one of them is
+ * a legitimate death.
+ */
+export type WorkSessionEndedKind =
+  | 'completed'
+  | 'stopped_by_operator'
+  | 'server_restart'
+  | 'out_of_memory'
+  | 'crashed'
+  | 'unknown';
+
+/**
  * Permission posture handed to the agent. Named for old maestro's vocabulary
  * because the personas carry these exact strings in team_members.permission_mode
  * and an import must not have to translate them.
@@ -376,6 +395,18 @@ export interface TransitionInput {
   status: WorkSessionStatus;
   exitCode?: number | null;
   error?: string | null;
+  /**
+   * The ending facts (171). Only meaningful with a terminal status; the RPC
+   * ignores them otherwise rather than date-stamping an ending that has not
+   * happened.
+   *
+   * `endedReason` is ONE PLAIN-ENGLISH SENTENCE, for a reader who is not a
+   * developer. `error` keeps the technical diagnostic — the two are not
+   * interchangeable, and the reason must never be a signal name or an exit
+   * code.
+   */
+  endedKind?: WorkSessionEndedKind | null;
+  endedReason?: string | null;
 }
 
 export interface RecordCommandInput {

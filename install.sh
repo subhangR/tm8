@@ -437,7 +437,7 @@ Group=${TM8_ENV_RUN_USER}
 WorkingDirectory=${TM8_ENV_CHECKOUT}
 EnvironmentFile=${TM8_ENV_ENVFILE}
 ExecStart=${NODE_BIN} --enable-source-maps ${TM8_ENV_CHECKOUT}/packages/server/dist/index.js
-Restart=on-failure
+Restart=always
 RestartSec=3
 KillSignal=SIGTERM
 TimeoutStopSec=20
@@ -1344,9 +1344,12 @@ if (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]]; then
       || { rm -f "$tmp"; need_root_hint "install -m 0644 <rendered> $unit_path"; die "cannot write $unit_path"; }
     rm -f "$tmp"
     as_root systemctl daemon-reload || die "systemctl daemon-reload failed"
-    # NEVER a signal. A clean node shutdown exits 0, so with Restart=on-failure a
-    # `kill -TERM` "restart" leaves the unit INACTIVE and the instance silently
-    # DOWN. systemctl is the only verb used here.
+    # systemctl is still the verb used HERE, because this runs as root and a
+    # restart is what is meant. The unit is Restart=always now, so `kill -TERM`
+    # is also a correct restart for an operator without passwordless sudo —
+    # which is what made the old on-failure setting dangerous: it left SIGKILL
+    # as the only working restart, and SIGKILL runs no shutdown handler, so
+    # nothing recorded why the live agents died (171).
     as_root systemctl enable "$UNIT_NAME" || die "systemctl enable $UNIT_NAME failed"
     # `restart`, NOT `enable --now`. `--now` only STARTS a unit that is stopped,
     # so on the case this installer exists to serve — upgrading a node that is
@@ -1365,9 +1368,10 @@ elif (( USE_SERVICE )) && [[ "$SERVICE_KIND" == launchd ]]; then
   # this is the second of the two jobs. RunAtLoad + KeepAlive means it comes up at
   # login and is restarted if it dies — the launchd analogue of enable --now with
   # Restart. KeepAlive here is UNCONDITIONAL (restart on any exit), which is the
-  # right choice and not the systemd hazard's mirror: on Linux `Restart=on-failure`
-  # plus a clean exit 0 leaves the unit down, so a signal "restart" silently
-  # stops it; launchd's KeepAlive=true brings the server back even after a clean
+  # right choice, and it is what the systemd side now does too: `Restart=always`
+  # plus a clean exit 0 brings the unit back, so a signal "restart" is a real
+  # restart. (Under the old `Restart=on-failure` it silently stopped the unit
+  # instead.) launchd's KeepAlive=true brings the server back even after a clean
   # exit, so a node that shuts down cleanly on a transient DB blip is restarted
   # rather than left down. Stopping it is `launchctl bootout`, which --uninstall
   # and a re-install both do.
@@ -1465,7 +1469,7 @@ elif (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]]; then
     printf '\n'; warn "no db:ok on $TM8_ENV_SERVER_PORT within 60s"
     info "last 30 log lines:"
     journalctl -u "$UNIT_NAME" -n 30 --no-pager 2>&1 | sed 's/^/        /' || true
-    # The unit is enabled with Restart=on-failure/RestartSec=3, so a server that
+    # The unit is enabled with Restart=always/RestartSec=3, so a server that
     # cannot boot is now respawning every ~3s. Say so, and how to stop it — a
     # bare `die` would leave a crash-loop running with no way out named.
     warn "the unit is enabled and will respawn the server every ~3s until you stop it:"

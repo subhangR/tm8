@@ -46,7 +46,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { loadUnreadCounts } from '../facade/entity-read.js';
+import { isEndedKind, loadUnreadCounts } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -243,6 +243,8 @@ interface SummaryRow {
   ws_exited_at: Date | string | null;
   ws_checkout_branch: string | null;
   ws_workdir_mode: string | null;
+  ws_ended_kind: string | null;
+  ws_ended_reason: string | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -360,6 +362,8 @@ select
   ws.exited_at       as ws_exited_at,
   ws.checkout_branch as ws_checkout_branch,
   ws.workdir_mode    as ws_workdir_mode,
+  ws.ended_kind      as ws_ended_kind,
+  ws.ended_reason    as ws_ended_reason,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
   f.size_bytes       as file_size_bytes,
@@ -1087,6 +1091,12 @@ export class PgEntityProjector implements EntityProjector {
           r.ws_workdir_mode === 'scratch'
             ? { workdirMode: r.ws_workdir_mode }
             : {}),
+          // The ending facts (171) — MIRRORS entity-read.ts stateOf for the
+          // same reason the lane facts do: an event-borne summary and a read
+          // summary that disagree about the same row is the drift 165 exists
+          // to prevent. An unrecognised kind projects null, never through.
+          endedKind: isEndedKind(r.ws_ended_kind) ? r.ws_ended_kind : null,
+          endedReason: r.ws_ended_reason ?? null,
         };
       case 'file':
         return {

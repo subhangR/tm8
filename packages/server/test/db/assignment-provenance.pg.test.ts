@@ -211,6 +211,20 @@ describe.sequential('task assignment provenance (129)', () => {
     // maintains that column from `tasks.work_status`. It touches no function
     // this suite exercises, so the position statement survives it too.
     database.apply(['147_entity_status_category.sql']);
+    // …and 171, for EXACTLY the reason 135 and 147 are here — the third
+    // instance of one recurring shape, not a new judgement call. 171 added
+    // `work_sessions.ended_kind` / `.ended_reason` to the `ws.` arm of the
+    // shared summary SELECT in `entity-read.ts`, so current code selects two
+    // columns a 129-era schema does not have and `loadEntitySummariesByIds`
+    // refuses to run — the identical failure 135 and 147 each caused, with a
+    // different relation again (`column ws.ended_kind does not exist`).
+    // Same safety argument, checked the same way: 171 touches only
+    // `public.work_sessions` (two nullable columns and one CHECK), one trigger
+    // on that table, and the `work_session_transition` signature. This suite
+    // exercises assignment provenance on tasks and members and calls no
+    // function 171 redefines, so the position statement at 129 survives it.
+    // Verified applying clean directly onto the tranche.
+    database.apply(['171_session_ended_reason.sql']);
   }, 180_000);
 
   afterAll(async () => {
