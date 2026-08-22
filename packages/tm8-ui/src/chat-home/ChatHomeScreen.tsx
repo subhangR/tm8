@@ -25,6 +25,12 @@ import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
 import type { ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
+import {
+  chatModelChoices,
+  firstRunnableModel,
+  hasRunnableModel,
+  type ChatModelChoice,
+} from './chat-models';
 import { EntityTray } from './EntityTray';
 import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
@@ -385,7 +391,19 @@ export function ChatHomeScreen({
   const [phase, setPhase] = useState<ComposerPhase>('idle');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
-  const [modelId, setModelId] = useState(models[0]?.model ?? '');
+  /**
+   * THE MODEL THE NEXT TURN WILL RUN ON — not the model this thread was born
+   * with. Those used to be the same fact because the choice was write-once; a
+   * turn may now name its own model (contract `PostMessageInput.model`), so
+   * this is a live selection for as long as the conversation lasts.
+   *
+   * Seeded with the first model that can actually RUN here rather than with
+   * `models[0]`, which may be a Codex entry this surface cannot launch. See
+   * `chat-models.ts`.
+   */
+  const [modelId, setModelId] = useState(
+    () => firstRunnableModel(chatModelChoices(models))?.model ?? '',
+  );
   const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? 'ask');
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
@@ -956,10 +974,85 @@ export function ChatHomeScreen({
   const followedHeightRef = useRef(-1);
 
   const activeConfig = detail?.summary.config ?? null;
-  const selectedModel = useMemo(
-    () => models.find((model) => model.model === modelId) ?? null,
-    [modelId, models],
-  );
+  /**
+   * Every model on offer, each carrying what this surface knows about it. The
+   * one seam the picker reads — see `chat-models.ts` for what replaces its
+   * input when model discovery lands.
+   */
+  const modelChoices = useMemo(() => chatModelChoices(models), [models]);
+  /**
+   * The selected model, and only if it can RUN. A model that cannot launch
+   * here is not a selection this composer will act on — the picker refuses it,
+   * and this is the second place that refusal is made rather than assumed.
+   *
+   * THE THREAD'S OWN MODEL IS ALWAYS SELECTABLE, catalog or no catalog. A model
+   * can be retired from the catalog after a thread was configured on it, and
+   * the thread keeps running on it regardless — the server reads its model from
+   * the binding, not from this browser. Requiring catalog membership here would
+   * make a person unable to SEND in a working conversation because a list they
+   * never see no longer mentions the model already answering them. Sending it
+   * changes nothing either way: an override is only transmitted when it differs
+   * from the thread's default, and this is exactly the case where it does not.
+   */
+  const selectedModel = useMemo(() => {
+    const offered = modelChoices.find(
+      (choice) => choice.model === modelId && choice.suitability.unavailable === null,
+    );
+    if (offered) return offered;
+    if (activeConfig && modelId === activeConfig.model) {
+      return {
+        model: activeConfig.model,
+        label: activeConfig.modelLabel,
+        suitability: { unavailable: null, tier: null },
+      } satisfies ChatModelChoice;
+    }
+    return null;
+  }, [modelId, modelChoices, activeConfig]);
+  /**
+   * ADOPT THE THREAD'S MODEL WHEN A CONFIGURED THREAD IS OPENED.
+   *
+   * The picker shows what the NEXT turn will run on, and for a thread already
+   * under way the honest default is what it has been running on — a composer
+   * that silently proposed a different model than the one answering would be
+   * the same lie as one that could not be changed at all. From there the person
+   * may pick something else and the next turn carries it.
+   *
+   * Keyed on the thread's id, not on its model: re-running this whenever the
+   * config object changes identity would drag the selection back to the
+   * thread's default every time a snapshot reloaded, and the person's choice
+   * would be undone by a refresh they did not ask for.
+   */
+  const adoptedRootRef = useRef<EntityId | null>(null);
+  useEffect(() => {
+    if (!selectedRootId || !activeConfig) {
+      adoptedRootRef.current = null;
+      /**
+       * …AND HAND IT BACK WHEN LEAVING FOR A NEW CONVERSATION.
+       *
+       * Adopting is only half of it. A thread may legitimately be running a
+       * model the catalog no longer offers — that model stays sendable INSIDE
+       * that thread, because the server reads it from the binding — but a NEW
+       * conversation has no binding to read, so a selection carried over from
+       * the thread just closed would leave the composer refusing to send with
+       * no control the person could use to fix it. That is the exact sequence
+       * `craft-screen` walks: open a conversation, press ＋, type, send.
+       *
+       * A selection that IS offerable survives untouched, because switching
+       * away from a thread is not a reason to undo a deliberate choice.
+       */
+      setModelId((current) => (
+        modelChoices.some(
+          (choice) => choice.model === current && choice.suitability.unavailable === null,
+        )
+          ? current
+          : firstRunnableModel(modelChoices)?.model ?? current
+      ));
+      return;
+    }
+    if (adoptedRootRef.current === selectedRootId) return;
+    adoptedRootRef.current = selectedRootId;
+    setModelId(activeConfig.model);
+  }, [selectedRootId, activeConfig, modelChoices]);
   const busy = isBusyPhase(phase);
   /** A thread being BORN — the two round trips between Send and a root that
    *  exists. There is no `detail` to hang a pulse off during either, which is
@@ -1031,23 +1124,31 @@ export function ChatHomeScreen({
     teammateId === ''
       ? 'No agent teammate is available in this space.'
       : !selectedModel
-        ? 'No model is available from the launch catalog.'
+        ? (hasRunnableModel(modelChoices)
+          ? 'Pick a model this chat can run.'
+          : 'No model this chat can run is available.')
         : null;
   const refusal = startUnavailable ?? selectionUnavailable;
 
   /**
-   * THE THREAD'S THREE WRITE-ONCE FACTS, as the composer's drop-ups read them.
+   * THE THREAD'S SETTINGS, as the composer's drop-ups read them.
    *
-   * A configured thread shows what it was STARTED with and refuses edits; a new
-   * thread shows the pending selection and takes them. The two lists carry the
-   * config's own label when the catalog no longer offers it — a teammate can
-   * leave the space and a model can be retired from the launch catalog after a
-   * thread pinned it, and a trigger reading "—" would hide the very fact the
-   * thread is pinned to.
+   * TWO OF THE THREE ARE WRITE-ONCE; THE MODEL IS NOT ANY MORE. Teammate and
+   * mode are still the thread's for its whole life, and a configured thread
+   * shows what it was started with and refuses edits to them. The model is now
+   * a per-turn choice: the thread keeps the model it was born with as its
+   * default, and each turn either inherits it or names its own
+   * (`PostMessageInput.model`, migration 170). So the model drop-up stays live
+   * for the life of the conversation, showing what the NEXT turn will run on.
+   *
+   * The lists still carry the config's own label when the catalog no longer
+   * offers it — a teammate can leave the space and a model can be retired after
+   * a thread used it, and a trigger reading "—" would hide the very fact the
+   * thread is on.
    */
   const pinned = activeConfig !== null;
   const shownTeammateId = activeConfig?.teammateId ?? teammateId;
-  const shownModelId = activeConfig?.model ?? modelId;
+  const shownModelId = modelId;
   const shownMode = activeConfig?.mode ?? chatMode;
   const teammateOptions = useMemo(() => {
     const base = teammates.map((teammate) => ({
@@ -1064,15 +1165,22 @@ export function ChatHomeScreen({
       : base;
   }, [teammates, activeConfig]);
   const modelOptions = useMemo(() => {
-    const base = models.map((model) => ({
-      id: model.model,
-      label: model.label,
-      hint: model.provider,
+    const base = modelChoices.map((choice) => ({
+      id: choice.model,
+      label: choice.label,
+      ...(choice.hint ? { hint: choice.hint } : {}),
+      // A model this chat cannot launch is SHOWN with its reason rather than
+      // dropped — `ComposerSelect` renders the row unpickable and says why.
+      // Before this, the picker offered all three Codex entries and the only
+      // way to learn they could not run was to send and read the refusal.
+      ...(choice.suitability.unavailable
+        ? { unavailable: choice.suitability.unavailable }
+        : {}),
     }));
     return activeConfig && !base.some((option) => option.id === activeConfig.model)
       ? [{ id: activeConfig.model, label: activeConfig.modelLabel }, ...base]
       : base;
-  }, [models, activeConfig]);
+  }, [modelChoices, activeConfig]);
 
   /**
    * THE COMPOSER IS THE SHARED RICH INPUT (chip placement, R4).
@@ -1264,6 +1372,15 @@ export function ChatHomeScreen({
           body,
           clientMutationId: newMutationId('chat-turn'),
           ...(attachmentIds.length ? { attachmentIds } : {}),
+          /* THE OVERRIDE IS SENT ONLY WHEN IT IS ONE. An explicit model equal
+             to the thread's default is not wrong, but it is noise on every
+             message of every conversation that never changed model — and it
+             would make "this turn asked for something different" unreadable in
+             the stored rows. Absent means "whatever the thread runs on", which
+             is both smaller and truer. */
+          ...(activeConfig && selectedModel.model !== activeConfig.model
+            ? { model: selectedModel.model }
+            : {}),
         });
         // Clear only the draft we actually sent — if the user switched threads
         // and typed something new while the post was in flight, keep it.
@@ -1338,6 +1455,7 @@ export function ChatHomeScreen({
       }
     }
   }, [
+    activeConfig,
     anchorId,
     busy,
     chatMode,
@@ -1827,9 +1945,15 @@ export function ChatHomeScreen({
             ) : null}
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
             {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
+            {/* "YOU STOPPED THIS", AND NOTHING THAT READS AS BREAKAGE.
+                The status model of the design of record (doc 01a02907 §3) gives
+                `cancelled` this exact sentence and this exact tone — attributed
+                to the person, never a failure — and the crew vocabulary spells
+                it the same way for a stopped helper. It is a `status`, not an
+                `alert`: the person who stopped it does not need announcing to. */}
             {phase === 'stopped-continuable' ? (
               <p className="tch-continuable" role="status">
-                Turn stopped · this thread is continuable. Send another message to resume.
+                You stopped this. Send another message to pick up where it left off.
               </p>
             ) : null}
             <ComposerCard
@@ -1922,13 +2046,17 @@ export function ChatHomeScreen({
                     disabled={pinned}
                     emptyNote="No agent teammate is available in this space."
                   />
+                  {/* NOT `disabled={pinned}` — the one control here that a
+                      configured thread keeps. Mode and teammate are the
+                      thread's for its whole life; the model is the next turn's,
+                      and a person who wants a different one mid-conversation
+                      can now have it without abandoning the conversation. */}
                   <ComposerSelect
                     label="Chat model"
                     testId="tch-model"
                     options={modelOptions}
                     value={shownModelId}
                     onChange={setModelId}
-                    disabled={pinned}
                     emptyNote="No model is available from the launch catalog."
                   />
                 </span>
@@ -2295,7 +2423,10 @@ function phaseLabel(phase: ComposerPhase): string {
     // Streaming is announced by the send button itself (the working loader),
     // not by a second label fighting the pinned chip for the same row.
     case 'streaming': return '';
-    case 'stopped-continuable': return 'Stopped · continuable';
+    // The phase chip is the terse one — the sentence under the transcript
+    // carries the rest. "Stopped · continuable" was two machine words dressed
+    // as English; this is what happened, said once.
+    case 'stopped-continuable': return 'You stopped this';
     default: return '';
   }
 }

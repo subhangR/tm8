@@ -200,6 +200,8 @@ import type {
   HomeSnapshot,
   StartChatThreadInput,
   StartChatThreadResult,
+  InterruptChatThreadInput,
+  InterruptChatThreadResult,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -812,6 +814,17 @@ export interface Seam {
      * root message id; the op never creates messages and triggers turn 1.
      */
     startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult>;
+    /**
+     * The contract's `chat.threads.interrupt` — stop the turn a thread is
+     * running. Addressed by the thread ROOT, because that is what the chat
+     * runtime is keyed by: a chat thread has no work_session anywhere in its
+     * path for `commands.terminate` to target, which is why stopping one
+     * needed an operation of its own rather than a reuse.
+     */
+    interruptChatThread(
+      rootMessageId: EntityId,
+      input: InterruptChatThreadInput,
+    ): Promise<InterruptChatThreadResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;

@@ -46,6 +46,20 @@ export interface ComposerSelectOption {
   hint?: string;
   /** Teammates only, so the trigger and the rows draw the real face. */
   actor?: { id: EntityId; avatar?: string | null };
+  /**
+   * Why this option CANNOT be picked here, in the caller's own words. Present
+   * ⇒ the row still draws, still reads, and refuses the press.
+   *
+   * UNAVAILABLE IS NOT INVISIBLE — the rule the composer's own Stop button
+   * already follows a few lines away. A model this surface cannot run is a
+   * FACT ABOUT THE MODEL, and dropping it from the list turns that fact into an
+   * absence a person has to guess at. Shown with its reason, the list answers
+   * the question instead of raising it.
+   *
+   * The reason REPLACES `hint` on the row: a row that says both "OpenAI" and
+   * "cannot run here" has buried the half that matters.
+   */
+  unavailable?: string;
 }
 
 export interface ComposerSelectProps {
@@ -115,8 +129,37 @@ export function ComposerSelect({
   const menuId = useId();
 
   const choose = (option: ComposerSelectOption): void => {
+    // The row that states why it cannot be picked must also not be pickable.
+    // Guarded HERE rather than only on the row, because Enter on the keyboard
+    // path reaches this function without going through the click handler.
+    if (option.unavailable) return;
     onChange(option.id);
     close();
+  };
+
+  /**
+   * The next SELECTABLE row in `direction`, wrapping. Arrow keys must not park
+   * the highlight on a row Enter would refuse — that reads as a broken keyboard
+   * rather than as an unavailable option. Returns `from` unchanged when nothing
+   * else can be picked, so a list of entirely unavailable rows still highlights
+   * one and still reads its reason.
+   */
+  const nextSelectable = (from: number, direction: 1 | -1): number => {
+    const count = options.length;
+    if (count === 0) return 0;
+    for (let step = 1; step <= count; step += 1) {
+      const index = (from + direction * step + count * count) % count;
+      if (!options[index]?.unavailable) return index;
+    }
+    return from;
+  };
+
+  /** Where the highlight lands when the menu opens: the current value if it is
+   *  still selectable, else the first row that is. */
+  const openIndex = (): number => {
+    if (selectedIndex >= 0 && !options[selectedIndex]?.unavailable) return selectedIndex;
+    const firstSelectable = options.findIndex((option) => !option.unavailable);
+    return firstSelectable >= 0 ? firstSelectable : 0;
   };
 
   /*
@@ -138,10 +181,17 @@ export function ComposerSelect({
           className="tch-pickmenu__opt"
           data-testid={`${testId}-${option.id}`}
           data-active={index === activeIndex || undefined}
+          data-unavailable={option.unavailable ? '' : undefined}
           aria-selected={option.id === value}
+          /* `aria-disabled`, not `disabled`: the row must stay reachable and
+             readable, because its reason is the thing it exists to say. A
+             `disabled` button is skipped by the very readers that most need
+             to hear why the option is out. */
+          aria-disabled={option.unavailable ? true : undefined}
           /* Hover moves the highlight so the mouse and the arrow
-             keys never disagree about which row Enter would take. */
-          onMouseEnter={() => setActive(index)}
+             keys never disagree about which row Enter would take — but it
+             never parks on a row Enter would refuse. */
+          onMouseEnter={() => { if (!option.unavailable) setActive(index); }}
           onClick={() => choose(option)}
         >
           {option.actor ? (
@@ -155,7 +205,11 @@ export function ComposerSelect({
           ) : null}
           <span className="tch-pickmenu__text">
             <span className="tch-pickmenu__name">{option.label}</span>
-            {option.hint ? (
+            {option.unavailable ? (
+              <span className="tch-pickmenu__hint tch-pickmenu__hint--out">
+                {option.unavailable}
+              </span>
+            ) : option.hint ? (
               <span className="tch-pickmenu__hint">{option.hint}</span>
             ) : null}
           </span>
@@ -203,18 +257,18 @@ export function ComposerSelect({
         aria-activedescendant={open && options.length ? `${menuId}-opt-${activeIndex}` : undefined}
         disabled={disabled}
         onClick={() => {
-          setActive(selectedIndex >= 0 ? selectedIndex : 0);
+          setActive(openIndex());
           setOpen((v) => !v);
         }}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault();
             if (!open) {
-              setActive(selectedIndex >= 0 ? selectedIndex : 0);
+              setActive(openIndex());
               setOpen(true);
             } else if (options.length) {
-              const step = event.key === 'ArrowDown' ? 1 : options.length - 1;
-              setActive((current) => (current + step) % options.length);
+              const direction = event.key === 'ArrowDown' ? 1 : -1;
+              setActive((current) => nextSelectable(current, direction));
             }
             return;
           }

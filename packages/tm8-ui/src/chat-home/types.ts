@@ -205,6 +205,14 @@ export interface ChatPostInput {
   clientMutationId: string;
   /** Same contract as `ChatRootInput.attachmentIds` — every turn may carry files. */
   attachmentIds?: EntityId[];
+  /**
+   * The model THIS turn should run on, when it differs from the one the thread
+   * was configured with. Absent ⇒ the thread's default, which is every turn of
+   * every conversation that never changed model.
+   *
+   * `PostMessageInput.model` on the wire; the Server refuses one it cannot run.
+   */
+  model?: string;
 }
 
 export interface ChatStartResult {

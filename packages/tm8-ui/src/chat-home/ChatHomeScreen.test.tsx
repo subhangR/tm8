@@ -7,10 +7,22 @@ import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures'
 import type { ChatHomePort, ChatModelOption, ChatThreadDetail, ChatTurn } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
+/**
+ * Two runnable models and one that is not. The Codex entry stays in this list
+ * ON PURPOSE: chat launches claude-code models only, so it is what proves the
+ * picker SHOWS an unrunnable model with its reason rather than hiding it — and
+ * refuses to select it.
+ */
 const MODELS: ChatModelOption[] = [
   {
     model: 'claude-sonnet-4-5',
     label: 'Sonnet 4.5',
+    provider: 'Anthropic',
+    agentTool: 'claude-code',
+  },
+  {
+    model: 'claude-opus-4-5',
+    label: 'Opus 4.5',
     provider: 'Anthropic',
     agentTool: 'claude-code',
   },
@@ -127,10 +139,12 @@ describe('Chat Home', () => {
     expect(readLine.textContent).toBe('Read 1 task');
     expect(view.queryByTestId('chat-tool-card')).toBeNull();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
-    // A configured thread still SAYS what it runs as; it just cannot be edited.
+    // A configured thread still SAYS what its teammate and mode are; those two
+    // cannot be edited. The MODEL can: it is the next turn's choice, not the
+    // thread's, so its drop-up stays live for the life of the conversation.
     expect((view.getByLabelText('Chat teammate') as HTMLButtonElement).disabled).toBe(true);
     expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
-    expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(false);
     expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
     // The pinned state is the disabled triggers themselves — the foot carries
     // controls, not copy (user ruling 2026-08-18).
@@ -159,7 +173,7 @@ describe('Chat Home', () => {
     fireEvent.keyDown(view.getByLabelText('Chat teammate'), { key: 'Escape' });
 
     fireEvent.click(view.getByLabelText('Chat model'));
-    fireEvent.click(view.getByTestId('tch-model-gpt-5.6-sol'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-5'));
     fireEvent.click(view.getByLabelText('Chat mode'));
     fireEvent.click(view.getByTestId('tch-mode-build'));
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
@@ -175,7 +189,7 @@ describe('Chat Home', () => {
       clientMutationId: 'chat-root:test',
     });
     expect(controls.configs[0]).toMatchObject({
-      model: 'gpt-5.6-sol',
+      model: 'claude-opus-4-5',
       mode: 'build',
       clientMutationId: 'chat-config:test',
     });
@@ -281,8 +295,12 @@ describe('Chat Home', () => {
     await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /stop/i }));
 
-    await waitFor(() => expect(view.getByText('Stopped · continuable')).toBeTruthy());
-    expect(view.getByText(/this thread is continuable/i)).toBeTruthy();
+    /* "You stopped this" — the design's own sentence (doc 01a02907 section 3),
+       attributed to the person and never reading as a failure. Both the phase
+       chip and the line under the transcript say it, and neither says
+       "stopped · continuable", which was two machine words dressed as English. */
+    await waitFor(() => expect(view.getByText('You stopped this')).toBeTruthy());
+    expect(view.getByText(/pick up where it left off/i)).toBeTruthy();
     expect((view.getByLabelText('Message the chat agent') as HTMLTextAreaElement).disabled).toBe(false);
     expect(controls.interrupts).toEqual(['019f0000-0000-7000-8000-000000000010']);
     expect(view.getByText('I found the current context before the turn was stopped.')).toBeTruthy();
@@ -303,7 +321,7 @@ describe('Chat Home', () => {
         usage: {},
       });
     });
-    expect(view.getByText('Stopped · continuable')).toBeTruthy();
+    expect(view.getByText('You stopped this')).toBeTruthy();
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Continue from the persisted result.' },

@@ -305,9 +305,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(169);
-    expect(rows).toHaveLength(169);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(169);
+    // 169 -> 170 (chat run controls): chat.threads.interrupt.
+    expect(SURFACE).toHaveLength(170);
+    expect(rows).toHaveLength(170);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(170);
   });
 
   /**
@@ -857,7 +858,26 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // THIS NUMBER ASSUMES THIS BRANCH IS THE NEXT MIGRATION TO LAND. If #517
     // lands first it adds two files and the merged tree is 161, not 159.
     // Re-measure on the merged tree; do not adjust by arithmetic.
-    expect(server.appliedMigrations.length).toBe(159);
+    //
+    // 159 -> 161 (2026-08-22, chat run controls, AT MERGE): THIS BRANCH IS THE
+    // SECOND LANDER, which is the case the row above told the next person to
+    // handle. #514 landed first (main 8ae2f29d, 159 files), so this branch's
+    // earlier pin of 160 — measured when main was d681023f/158 and #514 was
+    // still open — is now wrong by exactly #514's one file.
+    //
+    // 161 APPEARS ON NEITHER SIDE OF THE MERGE CONFLICT. HEAD offered 160 and
+    // origin/main offered 159; the correct value is on neither, so this could
+    // not be resolved by picking a side and was not. RE-MEASURED on the merged
+    // tree, three independent ways, exactly as the row above instructs:
+    //   ls db/migrations/*.sql | wc -l              -> 161
+    //   git ls-files db/migrations | grep -c '.sql' -> 161
+    //   find db/migrations -name '*.sql' | wc -l    -> 161
+    // All three of the afternoon's migrations are present and every prefix is
+    // unique (checked, no duplicates): 169_chat_turn_stopped_state.sql and
+    // 170_chat_per_turn_model.sql from this branch, 171_session_ended_reason.sql
+    // from #514. The 169/170-versus-171 renumber the row above describes did its
+    // job: the merged tree that no CI run ever builds is clean.
+    expect(server.appliedMigrations.length).toBe(161);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

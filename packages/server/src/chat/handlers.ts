@@ -5,6 +5,8 @@ import {
   ChatThreadSummarySchema,
   CollabError,
   launchModel,
+  type EntityId,
+  type InterruptChatThreadResult,
   type StartChatThreadInput,
   type StartChatThreadResult,
 } from '@tm8/contract';
@@ -85,10 +87,52 @@ function startChatThread(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationH
   };
 }
 
+/**
+ * chat.threads.interrupt — stop the turn this thread is running.
+ *
+ * READ THEN ASK, in that order. The thread is read under the caller's own
+ * claims first, so a caller who cannot see the thread is told it is not there
+ * rather than being allowed to stop it, and a root id that is not a chat thread
+ * at all fails as a not-found instead of quietly answering "nothing running".
+ *
+ * NOT LEDGERED, which is a deliberate difference from every other chat command.
+ * The ledger replays a mutation to its stored result; an interrupt has no
+ * stored result to replay, because what it does is signal a process. Replaying
+ * `stopped: true` for a run that has since ended would be a fabricated answer
+ * about the present. `clientMutationId` is still required and still travels, so
+ * the request stays traceable.
+ */
+function interruptChatThread(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler {
+  return async (ctx) => {
+    const rootMessageId = ctx.params.rootMessageId as EntityId | undefined;
+    if (!rootMessageId) throw new CollabError('invalid_input', 'rootMessageId is required');
+    const owner = await facade.owner();
+    const requestClaims = claimsFor(owner, ctx);
+    if (!requestClaims.identityId) {
+      throw new CollabError('unauthenticated', 'authentication is required');
+    }
+    if (!chat) {
+      throw new CollabError('upstream_unavailable', 'chat runtime is unavailable on this node');
+    }
+    const rows = await facade.db.query<{ root_message_id: string }>(
+      requestClaims,
+      'select root_message_id from public.chat_threads where root_message_id = $1',
+      [rootMessageId],
+    );
+    if (rows.length === 0) throw new CollabError('not_found', 'chat thread not found');
+    const result: InterruptChatThreadResult = {
+      rootMessageId,
+      stopped: await chat.orchestrator.interrupt(rootMessageId),
+    };
+    return result;
+  };
+}
+
 export function registerChatHandlers(
   registry: HandlerRegistry,
   facade: FacadeDeps,
   chat?: ChatHandlerDeps,
 ): void {
   registry.register('chat.threads.start', startChatThread(facade, chat));
+  registry.register('chat.threads.interrupt', interruptChatThread(facade, chat));
 }

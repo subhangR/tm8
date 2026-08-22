@@ -5,6 +5,7 @@ import {
   decodeCursor,
   encodeCursor,
   isCollabError,
+  launchModel,
   type AddMessageAttachmentsInput,
   type DeleteMessageInput,
   type HandoffDeliveryStatus,
@@ -424,6 +425,37 @@ export class W2MessagesHandoffsService {
     if (Math.max(1, requestedAnchorIds.length) * attachmentIds.length > 64) {
       throw new CollabError('invalid_input', 'anchor × attachment pairs must not exceed 64');
     }
+    /**
+     * THE PER-TURN MODEL IS REFUSED HERE OR NOWHERE (170).
+     *
+     * The schema bounds its shape and the column bounds its length, but neither
+     * can know whether this node can actually RUN it — that answer is in the
+     * launch catalog, and this is the first layer that can see both. Left
+     * unchecked, an unrunnable override would be stored on the message, copied
+     * onto the turn, and fail at the far end of the queue as a runtime error on
+     * a turn the person is watching, minutes after the send that caused it.
+     *
+     * The rule is the one `chat.threads.start` already applies to a thread's
+     * FIRST model, quoted here rather than re-derived: chat v1 runs claude-code
+     * models only. Both refusals name the model and the reason, so the two read
+     * the same whether a person is starting a conversation or changing its mind
+     * halfway through.
+     */
+    if (input.model !== undefined) {
+      const requested = launchModel(input.model);
+      if (!requested) {
+        throw new CollabError(
+          'invalid_input',
+          `unsupported chat model: ${input.model}`,
+        );
+      }
+      if (requested.agentTool !== 'claude-code') {
+        throw new CollabError(
+          'invalid_input',
+          `chat v1 runs claude-code models only; '${input.model}' launches via ${requested.agentTool}`,
+        );
+      }
+    }
 
     const stored = await withG04Reasons(() => this.deps.db.tx(claims, async (q) => {
       let anchorIds = requestedAnchorIds;
@@ -449,6 +481,10 @@ export class W2MessagesHandoffsService {
         // to messages.requested_chat_mode; only meaningful for a chat-thread
         // anchor, ignored otherwise.
         input.mode ?? null,
+        // Per-turn chat model (170): the same carrier for the other thing a
+        // person changes between turns, validated against the launch catalog
+        // above. NULL ⇒ the thread's write-once default model applies.
+        input.model ?? null,
       ]);
       // FOUR target classes come back from here, not one: the anchor when it
       // IS a work_session (072), the session being answered (076), the caller's

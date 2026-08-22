@@ -89,6 +89,7 @@ import {
   SavedViewInputSchema,
   SendHandoffInputSchema,
   StartChatThreadInputSchema,
+  InterruptChatThreadInputSchema,
   ResolveEntityAttentionInputSchema,
   ServerConnectionCreateInputSchema,
   ServerConnectionDeleteInputSchema,
@@ -235,6 +236,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'handoffs.send': SendHandoffInputSchema,
   'handoffs.withdraw': WithdrawHandoffInputSchema,
   'chat.threads.start': StartChatThreadInputSchema,
+  'chat.threads.interrupt': InterruptChatThreadInputSchema,
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,

@@ -92,8 +92,12 @@ describe('W1 adopted catalog target', () => {
     // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
     // (POST command) + .delete (DELETE command) — the real workflow tables.
     // MEASURED per PIN RULE v3, never carried.
-    expect(OPERATIONS).toHaveLength(172);
-    expect(V1_OPERATIONS).toHaveLength(170);
+    // 172 -> 173 (chat run controls): chat.threads.interrupt — stopping the
+    // turn a chat thread is running. `execution.terminate` could not serve
+    // here: it targets a work_session entity and a chat thread has none in its
+    // path. MEASURED per PIN RULE v3, never carried.
+    expect(OPERATIONS).toHaveLength(173);
+    expect(V1_OPERATIONS).toHaveLength(171);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -119,7 +123,8 @@ describe('W1 adopted catalog target', () => {
     // auth.claim.reissue, all POST commands. MEASURED.
     // 148: GET 60->61 (workflows.list), POST 79->80 (.upsert), DELETE 11->12
     // (.delete). MEASURED from the failing run.
-    }).toEqual({ GET: 61, POST: 80, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 });
+    // chat run controls: POST 80->81 — chat.threads.interrupt. MEASURED.
+    }).toEqual({ GET: 61, POST: 81, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -127,7 +132,8 @@ describe('W1 adopted catalog target', () => {
     // W4/132: read +1, command +2. MEASURED.
     // 141: command 101->104 (three new commands). MEASURED.
     // 148: read 64->65, command 104->106. MEASURED.
-    }).toEqual({ read: 65, command: 106, stream: 1 });
+    // chat run controls: command 106->107 — chat.threads.interrupt. MEASURED.
+    }).toEqual({ read: 65, command: 107, stream: 1 });
   });
 });
 

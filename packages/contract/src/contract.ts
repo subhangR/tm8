@@ -1044,6 +1044,41 @@ export interface StartChatThreadResult {
   thread: ChatThreadSummary;
 }
 
+/**
+ * chat.threads.interrupt — POST /v2/chat/threads/:rootMessageId/interrupt.
+ * Stop the turn this thread is running right now, at the person's request.
+ *
+ * WHY THIS IS NOT `execution.terminate`. That command targets a `work_session`
+ * entity and kills its PTY; a chat turn is neither. A thread's agent is a
+ * runtime the chat orchestrator owns, keyed by the thread's root message id,
+ * with no work_session anywhere in the path — so there was no operation a
+ * person could reach to stop one, which is the defect this closes.
+ *
+ * WHAT IT DOES NOT DO. It does not end the conversation and it does not unbind
+ * the thread. The interrupted runtime is marked stopped, which is precisely
+ * what routes the NEXT turn through the resume path — the thread continues from
+ * where it was, with everything already said still in the agent's context.
+ * "Stop" here means "stop what you are doing", not "throw this away".
+ *
+ * IDEMPOTENT BY SHAPE. Stopping a thread that is not running is not an error:
+ * the run may have finished between the person deciding and the click landing,
+ * and refusing there would turn a race into an error message about a thing that
+ * already happened. `stopped: false` reports it plainly instead.
+ */
+export interface InterruptChatThreadInput extends CommandContext {
+  clientMutationId: string;
+}
+
+export interface InterruptChatThreadResult {
+  rootMessageId: EntityId;
+  /**
+   * True when a live runtime was found and asked to stop. False means there
+   * was nothing running to stop — see the idempotency note above. Either way
+   * the request succeeded; this says which of the two happened.
+   */
+  stopped: boolean;
+}
+
 export interface ChatTurnDeltaFrame {
   type: 'chat.turn.delta';
   threadRootId: EntityId;
@@ -2085,6 +2120,25 @@ export interface PostMessageInput extends CommandContext {
    * enqueued chat turn runs under it (else the thread's default mode applies).
    */
   mode?: ChatMode;
+  /**
+   * Optional per-turn model chosen at send time — the same lifetime and the
+   * same carrier as `mode` above, for the other thing a person changes between
+   * turns. Only meaningful when the post targets a chat thread; the Server
+   * stamps it onto the message so the enqueued turn runs on it (else the
+   * thread's write-once default model applies).
+   *
+   * FREE STRING ON THE WIRE, REFUSED AT THE SERVER. There is no model enum
+   * here for the same reason `agentTool` has none: model ids belong to the
+   * provider's vocabulary, and an enum here would go stale the day one ships.
+   * The Server refuses an override it cannot run — chat launches claude-code
+   * models only, the same guard `chat.threads.start` already applies to a
+   * thread's first model — with a sentence naming the reason.
+   *
+   * A per-turn model does NOT rewrite the thread's binding: the thread keeps
+   * the model it was configured with as its default, and each turn either
+   * inherits that or names its own.
+   */
+  model?: string;
 }
 
 /** Accepted only at the versioned input migration boundary. */
