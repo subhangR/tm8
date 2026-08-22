@@ -193,6 +193,9 @@ describe('W5.C generator proof', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert and
     // RequiredCommandContextSchema binds .delete; .list is a READ and binds
     // nothing, so three new ops move this by two.
-    expect(ENTRIES).toHaveLength(99);
+    // +1 (chat run controls): InterruptChatThreadInputSchema binds
+    // chat.threads.interrupt — the thread rides in the path, the body is only
+    // the mutation id, and strictness is what keeps it that way.
+    expect(ENTRIES).toHaveLength(100);
   });
 });

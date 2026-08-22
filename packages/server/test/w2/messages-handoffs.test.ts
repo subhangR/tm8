@@ -284,6 +284,10 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           IDS.sourceSession,
           IDS.author,
           'batch-1',
+          // The two per-turn chat facts, in order: mode (154) then model (170).
+          // Both NULL here — this is an ordinary message, not a chat turn, and
+          // absent means "whatever the thread is already set to".
+          null,
           null,
         ]);
         return {
@@ -1050,7 +1054,8 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
       if (name === 'w2_post_message_batch') {
         expect(args).toEqual([
           [IDS.anchor], 'routed answer', IDS.message, [], [],
-          IDS.sourceSession, null, 'reply-batch-1', null,
+          // Trailing pair: per-turn mode (154), then per-turn model (170).
+          IDS.sourceSession, null, 'reply-batch-1', null, null,
         ]);
         return { messageBatchId: 'reply-batch-1', messageIds: [IDS.message] } as T;
       }

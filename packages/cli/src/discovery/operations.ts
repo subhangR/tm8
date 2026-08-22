@@ -2151,7 +2151,9 @@ export const CATALOG_DIGEST =
   // hand-derived.
   // Re-measured 148 (+ the three spaces.workflows rows) — read from the
   // regenerated conformance manifest, never hand-derived.
-  'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417';
+  // Re-measured (chat run controls, + chat.threads.interrupt) — read from the
+  // regenerated conformance manifest, never hand-derived.
+  'sha256:7bc5b347b9d62f4a7a731d6a9220cf5666445e0bbcc04d021e41da625d78c7ca';
 
 export const GRAMMAR_VERSION = '2';
 

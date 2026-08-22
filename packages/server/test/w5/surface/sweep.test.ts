@@ -305,9 +305,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(169);
-    expect(rows).toHaveLength(169);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(169);
+    // 169 -> 170 (chat run controls): chat.threads.interrupt.
+    expect(SURFACE).toHaveLength(170);
+    expect(rows).toHaveLength(170);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(170);
   });
 
   /**
@@ -827,7 +828,18 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   merge of origin/main into this branch: ls db/migrations/*.sql | wc -l -> 157
     // This branch's file moved 166 -> 167 in the same edit, because main's 166
     // landed first and two files cannot share a prefix.
-    expect(server.appliedMigrations.length).toBe(157);
+    // 157 -> 160 (2026-08-22, chat run controls): THREE steps, and as above the
+    // split matters more than the number. THIS PIN WAS ALREADY RED ON
+    // origin/main again — main measures 158 against a pin of 157, which is the
+    // failure task 01a02888-e7d4 owns. Measured on both trees, not adjusted by
+    // arithmetic:
+    //   origin/main @ d681023f: ls db/migrations/*.sql | wc -l -> 158  (pin said 157, RED)
+    //   this branch:            ls db/migrations/*.sql | wc -l -> 160
+    // TWO of the three are this branch's: 169_chat_turn_stopped_state.sql and
+    // 170_chat_per_turn_model.sql. The third is that pre-existing red, paid off
+    // here for the reason the block above gives — so the next person's failure
+    // is legible as their own. No prefix is duplicated (checked).
+    expect(server.appliedMigrations.length).toBe(160);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
