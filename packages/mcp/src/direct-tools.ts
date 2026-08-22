@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { execFile, spawn } from 'node:child_process';
 import { constants, createReadStream } from 'node:fs';
@@ -9,6 +9,17 @@ import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
 import { glob as globFiles } from 'tinyglobby';
 import { Agent } from 'undici';
+
+import {
+  ARTIFACT_MANIFEST_SCHEMA_ID,
+  ARTIFACT_MAX_FILE_BYTES,
+  ARTIFACT_MAX_FILES,
+  ARTIFACT_MAX_TOTAL_BYTES,
+  ARTIFACT_MEDIA_TYPES,
+  ARTIFACT_RUNTIME_ID,
+  artifactPathError,
+  type ArtifactMediaType,
+} from '@tm8/contract';
 
 import type { CatalogTransport } from './catalog-client.js';
 import { DIRECT_TOOL_NAMES, type DirectToolName } from './modes.js';
@@ -163,7 +174,37 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   },
   { name: 'doc_create', description: 'Create a first-class Markdown doc graph entity.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), title: stringProp('Document title.'), body: stringProp('Markdown body.'), attachTo: stringProp('Optional entity id to attach the doc to.') }, ['spaceId', 'title', 'body']), annotations: annotations(false) },
   { name: 'doc_update', description: 'Update a first-class Markdown doc under a version guard.', inputSchema: objectSchema({ docId: stringProp('Doc entity id.'), expectedVersion: integerProp('Current entity version.', 1, 1_000_000), title: stringProp('Optional replacement title.'), body: stringProp('Replacement Markdown body.') }, ['docId', 'expectedVersion', 'body']), annotations: annotations(false) },
-  { name: 'artifact_create', description: 'Create a versioned static-web artifact graph entity.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), name: stringProp('Artifact name.'), description: stringProp('Optional description.'), manifest: { type: 'object', additionalProperties: true }, files: { type: 'array', items: { type: 'object', additionalProperties: true } }, sourceWorkSessionId: stringProp('Optional producing session id.') }, ['spaceId', 'name', 'manifest']), annotations: annotations(false) },
+  {
+    name: 'artifact_create',
+    description:
+      'Create a versioned static-web artifact graph entity. Pass the bundle source in `files` as ' +
+      '{path, content} (UTF-8 text) or {path, contentBase64} (binary); the manifest — per-file ' +
+      'mediaType, size and sha256, byte-sorted paths — is computed for you. `entrypoint` defaults ' +
+      'to "index.html". Supply `manifest` only to pass a pre-built manifest through verbatim.',
+    inputSchema: objectSchema({
+      spaceId: stringProp('Space id.'),
+      name: stringProp('Artifact name.'),
+      description: stringProp('Optional description.'),
+      entrypoint: stringProp('Bundle entry file path. Defaults to "index.html" when present, else the only HTML file.'),
+      files: {
+        type: 'array',
+        description: 'Bundle source files. Give each file either `content` (UTF-8 text) or `contentBase64` (binary), never both.',
+        items: objectSchema({
+          path: stringProp('Bundle-relative path, e.g. "index.html" or "assets/app.js". No leading "/", no "..".'),
+          content: stringProp('File body as UTF-8 text.'),
+          contentBase64: stringProp('File body as base64, for binary files.'),
+          mediaType: { type: 'string', description: 'Optional media type override; inferred from the path extension otherwise.', enum: [...ARTIFACT_MEDIA_TYPES] },
+        }, ['path']),
+      },
+      manifest: {
+        type: 'object',
+        description: 'Optional pre-built tm8.web-artifact/1 manifest. Omit it and let `files` drive manifest construction.',
+        additionalProperties: true,
+      },
+      sourceWorkSessionId: stringProp('Optional producing session id.'),
+    }, ['spaceId', 'name', 'files']),
+    annotations: annotations(false),
+  },
   { name: 'web_fetch', description: 'Fetch an HTTP(S) page as capped readable text.', inputSchema: objectSchema({ url: stringProp('Public HTTP(S) URL.'), maxBytes: integerProp('Maximum response bytes.', 1024, 500_000) }, ['url']), annotations: annotations(true, false, true) },
   { name: 'web_search', description: 'Search the public web and return links and snippets.', inputSchema: objectSchema({ query: stringProp('Search query.'), limit: integerProp('Maximum results.', 1, 10) }, ['query']), annotations: annotations(true, false, true) },
   { name: 'memory_write', description: 'Write a durable Space memory graph entity.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('Decision or fact to remember.'), mechanism: stringProp('How it was established.'), subjectScope: stringProp('Scope the statement applies to.'), doesNotEstablish: stringProp('Explicit boundary of the claim.') }, ['spaceId', 'statement']), annotations: annotations(false) },
@@ -748,13 +789,154 @@ async function artifactCreate(args: Record<string, unknown>, context: DirectTool
   const spaceId = requiredString(args.spaceId, 'spaceId');
   assertThreadSpace(context, spaceId);
   const body: Record<string, unknown> = {
-    spaceId, name: requiredString(args.name, 'name'),
-    manifest: requiredObject(args.manifest, 'manifest'), clientMutationId: randomUUID(),
+    spaceId, name: requiredString(args.name, 'name'), clientMutationId: randomUUID(),
   };
-  for (const key of ['description', 'files', 'sourceWorkSessionId'] as const) if (args[key] !== undefined) body[key] = args[key];
+
+  // Two ways in. A caller that already holds a valid tm8.web-artifact/1 manifest
+  // passes it through verbatim (the CLI and CI builds do this). A model calling
+  // from chat supplies plain source files and we derive the manifest here —
+  // sha256, size, mediaType and byte-ordering are mechanical, and asking a model
+  // to produce them by hand is what kept chat artifacts from ever being created.
+  if (args.manifest !== undefined) {
+    body.manifest = requiredObject(args.manifest, 'manifest');
+    if (args.files !== undefined) body.files = args.files;
+  } else {
+    const built = buildArtifactBundle(args.files, optionalString(args.entrypoint, 'entrypoint'));
+    body.manifest = built.manifest;
+    body.files = built.files;
+  }
+
+  const description = optionalString(args.description, 'description');
+  if (description !== undefined) body.description = description;
   const sourceWorkSessionId = optionalString(args.sourceWorkSessionId, 'sourceWorkSessionId');
-  if (sourceWorkSessionId) await confinedEntity(context, sourceWorkSessionId, 'work_session');
+  if (sourceWorkSessionId) {
+    await confinedEntity(context, sourceWorkSessionId, 'work_session');
+    body.sourceWorkSessionId = sourceWorkSessionId;
+  }
   return result('artifact_create', { data: await context.transport.invoke('artifacts.create', { body }) });
+}
+
+/** Path-extension → media type, restricted to the frozen contract allowlist. */
+const ARTIFACT_EXTENSION_MEDIA_TYPES: Readonly<Record<string, ArtifactMediaType>> = Object.freeze({
+  '.html': 'text/html', '.htm': 'text/html',
+  '.css': 'text/css',
+  '.js': 'text/javascript', '.mjs': 'text/javascript',
+  '.json': 'application/json', '.map': 'application/json',
+  '.wasm': 'application/wasm',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain', '.md': 'text/plain',
+});
+
+/**
+ * Turn model-authored `{path, content|contentBase64, mediaType?}` entries into the
+ * strict manifest plus the inline base64 payload the create command expects.
+ * Everything the server verifies (hash, size, ordering, entrypoint membership) is
+ * computed from the same bytes we send, so a well-formed call cannot disagree.
+ */
+function buildArtifactBundle(
+  rawFiles: unknown,
+  entrypointArgument: string | undefined,
+): { manifest: Record<string, unknown>; files: { path: string; contentBase64: string }[] } {
+  const entries = boundedArray(rawFiles, 'files', 1, ARTIFACT_MAX_FILES);
+
+  const built = entries.map((entry, index) => {
+    const file = objectOf(entry, `files[${index}]`);
+    const path = requiredString(file.path, `files[${index}].path`);
+    const pathProblem = artifactPathError(path);
+    if (pathProblem) throw new DirectToolError('invalid_input', `files[${index}].path ${pathProblem}`);
+
+    const hasText = file.content !== undefined;
+    const hasBinary = file.contentBase64 !== undefined;
+    if (hasText === hasBinary) {
+      throw new DirectToolError('invalid_input', `files[${index}] needs exactly one of content or contentBase64`);
+    }
+
+    let bytes: Buffer;
+    if (hasText) {
+      bytes = Buffer.from(requiredString(file.content, `files[${index}].content`, true), 'utf8');
+    } else {
+      const encoded = requiredString(file.contentBase64, `files[${index}].contentBase64`, true);
+      bytes = Buffer.from(encoded, 'base64');
+      // Buffer.from silently drops invalid base64; re-encoding proves a round trip.
+      if (bytes.toString('base64').replace(/=+$/, '') !== encoded.replace(/[\s=]+/g, '')) {
+        throw new DirectToolError('invalid_input', `files[${index}].contentBase64 is not valid base64`);
+      }
+    }
+    if (bytes.byteLength > ARTIFACT_MAX_FILE_BYTES) {
+      throw new DirectToolError('payload_too_large', `files[${index}] exceeds ${ARTIFACT_MAX_FILE_BYTES} bytes`);
+    }
+
+    const mediaType = artifactMediaType(file.mediaType, path, index);
+    return {
+      path,
+      mediaType,
+      size: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      contentBase64: bytes.toString('base64'),
+    };
+  });
+
+  const total = built.reduce((sum, file) => sum + file.size, 0);
+  if (total > ARTIFACT_MAX_TOTAL_BYTES) {
+    throw new DirectToolError('payload_too_large', `bundle exceeds ${ARTIFACT_MAX_TOTAL_BYTES} bytes`);
+  }
+
+  // The contract requires ascending UTF-8 byte order and rejects re-sorting on the
+  // server, so the ordering has to be settled before the hash is taken — here.
+  built.sort((a, b) => Buffer.compare(Buffer.from(a.path, 'utf8'), Buffer.from(b.path, 'utf8')));
+  for (let i = 1; i < built.length; i++) {
+    if (built[i - 1]!.path === built[i]!.path) {
+      throw new DirectToolError('invalid_input', `files contains duplicate path "${built[i]!.path}"`);
+    }
+  }
+
+  const entrypoint = entrypointArgument ?? defaultArtifactEntrypoint(built.map((file) => file.path));
+  if (!built.some((file) => file.path === entrypoint)) {
+    throw new DirectToolError('invalid_input', `entrypoint "${entrypoint}" is not one of the supplied file paths`);
+  }
+
+  return {
+    manifest: {
+      schema: ARTIFACT_MANIFEST_SCHEMA_ID,
+      runtime: ARTIFACT_RUNTIME_ID,
+      entrypoint,
+      files: built.map(({ path, mediaType, size, sha256 }) => ({ path, mediaType, size, sha256 })),
+    },
+    files: built.map(({ path, contentBase64 }) => ({ path, contentBase64 })),
+  };
+}
+
+function artifactMediaType(raw: unknown, path: string, index: number): ArtifactMediaType {
+  if (raw !== undefined) {
+    const declared = requiredString(raw, `files[${index}].mediaType`);
+    if (!(ARTIFACT_MEDIA_TYPES as readonly string[]).includes(declared)) {
+      throw new DirectToolError('invalid_input', `files[${index}].mediaType "${declared}" is not an allowed artifact media type`);
+    }
+    return declared as ArtifactMediaType;
+  }
+  const extension = extname(path).toLowerCase();
+  const inferred = ARTIFACT_EXTENSION_MEDIA_TYPES[extension];
+  if (!inferred) {
+    throw new DirectToolError('invalid_input', `files[${index}] needs an explicit mediaType: cannot infer one from "${path}"`);
+  }
+  return inferred;
+}
+
+function defaultArtifactEntrypoint(paths: string[]): string {
+  if (paths.includes('index.html')) return 'index.html';
+  const html = paths.filter((path) => path.endsWith('.html') || path.endsWith('.htm'));
+  if (html.length === 1) return html[0]!;
+  throw new DirectToolError(
+    'invalid_input',
+    'cannot infer entrypoint: include an "index.html" or name one explicitly with `entrypoint`',
+  );
 }
 
 async function webFetch(args: Record<string, unknown>, context: DirectToolContext) {
