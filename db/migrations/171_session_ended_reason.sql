@@ -137,6 +137,30 @@ $$;
 -- ran once, at 008. A function created later — or recreated under a NEW
 -- signature, as here — is not covered by it and must be granted explicitly,
 -- or every caller gets a bare permission denied at runtime.
+--
+-- THE REVOKE IS NOT OPTIONAL, AND IT IS WHY THIS IS TWO STATEMENTS. The 6-arg
+-- function this file DROPS carried its ACL forward across every earlier
+-- `create or replace`, because replace preserves grants. A DROP does not: the
+-- 8-arg function below is a NEW object, and Postgres gives a new function
+-- EXECUTE TO PUBLIC by default. Granting `tm8_app` without revoking PUBLIC
+-- leaves the door callable by every role that can connect — including
+-- `tm8_delivery_worker`, which exists precisely so the delivery adapter holds
+-- three RPCs and nothing else.
+--
+-- This is 162's defect exactly, re-armed by a DROP instead of by an omission.
+-- 162 repaired `set_session_done` after 156 created it SECURITY DEFINER with
+-- neither a revoke nor a grant, and its docblock names the detector that
+-- catches it — `test/db/w2-execution.pg.test.ts > "cleanup runs on the
+-- existing owner path — no fourth delivery RPC"`, which enumerates
+-- `has_function_privilege('tm8_delivery_worker', …)` over schema `public` and
+-- pins that surface at three names. MEASURED here before the revoke was added:
+-- that assertion failed with a fourth entry, `work_session_transition`, and
+-- `proacl` read `{=X/tm8,tm8=X/tm8,tm8_app=X/tm8}` — the leading `=X` being the
+-- PUBLIC grant. A PUBLIC grant is not visible in a diff of the function, only
+-- in a diff of the surface, which is why the revoke is restated here rather
+-- than assumed from the function it replaces.
+revoke all on function public.work_session_transition(
+  uuid, text, integer, text, uuid, text, text, text) from public;
 grant execute on function public.work_session_transition(
   uuid, text, integer, text, uuid, text, text, text) to tm8_app;
 
