@@ -1,4 +1,4 @@
-// WHY A SESSION ENDED, in a form a human can read (169).
+// WHY A SESSION ENDED, in a form a human can read (171).
 //
 // The incident this exists for: 2026-08-22 11:04:16 UTC, a deploy SIGKILLed
 // the server with four live agents and all four were recorded as ordinary

@@ -259,7 +259,7 @@ export interface EntityRow {
   /** Lane facts (107); optional keeps legacy row fixtures source-compatible. */
   ws_checkout_branch?: string | null;
   ws_workdir_mode?: string | null;
-  /** Ending facts (169); optional for the same fixture-compatibility reason. */
+  /** Ending facts (171); optional for the same fixture-compatibility reason. */
   ws_ended_kind?: string | null;
   ws_ended_reason?: string | null;
   ws_pin_revision: number | null;
@@ -376,7 +376,7 @@ export function isoOrNull(value: Date | string | null): string | null {
 }
 
 /**
- * `work_sessions.ended_kind` (169) narrowed to the contract enum. A value the
+ * `work_sessions.ended_kind` (171) narrowed to the contract enum. A value the
  * contract does not know is projected as `null` rather than passed through:
  * the summary state is `.strict()`, so an unrecognised string would fail
  * validation and take the whole entity read down with it — a schema drift on
@@ -1384,7 +1384,7 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         row.ws_workdir_mode === 'scratch'
           ? { workdirMode: row.ws_workdir_mode }
           : {}),
-        // The ending facts (169), projected exactly like the lane facts above:
+        // The ending facts (171), projected exactly like the lane facts above:
         // nullable-and-present, so an explicit null reads as "no ending was
         // recorded" and never as a default. `endedKind` is projected only when
         // the column holds one of its CHECK values — the enum is the contract,

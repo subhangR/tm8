@@ -46,7 +46,7 @@
 #    runs, so nothing records WHY any live session died, and the next process
 #    can only infer it. Under Restart=always a plain `kill -TERM` is a correct,
 #    complete restart — the handler runs, every live session is annotated with a
-#    plain-English reason (169), and systemd brings the unit back. The hard kill
+#    plain-English reason (171), and systemd brings the unit back. The hard kill
 #    stops being necessary.
 #
 #    `systemctl stop` still stops the unit and keeps it stopped: an explicit

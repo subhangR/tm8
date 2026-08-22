@@ -1349,7 +1349,7 @@ if (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]]; then
     # is also a correct restart for an operator without passwordless sudo —
     # which is what made the old on-failure setting dangerous: it left SIGKILL
     # as the only working restart, and SIGKILL runs no shutdown handler, so
-    # nothing recorded why the live agents died (169).
+    # nothing recorded why the live agents died (171).
     as_root systemctl enable "$UNIT_NAME" || die "systemctl enable $UNIT_NAME failed"
     # `restart`, NOT `enable --now`. `--now` only STARTS a unit that is stopped,
     # so on the case this installer exists to serve — upgrading a node that is

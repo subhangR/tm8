@@ -141,7 +141,7 @@ export interface BootstrappedServer {
    * The execution block, when this node has one. Exposed so whoever owns the
    * process lifetime can call `recordShutdown` before exiting — the reason a
    * session died is only knowable first-hand from the process it died with,
-   * and after that only inferable (169).
+   * and after that only inferable (171).
    */
   readonly execution?: ExecutionRuntime | undefined;
   /**
@@ -954,7 +954,7 @@ export async function main(): Promise<void> {
     const shutdown = (signal: string): void => {
       console.log(`\n${signal} — shutting down`);
       // FIRST, before anything is torn down: tell every live session why it is
-      // about to die (169). This process holds their PTYs, so they die with it
+      // about to die (171). This process holds their PTYs, so they die with it
       // either way — but this is the only moment the reason is known
       // first-hand rather than inferred by the next process from an empty PTY
       // map. Without it a deploy is indistinguishable, in the graph, from four

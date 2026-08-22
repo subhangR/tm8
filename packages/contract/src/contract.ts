@@ -332,11 +332,11 @@ export type CoreEntityState =
       checkoutBranch?: string | null;
       workdirMode?: WorkSessionWorkdirMode;
       /**
-       * WHY THIS SESSION ENDED (169). ADDITIVE and OPTIONAL, like the lane
-       * facts above: a node that predates 169 omits them and a consumer
+       * WHY THIS SESSION ENDED (171). ADDITIVE and OPTIONAL, like the lane
+       * facts above: a node that predates 171 omits them and a consumer
        * renders no ending claim.
        *
-       * Until 169 the only ending facts a client could see were `status` and
+       * Until 171 the only ending facts a client could see were `status` and
        * `exitedAt`. That is how the 2026-08-22 11:04 incident hid: a deploy
        * SIGKILLed the server with four live agents, and all four were recorded
        * as ordinary exits. `exitCode` was NULL (it always is on that path) and
@@ -356,7 +356,7 @@ export type CoreEntityState =
        * evidence (the cgroup `oom_kill` counter), not an inference from a
        * signal number.
        *
-       * `null` on either is a MEASURED absence — a pre-169 row, or a session
+       * `null` on either is a MEASURED absence — a pre-171 row, or a session
        * that has not ended — and renders nothing, never a default. Both are
        * cleared when a session is resumed: the ending belonged to the run that
        * ended, not to the one now starting.
@@ -2986,7 +2986,7 @@ export type WorkSessionWorkdirMode = 'project' | 'worktree' | 'scratch';
 
 /**
  * WHAT CLASS OF ENDING a session had — `work_sessions.ended_kind`'s CHECK
- * verbatim (169). The machine-readable half of the ending; `endedReason`
+ * verbatim (171). The machine-readable half of the ending; `endedReason`
  * carries the sentence a person reads.
  *
  *   completed            — the agent finished on its own terms, exit 0.

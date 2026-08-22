@@ -223,7 +223,7 @@ export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
 /** Mirrors `work_sessions.workdir_mode`'s CHECK exactly — 001, widened by 015. */
 export const WorkSessionWorkdirModeSchema: z.ZodType<WorkSessionWorkdirMode> =
   z.enum(['project', 'worktree', 'scratch']);
-/** Mirrors `work_sessions.ended_kind`'s CHECK exactly — 169. */
+/** Mirrors `work_sessions.ended_kind`'s CHECK exactly — 171. */
 export const WorkSessionEndedKindSchema: z.ZodType<WorkSessionEndedKind> =
   z.enum([
     'completed',
@@ -391,9 +391,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // explicit null checkoutBranch = measured absence (no repo/detached HEAD).
     checkoutBranch: z.string().nullable().optional(),
     workdirMode: WorkSessionWorkdirModeSchema.optional(),
-    // The ending facts (169), additive: absent = a pre-169 node, no claim;
+    // The ending facts (171), additive: absent = a pre-171 node, no claim;
     // explicit null = a session that has not ended, or one that ended before
-    // 169 and so was never asked why. `endedReason` is one plain-English
+    // 171 and so was never asked why. `endedReason` is one plain-English
     // sentence for a person; `endedKind` is the closed vocabulary that keeps
     // `out_of_memory` — the one legitimate involuntary death — recognisable.
     endedKind: WorkSessionEndedKindSchema.nullable().optional(),

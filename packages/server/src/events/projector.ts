@@ -1091,7 +1091,7 @@ export class PgEntityProjector implements EntityProjector {
           r.ws_workdir_mode === 'scratch'
             ? { workdirMode: r.ws_workdir_mode }
             : {}),
-          // The ending facts (169) — MIRRORS entity-read.ts stateOf for the
+          // The ending facts (171) — MIRRORS entity-read.ts stateOf for the
           // same reason the lane facts do: an event-borne summary and a read
           // summary that disagree about the same row is the drift 165 exists
           // to prevent. An unrecognised kind projects null, never through.

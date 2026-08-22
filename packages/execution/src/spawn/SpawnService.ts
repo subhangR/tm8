@@ -254,7 +254,7 @@ function describePtyExit(exitInfo: PtyExitInfo): string {
 }
 
 /**
- * The same PTY exit, said to a PERSON (169).
+ * The same PTY exit, said to a PERSON (171).
  *
  * `describePtyExit` above is the technical diagnostic and keeps its job. This
  * is the other half: one sentence, no signal numbers, no exit codes, no jargon.
@@ -342,7 +342,7 @@ export class SpawnService {
   private readonly sessionAuth = new Map<string, GraphAuth>();
   /**
    * The cgroup OOM-kill counter as it stood when each session's PTY was
-   * spawned (169). The exit path compares against it: an ADVANCE across a
+   * spawned (171). The exit path compares against it: an ADVANCE across a
    * session's lifetime is kernel evidence that a memory kill happened, which
    * is the only thing that can separate the OOM killer's SIGKILL from a
    * deploy's — they are identical at the process level.
@@ -915,7 +915,7 @@ export class SpawnService {
 
     this.sessionAuth.set(sessionId, auth);
     // The OOM baseline, captured with the claims because it is the same kind
-    // of launch-time bookkeeping and must exist before the PTY can die (169).
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
     this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
 
     try {
@@ -1294,7 +1294,7 @@ export class SpawnService {
 
     this.sessionAuth.set(sessionId, auth);
     // The OOM baseline, captured with the claims because it is the same kind
-    // of launch-time bookkeeping and must exist before the PTY can die (169).
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
     this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
     let launchedPty = false;
     try {
@@ -1588,7 +1588,7 @@ export class SpawnService {
 
     this.sessionAuth.set(sessionId, auth);
     // The OOM baseline, captured with the claims because it is the same kind
-    // of launch-time bookkeeping and must exist before the PTY can die (169).
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
     this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
 
     try {
@@ -2021,7 +2021,7 @@ export class SpawnService {
        */
       terminalStatus?: 'exited' | 'failed';
       /**
-       * The ending facts (169), for a caller that knows more than "an operator
+       * The ending facts (171), for a caller that knows more than "an operator
        * asked". Default to a cancellation, which is what a bare terminate is.
        *
        * `endedReason` is read by a PERSON, and by a person who is not a
@@ -2087,7 +2087,7 @@ export class SpawnService {
           ? 'terminated by request (force) — exit code not observed, kill does not wait for the real exit event'
           : 'terminated by request — exit code not observed, kill does not wait for the real exit event');
     const status = opts.terminalStatus ?? 'exited';
-    // The ending facts (169). `endedReason` is the sentence a person reads, so
+    // The ending facts (171). `endedReason` is the sentence a person reads, so
     // it never mentions PTYs, kill outcomes or exit events — all of which are
     // already in `error` above, which is unchanged and stays technical. The
     // default reads as a cancellation because that is what an unqualified

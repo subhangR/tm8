@@ -26,7 +26,7 @@ export type AgentMode =
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
 
 /**
- * work_sessions.ended_kind — the six classes 169's CHECK allows. Mirrored here
+ * work_sessions.ended_kind — the six classes 171's CHECK allows. Mirrored here
  * rather than imported from the contract, exactly as WorkSessionStatus above
  * is: this package states the database's vocabulary, and the contract states
  * the wire's. They are kept identical deliberately, not by coupling.
@@ -396,7 +396,7 @@ export interface TransitionInput {
   exitCode?: number | null;
   error?: string | null;
   /**
-   * The ending facts (169). Only meaningful with a terminal status; the RPC
+   * The ending facts (171). Only meaningful with a terminal status; the RPC
    * ignores them otherwise rather than date-stamping an ending that has not
    * happened.
    *

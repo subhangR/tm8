@@ -1,4 +1,4 @@
--- 169 — WHY A SESSION ENDED, in a form a human can read.
+-- 171 — WHY A SESSION ENDED, in a form a human can read.
 --
 -- Incident 2026-08-22 11:04:16 UTC: a deploy SIGKILLed the server with four
 -- live agents. All four were retired as ordinary `exited` rows and the event
@@ -24,7 +24,7 @@
 -- column cannot be both "something went wrong" and "here is what happened".
 --
 -- NULLABLE, NEVER DEFAULTED — 107's rule. NULL means no ending fact was
--- captured: a pre-169 row, or a session still running. NULL must render as no
+-- captured: a pre-171 row, or a session still running. NULL must render as no
 -- claim. Inventing "Finished normally" for a row nobody measured is exactly the
 -- lie this migration exists to end.
 
@@ -40,7 +40,7 @@ exception when duplicate_object then null; end $$;
 
 comment on column public.work_sessions.ended_kind is
   'What class of ending this was, for code to branch on. NULL = never '
-  'captured (pre-169 row, or still running) and must render as no claim. '
+  'captured (pre-171 row, or still running) and must render as no claim. '
   '''out_of_memory'' is kernel evidence from the cgroup oom_kill counter, not '
   'an inference from a signal number — it is the one involuntary death policy '
   'permits, so it must stay distinguishable from every other ending.';
@@ -145,7 +145,7 @@ grant execute on function public.work_session_transition(
 -- 062's rule: the exit evidence belongs to the PREVIOUS run. It already nulls
 -- exit_code/error/exited_at on resume; the two new facts are the same kind of
 -- fact and must go with them. Leaving a stale "Stopped by a server restart"
--- on a session that is running again is precisely the sort of lie 169 exists
+-- on a session that is running again is precisely the sort of lie 171 exists
 -- to remove — and it is why the 11:04 incident showed only two of its four
 -- rows by the time anyone looked.
 

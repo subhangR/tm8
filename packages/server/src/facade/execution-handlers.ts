@@ -712,8 +712,8 @@ export class DbGraphPort implements GraphPort {
       input.error ?? null,
       null, // p_transcript_doc_id — transcripts are post-G1A
       null, // p_client_mutation_id — an exit is not a client mutation
-      input.endedKind ?? null, // p_ended_kind (169)
-      input.endedReason ?? null, // p_ended_reason (169) — plain English
+      input.endedKind ?? null, // p_ended_kind (171)
+      input.endedReason ?? null, // p_ended_reason (171) — plain English
     ]);
   }
 
@@ -1259,7 +1259,7 @@ export interface ExecutionRuntime {
   reconcileWorktrees(): Promise<WorktreeReconcileReport>;
   /**
    * Annotate every live session with WHY it is about to die, from the process
-   * that is dying (169). The mirror image of `reconcileGhosts`: that one infers
+   * that is dying (171). The mirror image of `reconcileGhosts`: that one infers
    * a past death from the next process, this one observes an imminent one from
    * this process. Call it from the signal handler, before the listener closes.
    *
