@@ -75,6 +75,8 @@ export const echoAgentHarness: Harness = {
      * there is no hazard to report here, rather than a hazard tm8 has chosen to
      * tolerate, and the two must not be collapsed into one word.
      */
+    commandNetwork: 'provider-default',
+
     confinement: 'no-command-execution',
 
     /** tm8 cannot read a transcript for it ⇒ `unsupported_agent_tool`. */

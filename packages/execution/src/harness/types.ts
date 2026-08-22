@@ -201,6 +201,18 @@ export interface HarnessCapabilities {
 
   readonly confinement: ConfinementStory;
 
+  /**
+   * How this tool's SHELL COMMANDS reach the network.
+   *
+   * `loopback-proxy` means tm8 owns the policy and injects it: the exact-host
+   * proxy config, and a preflight that refuses if the installed CLI cannot
+   * honour it. `provider-default` means tm8 injects nothing and the tool's own
+   * behaviour stands. Separate from {@link confinement} because they are
+   * genuinely independent — a tool can be sandboxed with unrestricted network,
+   * or unsandboxed with none.
+   */
+  readonly commandNetwork: 'loopback-proxy' | 'provider-default';
+
   /** Null ⇒ `SessionTranscriptPage.unavailableReason = 'unsupported_agent_tool'`. */
   readonly transcriptDialect: TranscriptDialect | null;
 }

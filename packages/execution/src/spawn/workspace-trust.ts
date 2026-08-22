@@ -1,3 +1,4 @@
+import type { Harness } from '../harness/types.js';
 // Seed each agent CLI's per-workspace TRUST record before an unattended launch.
 //
 // BEHAVIORAL ORACLE: maestro's `claude-workspace-trust.ts` for the Claude half.
@@ -210,4 +211,30 @@ async function writeFileAtomic(configPath: string, contents: string): Promise<vo
   const tempPath = `${configPath}.tm8-${String(process.pid)}-${randomBytes(4).toString('hex')}.tmp`;
   await writeFile(tempPath, contents, { mode: 0o600 });
   await rename(tempPath, configPath);
+}
+
+/**
+ * Pre-answer the harness's first-run workspace-trust dialog, if it has one.
+ *
+ * A REGISTRY, not a pair of `if`s. The two call sites (spawn and resume) used to
+ * each carry `if (agentTool === 'claude-code') … if (agentTool === 'codex') …`,
+ * which is four places a third harness could be forgotten — and forgetting it
+ * here is silent: the child comes up untrusted and blocks on a dialog nobody is
+ * watching, having already been recorded as `running`.
+ */
+const WORKSPACE_TRUST_WRITERS: Readonly<
+  Record<string, ((cwd: string, env: NodeJS.ProcessEnv) => Promise<unknown>) | null>
+> = Object.freeze({
+  claude: trustClaudeWorkspace,
+  codex: trustCodexWorkspace,
+  none: null,
+});
+
+export async function trustWorkspaceForHarness(
+  harness: Harness,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const writer = WORKSPACE_TRUST_WRITERS[harness.capabilities.workspaceTrust];
+  if (writer) await writer(cwd, env);
 }

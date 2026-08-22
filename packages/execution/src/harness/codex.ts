@@ -106,6 +106,8 @@ export const codexHarness: Harness = {
      * session as `running`. Codex ships its OWN bwrap, so "is bwrap installed?"
      * answers yes while the sandbox cannot work.
      */
+    commandNetwork: 'loopback-proxy',
+
     confinement: { probe: 'codex-bwrap' },
 
     transcriptDialect: 'codex',

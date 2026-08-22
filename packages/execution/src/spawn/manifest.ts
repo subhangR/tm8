@@ -42,6 +42,7 @@ import {
 } from './agent-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
 import { codexHarness } from '../harness/codex.js';
+import { harnessForBinary, tryResolveHarness } from '../harness/registry.js';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -198,7 +199,11 @@ export function resolveCommandNetworkPolicy(
   env: NodeJS.ProcessEnv = process.env,
 ): CommandNetworkPolicy {
   const override = env.TM8_AGENT_CMD?.trim();
-  if (override && override !== 'codex') {
+  // tm8 owns command networking only for a harness that declares it. An
+  // operator wrapper is operator-defined UNLESS it names that harness's own
+  // binary, in which case tm8's policy still applies.
+  const harness = tryResolveHarness(launch.agentTool);
+  if (override && harnessForBinary(override)?.capabilities.commandNetwork !== 'loopback-proxy') {
     return {
       mode: 'operator-defined',
       commandNetworkAccess: null,
@@ -207,7 +212,7 @@ export function resolveCommandNetworkPolicy(
       portScoped: false,
     };
   }
-  if (launch.agentTool !== 'codex') {
+  if (harness?.capabilities.commandNetwork !== 'loopback-proxy') {
     return {
       mode: 'provider-default',
       commandNetworkAccess: null,

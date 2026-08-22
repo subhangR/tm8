@@ -63,6 +63,8 @@ export const claudeCodeHarness: Harness = {
      * no OS-level sandbox tm8 drives through flags — nothing here to probe, and
      * nothing that can silently fail the way codex's bwrap did.
      */
+    commandNetwork: 'provider-default',
+
     confinement: 'enforced-in-agent',
 
     transcriptDialect: 'claude-code',
