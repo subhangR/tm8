@@ -17,6 +17,9 @@ import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
+import { bootDesktopSidecar, desktopNodeId, desktopServerConfig, isDesktopProfile, report } from './desktop.js';
+import { SidecarError } from './sidecar/errors.js';
+import type { SidecarManager } from './sidecar/manager.js';
 import {
   createControlChannel,
   createDurableEventPump,
@@ -161,6 +164,16 @@ export interface BootstrappedServer {
    * Narrowed to `url` + `close` for the same reason `delivery` is.
    */
   readonly preview: { readonly url: string; readonly port: number; close(): Promise<void> } | undefined;
+  /**
+   * The `#claim=` URL, present only while this node is UNCLAIMED.
+   *
+   * It is already printed to stdout, which is the whole story for a server
+   * install. It is returned as well because a double-clicked `.app` has no
+   * stdout anyone will ever read: the desktop shell opens this instead of the
+   * bare origin, so the first-run ceremony is a screen rather than a treasure
+   * hunt through a terminal that does not exist.
+   */
+  readonly claimUrl: string | undefined;
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrappedServer> {
@@ -227,7 +240,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * compounds. Hence `createExecutionRuntime` rather than a symmetrical
    * `registerExecutionHandlers` here.
    */
-  const execution = db ? createExecutionRuntime({ db, config, dataDir, owner }) : undefined;
+  const execution = db
+    ? createExecutionRuntime({
+        db,
+        config,
+        dataDir,
+        owner,
+        // The default is `<host>:<port>`, which the desktop app's ephemeral
+        // port would change on every launch — orphaning its own worktree
+        // allocations and its own ghost sessions. See `desktopNodeId`.
+        ...(isDesktopProfile() && dataDir ? { nodeId: desktopNodeId(dataDir) } : {}),
+      })
+    : undefined;
 
   if (db && config.launchBootstrap) {
     const seeded = await ensureLaunchResources({
@@ -859,12 +883,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
   }
 
+  let claimUrl: string | undefined;
   // LAST, and after the listener is up, so the printed URL is one the reader
   // can actually click. A node with no credential on it cannot be signed into
   // at all, and its own output is the only channel to the person who just
   // installed it — see identity/node-claim-boot.ts.
   if (db) {
-    await announceNodeClaim({
+    claimUrl = await announceNodeClaim({
       db,
       dataDir,
       // The bind address is loopback by S1, so behind a proxy or a tailnet the
@@ -879,15 +904,21 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     });
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview, scheduler };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler, claimUrl };
 }
 
 export async function main(): Promise<void> {
+  let sidecar: SidecarManager | undefined;
   try {
+    // The desktop app owns its Postgres. Everything about that lives behind
+    // this one flag in `desktop.ts`; a server install takes neither branch.
+    if (isDesktopProfile()) sidecar = await bootDesktopSidecar();
+
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
-    const { server, url, db, delivery, preview, scheduler } = await bootstrap({
+    const { server, url, db, delivery, preview, scheduler, claimUrl } = await bootstrap({
       startBackgroundJobs: true,
+      ...(sidecar ? { config: await desktopServerConfig() } : {}),
       // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
       // launch-config resolver. Without this line the chat ships dead — the
       // orchestrator only exists when a runtime is injected (see compose.ts).
@@ -945,12 +976,18 @@ export async function main(): Promise<void> {
     // as a hang rather than as the clean exit it nearly was.
     const shutdown = (signal: string): void => {
       console.log(`\n${signal} — shutting down`);
+      report({ phase: 'stopping', message: 'Shutting down…' });
       void Promise.resolve(scheduler?.stop(2_000))
         .catch(() => undefined)
         .then(() => server.close())
         .then(() => preview?.close())
         .then(() => delivery?.close())
         .then(() => db?.end())
+        // Postgres goes last and only in the desktop profile: every client of
+        // it above has to be closed before `pg_ctl -m fast` runs, or the
+        // shutdown races its own connections. A server install does not own
+        // its cluster and must not stop it.
+        .then(() => sidecar?.stop())
         .then(
           () => process.exit(0),
           () => process.exit(1),
@@ -958,7 +995,21 @@ export async function main(): Promise<void> {
     };
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
+    // The desktop shell asks over IPC rather than by signal: `before-quit` runs
+    // while the child is still a well-behaved child, and a message can be
+    // acknowledged where a signal cannot.
+    process.on('message', (msg: unknown) => {
+      if ((msg as { type?: string } | null)?.type === 'tm8:shutdown') shutdown('IPC shutdown');
+    });
+
+    report({ phase: 'ready', message: 'Ready', url: claimUrl ?? url });
   } catch (err) {
+    report({
+      phase: 'failed',
+      message: err instanceof Error ? err.message : String(err),
+      ...(err instanceof SidecarError ? { code: err.code, ...(err.detail ? { detail: err.detail } : {}) } : {}),
+    });
+    await sidecar?.stop().catch(() => undefined);
     // A config refusal (S1: non-loopback without token auth) lands here and
     // must be loud — a server that silently declines to start is worse than
     // one that never started.

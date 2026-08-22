@@ -24,6 +24,8 @@ export interface ClusterTarget {
   readonly pgPort: number;
   readonly superuser: string;
   readonly logDir: string;
+  /** `listen_addresses`; `''` is the socket-only desktop profile. */
+  readonly listenAddresses?: string;
 }
 
 /** `pg_ctl` reports 0 = running, 3 = not running, anything else = broken. */
@@ -115,14 +117,29 @@ export async function initdb(t: ClusterTarget, opts: InitdbOptions = {}): Promis
   opts.logger?.info(`initdb: created cluster at ${t.pgDataDir}`);
 }
 
-/** Postmaster options: socket inside the data dir (§7) + loopback TCP for tooling. */
+/**
+ * Postmaster options: socket inside the data dir (§7), plus loopback TCP for
+ * tooling unless `listenAddresses` says otherwise.
+ *
+ * Every value is single-quoted because `pg_ctl` splices this string into the
+ * command line it hands to the shell **without quoting it** (only `-D` gets
+ * quoted, by `pg_ctl` itself). An unquoted socket directory therefore breaks on
+ * any path containing a space — which is every macOS
+ * `~/Library/Application Support/...` data dir, i.e. the desktop app's.
+ */
 export function postmasterOptions(t: ClusterTarget): string {
+  const listen = t.listenAddresses ?? '127.0.0.1';
   return [
-    `-k ${t.socketDir}`,
+    `-k ${shellQuote(t.socketDir)}`,
     `-p ${t.pgPort}`,
-    `-c listen_addresses=127.0.0.1`,
+    `-c listen_addresses=${shellQuote(listen)}`,
     `-c unix_socket_permissions=0700`,
   ].join(' ');
+}
+
+/** POSIX single-quoting: the only escape inside `'…'` is `'\''`. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export interface StartOptions {

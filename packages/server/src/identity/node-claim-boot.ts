@@ -57,7 +57,7 @@ export interface ClaimAnnouncementOptions {
  * to boot over a convenience copy would turn a permissions warning into an
  * outage. The refusal is logged with the reason rather than swallowed.
  */
-export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise<void> {
+export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise<string | undefined> {
   const log = opts.log ?? ((line: string) => console.log(line));
 
   let claimed: boolean;
@@ -68,12 +68,12 @@ export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise
     // and start anyway — the alternative is a server that will not boot until
     // someone runs a migration it cannot tell them about.
     log(`  claim: could not determine whether this node is claimed — ${message(err)}`);
-    return;
+    return undefined;
   }
 
   if (claimed) {
     log(`  node: claimed · mode ${opts.nodeMode}`);
-    return;
+    return undefined;
   }
 
   /**
@@ -99,7 +99,7 @@ export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise
     await opts.ensureOwner();
   } catch (err) {
     log(`  claim: this node has no owner account to claim and one could not be created — ${message(err)}`);
-    return;
+    return undefined;
   }
 
   const tokenPath = join(opts.dataDir, 'setup-token');
@@ -127,7 +127,7 @@ export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise
       token = await issueNodeClaimToken(opts.db);
     } catch (err) {
       log(`  claim: could not mint a claim token — ${message(err)}`);
-      return;
+      return undefined;
     }
     try {
       // Mode on open AND an explicit chmod: the open mode is masked by the
@@ -153,6 +153,9 @@ export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise
   log('  │  The token is single-use and is burned the moment it is claimed.');
   log('  └──────────────────────────────────────────────────────────────────');
   log('');
+  // Returned, not merely printed: a double-clicked `.app` has no terminal, so
+  // for the desktop shell this line IS the terminal (`desktop.ts`).
+  return claimUrl;
 }
 
 function message(err: unknown): string {

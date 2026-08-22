@@ -207,6 +207,18 @@ function authorizeDeliveryPrincipal(
  * The wait is registered BEFORE admission is attempted, not after — see
  * `PromptSettlementWaiter`'s own docs for the same-tick-resolve hazard that
  * ordering exists to close.
+ *
+ * DIAGNOSTIC TRAP, BECAUSE THIS DOCBLOCK IS WHERE YOU WILL LAND LOOKING FOR IT:
+ * `status: 'delivered'` with a `failure_reason` of NULL and an agent that never
+ * answers is **almost never a delivery fault**. The far likelier cause is the
+ * target session's ACCESS MODE. A session spawned `--access-mode safe` stops at
+ * a permission prompt the first time it tries to run `tm8 message send` — the
+ * prompt is drawn in its terminal, the text was genuinely delivered, and the
+ * agent waits for a human who is not watching. Measured twice on two spawns
+ * while proving the desktop app's delivery path: identical `delivered` rows,
+ * no reply; the same message to a `fullAccess` session was answered in ~90 s.
+ * So when the row says delivered and the terminal is silent, check the access
+ * mode BEFORE you go looking in here.
  */
 export async function promptInternal(
   deps: InternalPromptDeps,
