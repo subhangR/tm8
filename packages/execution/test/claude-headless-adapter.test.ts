@@ -468,7 +468,16 @@ describe('ClaudeHeadlessAdapter', () => {
     let resolveExit!: (event: AgentThreadExit) => void;
     const exited = new Promise<AgentThreadExit>((resolve) => (resolveExit = resolve));
     const runtime = adapter({ onThreadExit: resolveExit });
-    const thread = input({ env: { TM8_FAKE_HEADLESS_MODE: 'idle-crash' } });
+    const thread = input({
+      env: {
+        TM8_FAKE_HEADLESS_MODE: 'idle-crash',
+        // The crash must land AFTER the boot window closes or it is a boot
+        // failure and this callback is never reached. The fake's old fixed
+        // 180 ms only outran the old fixed 100 ms window; both move together
+        // now, so the ordering holds at any window this file is run with.
+        TM8_FAKE_IDLE_CRASH_MS: String(BOOT_SETTLEMENT_MS + 500),
+      },
+    });
     await runtime.startThread(thread);
 
     await expect(exited).resolves.toMatchObject({
