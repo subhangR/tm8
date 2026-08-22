@@ -16,7 +16,6 @@
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type {
-  ActivityItem,
   CollectionQuery,
   Connections,
   DurableWorkspaceEvent,
@@ -703,7 +702,6 @@ export const selectConnectionsOf = (id: EntityId) => (s: DomainStoreState): Conn
     ).length,
   };
 };
-export const selectActivityFeed = (s: DomainStoreState): ActivityItem[] => s.activityFeed;
 export const selectUnreadNotificationCount = (s: DomainStoreState): number =>
   s.notifications.filter((n) => n.readAt == null).length;
 /** `undefined` ⇒ no server menu cached — the UI substitutes its shipped default (C-4). */
