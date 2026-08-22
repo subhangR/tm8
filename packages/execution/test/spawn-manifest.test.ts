@@ -317,6 +317,39 @@ describe('resolveWorkdir', () => {
     const resolved = resolveWorkdir(base, ctx, { ...opts, sessionIdHint: 'sess-9' });
     expect(resolved.path).toBe('/tmp/tm8-scratch/sess-9');
   });
+
+  /**
+   * THE FOURTH COMBINATION, which used to be the only unguarded one.
+   *
+   * `scratch` with a project throws. `worktree` without a project throws.
+   * `project` WITHOUT a project fell through to the projectless return and came
+   * back as `.../scratch/pending` — while still reporting `mode: 'project'`.
+   * Nothing failed, so the session spawned, the row recorded `project`, and the
+   * agent ran in a scratch directory instead of the repository it was asked for.
+   *
+   * The operator's report was "my sessions are not starting from /root/strykr".
+   */
+  it('refuses project mode when there is no project, rather than silently using scratch', () => {
+    const ctx = context();
+    ctx.project = null;
+    const request = { ...base, workdir: { mode: 'project' as const } };
+
+    expect(() => resolveWorkdir(request, ctx, opts)).toThrow(/"project" requires a project/);
+  });
+
+  it('leaves the DEFAULT untouched, which is why the guard is safe to add', () => {
+    // An unspecified mode already resolves to `project` only when one exists, so
+    // a caller that simply does not know is unaffected by the guard above. Only
+    // a caller explicitly asking for a project it does not have now fails.
+    const ctx = context();
+    ctx.project = null;
+    expect(() => resolveWorkdir(base, ctx, opts)).not.toThrow();
+    expect(resolveWorkdir(base, ctx, opts).mode).toBe('scratch');
+
+    const withProject = context();
+    expect(resolveWorkdir(base, withProject, opts).mode).toBe('project');
+    expect(resolveWorkdir(base, withProject, opts).path).toBe('/tmp/tm8-fixture');
+  });
 });
 
 describe('buildAgentCommand', () => {
