@@ -950,10 +950,45 @@ const WORK_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   cancelled: 'cancelled',
 };
 
+/**
+ * MIGRATION 155's mapping, the session half of the same mirror.
+ *
+ * The docblock above says every other kind "honestly OMITS the key … until
+ * phase 5 gives them one". Phase 5 GAVE work_session one — 155 installs
+ * `internal.session_status_category` and an AFTER trigger on every writer, and
+ * backfills — and this table never followed. The omission stopped being honest
+ * the day that migration ran: on the node a running session reads
+ * `category: 'in_progress'`, and in this fixture the same row read `undefined`,
+ * which the category predicate below treats as matching NO tab at all.
+ *
+ * That gap is why the reported defect had no failing test. Four empty tabs
+ * looks the same as a landing-tab bug from inside a fixture-backed test, so
+ * neither could be asserted, and the panel walk above renders every kind
+ * without ever reading a row into a band.
+ *
+ * `spawning -> to_do` is 155's ruling verbatim, including its reason: a
+ * spawning session has been ASKED for, not started, and it is what makes
+ * `session_resume` a legal `done -> to_do` reopen rather than a refused
+ * `done -> in_progress`.
+ */
+const SESSION_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
+  spawning: 'to_do',
+  running: 'in_progress',
+  idle: 'in_progress',
+  exited: 'done',
+  failed: 'done',
+};
+
 function stampCategory(s: EntitySummary): void {
-  if (s.state.kind !== 'task') return;
-  const category = WORK_STATUS_CATEGORY[s.state.status];
-  if (category) s.category = category;
+  if (s.state.kind === 'task') {
+    const category = WORK_STATUS_CATEGORY[s.state.status];
+    if (category) s.category = category;
+    return;
+  }
+  if (s.state.kind === 'work_session') {
+    const category = SESSION_STATUS_CATEGORY[s.state.status];
+    if (category) s.category = category;
+  }
 }
 
 export function createFixtureSeam(): FixtureSeam {

@@ -26,6 +26,7 @@
  * All of it is plain SELECT through RLS. Nothing in this file writes.
  */
 import type {
+  WorkSessionEndedKind,
   WorkSessionKind,
   AcceptanceCriterion,
   ActorSummary,
@@ -105,6 +106,7 @@ export const ENTITY_COLUMNS = `
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
+  ws.ended_kind as ws_ended_kind, ws.ended_reason as ws_ended_reason,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -257,6 +259,9 @@ export interface EntityRow {
   /** Lane facts (107); optional keeps legacy row fixtures source-compatible. */
   ws_checkout_branch?: string | null;
   ws_workdir_mode?: string | null;
+  /** Ending facts (171); optional for the same fixture-compatibility reason. */
+  ws_ended_kind?: string | null;
+  ws_ended_reason?: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -368,6 +373,24 @@ export function iso(value: Date | string): string {
 
 export function isoOrNull(value: Date | string | null): string | null {
   return value === null || value === undefined ? null : iso(value);
+}
+
+/**
+ * `work_sessions.ended_kind` (171) narrowed to the contract enum. A value the
+ * contract does not know is projected as `null` rather than passed through:
+ * the summary state is `.strict()`, so an unrecognised string would fail
+ * validation and take the whole entity read down with it — a schema drift on
+ * one column must not make a session unreadable.
+ */
+export function isEndedKind(value: string | null | undefined): value is WorkSessionEndedKind {
+  return (
+    value === 'completed' ||
+    value === 'stopped_by_operator' ||
+    value === 'server_restart' ||
+    value === 'out_of_memory' ||
+    value === 'crashed' ||
+    value === 'unknown'
+  );
 }
 
 /** `date` columns must not acquire a timezone on the way out. */
@@ -1361,6 +1384,13 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         row.ws_workdir_mode === 'scratch'
           ? { workdirMode: row.ws_workdir_mode }
           : {}),
+        // The ending facts (171), projected exactly like the lane facts above:
+        // nullable-and-present, so an explicit null reads as "no ending was
+        // recorded" and never as a default. `endedKind` is projected only when
+        // the column holds one of its CHECK values — the enum is the contract,
+        // and a row carrying something else is a bug to surface, not to render.
+        endedKind: isEndedKind(row.ws_ended_kind) ? row.ws_ended_kind : null,
+        endedReason: row.ws_ended_reason ?? null,
         // The persona, via the SAME resolver that attributes this session's
         // messages — `loadActors` keyed by the session's own id already does
         // the `participates_in` hop. A session with no persona resolves to a

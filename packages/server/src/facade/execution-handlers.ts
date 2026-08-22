@@ -713,6 +713,8 @@ export class DbGraphPort implements GraphPort {
       input.error ?? null,
       null, // p_transcript_doc_id — transcripts are post-G1A
       null, // p_client_mutation_id — an exit is not a client mutation
+      input.endedKind ?? null, // p_ended_kind (171)
+      input.endedReason ?? null, // p_ended_reason (171) — plain English
     ]);
   }
 
@@ -1267,6 +1269,16 @@ export interface ExecutionRuntime {
    * checkout) and a node with no worktree area still wants the first.
    */
   reconcileWorktrees(): Promise<WorktreeReconcileReport>;
+  /**
+   * Annotate every live session with WHY it is about to die, from the process
+   * that is dying (171). The mirror image of `reconcileGhosts`: that one infers
+   * a past death from the next process, this one observes an imminent one from
+   * this process. Call it from the signal handler, before the listener closes.
+   *
+   * Resolves to how many rows it managed to annotate. Never rejects — a
+   * shutdown must not hang or fail because bookkeeping did.
+   */
+  recordShutdown(signal: string): Promise<number>;
 }
 
 /**
@@ -1382,6 +1394,24 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         const message = error instanceof Error ? error.message : String(error);
         deps.logger?.warn?.('execution: ghost reconciliation skipped', { error: message });
         return { retired: 0, errors: [{ message }] };
+      }
+    },
+    recordShutdown: async (signal: string) => {
+      // Same loopback-owner identity as ghost reconciliation, and for the same
+      // reason: `work_session_transition` needs a real member. Wrapped for the
+      // same reason too — a node whose graph is unreachable must still be able
+      // to shut down.
+      try {
+        const o = await owner();
+        return await spawnService.recordShutdown(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'shutdown-record' },
+          signal,
+        );
+      } catch (error) {
+        deps.logger?.warn?.('execution: shutdown annotation skipped', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return 0;
       }
     },
     reconcileWorktrees: async () => {
@@ -1510,6 +1540,24 @@ export function registerExecutionHandlers(
           retired: 0,
           errors: [{ message: error instanceof Error ? error.message : String(error) }],
         };
+      }
+    },
+    recordShutdown: async (signal: string) => {
+      // Same loopback-owner identity as ghost reconciliation, and for the same
+      // reason: `work_session_transition` needs a real member. Wrapped for the
+      // same reason too — a node whose graph is unreachable must still be able
+      // to shut down.
+      try {
+        const o = await owner();
+        return await spawnService.recordShutdown(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'shutdown-record' },
+          signal,
+        );
+      } catch (error) {
+        deps.logger?.warn?.('execution: shutdown annotation skipped', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return 0;
       }
     },
     reconcileWorktrees: async () => {

@@ -158,6 +158,50 @@ describe('fixture seam — reads', () => {
     expect(done.page.items.every((s) => s.state.kind === 'work_session' && s.state.status !== 'running')).toBe(true);
   });
 
+  /**
+   * MIGRATION 155's session→category mapping, which this fixture did not mirror
+   * until the sessions-surface fix. `stampCategory` early-returned for every
+   * non-task, so a running session came back with `category: undefined` — and
+   * the category predicate treats absence as matching NO band. Four empty tabs.
+   *
+   * That is why the landing-tab defect above it had no failing test: from
+   * inside a fixture-backed panel test, "the wrong tab is open" and "no tab can
+   * hold this row" are the same empty screen. Asserting the mapping HERE is
+   * what makes the panel assertion mean what it says.
+   */
+  it('stamps a session category off its status, as migration 155 does on the node', async () => {
+    const seam = await openSeam();
+
+    const live = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['work_session'], filters: { category: ['in_progress'] },
+    });
+    const liveIds = live.page.items.map((s) => s.id);
+    // `running` -> in_progress. The record is what the filter reads; a stale
+    // session's RECORD still says running, exactly as the sessionStatus case
+    // above establishes, so it belongs in this band too.
+    expect(liveIds).toContain(sessionLive.id);
+    expect(liveIds).toContain(sessionStale.id);
+    expect(liveIds).not.toContain(sessionExited.id);
+
+    const finished = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['work_session'], filters: { category: ['done'] },
+    });
+    const finishedIds = finished.page.items.map((s) => s.id);
+    expect(finishedIds).toContain(sessionExited.id);
+    expect(finishedIds).not.toContain(sessionLive.id);
+
+    /* THE POINT OF THE WHOLE FIX, stated as a query: To Do cannot hold a live
+       session. Only the sub-second `spawning` transient maps there (155's
+       ruling — asked for is not started), so the band the sessions surface
+       used to open on is one a running row is structurally excluded from. */
+    const todo = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['work_session'], filters: { category: ['to_do'] },
+    });
+    expect(todo.page.items.every((s) => s.state.kind === 'work_session'
+      && s.state.status === 'spawning')).toBe(true);
+    expect(todo.page.items.map((s) => s.id)).not.toContain(sessionLive.id);
+  });
+
   it('delivery facets pass through UNCOLLAPSED — unknown stays unknown', async () => {
     const seam = await openSeam();
     const view = await seam.delivery(messageAgentNullProvenance.id);

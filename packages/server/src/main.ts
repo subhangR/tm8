@@ -32,6 +32,7 @@ import {
   createLivenessBroadcaster,
 } from './events/index.js';
 import { createExecutionRuntime, createLoopExecutorPort } from './facade/execution-handlers.js';
+import type { ExecutionRuntime } from './facade/execution-handlers.js';
 import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
 import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
@@ -137,6 +138,13 @@ export interface BootstrappedServer {
   readonly subscriptions: SubscriptionRegistry;
   readonly events: WorkspaceEventPublisher;
   readonly url: string;
+  /**
+   * The execution block, when this node has one. Exposed so whoever owns the
+   * process lifetime can call `recordShutdown` before exiting — the reason a
+   * session died is only knowable first-hand from the process it died with,
+   * and after that only inferable (171).
+   */
+  readonly execution?: ExecutionRuntime | undefined;
   /**
    * The graph connection, when one was configured. Undefined on a
    * database-less node — see the guard in `bootstrap`. Callers that own the
@@ -913,14 +921,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     });
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview, scheduler };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution };
 }
 
 export async function main(): Promise<void> {
   try {
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
-    const { server, url, db, delivery, preview, scheduler } = await bootstrap({
+    const { server, url, db, delivery, preview, scheduler, execution } = await bootstrap({
       startBackgroundJobs: true,
       // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
       // launch-config resolver. Without this line the chat ships dead — the
@@ -979,7 +987,24 @@ export async function main(): Promise<void> {
     // as a hang rather than as the clean exit it nearly was.
     const shutdown = (signal: string): void => {
       console.log(`\n${signal} — shutting down`);
-      void Promise.resolve(scheduler?.stop(2_000))
+      // FIRST, before anything is torn down: tell every live session why it is
+      // about to die (171). This process holds their PTYs, so they die with it
+      // either way — but this is the only moment the reason is known
+      // first-hand rather than inferred by the next process from an empty PTY
+      // map. Without it a deploy is indistinguishable, in the graph, from four
+      // agents finishing their work, which is exactly how 2026-08-22 11:04 hid.
+      //
+      // Bounded and non-throwing by contract (see recordShutdown), and awaited
+      // before the listener closes so the writes actually land. TimeoutStopSec
+      // on the unit remains the outer bound.
+      void Promise.resolve(execution?.recordShutdown(signal))
+        .catch(() => undefined)
+        .then((annotated) => {
+          if (typeof annotated === 'number' && annotated > 0) {
+            console.log(`  recorded shutdown reason on ${annotated} live session(s)`);
+          }
+        })
+        .then(() => scheduler?.stop(2_000))
         .catch(() => undefined)
         .then(() => server.close())
         .then(() => preview?.close())
