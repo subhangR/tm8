@@ -25,7 +25,12 @@ import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
 import type { ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
-import { chatModelChoices, firstRunnableModel, hasRunnableModel } from './chat-models';
+import {
+  chatModelChoices,
+  firstRunnableModel,
+  hasRunnableModel,
+  type ChatModelChoice,
+} from './chat-models';
 import { EntityTray } from './EntityTray';
 import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
@@ -979,13 +984,30 @@ export function ChatHomeScreen({
    * The selected model, and only if it can RUN. A model that cannot launch
    * here is not a selection this composer will act on — the picker refuses it,
    * and this is the second place that refusal is made rather than assumed.
+   *
+   * THE THREAD'S OWN MODEL IS ALWAYS SELECTABLE, catalog or no catalog. A model
+   * can be retired from the catalog after a thread was configured on it, and
+   * the thread keeps running on it regardless — the server reads its model from
+   * the binding, not from this browser. Requiring catalog membership here would
+   * make a person unable to SEND in a working conversation because a list they
+   * never see no longer mentions the model already answering them. Sending it
+   * changes nothing either way: an override is only transmitted when it differs
+   * from the thread's default, and this is exactly the case where it does not.
    */
-  const selectedModel = useMemo(
-    () => modelChoices.find(
+  const selectedModel = useMemo(() => {
+    const offered = modelChoices.find(
       (choice) => choice.model === modelId && choice.suitability.unavailable === null,
-    ) ?? null,
-    [modelId, modelChoices],
-  );
+    );
+    if (offered) return offered;
+    if (activeConfig && modelId === activeConfig.model) {
+      return {
+        model: activeConfig.model,
+        label: activeConfig.modelLabel,
+        suitability: { unavailable: null, tier: null },
+      } satisfies ChatModelChoice;
+    }
+    return null;
+  }, [modelId, modelChoices, activeConfig]);
   /**
    * ADOPT THE THREAD'S MODEL WHEN A CONFIGURED THREAD IS OPENED.
    *

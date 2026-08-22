@@ -86,6 +86,35 @@ describe('changing the model of a conversation already under way', () => {
     expect(controls.posts[0]?.model).toBeUndefined();
   });
 
+  /**
+   * A MODEL CAN BE RETIRED FROM THE CATALOG AFTER A THREAD WAS BUILT ON IT, and
+   * the thread keeps running on it — the server reads its model from the
+   * binding, not from this browser. So the thread's own model stays sendable
+   * even when the offered list has never heard of it; requiring catalog
+   * membership would leave a person unable to reply in a working conversation
+   * because of a list they never see.
+   */
+  it('stays sendable when the thread runs a model the catalog no longer offers', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const withoutTheThreadsModel = MODELS.filter((m) => m.model !== 'claude-sonnet-4-5');
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={withoutTheThreadsModel} />,
+    );
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() =>
+      expect(view.getByLabelText('Chat model').textContent).toContain('Sonnet 4.5'),
+    );
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Carry on.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+    // …and still sends no override: it IS the thread's default.
+    expect(controls.posts[0]?.model).toBeUndefined();
+  });
+
   /** Teammate and mode are still the thread's for its whole life. */
   it('leaves the other two thread settings pinned', async () => {
     const { port } = createChatHomeFixturePort();
