@@ -102,7 +102,7 @@ import type {
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionEndedKind, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -223,6 +223,16 @@ export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
 /** Mirrors `work_sessions.workdir_mode`'s CHECK exactly — 001, widened by 015. */
 export const WorkSessionWorkdirModeSchema: z.ZodType<WorkSessionWorkdirMode> =
   z.enum(['project', 'worktree', 'scratch']);
+/** Mirrors `work_sessions.ended_kind`'s CHECK exactly — 171. */
+export const WorkSessionEndedKindSchema: z.ZodType<WorkSessionEndedKind> =
+  z.enum([
+    'completed',
+    'stopped_by_operator',
+    'server_restart',
+    'out_of_memory',
+    'crashed',
+    'unknown',
+  ]);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
   z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
@@ -381,6 +391,13 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // explicit null checkoutBranch = measured absence (no repo/detached HEAD).
     checkoutBranch: z.string().nullable().optional(),
     workdirMode: WorkSessionWorkdirModeSchema.optional(),
+    // The ending facts (171), additive: absent = a pre-171 node, no claim;
+    // explicit null = a session that has not ended, or one that ended before
+    // 171 and so was never asked why. `endedReason` is one plain-English
+    // sentence for a person; `endedKind` is the closed vocabulary that keeps
+    // `out_of_memory` — the one legitimate involuntary death — recognisable.
+    endedKind: WorkSessionEndedKindSchema.nullable().optional(),
+    endedReason: z.string().nullable().optional(),
     // The persona this run acts as, from its latest `participates_in` edge.
     // Absent = a node that predates the field; explicit null = a run with no
     // persona, which renders the tool alone. See the DTO note in contract.ts.

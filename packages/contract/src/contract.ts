@@ -332,6 +332,38 @@ export type CoreEntityState =
       checkoutBranch?: string | null;
       workdirMode?: WorkSessionWorkdirMode;
       /**
+       * WHY THIS SESSION ENDED (171). ADDITIVE and OPTIONAL, like the lane
+       * facts above: a node that predates 171 omits them and a consumer
+       * renders no ending claim.
+       *
+       * Until 171 the only ending facts a client could see were `status` and
+       * `exitedAt`. That is how the 2026-08-22 11:04 incident hid: a deploy
+       * SIGKILLed the server with four live agents, and all four were recorded
+       * as ordinary exits. `exitCode` was NULL (it always is on that path) and
+       * the `error` column — which did hold an accurate reason — is not on
+       * this object at all. Four unexplained deaths were indistinguishable
+       * from four clean finishes.
+       *
+       * `endedReason` is ONE PLAIN-ENGLISH SENTENCE, written for a person who
+       * is not a developer: "Stopped by a server restart at 11:04." Never a
+       * signal name, exit code, or stack trace. Render it verbatim.
+       *
+       * `endedKind` is the closed vocabulary for code to branch on. It exists
+       * chiefly so `out_of_memory` stays RECOGNISABLE rather than folded in
+       * with every other ending — under the standing policy, resource
+       * exhaustion is the one involuntary death that is allowed to happen, so
+       * it is the one a client must be able to single out. It is kernel
+       * evidence (the cgroup `oom_kill` counter), not an inference from a
+       * signal number.
+       *
+       * `null` on either is a MEASURED absence — a pre-171 row, or a session
+       * that has not ended — and renders nothing, never a default. Both are
+       * cleared when a session is resumed: the ending belonged to the run that
+       * ended, not to the one now starting.
+       */
+      endedKind?: WorkSessionEndedKind | null;
+      endedReason?: string | null;
+      /**
        * WHO IS RUNNING THIS SESSION — the persona resolved through the
        * session's most recent `participates_in` edge, the SAME hop
        * `loadActors` attributes messages by. Carried on the summary so a
@@ -3005,6 +3037,36 @@ export type WorkSessionKind = 'agent' | 'credential' | 'shell';
  * branch is not exclusively the session's, 'scratch' has no project repo.
  */
 export type WorkSessionWorkdirMode = 'project' | 'worktree' | 'scratch';
+
+/**
+ * WHAT CLASS OF ENDING a session had — `work_sessions.ended_kind`'s CHECK
+ * verbatim (171). The machine-readable half of the ending; `endedReason`
+ * carries the sentence a person reads.
+ *
+ *   completed            — the agent finished on its own terms, exit 0.
+ *   stopped_by_operator  — somebody asked it to stop.
+ *   server_restart       — the server process it lived in went away: a deploy,
+ *                          a restart, a crash of the host. The agent did not
+ *                          choose this and nothing was wrong with it.
+ *   out_of_memory        — killed for memory. KERNEL EVIDENCE, from the
+ *                          cgroup's `oom_kill` counter, never inferred from a
+ *                          signal number. Kept as its own value because under
+ *                          the standing policy resource exhaustion is the ONE
+ *                          involuntary death that may legitimately happen, so
+ *                          it must never be folded in with the others.
+ *   crashed              — the agent's own process died badly: a non-zero exit
+ *                          or a signal that was not a managed stop.
+ *   unknown              — an ending was observed but nothing explains it.
+ *                          Deliberately available: an honest "we do not know"
+ *                          beats picking the nearest plausible value.
+ */
+export type WorkSessionEndedKind =
+  | 'completed'
+  | 'stopped_by_operator'
+  | 'server_restart'
+  | 'out_of_memory'
+  | 'crashed'
+  | 'unknown';
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 

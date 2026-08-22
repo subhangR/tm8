@@ -523,6 +523,15 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          Not `assignControl` because the write is the addItem/removeItem pair
          (set → member), not a generic edge from the row. */
       'membership',
+      /* Opened 2026-08-22 with the sessions-surface fix. WHICH of the four
+         shared category tabs a kind OPENS ON, which used to be `[0]` — To Do —
+         for every kind. Deliberately NOT a member of `categories`: the four
+         bands and their order are universal (D41) and stay exactly one array;
+         what is per-kind is where a kind's population SITS in them. An AUTHORED
+         kind is born in To Do; an OBSERVED one is not, and work_session's To Do
+         holds only the sub-second `spawning` transient (migration 155) — so the
+         sessions list opened on a band a running session cannot be in. */
+      'defaultCategory',
     ];
     for (const row of allKinds()) {
       for (const key of Object.keys(row.list)) {

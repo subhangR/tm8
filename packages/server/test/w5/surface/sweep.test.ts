@@ -828,18 +828,56 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   merge of origin/main into this branch: ls db/migrations/*.sql | wc -l -> 157
     // This branch's file moved 166 -> 167 in the same edit, because main's 166
     // landed first and two files cannot share a prefix.
-    // 157 -> 160 (2026-08-22, chat run controls): THREE steps, and as above the
-    // split matters more than the number. THIS PIN WAS ALREADY RED ON
-    // origin/main again — main measures 158 against a pin of 157, which is the
-    // failure task 01a02888-e7d4 owns. Measured on both trees, not adjusted by
-    // arithmetic:
+    //
+    // 157 -> 159 (2026-08-22): TWO steps again, and again only one of them is
+    // this branch's. 171_session_ended_reason.sql is the +1 this branch owns.
+    // The other +1 is main RED ON THIS LINE BEFORE THIS BRANCH EXISTED — the
+    // third time, after #447 and after the row above. #504 is the standalone
+    // repair for it (157 -> 158, no migration of its own); this branch would be
+    // red on main's arrears whether or not #504 lands first, so it carries the
+    // measured number rather than a number that is only right after someone
+    // else merges. MEASURED, never derived:
     //   origin/main @ d681023f: ls db/migrations/*.sql | wc -l -> 158  (pin said 157, RED)
-    //   this branch:            ls db/migrations/*.sql | wc -l -> 160
-    // TWO of the three are this branch's: 169_chat_turn_stopped_state.sql and
-    // 170_chat_per_turn_model.sql. The third is that pre-existing red, paid off
-    // here for the reason the block above gives — so the next person's failure
-    // is legible as their own. No prefix is duplicated (checked).
-    expect(server.appliedMigrations.length).toBe(160);
+    //   pr504:                  ls db/migrations/*.sql | wc -l -> 158  (pin says 158, correct)
+    //   this branch:            ls db/migrations/*.sql | wc -l -> 159
+    //   this branch:            git ls-tree --name-only HEAD db/migrations/ | grep -c sql -> 159
+    //
+    // RENUMBERED 169 -> 171 BEFORE LANDING, and this is the row the assertion
+    // below was written for. #517 (feat/chat-run-controls) independently
+    // authored 169_chat_turn_stopped_state.sql and 170_chat_per_turn_model.sql
+    // against the same main. Both branches were correct in isolation and each
+    // had a unique prefix WITHIN ITSELF, so neither branch's CI could see the
+    // other: `pull_request` builds the merge of ONE pr into its base, and the
+    // duplicate exists only in a merged tree that no run ever constructs. Git
+    // does not conflict on two different filenames, so the second to land would
+    // have put a duplicate 169 on main silently. 171 was chosen by checking
+    // every open PR for a db/migrations addition, not by adding one to main's
+    // highest — 169 and 170 are spoken for and 171 was the first free prefix
+    // above them.
+    //
+    // THIS NUMBER ASSUMES THIS BRANCH IS THE NEXT MIGRATION TO LAND. If #517
+    // lands first it adds two files and the merged tree is 161, not 159.
+    // Re-measure on the merged tree; do not adjust by arithmetic.
+    //
+    // 159 -> 161 (2026-08-22, chat run controls, AT MERGE): THIS BRANCH IS THE
+    // SECOND LANDER, which is the case the row above told the next person to
+    // handle. #514 landed first (main 8ae2f29d, 159 files), so this branch's
+    // earlier pin of 160 — measured when main was d681023f/158 and #514 was
+    // still open — is now wrong by exactly #514's one file.
+    //
+    // 161 APPEARS ON NEITHER SIDE OF THE MERGE CONFLICT. HEAD offered 160 and
+    // origin/main offered 159; the correct value is on neither, so this could
+    // not be resolved by picking a side and was not. RE-MEASURED on the merged
+    // tree, three independent ways, exactly as the row above instructs:
+    //   ls db/migrations/*.sql | wc -l              -> 161
+    //   git ls-files db/migrations | grep -c '.sql' -> 161
+    //   find db/migrations -name '*.sql' | wc -l    -> 161
+    // All three of the afternoon's migrations are present and every prefix is
+    // unique (checked, no duplicates): 169_chat_turn_stopped_state.sql and
+    // 170_chat_per_turn_model.sql from this branch, 171_session_ended_reason.sql
+    // from #514. The 169/170-versus-171 renumber the row above describes did its
+    // job: the merged tree that no CI run ever builds is clean.
+    expect(server.appliedMigrations.length).toBe(161);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

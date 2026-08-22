@@ -28,12 +28,35 @@
 #
 # 1. After=, not Requires=, on Postgres. Requires= couples the units so hard that
 #    a Postgres restart takes tm8 down with it and leaves it down. After= gives
-#    the ordering, which is what is actually wanted; Restart=on-failure handles
-#    the reconnect.
+#    the ordering, which is what is actually wanted; Restart= handles the
+#    reconnect.
 #
-# 2. NEVER stop this with a signal. A clean Node shutdown exits 0, so under
-#    Restart=on-failure a `kill -TERM` "restart" leaves the unit INACTIVE and the
-#    instance silently DOWN. Use systemctl stop/start/restart, only.
+# 2. Restart=always, NOT on-failure — and this is load-bearing for agent safety,
+#    not just uptime.
+#
+#    The server exits 0 on SIGTERM (main.ts's handler). Under the previous
+#    Restart=on-failure that made `kill -TERM` leave the unit INACTIVE and the
+#    instance silently DOWN, so the only safe restart verb was systemctl — which needs
+#    root. An operator without passwordless sudo therefore had exactly one way
+#    to cycle this service: SIGKILL the main PID, which is a "failure" exit and
+#    so does get restarted. That is precisely what /home/tm8/deploy-main.sh
+#    does, and on 2026-08-22 11:04 it killed four live agents.
+#
+#    SIGKILL is the worst possible way to stop this process: no shutdown handler
+#    runs, so nothing records WHY any live session died, and the next process
+#    can only infer it. Under Restart=always a plain `kill -TERM` is a correct,
+#    complete restart — the handler runs, every live session is annotated with a
+#    plain-English reason (171), and systemd brings the unit back. The hard kill
+#    stops being necessary.
+#
+#    `systemctl stop` still stops the unit and keeps it stopped: an explicit
+#    stop is not a restart trigger under any Restart= setting. So this does not
+#    take the stop verb away from anyone.
+#
+#    WHAT THIS DOES NOT DO: it does not keep agents alive across the restart.
+#    Their PTY masters live in this process and die with it — measured, see
+#    docs/ops/agent-survival-across-restarts.md. This makes the death honest and
+#    graceful, not avoidable.
 
 [Unit]
 Description=tm8 @SLOT@ server (@PORT@)
@@ -47,7 +70,7 @@ Group=@USER@
 WorkingDirectory=/opt/tm8/@SLOT@
 EnvironmentFile=/etc/tm8/@SLOT@.env
 ExecStart=/usr/bin/node --enable-source-maps /opt/tm8/@SLOT@/packages/server/dist/index.js
-Restart=on-failure
+Restart=always
 RestartSec=3
 KillSignal=SIGTERM
 TimeoutStopSec=20
