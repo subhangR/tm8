@@ -43,7 +43,9 @@ The new UI is built from an approved design suite in **`packages/tm8-ui`** (new 
 
 - Ports: tm8-server **4610** · old UI dev **4611** · **new tm8-ui dev server: 4612** · sidecar Postgres **5442**. Data dirs `~/.tm8/` (prod) `~/.tm8-dev/` (dev).
 - Runtime split: `packages/server` + `packages/execution` run **node** (never bun); UI packages may use bun/vite.
-- Verification is scoped per-package (`tsc -b`, `vitest`); **never run parallel vite builds**. `HOW-TO-TEST.md` at repo root is the test manual — follow it literally.
+- Verification is scoped per-package (`bun run typecheck`, `bun run test`); do not
+  substitute a bare compiler command for the package gate. **Never run parallel vite
+  builds.** `HOW-TO-TEST.md` at repo root is the test manual — follow it literally.
 - STATE.md is historically stale; trust the tree, not STATE.md.
 
 ## Protocol

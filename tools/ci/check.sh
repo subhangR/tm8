@@ -89,6 +89,11 @@ else
 fi
 
 # --- 2. typecheck: per-package scoped tsc -b, SEQUENTIAL --------------------
+# Refuse to begin if any first-class project would make build mode ambiguous or
+# vacuous. This audits the effective config (including `extends`) and proves that
+# every project has both `composite` and at least one input file.
+run_stage "typecheck configuration audit" node tools/ci/typecheck-config.mjs
+
 # Order matters: contract first (everything references it), then dependents.
 #
 # The three groups below (TSC_PROJECTS, packages/ui, packages/tm8-ui) are
@@ -124,7 +129,7 @@ done
 # packages/ui is intentionally absent above: it arrives at W3/M2 and is verified
 # with its own scoped `tsc -b` + a SINGLE vite build, never fanned out here.
 if [ -f packages/ui/tsconfig.json ]; then
-  run_stage "typecheck packages/ui" ./node_modules/.bin/tsc -b packages/ui
+  run_stage "typecheck packages/ui" bun run --cwd packages/ui typecheck
 else
   skip "typecheck packages/ui" "UI arrives at W3/M2"
 fi
@@ -133,7 +138,7 @@ fi
 # the contract build so additions such as execution.spawn credential provenance
 # cannot land on one side of the seam without the other.
 if [ -f packages/tm8-ui/tsconfig.json ]; then
-  run_stage "typecheck packages/tm8-ui" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
+  run_stage "typecheck packages/tm8-ui" bun run --cwd packages/tm8-ui typecheck
 else
   skip "typecheck packages/tm8-ui" "production UI is absent"
 fi

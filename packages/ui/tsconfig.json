@@ -1,6 +1,7 @@
 {
   "//": "Mirrors maestro-ui/tsconfig.json at snapshot b422978 — the config the 270-file collab-v2 module was gate-verified against. Deliberately NOT stricter: adding noUnusedLocals/noUnusedParameters here produced 20+ errors inside Atlas's module that are config drift rather than transplant breakage, and satisfying them would have meant editing files this lane does not own.",
   "compilerOptions": {
+    "composite": true,
     "target": "ES2021",
     "useDefineForClassFields": true,
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
