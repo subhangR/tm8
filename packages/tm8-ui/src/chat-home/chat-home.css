@@ -981,6 +981,72 @@ button.tch-entity-chip:hover {
   }
 }
 
+/* ── THE CONVERSATION BEING OPENED ────────────────────────────────────────
+   The arm that replaced the bare centred wait row — see `ThreadOpening` in
+   ChatHomeScreen.tsx for why the outgoing transcript is not what stands here.
+
+   TOP-ALIGNED AND NOT CENTRED, which is the whole structural point. The row
+   this supersedes was one line with `margin: auto` around it, so on a phone —
+   where the transcript IS the page — the surface emptied to a mark floating in
+   the middle and then refilled from the top. This starts where the turns will
+   start and holds their column, so the arriving transcript replaces a page
+   that is already the right shape. */
+.tch-opening {
+  display: flex;
+  flex-direction: column;
+  /* NOT `flex: 1`. `.tch-transcript` is a scrolling flex column and `.tch-welcome`
+     claims the whole box there; this must not, or the skeleton would stretch its
+     rows down a tall viewport and stop tracing the turns it stands for. */
+  flex: 0 0 auto;
+}
+
+/* The wait row keeps its words and its mark; it just captions the shape now
+   instead of being the only thing on the page. */
+.tch-opening__wait { padding-top: 0; margin-bottom: var(--pn-space-5); }
+
+.tch-opening__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* One placeholder turn, spaced like a real one (`.tch-turn`'s own margin) so
+   the arriving transcript does not shift what is already on screen. */
+.tch-opening__row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: var(--pn-space-6);
+}
+
+/* The viewer's side follows the same ruling the real bubbles do (byline
+   sidedness, 2026-08-18): their own turns sit right, the agent's stay in the
+   26px avatar gutter. A skeleton that ignored it would re-lay itself the
+   instant the turns landed. */
+.tch-opening__row[data-role='user'] { align-items: flex-end; }
+.tch-opening__row[data-role='assistant'] { align-items: flex-start; margin-left: 26px; }
+
+.tch-opening__line {
+  width: min(72%, 420px);
+  height: 11px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+  animation: tch-opening-pulse 1.6s var(--pn-ease-standard) infinite;
+}
+
+.tch-opening__line--short { width: min(44%, 260px); }
+
+@keyframes tch-opening-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* The skeleton is scenery for a wait, so it is the first thing to hold still:
+   a reader who has asked for reduced motion gets the shape without the
+   breathing, and the wait mark beside it is still the activity signal. */
+@media (prefers-reduced-motion: reduce) {
+  .tch-opening__line { animation: none; }
+}
+
 /* Still the sidebar row's live pip — a STATUS on a list row, not a wait, and
    one per streaming thread. It keeps the dot. */
 @keyframes tch-dot-pulse {
