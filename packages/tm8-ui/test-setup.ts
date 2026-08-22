@@ -69,3 +69,41 @@ install(globalThis);
 if (typeof window !== 'undefined' && (window as unknown) !== globalThis) {
   install(window);
 }
+
+/**
+ * `waitFor`'s OWN deadline, which is a SECOND deadline and a much tighter one.
+ *
+ * Testing Library's `asyncUtilTimeout` defaults to 1000 ms
+ * (`@testing-library/dom/dist/config.js:15`), and it is the deadline that
+ * actually decides most of this package's async assertions: a `waitFor` gives
+ * up after one second and throws its own "Unable to find …" long before
+ * vitest's `testTimeout` in vite.config.ts is anywhere near expiring. Raising
+ * only the outer one would leave the inner one governing, which is why this is
+ * set here and not only there.
+ *
+ * ONE SECOND IS A CLAIM THAT A REACT SHELL MOUNTS AND SETTLES IN UNDER A
+ * SECOND. On this repo's build node — 4 cores, load average 15-24, up to eight
+ * agent sessions running suites at once — it does not, and the failure it
+ * produces is a plain red with a DOM dump, indistinguishable from a real
+ * missing element. That is how `unbuilt-view-card.test.tsx` came to be reported
+ * as a failure that "passes in isolation", and it is the same shape as the
+ * craft-screen cases that fail one round in ten and pass the other nine.
+ *
+ * This weakens nothing. `waitFor` polls and returns the instant its callback
+ * succeeds, so a passing assertion costs exactly what it costs today; only a
+ * FAILING one waits longer before it reports — and an assertion that was going
+ * to fail still fails, with the same message. What changes is that an assertion
+ * that was going to SUCCEED is no longer cut off by the clock.
+ *
+ * Deliberately kept under vite.config.ts's `testTimeout` so the inner deadline
+ * fires first and names the element, rather than the outer one firing and
+ * saying only "Test timed out". Override with `TM8_TEST_ASYNC_TIMEOUT_MS`.
+ */
+const ASYNC_UTIL_TIMEOUT_MS = Number(process.env['TM8_TEST_ASYNC_TIMEOUT_MS'] ?? 10_000);
+
+/* jsdom only. This file also runs for the many `environment: 'node'` suites in
+   this package, and @testing-library/dom reaches for a document at import. */
+if (typeof document !== 'undefined') {
+  const { configure } = await import('@testing-library/dom');
+  configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
+}
