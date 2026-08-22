@@ -424,7 +424,14 @@ export function ChatHomeScreen({
   }, [routeThreadId, soloConversation]);
 
   /* Publish the list and the RESOLVED selection to a solo host — see the
-     props' docblocks for why these are two callbacks and not one. */
+     props' docblocks for why these are two callbacks and not one.
+
+     THIS EFFECT IS AS CHEAP AS `threads` IS STABLE, and on the phone that is a
+     rendering budget rather than a nicety: the solo host wires
+     `onThreadsChange` to its OWN `setThreads`, so a fire here re-renders the
+     whole shell. Every `setThreads` updater on this screen must therefore
+     return `current` unchanged when nothing a row RENDERS moved — see the
+     frame updater in the subscribe effect for the case that made this bite. */
   useEffect(() => {
     onThreadsChange?.(threads);
   }, [threads, onThreadsChange]);
@@ -586,17 +593,53 @@ export function ChatHomeScreen({
             refreshingThreadsRef.current = false;
           });
         }
-        setThreads((current) =>
-          current.map((thread) =>
-            thread.rootId === frame.threadRootId
-              ? {
-                  ...thread,
-                  state: frame.type === 'chat.turn.done' ? 'idle' : 'streaming',
-                  updatedAt: new Date().toISOString(),
-                }
-              : thread,
-          ),
-        );
+        /*
+         * ── THE FRAME UPDATER IS A NO-OP UNLESS THE LIST ACTUALLY CHANGED ───
+         *
+         * This ran `current.map(...)` on EVERY frame, and `map` allocates a new
+         * array unconditionally — so `threads` took a new identity at streaming
+         * TOKEN RATE whether or not any row's rendered facts moved. That
+         * identity fires the publish effect above, and on the phone
+         * `onThreadsChange` is the SHELL's `setThreads` (`MobileShell`, the
+         * `dashboard` arm): every token re-rendered the shell, which re-runs
+         * `screenFor` and rebuilds the header, the frame, the drawer and the
+         * chat screen. On desktop that repaints one sidebar column; on the
+         * phone the chat screen IS the shell, so it repainted the page. That
+         * was the flicker Subhang reported.
+         *
+         * Returning `current` unchanged is the whole fix: React bails out of
+         * the state update, `threads` keeps its identity, and the publish
+         * effect never fires. It is referential equality and not `memo()` on
+         * purpose — a memo would only move the wasted render one level down,
+         * and every consumer of the published list would still be woken.
+         *
+         * AND A DELTA NO LONGER REWRITES `updatedAt`. That field is the SORT
+         * KEY `composeThreadColumn` buckets and orders by, so stamping it per
+         * token made rows physically reorder underneath a reader while the
+         * answer they were reading streamed. During a turn the list only needs
+         * the state flip (streaming ⇄ idle) that draws the live pip; the real
+         * timestamp is stamped once on `chat.turn.done` — one reorder when the
+         * turn is genuinely over, which is what "most recent first" means —
+         * and otherwise left to the next `listThreads` read.
+         */
+        setThreads((current) => {
+          const index = current.findIndex((thread) => thread.rootId === frame.threadRootId);
+          if (index === -1) return current;
+          const thread = current[index];
+          if (!thread) return current;
+          const done = frame.type === 'chat.turn.done';
+          // A delta only ever asserts "this thread is live". If the row already
+          // says so, nothing rendered would differ — keep the identity.
+          if (!done) {
+            if (thread.state === 'streaming') return current;
+            const next = current.slice();
+            next[index] = { ...thread, state: 'streaming' };
+            return next;
+          }
+          const next = current.slice();
+          next[index] = { ...thread, state: 'idle', updatedAt: new Date().toISOString() };
+          return next;
+        });
         if (frame.threadRootId !== activeRootRef.current) return;
         // A delta for a message we have never seen means another participant
         // started this turn — pull their message in alongside the stream.
