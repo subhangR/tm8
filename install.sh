@@ -1416,7 +1416,14 @@ verify_running() {
   # A healthy /health proves SOMETHING is serving, not that it is what this run
   # built — a stale process answers exactly the same. Prove the unit entered
   # active during this run, so the no-op above cannot come back silently.
-  if (( USE_SYSTEMD )) && command -v systemctl >/dev/null; then
+  #
+  # SPELLED OUT rather than `(( USE_SYSTEMD ))`, which was never assigned
+  # anywhere. Under `set -u` that is fatal the moment /health comes back ok, and
+  # both call sites that expect a healthy answer mute stderr (`2>/dev/null`),
+  # so the shell died at this line with its own diagnosis discarded — taking
+  # the entire closing summary with it and returning 1 from an install that
+  # had just succeeded. This is the same guard as the systemd branch below.
+  if (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]] && command -v systemctl >/dev/null; then
     local entered entered_epoch
     entered="$(systemctl show "$UNIT_NAME" -p ActiveEnterTimestamp --value 2>/dev/null || true)"
     entered_epoch="$(date -d "$entered" +%s 2>/dev/null || echo 0)"
