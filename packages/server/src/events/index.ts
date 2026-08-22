@@ -17,4 +17,5 @@ export * from './poll.js';
 export * from './control.js';
 export * from './presence.js';
 export * from './pump.js';
+export * from './liveness-broadcast.js';
 export * from './handlers.js';

@@ -155,6 +155,49 @@ export function fanOutPresence(registry: SubscriptionRegistry, spaceId: string, 
   return delivered;
 }
 
+/**
+ * Ephemeral LIVENESS fan-out — the third path, and a third function for the
+ * reason stated at the top of this file: a single `fanOut(…, isPresence)` with
+ * a branch inside it is one bad `if` away from putting an ephemeral event on
+ * the durable stream and poisoning a client's `seq` cursor. Three paths cannot
+ * make that mistake either.
+ *
+ * ## Why this uses the SPACE set and not the presence set
+ *
+ * `execution.liveness_changed` is ephemeral like presence, but it is not
+ * presence and must not be gated behind the `presence` toggle. Presence is an
+ * opt-in because a client that does not draw viewer avatars should not pay for
+ * them; liveness is what the chat surface needs in order to stop lying about
+ * whether an agent is running, and a chat client that had to opt into a
+ * PRESENCE channel to get it would be coupling two unrelated features.
+ *
+ * ## Why space-subscription is the right authorization boundary
+ *
+ * `subscribe` is authorized against the same membership predicate that guards
+ * `spaces.get`, and a Space the caller may not read is never added to this
+ * set (control.ts). The payload's ids are work_sessions in that space, and
+ * read visibility for a work_session IS space membership —
+ * `internal.entity_row_visible` (db/migrations/159) reduces to
+ * `is_space_member(space_id)` for every kind except a restricted `project`.
+ * So a subscriber receiving this set receives exactly what `execution.liveness`
+ * would hand it over HTTP, and nothing more.
+ *
+ * That equivalence is the whole safety argument, so it is asserted rather than
+ * assumed: see `liveness-broadcast.test.ts`.
+ */
+export function fanOutLiveness(registry: SubscriptionRegistry, spaceId: string, text: string): number {
+  let delivered = 0;
+  for (const sink of registry.connectionsFor(spaceId)) {
+    try {
+      sink.send(text);
+      delivered += 1;
+    } catch {
+      // See fanOutDurable.
+    }
+  }
+  return delivered;
+}
+
 // `SubscriptionAuthorizer` USED TO BE DECLARED HERE, alongside an
 // `AllowAllSubscriptionAuthorizer` that returned true unconditionally and whose
 // own docstring said it "MUST NOT ship past W2". Both are gone, deliberately.

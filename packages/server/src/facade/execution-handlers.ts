@@ -43,6 +43,7 @@ import {
   type ResolvedInteractionProfileContext,
   type ResumeWorkSessionResult,
   type SessionLaunchPosture,
+  type SessionLivenessSink,
   type SpawnContext,
   type SpawnRequest,
   type Tm8Manifest,
@@ -1217,6 +1218,17 @@ export interface ExecutionRuntimeDeps {
    * this whole file just stopped having.
    */
   owner?: () => Promise<LoopbackOwner>;
+  /**
+   * Where session liveness is PUSHED (T-L10). Handed straight to
+   * `SpawnService`, which is the only thing here that holds both the session
+   * and its space at the instant a terminal appears, goes quiet or dies.
+   *
+   * OPTIONAL. A runtime built without one still records every transition in the
+   * graph exactly as before; clients simply fall back to the 30s liveness read
+   * to notice. That is the pre-push behaviour, so an unwired host degrades
+   * rather than breaking.
+   */
+  liveness?: SessionLivenessSink;
 }
 
 export interface ExecutionRuntime {
@@ -1330,6 +1342,10 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
       : {}),
     ...(worktrees ? { worktrees } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
+    // The push seam (T-L10). Spread rather than passed as `undefined` because
+    // `SpawnServiceOptions` is exactOptionalPropertyTypes-clean and an explicit
+    // undefined is not the same as an absent key.
+    ...(deps.liveness ? { liveness: deps.liveness } : {}),
   });
 
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);

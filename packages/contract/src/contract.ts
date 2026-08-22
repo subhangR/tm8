@@ -1143,7 +1143,86 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'presence.changed'; entityId: EntityId; presence: PresenceSnapshot }
  | { type: 'typing.changed'; anchorId: EntityId; typingActorIds: EntityId[] }
  | { type: 'voice.participants.changed'; voiceChannelId: EntityId; spaceId: SpaceId;
-     participants: VoiceParticipant[] });
+     participants: VoiceParticipant[] }
+ /**
+  * The node's PTY map moved — a terminal appeared, went quiet, woke up, or
+  * died. EPHEMERAL and server-synthesized, exactly like
+  * `voice.participants.changed`: never ledgered, never on the durable stream,
+  * `seq` is channel-local (see `EphemeralWorkspaceEvent` below).
+  *
+  * ## Why this event exists at all
+  *
+  * `execution.liveness` (A21) answers "is there actually a live terminal", and
+  * before this event the ONLY way to ask was an HTTP read on a 30s interval,
+  * nudged by `entity.upsert`. That is the graph announcing WITHOUT the socket
+  * delivering: the client is told something about a work_session changed and
+  * then has to go ask the database WHAT. Under T-L10 the database is banned
+  * from the streaming hot path, so the announce-then-poll shape was the
+  * violation — and it cost a round trip (measured p50 298ms on a node with 9
+  * live sessions) on top of the pump's own interval.
+  *
+  * The node already knows every one of these transitions in-process, with no
+  * query. This carries the answer instead of a reason to go looking for it.
+  *
+  * ## Why it carries the whole live set and not just the delta
+  *
+  * `liveEntityIds` is the FULL live set for this space, so applying the event
+  * is idempotent and a dropped frame self-heals on the next one. A pure delta
+  * would wedge a client that missed one — and this channel is explicitly
+  * allowed to drop, so a wedgeable fold would be a bug by construction. The
+  * set is bounded by the node's LIVE PTY map (the session cap, tens), never by
+  * the number of work_sessions that have ever existed.
+  *
+  * Every id in it is a work_session in `spaceId`, and read visibility for a
+  * work_session IS space membership — `internal.entity_row_visible`
+  * (db/migrations/159) reduces to `is_space_member(space_id)` for every kind
+  * except a restricted `project`. So the fan-out's space scoping is the same
+  * authorization boundary `execution.liveness` enforces with RLS, and this
+  * event tells a subscriber nothing that read would refuse them.
+  */
+ | { type: 'execution.liveness_changed';
+     /** Stable per node process. A change means every previously-live PTY is gone. */
+     nodeBootId: string;
+     /** The FULL live set for this space, as the node's PTY map holds it. */
+     liveEntityIds: EntityId[];
+     /**
+      * WHICH session moved and HOW, so a consumer can be specific about the one
+      * helper that changed rather than re-rendering the crew. Null when the
+      * event is a whole-set correction with no single cause (node restart).
+      */
+     changed: { id: EntityId; transition: LivenessTransition } | null;
+     /**
+      * The evidence tier behind `changed`, per DESIGN 2 (#507): provenance
+      * rides EVERY reading, so a consumer can refuse to render a guess as a
+      * fact. `appeared`/`vanished` are `reported` — the node owns the PTY and
+      * observed it. `woke`/`quiet` are `guessed` — they come from stream
+      * silence, which cannot tell an agent thinking hard from one stopped at a
+      * permission prompt. Null when `changed` is null.
+      */
+     confidence: LivenessConfidence | null;
+     checkedAt: string });
+
+/**
+ * What moved in the node's PTY map. Lifecycle (`appeared`/`vanished`) and
+ * activity (`woke`/`quiet`) are deliberately different words: the node KNOWS
+ * the first pair and INFERS the second, and a consumer that could not tell
+ * them apart would have to treat both as equally trustworthy. See
+ * `LivenessConfidence`.
+ */
+export type LivenessTransition = 'appeared' | 'vanished' | 'woke' | 'quiet';
+
+/**
+ * DESIGN 2's evidence tiers, as far as the PTY host can currently reach.
+ *
+ * `reported` — the node observed it directly (it spawned the PTY; it reaped it).
+ * `guessed`  — inferred from stream silence, which is what ships today.
+ *
+ * `derived` (read from the agent's own transcript) is the third tier in #507
+ * and has no producer yet. It is deliberately ABSENT from this union rather
+ * than declared-and-never-emitted: a tier nothing can produce is a value a
+ * consumer would write a branch for and never exercise.
+ */
+export type LivenessConfidence = 'reported' | 'guessed';
 
 /**
  * DEV-4: presence/typing are CLIENT-SYNTHESIZED, ephemeral events. They stay in
@@ -1157,8 +1236,35 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
 export type PresenceWorkspaceEvent =
   Extract<WorkspaceEvent, { type: 'presence.changed' | 'typing.changed' | 'voice.participants.changed' }>;
 
+/**
+ * EVERY ephemeral event — the set `DurableWorkspaceEvent` is defined by NOT
+ * being.
+ *
+ * `PresenceWorkspaceEvent` above is kept exactly as it was, because it is the
+ * name 40-odd call sites use for "presence and typing and the voice roster".
+ * `execution.liveness_changed` is not any of those, but it shares every
+ * property that matters here: server-synthesized, never ledgered, channel-local
+ * `seq`, must never ride the durable stream. So the EXCLUSION below widens and
+ * the presence name does not — which keeps `DurableWorkspaceEvent` correct by
+ * construction rather than by a reviewer noticing.
+ *
+ * The load-bearing consequence: a client's durable cursor is advanced from
+ * `seq`, and an ephemeral seq that reached that cursor would poison it — the
+ * two counters are different sequence spaces (see the server's `seq.ts`, S8).
+ * Because this alias is what `DurableWorkspaceEvent` subtracts, no `if` on the
+ * delivery path can make that mistake.
+ */
+export type EphemeralWorkspaceEvent =
+  Extract<WorkspaceEvent, {
+    type: 'presence.changed' | 'typing.changed' | 'voice.participants.changed'
+      | 'execution.liveness_changed';
+  }>;
+
+/** The one ephemeral event that is not presence. Named so consumers need not re-Extract. */
+export type LivenessChangedEvent = Extract<WorkspaceEvent, { type: 'execution.liveness_changed' }>;
+
 /** The durable event stream (`subscribe`) emits exactly these. */
-export type DurableWorkspaceEvent = Exclude<WorkspaceEvent, PresenceWorkspaceEvent>;
+export type DurableWorkspaceEvent = Exclude<WorkspaceEvent, EphemeralWorkspaceEvent>;
 
 // ---------------------------------------------------------------------------
 // The CLIENT→SERVER control channel on the same socket (§5)

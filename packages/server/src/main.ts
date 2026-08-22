@@ -12,7 +12,7 @@
 import type { IncomingMessage } from 'node:http';
 import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
-import { CredentialSessionLauncher } from '@tm8/execution';
+import { CredentialSessionLauncher, NODE_BOOT_ID } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
@@ -29,6 +29,7 @@ import {
   registerEventHandlers,
   SubscriptionRegistry,
   WorkspaceEventPublisher,
+  createLivenessBroadcaster,
 } from './events/index.js';
 import { createExecutionRuntime, createLoopExecutorPort } from './facade/execution-handlers.js';
 import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
@@ -227,7 +228,48 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * compounds. Hence `createExecutionRuntime` rather than a symmetrical
    * `registerExecutionHandlers` here.
    */
-  const execution = db ? createExecutionRuntime({ db, config, dataDir, owner }) : undefined;
+  /**
+   * HOISTED ABOVE THE EXECUTION BLOCK, and only because of the liveness push.
+   *
+   * The fan-out registry and the publisher are pure constructions — neither
+   * takes a db, a config or anything that is not built yet — but the execution
+   * runtime now needs a publisher to push `execution.liveness_changed` through,
+   * and it is built here. Constructing them later and back-patching would mean
+   * a window at boot in which a spawning session's transitions go nowhere,
+   * which is precisely the class of silent gap the push exists to close.
+   *
+   * Their original declaration sites below are gone, not duplicated.
+   */
+  const subscriptions = new SubscriptionRegistry();
+  // NOT a stand-in for the durable sequence — that misreading is why this
+  // comment was rewritten. The durable per-Space seq is a committed table row
+  // (`public.space_event_seq`, 003:282) minted by the capture trigger inside
+  // the mutating transaction, and the server only ever READS it. What the
+  // publisher needs an in-memory counter for is the EPHEMERAL channels, whose
+  // seq is channel-local by contract (DEV-4, contract §5) and is required to
+  // reset on restart. `InMemorySeqSource` is an alias for `PresenceSeqSource`
+  // (seq.ts:82); the old text told the next implementer to replace exactly the
+  // thing that is already correct.
+  const events = new WorkspaceEventPublisher(new InMemorySeqSource(), subscriptions);
+
+  /**
+   * The liveness PUSH (T-L10: the graph announces, the socket delivers).
+   *
+   * `NODE_BOOT_ID` rides every event so a client can tell "this node restarted
+   * and every PTY you knew about is gone" from "one session ended". Note what
+   * is NOT wired: there is no boot-time push. A restart drops every socket, and
+   * the client's reconnect path already forces a fresh liveness read — so the
+   * one transition this cannot push is also the one that cannot be missed.
+   */
+  const livenessBroadcast = createLivenessBroadcaster({
+    publisher: events,
+    nodeBootId: NODE_BOOT_ID,
+    onError: (message) => console.warn(`liveness push: ${message}`),
+  });
+
+  const execution = db
+    ? createExecutionRuntime({ db, config, dataDir, owner, liveness: livenessBroadcast })
+    : undefined;
 
   if (db && config.launchBootstrap) {
     const seeded = await ensureLaunchResources({
@@ -247,7 +289,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Declared before the registration block because `presence.get` is only
   // mounted when a presence source exists — see registerEventHandlers.
   const presence = new InMemoryPresenceStore();
-  const subscriptions = new SubscriptionRegistry();
+  // `subscriptions` is declared above the execution block now — the liveness
+  // push needs the publisher that needs this registry. See the note there.
   // Factory callers get the composed context; block callers pass through
   // unchanged (every test harness injects the block form directly).
   const chatBlock: ChatBootstrapOptions | undefined =
@@ -359,16 +402,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     );
   }
 
-  // NOT a stand-in for the durable sequence — that misreading is why this
-  // comment was rewritten. The durable per-Space seq is a committed table row
-  // (`public.space_event_seq`, 003:282) minted by the capture trigger inside
-  // the mutating transaction, and the server only ever READS it. What the
-  // publisher needs an in-memory counter for is the EPHEMERAL presence channel,
-  // whose seq is channel-local by contract (DEV-4, contract §5) and is required
-  // to reset on restart. `InMemorySeqSource` is an alias for `PresenceSeqSource`
-  // (seq.ts:82); the old text told the next implementer to replace exactly the
-  // thing that is already correct.
-  const events = new WorkspaceEventPublisher(new InMemorySeqSource(), subscriptions);
+  // `events` is declared above the execution block now — see the note there.
 
   // The live event path. Before this, `publishDurable` had no production caller
   // at all, so no durable event reached a socket however well the log worked.

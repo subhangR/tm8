@@ -1324,6 +1324,26 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     spaceId: SpaceIdSchema,
     participants: z.array(VoiceParticipantSchema),
   }).strict(),
+  // The PTY map moved. Ephemeral, server-synthesized, never durable — see the
+  // contract type for why it carries the whole live set rather than a delta.
+  //
+  // `changed` and `confidence` are NULLABLE, never optional, and for the same
+  // reason `eventHwm` is: "no single cause" (a node restart corrects the whole
+  // set at once) is an ANSWER this event must be able to give, and an absent
+  // key is the shape a consumer reads as "not sent by this build" rather than
+  // as "there genuinely wasn't one".
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('execution.liveness_changed'),
+    nodeBootId: z.string().min(1),
+    liveEntityIds: z.array(EntityIdSchema),
+    changed: z.object({
+      id: EntityIdSchema,
+      transition: z.enum(['appeared', 'vanished', 'woke', 'quiet']),
+    }).strict().nullable(),
+    confidence: z.enum(['reported', 'guessed']).nullable(),
+    checkedAt: IsoTimestamp,
+  }).strict(),
 ]));
 
 // ---------------------------------------------------------------------------
