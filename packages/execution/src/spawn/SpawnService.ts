@@ -42,6 +42,7 @@ import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
 import { harnessForBinary, resolveHarness, tryResolveHarness } from '../harness/registry.js';
+import { readConfinement } from '../harness/confinement.js';
 import type { Harness } from '../harness/types.js';
 import {
   AGENT_CREDENTIAL_CONFIG_DIR_VAR,
@@ -578,49 +579,41 @@ export class SpawnService {
     //
     // Each arm below is reachable only because a harness SAID so.
     const harness = resolveHarness(launch.agentTool);
-    const confinement = harness.capabilities.confinement;
+    const declared = readConfinement(harness);
 
-    // Claude Code's permission modes are enforced inside the agent, and the
-    // smoke harness runs no arbitrary commands at all. Neither has an OS-level
-    // sandbox tm8 drives through flags, so there is nothing to probe and
-    // nothing that can silently fail this way.
-    if (confinement === 'enforced-in-agent' || confinement === 'no-command-execution') {
-      return CONFINED;
-    }
+    switch (declared.kind) {
+      case 'confined':
+        return CONFINED;
 
-    // Never CONFINED without evidence. A harness that has not had its
-    // confinement measured refuses the launch rather than inheriting a
-    // reassuring default — and says which of the two it is, because "we did not
-    // measure" and "we measured and it cannot confine" are different facts and
-    // only one of them is fixable by installing a package.
-    if (confinement === 'unknown') {
-      throw new SpawnError(
-        `agent tool '${launch.agentTool}' does not declare a confinement story, so tm8 cannot ` +
-          `say whether a '${launch.permissionMode}' launch would be confined. Refusing rather ` +
-          `than assuming it would be. Give the harness a measured ` +
-          `capabilities.confinement — 'enforced-in-agent', 'no-command-execution', ` +
-          `'unconfined', or { probe } — before launching it.`,
-        'not_implemented',
-        { agentTool: launch.agentTool, permissionMode: launch.permissionMode },
-      );
-    }
+      // Never CONFINED without evidence. A harness whose confinement has not
+      // been measured refuses the launch rather than inheriting a reassuring
+      // default — "we did not measure" and "we measured and it cannot confine"
+      // are different facts, and only one is fixable by installing a package.
+      case 'refuse':
+        throw new SpawnError(declared.reason, 'not_implemented', {
+          agentTool: launch.agentTool,
+          permissionMode: launch.permissionMode,
+        });
 
-    // An honest declaration that nothing confines this tool. Surfaced as a
-    // degradation rather than hidden, on the same terms as a failed probe.
-    if (confinement === 'unconfined') {
-      const detail = `agent tool '${launch.agentTool}' declares no confinement mechanism`;
-      if (this.env.TM8_REQUIRE_CODEX_SANDBOX?.trim() === '1') {
-        throw new SpawnError(
-          `${detail} and TM8_REQUIRE_CODEX_SANDBOX=1 forbids running it unconfined.`,
-          'conflict',
-          { agentTool: launch.agentTool, permissionMode: launch.permissionMode },
+      // An honest declaration that nothing confines this tool. Surfaced as a
+      // degradation rather than hidden, on the same terms as a failed probe.
+      case 'degraded': {
+        if (this.env.TM8_REQUIRE_CODEX_SANDBOX?.trim() === '1') {
+          throw new SpawnError(
+            `${declared.detail} and TM8_REQUIRE_CODEX_SANDBOX=1 forbids running it unconfined.`,
+            'conflict',
+            { agentTool: launch.agentTool, permissionMode: launch.permissionMode },
+          );
+        }
+        this.logger?.warn?.(
+          `SpawnService: launching ${launch.agentTool} UNCONFINED — it declares no confinement mechanism.`,
+          { agentTool: launch.agentTool, requestedPermissionMode: launch.permissionMode },
         );
+        return { unavailable: true, degradedReason: declared.detail };
       }
-      this.logger?.warn?.(
-        `SpawnService: launching ${launch.agentTool} UNCONFINED — it declares no confinement mechanism.`,
-        { agentTool: launch.agentTool, requestedPermissionMode: launch.permissionMode },
-      );
-      return { unavailable: true, degradedReason: detail };
+
+      case 'probe':
+        break;
     }
 
     // Remaining arm: { probe }. Explicit full access opted out of confinement
