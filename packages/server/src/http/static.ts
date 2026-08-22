@@ -1,10 +1,18 @@
 /**
  * The serve-static seam for the built web UI.
  *
- * AM-1/T-D21: there is no desktop shell. `packages/ui` is a browser app —
- * Vite serves it on 4611 in dev, and in production tm8-server serves the
- * built bundle from `TM8_UI_DIR` on 4610. Same-origin by construction, which
- * is why the CORS posture (S4) can be "same-origin only, no exceptions".
+ * AM-1/T-D21, as amended by AM-7/T-D24 (2026-08-21): there IS now a desktop
+ * shell (Electron, `apps/desktop/`), but the UI is still a browser app and
+ * this seam is why. Vite serves it on 4611 in dev; in production tm8-server
+ * serves the built bundle from `TM8_UI_DIR` on 4610. Same-origin by
+ * construction, which is why the CORS posture (S4) can be "same-origin only,
+ * no exceptions".
+ *
+ * The desktop app does not get a private path through here. It forks this
+ * same server and points a `BrowserWindow` at the ordinary loopback URL, so
+ * it is a *client of this handler*, not a variant of it. Keep it that way:
+ * a desktop-only branch in this file would re-couple the UI to a shell and
+ * undo the one property AM-7 was careful to preserve.
  *
  * Boundaries this handler must never cross:
  * - it is only consulted AFTER `/v2/*` and `/health` have been ruled out, so
