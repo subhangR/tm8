@@ -401,20 +401,58 @@ export function ChatHomeScreen({
     detailRef.current = detail;
   }, [detail]);
 
-  /* ADOPT the addressed conversation (D1): back/forward and shared links win
-     over the current selection; a bare address changes nothing. The select
-     effect below owns loading whatever this lands on.
+  /**
+   * ADOPT the addressed conversation (D1): back/forward and shared links win
+   * over the current selection; a bare address changes nothing. The select
+   * effect below owns loading whatever this lands on.
+   *
+   * ── ADOPTING A NAMED THREAD IS A RENDER-PHASE ADJUSTMENT, NOT AN EFFECT ───
+   *
+   * The adoption used to live in the effect below, and an effect runs AFTER a
+   * commit. So one tap in the phone's drawer painted twice: a first frame with
+   * the incoming `routeThreadId` but the OUTGOING `selectedRootId` — the old
+   * thread's turns, on screen, while the drawer's ✓ had already moved to the
+   * new row — and then a second frame once the effect landed. Two full builds
+   * of the screen tree, and on a phone, where this screen IS the page, the
+   * first of them is a frame of the wrong conversation.
+   *
+   * This is React's documented "adjusting state when a prop changes": a
+   * setState during render of the component's OWN state makes React throw the
+   * in-progress output away and re-render immediately, WITHOUT committing. The
+   * intermediate frame is never painted, the DOM is written once, and the
+   * commit that lands already agrees with the drawer.
+   *
+   * `adopted` is an object rather than the bare id so that "nothing adopted
+   * yet" is distinguishable from "adopted `null`" and from "adopted
+   * `undefined`" — the prop is optional, and `undefined` (no host driving the
+   * selection) is a THIRD state, not a spelling of `null`.
+   *
+   * THE FEEDBACK LOOP STILL CLOSES. The screen still publishes every selection
+   * the host did not make — see the publish effect below, which has one
+   * consequence of this change written on it: landing the adoption a flush
+   * earlier is what turned the loop's echo from free into a second shell
+   * render, and what the guard there now suppresses.
+   *
+   * ONLY THE ADOPT HALF MOVED. The solo RESET below is still an effect,
+   * deliberately: it clears `detail`, `phase` and `submitError` and writes a
+   * ref, and a render pass is not allowed to do any of that. It also does not
+   * need to be early — it lands on the new-conversation composer, which is not
+   * a thread whose turns could be shown under the wrong selection.
+   */
+  const [adopted, setAdopted] = useState<{ readonly value: EntityId | null | undefined } | null>(
+    null,
+  );
+  if (adopted === null || adopted.value !== routeThreadId) {
+    setAdopted({ value: routeThreadId });
+    if (routeThreadId && routeThreadId !== selectedRootId) setSelectedRootId(routeThreadId);
+  }
 
-     SOLO (Craft) READS `null` AS AN INSTRUCTION, not as silence. With the
-     thread column hosted outside, the host's picker is the ONLY selector —
-     so "the host says no thread" can only mean the new-conversation
+  /* SOLO (Craft, the phone) READS `null` AS AN INSTRUCTION, not as silence.
+     With the thread column hosted outside, the host's picker is the ONLY
+     selector — so "the host says no thread" can only mean the new-conversation
      composer. Everywhere else a bare address coexists with this screen's own
      column, and overriding the viewer's row click from it would be wrong. */
   useEffect(() => {
-    if (routeThreadId) {
-      setSelectedRootId((current) => (current === routeThreadId ? current : routeThreadId));
-      return;
-    }
     if (!soloConversation || routeThreadId !== null) return;
     setSelectedRootId(null);
     setDetail(null);
@@ -429,7 +467,42 @@ export function ChatHomeScreen({
     onThreadsChange?.(threads);
   }, [threads, onThreadsChange]);
 
+  /**
+   * ── THE PUBLISH IS FOR SELECTIONS THE HOST DID NOT MAKE ───────────────────
+   *
+   * `onSelectionChange` exists because two of this screen's OWN behaviours land
+   * on a thread the host never chose — cold start opens the most recent
+   * conversation, and a first send adopts the root it just created — and after
+   * either of them a write-only `routeThreadId` left the shell believing `null`
+   * while a real conversation was on screen. That is the whole of the fact it
+   * carries, and it is unchanged here.
+   *
+   * WHAT IS SUPPRESSED IS THE ECHO. When the resolved selection is the one the
+   * host just pushed down, the host already knows: publishing it tells it
+   * something it told us. `MobileShell`'s docblock reasons that this costs
+   * nothing because `setThreadId(B)` from `B` sets no state — and that is true
+   * of the STATE, but not of the render. React's eager bailout needs the host's
+   * fiber to be idle, and in the flush immediately after the tap it is not, so
+   * the echo scheduled a second render of the shell: `screenFor(...)` re-run and
+   * the whole screen tree rebuilt, for an answer nobody was waiting for.
+   * Measured on this task at 2 shell render passes per tap, 1 with this guard.
+   *
+   * `routeSeen` is mirrored in a LAYOUT effect rather than during render so
+   * this stays a pure read: layout effects run before passive ones, so by the
+   * time this publish runs the mirror already holds the route that was pushed
+   * in the very same commit.
+   *
+   * A HOST THAT DRIVES NOTHING IS UNAFFECTED. `routeThreadId` is `undefined`
+   * there, which no `EntityId | null` can equal, so the desktop and every test
+   * that passes only `onSelectionChange` publish exactly as before.
+   */
+  const routeSeenRef = useRef(routeThreadId);
+  useLayoutEffect(() => {
+    routeSeenRef.current = routeThreadId;
+  }, [routeThreadId]);
+
   useEffect(() => {
+    if (selectedRootId === routeSeenRef.current) return;
     onSelectionChange?.(selectedRootId);
   }, [selectedRootId, onSelectionChange]);
 
@@ -677,6 +750,15 @@ export function ChatHomeScreen({
    */
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
+  /**
+   * THE HEIGHT THE TRANSCRIPT WAS LAST FOLLOWED TO — the third ref, and the one
+   * that keeps this effect from being a scroll SOURCE as well as a scroll sink.
+   *
+   * `-1` is not "zero pixels", it is NOT FOLLOWING: set while the reader is
+   * reading back, and on every thread switch, so the next opt-in re-anchors
+   * even when the height it lands on is one this box has been to before.
+   */
+  const followedHeightRef = useRef(-1);
 
   const activeConfig = detail?.summary.config ?? null;
   const selectedModel = useMemo(
@@ -697,19 +779,57 @@ export function ChatHomeScreen({
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
 
   /* Opening a conversation is not "growth" — it always lands on the newest
-     turn, whatever the reader was doing in the thread they just left. */
+     turn, whatever the reader was doing in the thread they just left. The
+     followed height goes with it: the incoming thread is a different box of
+     content, so a height it happens to share with the outgoing one must not
+     read as "already there". */
   useLayoutEffect(() => {
     stickToBottomRef.current = true;
+    followedHeightRef.current = -1;
   }, [selectedRootId]);
 
-  /* Keyed on `detail` and `thinking` because those are exactly the two things
-     that change the transcript's height: every frame merge mints a new detail
-     object (`mergeChatTurnFrame` is immutable), and the waiting mark is a row
-     that appears and disappears under the last turn. */
+  /**
+   * ── STICK TO THE BOTTOM, BUT ONLY WHEN THE BOTTOM MOVED ───────────────────
+   *
+   * Keyed on `detail` and `thinking` because those are exactly the two things
+   * that change the transcript's height: every frame merge mints a new detail
+   * object (`mergeChatTurnFrame` is immutable), and the waiting mark is a row
+   * that appears and disappears under the last turn.
+   *
+   * A NEW `detail` IS NOT EVIDENCE OF GROWTH, and treating it as such made this
+   * effect the phone's jitter source. During a stream a delta lands per token
+   * and each one mints a fresh object, but most of them append INSIDE a line
+   * that has not wrapped yet: the transcript's `scrollHeight` is unchanged and
+   * there is nothing to follow. The old code wrote `scrollTop` anyway, on every
+   * one of them. Measured on this task, 10 stream frames at an unchanged height
+   * cost 10 scroll writes; with this guard they cost 0.
+   *
+   * WHY THAT MATTERS HERE AND NOT ON A DESKTOP. `MobileFrame` publishes
+   * `--mobile-keyboard-inset` from `useKeyboardInset`, which recomputes on
+   * visualViewport `resize` AND `scroll` and resizes the WHOLE frame — so a
+   * programmatic scroll is an input to a measurement whose output is a layout
+   * change, which is an input to the next scroll. On iOS that closed loop reads
+   * as jitter. The hook is not the fault and is not touched: it already rounds
+   * and bails on an unchanged value (read its docblock — the `offsetTop` term
+   * is load-bearing). The fault is a scroll that nothing asked for.
+   *
+   * THE READER'S INTENT STILL WINS, and it wins in BOTH directions. While they
+   * are reading back, the followed height is dropped rather than remembered —
+   * so the moment they come back within `NEAR_BOTTOM_PX` and the next frame
+   * lands, they are re-anchored to the end even though the height never moved.
+   * Remembering it would have made opting back in silently do nothing.
+   */
   useLayoutEffect(() => {
     const element = transcriptRef.current;
-    if (!element || !stickToBottomRef.current) return;
-    element.scrollTop = element.scrollHeight;
+    if (!element) return;
+    if (!stickToBottomRef.current) {
+      followedHeightRef.current = -1;
+      return;
+    }
+    const height = element.scrollHeight;
+    if (height === followedHeightRef.current) return;
+    followedHeightRef.current = height;
+    element.scrollTop = height;
   }, [detail, thinking]);
 
   const selectionUnavailable =
@@ -1368,11 +1488,12 @@ export function ChatHomeScreen({
           ) : selectedRootId !== null && detail?.summary.rootId !== selectedRootId ? (
             // Never render one thread's transcript under another thread's
             // selection; a matching transcript stays up through a same-thread
-            // reload so fast reads cannot flicker.
-            <div className="tch-wait tch-wait--solo" role="status" data-testid="chat-detail-loading">
-              <WaitMark />
-              Reading this conversation…
-            </div>
+            // reload so fast reads cannot flicker. What stands in for the
+            // incoming thread while it is read is the thread ITSELF — see
+            // `ThreadOpening`.
+            <ThreadOpening
+              summary={threads.find((thread) => thread.rootId === selectedRootId) ?? null}
+            />
           ) : detail ? (
             <>
               {/* THE GRAPH IS NOT HERE ANY MORE (Cockpit ruling 2026-08-18).
@@ -1742,6 +1863,95 @@ function SendMark() {
     <span className="tch-send__mark" aria-hidden>
       <RibbonMark className="tch-send__ribbon" segments={SEND_SEGMENTS} />
     </span>
+  );
+}
+
+/**
+ * ── THE CONVERSATION YOU JUST OPENED, WHILE ITS TURNS ARE STILL BEING READ ──
+ *
+ * Reported by Subhang as "loading a chat flickers the entire page". The arm
+ * this replaces drew one centred wait row and nothing else, and the reasoning
+ * for it was sound as far as it went: one thread's turns must never be shown
+ * under another thread's selection, so the outgoing transcript has to go. What
+ * it missed is that ON A PHONE THE TRANSCRIPT IS THE PAGE. Desktop hides the
+ * cost because the transcript is one column of three and the other two hold
+ * still; at 390px the whole surface collapses to a wait mark and refills, and
+ * that collapse-and-refill IS the flicker.
+ *
+ * ── WHY THIS IS NOT THE OUTGOING TRANSCRIPT, HELD AND DIMMED ───────────────
+ *
+ * That was the first thing considered and it is the wrong trade. Dimming does
+ * not change WHOSE words are on the page: the drawer's ✓ has already moved,
+ * the header already names the new conversation, and the paragraphs underneath
+ * would still be the old one's. A reader who taps a thread and reads the reply
+ * that is sitting there has been told something false, and no amount of opacity
+ * un-tells it. `inert` and `aria-hidden` would make it unreachable and unheard,
+ * which fixes the interaction and leaves the lie.
+ *
+ * ── SO WHAT STANDS HERE IS THE SHAPE OF THE THREAD BEING OPENED ───────────
+ *
+ * `listThreads` has already been read — it is what the drawer's rows ARE — so
+ * the incoming thread's `replyCount` is in hand before `readThread` is even
+ * called. That is enough to lay out the turns that are coming: placeholder
+ * rows, sided the way the real ones will be sided, spaced the way the real
+ * ones are spaced, starting where the real ones start. The page keeps its
+ * shape through the swap instead of collapsing to a centred mark and refilling
+ * from the top, which is the collapse-and-refill the reporter saw.
+ *
+ * The invariant is not weakened, it is made trivial: nothing of the outgoing
+ * thread survives this arm, so there is no arrangement of it that could show
+ * one thread's transcript under another thread's selection.
+ *
+ * ── WHY IT DOES NOT NAME THE THREAD, THOUGH IT COULD ──────────────────────
+ *
+ * The summary carries a title and a preview and both are true here, so the
+ * first draft printed them at the head of the skeleton. It was wrong for a
+ * reason worth recording: THE TITLE ALREADY LIVES ON THIS SCREEN. The thread
+ * column's row carries it, and on the phone the drawer row the reader just
+ * tapped carried it. A second copy inside the transcript puts the same string
+ * in two places for the duration of every read — which made twenty-one
+ * existing assertions on this screen ambiguous overnight, and that ambiguity
+ * is the honest signal, not the test-fixture inconvenience: a reader looking
+ * at two identical titles cannot tell which one is the conversation. The
+ * skeleton's job is the SHAPE. Naming is the header's job and the row's.
+ *
+ * CAPPED AT SIX ROWS, and the cap is not cosmetic: `replyCount` on a long
+ * thread is in the hundreds, and a skeleton taller than the viewport reserves
+ * height for content that will be scrolled past anyway while costing a paint.
+ * FLOORED AT TWO, so a one-reply thread still gets a shape rather than a bare
+ * line — and a thread reached by address before `listThreads` returned has no
+ * summary at all, which is what the default stands in for.
+ *
+ * `data-testid` and `role="status"` are the ones the old row carried, kept
+ * deliberately: `ChatHomeScreen.stability.test.tsx` and `wait-marks.test.tsx`
+ * both watch this arm appear and disappear, and that is exactly the fact that
+ * has not changed. Only what it looks like has.
+ */
+function ThreadOpening({ summary }: { summary: ChatThreadSummary | null }) {
+  const rows = Math.min(Math.max(summary?.replyCount ?? 3, 2), 6);
+  return (
+    <div className="tch-opening" role="status" data-testid="chat-detail-loading">
+      <div className="tch-wait tch-opening__wait">
+        <WaitMark />
+        Reading this conversation…
+      </div>
+      {/* ARIA-HIDDEN, because a skeleton is a promise about layout and not
+          content. A screen reader is told "Reading this conversation…" by the
+          row above and nothing else; announcing six empty boxes would be noise
+          standing in for the very thing that has not arrived. */}
+      <div className="tch-opening__rows" aria-hidden>
+        {Array.from({ length: rows }, (_, index) => (
+          <div
+            key={index}
+            className="tch-opening__row"
+            data-role={index % 2 === 0 ? 'user' : 'assistant'}
+          >
+            <span className="tch-opening__line" />
+            <span className="tch-opening__line tch-opening__line--short" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
