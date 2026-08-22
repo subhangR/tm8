@@ -270,7 +270,7 @@ function deliveryEnv(dbUrl: URL): Record<string, string> {
     const serverEntry = join(REPO_ROOT, 'packages/server/dist/index.js');
     child = spawn('node', ['--enable-source-maps', serverEntry], {
       env: {
-        ...process.env,
+        ...scrubAmbientAgentIdentity(process.env),
         TM8_DATABASE_URL: dbUrl.href,
         TM8_DATA_DIR: dataDir,
         TM8_BIND: '127.0.0.1',
@@ -404,11 +404,19 @@ function deliveryEnv(dbUrl: URL): Record<string, string> {
  * refusal changes to "forbidden: not permitted to act as this actor". Both
  * halves of the identity have to go, so the whole seam is listed.
  *
+ * BOTH CHILDREN, NOT ONLY THE CLI — measured the hard way. Scrubbing the CLI
+ * spawn alone left `entity.test.ts` failing with the SAME "invalid token", and
+ * only scrubbing the parent shell as well turned it green (35/35). The Server
+ * is the other child of this harness and it inherits `...process.env` too, so
+ * an ambient identity reaches the request path through it whichever end is
+ * cleaned. A suite that boots its own Server against its own database must
+ * boot BOTH ends of the wire with the same empty identity a runner has.
+ *
  * Across the package that ambient identity accounted for 13 of the 73 test
  * files on a clean checkout — every one of them a red that says nothing about
  * the code, on every agent session on this node, forever. CI never saw it
  * because a GitHub runner has none of these variables set; this list simply
- * gives a developer's shell the same environment the gate already has.
+ * gives a developer's shell the environment the gate already has.
  *
  * A test that WANTS one of these passes it through `extraEnv`, which is applied
  * after this scrub and therefore still wins.
@@ -426,6 +434,32 @@ const AMBIENT_AGENT_IDENTITY = [
   'TM8_MODEL',
 ] as const;
 
+/** A copy of `env` with the ambient agent-session identity removed. */
+function scrubAmbientAgentIdentity(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const copy = { ...env };
+  for (const name of AMBIENT_AGENT_IDENTITY) delete copy[name];
+  return copy;
+}
+
+/**
+ * AND THE WORKER ITSELF — the third door, and the one that made the first two
+ * look like they had not worked.
+ *
+ * Not every suite here goes through a child process. `space.test.ts`'s G01
+ * group calls `resolveContext` / `sessionContextFromEnv` from `src/context.ts`
+ * IN PROCESS, against the real Server, and those read the vitest worker's own
+ * `process.env` at call time. With both spawns scrubbed and the worker left
+ * alone, `entity.test.ts` went green and `space.test.ts` stayed red on the same
+ * "unauthenticated: invalid token" — the leak had simply moved to the door
+ * nobody had shut.
+ *
+ * So the worker is scrubbed too, at module scope: this file is imported by
+ * every file in the package that talks to a real Server (all 13 that were red),
+ * and module scope runs before any `describe` body. One statement, all three
+ * doors, and the environment a test observes is now the environment CI has.
+ */
+for (const name of AMBIENT_AGENT_IDENTITY) delete process.env[name];
+
 /** Run the built CLI as a child process — the way an agent actually invokes it. */
 export async function cli(
   argv: readonly string[],
@@ -441,9 +475,13 @@ export async function cli(
   // anything a test explicitly journals via extraEnv is tagged harness.
   // TM8_NO_CACHE keeps fixtures deterministic: a suite invocation must never
   // serve a cached payload another suite invocation happened to store.
-  const base = { ...process.env, TM8_JOURNAL_CLASS: 'harness', TM8_NO_CACHE: '1', ...server.env };
+  const base = {
+    ...scrubAmbientAgentIdentity(process.env),
+    TM8_JOURNAL_CLASS: 'harness',
+    TM8_NO_CACHE: '1',
+    ...server.env,
+  };
   delete base.TM8_JOURNAL_PATH; // inherited only — an explicit extraEnv path survives below
-  for (const name of AMBIENT_AGENT_IDENTITY) delete base[name];
   return await new Promise((resolve) => {
     const child = spawn('node', [entry, ...argv], {
       env: { ...base, ...extraEnv },
