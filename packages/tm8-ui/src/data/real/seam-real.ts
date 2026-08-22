@@ -219,6 +219,11 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
   // Wires 2 and 3 (see header).
   connection.onEvent((event) => liveness.noteEvent(event));
+  /* THE PUSH. Note that this is a SEPARATE subscription from `onEvent` above
+     and not a branch inside it: an ephemeral event's seq belongs to a different
+     counter, and a shared entry point is where the two would eventually be
+     confused. `notePush` applies the snapshot; it issues no read. */
+  connection.onLiveness((event) => liveness.notePush(event));
   connection.onReconnect(() => liveness.noteReconnect());
 
   const seam: RealSeam = {
@@ -485,6 +490,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       refresh: (spaceId) => liveness.refresh(spaceId),
       onChange: (cb) => liveness.onChange(cb),
       statusOf: (session) => liveness.statusOf(session),
+      confidenceOf: (sessionId) => liveness.confidenceOf(sessionId),
     },
 
     realControls: {

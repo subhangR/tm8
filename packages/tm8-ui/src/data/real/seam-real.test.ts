@@ -483,7 +483,16 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       'updateProfile',
       'upsertReadMark', 'work',
     ].sort());
-    expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
+    // 2026-08-22 (the liveness push): `confidenceOf` — HOW the node knows what
+    // it last said about a session, which `statusOf` alone cannot express.
+    //
+    // It is a fourth member rather than a field on the `SessionLiveness`
+    // verdict on purpose. WHAT is happening and HOW WELL WE KNOW are different
+    // questions, and DESIGN 2 (#507) is entirely about not collapsing them: a
+    // verdict the node reported a moment ago and one inferred from a read up to
+    // 90s old are not the same claim, and a caller that could not ask would
+    // render both identically. Null is its most important return.
+    expect(Object.keys(seam.liveness).sort()).toEqual(['confidenceOf', 'onChange', 'refresh', 'statusOf']);
     // Amendment 3 (2026-08-01, attachments): `downloadHref` — the one seam
     // member that answers a URL rather than a DTO, because `files.download`
     // answers raw bytes and a browser reaches those through `href`/`src`.

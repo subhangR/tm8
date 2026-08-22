@@ -1,5 +1,5 @@
 // @tm8/execution — the spawn block's public surface.
-export { SpawnService, type SpawnServiceOptions } from './SpawnService.js';
+export { SpawnService, type SpawnServiceOptions, type SessionLivenessSink } from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,
   DEFAULT_MODEL,

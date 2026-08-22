@@ -130,6 +130,40 @@ export interface SpawnServiceOptions {
    * worktree outlives many sessions. 0 means unbounded.
    */
   worktreeCap?: number;
+  /**
+   * Where session liveness is PUSHED, as opposed to where it is recorded.
+   *
+   * This is not a second writer and it does not replace `graph.transition` —
+   * the durable projection is untouched. It exists because the graph is the
+   * wrong instrument for a streaming hot path (T-L10): a client told that a
+   * work_session changed still has to make an HTTP round trip to
+   * `execution.liveness` to learn WHAT, and that round trip measured p50 298 ms
+   * on a node with nine live sessions, on top of the durable pump's own 1s
+   * interval.
+   *
+   * This service already holds both facts at every transition — which session,
+   * and which space — so it is the one place the answer can be handed over
+   * without a lookup. OPTIONAL: a host that wires nothing behaves exactly as it
+   * did, falling back to the client's 30s read.
+   */
+  liveness?: SessionLivenessSink;
+}
+
+/**
+ * The liveness PUSH sink (see `SpawnServiceOptions.liveness`).
+ *
+ * Declared here rather than imported from the server package because the
+ * dependency runs the other way: @tm8/execution knows when a terminal appears,
+ * goes quiet and dies, and must not know that something called a WebSocket
+ * exists. The server implements this; a test satisfies it in three lines.
+ */
+export interface SessionLivenessSink {
+  /** A PTY for `sessionId` now exists, in `spaceId`. */
+  noteAppeared(sessionId: string, spaceId: string): void;
+  /** The PTY is gone — on EVERY exit path, including the ones that write nothing. */
+  noteVanished(sessionId: string): void;
+  /** The PTY went quiet, or started talking again. */
+  noteActivity(sessionId: string, activity: 'busy' | 'idle'): void;
 }
 
 /**
@@ -354,6 +388,12 @@ export class SpawnService {
   /** Failed spawn terminal writes retried for this process lifetime. Startup
    * ghost reconciliation is the second line of defence after a node restart. */
   private readonly failedTransitionRetries = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * Where liveness is pushed. Never null after construction — an unwired host
+   * gets a sink that does nothing, so every call site below is an unconditional
+   * statement rather than an `if` a future edit can forget to write.
+   */
+  private readonly liveness: SessionLivenessSink;
 
   constructor(options: SpawnServiceOptions) {
     this.graph = options.graph;
@@ -372,6 +412,11 @@ export class SpawnService {
     this.gitHubCredentials = options.gitHubCredentials;
     this.worktrees = options.worktrees ?? null;
     this.worktreeCap = options.worktreeCap ?? 0;
+    this.liveness = options.liveness ?? {
+      noteAppeared: () => {},
+      noteVanished: () => {},
+      noteActivity: () => {},
+    };
   }
 
   /**
@@ -1125,6 +1170,12 @@ export class SpawnService {
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
       });
+      // THE PUSH, at the instant the terminal exists and before the first
+      // await. Deliberately not after the boot-settlement window: a child that
+      // dies inside those 150ms was still live for them, and a watcher who saw
+      // nothing appear and then saw it die learns less than one who saw both.
+      // The `vanished` push on the failure path below tells the rest of it.
+      this.liveness.noteAppeared(sessionId, request.spaceId);
 
       // Arm the watcher before the first post-spawn await. A very short-lived
       // child can exit while the running transition is in flight; registering
@@ -1308,6 +1359,10 @@ export class SpawnService {
       });
 
       launchedPty = true;
+      // Pushed BEFORE the running transition, and that ordering is the point:
+      // the transition is a database write and this is not, so pushing after it
+      // would put the DB back in front of the socket for no reason.
+      this.liveness.noteAppeared(sessionId, request.spaceId);
 
       await this.graph.transition(auth, { sessionId, status: 'running' });
 
@@ -1759,6 +1814,13 @@ export class SpawnService {
         ...(request.rows ? { rows: request.rows } : {}),
       });
       launchedPty = !reused;
+      // Unconditional, INCLUDING the `reused` case. A resume against a terminal
+      // that was already alive still changes what a watcher should be told —
+      // this node may have restarted since the client last heard anything, so
+      // the client's live set may not contain a session this one is certain of.
+      // The push is idempotent; a silence conditioned on `reused` would not be
+      // recoverable.
+      this.liveness.noteAppeared(sessionId, info.spaceId);
 
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
       await this.graph.transition(auth, { sessionId, status: 'running' });
@@ -2349,6 +2411,22 @@ export class SpawnService {
     // and the RPC would refuse it with a 23514 anyway. Checking here keeps a
     // routine race out of the error log.
     if (!this.pty.hasSession(sessionId)) return;
+    // Pushed BEFORE the await, and outside the try. Two reasons, both about
+    // what a person sees:
+    //
+    //  1. The transition is a round trip to Postgres and this is a function
+    //     call. Sequencing the push after it would add the database's latency
+    //     to a path whose entire purpose is not having any.
+    //  2. The `catch` below deliberately swallows a failed transition — "the
+    //     next transition corrects it". That is a reasonable rule for the
+    //     durable record and a bad one for a live screen, which would sit on
+    //     the previous state until something else happened. The push is
+    //     unconditional, so the screen is right even when the write was not.
+    //
+    // The confidence tier rides with it: this is `guessed`, because stream
+    // silence cannot tell an agent thinking hard from one at a permission
+    // prompt (#507). A consumer is told that, and may refuse to act on it.
+    this.liveness.noteActivity(sessionId, activity === 'idle' ? 'idle' : 'busy');
     try {
       await this.graph.transition(auth, {
         sessionId,
@@ -2380,6 +2458,20 @@ export class SpawnService {
   ): Promise<void> => {
     const auth = this.sessionAuth.get(sessionId);
     this.sessionAuth.delete(sessionId);
+    // FIRST, and above the early return — this is the whole reason the push
+    // exists as a separate path from the graph write.
+    //
+    // The branch below is the one transition in this service that records
+    // NOTHING: no claims means no `graph.transition`, so no `workspace_events`
+    // row, so no `entity.upsert`, so no client nudge. The session stays
+    // `running` in the graph until the next node boot's ghost sweep, and before
+    // this line a watcher's only evidence that the agent had died was the id
+    // dropping out of a liveness read up to 30 seconds later.
+    //
+    // This push does not repair the ghost row — that is still a real defect and
+    // the loud log below still names it. It just stops the SCREEN from being
+    // wrong about it for half a minute.
+    this.liveness.noteVanished(sessionId);
     if (auth === undefined) {
       this.loud(
         `PTY for session ${sessionId} exited (${status}) with no captured claims — ` +

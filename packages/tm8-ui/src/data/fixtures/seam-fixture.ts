@@ -4387,6 +4387,21 @@ export function createFixtureSeam(): FixtureSeam {
         if (!snap) return 'unknown';
         return snap.liveEntityIds.includes(session.id) ? 'live' : 'stale';
       },
+      /**
+       * ALWAYS NULL, deliberately, and it is the honest answer rather than a
+       * gap.
+       *
+       * A tier is established by a `execution.liveness_changed` push from a
+       * node that observed the transition. The fixture seam has no node and
+       * receives no pushes — every verdict `statusOf` gives above comes from a
+       * snapshot a test set by hand. Returning `'reported'` here would let a
+       * component pass its honesty assertions against a confidence the fixture
+       * cannot actually supply, which is the failure mode the tier exists to
+       * make visible. Null means "nothing has told me", and nothing has.
+       */
+      confidenceOf(): null {
+        return null;
+      },
     },
 
     fixtureControls: {
