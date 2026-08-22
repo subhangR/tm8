@@ -770,6 +770,27 @@ const ROWS: readonly KindConfig[] = [
     },
     card: { fields: ['sessionStatus', 'agentTool', 'model', 'activityAt'] },
     list: baseList({
+      /**
+       * OPEN ON THE LIVE ONES — the reported defect, stated as data.
+       *
+       * A session's category is OBSERVED, not authored: 155 derives it from the
+       * process (spawning→to_do, running/idle→in_progress, exited/failed→done).
+       * `spawning` is the sub-second gap between "asked for" and "started", so
+       * To Do holds a session only by accident of timing, and NEVER holds a
+       * running one. Landing there is landing on an empty screen — 477 sessions
+       * on the launch node, To Do 0 / In Progress 6 / Done 471 — which is
+       * exactly the report: "doesn't show me live sessions."
+       *
+       * In Progress rather than Done, though Done is where 471 of the 477 are:
+       * the question this list opens on is "what is running", not "what has
+       * ever run". Done is one click away and remembered per kind once picked.
+       *
+       * NOT A NEW FILTER, and deliberately so. `filters.sessionStatus` already
+       * exists and already works (contract A22, server `ws.status = any(...)`);
+       * what was broken was never the vocabulary's ability to say `running`,
+       * only which band this panel opened on. See the PR body.
+       */
+      defaultCategory: 'in_progress',
       tree: { by: 'hierarchy', guideLines: true, messagePulse: true },
       tile: {
         anatomy: 'session-tree',

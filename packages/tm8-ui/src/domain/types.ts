@@ -549,6 +549,37 @@ export interface ListConfig {
    * the query it claims to summarise.
    */
   categories?: readonly StatusCategoryTab[];
+  /**
+   * WHICH of those four the panel OPENS ON, before the viewer has ever picked
+   * a tab for this kind. Omitted means the first one, which is `to_do`.
+   *
+   * WHY THIS IS A PER-KIND FACT and not a constant. `categories` is one shared
+   * array precisely because the four buckets mean the same thing everywhere —
+   * that ruling is right and this does not touch it. What is NOT universal is
+   * where a kind's population SITS in them, and that follows from who writes
+   * the status:
+   *
+   *   AUTHORED kinds (task, doc, project, pull_request) are born `to_do` and a
+   *   human moves them along. Landing on To Do lands on the backlog, which is
+   *   the whole point of opening the list.
+   *
+   *   OBSERVED kinds have their category derived from something the user does
+   *   not author. A work_session's comes from the PROCESS (migration 155:
+   *   spawning→to_do, running/idle→in_progress, exited/failed→done), and
+   *   `spawning` is a sub-second birth transient. So To Do is not this kind's
+   *   backlog — it is a bucket nothing is ever caught in, and a running
+   *   session is structurally incapable of appearing there.
+   *
+   * Measured on the launch node, 477 sessions: To Do 0, In Progress 6, Done
+   * 471. Every other kind in the space had a populated To Do. So the sessions
+   * surface opened on the one permanently-empty tab it has, and the report
+   * this fixes ("doesn't show me live sessions") is that emptiness.
+   *
+   * RESOLVED AGAINST `categories`, never trusted blind: a value naming a tab
+   * this kind does not declare falls back to the first, so the panel cannot be
+   * pointed at a band it has no button for.
+   */
+  defaultCategory?: StatusCategory;
   /** task subtree; session coordinator→worker. */
   /**
    * `messagePulse` binds the tree's hairlines to live message provenance: a
