@@ -37,6 +37,7 @@ import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/ser
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
+import { createIdleSessionReapJob, resolveIdleReapMinutes } from './scheduler/jobs/idle-sessions.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
@@ -813,6 +814,32 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       scheduler.register(
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
       );
+    }
+
+    // Idle reaping, opt-in per node. An idle agent holds its whole context
+    // resident to wait for input it may never get, and `session resume` restores
+    // that conversation in full — so the process buys nothing the row does not
+    // already guarantee. Registered only when configured, so an unset node keeps
+    // exactly its previous behaviour and the job list does not grow a permanent
+    // no-op.
+    const idleReapMinutes = resolveIdleReapMinutes(process.env);
+    if (execution && idleReapMinutes > 0) {
+      const reapClaims = async (): Promise<DbClaims> => {
+        const o = await owner();
+        return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'idle-session-reap' };
+      };
+      scheduler.register(
+        createIdleSessionReapJob({
+          db,
+          claims: reapClaims,
+          execution: {
+            hasSession: (id) => execution.pty.hasSession(id),
+            terminate: (claims, id, opts) => execution.spawnService.terminate(claims, id, opts),
+          },
+          idleMinutes: idleReapMinutes,
+        }),
+      );
+      console.log(`  sessions: reaping agent sessions idle beyond ${String(idleReapMinutes)}m (resume restores them)`);
     }
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
