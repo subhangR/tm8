@@ -57,6 +57,7 @@ import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './sched
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
 import { createCompletedAutoCloseJob, createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
+import { createIdleSessionReapJob, resolveIdleReapMinutes } from './scheduler/jobs/idle-sessions.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -1132,6 +1133,31 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       scheduler.register(
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
       );
+    }
+    // Idle reaping, opt-in per node. An idle agent holds its whole context
+    // resident to wait for input it may never get, and `session resume` restores
+    // that conversation in full — so the process buys nothing the row does not
+    // already guarantee. Registered only when configured, so an unset node keeps
+    // exactly its previous behaviour and the job list does not grow a permanent
+    // no-op.
+    const idleReapMinutes = resolveIdleReapMinutes(process.env);
+    if (execution && idleReapMinutes > 0) {
+      const reapClaims = async (): Promise<DbClaims> => {
+        const o = await owner();
+        return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'idle-session-reap' };
+      };
+      scheduler.register(
+        createIdleSessionReapJob({
+          db,
+          claims: reapClaims,
+          execution: {
+            hasSession: (id) => execution.pty.hasSession(id),
+            terminate: (claims, id, opts) => execution.spawnService.terminate(claims, id, opts),
+          },
+          idleMinutes: idleReapMinutes,
+        }),
+      );
+      console.log(`  sessions: reaping agent sessions idle beyond ${String(idleReapMinutes)}m (resume restores them)`);
     }
     // R2 gate 2 (session_credential_binding): a session still `pending` past the grace never recorded
     // the credential it runs on and can never run; ended in SQL. Every other
