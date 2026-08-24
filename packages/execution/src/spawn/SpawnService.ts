@@ -34,6 +34,7 @@ import {
   resolveLaunchConfig,
   resolveSessionTitle,
   resolveWorkdir,
+  supportsPositionalPrompt,
   withAgentPrompt,
   withAgentResume,
   type ResolvedLaunchConfig,
@@ -100,8 +101,16 @@ export interface SpawnServiceOptions {
    * callback bridge existed; those retain the argv positional fallback.
    */
   promptSettlement?: Pick<PromptSettlementWaiter, 'awaitOutcome' | 'cancel'>;
-  /** Hard ceiling for first-turn settlement. Default 90s (the PTY closed
-   * loop's documented cold-path worst case is ~82s). */
+  /**
+   * Hard ceiling for first-turn settlement. Default 150s.
+   *
+   * This is a BACKSTOP against a wedged delivery, so it must stay strictly
+   * larger than the closed loop's own worst case — a ceiling tighter than the
+   * work it bounds fails sessions that were about to succeed. Cold-path budget,
+   * summing PtyHostService's constants: 45s readiness gate + 22s arrival
+   * confirmation (three body writes with a 5s re-settle between) + ~1.3s
+   * pre-submit floor + ~36s submit-verify backoff ≈ 104s.
+   */
   firstPromptSettlementMs?: number;
   /** Base delay for retrying a failed terminal-state write. Default 1s. */
   failedTransitionRetryMs?: number;
@@ -365,7 +374,7 @@ export class SpawnService {
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
     this.promptSettlement = options.promptSettlement;
-    this.firstPromptSettlementMs = options.firstPromptSettlementMs ?? 90_000;
+    this.firstPromptSettlementMs = options.firstPromptSettlementMs ?? 150_000;
     this.failedTransitionRetryMs = options.failedTransitionRetryMs ?? 1_000;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
     this.credentialHome = options.credentialHome;
@@ -1013,13 +1022,21 @@ export class SpawnService {
         launch.agentTool === 'codex'
           ? `${envelope.task}\n<tm8_session_id>${sessionId}</tm8_session_id>`
           : envelope.task;
-      // Production queues the first task through PtyHostService's closed-loop
-      // submit and waits for its settlement below. Passing it positionally as
-      // well would duplicate the assignment. Legacy embedders without the
-      // settlement bridge retain the positional path for compatibility.
+      // THE FIRST TURN RIDES IN ARGV wherever the binary accepts one, because a
+      // prompt that is already in the process cannot be lost to a boot race. The
+      // alternative — launch an idle REPL and type the task into the TUI once it
+      // looks quiet — is what produced sessions that reported `running` with an
+      // empty composer and an agent that never received its assignment. See
+      // `withAgentPrompt`'s production note for the evidence.
+      //
+      // Only a launch this function cannot configure (echo-agent, an operator
+      // `TM8_AGENT_CMD` wrapper) still needs the PTY to carry its first turn, and
+      // `positionalTask` is the single source of truth for which case we are in —
+      // so the task is delivered exactly once, never zero times and never twice.
+      const positionalTask = supportsPositionalPrompt(launch, this.env);
       const command = withAgentPrompt(
         baseCommand,
-        { system: envelope.system, task: this.promptSettlement ? '' : task },
+        { system: envelope.system, task: positionalTask ? task : '' },
         launch,
         this.env,
       );
@@ -1096,7 +1113,9 @@ export class SpawnService {
       // spawnIfAbsent drains it.
       this.pty.beginPromptHandoff(sessionId);
       let firstPromptOutcome: Promise<PromptSettlementResult> | undefined;
-      if (this.promptSettlement) {
+      // `positionalTask` already put the assignment in the command line; queuing
+      // it here as well would deliver the same first turn twice.
+      if (this.promptSettlement && !positionalTask) {
         firstPromptDeliveryId = `spawn:${sessionId}:${randomUUID()}`;
         // Registration MUST precede queue admission: a same-tick settlement
         // must already have somewhere to land (PromptSettlementWaiter's law).

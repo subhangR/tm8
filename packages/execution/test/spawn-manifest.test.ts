@@ -16,6 +16,7 @@ import {
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
   resolveWorkdir,
+  supportsPositionalPrompt,
   withAgentPrompt,
 } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
@@ -455,6 +456,30 @@ describe('buildAgentCommand', () => {
     expect(
       withAgentPrompt('my-agent', { system: 'PROMPT', task: 'TASK' }, launch, { TM8_AGENT_CMD: 'my-agent' }),
     ).toBe('my-agent');
+  });
+
+  /**
+   * `supportsPositionalPrompt` is what SpawnService consults to decide whether
+   * it still has to hand the first turn to the PTY. If it and `withAgentPrompt`
+   * ever disagreed, the assignment would be delivered twice (duplicate first
+   * turn) or not at all (the empty-session bug) — so they are pinned together,
+   * against the same launches, here.
+   */
+  it('agrees with withAgentPrompt about which launches carry the task in argv', () => {
+    const codexLaunch = { ...launch, agentTool: 'codex' as const, model: 'gpt-5-codex' };
+    const cases = [
+      { launch, env: {}, positional: true },
+      { launch: codexLaunch, env: {}, positional: true },
+      { launch, env: { TM8_AGENT_CMD: 'echo-agent' }, positional: false },
+      { launch, env: { TM8_AGENT_CMD: 'my-agent' }, positional: false },
+    ];
+    for (const { launch: l, env, positional } of cases) {
+      expect(supportsPositionalPrompt(l, env)).toBe(positional);
+      const base = buildAgentCommand(l, env);
+      const embedded = withAgentPrompt(base, { system: 'SYS', task: 'TASK' }, l, env);
+      // "Carries the task in argv" is exactly "the command grew a 'TASK' tail".
+      expect(embedded.endsWith(`'TASK'`)).toBe(positional);
+    }
   });
 
   /**
