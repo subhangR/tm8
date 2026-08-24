@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ZoomableFigure } from './ZoomableFigure';
 
 /**
  * MERMAID DIAGRAMS, rendered for real (user ruling 2026-07-31: "titles, code,
@@ -36,6 +37,17 @@ import { useEffect, useRef, useState } from 'react';
  *    then viewed in dark would be black-on-black. The theme is observed and
  *    the diagram re-rendered — which is also why the token colours below are
  *    read from the live computed style rather than hardcoded.
+ *
+ * 5. THE DRAWN DIAGRAM IS HANDED TO `kit/ZoomableFigure`, WHICH IS NOT A
+ *    MERMAID FEATURE. A reader could see a wide flowchart and only pan it
+ *    sideways inside the column; expand/zoom/pan is the escape hatch, and it
+ *    lives in a shared shell because the chat `explain_graph` card has the
+ *    identical squeeze with an SVG this file never touches. Nothing about the
+ *    trust boundary moves: that component's controls are SIBLINGS of the
+ *    injected subtree and it zooms with a transform on a wrapper OUTSIDE it,
+ *    so §2 above still describes the only markup this file does not construct.
+ *    Only the drawn phase is wrapped — a diagram that is still rendering, or
+ *    one that failed, has nothing to zoom and keeps its plain frame.
  */
 
 /** Module-level, so the ~800KB parse happens once per session, not per block. */
@@ -178,20 +190,38 @@ export function Mermaid({ source, testId = 'mermaid' }: MermaidProps) {
     );
   }
 
-  return (
-    <div className="md-mermaid" data-testid={testId} ref={hostRef} data-phase={state.phase}>
-      {state.phase === 'rendering' ? (
+  if (state.phase === 'rendering') {
+    return (
+      <div className="md-mermaid" data-testid={testId} ref={hostRef} data-phase="rendering">
         <span className="md-mermaid__pending">drawing diagram…</span>
-      ) : (
-        /* Mermaid's own output, sanitised by it under securityLevel:'strict'.
-           This is the ONE place the doc pipeline inserts markup it did not
-           construct, and it is why the level above is not adjustable here. */
-        <div
-          className="md-mermaid__svg"
-          // eslint-disable-next-line react/no-danger -- see the docblock, §2
-          dangerouslySetInnerHTML={{ __html: state.svg }}
-        />
-      )}
-    </div>
+      </div>
+    );
+  }
+
+  /**
+   * `hostRef` stays on the ROOT in every phase, which is why the figure takes
+   * it rather than the wrapper below. The render effect reads the palette off
+   * `hostRef.current` after an await, and on a theme change that await resolves
+   * while the previous phase's DOM is still mounted — a ref that only existed
+   * in one phase would read `null` there and silently drop the whole palette
+   * back to mermaid's defaults.
+   */
+  return (
+    <ZoomableFigure
+      ref={hostRef}
+      className="md-mermaid"
+      label="Diagram"
+      testId={testId}
+      dataAttrs={{ 'data-phase': state.phase }}
+    >
+      {/* Mermaid's own output, sanitised by it under securityLevel:'strict'.
+          This is the ONE place the doc pipeline inserts markup it did not
+          construct, and it is why the level above is not adjustable here. */}
+      <div
+        className="md-mermaid__svg"
+        // eslint-disable-next-line react/no-danger -- see the docblock, §2
+        dangerouslySetInnerHTML={{ __html: state.svg }}
+      />
+    </ZoomableFigure>
   );
 }

@@ -363,14 +363,22 @@
 .tch-xgraph__legend span[data-basis='inferred']::before { content: '– –'; color: var(--pn-brand-2); }
 .tch-xgraph__legend span[data-basis='persisted']::before { color: var(--pn-info); }
 .tch-xgraph__legend span[data-basis='pending']::before { content: '···'; color: var(--pn-wait); }
+/* The sideways scroll moved INTO `kit/ZoomableFigure`'s viewport (see the
+   GraphCard comment): the same box has to stop scrolling and start being panned
+   by a transform the moment a reader zooms, and one element cannot do both. The
+   frame — margin, border, paper — is still this file's. */
 .tch-xgraph__stage {
-  overflow-x: auto;
   margin-top: 8px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   background: var(--pn-surface);
 }
-.tch-xgraph__stage svg { display: block; min-width: 620px; width: 100%; height: auto; }
+/* Qualified to the CANVAS, not the stage. The stage is now a `kit-zfig` root,
+   so it also contains the figure's four control buttons — and each of those
+   holds a 13px `kit/VectorIcon` svg, which a bare `.tch-xgraph__stage svg`
+   would stretch to a 620px minimum. The canvas holds the drawing and nothing
+   else, which is exactly the distinction wanted here. */
+.tch-xgraph__stage .kit-zfig__canvas svg { display: block; min-width: 620px; width: 100%; height: auto; }
 .tch-xgraph__stage marker path { fill: var(--pn-ink-3); }
 .tch-xgraph__edges path { fill: none; stroke-width: 1.5; }
 .tch-xgraph__edges g[data-basis='persisted'] path { stroke: var(--pn-info); }
