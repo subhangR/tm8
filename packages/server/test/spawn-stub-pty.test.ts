@@ -184,8 +184,17 @@ describe('server spawn integration with a stub PTY', () => {
       // matched nothing once it landed. The overrides are asserted by name just
       // below so the wildcard cannot swallow their disappearance; their contents
       // are owned by test/codex-loopback.integration.test.ts in packages/execution.
+      //
+      // `-c 'check_for_update_on_startup=false'` sits between the model and the
+      // approval policy because the start-up self-update kill switch is emitted
+      // FIRST and in EVERY posture — it is not gated on the approval or sandbox
+      // branch, so a bypass session needs it exactly as much as a confined one.
+      // Spelled out rather than swallowed by the wildcard: without it a codex
+      // session on this deployment forks `npm install @openai/codex` and tears
+      // its own TUI down in ~1.7s, so its DISAPPEARANCE from this command line
+      // is a production defect and must fail here.
       command: expect.stringMatching(
-        /^codex --model 'gpt-5\.6-sol' --ask-for-approval never --sandbox workspace-write .*--no-alt-screen -c /,
+        /^codex --model 'gpt-5\.6-sol' -c 'check_for_update_on_startup=false' --ask-for-approval never --sandbox workspace-write .*--no-alt-screen -c /,
       ),
       env: expect.objectContaining({
         TM8_MODEL: 'gpt-5.6-sol',

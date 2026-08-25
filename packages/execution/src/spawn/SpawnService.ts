@@ -19,7 +19,7 @@ import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/
 import { composePrompt } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
-import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
+import { trustWorkspaceForHarness } from './workspace-trust.js';
 import {
   preflightCodexNetworkPolicy,
   type CodexNetworkPreflight,
@@ -42,7 +42,11 @@ import { detectCheckoutBranch } from './checkout-branch.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
+import { harnessForBinary, resolveHarness, tryResolveHarness } from '../harness/registry.js';
+import { readConfinement } from '../harness/confinement.js';
+import type { Harness } from '../harness/types.js';
 import {
+  AGENT_CREDENTIAL_CONFIG_DIR_VAR,
   agentCredentialProviderFor,
   type AgentCredentialHome,
   type AgentCredentialHomePort,
@@ -150,6 +154,24 @@ interface SandboxDecision {
 
 /** The ordinary case: whatever the posture asked for, the node can give it. */
 const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
+
+/**
+ * The config home the child will actually read, recorded on the manifest.
+ *
+ * Derived from two capabilities rather than a per-tool ternary: the directory
+ * name the tool keeps under a member's home, and the credential provider whose
+ * redirect variable overrides it. Those variables are the verified ones in
+ * `AGENT_CREDENTIAL_CONFIG_DIR_VAR` — `CLAUDE_CONFIG_DIR` and `CODEX_HOME` —
+ * each measured in both directions with a positive control. Null when the
+ * harness keeps no config home at all.
+ */
+function agentConfigHomeFor(harness: Harness, env: NodeJS.ProcessEnv): string | null {
+  const dirName = harness.capabilities.configDirName;
+  if (!dirName) return null;
+  const provider = harness.capabilities.credentialProvider;
+  const redirect = provider ? env[AGENT_CREDENTIAL_CONFIG_DIR_VAR[provider]] : undefined;
+  return redirect ?? join(env.HOME ?? homedir(), dirName);
+}
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
  *  graph in lifecycle states, and 'completed' is not one of the five the
@@ -442,10 +464,13 @@ export class SpawnService {
     }
 
     const override = this.env.TM8_AGENT_CMD?.trim();
+    // tm8 only preflights a tool whose command networking IT owns. An operator
+    // wrapper is preflighted only when it names that same harness's binary.
+    const netHarness = tryResolveHarness(launch.agentTool);
     if (
-      launch.agentTool === 'codex' &&
+      netHarness?.capabilities.commandNetwork === 'loopback-proxy' &&
       launch.permissionMode !== 'bypassPermissions' &&
-      (!override || override === 'codex')
+      (!override || harnessForBinary(override)?.capabilities.commandNetwork === 'loopback-proxy')
     ) {
       await this.codexNetworkPreflight(resolved, env);
     }
@@ -606,14 +631,66 @@ export class SpawnService {
    * per node boot, not one per spawn.
    */
   private async resolveSandboxPosture(launch: ResolvedLaunchConfig): Promise<SandboxDecision> {
-    // Only codex has an OS-level sandbox tm8 drives through flags. Claude Code's
-    // permission modes are enforced inside the agent, so there is nothing here
-    // to probe and nothing that can silently fail this way.
-    if (launch.agentTool !== 'codex') return CONFINED;
+    // A POSITIVE READ of what the harness declares, replacing the negative
+    // predicate `if (launch.agentTool !== 'codex') return CONFINED`.
+    //
+    // That predicate was correct for exactly two tools and wrong for every
+    // other: a third harness fell through it and was reported CONFINED having
+    // been probed for nothing. It reported the SAFE answer on NO evidence,
+    // which is the one combination this file's own sandbox-probe comments argue
+    // against at length — the 2026-08-02 defect was precisely tm8 calling
+    // something a sandbox that was not one.
+    //
+    // Each arm below is reachable only because a harness SAID so.
+    const harness = resolveHarness(launch.agentTool);
+    const declared = readConfinement(harness);
+
+    switch (declared.kind) {
+      case 'confined':
+        return CONFINED;
+
+      // Never CONFINED without evidence. A harness whose confinement has not
+      // been measured refuses the launch rather than inheriting a reassuring
+      // default — "we did not measure" and "we measured and it cannot confine"
+      // are different facts, and only one is fixable by installing a package.
+      case 'refuse':
+        throw new SpawnError(declared.reason, 'not_implemented', {
+          agentTool: launch.agentTool,
+          permissionMode: launch.permissionMode,
+        });
+
+      // An honest declaration that nothing confines this tool. Surfaced as a
+      // degradation rather than hidden, on the same terms as a failed probe.
+      case 'degraded': {
+        if (this.env.TM8_REQUIRE_CODEX_SANDBOX?.trim() === '1') {
+          throw new SpawnError(
+            `${declared.detail} and TM8_REQUIRE_CODEX_SANDBOX=1 forbids running it unconfined.`,
+            'conflict',
+            { agentTool: launch.agentTool, permissionMode: launch.permissionMode },
+          );
+        }
+        this.logger?.warn?.(
+          `SpawnService: launching ${launch.agentTool} UNCONFINED — it declares no confinement mechanism.`,
+          { agentTool: launch.agentTool, requestedPermissionMode: launch.permissionMode },
+        );
+        return { unavailable: true, degradedReason: declared.detail };
+      }
+
+      case 'probe':
+        break;
+    }
+
+    // Remaining arm: { probe }. Explicit full access opted out of confinement
+    // already, so there is nothing to probe for.
     if (launch.permissionMode === 'bypassPermissions') return CONFINED;
 
+    // The probe runs the PROVIDER'S OWN sandbox entry point, which is why the
+    // binary comes from the harness rather than a literal: it must exercise the
+    // identical machinery with the identical bundled helper, since that is the
+    // provider's answer to the provider's question and the only kind that stays
+    // true across releases. An operator wrapper still wins, as everywhere else.
     const availability = await probeCodexSandbox({
-      binary: this.env.TM8_AGENT_CMD?.trim() || 'codex',
+      binary: this.env.TM8_AGENT_CMD?.trim() || harness.binary,
       env: this.env,
       logger: this.logger,
     });
@@ -794,6 +871,9 @@ export class SpawnService {
 
     const inherited = await this.inheritedPosture(auth, request);
     const launch = resolveLaunchConfig(request, context, this.env, inherited);
+    // Resolved ONCE for the whole spawn. Every per-tool decision below is a read
+    // off this object rather than another comparison against its name.
+    const harness = resolveHarness(launch.agentTool);
     // Fail before creating a work_session row when a coordinated mode has no
     // concrete parent to receive its result. composeManifest repeats this
     // guard so direct callers cannot manufacture an unroutable prompt.
@@ -813,7 +893,10 @@ export class SpawnService {
     // (see native-session.ts). An operator wrapper gets neither: tm8 must not
     // guess flags into a command it does not own.
     const nativeSessionId =
-      !this.env.TM8_AGENT_CMD?.trim() && launch.agentTool === 'claude-code' ? randomUUID() : null;
+      !this.env.TM8_AGENT_CMD?.trim() &&
+      resolveHarness(launch.agentTool).capabilities.acceptsPreMintedSessionId
+        ? randomUUID()
+        : null;
     const title = resolveSessionTitle(request, context);
     const workdir = resolveWorkdir(request, context, {
       scratchRoot: join(this.dataDir, 'scratch'),
@@ -1009,10 +1092,11 @@ export class SpawnService {
       // durable link between this tm8 session and its rollout file is a marker
       // in the first user turn. That marker is what resume's capture scan
       // matches (native-session.ts). Claude needs none: its id is pre-minted.
-      const task =
-        launch.agentTool === 'codex'
-          ? `${envelope.task}\n<tm8_session_id>${sessionId}</tm8_session_id>`
-          : envelope.task;
+      // A harness tm8 CAN pre-mint an id for needs no marker; one it cannot
+      // must carry it, or the rollout can never be tied back to this session.
+      const task = harness.capabilities.acceptsPreMintedSessionId
+        ? envelope.task
+        : `${envelope.task}\n<tm8_session_id>${sessionId}</tm8_session_id>`;
       // Production queues the first task through PtyHostService's closed-loop
       // submit and waits for its settlement below. Passing it positionally as
       // well would duplicate the assignment. Legacy embedders without the
@@ -1071,11 +1155,7 @@ export class SpawnService {
       await this.graph.recordManifest(auth, sessionId, manifest, envVarNames, {
         system: envelope.system,
         task,
-      }, launch.agentTool === 'claude-code'
-        ? env.CLAUDE_CONFIG_DIR ?? join(env.HOME ?? homedir(), '.claude')
-        : launch.agentTool === 'codex'
-          ? env.CODEX_HOME ?? join(env.HOME ?? homedir(), '.codex')
-          : null);
+      }, agentConfigHomeFor(harness, env));
 
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
 
@@ -1088,8 +1168,7 @@ export class SpawnService {
       // use. Passing the server environment here writes into the node account
       // even when `env` points Claude/Codex at a member-specific home, leaving
       // the child untrusted and reintroducing shared mutable provider state.
-      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, env);
-      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
+      await trustWorkspaceForHarness(harness, cwd, env);
 
       // Prompts accepted between here and the PTY being live must not be
       // dropped on the floor; the handoff parks them in the bounded FIFO and
@@ -1435,7 +1514,10 @@ export class SpawnService {
     const launch = resolveLaunchConfig(syntheticRequest, context, this.env, recordedPosture);
     const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
 
-    if (launch.agentTool !== 'claude-code' && launch.agentTool !== 'codex') {
+    // Refused at the service layer as well as in the command builder: a harness
+    // with no exact-id resume contract must never be restarted fresh and
+    // presented as resumed.
+    if (!tryResolveHarness(launch.agentTool)?.capabilities.resume) {
       throw new SpawnError(
         `agent tool '${launch.agentTool}' has no resume-by-id contract`,
         'invalid_input',
@@ -1503,7 +1585,8 @@ export class SpawnService {
     // are captured lazily from the rollout here, then recorded write-once so
     // the scan never runs twice.
     let nativeSessionId = info.nativeSessionId;
-    if (!nativeSessionId && launch.agentTool === 'codex') {
+    // Only a harness whose id tm8 could NOT pre-mint needs discovering here.
+    if (!nativeSessionId && !resolveHarness(launch.agentTool).capabilities.acceptsPreMintedSessionId) {
       const configDirs = [...new Set([
         ...(info.agentConfigDir ? [info.agentConfigDir] : []),
         ...await knownAgentConfigDirs({
@@ -1540,8 +1623,8 @@ export class SpawnService {
     }
     if (!nativeSessionId) {
       throw new SpawnError(
-        launch.agentTool === 'codex'
-          ? `no Codex rollout under ~/.codex/sessions could be proven to belong to session ${sessionId} — refusing to resume a different or fresh conversation`
+        !resolveHarness(launch.agentTool).capabilities.acceptsPreMintedSessionId
+          ? `no ${launch.agentTool} rollout could be proven to belong to session ${sessionId} — refusing to resume a different or fresh conversation`
           : `work session ${sessionId} has no recorded native session id (spawned before resume support) — it cannot be resumed`,
         'conflict',
         { sessionId, agentTool: launch.agentTool },
@@ -1746,8 +1829,7 @@ export class SpawnService {
 
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
       // Resume must seed the exact same member-scoped home as a fresh spawn.
-      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, env);
-      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
+      await trustWorkspaceForHarness(resolveHarness(launch.agentTool), cwd, env);
 
       this.pty.beginPromptHandoff(sessionId);
       const { reused } = this.pty.spawnIfAbsent({

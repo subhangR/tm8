@@ -41,6 +41,8 @@ import {
   type AgentCredentialHome,
 } from './agent-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
+import { codexHarness } from '../harness/codex.js';
+import { harnessForBinary, tryResolveHarness } from '../harness/registry.js';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -62,7 +64,9 @@ export const DEFAULT_AGENT_TOOL = 'claude-code';
  */
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'auto';
 /** The magic `TM8_AGENT_CMD` value that selects the built-in smoke agent. */
-export const ECHO_AGENT_CMD = 'echo-agent';
+/** Re-exported: the definition moved to `../harness/echo-agent.ts`, which owns
+ *  the smoke harness. Kept exported here so existing importers do not move. */
+export { ECHO_AGENT_CMD, echoAgentPath } from '../harness/echo-agent.js';
 
 /**
  * A coordinated launch is only coherent when it names the work session that
@@ -195,7 +199,11 @@ export function resolveCommandNetworkPolicy(
   env: NodeJS.ProcessEnv = process.env,
 ): CommandNetworkPolicy {
   const override = env.TM8_AGENT_CMD?.trim();
-  if (override && override !== 'codex') {
+  // tm8 owns command networking only for a harness that declares it. An
+  // operator wrapper is operator-defined UNLESS it names that harness's own
+  // binary, in which case tm8's policy still applies.
+  const harness = tryResolveHarness(launch.agentTool);
+  if (override && harnessForBinary(override)?.capabilities.commandNetwork !== 'loopback-proxy') {
     return {
       mode: 'operator-defined',
       commandNetworkAccess: null,
@@ -204,7 +212,7 @@ export function resolveCommandNetworkPolicy(
       portScoped: false,
     };
   }
-  if (launch.agentTool !== 'codex') {
+  if (harness?.capabilities.commandNetwork !== 'loopback-proxy') {
     return {
       mode: 'provider-default',
       commandNetworkAccess: null,
@@ -465,386 +473,62 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Absolute path to the built-in echo agent, resolved relative to this module.
- *
- *  `../../harness/echo-agent.mjs` lands on the same file from `src/spawn/`
- *  (vitest, running TypeScript directly) and from `dist/spawn/` (the built
- *  server) — both are two levels below the package root. */
-export function echoAgentPath(): string {
-  return fileURLToPath(new URL('../../harness/echo-agent.mjs', import.meta.url));
-}
-
 /**
- * Per-`agentTool` binary name, selected when the operator has not forced one
- * via `TM8_AGENT_CMD`.
+ * The agent-command builders now live in the HARNESS REGISTRY (`../harness/`),
+ * which is the sole dispatch point for agent-tool differences. They are
+ * re-exported here unchanged in signature, error shape and rendered output, so
+ * every existing importer of `@tm8/execution` is unaffected.
  *
- * Before this table existed, a per-session `agentTool: 'codex'` landed on the
- * work_session row, the manifest, and `TM8_AGENT_TOOL` — everywhere EXCEPT the
- * one place that decides which binary the PTY actually runs. `buildAgentCommand`
- * ignored `launch.agentTool` entirely and fell straight through to `'claude'`,
- * so a caller who asked for codex silently got Claude launched with a model
- * name (e.g. `gpt-5-codex`) it does not recognise. Measured 2026-07-28: a spawn
- * with `agentTool: 'codex'` produced a work_session row and manifest that both
- * said `codex`, while the live PTY's argv (`ps -p <pid> -o args=`) was the bare
- * `claude` command. This table is what makes the resolved tool selection reach
- * the actual child process.
+ * WHAT MOVED, AND WHY. This block used to hold a three-entry lookup table
+ * followed by a chain of string-equality tests on the resolved binary
+ * (`raw === ECHO_AGENT_CMD`, `raw === 'codex'`, `raw !== 'claude'`), with
+ * Claude's entire flag vocabulary inlined into the tail of `buildAgentCommand`
+ * and Codex's into `buildCodexArgs`. Adding a third real agent meant adding a
+ * fourth branch here and then finding every other place that had made the same
+ * assumption. tm8 law T-L4 forbids exactly that shape — behaviour keyed on a
+ * string literal makes the set of legal values a property of the CODE rather
+ * than of a REGISTRY.
  *
- * Tool-specific argument and prompt handling lives in the two builders below;
- * unsupported tools are rejected instead of being routed through another CLI.
+ * The measured failure this prevents is already in this file's history: on
+ * 2026-07-28 a spawn with `agentTool: 'codex'` produced a work_session row and
+ * a manifest that both said `codex`, while the live PTY's argv was the bare
+ * `claude` command, because the tool selection reached every surface EXCEPT the
+ * one that picks the binary. `AGENT_TOOL_BINARIES` was the fix; it is now
+ * DERIVED from the registry, so it can no longer drift from the harnesses it
+ * names.
+ *
+ * The per-tool flag knowledge — including the hard-won facts that
+ * `instructions` is reserved by Codex and silently ignored, that `codex resume`
+ * is a subcommand while the rollout id is positional, and that `auto` is a
+ * first-class Claude `--permission-mode` — moved WITH the code, into
+ * `../harness/claude-code.ts` and `../harness/codex.ts`.
  */
-const AGENT_TOOL_BINARIES: Readonly<Record<string, string>> = {
-  'claude-code': 'claude',
-  codex: 'codex',
-  'echo-agent': ECHO_AGENT_CMD,
-};
+export { AGENT_TOOL_BINARIES } from '../harness/registry.js';
+export { buildAgentCommand, withAgentPrompt, withAgentResume } from '../harness/command.js';
+/** Re-exported: the Codex start-up self-update kill switch is per-harness flag
+ *  knowledge and lives with the rest of it in `../harness/codex.ts`. Kept on
+ *  this module's surface because that is where it was first exported from. */
+export {
+  CODEX_DISABLE_STARTUP_UPDATE_CHECK,
+  codexUpdateCheckConfigArgs,
+} from '../harness/codex.js';
 
 /**
- * Build the shell command line the PTY runs.
+ * Codex's exact logical argv before any shell joining or quoting.
  *
- * `TM8_AGENT_CMD` is an OPERATOR OVERRIDE and wins over everything — it forces
- * one binary for the whole node, whatever any session's resolved `agentTool`
- * says. Absent it, the resolved tool picks its own default binary via
- * {@link AGENT_TOOL_BINARIES}. Unrecognised tool names are rejected:
- *   - `echo-agent`  → the built-in smoke agent. Proves the whole loop (manifest
- *                     read → PTY spawn → prompt delivery → output) without
- *                     burning a real model session. HOW-TO-TEST uses this.
- *   - `claude-code` → real Claude Code, with flags derived from the manifest the
- *                     same way old maestro's ClaudeSpawner.buildBaseArgs did.
- *   - `codex`       → Codex with its model and developer-instruction config.
- * An explicit `TM8_AGENT_CMD` remains a complete operator-owned wrapper and is
- * used verbatim.
- */
-export function buildAgentCommand(
-  launch: ResolvedLaunchConfig,
-  env: NodeJS.ProcessEnv = process.env,
-  opts: {
-    /**
-     * The PRE-MINTED native session id (maestro's claude-spawner pattern):
-     * `--session-id <uuid>` forces Claude to adopt tm8's uuid as its own
-     * conversation id, which is what makes `--resume <uuid>` possible later
-     * without ever parsing a transcript. Claude-only — Codex cannot be
-     * pre-seeded (its CLI mints its own rollout id), and an operator wrapper's
-     * flag vocabulary is unknown, so both ignore this.
-     */
-    claudeSessionId?: string | null;
-    /**
-     * This node cannot actually confine a codex command, as established by
-     * RUNNING the provider's own sandbox rather than inferring from paths or
-     * capability bits — see `sandbox-probe.ts`.
-     *
-     * When set, the codex branch stops emitting `--sandbox`, because emitting
-     * it is what produced the defect this flag exists to end: the flag went
-     * out, codex accepted it, the session came up healthy in every tm8 surface,
-     * and then failed EVERY shell command with `bwrap: loopback: Failed
-     * RTM_NEWADDR: Operation not permitted`. tm8 was calling that a sandbox.
-     * It was a session that could not run anything.
-     *
-     * The caller decides WHETHER a launch may proceed unconfined — that is a
-     * security question and it is answered in SpawnService, which refuses by
-     * default. By the time this flag is true the decision is already made, and
-     * this function's only job is to emit a command line that tells the truth
-     * about it.
-     */
-    sandboxUnavailable?: boolean;
-  } = {},
-): string {
-  const override = env.TM8_AGENT_CMD?.trim();
-  const raw = override || AGENT_TOOL_BINARIES[launch.agentTool];
-
-  if (!raw) {
-    throw new SpawnError(`unsupported agent tool: ${launch.agentTool}`, 'invalid_input', {
-      agentTool: launch.agentTool,
-    });
-  }
-
-  if (raw === ECHO_AGENT_CMD) {
-    return `node ${shellQuote(echoAgentPath())}`;
-  }
-
-  if (raw === 'codex') {
-    return renderCodexCommand(
-      buildCodexArgs(launch, { sandboxUnavailable: opts.sandboxUnavailable === true }),
-    );
-  }
-
-  if (raw !== 'claude') return raw;
-
-  const args: string[] = [];
-  if (launch.permissionMode === 'bypassPermissions') {
-    args.push('--dangerously-skip-permissions');
-  } else {
-    args.push('--permission-mode', mapClaudePermissionMode(launch.permissionMode));
-  }
-  if (launch.model) args.push('--model', shellQuote(launch.model));
-  if (launch.reasoningEffort) args.push('--effort', launch.reasoningEffort);
-  if (opts.claudeSessionId) args.push('--session-id', shellQuote(opts.claudeSessionId));
-  return ['claude', ...args].join(' ');
-}
-
-/**
- * Build Codex's exact logical argv before any shell joining or quoting.
- *
- * This is the single source used by new sessions and by exact-id resume (which
- * transforms only the executable/subcommand and retains these arguments).
+ * Retained as a named export because it is part of `@tm8/execution`'s surface
+ * and the spawn suite asserts on it directly. It now renders the registry's
+ * tagged argv down to plain strings, so the argv and the real command line
+ * cannot diverge — previously they were two independent constructions of the
+ * same list, kept in agreement only by review.
  */
 export function buildCodexArgs(
   launch: ResolvedLaunchConfig,
   opts: { sandboxUnavailable?: boolean } = {},
 ): string[] {
-  const args: string[] = [];
-  if (launch.model) args.push('--model', launch.model);
-
-  // Codex's approval prompts are the SAME unattended-hang hazard the Claude
-  // branch documents. tm8's project trust gate is the human authorization, so
-  // every non-bypass session receives an explicit non-interactive posture.
-  //
-  // `opts.sandboxUnavailable` collapses the second branch into the first.
-  // WHY NOT KEEP `--ask-for-approval` AND DROP ONLY `--sandbox`: approvals with
-  // no sandbox is a policy that stops to ask with nobody at the terminal to
-  // answer — the exact unattended hang this branch was written to design out —
-  // and it would buy no confinement in exchange for it. If the node cannot
-  // confine, the honest command line says so in one flag rather than implying a
-  // gate that will never open.
-  if (launch.permissionMode === 'bypassPermissions' || opts.sandboxUnavailable === true) {
-    // Explicit full access is preserved exactly: no proxy or sandbox flags are
-    // injected into the opt-in bypass path.
-    args.push('--dangerously-bypass-approvals-and-sandbox');
-  } else {
-    args.push('--ask-for-approval', mapCodexApprovalPolicy(launch.permissionMode));
-    args.push('--sandbox', mapCodexSandboxMode(launch.permissionMode));
-    args.push(...codexLoopbackConfigArgs());
-  }
-
-  // This PTY is always server-hosted and rendered into a browser xterm, so
-  // Codex must stay inline for reconnectable scrollback.
-  args.push('--no-alt-screen');
-
-  if (launch.reasoningEffort) {
-    args.push('-c', `model_reasoning_effort=${JSON.stringify(launch.reasoningEffort)}`);
-  }
-
-  // NOT passed: `--cd`. The PTY already spawns with the graph-resolved cwd.
-  return args;
-}
-
-/** Quote only values whose content is not fixed CLI vocabulary. */
-function renderCodexCommand(args: readonly string[]): string {
-  const rendered: string[] = ['codex'];
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index] as string;
-    const previous = args[index - 1];
-    rendered.push(previous === '--model' || previous === '-c' ? shellQuote(arg) : arg);
-  }
-  return rendered.join(' ');
-}
-
-/**
- * Turn a base agent command into the RESUME invocation for `nativeSessionId`.
- *
- * Ported from maestro's proven resume builders (claude-spawner/codex-spawner
- * buildResumeArgs), including the two facts that make resume correct:
- *   - The SYSTEM prompt is re-appended. `--resume` / `codex resume` restore
- *     conversation HISTORY, not the invocation's own configuration — an agent
- *     resumed without it comes back with its memory and no identity.
- *   - The TASK prompt is NOT re-sent. It is already the first user turn of the
- *     restored conversation; sending it again duplicates the assignment. No
- *     positional argument also happens to be what keeps both CLIs in the
- *     interactive session the PTY needs.
- * Exact-id only: no `--continue`, no `--last` — both mean "most recent", which
- * resumes the WRONG conversation the moment two sessions share a cwd.
- *
- * Refusals are loud and typed. An operator wrapper (`TM8_AGENT_CMD`) has a
- * private flag vocabulary tm8 must not guess a resume flag into, and a tool
- * with no resume-by-id contract (echo-agent, gemini, hermes) must never be
- * silently restarted fresh and presented as resumed.
- */
-export function withAgentResume(
-  command: string,
-  systemPrompt: string,
-  launch: ResolvedLaunchConfig,
-  nativeSessionId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const override = env.TM8_AGENT_CMD?.trim();
-  if (override) {
-    throw new SpawnError(
-      'resume is not supported under a TM8_AGENT_CMD operator wrapper — tm8 cannot know its resume flags',
-      'not_implemented',
-      { override },
-    );
-  }
-  const raw = AGENT_TOOL_BINARIES[launch.agentTool];
-  const system = systemPrompt.trim();
-
-  if (raw === 'claude') {
-    const parts = [command];
-    if (system !== '') parts.push(`--append-system-prompt ${shellQuote(system)}`);
-    parts.push(`--resume ${shellQuote(nativeSessionId)}`);
-    return parts.join(' ');
-  }
-  if (raw === 'codex') {
-    // `resume` is a SUBCOMMAND and must come before the flags; the rollout id
-    // is positional and must come after them.
-    const parts = [command.replace(/^codex\b/, 'codex resume')];
-    if (system !== '') {
-      parts.push(`-c ${shellQuote(`developer_instructions=${JSON.stringify(system)}`)}`);
-    }
-    parts.push(shellQuote(nativeSessionId));
-    return parts.join(' ');
-  }
-  throw new SpawnError(
-    `agent tool '${launch.agentTool}' has no resume-by-id contract`,
-    'invalid_input',
-    { agentTool: launch.agentTool },
-  );
-}
-
-/**
- * Append the composed prompts to an agent command line.
- *
- * SEPARATE from {@link buildAgentCommand} because of an ordering constraint that
- * looks circular and is not: the prompt is composed FROM the manifest, and the
- * manifest records the command. Splitting the two unties it — the base command
- * is built and recorded, the manifest is composed, the prompt is derived from
- * it, and only then is the prompt appended to produce the line the PTY runs.
- * Nothing in the prompt renders `launch.command`, so there is no real cycle.
- *
- * THIS IS THE STEP THAT WAS MISSING. Before it, tm8 composed a complete manifest
- * AND a complete system prompt, wrote the manifest to disk, exported
- * `TM8_MANIFEST_PATH` — then launched a bare `claude` that read none of it. Every
- * real agent booted with no identity and no task. It went unnoticed because the
- * smoke stub (`echo-agent`) DOES read the manifest, so the loop passed on a path
- * the product never takes.
- *
- * THE TWO PROMPTS TRAVEL ON DIFFERENT CHANNELS, and conflating them was the
- * second half of the same bug. The system prompt configures the agent; the task
- * prompt is the agent's FIRST USER TURN — the thing that makes it start working.
- * This function used to take one string, and its only caller passed
- * `${envelope.system}\n\n${envelope.task}`, so the task block landed inside
- * `--append-system-prompt` and no positional argument was emitted at all.
- * Measured 2026-07-30 on a live spawn (`ps -p <pid> -o command=`): the argv
- * ended `...</tm8_system_prompt>\n\n<tm8_task_prompt count="0">...`, with
- * nothing after it. Both CLIs treat an invocation with no positional prompt as
- * an INTERACTIVE session, so every tm8-launched agent booted to an idle REPL
- * with its assignment buried in its own configuration, reported `running`, and
- * never emitted a token. A session row that exists is not an agent that started.
- *
- * Delivery is PER-TOOL, and matches maestro's proven spawners
- * (`maestro-cli/src/services/{claude,codex}-spawner.ts`) flag for flag:
- *   - Claude: `--append-system-prompt <system>` then `<task>` positional
- *   - Codex:  `-c developer_instructions=<json>` then `<task>` positional
- *     (`instructions` is reserved by Codex and silently ignored)
- * The manifest-reading smoke agent needs neither: it reads the typed manifest.
- * Operator wrappers (`TM8_AGENT_CMD`) are returned unchanged because tm8 cannot
- * know their private flag vocabulary — including whether a bare positional would
- * be read as a prompt or as a path.
- *
- * The positional goes LAST, after every flag, because both CLIs stop parsing
- * options at the first non-option argument.
- *
- * PRODUCTION NOTE (2026-08-16): SpawnService passes an empty `task` when its
- * PromptSettlementWaiter is wired, launches the interactive provider with this
- * function's system configuration, then submits the task through the PTY
- * closed loop and waits for its outcome before recording `running`. Positional
- * task delivery remains the compatibility path for legacy embedders without a
- * settlement callback, and the focused unit surface for provider argv.
- */
-export function withAgentPrompt(
-  command: string,
-  prompts: { system: string; task: string },
-  launch: ResolvedLaunchConfig,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const system = prompts.system.trim();
-  const task = prompts.task.trim();
-  if (system === '' && task === '') return command;
-  const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
-
-  // echo-agent reads the typed manifest directly. An operator-provided wrapper
-  // is a complete command whose private flag vocabulary tm8 must not guess.
-  if (raw !== 'claude' && raw !== 'codex') return command;
-
-  const parts = [command];
-  if (system !== '') {
-    parts.push(
-      raw === 'claude'
-        ? `--append-system-prompt ${shellQuote(system)}`
-        : `-c ${shellQuote(`developer_instructions=${JSON.stringify(system)}`)}`,
-    );
-  }
-  if (task !== '') parts.push(shellQuote(task));
-  return parts.join(' ');
-}
-
-/**
- * tm8's four postures → Codex's `--ask-for-approval` policy.
- *
- * `interactive` maps to `untrusted` and NOT to `on-request`, which is the honest
- * answer for an unattended launch: a policy that stops to ask is a policy that
- * hangs, and `untrusted` at least confines what runs without asking. The pairing
- * with the sandbox below is what makes it usable. Mirrors maestro's
- * `mapApprovalPolicy` (codex-spawner.ts:101).
- */
-function mapCodexApprovalPolicy(mode: PermissionMode): string {
-  switch (mode) {
-    // Codex has no `auto` of its own, and inventing one out of `on-request`
-    // would be a REGRESSION dressed as a translation: `on-request` stops to ask,
-    // and there is nobody at this PTY to answer. `auto` is tm8's default, so
-    // codex sessions that name no posture must keep landing exactly where they
-    // land today — `never` + `workspace-write`, i.e. `acceptEdits`.
-    case 'auto':
-    case 'acceptEdits':
-      return 'never';
-    case 'readOnly':
-    case 'interactive':
-      return 'untrusted';
-    case 'bypassPermissions':
-      // Unreachable — the caller emits
-      // --dangerously-bypass-approvals-and-sandbox instead.
-      return 'never';
-  }
-}
-
-/** tm8 postures → Codex's `--sandbox` mode. */
-function mapCodexSandboxMode(mode: PermissionMode): string {
-  switch (mode) {
-    case 'auto':
-    case 'acceptEdits':
-    case 'interactive':
-    case 'readOnly':
-      // Codex's legacy read-only sandbox has no supported network-enable key.
-      // tm8 plan agents still have to call the loopback graph API, so they run
-      // in workspace-write with source edits explicitly prohibited by the
-      // trusted launch prompt. See CODEX-COMMAND-NETWORK.md.
-      return 'workspace-write';
-    case 'bypassPermissions':
-      // Unreachable — see mapCodexApprovalPolicy.
-      return 'danger-full-access';
-  }
-}
-
-/**
- * tm8's five postures → the `--permission-mode` values Claude accepts.
- *
- * `auto` is passed straight through: it is a first-class Claude Code mode
- * (`--permission-mode` choices are acceptEdits / auto / bypassPermissions /
- * manual / dontAsk / plan, verified against the installed CLI 2026-08-01), and
- * it is the posture a tm8 session gets when nothing named one.
- */
-function mapClaudePermissionMode(mode: PermissionMode): string {
-  switch (mode) {
-    case 'auto':
-      return 'auto';
-    case 'acceptEdits':
-      return 'acceptEdits';
-    case 'readOnly':
-      return 'plan';
-    case 'interactive':
-      return 'default';
-    case 'bypassPermissions':
-      // Unreachable — the caller emits --dangerously-skip-permissions instead.
-      return 'acceptEdits';
-  }
+  return codexHarness
+    .buildArgv(launch, { sandboxUnavailable: opts.sandboxUnavailable === true })
+    .map((token) => (typeof token === 'string' ? token : token.value));
 }
 
 /** Auth credentials forwarded from the server's own environment, when present. */
