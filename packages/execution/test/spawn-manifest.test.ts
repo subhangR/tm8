@@ -684,6 +684,45 @@ describe('composeEnv', () => {
     baseUrl: 'http://127.0.0.1:4610',
   });
 
+  /**
+   * IS_SANDBOX reaches the agent when the OPERATOR set it, and never otherwise.
+   *
+   * The Claude CLI refuses `--permission-mode bypassPermissions` under root
+   * unless this is set, and tm8 nodes commonly run as root so agent sessions can
+   * reach a home-owned checkout. Without the passthrough every Bypass launch on
+   * such a node died about two seconds in, reported only as "initial task prompt
+   * did not settle".
+   */
+  it('passes the operator-set IS_SANDBOX through to the agent', () => {
+    const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', { IS_SANDBOX: '1' });
+    expect(env.IS_SANDBOX).toBe('1');
+  });
+
+  it('never invents IS_SANDBOX when the operator did not set it', () => {
+    // The whole posture: tm8 CARRIES this decision, it does not MAKE it. A node
+    // that never opted in must not have a sandbox asserted on its behalf.
+    const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', {});
+    expect(env).not.toHaveProperty('IS_SANDBOX');
+  });
+
+  it('carries the operator flag without widening the list to server secrets', () => {
+    // The bar SAFE_BASE_ENV_KEYS exists to enforce, re-asserted beside the
+    // addition. Provider credentials are NOT part of that bar — `AUTH_ENV_KEYS`
+    // forwards ANTHROPIC_API_KEY and its siblings deliberately, because the
+    // agent cannot authenticate without them. What must never cross is the
+    // node's own infrastructure: the database URL above all.
+    const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', {
+      IS_SANDBOX: '1',
+      TM8_DATABASE_URL: 'postgres://tm8@127.0.0.1:5442/tm8_prod',
+      TM8_DELIVERY_DATABASE_URL: 'postgres://worker@127.0.0.1:5442/tm8_prod',
+      AWS_SECRET_ACCESS_KEY: 'nope',
+    });
+    expect(env.IS_SANDBOX).toBe('1');
+    expect(env).not.toHaveProperty('TM8_DATABASE_URL');
+    expect(env).not.toHaveProperty('TM8_DELIVERY_DATABASE_URL');
+    expect(env).not.toHaveProperty('AWS_SECRET_ACCESS_KEY');
+  });
+
   it('sets the session and exact persona variables in the boot contract', () => {
     const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', {});
     expect(env.TM8_SESSION_ID).toBe('sess-1');
