@@ -889,6 +889,37 @@ const SAFE_BASE_ENV_KEYS = [
   'COLORTERM',
   'TMPDIR',
   'XDG_CACHE_HOME',
+
+  /**
+   * IS_SANDBOX — the operator's answer to "is this node already contained?",
+   * and the one thing standing between a root-run node and `bypassPermissions`.
+   *
+   * The Claude CLI refuses `--permission-mode bypassPermissions` outright when
+   * it is running as root ("--dangerously-skip-permissions cannot be used with
+   * root/sudo privileges for security reasons") unless this is set. A node that
+   * runs as root — which tm8 nodes commonly do, so agent sessions can reach a
+   * home-owned checkout — therefore cannot spawn a bypass session at all: the
+   * agent exits 1 about two seconds in, and what the operator sees is
+   * "initial task prompt did not settle ... session_replaced_or_exited", which
+   * names neither root nor the flag.
+   *
+   * Measured on a live node 2026-08-26: every session using `auto` or
+   * `acceptEdits` ran normally while every `Bypass` launch died in ~2s. Setting
+   * this variable on the same command made the identical invocation succeed.
+   *
+   * IT IS PASSED THROUGH, NEVER INVENTED. tm8 does not set it — the operator
+   * does, on the service, deliberately, and this list is what decides whether
+   * the server's own environment may reach the agent. That is the same posture
+   * `PATH` and `HOME` already have here: operator-configured, not secret.
+   *
+   * It is not a credential, which is the bar this list exists to enforce. It IS
+   * a safety assertion — it tells the CLI to trust that the surrounding
+   * environment is contained — so an operator who sets it on a node that is not
+   * contained has widened what a bypass session can reach. That is their call to
+   * make, and refusing to carry the variable does not make it for them; it only
+   * makes the refusal illegible.
+   */
+  'IS_SANDBOX',
 ] as const;
 
 /**
