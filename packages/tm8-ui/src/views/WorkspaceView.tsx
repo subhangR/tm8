@@ -38,7 +38,7 @@ import {
 import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
-import { placeholderTitleFor, useNewTask } from '../authoring';
+import { placeholderTitleFor, stagedBirthFor, useNewTask } from '../authoring';
 import { homeRootKinds } from '../domain/home-rail';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
@@ -652,13 +652,25 @@ export function WorkspaceView(props: WorkspaceViewProps) {
      * on the Sessions row and pressing ＋ on the Sessions cell must not do
      * different things.
      *
-     * Two arms, and the registry decides which (never a kind literal, §15.2):
+     * Three arms, and the registry decides which (never a kind literal, §15.2):
      *   - `rootBirthAction` ⇒ the kind is STARTED. Sessions are the case: the
      *     birth is `start-terminal`, dispatched through `useSessionStart`,
      *     which owns the space and the project a terminal needs.
+     *   - `stagedBirthFor` ⇒ the kind declares a `createForm`, so its content
+     *     has to exist BEFORE the entity does. Files are the case: the picker
+     *     opens, the bytes upload, and the entity appears only once the node
+     *     has stored something.
      *   - otherwise ⇒ the generic create, with the TARGET kind's own
      *     placeholder. `flow` is the vehicle (its commands, its `onCreated`),
      *     not the subject — its bound kind is only the default.
+     *
+     * THE MIDDLE ARM IS THE ONE THAT WAS MISSING, and its absence is the whole
+     * of Tarkesh bug 01a04730. Rewiring this header to `useNewTask` (R4 above)
+     * dropped the `createForm` routing `EntityCreateControl` had been doing,
+     * so ＋ on Files ran the generic create — `create_file_entity` writes a
+     * `public.files` row with `size_bytes 0` and a `storage_path` no blob is
+     * ever written to, which lists a row and 404s its own Download link. Both
+     * halves of the report, from one dropped branch.
      */
     const birthFor = (kind: string): { refusal: { cause: string; remedy: string } | null; perform: () => void } => {
       const action = rootBirthAction(kind);
@@ -678,6 +690,27 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             };
       }
       const target = getKind(kind);
+      /* The staged door outranks the generic one, and it is asked BEFORE
+         `flow.unavailableFor`: that question is about the generic create, and
+         answering it for a kind that never uses the generic create is how a
+         working upload gets refused on a technicality it does not depend on. */
+      const staged = stagedBirthFor(target, {
+        spaceId: data.spaceId,
+        files: data.seam.files,
+        onCreated: (id, result) => {
+          data.reconcileCommand(result);
+          nav.push?.(id as EntityId);
+        },
+        onNotice: (text) =>
+          props.onNotice({
+            id: 'workspace-upload-failed',
+            tone: 'error',
+            title: 'Upload failed',
+            body: text,
+            ttlMs: 8_000,
+          }),
+      });
+      if (staged) return { refusal: null, perform: staged };
       return {
         refusal: flow.unavailableFor(target.kind) ?? refusalFor(target),
         perform: () =>

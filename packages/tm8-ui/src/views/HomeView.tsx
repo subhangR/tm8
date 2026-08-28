@@ -46,7 +46,7 @@ import {
 import type { ActionRef } from '../domain';
 import { getKind } from '../domain';
 import { attachmentsFor } from '../files/port';
-import { placeholderTitleFor, useNewTask } from '../authoring';
+import { placeholderTitleFor, stagedBirthFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { navStore, useNavStore } from '../stores/navStore';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
@@ -440,6 +440,29 @@ export function HomeView(props: HomeViewProps) {
             };
       }
       const target = getKind(kind);
+      /* THE STAGED ARM — the Work tab's `birthFor` states it in full. Home
+         carries it because Home carries the same header: `homeRootKinds()`
+         puts Files on this rail too, and a fix that landed on only one of the
+         two surfaces would have left the identical ＋ making hollow rows one
+         tab away. Asked BEFORE `unavailableFor`, which is a question about the
+         generic create this arm never reaches. */
+      const staged = stagedBirthFor(target, {
+        spaceId: data.spaceId,
+        files: data.seam.files,
+        onCreated: (id, result) => {
+          data.reconcileCommand(result);
+          navStore.getState().openCenter(id);
+        },
+        onNotice: (text) =>
+          onNotice({
+            id: 'home-upload-failed',
+            tone: 'error',
+            title: 'Upload failed',
+            body: text,
+            ttlMs: 8_000,
+          }),
+      });
+      if (staged) return { refusal: null, perform: staged };
       return {
         refusal:
           newEntity.unavailableFor(target.kind)
@@ -456,7 +479,12 @@ export function HomeView(props: HomeViewProps) {
           }),
       };
     },
-    [newEntity, sessionStart.onAction],
+    /* The three `data` MEMBERS this reads, not `data` itself. `data` is a
+       fresh object on every render of this screen, so depending on it would
+       make `birthFor` — and therefore the `onCreateKind` prop handed down to
+       `ChatHomeScreen` — a new identity every render, which is the memo-defeat
+       this list exists to prevent. */
+    [data.spaceId, data.seam.files, data.reconcileCommand, newEntity, onNotice, sessionStart.onAction],
   );
   const cellBirth = birthFor(cellConfig.kind);
 

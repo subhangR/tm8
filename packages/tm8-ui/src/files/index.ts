@@ -40,6 +40,9 @@ export { MessageAttachments, type MessageAttachmentsProps } from './MessageAttac
    see the component's header for why this lane owns it. */
 export { ChooseFilesControl } from './ChooseFilesControl';
 export { ProjectFolderPicker, type ProjectFolderPickerProps } from './ProjectFolderPicker';
+/* Pick-then-upload as one action — the create door for the `file` kind,
+   shared by the panel's button and by both root headers' ＋. */
+export { runFileUploadCreate, type FileUploadCreateOptions } from './create';
 export {
   createFileUploadTask,
   safeUploadReason,

@@ -77,6 +77,9 @@ export {
 export { NewTaskControl } from './NewTaskControl';
 export { EntityCreateControl } from './EntityCreateControl';
 export { FileUploadCreateControl } from './FileUploadCreateControl';
+/* The same staged create door as an ACTION, for a header that owns its own
+   button and cannot host a component. See `staged-birth.ts`. */
+export { stagedBirthFor, type StagedBirthDeps } from './staged-birth';
 export { RefusalCard, type RefusalMove } from './RefusalCard';
 export { AuthoringHost, SaveControls } from './SaveControls';
 export { StatusSelect, type StatusOption } from './StatusSelect';
