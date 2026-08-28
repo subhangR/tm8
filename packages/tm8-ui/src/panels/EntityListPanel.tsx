@@ -401,8 +401,11 @@ export interface EntityListPanelProps {
    * the one `ValueControl` is what stops them disagreeing.
    *
    * Absent ⇒ the picker renders DISABLED WITH REASON, never enabled-inert.
+   *
+   * `null` clears, and only a `dateControls` field ever sends one — see
+   * `ControlHost.onSetValue`, which this must keep satisfying structurally.
    */
-  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+  onSetValue?: (entityId: string, source: string, next: string | null, label: string) => void;
 
   /**
    * Set or clear (`null`) ONE axis of an expanded row's `state.axes` record.

@@ -507,6 +507,13 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          assignment by an edge — three different writes, so they are three
          fields rather than one overloaded `controls`. */
       'valueControls',
+      /* Opened 2026-08-28 with the due date on the strip. Not `valueControls`
+         because that field is explicitly "an enum member of `EntityState` this
+         kind lets a user set" and renders a picker over declared `options` — a
+         date has no vocabulary to declare. The WRITE is the same
+         version-guarded content patch, and deliberately so; only the input
+         differs. See `DateControl`. */
+      'dateControls',
       /* Opened 2026-08-16 with W1: axis pickers are DATA-driven — the field
          only marks the kind whose state carries `axes`; the vocabulary is the
          space's own `task_axes` rows, handed over by the host. Not

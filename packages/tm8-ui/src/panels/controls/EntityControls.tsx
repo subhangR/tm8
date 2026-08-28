@@ -57,6 +57,7 @@ import type {
   ActionContext,
   ActionRef,
   AssignControl,
+  DateControl,
   KindConfig,
   MembershipListControl,
   StateControl,
@@ -200,8 +201,15 @@ export interface ControlHost {
    * "priority could not be changed" — lowercase mid-sentence. Both come off the
    * same registry `ValueControl`, whose `label` is required, so it is required
    * here too; an optional fourth argument would let a host silently drop it.
+   *
+   * `null` IS A CLEAR, and only a `dateControls` field can send one: a
+   * `ValueControl`'s enum has nothing in the contract that clears it, while
+   * `tasks.due_date` is nullable and "no due date" is a value the database
+   * holds. It rides this executor rather than a second one because the PATCH
+   * is identical — `content[source]`, version-guarded — and a parallel
+   * executor would be a second place to forget the version guard.
    */
-  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+  onSetValue?: (entityId: string, source: string, next: string | null, label: string) => void;
   /**
    * A registry `axisControls` write — ONE axis of the row's `state.axes`
    * record. `null` clears the axis back to unset, which is a real state the
@@ -559,6 +567,7 @@ export function stripHasLiveControl(props: ControlHost, config: KindConfig): boo
       && list.stateControl.readOnlyReason === undefined
       && props.onSetState !== undefined)
     || ((list.valueControls?.length ?? 0) > 0 && props.onSetValue !== undefined)
+    || ((list.dateControls?.length ?? 0) > 0 && props.onSetValue !== undefined)
     || (list.axisControls !== undefined
       && (props.taskAxes?.length ?? 0) > 0
       && props.onSetAxis !== undefined)
@@ -657,6 +666,13 @@ export function EntityControlStrip({
 
       {(list.valueControls ?? []).map((value) =>
         line(value.label, <RowValueControl row={row} props={props} control={value} />),
+      )}
+
+      {/* Directly after the enum pickers and before the axes, so the strip
+          reads status → priority → due → axes: the kind's OWN registry-declared
+          fields together, then the per-space vocabulary the host hydrates. */}
+      {(list.dateControls ?? []).map((date) =>
+        line(date.label, <RowDateControl row={row} props={props} control={date} />),
       )}
 
       {/* One picker per axis the SPACE defines — none defined, none drawn.
@@ -801,6 +817,133 @@ function RowValueControl({
           </option>
         ))}
       </select>
+    </span>
+  );
+}
+
+/**
+ * THE `YYYY-MM-DD` AN `<input type="date">` WILL ACCEPT, or `''`.
+ *
+ * The stored value reaches us in TWO shapes, and this is not defensiveness:
+ * the read projection returns a date-only string (`entity-read.ts` `dateOnly`)
+ * while the event projector returns a full ISO timestamp (`projector.ts`
+ * `iso`), so a row hydrated from a live event carries `2026-09-01T00:00:00Z`
+ * where the same row fetched by id carries `2026-09-01`. A date input silently
+ * renders BLANK on a value it cannot parse, so without this the control would
+ * go empty the moment an event echoed a save — reading as "the write cleared
+ * it" one frame after a write that did not.
+ *
+ * Truncating rather than parsing is deliberate: a due date is a CALENDAR day,
+ * and `new Date(...)` would push it across a day boundary for any viewer west
+ * of the stored zero hour.
+ */
+function dateInputValue(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const head = raw.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(head) ? head : '';
+}
+
+/**
+ * The picker for a registry-declared `DateControl` — a task's due date, today.
+ *
+ * `RowValueControl`'s anatomy and its three refusals verbatim (not loaded,
+ * refused, not wired), over a different input and with one write the enum
+ * pickers do not have.
+ *
+ * WHY A NATIVE `<input type="date">` AND NOT A DRAWN CALENDAR. The kit has no
+ * calendar, and a hand-rolled one is a month grid, a keyboard model, a locale
+ * and a focus trap — four things to get wrong in a control that sits inside a
+ * row. The native input already carries all four, plus the platform's own date
+ * format for the viewer's locale, which is a fact this app has no business
+ * deciding. The wire format is unaffected: the element's `value` is
+ * `YYYY-MM-DD` regardless of how it is DISPLAYED, which is exactly what the
+ * `date` column wants.
+ *
+ * CLEARING IS A REAL WRITE, and the one place this diverges from
+ * `RowValueControl`. Emptying the field sends an explicit `null` — see
+ * `ControlHost.onSetValue` and the `DateControl` docblock for why the server
+ * reads nothing else as a clear. `RowAxisControl` has the same property for
+ * the same reason and offers it as a `no <axis>` option; here the input's own
+ * clear affordance already is one, so no synthetic option is invented.
+ */
+function RowDateControl({
+  row,
+  props,
+  control,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  control: DateControl;
+}) {
+  const inputId = useId();
+  /* Read by registry-declared NAME off `state`, exactly as `RowValueControl`
+     reads priority — so this file never learns that `dueDate` is the one field
+     whose read half and write half live in different places. */
+  const current = dateInputValue((row.state as unknown as Record<string, unknown>)[control.source]);
+  const verb = `Set ${control.label.toLowerCase()}`;
+
+  /* `data-source` on the REFUSED pill as well as on the live input, the same
+     hook and the same reason as `RowValueControl`: the two are one control in
+     two states, and a hook on only the enabled one lets a refusal go
+     unasserted. */
+  const currentPill = (
+    <span className="lp__statesel kit-pill--idle" data-source={control.source}>
+      {current === '' ? control.emptyLabel : current}
+    </span>
+  );
+
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label={verb} />;
+  }
+
+  /* `canEdit` — the value travels in the kind's content patch, which the
+     server authorizes as an edit and not as its own verb. */
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id)?.canEdit === false) {
+    return (
+      <DisabledAction label={verb} reason={toReason(REASONS.cannotEdit)}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (!props.onSetValue) {
+    return (
+      <DisabledAction label={verb} reason={NOT_WIRED_REASON}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  return (
+    /* `--date` SUPPRESSES THE WRAPPER'S CARET. That pseudo-element exists
+       because a `<select>` styled as a pill loses its native affordance and
+       becomes indistinguishable from the badge beside it; a date input keeps
+       its own calendar indicator, so the caret would be a second, wrong glyph
+       claiming it is a dropdown. */
+    <span className="lp__statewrap lp__statewrap--date">
+      <input
+        id={inputId}
+        type="date"
+        className="lp__statesel lp__statesel--live lp__datesel kit-pill--idle"
+        aria-label={`${verb} for ${row.title}`}
+        data-testid="row-date-input"
+        data-source={control.source}
+        /* The unset field is marked STRUCTURALLY rather than by a second face:
+           the stylesheet dims the browser's own `dd/mm/yyyy` placeholder off
+           it, and the word the registry chose reaches a screen reader through
+           `title` — which is also the sighted hover, so the two agree. */
+        data-empty={current === '' ? 'true' : undefined}
+        title={current === '' ? control.emptyLabel : undefined}
+        value={current}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === current) return;
+          /* An emptied box is a CLEAR, not a write of `''`: the column is
+             `date`, and an empty string is not one. */
+          props.onSetValue?.(row.id, control.source, next === '' ? null : next, control.label);
+        }}
+      />
     </span>
   );
 }

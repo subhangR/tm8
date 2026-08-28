@@ -28,6 +28,7 @@ import type {
   AssignControl,
   CollectionMode,
   ContentBlockRef,
+  DateControl,
   FilterSpec,
   KindConfig,
   ListConfig,
@@ -160,6 +161,39 @@ const TASK_PRIORITY_CONTROL: ValueControl = {
     { id: 'high', label: 'HIGH', tone: 'block' },
     { id: 'urgent', label: 'URGENT', tone: 'block' },
   ],
+};
+
+/**
+ * THE DUE DATE ON THE STRIP — user report 2026-08-28: "the task detail panel
+ * should have an option to select due date. is it already there in the model,
+ * i dont see it in the entity detail panel."
+ *
+ * It WAS in the model, end to end, and the answer to why they could not see it
+ * is the whole reason this control exists. Two facts compounded:
+ *
+ *   1. The only write surface was the `editFields` dialog behind the panel
+ *      header's `Edit` verb — one more field in a form, beside `Title`, where
+ *      nothing about the panel suggests a date lives.
+ *   2. `MetaGrid` draws a `Due` cell only when the field is SET, so on a task
+ *      with no due date — every task, until someone opens that dialog — the
+ *      panel says nothing about due dates at all. An unset optional field
+ *      rendered as absence is indistinguishable from an unmodelled one, which
+ *      is exactly the inference the report makes.
+ *
+ * So the due date joins status / priority / assignees ON THE STRIP, which is
+ * where a user goes to set a task's attributes and where they looked. The
+ * dialog row STAYS: it is the same registry `source` and the same patch, and
+ * removing it would take the field off the create-adjacent surface to gain
+ * nothing. This is not the duplication D67's amendment forbids — that was a
+ * dead COPY of a live control on one surface; both of these write.
+ */
+const TASK_DUE_CONTROL: DateControl = {
+  source: 'dueDate',
+  label: 'Due date',
+  /* Not "none": the strip's empty faces name their FIELD (`no priority`,
+     `no assignee`), so a row of them reads as a list of unset things rather
+     than a column of the same word four times. */
+  emptyLabel: 'no due date',
 };
 
 /**
@@ -664,6 +698,7 @@ const ROWS: readonly KindConfig[] = [
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
       valueControls: [TASK_PRIORITY_CONTROL],
+      dateControls: [TASK_DUE_CONTROL],
       /* The per-space `type` taxonomy (and any axis the space defines). The
          vocabulary is server data, not a static options list — see the
          `ListConfig.axisControls` docblock for why this is not a

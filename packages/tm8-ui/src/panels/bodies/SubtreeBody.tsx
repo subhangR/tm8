@@ -373,6 +373,7 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
   const controlled = new Set<string>(
     [
       ...(config.list.valueControls ?? []).map((c) => c.source),
+      ...(config.list.dateControls ?? []).map((c) => c.source),
       ...(config.list.assignControl ? [config.list.assignControl.source] : []),
     ],
   );
@@ -431,7 +432,12 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
     });
   }
 
-  if (typeof state.dueDate === 'string' && state.dueDate.length > 0) {
+  /* Suppressed on a kind whose strip now OWNS the date (task, via
+     `dateControls`) for the D67 reason the `controlled` note above gives: the
+     read-only cell beside a live picker of the same fact is the confusion, not
+     the redundancy. A kind that declares no date control keeps this cell,
+     because for that kind it is the only truth available. */
+  if (typeof state.dueDate === 'string' && state.dueDate.length > 0 && !controlled.has('dueDate')) {
     cells.push({ key: 'dueDate', label: 'Due', value: <span className="sb-grid__mono">{state.dueDate}</span> });
   }
 

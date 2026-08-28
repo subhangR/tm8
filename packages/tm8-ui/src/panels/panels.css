@@ -3144,6 +3144,47 @@
   font-style: italic;
 }
 
+/* THE DUE-DATE PICKER — the same pill as the selects beside it, over a native
+   `<input type="date">`.
+
+   NO WRAPPER CARET. The `::after` above compensates for a `<select>` losing
+   its native affordance under `appearance: none`; a date input keeps its own
+   calendar indicator, so drawing the triangle too would put two affordances on
+   one control and one of them would be lying about the interaction. The
+   `--live` padding it reserved goes back for the same reason. */
+.cv2-root .lp__statewrap--date::after { content: none; }
+.cv2-root .lp__datesel.lp__statesel--live { padding-right: 6px; }
+
+/* The browser's indicator, quieted to sit among the pills instead of stamping
+   the platform's full-contrast glyph on a card of soft ones. */
+.cv2-root .lp__datesel::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  opacity: 0.55;
+}
+.cv2-root .lp__datesel::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* The glyph is a near-BLACK bitmap the browser draws itself, so on the dark
+   theme it disappears into the pill and the control loses its only mark that
+   a calendar is behind it. `invert` is the one lever a UA pseudo-element
+   gives us here — the doubled selector is this stylesheet's standing pattern
+   for the theme flag landing on the root or above it (see `pn-btn--primary`). */
+.cv2-root[data-theme='dark'] .lp__datesel::-webkit-calendar-picker-indicator,
+[data-theme='dark'] .cv2-root .lp__datesel::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* UNSET IS QUIET, and it is the browser's own `dd/mm/yyyy` placeholder that is
+   being quieted — not a word of ours. The registry's `no due date` reaches the
+   user through the control's `title`, so the visible face stays a real date
+   field (which is what makes it obvious you can type one) while no longer
+   shouting a format mask from a row of otherwise settled values.
+
+   Matches `--absent` above deliberately: same fact, same treatment. Italic is
+   NOT applied — it would slant a date mask into near-illegibility at 10.5px. */
+.cv2-root .lp__datesel[data-empty='true'] { color: var(--pn-ink-4); }
+
 /* THE COLLAPSED TILE'S STATUS MARK, as a trigger.
    It must occupy the 16px square `.pn-tt__status` gives it and nothing more:
    that row's height is pinned by its tallest child, so any padding here would
@@ -3431,6 +3472,13 @@
 }
 /* The caret's room scales with the type it sits beside. */
 .cv2-root[data-shell='mobile'] .lp__statesel--live { padding-right: 26px; }
+/* AND IS GIVEN BACK on the date input, which draws no caret to make room for.
+   FOUR CLASSES for the reason spelled out at length above: the desktop rule
+   that zeroes this padding is (0,3,0), and so is the phone rule immediately
+   overhead — a three-class override here would lose the tie on source order,
+   look right in the diff, and leave 26px of dead space beside every date on a
+   phone. The extra `.lp__statesel--live` is what carries it to (0,4,0). */
+.cv2-root[data-shell='mobile'] .lp__datesel.lp__statesel--live { padding-right: 6px; }
 
 /* The chip row's WIDE row-action — "Archive" on entity detail, 83x24. The
    sixth of the unowned set, and it needs the SAME (0,4,0) treatment as the

@@ -159,6 +159,46 @@ describe('the panel mounts the real control strip', () => {
     expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'priority', 'low', 'Priority');
   });
 
+  /**
+   * THE REPORTED DEFECT, on the surface it was reported against — 2026-08-28:
+   * "the task detail panel should have an option to select due date. is it
+   * already there in the model, i dont see it in the entity detail panel."
+   *
+   * The field WAS modelled end to end; the panel's only door to it was the
+   * modal `editFields` dialog behind the header's `Edit` verb, and `MetaGrid`
+   * read the value out only when it was already set — so a task with no due
+   * date said nothing about due dates anywhere on this panel. This holds the
+   * live control on the strip, beside status and priority, where the report
+   * says a user looks.
+   */
+  it('the panel mounts a REAL due-date control, and it writes dueDate', () => {
+    const h = host();
+    const { getByTestId } = panel(TASK, h);
+
+    const input = getByTestId('row-date-input') as HTMLInputElement;
+    // The registry names the field; the panel must not spell it.
+    expect(input.dataset.source).toBe('dueDate');
+
+    fireEvent.change(input, { target: { value: '2026-09-01' } });
+    expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'dueDate', '2026-09-01', 'Due date');
+  });
+
+  /**
+   * The grid must not restate what the strip now owns. Before `dateControls`
+   * the `Due` cell was the only place the value appeared, so it had to stay;
+   * now it would be a read-only copy under a live picker, which is the exact
+   * shape D67's amendment removed ("the buttons are broken" — the things that
+   * looked like buttons were `<span>`s and the real control was elsewhere).
+   */
+  it('the read-only Due cell gives way to the control that replaced it', () => {
+    const { getByTestId } = panel(
+      { ...TASK, state: { ...TASK.state, dueDate: '2026-09-01' } as EntityDetail['state'] },
+      host(),
+    );
+    expect((getByTestId('row-date-input') as HTMLInputElement).value).toBe('2026-09-01');
+    expect(getByTestId('subtree-grid').textContent).not.toMatch(/Due/);
+  });
+
   it('the panel mounts a REAL assignee control, and it writes an EDGE', () => {
     const h = host();
     const { getByTestId, getByRole } = panel(TASK, h);

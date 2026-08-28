@@ -170,14 +170,23 @@ describe('the composed metadata grid', () => {
     const grid = getByTestId('subtree-grid');
     expect(grid.textContent).toContain(taskUuidTitle.id);
     /*
-     * `dueDate` is EDITABLE now (the task's `editFields` dialog) and the grid
-     * is still where it is READ. Not a contradiction: suppression is keyed on
-     * `valueControls`/`assignControl` — the controls mounted PERSISTENTLY in
-     * the strip above this body, which would otherwise be drawn twice on one
-     * screen. A dialog is modal and absent the rest of the time, so removing
-     * the row would leave the due date visible nowhere.
+     * `Due` LEFT THIS GRID on 2026-08-28, and the reason is the rule the next
+     * test states rather than an exception to it.
+     *
+     * It used to be read here precisely BECAUSE the only writer was the modal
+     * `editFields` dialog: a control that is absent the rest of the time
+     * cannot also be the place the value is read, so suppressing the row would
+     * have left the due date visible nowhere. The task now declares
+     * `dateControls`, which mounts a PERSISTENT picker in the strip above this
+     * body — so the premise is gone, and keeping the cell would put a
+     * read-only `Due 2026-09-01` under a live one. `controlled` is keyed off
+     * the registry, so this followed from the declaration with no edit here.
+     *
+     * The scalars with no strip control keep their cells, which is what the
+     * assertions below hold.
      */
-    expect(grid.textContent).toMatch(/Due/);
+    expect(grid.textContent).not.toMatch(/Due/);
+    expect(grid.textContent).toContain('Points');
   });
 
   /**
