@@ -1077,10 +1077,21 @@ export interface EditFieldSpec {
   valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule' | 'date';
 }
 
+/**
+ * The graph canvas's kind identity — one palette family per kind, worn as the
+ * card's left accent and eyebrow. Names map to the Astryx palette families;
+ * a kind without one renders the neutral gray family.
+ */
+export type GraphFamily =
+  | 'blue' | 'green' | 'orange' | 'red' | 'purple'
+  | 'teal' | 'cyan' | 'yellow' | 'pink' | 'gray';
+
 export interface KindConfig {
   kind: CoreEntityKind | CustomKindFallback;
   label: string;
   labelPlural: string;
+  /** Graph card family (see GraphFamily). Optional — absent renders gray. */
+  graphFamily?: GraphFamily;
   /**
    * The TEXT fallback mark. Still required — it is what a plain-string surface
    * (a `title=` tooltip, a palette row, a console dump) can show — but it is
