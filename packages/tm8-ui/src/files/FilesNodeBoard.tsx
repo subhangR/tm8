@@ -30,7 +30,7 @@ type Theme = 'light' | 'dark';
 export function FilesNodeBoard({ theme = 'light' }: { theme?: Theme }) {
   return (
     <div
-      className="cv2-root fn-board"
+      className="cv2-root fn-board" data-astryx-theme="neutral"
       data-theme={theme === 'dark' ? 'dark' : undefined}
       data-testid="files-node-board"
       data-board-theme={theme}

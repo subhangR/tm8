@@ -173,7 +173,8 @@ describe('the pivots', () => {
     const view = await mountBoard();
     fireEvent.click(view.getByTestId('bd-pivot-priority'));
     await waitFor(() => expect(columnKeys(view)).toEqual(['urgent', 'high', 'medium', 'low']));
-    expect(column(view, 'medium').getByText(GUIDE)).toBeTruthy();
+    /* React 19: rows land a commit after the columns do. */
+    await waitFor(() => expect(column(view, 'medium').getByText(GUIDE)).toBeTruthy());
 
     /* The write path is DIFFERENT here — a content patch that needs the
        detail's version, hydrated on demand — so it gets its own commit

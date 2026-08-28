@@ -94,7 +94,7 @@ function FixtureStrip() {
 function ThemePane({ theme }: { theme: 'light' | 'dark' }) {
   const paneStyle: CSSProperties = { flex: 1, minWidth: 0, overflow: 'auto', padding: 24 };
   return (
-    <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined} style={paneStyle}>
+    <div className="cv2-root" data-astryx-theme="neutral" data-theme={theme === 'dark' ? 'dark' : undefined} style={paneStyle}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 560 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
           <span className="t-h1">tm8-ui kit</span>
