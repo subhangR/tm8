@@ -9,6 +9,8 @@
    which blocked first paint on a third-party round-trip and, offline, silently
    dropped the whole type system to Georgia/system-ui. */
 @import './fonts.css';
+/* Meta Astryx design system + --pn-* bridge — see astryx-bridge.css header. */
+@import './astryx-bridge.css';
 
 .cv2-root {
   /* --- 1 · paper & ink ---------------------------------------------------- */

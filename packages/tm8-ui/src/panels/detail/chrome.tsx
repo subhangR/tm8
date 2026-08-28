@@ -386,7 +386,7 @@ export function ActionBar({
    * The bar element, for a host that needs the TRIGGER and the expand inside
    * one dismissal boundary — see `flowSurface`.
    */
-  barRef?: React.RefObject<HTMLDivElement>;
+  barRef?: React.RefObject<HTMLDivElement | null>;
   /** The flow verb whose config is currently expanded, if any. */
   openFlow?: ActionRef | null;
   /** Toggles that expand. Absent ⇒ a flow verb falls back to `onAction`. */

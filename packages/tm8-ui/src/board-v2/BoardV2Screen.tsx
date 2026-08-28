@@ -37,7 +37,10 @@ import type { SetStateOutcome } from '../domain';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { DisabledIconControl, toReason, type DetailReasons } from '../panels';
-import { AvatarStack, Pill, shortDate } from '../kit';
+import { AvatarStack, Pill } from '../kit';
+import { Badge } from '@astryxdesign/core/Badge';
+import { ProgressBar } from '@astryxdesign/core/ProgressBar';
+import { Timestamp } from '@astryxdesign/core/Timestamp';
 import type { Notice } from '../shell/notices';
 import type { GateData } from '../views/useGateData';
 import { useRowLifecycle } from '../views/useRowLifecycle';
@@ -619,6 +622,17 @@ function ColumnView({
   );
 }
 
+/* Priority chips follow tm8's own tone semantics (the registry dresses `high`
+   in 'block') expressed through Astryx's semantic Badge palette. A word map,
+   not a kind map — any kind whose state carries `priority` gets the same
+   read, and an unknown word falls back to neutral rather than lying. */
+const PRIORITY_BADGE: Record<string, 'error' | 'warning' | 'info' | 'neutral'> = {
+  urgent: 'error',
+  high: 'error',
+  medium: 'info',
+  low: 'neutral',
+};
+
 function CardView({
   row,
   fromKey,
@@ -671,10 +685,31 @@ function CardView({
         {row.title}
       </button>
       <div className="b2__card-meta">
-        {typeof state.priority === 'string' ? <Pill tone="idle">{state.priority}</Pill> : null}
-        {state.dueDate ? <span className="b2__card-due">{`due ${shortDate(state.dueDate)}`}</span> : null}
+        {typeof state.priority === 'string' ? (
+          <Badge variant={PRIORITY_BADGE[state.priority] ?? 'neutral'} label={state.priority} />
+        ) : null}
+        {state.dueDate ? (
+          <span
+            className="b2__card-due"
+            data-overdue={new Date(state.dueDate).getTime() < Date.now() || undefined}
+          >
+            {'due '}
+            <Timestamp value={state.dueDate} format="relative_short" hasTooltip={false} />
+          </span>
+        ) : null}
         {state.acceptance && state.acceptance.total > 0 ? (
-          <span className="b2__card-accept">{`✓ ${state.acceptance.completed}/${state.acceptance.total}`}</span>
+          <span
+            className="b2__card-accept"
+            title={`${state.acceptance.completed} of ${state.acceptance.total} acceptance criteria met`}
+          >
+            <ProgressBar
+              value={state.acceptance.completed}
+              max={state.acceptance.total}
+              label={`Acceptance: ${state.acceptance.completed} of ${state.acceptance.total} met`}
+              isLabelHidden
+            />
+            <span className="b2__card-accept-count">{`${state.acceptance.completed}/${state.acceptance.total}`}</span>
+          </span>
         ) : null}
         {state.assignees && state.assignees.length > 0 ? <AvatarStack actors={state.assignees} /> : null}
       </div>

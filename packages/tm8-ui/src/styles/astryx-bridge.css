@@ -1,0 +1,98 @@
+/* ==========================================================================
+   ASTRYX BRIDGE — Meta Astryx design system, phase-1 adoption.
+   Loads @astryxdesign CSS (all of it @layer'd, so existing un-layered tm8
+   rules always win where both apply) and remaps the `--pn-*` semantic tokens
+   onto Astryx theme tokens wherever a scope opts in via
+   `data-astryx-theme="<theme>"` on a `.cv2-root` element.
+
+   · Dark: Astryx tokens are light-dark() pairs resolved by `color-scheme`,
+     which this file pins to tm8's own scoped `[data-theme="dark"]` state —
+     the OS preference never leaks in (index.html doctrine).
+   · The remap selector doubles the attribute for a deliberate specificity
+     bump over tokens.css (this sheet is @import'd BEFORE tokens.css rules,
+     so it cannot win by source order).
+   · No hex here, by design and by law (hex-ban.test.ts): every value is a
+     var() into the Astryx theme.
+   · Unmapped on purpose (phase 2, see docs/ui/astryx-adoption.md):
+     --pn-fs-* / --pn-lh-* / --pn-track-* (canvas-measured type scale),
+     --pn-space-* (identical 4px grid already), --pn-brand-rgb (alpha
+     compositor with no var()-able Astryx analog), --pn-x-* (terminal lane).
+   ========================================================================== */
+
+@layer reset, astryx-base, astryx-theme;
+
+@import '@astryxdesign/core/astryx.css';
+@import '@astryxdesign/theme-neutral/theme.css';
+@import '@astryxdesign/theme-gothic/theme.css';
+
+/* --- light-dark() resolution follows tm8's scoped theme, not the OS ------- */
+.cv2-root {
+  color-scheme: light;
+}
+
+.cv2-root[data-theme='dark'],
+[data-theme='dark'] .cv2-root {
+  color-scheme: dark;
+}
+
+/* --- token bridge: --pn-* follows Astryx wherever the scope opts in -------
+   The second selector keeps nested `.cv2-root` re-entries (alwaysDark panels,
+   the terminal, boards that re-open the theme scope) on the bridge — without
+   it they would fall back to tokens.css atelier values. Both forms are
+   (0,3,0) so they beat every tokens.css block regardless of source order. */
+.cv2-root[data-astryx-theme][data-astryx-theme],
+[data-astryx-theme] .cv2-root.cv2-root {
+  /* 1 · paper & ink → Astryx surfaces and text */
+  --pn-paper: var(--color-background-body);
+  --pn-surface: var(--color-background-surface);
+  --pn-card: var(--color-background-card);
+  --pn-hover: var(--color-overlay-hover);
+  --pn-active: var(--color-overlay-pressed);
+  --pn-line: var(--color-border);
+  --pn-line-2: var(--color-border-emphasized);
+  --pn-ink: var(--color-text-primary);
+  --pn-ink-2: var(--color-text-secondary);
+  --pn-ink-3: var(--color-text-secondary);
+  --pn-ink-4: var(--color-text-disabled);
+
+  /* 2 · brass → accent */
+  --pn-brand: var(--color-accent);
+  --pn-brand-2: var(--color-text-accent);
+  --pn-brand-soft: var(--color-accent-muted);
+
+  /* 3 · functional/status (word + color doctrine unchanged) */
+  --pn-run: var(--color-success);
+  --pn-run-soft: var(--color-success-muted);
+  --pn-wait: var(--color-warning);
+  --pn-wait-soft: var(--color-warning-muted);
+  --pn-block: var(--color-error);
+  --pn-block-soft: var(--color-error-muted);
+  --pn-info: var(--color-text-blue);
+  --pn-info-soft: var(--color-background-blue);
+  --pn-idle: var(--color-text-gray);
+  --pn-idle-soft: var(--color-background-gray);
+  --pn-pr-merged: var(--color-text-purple);
+  --pn-pr-merged-soft: var(--color-background-purple);
+
+  /* 4 · type families (sizes stay canvas-measured — phase 2) */
+  --pn-ui: var(--font-family-body);
+  --pn-serif: var(--font-family-heading);
+  --pn-mono: var(--font-family-code);
+
+  /* 6 · radii */
+  --pn-r-xs: var(--radius-inner);
+  --pn-r-sm: var(--radius-inner);
+  --pn-r-md: var(--radius-element);
+  --pn-r-lg: var(--radius-container);
+  --pn-r-pill: var(--radius-full);
+
+  /* 7 · elevation */
+  --pn-sh-sm: var(--shadow-low);
+  --pn-sh-md: var(--shadow-med);
+  --pn-sh-pop: var(--shadow-high);
+
+  /* 8 · motion */
+  --pn-dur-fast: var(--duration-fast);
+  --pn-dur-base: var(--duration-medium);
+  --pn-dur-slow: var(--duration-slow);
+}
