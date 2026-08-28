@@ -468,8 +468,14 @@ export interface RowProjection {
 /** The server's default when a query carries no sort (`collections.ts`). */
 const DEFAULT_SORT: NonNullable<CollectionQuery['sort']> = 'activityAt_desc';
 
-/** `coalesce(t.due_date, '9999-12-31')` — the sentinel that sorts nulls last. */
-const NO_DUE_DATE = '9999-12-31';
+/**
+ * `coalesce(t.<col>, '9999-12-31')` — the sentinel that sorts nulls last.
+ *
+ * ONE constant for BOTH date sorts, because the server uses one: `dueDate` and
+ * `startDate` coalesce to the same literal in `collections.ts`. A second copy
+ * spelled the same would be a second thing to forget when it moves.
+ */
+const NO_DATE = '9999-12-31';
 
 /** `case t.priority when 'urgent' then 0 … else 3 end`, verbatim. */
 const PRIORITY_RANK: Readonly<Record<string, number>> = {
@@ -494,7 +500,28 @@ const ORDERINGS: Record<
   dueDate: {
     of: (r) => {
       const due = (r.state as unknown as Record<string, unknown>).dueDate;
-      return typeof due === 'string' ? due : NO_DUE_DATE;
+      return typeof due === 'string' ? due : NO_DATE;
+    },
+    dir: 1,
+  },
+  /**
+   * THIS RECORD IS TOTAL OVER THE CONTRACT'S SORT ENUM, and that is the point:
+   * adding `startDate` to `CollectionQuery['sort']` upstream made this file a
+   * TYPE ERROR until the arm existed. A `Partial` with a runtime fallback would
+   * have compiled and then sorted every row by activity while the list header
+   * said "Start date" — the same class of lie the `DEFAULT_SORT` docblock
+   * refuses. Leave it total.
+   *
+   * Date-only comparison is a plain string compare because `YYYY-MM-DD` is
+   * lexicographically ordered; the server compares the rendered `to_char` for
+   * the same reason. `startDate` may still arrive as a full ISO timestamp from
+   * a projector that widened it — the prefix orders identically either way, so
+   * this needs no truncation where `dateInputValue` did.
+   */
+  startDate: {
+    of: (r) => {
+      const start = (r.state as unknown as Record<string, unknown>).startDate;
+      return typeof start === 'string' ? start : NO_DATE;
     },
     dir: 1,
   },

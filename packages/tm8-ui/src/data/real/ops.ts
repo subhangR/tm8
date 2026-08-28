@@ -790,6 +790,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
           priority: input.priority,
           acceptanceCriteria: input.acceptanceCriteria,
           pointsEstimate: input.pointsEstimate,
+          startDate: input.startDate,
           dueDate: input.dueDate,
         }),
       } as CreateEntityInput;
@@ -833,6 +834,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
           priority: input.priority,
           acceptanceCriteria: input.acceptanceCriteria,
           pointsEstimate: input.pointsEstimate,
+          startDate: input.startDate,
           dueDate: input.dueDate,
         }),
       } as PatchEntityInput;

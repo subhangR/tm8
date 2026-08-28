@@ -159,6 +159,66 @@ describe('the panel mounts the real control strip', () => {
     expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'priority', 'low', 'Priority');
   });
 
+  /**
+   * THE REPORTED DEFECT, on the surface it was reported against — 2026-08-28:
+   * "the task detail panel should have an option to select due date. is it
+   * already there in the model, i dont see it in the entity detail panel."
+   *
+   * The field WAS modelled end to end; the panel's only door to it was the
+   * modal `editFields` dialog behind the header's `Edit` verb, and `MetaGrid`
+   * read the value out only when it was already set — so a task with no due
+   * date said nothing about due dates anywhere on this panel. This holds the
+   * live control on the strip, beside status and priority, where the report
+   * says a user looks.
+   */
+  it('the panel mounts a REAL control for EVERY registry date, and each writes its own field', () => {
+    const h = host();
+    const { getAllByTestId } = panel(TASK, h);
+
+    const inputs = getAllByTestId('row-date-input') as HTMLInputElement[];
+    /* Driven off the registry rather than a literal pair, so a third date
+       field is covered here the moment it is declared and this test can never
+       quietly stop covering one that was removed. The panel must not spell a
+       field name; the registry is the only place they appear. */
+    const declared = getKind('task').list.dateControls!;
+    expect(inputs.map((i) => i.dataset.source)).toEqual(declared.map((c) => c.source));
+
+    for (const [i, control] of declared.entries()) {
+      h.onSetValue.mockClear();
+      fireEvent.change(inputs[i]!, { target: { value: '2026-09-01' } });
+      expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, control.source, '2026-09-01', control.label);
+    }
+  });
+
+  /**
+   * The grid must not restate what the strip now owns. Before `dateControls`
+   * the `Due` cell was the only place the value appeared, so it had to stay;
+   * now it would be a read-only copy under a live picker, which is the exact
+   * shape D67's amendment removed ("the buttons are broken" — the things that
+   * looked like buttons were `<span>`s and the real control was elsewhere).
+   */
+  it('the read-only Due cell gives way to the control that replaced it', () => {
+    const { getByTestId, getAllByTestId } = panel(
+      {
+        ...TASK,
+        state: {
+          ...TASK.state, dueDate: '2026-09-01', startDate: '2026-08-01',
+        } as EntityDetail['state'],
+      },
+      host(),
+    );
+    const bySource = Object.fromEntries(
+      (getAllByTestId('row-date-input') as HTMLInputElement[]).map((i) => [i.dataset.source, i.value]),
+    );
+    expect(bySource).toEqual({ dueDate: '2026-09-01', startDate: '2026-08-01' });
+    /* `Start` is suppressed for the same registry reason as `Due` and through
+       the same `controlled` set — it is asserted here because the grid grew a
+       `Start` cell in the same commit, and an unsuppressed one would sit as a
+       read-only copy directly under its own picker. */
+    expect(getByTestId('subtree-grid').textContent).not.toMatch(/Start/);
+    expect(getByTestId('subtree-grid').textContent).not.toMatch(/Due/);
+  });
+
   it('the panel mounts a REAL assignee control, and it writes an EDGE', () => {
     const h = host();
     const { getByTestId, getByRole } = panel(TASK, h);

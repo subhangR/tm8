@@ -654,6 +654,16 @@ export interface ListConfig {
    */
   valueControls?: readonly ValueControl[];
   /**
+   * Settable DATE fields the expanded row and the detail panel offer — a
+   * task's due date, today. Absent ⇒ this kind has no date to set.
+   *
+   * A plural list for the same reason `valueControls` is one: nothing here is
+   * about due dates specifically, and a second date field (a start date, a
+   * review-by) must not need a new prop. See `DateControl` for why it is not
+   * a `ValueControl`.
+   */
+  dateControls?: readonly DateControl[];
+  /**
    * The expanded row's ASSIGNEE picker. Absent ⇒ this kind is not assignable.
    *
    * Assignment is neither a state nor a content field: `state.assignees` is a
@@ -748,6 +758,44 @@ export interface ValueControl {
    * them — there is no second source here to disagree with.
    */
   options: readonly ValueOption[];
+}
+
+/**
+ * A settable CALENDAR DATE on the strip — a task's due date, today.
+ *
+ * SEPARATE FROM `valueControls` for the reason the registry's own `editFields`
+ * note gives: a `ValueControl` is "an enum member of `EntityState` this kind
+ * lets a user set" and renders a picker over declared `options`. A date has no
+ * vocabulary to declare, so folding it in would mean either an `options` list
+ * nobody can write or a picker branching on whether its own vocabulary is
+ * real — the same "one dispatch rule over two operations" this file refuses
+ * everywhere else.
+ *
+ * THE WRITE IS `valueControls`', though, and deliberately: `content[source]`,
+ * version-guarded, through the same `onSetValue` executor. What differs is the
+ * INPUT, not the patch, and a second executor would be a second place for the
+ * version guard to be forgotten.
+ *
+ * CLEARING IS A REAL WRITE HERE, unlike a `ValueControl` whose fields have no
+ * contract-level clear: `tasks.due_date` is nullable, so "no due date" is a
+ * value the database holds. Emptying the box sends an explicit `null`, which
+ * is the only thing `update_task_content`'s `coalesce` reads as a clear.
+ */
+export interface DateControl {
+  /**
+   * Which `EntityState` member carries the current value — read structurally,
+   * and written back under the SAME name in the kind's content patch.
+   *
+   * `dueDate` is the app's one field whose halves live apart: the server
+   * projects the column onto `state` and leaves it out of `contentOf`. That
+   * asymmetry is invisible from here because BOTH sides already name `source`
+   * — the strip reads `state[source]` exactly as `RowValueControl` does, and
+   * the executor writes `content[source]` exactly as it does for priority.
+   */
+  source: string;
+  label: string;
+  /** Shown when the field is unset. Not an option: null is not a value. */
+  emptyLabel: string;
 }
 
 export interface AssignControl {

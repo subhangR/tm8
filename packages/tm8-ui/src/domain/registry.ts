@@ -28,6 +28,7 @@ import type {
   AssignControl,
   CollectionMode,
   ContentBlockRef,
+  DateControl,
   FilterSpec,
   KindConfig,
   ListConfig,
@@ -160,6 +161,58 @@ const TASK_PRIORITY_CONTROL: ValueControl = {
     { id: 'high', label: 'HIGH', tone: 'block' },
     { id: 'urgent', label: 'URGENT', tone: 'block' },
   ],
+};
+
+/**
+ * THE DUE DATE ON THE STRIP — user report 2026-08-28: "the task detail panel
+ * should have an option to select due date. is it already there in the model,
+ * i dont see it in the entity detail panel."
+ *
+ * It WAS in the model, end to end, and the answer to why they could not see it
+ * is the whole reason this control exists. Two facts compounded:
+ *
+ *   1. The only write surface was the `editFields` dialog behind the panel
+ *      header's `Edit` verb — one more field in a form, beside `Title`, where
+ *      nothing about the panel suggests a date lives.
+ *   2. `MetaGrid` draws a `Due` cell only when the field is SET, so on a task
+ *      with no due date — every task, until someone opens that dialog — the
+ *      panel says nothing about due dates at all. An unset optional field
+ *      rendered as absence is indistinguishable from an unmodelled one, which
+ *      is exactly the inference the report makes.
+ *
+ * So the due date joins status / priority / assignees ON THE STRIP, which is
+ * where a user goes to set a task's attributes and where they looked. The
+ * dialog row STAYS: it is the same registry `source` and the same patch, and
+ * removing it would take the field off the create-adjacent surface to gain
+ * nothing. This is not the duplication D67's amendment forbids — that was a
+ * dead COPY of a live control on one surface; both of these write.
+ */
+const TASK_DUE_CONTROL: DateControl = {
+  source: 'dueDate',
+  label: 'Due date',
+  /* Not "none": the strip's empty faces name their FIELD (`no priority`,
+     `no assignee`), so a row of them reads as a list of unset things rather
+     than a column of the same word four times. */
+  emptyLabel: 'no due date',
+};
+
+/**
+ * THE START DATE — migration 172, and the reason `dateControls` was written as
+ * a LIST rather than a `dueControl` singleton one commit earlier.
+ *
+ * Everything that makes the due date work is field-agnostic already:
+ * `RowDateControl` reads `state[control.source]`, the executor patches
+ * `content[source]`, the css keys off `lp__datesel`, and `MetaGrid` suppresses
+ * whatever `controlled` holds. So this is DATA, not a second control — which is
+ * the whole test of whether that generalisation was real.
+ *
+ * `start_date` is nullable exactly as `due_date` is, so clearing is the same
+ * explicit `null` through the same executor onto `p_clear_start_date`.
+ */
+const TASK_START_CONTROL: DateControl = {
+  source: 'startDate',
+  label: 'Start date',
+  emptyLabel: 'no start date',
 };
 
 /**
@@ -340,6 +393,7 @@ const BY_UPDATED: SortSpec = { key: 'updatedAt_desc', label: 'Recently modified'
 const BY_CREATED: SortSpec = { key: 'createdAt_desc', label: 'Newest' };
 const BY_POSITION: SortSpec = { key: 'position', label: 'Manual order' };
 const BY_DUE: SortSpec = { key: 'dueDate', label: 'Due date' };
+const BY_START: SortSpec = { key: 'startDate', label: 'Start date' };
 const BY_PRIORITY: SortSpec = { key: 'priority', label: 'Priority' };
 
 /**
@@ -353,11 +407,12 @@ const also = (spec: SortSpec): SortSpec => ({ ...spec, default: false });
 /**
  * THE FOUR SORTS EVERY ENTITY CAN ANSWER.
  *
- * `dueDate` and `priority` are missing on purpose: server-side both coalesce
- * absent values to a sentinel (`9999-12-31`, rank 3), so on a kind with no due
- * date every row ties and the list falls through to its id tiebreak. That
- * renders as "sorted" and is shuffled — the same class of lie as a saturated
- * page calling itself complete. A kind opts INTO those two by having them.
+ * The DATE sorts and `priority` are missing on purpose: server-side all three
+ * coalesce absent values to a sentinel (`9999-12-31`, rank 3), so on a kind
+ * with no due date every row ties and the list falls through to its id
+ * tiebreak. That renders as "sorted" and is shuffled — the same class of lie
+ * as a saturated page calling itself complete. A kind opts INTO them by
+ * having them.
  */
 const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CREATED, BY_POSITION];
 
@@ -570,7 +625,8 @@ const ROWS: readonly KindConfig[] = [
     icon: '◻',
     iconArt: KIND_ART.task,
     /**
-     * TITLE AND DUE DATE — the write surface `dueDate` never had.
+     * TITLE AND THE TWO DATES — the write surface `dueDate` never had, and the
+     * one `startDate` is born with rather than waiting for its own report.
      *
      * The due date was modelled end to end and reachable from nowhere: the
      * column, the `PatchTaskInput` member, the `::date` sort and the read
@@ -596,6 +652,16 @@ const ROWS: readonly KindConfig[] = [
      */
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'What needs doing' },
+      {
+        target: 'content',
+        source: 'startDate',
+        /* Same split halves as `dueDate` below — projected onto `state`, absent
+           from `contentOf` — so the same `readFrom`. Without it the dialog
+           opens blank on a task that HAS a start date and Save clears it. */
+        readFrom: 'state',
+        label: 'Start date',
+        valueType: 'date',
+      },
       {
         target: 'content',
         source: 'dueDate',
@@ -660,10 +726,16 @@ const ROWS: readonly KindConfig[] = [
       },
       primaryActions: ['run', 'coordinate'],
       filters: [assigneeFilter, taskAttentionFilter, statusFilter, readyToPullFilter],
-      sort: [...DEFAULT_SORT, BY_DUE, BY_PRIORITY],
+      /* `BY_START` beside `BY_DUE`, in the order the two dates read: a task
+         starts and then it is due. Both are offered because the task kind is
+         the one that HAS them — the opt-in the `DEFAULT_SORT` note describes. */
+      sort: [...DEFAULT_SORT, BY_START, BY_DUE, BY_PRIORITY],
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
       valueControls: [TASK_PRIORITY_CONTROL],
+      /* Start before due — the order they read as a pair, and the order the
+         strip draws them in. */
+      dateControls: [TASK_START_CONTROL, TASK_DUE_CONTROL],
       /* The per-space `type` taxonomy (and any axis the space defines). The
          vocabulary is server data, not a static options list — see the
          `ListConfig.axisControls` docblock for why this is not a

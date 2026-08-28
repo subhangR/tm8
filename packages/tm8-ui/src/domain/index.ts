@@ -24,6 +24,7 @@ export type {
   ContentBlockKind,
   ContentBlockRef,
   CustomKindFallback,
+  DateControl,
   EditFieldSpec,
   FilterOption,
   FilterSpec,

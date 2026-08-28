@@ -207,6 +207,7 @@ interface SummaryRow {
   completion_gate: string | null;
   axes: Record<string, unknown> | null;
   due_date: Date | string | null;
+  start_date: Date | string | null;
   acceptance_criteria: unknown[] | null;
   doc_title: string | null;
   doc_body: string | null;
@@ -327,7 +328,8 @@ select
   c.human_messages, c.agent_messages, c.docs, c.memories,
   t.title            as task_title,
   t.description      as task_description,
-  t.work_status, t.priority, t.axes, t.due_date, t.acceptance_criteria, t.completion_gate,
+  t.work_status, t.priority, t.axes, t.due_date, t.start_date,
+  t.acceptance_criteria, t.completion_gate,
   d.title            as doc_title,
   d.body             as doc_body,
   d.format           as doc_format,
@@ -493,6 +495,29 @@ function iso(v: Date | string | null | undefined): string | null {
   if (v instanceof Date) return v.toISOString();
   const parsed = new Date(v);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+/**
+ * Normalize a `date` column WITHOUT letting it acquire a time or a timezone.
+ *
+ * This is deliberately NOT `iso`. A `date` has no instant in it, and `iso`
+ * widens one to midnight UTC — so `start_date = 2026-08-28` would read back as
+ * `2026-08-28T00:00:00.000Z` here while `entity-read.ts` (which uses its own
+ * `dateOnly`) returns `2026-08-28` for the same row. Two readers of one column
+ * disagreeing on its shape is a bug waiting for the first consumer that
+ * compares them.
+ *
+ * ⚠ `due_date` STILL GOES THROUGH `iso` and still has that divergence. Fixing
+ * it is a wire-format change to a field already shipped on public prod, so it
+ * is deliberately NOT bundled into the migration that adds `start_date` — see
+ * the note at `iso`. This helper is what `due_date` should use when someone
+ * rules on that. Until then: `startDate` is correct, `dueDate` is legacy, and
+ * the difference is intentional rather than overlooked.
+ */
+function dateOnly(v: Date | string | null | undefined): string | null {
+  if (v === null || v === undefined) return null;
+  const s = v instanceof Date ? v.toISOString() : String(v);
+  return s.slice(0, 10);
 }
 
 /** `iso` for the non-nullable timestamp columns, which are `not null` in the DDL. */
@@ -992,6 +1017,9 @@ export class PgEntityProjector implements EntityProjector {
           priority: oneOf(r.priority, PRIORITIES, 'medium'),
           axes: asStringRecord(r.axes),
           dueDate: iso(r.due_date),
+          // `dateOnly`, not `iso` — see the helper. A `date` column must not
+          // acquire midnight UTC on the way out.
+          startDate: dateOnly(r.start_date),
           assignees: assignees.map((id) => actors.get(id) ?? this.unknownActor(id)),
           assignments: assignments.map((assignment): TaskAssignment => ({
             assignee: actors.get(assignment.assigneeId) ?? this.unknownActor(assignment.assigneeId),

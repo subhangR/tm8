@@ -144,10 +144,19 @@ export interface RowLifecycle {
    * move back, so it passes `{notify: false}` and consumes the result; every
    * pre-existing caller ignores the return and keeps its notice.
    */
+  /**
+   * `next: null` CLEARS the field, and reaches here only from a registry
+   * `dateControls` picker: an enum `ValueControl` has nothing in the contract
+   * that clears it, while `tasks.due_date` is nullable and the server's
+   * `update_task_content` reads an explicit `null` — and nothing else — as a
+   * clear. It rides THIS executor rather than a parallel one because the patch
+   * is byte-for-byte the same sparse content write; the difference is which
+   * control produced the value. See `ControlHost.onSetValue`.
+   */
   setValue: (
     entityId: string,
     source: string,
-    next: string,
+    next: string | null,
     label: string,
     opts?: { notify?: boolean },
   ) => Promise<SetStateOutcome>;
@@ -345,7 +354,7 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
     (
       entityId: string,
       source: string,
-      next: string,
+      next: string | null,
       label: string,
       opts?: { notify?: boolean },
     ): Promise<SetStateOutcome> => {

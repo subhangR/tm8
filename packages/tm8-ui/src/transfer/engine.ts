@@ -152,6 +152,7 @@ export function createContentFor(detail: EntityDetail): Record<string, unknown> 
       }),
       ...(typeof content.pointsEstimate === 'number' ? { pointsEstimate: content.pointsEstimate } : {}),
       ...(typeof state.priority === 'string' ? { priority: state.priority } : {}),
+      ...(typeof state.startDate === 'string' ? { startDate: state.startDate } : {}),
       ...(typeof state.dueDate === 'string' ? { dueDate: state.dueDate } : {}),
       // Axes are deliberately NOT carried: they reference the source Space's
       // own axis registry, and an unknown axis fails the whole create.

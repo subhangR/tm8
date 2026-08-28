@@ -1026,7 +1026,8 @@ export class W2EntitiesCommandsTrackingService {
             content.description ?? '', content.axes ?? {}, input.parentId ?? null, input.position ?? null,
             content.priority ?? 'medium',
             JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
-            content.pointsEstimate ?? null, content.dueDate ?? null, input.attachTo?.entityId ?? null,
+            content.pointsEstimate ?? null, content.dueDate ?? null, content.startDate ?? null,
+            input.attachTo?.entityId ?? null,
             input.attachTo?.edgeType ?? 'attached_to', envelope.clientMutationId ?? null]);
           break;
         case 'doc':
@@ -1159,6 +1160,7 @@ export class W2EntitiesCommandsTrackingService {
                 ? null
                 : JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
               content.pointsEstimate ?? null, content.dueDate ?? null, content.dueDate === null,
+              content.startDate ?? null, content.startDate === null,
               envelope.clientMutationId ?? null]);
             break;
           case 'doc':

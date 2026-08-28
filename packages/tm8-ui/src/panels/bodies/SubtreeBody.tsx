@@ -341,7 +341,9 @@ export function SubtreeBody({
  *     draws in full — counting them twice is the same drift;
  *   · the rest have composed cells below.
  */
-const COMPOSED_KEYS = new Set(['kind', 'acceptance', 'assignees', 'priority', 'dueDate', 'axes']);
+const COMPOSED_KEYS = new Set([
+  'kind', 'acceptance', 'assignees', 'priority', 'dueDate', 'startDate', 'axes',
+]);
 
 function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity?: (id: string) => void }) {
   const state = detail.state as unknown as Record<string, unknown>;
@@ -373,6 +375,7 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
   const controlled = new Set<string>(
     [
       ...(config.list.valueControls ?? []).map((c) => c.source),
+      ...(config.list.dateControls ?? []).map((c) => c.source),
       ...(config.list.assignControl ? [config.list.assignControl.source] : []),
     ],
   );
@@ -431,7 +434,21 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
     });
   }
 
-  if (typeof state.dueDate === 'string' && state.dueDate.length > 0) {
+  /* Suppressed on a kind whose strip now OWNS the date (task, via
+     `dateControls`) for the D67 reason the `controlled` note above gives: the
+     read-only cell beside a live picker of the same fact is the confusion, not
+     the redundancy. A kind that declares no date control keeps this cell,
+     because for that kind it is the only truth available. */
+  /* Start date, same shape and same suppression as `Due` below. It is on
+     `COMPOSED_KEYS` for the reason the rest of that set is: without it the
+     fallback loop at the foot of this function would draw a raw `Start Date`
+     cell UNDER the live picker — the precise duplication the suppression above
+     exists to prevent, arriving through the generic path instead of this one. */
+  if (typeof state.startDate === 'string' && state.startDate.length > 0 && !controlled.has('startDate')) {
+    cells.push({ key: 'startDate', label: 'Start', value: <span className="sb-grid__mono">{state.startDate}</span> });
+  }
+
+  if (typeof state.dueDate === 'string' && state.dueDate.length > 0 && !controlled.has('dueDate')) {
     cells.push({ key: 'dueDate', label: 'Due', value: <span className="sb-grid__mono">{state.dueDate}</span> });
   }
 

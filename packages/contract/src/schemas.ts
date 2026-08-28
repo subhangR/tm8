@@ -288,6 +288,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     priority: PrioritySchema,
     axes: z.record(z.string()),
     dueDate: z.string().nullable().optional(),
+    startDate: z.string().nullable().optional(),
     assignees: z.array(ActorSummarySchema),
     assignments: z.array(z.object({
       assignee: ActorSummarySchema,
@@ -897,7 +898,7 @@ function collectionQueryShape() {
     filters: CollectionFiltersSchema.optional(),
     layout: z.enum(['list', 'board', 'tree', 'feed', 'gallery', 'graph']).optional(),
     groupBy: GroupBySchema.optional(),
-    sort: z.enum(['activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'priority']).optional(),
+    sort: z.enum(['activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority']).optional(),
     cursor: CursorSchema.optional(),
     limit: z.number().int().positive().optional(),
   };
@@ -1794,6 +1795,7 @@ export const CreateTaskInputSchema: z.ZodType<CreateTaskInput> = z.object({
   }).strict()).optional(),
   pointsEstimate: z.number().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
   attachTo: attachToSchema.optional(),
 }).strict();
 
@@ -1808,6 +1810,7 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
   acceptanceCriteria: z.array(AcceptanceCriterionSchema).optional(),
   pointsEstimate: z.number().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
 }).strict();
 
 /** The runtime half of `CreatableEntityKind` — the one place the set is stated. */

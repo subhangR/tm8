@@ -92,6 +92,15 @@ const SORTS: Record<SortName, SortSpec> = {
     cast: 'date',
     cursorExpr: "to_char(coalesce(t.due_date, '9999-12-31'::date), 'YYYY-MM-DD')",
   },
+  // Same sentinel posture as `dueDate` above, for the same keyset reason — and
+  // the same `to_char` rather than a JS `toISOString()`, which node-pg would
+  // parse at LOCAL midnight and could shift a day west of UTC.
+  startDate: {
+    expr: "coalesce(t.start_date, '9999-12-31'::date)",
+    dir: 'asc',
+    cast: 'date',
+    cursorExpr: "to_char(coalesce(t.start_date, '9999-12-31'::date), 'YYYY-MM-DD')",
+  },
   priority: {
     expr: "case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end",
     dir: 'asc',
