@@ -539,7 +539,7 @@ function PreviewCard({
 
   return (
     <section
-      className="cv2-root fn-card fn-card--dark"
+      className="cv2-root fn-card fn-card--dark" data-astryx-theme="neutral"
       data-theme="dark"
       data-always-dark="true"
       data-testid="preview-card"
@@ -691,7 +691,7 @@ export function PreviewOverlay({
   return (
     <div className="fn-overlay" data-testid="preview-overlay" role="presentation" onClick={onClose}>
       <div
-        className="cv2-root fn-overlay__panel"
+        className="cv2-root fn-overlay__panel" data-astryx-theme="neutral"
         data-theme="dark"
         data-always-dark="true"
         role="dialog"

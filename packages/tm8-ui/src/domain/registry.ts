@@ -620,6 +620,7 @@ const ROWS: readonly KindConfig[] = [
   // -- task -----------------------------------------------------------------
   {
     kind: 'task',
+    graphFamily: 'blue',
     label: 'Task',
     labelPlural: 'Tasks',
     icon: '◻',
@@ -822,6 +823,7 @@ const ROWS: readonly KindConfig[] = [
   // -- work_session ---------------------------------------------------------
   {
     kind: 'work_session',
+    graphFamily: 'green',
     label: 'Session',
     labelPlural: 'Sessions',
     icon: '▸',
@@ -996,6 +998,7 @@ const ROWS: readonly KindConfig[] = [
   // -- doc ------------------------------------------------------------------
   {
     kind: 'doc',
+    graphFamily: 'orange',
     label: 'Doc',
     labelPlural: 'Docs',
     icon: '▤',
@@ -1037,6 +1040,7 @@ const ROWS: readonly KindConfig[] = [
   // the collection got a home.
   {
     kind: 'channel',
+    graphFamily: 'yellow',
     label: 'Channel',
     labelPlural: 'Channels',
     icon: '#',
@@ -1139,6 +1143,7 @@ const ROWS: readonly KindConfig[] = [
   // source here and are absent instead of rendering empty.
   {
     kind: 'voice_channel',
+    graphFamily: 'yellow',
     label: 'Voice channel',
     labelPlural: 'Voice channels',
     // A placeholder in the canvases' own monochrome text idiom (see the module
@@ -1233,6 +1238,7 @@ const ROWS: readonly KindConfig[] = [
   // -- team_member ----------------------------------------------------------
   {
     kind: 'team_member',
+    graphFamily: 'purple',
     label: 'Teammate',
     labelPlural: 'Teammates',
     icon: '◆',
@@ -1303,6 +1309,7 @@ const ROWS: readonly KindConfig[] = [
   // -- pull_request ---------------------------------------------------------
   {
     kind: 'pull_request',
+    graphFamily: 'red',
     label: 'Pull request',
     labelPlural: 'Pull requests',
     icon: '⑂',
@@ -1343,6 +1350,7 @@ const ROWS: readonly KindConfig[] = [
   // -- commit ---------------------------------------------------------------
   {
     kind: 'commit',
+    graphFamily: 'red',
     label: 'Commit',
     labelPlural: 'Commits',
     icon: '◉',
@@ -1463,6 +1471,7 @@ const ROWS: readonly KindConfig[] = [
   // -- collection -----------------------------------------------------------
   {
     kind: 'collection',
+    graphFamily: 'cyan',
     label: 'Collection',
     labelPlural: 'Collections',
     icon: '▦',
@@ -1499,6 +1508,7 @@ const ROWS: readonly KindConfig[] = [
   // -- project (restricted: generic create/patch/delete/move refused) -------
   {
     kind: 'project',
+    graphFamily: 'gray',
     label: 'Project',
     labelPlural: 'Projects',
     icon: '⬢',
@@ -1586,6 +1596,7 @@ const ROWS: readonly KindConfig[] = [
   // -- memory (scope-carrying claims; staleness derived server-side) --------
   {
     kind: 'memory',
+    graphFamily: 'pink',
     label: 'Memory',
     labelPlural: 'Memories',
     icon: '◈',
@@ -1805,6 +1816,7 @@ const ROWS: readonly KindConfig[] = [
   // -- artifact (versioned bundle; bytes served via preview/export, not here) --
   {
     kind: 'artifact',
+    graphFamily: 'teal',
     label: 'Artifact',
     labelPlural: 'Artifacts',
     icon: '❖',

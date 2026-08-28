@@ -163,7 +163,7 @@ export function AuthFlow(props: AuthFlowProps) {
   // own — the shell's own root gets it from shell.css, and a gate mounted
   // above the shell has no such rule to inherit.
   return (
-    <div className="cv2-root auth-scope" data-theme={theme}>
+    <div className="cv2-root auth-scope" data-astryx-theme="neutral" data-theme={theme}>
       {body}
     </div>
   );

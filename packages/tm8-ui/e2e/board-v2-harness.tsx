@@ -41,7 +41,7 @@ function Harness() {
   }
 
   return (
-    <div className="cv2-root" data-testid="harness-ready" style={{ position: 'fixed', inset: 0, display: 'flex' }}>
+    <div className="cv2-root" data-astryx-theme="neutral" data-testid="harness-ready" style={{ position: 'fixed', inset: 0, display: 'flex' }}>
       <BoardV2Screen
         data={data}
         viewerMemberId="ada"
