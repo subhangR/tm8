@@ -1420,7 +1420,13 @@ verify_running() {
   # A healthy /health proves SOMETHING is serving, not that it is what this run
   # built — a stale process answers exactly the same. Prove the unit entered
   # active during this run, so the no-op above cannot come back silently.
-  if (( USE_SYSTEMD )) && command -v systemctl >/dev/null; then
+  # `USE_SERVICE` + `SERVICE_KIND`, the same pair every other service branch in
+  # this file tests (1335, 1366, 1467, 1483). This line asked for `USE_SYSTEMD`,
+  # which no longer exists anywhere in the script: the flag was split into "did
+  # the operator ask for a supervised instance" and "which manager does this OS
+  # speak" before this check was written, and the check went in against the old
+  # name. Under `set -u` that is not a stale read, it is a fatal one.
+  if (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]] && command -v systemctl >/dev/null; then
     local entered entered_epoch
     entered="$(systemctl show "$UNIT_NAME" -p ActiveEnterTimestamp --value 2>/dev/null || true)"
     entered_epoch="$(date -d "$entered" +%s 2>/dev/null || echo 0)"
