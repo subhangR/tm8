@@ -112,6 +112,9 @@ interface CorrectionEdgeRow {
   commit_sha: string | null;
   commit_message: string | null;
   commit_committed_at: Date | string | null;
+  commit_author: string | null;
+  commit_url: string | null;
+  commit_fetched_at: Date | string | null;
   project_entity_id: string;
   project_space_id: string;
   project_parent_id: string | null;
@@ -231,6 +234,12 @@ function artifactSummary(row: CorrectionEdgeRow, createdBy: ActorSummary): Entit
       sha: row.commit_sha ?? '',
       message: row.commit_message ?? '',
       committedAt: isoOrNull(row.commit_committed_at),
+      // Parity with the pull request arm above. The third of three places that
+      // build a commit state; the required `stale` is what found it.
+      author: row.commit_author,
+      ...(row.commit_url ? { url: row.commit_url } : {}),
+      fetchedAt: isoOrNull(row.commit_fetched_at),
+      stale: row.commit_fetched_at === null,
     },
   };
 }
@@ -274,6 +283,8 @@ async function loadCorrectionEdge(
             pr.head_ref pr_head_ref,
             commit_row.repo commit_repo, commit_row.sha commit_sha,
             commit_row.message commit_message, commit_row.committed_at commit_committed_at,
+            commit_row.author commit_author, commit_row.url commit_url,
+            commit_row.fetched_at commit_fetched_at,
             projection.id project_entity_id, projection.space_id project_space_id,
             projection.parent_id project_parent_id, projection.position project_position,
             projection.visibility project_visibility, projection.version project_version,

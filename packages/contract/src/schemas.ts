@@ -364,6 +364,16 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     sha: z.string(),
     message: z.string(),
     committedAt: z.string().nullable().optional(),
+    // Parity with the pull request arm above, and for the same reason: the
+    // panel's link-summary row reads `state.url` and `state.stale` for both
+    // kinds. A commit carried neither, so it could not render its link and
+    // could not say it was unsynced.
+    author: z.string().nullable().optional(),
+    url: z.string().optional(),
+    fetchedAt: z.string().nullable().optional(),
+    // Required, like the pull request arm's. An absent boolean reads as false,
+    // which is exactly the wrong answer for "never fetched".
+    stale: z.boolean(),
   }).strict(),
   z.object({
     kind: z.literal('file'),

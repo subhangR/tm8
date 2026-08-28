@@ -271,7 +271,27 @@ export type CoreEntityState =
        * link it (107), at LOWER confidence than created_in/in_worktree.
        */
       headRef?: string | null }
-  | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
+  /*
+   * A commit mirror. `url`/`fetchedAt`/`stale` are here for the same reason the
+   * pull request arm above carries them, and they were missing: the panel's
+   * link-summary row reads `state.url` and `state.stale` for BOTH kinds, so a
+   * commit could never render its `open ↗` link — although `public.commits.url`
+   * held one — and could never show that it was unsynced. The reported bug's
+   * own symptom was unobservable on the entity it was about.
+   *
+   * `stale` is required and not optional, matching the pull request arm: "we
+   * have never fetched this" is a fact the projection always knows, and an
+   * absent boolean would read as false, which is the one wrong answer.
+   *
+   * `author` is ADDITIVE ONLY and changes nothing on screen today — the panel's
+   * DETAILS block renders from `content`, which already carries every column of
+   * `public.commits`, so the author has always been visible there. It is
+   * mirrored onto `state` for typed consumers, consistent with `message`, `sha`
+   * and `committedAt`, which are duplicated from content for the same reason.
+   */
+  | { kind: 'commit'; repository: string; sha: string; message: string;
+      committedAt?: string | null; author?: string | null;
+      url?: string; fetchedAt?: string | null; stale: boolean }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
   | { kind: 'spell' | 'skill'; description?: string; equipped: boolean }
   // tm8 additions (03 §1) — see §2 for the enums.

@@ -941,6 +941,15 @@ export const commitFoundation = summary({
     sha: '9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c',
     message: 'feat(tm8-ui): A0 foundation — tokens verbatim, kit, fixtures',
     committedAt: T.morning,
+    // A HYDRATED commit, which is the interesting fixture: `url` and
+    // `stale: false` are what make the panel's link-summary row render `open ↗`
+    // and withhold the stale badge. Before the projection carried them, a
+    // commit could do neither — the reported "commits are not synced" symptom
+    // was invisible on the commit surface itself.
+    author: 'subhangR',
+    url: 'https://github.com/subhang/tm8/commit/9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c',
+    fetchedAt: T.morning,
+    stale: false,
   },
 });
 
