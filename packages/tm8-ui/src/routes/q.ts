@@ -28,7 +28,9 @@
  */
 import type { QValue } from './types';
 
-const SORT_KEYS = new Set(['activityAt_desc', 'createdAt_desc', 'position', 'dueDate', 'priority']);
+const SORT_KEYS = new Set([
+  'activityAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority',
+]);
 
 /** The pre-phase-9 spelling of `filters.status` / `groupBy: 'status'`. */
 const LEGACY_STATUS_KEY = 'workStatus';

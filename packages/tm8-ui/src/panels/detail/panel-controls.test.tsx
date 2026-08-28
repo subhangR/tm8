@@ -171,16 +171,23 @@ describe('the panel mounts the real control strip', () => {
    * live control on the strip, beside status and priority, where the report
    * says a user looks.
    */
-  it('the panel mounts a REAL due-date control, and it writes dueDate', () => {
+  it('the panel mounts a REAL control for EVERY registry date, and each writes its own field', () => {
     const h = host();
-    const { getByTestId } = panel(TASK, h);
+    const { getAllByTestId } = panel(TASK, h);
 
-    const input = getByTestId('row-date-input') as HTMLInputElement;
-    // The registry names the field; the panel must not spell it.
-    expect(input.dataset.source).toBe('dueDate');
+    const inputs = getAllByTestId('row-date-input') as HTMLInputElement[];
+    /* Driven off the registry rather than a literal pair, so a third date
+       field is covered here the moment it is declared and this test can never
+       quietly stop covering one that was removed. The panel must not spell a
+       field name; the registry is the only place they appear. */
+    const declared = getKind('task').list.dateControls!;
+    expect(inputs.map((i) => i.dataset.source)).toEqual(declared.map((c) => c.source));
 
-    fireEvent.change(input, { target: { value: '2026-09-01' } });
-    expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'dueDate', '2026-09-01', 'Due date');
+    for (const [i, control] of declared.entries()) {
+      h.onSetValue.mockClear();
+      fireEvent.change(inputs[i]!, { target: { value: '2026-09-01' } });
+      expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, control.source, '2026-09-01', control.label);
+    }
   });
 
   /**
@@ -191,11 +198,24 @@ describe('the panel mounts the real control strip', () => {
    * looked like buttons were `<span>`s and the real control was elsewhere).
    */
   it('the read-only Due cell gives way to the control that replaced it', () => {
-    const { getByTestId } = panel(
-      { ...TASK, state: { ...TASK.state, dueDate: '2026-09-01' } as EntityDetail['state'] },
+    const { getByTestId, getAllByTestId } = panel(
+      {
+        ...TASK,
+        state: {
+          ...TASK.state, dueDate: '2026-09-01', startDate: '2026-08-01',
+        } as EntityDetail['state'],
+      },
       host(),
     );
-    expect((getByTestId('row-date-input') as HTMLInputElement).value).toBe('2026-09-01');
+    const bySource = Object.fromEntries(
+      (getAllByTestId('row-date-input') as HTMLInputElement[]).map((i) => [i.dataset.source, i.value]),
+    );
+    expect(bySource).toEqual({ dueDate: '2026-09-01', startDate: '2026-08-01' });
+    /* `Start` is suppressed for the same registry reason as `Due` and through
+       the same `controlled` set — it is asserted here because the grid grew a
+       `Start` cell in the same commit, and an unsuppressed one would sit as a
+       read-only copy directly under its own picker. */
+    expect(getByTestId('subtree-grid').textContent).not.toMatch(/Start/);
     expect(getByTestId('subtree-grid').textContent).not.toMatch(/Due/);
   });
 

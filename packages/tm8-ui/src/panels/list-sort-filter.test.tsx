@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import type { EntitySummary } from '@tm8/contract';
-import type { ActionContext, ListPageState, QueryFilter, SortKey } from '../domain';
+import { getKind, type ActionContext, type ListPageState, type QueryFilter, type SortKey } from '../domain';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
 import { EntityListPanel } from './index';
 import { narrow } from './EntityListPanel';
@@ -54,11 +54,22 @@ describe('the sort chip reaches the seam', () => {
     );
     fireEvent.click(getByTestId('sort-trigger'));
     const labels = getAllByRole('menuitemradio').map((b) => b.textContent?.replace('✓', ''));
-    // The contract's six, all of them, because a task has a due date and a
-    // priority. Pinned as a SET so re-ordering the menu is not a failure.
-    expect(new Set(labels)).toEqual(
-      new Set(['Recent activity', 'Recently modified', 'Newest', 'Manual order', 'Due date', 'Priority']),
-    );
+    /* DERIVED FROM THE REGISTRY, not a literal list — the defect this test is
+       named for was the menu offering TWO of the sorts a kind declares, so the
+       thing worth holding is "the menu equals the declaration", and a hardcoded
+       set cannot say that. It also decides the wrong way when it fails: a sort
+       added to the registry and never wired to the menu would look like the
+       PIN being stale rather than the menu being incomplete, and the honest fix
+       is indistinguishable from the dishonest one.
+
+       Still a SET, so re-ordering the menu is not a failure. Task declares the
+       four every kind can answer plus the three it opts into by HAVING them —
+       both dates and priority (see `DEFAULT_SORT` in the registry for why a
+       kind without them must not be offered a sort that ties every row). */
+    expect(new Set(labels)).toEqual(new Set(getKind('task').list.sort.map((s) => s.label)));
+    // Not vacuous — an empty declaration would satisfy the equality above.
+    expect(labels).toHaveLength(7);
+    expect(new Set(labels)).toContain('Start date');
   });
 
   it('CHOOSING a sort issues a query carrying it — the defect, stated directly', () => {

@@ -1436,18 +1436,38 @@ describe('§15.1 — edit declares its fields, and fields declare their verb', (
    *   · NOT `required` — `tasks.due_date` is nullable, so "no due date" is a
    *     value the database holds rather than a hole in the record.
    */
-  it('the task offers a Title and a due date read from state, written to content', () => {
+  it('the task offers a Title and BOTH dates, read from state, written to content', () => {
     const fields = getKind('task').editFields ?? [];
-    expect(fields.map((f) => f.label)).toEqual(['Title', 'Due date']);
+    expect(fields.map((f) => f.label)).toEqual(['Title', 'Start date', 'Due date']);
 
-    const dueDate = fields.find((f) => f.source === 'dueDate');
-    expect(dueDate?.target).toBe('content');
-    expect(dueDate?.readFrom).toBe('state');
-    expect(dueDate?.valueType).toBe('date');
-    expect(dueDate?.required ?? false).toBe(false);
+    /* THE SAME FOUR PROPERTIES ON EACH, checked in a loop rather than written
+       twice: both columns are nullable `date`s whose halves live apart — the
+       server projects them onto `state` and leaves them out of `contentOf` —
+       so a `readFrom` missing on either opens the dialog blank on a task that
+       HAS the value and clears it on Save. That is a silent data loss, and it
+       is the one property here worth holding for every date rather than for
+       the one that happened to be written first. */
+    for (const source of ['startDate', 'dueDate']) {
+      const field = fields.find((f) => f.source === source);
+      expect(field, source).toBeDefined();
+      expect(field?.target).toBe('content');
+      expect(field?.readFrom).toBe('state');
+      expect(field?.valueType).toBe('date');
+      expect(field?.required ?? false).toBe(false);
 
-    // The sort this row already offered now has something a human can fill.
-    expect(getKind('task').list.sort.map((s) => s.key)).toContain('dueDate');
+      // Each sort now has something a human can fill — `dueDate`'s row existed
+      // and could only be filled by the CLI; `startDate`'s ships filled.
+      expect(getKind('task').list.sort.map((s) => s.key)).toContain(source);
+    }
+
+    /* The dialog row and the strip control are the SAME registry `source` and
+       the same patch, so the two surfaces cannot disagree about a field name.
+       Holding it here is what would catch a date added to one and not the
+       other — the state the due date sat in for as long as it was invisible. */
+    const strip = getKind('task').list.dateControls ?? [];
+    expect(strip.map((c) => c.source)).toEqual(
+      fields.filter((f) => f.valueType === 'date').map((f) => f.source),
+    );
   });
 
   it('the channel offers exactly Name and an OPTIONAL Topic (user ruling 2026-08-07)', () => {

@@ -674,13 +674,14 @@ describe('the priority chip writes priority', () => {
   });
 });
 
+
 /**
  * ===========================================================================
- * THE DUE DATE ON THE STRIP — user report 2026-08-28: "the task detail panel
+ * THE DATES ON THE STRIP — user report 2026-08-28: "the task detail panel
  * should have an option to select due date. is it already there in the model,
  * i dont see it in the entity detail panel."
  *
- * It was in the model end to end, and reachable only from the modal
+ * The due date was in the model end to end, and reachable only from the modal
  * `editFields` dialog — while `MetaGrid` drew a `Due` cell ONLY when the field
  * was set, so a task without one said nothing about due dates anywhere. An
  * unset optional field rendered as pure absence is indistinguishable from an
@@ -688,23 +689,42 @@ describe('the priority chip writes priority', () => {
  *
  * These hold the control that answers it, in the same four arms the priority
  * chip has, plus the one write an enum picker does not have: CLEARING.
+ *
+ * RUN OVER BOTH DATE FIELDS, and that is the assertion, not a convenience.
+ * `dateControls` was written as a LIST so that a second date would cost a
+ * registry entry and no new control — `RowDateControl` reads
+ * `state[control.source]` and patches `content[source]`, and nothing between
+ * the registry and the wire names a field. Parameterising these proves that
+ * claim instead of restating it: `startDate` (migration 172) passes the due
+ * date's own suite, unchanged, or the generalisation was never real.
  * ===========================================================================
  */
-describe('the due-date chip writes a due date', () => {
-  const dueControl = () => getKind('task').list.dateControls![0]!;
+describe.each(['dueDate', 'startDate'] as const)('the %s chip writes a date', (source) => {
+  /* BY SOURCE, never by index — the strip draws two of these now, and an
+     index would silently retarget every assertion at the wrong field. */
+  const control = () => getKind('task').list.dateControls!.find((c) => c.source === source)!;
 
-  const withDue = (dueDate: string | undefined): EntitySummary => {
+  const withDate = (value: string | undefined): EntitySummary => {
     const live = rowsOfKind('task').find((r) => r.deletedAt == null)!;
-    return { ...live, state: { ...live.state, dueDate } } as EntitySummary;
+    return { ...live, state: { ...live.state, [source]: value } } as EntitySummary;
+  };
+
+  /* Both inputs carry the same `data-testid`; `data-source` is what tells them
+     apart, and it is the registry's own field name rather than a position. */
+  const dateInput = (): HTMLInputElement => {
+    const found = screen
+      .getAllByTestId('row-date-input')
+      .find((el) => (el as HTMLInputElement).dataset.source === source);
+    expect(found).toBeDefined();
+    return found as HTMLInputElement;
   };
 
   it('dispatches onSetValue with the registry’s own field name', () => {
     const onSetValue = vi.fn();
-    mount('task', { onSetValue }, [withDue(undefined)]);
+    mount('task', { onSetValue }, [withDate(undefined)]);
     expandFirstRow();
 
-    const input = screen.getAllByTestId('row-date-input')[0] as HTMLInputElement;
-    fireEvent.change(input, { target: { value: '2026-09-01' } });
+    fireEvent.change(dateInput(), { target: { value: '2026-09-01' } });
 
     expect(onSetValue).toHaveBeenCalledTimes(1);
     /* The SAME executor as the priority chip, carrying source and label for
@@ -712,51 +732,58 @@ describe('the due-date chip writes a due date', () => {
        failure notice is titled from `label`. What differs is the input, never
        the write; a second executor would be a second place to forget the
        version guard. */
-    expect(onSetValue.mock.calls[0]!.slice(1)).toEqual(['dueDate', '2026-09-01', dueControl().label]);
+    expect(onSetValue.mock.calls[0]!.slice(1)).toEqual([source, '2026-09-01', control().label]);
   });
 
   /**
    * CLEARING IS A REAL WRITE, and it is the one thing this control does that
-   * `RowValueControl` cannot. `tasks.due_date` is nullable, so "no due date"
-   * is a value the database holds — and the server's `update_task_content`
+   * `RowValueControl` cannot. Both columns are nullable, so "no date" is a
+   * value the database holds — and the server's `update_task_content`
    * COALESCEs an absent field to the stored one, so an explicit `null` is the
-   * only thing it reads as a clear. An emptied box that sent `''` would be a
-   * 400 on a `date` column; one that sent nothing would look like a no-op.
+   * only thing it reads as a clear (`p_clear_due_date` / `p_clear_start_date`).
+   * An emptied box that sent `''` would be a 400 on a `date` column; one that
+   * sent nothing would look like a no-op.
    */
   it('sends an explicit null when the box is emptied, not an empty string', () => {
     const onSetValue = vi.fn();
-    mount('task', { onSetValue }, [withDue('2026-09-01')]);
+    mount('task', { onSetValue }, [withDate('2026-09-01')]);
     expandFirstRow();
 
-    const input = screen.getAllByTestId('row-date-input')[0] as HTMLInputElement;
+    const input = dateInput();
     expect(input.value).toBe('2026-09-01');
     fireEvent.change(input, { target: { value: '' } });
 
-    expect(onSetValue.mock.calls[0]!.slice(1)).toEqual(['dueDate', null, dueControl().label]);
+    expect(onSetValue.mock.calls[0]!.slice(1)).toEqual([source, null, control().label]);
   });
 
   /**
    * THE TWO SHAPES THE STORED VALUE ARRIVES IN. `entity-read.ts` projects the
-   * column as a date-only string; the event projector renders it as a full ISO
-   * timestamp. A date input goes BLANK on a value it cannot parse, so a row
-   * hydrated from a live event would empty the control one frame after a save
-   * that succeeded — reading as "the write cleared it".
+   * column as a date-only string; the event projector renders `due_date` as a
+   * full ISO timestamp (`startDate` ships date-only from both, and aligning
+   * `dueDate` is a flagged follow-up). A date input goes BLANK on a value it
+   * cannot parse, so a row hydrated from a live event would empty the control
+   * one frame after a save that succeeded.
+   *
+   * HELD FOR BOTH FIELDS DELIBERATELY, including the one that does not diverge
+   * today: this is what would fail if the projector ever widened `start_date`
+   * too, and it is what must NOT be deleted when `dueDate` is finally aligned —
+   * an alignment commit would otherwise pass while proving nothing.
    */
-  it('renders a timestamped due date, not just a date-only one', () => {
-    mount('task', { onSetValue: vi.fn() }, [withDue('2026-09-01T00:00:00.000Z')]);
+  it('renders a timestamped date, not just a date-only one', () => {
+    mount('task', { onSetValue: vi.fn() }, [withDate('2026-09-01T00:00:00.000Z')]);
     expandFirstRow();
-    expect((screen.getAllByTestId('row-date-input')[0] as HTMLInputElement).value).toBe('2026-09-01');
+    expect(dateInput().value).toBe('2026-09-01');
   });
 
   it('shows an unset field as unset, and says so in the registry’s own words', () => {
-    mount('task', { onSetValue: vi.fn() }, [withDue(undefined)]);
+    mount('task', { onSetValue: vi.fn() }, [withDate(undefined)]);
     expandFirstRow();
-    const input = screen.getAllByTestId('row-date-input')[0] as HTMLInputElement;
+    const input = dateInput();
     expect(input.value).toBe('');
     /* The word reaches the user through `title` rather than a second face:
        the visible control stays a real date field, which is what makes it
        obvious one can be typed. */
-    expect(input.getAttribute('title')).toBe(dueControl().emptyLabel);
+    expect(input.getAttribute('title')).toBe(control().emptyLabel);
     expect(input.getAttribute('data-empty')).toBe('true');
   });
 
@@ -765,7 +792,7 @@ describe('the due-date chip writes a due date', () => {
     const strip = expandFirstRow();
     expect(within(strip).queryByTestId('row-date-input')).toBeNull();
     // Still SHOWS the value — a refusal hides the control, never the fact.
-    expect(strip.querySelector('[data-source="dueDate"]')).not.toBeNull();
+    expect(strip.querySelector(`[data-source="${source}"]`)).not.toBeNull();
   });
 
   it('reads unloaded capabilities as CHECKING, not as refused and not as live', () => {
@@ -774,8 +801,8 @@ describe('the due-date chip writes a due date', () => {
     expect(within(strip).queryByTestId('row-date-input')).toBeNull();
     const checking = within(strip).getAllByTestId('checking-permission');
     // Named for THIS control, so its checking state stays tellable apart from
-    // the priority chip's in a strip that draws both.
-    const label = dueControl().label.toLowerCase();
+    // the priority chip's — and from the OTHER date's — in a strip drawing all.
+    const label = control().label.toLowerCase();
     expect(checking.some((el) => el.getAttribute('aria-label')?.includes(`Set ${label}`))).toBe(true);
   });
 
@@ -786,6 +813,7 @@ describe('the due-date chip writes a due date', () => {
     expect(within(strip).getAllByTestId('disabled-with-reason').length).toBeGreaterThan(0);
   });
 });
+
 
 describe('the assigned chip writes an EDGE, one actor at a time', () => {
   const ADA = { id: 'member-ada', kind: 'member', displayName: 'Ada', avatar: null, isAgent: false } as const;
