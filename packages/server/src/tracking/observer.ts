@@ -22,13 +22,26 @@
  *     request stays claimable and the next tick tries again — because "GitHub
  *     asked us to slow down" is not evidence about a pull request.
  *
- * S15: the credential lives in the environment and never in Postgres. The queue
- * carries intent only, which is exactly what 006's comment said it would.
+ * S15: the queue carries INTENT only, which is exactly what 006's comment said
+ * it would. This line used to add "the credential lives in the environment and
+ * never in Postgres", and that had quietly become both false and harmful: 093
+ * put an encrypted per-account GitHub token in Postgres, the UI stored one, and
+ * this file — still reading `process.env` and nothing else — went on calling
+ * GitHub anonymously beside it for nineteen days, at 60 requests/hour for the
+ * whole host. The token still never sits in Postgres in the CLEAR (093 seals it
+ * with a key under `<dataDir>`, outside the database), which is the part of S15
+ * that was actually load-bearing. See `credential.ts` for where the token comes
+ * from now and, more importantly, for whose it is allowed to be.
  */
 
 import type { Db, DbClaims } from '../db/types.js';
 import type { JobContext, JobOutcome, ScheduledJob } from '../scheduler/types.js';
-import { GithubClient, resolveGithubToken } from './github.js';
+import {
+  describeTrackingCredential,
+  resolveTrackingCredential,
+  type ResolvedTrackingCredential,
+} from './credential.js';
+import { GithubClient } from './github.js';
 
 export const TRACKING_OBSERVER_JOB_NAME = 'tracking.observer';
 
@@ -57,6 +70,13 @@ export interface TrackingObserverOptions {
    * their node holding the queue.
    */
   claims: () => Promise<DbClaims>;
+  /**
+   * Where `.git-credential.key` lives. Without it the node account's STORED
+   * GitHub token cannot be opened and the observer falls back to anonymous
+   * calls — 60 requests/hour for the whole host. See `credential.ts` for the
+   * identity rule and for what it deliberately does not do.
+   */
+  dataDir?: string;
   client?: GithubClient;
   /** Requests per tick. Small on purpose — this is a poller, not a backfill. */
   batchSize?: number;
@@ -86,8 +106,22 @@ export async function runTrackingObserverTick(
   log?: (message: string) => void,
 ): Promise<JobOutcome> {
   const ctxLogger = log;
-  const client = options.client ?? new GithubClient({ token: resolveGithubToken() });
   const claims = await options.claims();
+
+  // The credential resolves under the observer's OWN claims — that is the whole
+  // identity rule, and `credential.ts` is where it is defended. Resolved once
+  // per tick rather than once per process so a token connected (or rotated, or
+  // disconnected) while the node runs takes effect on the next tick instead of
+  // at the next restart.
+  const credential: ResolvedTrackingCredential = options.client
+    ? { token: undefined, source: 'injected' }
+    : await resolveTrackingCredential({
+      db: options.db,
+      claims,
+      dataDir: options.dataDir,
+      ...(ctxLogger ? { logger: { warn: (m: string) => { ctxLogger(m); } } } : {}),
+    });
+  const client = options.client ?? new GithubClient({ token: credential.token });
 
   const claimed = await options.db.rpc<{ claimed?: unknown }>(
     claims,
@@ -167,7 +201,22 @@ export async function runTrackingObserverTick(
       // receipt for work no process did; the abort signal fires on every
       // shutdown and every job timeout, so this is an ordinary path, not an
       // exotic one.
+      //
+      // BUT SAY WHY. Claimed-and-silent is how a rate limit went unnoticed for
+      // nineteen days on the node this was written for: all three stop reasons
+      // left an identical NULL `error`, so a row that stopped because GitHub
+      // refused looked exactly like a row that stopped on the clock. 174's door
+      // writes the reason WITHOUT completing the row, so the stale window still
+      // returns it and the note is a note rather than a verdict.
       abandoned += 1;
+      await noteStop(options.db, claims, request.requestId, stopReason({
+        rateLimited,
+        aborted: signal?.aborted === true,
+        budgetExhausted: attempted >= targetBudget,
+        succeeded,
+        targets: request.targets.length,
+        credential,
+      }), ctxLogger);
       if (rateLimited) break;
       continue;
     }
@@ -204,8 +253,66 @@ export async function runTrackingObserverTick(
       abandoned,
       rateLimited,
       authenticated: client.authenticated,
+      // WHERE the token came from, not just whether there was one.
+      // `authenticated` alone cannot tell "the operator set an env var" from
+      // "the node account's stored credential was opened" from "neither", and
+      // the third case is the one that silently costs you the hour's quota.
+      credentialSource: credential.source,
+      ...(credential.login ? { credentialLogin: credential.login } : {}),
+      ...(credential.reason ? { credentialReason: credential.reason } : {}),
     },
   };
+}
+
+interface StopReasonInput {
+  rateLimited: boolean;
+  aborted: boolean;
+  budgetExhausted: boolean;
+  succeeded: number;
+  targets: number;
+  credential: ResolvedTrackingCredential;
+}
+
+/**
+ * The sentence an operator reads off `tracking_refresh_requests.error`.
+ *
+ * It names the cause AND the credential, because those two facts together are
+ * what took hours to assemble by hand: "rate limited" on its own reads as
+ * "GitHub is busy", when the actual content is usually "this node is calling
+ * GitHub anonymously and 60/hour is all anonymous gets".
+ */
+function stopReason(input: StopReasonInput): string {
+  const progress = `${input.succeeded} of ${input.targets} target(s) refreshed first`;
+  const credential = describeTrackingCredential(input.credential);
+  if (input.rateLimited) {
+    return `stopped: GitHub rate limit — ${credential}. ${progress}. Still claimed; the stale window returns it to the queue and a later tick resumes it.`;
+  }
+  if (input.aborted) {
+    return `stopped: the observer tick was aborted (node shutdown, or the job's timeout) after ${progress} — ${credential}. Still claimed; a later tick resumes it. NOTE that a resumed tick restarts at the FIRST target, so a request larger than one tick can consume its attempts without finishing.`;
+  }
+  if (input.budgetExhausted) {
+    return `stopped: the tick's per-target budget was exhausted after ${progress} — ${credential}. Still claimed; a later tick resumes it.`;
+  }
+  return `stopped for an unclassified reason after ${progress} — ${credential}. Still claimed.`;
+}
+
+/** Best effort by construction: a diagnostic that raises is worse than no diagnostic. */
+async function noteStop(
+  db: Db,
+  claims: DbClaims,
+  requestId: string,
+  reason: string,
+  log?: (message: string) => void,
+): Promise<void> {
+  try {
+    await db.rpc(claims, 'public.note_tracking_refresh_stop', [requestId, reason]);
+  } catch (error) {
+    log?.(
+      `tracking.observer: could not record the stop reason for ${requestId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 async function refreshOne(
