@@ -142,6 +142,7 @@ export const OPERATIONS = [
   { name: 'projects.file.blame',     method: 'GET',    path: '/v2/projects/:projectId/blame',               kind: 'read',    status: 'v1' },
   { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
   { name: 'projects.link',           method: 'POST',   path: '/v2/spaces/:spaceId/projects',                kind: 'command', status: 'v1' },
+  { name: 'projects.createFromRepo', method: 'POST',   path: '/v2/spaces/:spaceId/projects/from-repo',      kind: 'command', status: 'v1' },
   { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },
   { name: 'projects.files.list',     method: 'GET',    path: '/v2/projects/:projectId/files',               kind: 'read',    status: 'v1' },
   { name: 'projects.files.attach',   method: 'POST',   path: '/v2/projects/:projectId/files/attach',        kind: 'command', status: 'v1' },

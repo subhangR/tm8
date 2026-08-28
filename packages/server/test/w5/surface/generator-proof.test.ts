@@ -193,6 +193,7 @@ describe('W5.C generator proof', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert and
     // RequiredCommandContextSchema binds .delete; .list is a READ and binds
     // nothing, so three new ops move this by two.
-    expect(ENTRIES).toHaveLength(99);
+    // 99 -> 100: projects.createFromRepo binds ProjectCreateFromRepoInputSchema.
+    expect(ENTRIES).toHaveLength(100);
   });
 });

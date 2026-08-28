@@ -65,6 +65,7 @@ const TRANCHE_V1_FACADE_OPERATIONS = [
   'placements.apply',
   'projects.associations.correct',
   'projects.create',
+  'projects.createFromRepo',
   'projects.get',
   'projects.link',
   'projects.list',
@@ -489,7 +490,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
-    expect(registry.size).toBe(152); // +3 (148): the spaces.workflows handlers
+    expect(registry.size).toBe(153); // +3 (148): the spaces.workflows handlers
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -661,7 +662,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // their bodies (auth.claim.reissue takes no body, so it binds nothing).
     // +2 (148): .upsert binds WorkflowInputSchema, .delete binds
     // RequiredCommandContextSchema; .list is a READ and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(99);
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(100);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -819,8 +820,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // all mounted and all registered.
     // +3 (148): the three spaces.workflows routes, all mounted and all
     // registered. MEASURED off /health.
-    expect(health).toMatchObject({ ok: true, operations: 171, implemented: 169 });
-    expect(harness.production.server.registry.size).toBe(169);
+    expect(health).toMatchObject({ ok: true, operations: 172, implemented: 170 });
+    expect(harness.production.server.registry.size).toBe(170);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -840,7 +841,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(169); // +3 (148): the spaces.workflows handlers
+    expect(registered.size + residual.length).toBe(170); // +3 (148): the spaces.workflows handlers
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

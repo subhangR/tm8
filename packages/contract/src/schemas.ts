@@ -80,7 +80,7 @@ import type {
   ProjectFolderUploadAbortInput, ProjectFolderUploadCompleteInput,
   ProjectFolderUploadEntry, ProjectFolderUploadFileGrant, ProjectFolderUploadGrant,
   ProjectFolderUploadInitInput, ProjectFolderUploadResult,
-  ProjectLinkInput, ProjectResource,
+  ProjectCreateFromRepoInput, ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
   RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
@@ -2554,6 +2554,17 @@ export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object(
 export const ProjectLinkInputSchema: z.ZodType<ProjectLinkInput> = z.object({
   ...commandContextShape,
   projectId: ProjectIdSchema,
+}).strict();
+
+/**
+ * `repoUrl` is bounded here only for shape and size; the meaningful check —
+ * github.com, no embedded credentials, exactly one owner/repo — lives in
+ * `normalizeGitHubRepoUrl` so that one rule governs every caller.
+ */
+export const ProjectCreateFromRepoInputSchema: z.ZodType<ProjectCreateFromRepoInput> = z.object({
+  ...commandContextShape,
+  repoUrl: z.string().min(1).max(400),
+  name: z.string().min(1).max(200).optional(),
 }).strict();
 
 export const CorrectProjectAssociationInputSchema: z.ZodType<CorrectProjectAssociationInput> = z.object({

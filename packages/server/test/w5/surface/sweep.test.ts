@@ -305,9 +305,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(169);
-    expect(rows).toHaveLength(169);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(169);
+    // 169 -> 170: projects.createFromRepo.
+    expect(SURFACE).toHaveLength(170);
+    expect(rows).toHaveLength(170);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(170);
   });
 
   /**
@@ -857,7 +858,18 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // THIS NUMBER ASSUMES THIS BRANCH IS THE NEXT MIGRATION TO LAND. If #517
     // lands first it adds two files and the merged tree is 161, not 159.
     // Re-measure on the merged tree; do not adjust by arithmetic.
-    expect(server.appliedMigrations.length).toBe(159);
+    //
+    // 159 -> 161 (2026-08-28, self-serve GitHub linking). The same two-step
+    // shape as every row above, and again only one step is this branch's.
+    // 173_self_serve_project_from_repo.sql is the +1 this branch owns; the
+    // other +1 is main's arrears, RED ON THIS LINE BEFORE THIS BRANCH EXISTED
+    // for the fourth time. MEASURED on both trees, never derived:
+    //   origin/main @ 2a773fdc: ls db/migrations/*.sql | wc -l -> 160  (pin said 159, RED)
+    //   this branch:            ls db/migrations/*.sql | wc -l -> 161
+    // Numbered 173 rather than 169: main already carries 167, 168, 171 and
+    // 172, so 173 was the first free prefix above the highest, chosen the way
+    // the row above describes rather than by adding one to a stale maximum.
+    expect(server.appliedMigrations.length).toBe(161);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
@@ -1116,6 +1128,12 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
+  // 2026-08-28 (self-serve GitHub linking): projects.createFromRepo validates
+  // its `repoUrl` in-handler via normalizeGitHubRepoUrl, because the rule is
+  // about ORIGIN (github.com, no embedded credentials, exactly one
+  // owner/repo) rather than shape, and one rule has to govern every caller.
+  // The sweep's synthetic string is not a repository URL, so it lands here.
+  'projects.createFromRepo',
   // 2026-08-10 (files consolidation): projects.files.read validates its `path`
   // query in-handler, and folderUploads.init validates its manifest in-handler;
   // the sweep's synthetic bodies reach both refusals.

@@ -9,6 +9,8 @@ import {
   type EntitySummary,
   type CommitSessionAttribution,
   type ProjectBranchTopology,
+  type ProjectCreateFromRepoInput,
+  type ProjectCreateFromRepoResult,
   type ProjectCreateInput,
   type ProjectFileBlame,
   type ProjectFileHistory,
@@ -33,6 +35,13 @@ import {
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, iso, isoOrNull, loadActors } from '../../entity-read.js';
 import { ensureProjectWorkingDirectory, listProjectDirectories } from './project-directories.js';
+import {
+  cloneRepository,
+  normalizeGitHubRepoUrl,
+  projectWorkingDir,
+} from './project-clone.js';
+import { DbGitHubCredentialStore } from '../../../credentials/github-credential-store.js';
+import { resolveServerDataDir } from '../../../http/config.js';
 import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 /** `?staleAfterDays=` — absent means "use the module's own default". */
@@ -63,6 +72,12 @@ interface ProjectMutationResult {
 }
 
 interface LinkMutationResult {
+  spaceId: string;
+  projectId: string;
+}
+
+interface ProjectFromRepoMutationResult {
+  project: ProjectRow;
   spaceId: string;
   projectId: string;
 }
@@ -336,8 +351,25 @@ function updatePatch(input: ProjectUpdateInput): Record<string, unknown> {
   return patch;
 }
 
+export interface W2ProjectsAssociationsServiceOptions {
+  /** Injected in tests; defaults to the DB-backed store. */
+  credentials?: Pick<DbGitHubCredentialStore, 'resolve'>;
+}
+
 export class W2ProjectsAssociationsService {
-  constructor(private readonly deps: FacadeDeps) {}
+  private readonly credentials: Pick<DbGitHubCredentialStore, 'resolve'>;
+
+  constructor(
+    private readonly deps: FacadeDeps,
+    options: W2ProjectsAssociationsServiceOptions = {},
+  ) {
+    this.credentials =
+      options.credentials ??
+      new DbGitHubCredentialStore({
+        db: this.deps.db,
+        dataDir: this.deps.config.dataDir ?? resolveServerDataDir(),
+      });
+  }
 
   readonly listProjectDirectories = async (ctx: RequestContext) => {
     const owner = await this.deps.owner();
@@ -656,6 +688,71 @@ export class W2ProjectsAssociationsService {
       ],
     );
     return toProjectResource(raw.project);
+  };
+
+  /**
+   * Attach a GitHub repository to a space, as an ordinary space admin.
+   *
+   * The order matters and is not interchangeable. The credential is resolved
+   * FIRST so that a member with no GitHub connection gets a named refusal
+   * instead of a directory; the clone happens SECOND, outside any transaction,
+   * because it is slow and can fail; the row is written LAST, in one ledgered
+   * RPC that creates and links together. A clone that succeeds but whose RPC
+   * fails leaves a directory and no row — recoverable, and the retry reuses
+   * it. The reverse order would leave a project row pointing at nothing.
+   */
+  readonly createProjectFromRepo = async (
+    ctx: RequestContext,
+  ): Promise<ProjectCreateFromRepoResult & { patches: [] }> => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const input = ctx.body as ProjectCreateFromRepoInput;
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+
+    // Rejects non-github hosts, ssh/file schemes and credential-bearing URLs.
+    const repo = normalizeGitHubRepoUrl(input.repoUrl);
+
+    // The acting member's OWN credential. Never the node's: cloning as the
+    // node would let any space admin read any repository the node can see.
+    const credential = await this.credentials.resolve(claims as never);
+    if (credential === null) {
+      throw new CollabError(
+        'forbidden',
+        'no GitHub credential stored for this account — connect one under Settings → Agent credentials',
+        { details: { reason: 'no_github_credential' } },
+      );
+    }
+
+    const dataDir = this.deps.config.dataDir ?? resolveServerDataDir();
+    const workingDir = projectWorkingDir(dataDir, spaceId, repo);
+
+    await cloneRepository({
+      repo,
+      workingDir,
+      token: credential.token,
+      login: credential.login,
+    });
+
+    const raw = await this.deps.db.rpc<ProjectFromRepoMutationResult>(
+      claims,
+      'create_project_from_repo',
+      [
+        spaceId,
+        input.name?.trim() || repo.repo,
+        workingDir,
+        repo.url,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ],
+    );
+
+    return {
+      project: toProjectResource(raw.project),
+      spaceId: raw.spaceId,
+      projectId: raw.projectId,
+      patches: [],
+    };
   };
 
   readonly updateProject = async (ctx: RequestContext): Promise<ProjectResource> => {

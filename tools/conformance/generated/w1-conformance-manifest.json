@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417",
+  "catalogDigest": "sha256:ec4fd371a01c12a2cd617154fc026906d23015cfe2e21738d761a31b16ee7986",
   "catalog": {
-    "total": 172,
-    "v1": 170,
+    "total": 173,
+    "v1": 171,
     "reserved": 2,
-    "http": 171,
+    "http": 172,
     "ws": 1,
-    "registerableV1Http": 169,
+    "registerableV1Http": 170,
     "methods": {
       "GET": 61,
-      "POST": 80,
+      "POST": 81,
       "PATCH": 11,
       "DELETE": 12,
       "PUT": 7,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 65,
-      "command": 106,
+      "command": 107,
       "stream": 1
     },
-    "uniqueNames": 172,
-    "uniqueBindings": 172
+    "uniqueNames": 173,
+    "uniqueBindings": 173
   },
   "reservedOperations": [
     "search.query",
@@ -778,6 +778,13 @@
         "operation": "projects.link",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.createFromRepo",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/projects/from-repo",
         "status": "registered",
         "source": "server-router"
       },
@@ -1608,7 +1615,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 141
+    "unimplementedV1Http": 142
   },
   "schemas": {
     "additive": {
@@ -3147,6 +3154,24 @@
           "link"
         ],
         "inputSchemaRef": "ProjectLinkInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.createFromRepo",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.createFromRepo",
+        "intentTags": [
+          "projects",
+          "create",
+          "from",
+          "repo"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,

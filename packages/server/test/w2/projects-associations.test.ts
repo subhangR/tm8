@@ -134,6 +134,7 @@ describe('W2.G06 projects and association correction facade', () => {
       'projects.associations.correct',
       'projects.branches.list',
       'projects.create',
+      'projects.createFromRepo',
       'projects.directories.list',
     'projects.file.blame',
     'projects.file.history',

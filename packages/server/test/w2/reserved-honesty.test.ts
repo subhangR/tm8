@@ -130,13 +130,13 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
     // gitMerge (POST commands).
     // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge, one POST command.
-    expect(OPERATIONS).toHaveLength(172); // +3 148 spaces.workflows, MEASURED
-    expect(V1_OPERATIONS).toHaveLength(170);
+    expect(OPERATIONS).toHaveLength(173); // +1 projects.createFromRepo, +3 148 spaces.workflows, MEASURED
+    expect(V1_OPERATIONS).toHaveLength(171);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(171);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(172);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
@@ -150,7 +150,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // auth.claim.reissue) — 163 -> 166.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(169); // 166 -> 169 (148): spaces.workflows.*
+    )).toHaveLength(170); // +1 projects.createFromRepo; 166 -> 169 (148): spaces.workflows.*
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

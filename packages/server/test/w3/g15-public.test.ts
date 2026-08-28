@@ -75,14 +75,14 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 131 -> 135: credentials.*; all four are mounted.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows,
     // all mounted.
-    expect(OPERATIONS).toHaveLength(172); // +3 148 spaces.workflows
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(171); // +3 148
+    expect(OPERATIONS).toHaveLength(173); // +1 projects.createFromRepo, +3 148 spaces.workflows
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(172); // +1 createFromRepo, +3 148
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 171, // +3 148: the spaces.workflows routes
-      implemented: 169, // +3 148
+      operations: 172, // +1 projects.createFromRepo; +3 148: the spaces.workflows routes
+      implemented: 170, // +1 projects.createFromRepo; +3 148
     });
   });
 
@@ -123,7 +123,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // The four credentials.* rows bring the mounted set to 132.
     // 141: +3 (auth.password.change, auth.invite.signup, auth.claim.reissue),
     // all mounted and none answering 501 — 163 -> 166.
-    expect(implemented).toHaveLength(169);
+    expect(implemented).toHaveLength(170);
   });
 
   /**

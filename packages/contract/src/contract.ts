@@ -3415,6 +3415,30 @@ export interface ProjectLinkInput extends CommandContext {
   projectId: ProjectId;
 }
 
+/**
+ * Attach a GitHub repository to a space without node-admin.
+ *
+ * `repoUrl` is the ONLY input, and that is the security property rather than a
+ * convenience: `projects.create` needs node-admin because it accepts an
+ * arbitrary `workingDir`, and a project row is a read grant over that
+ * directory (`projects.files.list` is member-reachable). Here the server
+ * derives the directory under a managed root, so there is nothing for a caller
+ * to point anywhere. Space-admin gated, like `projects.link`. See migration 173.
+ */
+export interface ProjectCreateFromRepoInput extends CommandContext {
+  /** `https://github.com/owner/repo` or `owner/repo`. github.com only. */
+  repoUrl: string;
+  /** Defaults to the repository name. */
+  name?: string;
+}
+
+export interface ProjectCreateFromRepoResult {
+  /** Always `trust: 'untrusted'` — no self-serve path mints a trusted project. */
+  project: ProjectResource;
+  spaceId: SpaceId;
+  projectId: ProjectId;
+}
+
 export interface CorrectProjectAssociationInput {
   clientMutationId: string;
   projectId: ProjectId;

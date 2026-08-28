@@ -19,6 +19,8 @@ export function registerW2ProjectsAssociationsHandlers(
     'projects.file.blame': service.fileBlame,
     'projects.update': service.updateProject,
     'projects.link': service.linkProject,
+    'projects.createFromRepo': async (ctx) =>
+      json(await service.createProjectFromRepo(ctx), { status: 201 }),
     'projects.unlink': service.unlinkProject,
     'projects.associations.correct': service.correctProjectAssociation,
   });

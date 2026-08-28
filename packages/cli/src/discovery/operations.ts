@@ -1173,6 +1173,17 @@ const ROWS: Record<OperationName, Row> = {
       'the result carries BOTH identities: the ProjectResource id and the per-Space projection entity id — they are never interchangeable',
     ],
   },
+  'projects.createFromRepo': {
+    cmd: null,
+    sum: 'Clone a GitHub repository into a Space as a project, without node-admin',
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'the ONLY input is a repo URL: the working directory is server-derived under a managed root, which is why this needs no node-admin (migration 173)',
+      'clones with the ACTING member\'s own stored GitHub credential, never the node\'s — connect one under Settings → Agent credentials first',
+      'the project is always created untrusted; trust stays an explicit grant a node admin makes afterwards',
+    ],
+  },
   'projects.unlink': {
     cmd: ['project', 'unlink'],
     syn: 'tm8 project unlink <project-resource-id> [--space <space-id>] --yes [--mutation-id <id>]',
