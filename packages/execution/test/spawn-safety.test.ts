@@ -161,6 +161,60 @@ describe('SpawnService spawn acknowledgement safety', () => {
     expect(promptSettlement.cancel).not.toHaveBeenCalled();
   });
 
+  /**
+   * THE EMPTY-SESSION FIX. A provider whose binary takes a positional prompt
+   * gets its first turn in ARGV, where a boot race cannot reach it — and must
+   * therefore NOT also be sent through the PTY, or the agent would receive its
+   * assignment twice. The test above is the mirror image: an operator wrapper
+   * (`TM8_AGENT_CMD`) cannot take a positional, so it keeps the PTY path.
+   *
+   * Together they pin the invariant that matters: the first turn is delivered
+   * exactly once, by exactly one of the two mechanisms.
+   */
+  it('carries the first turn in argv for a real provider, and does not also type it', async () => {
+    const promptSettlement = {
+      awaitOutcome: vi.fn(async () => ({ outcome: 'delivered' as const })),
+      cancel: vi.fn(),
+    };
+    service = new SpawnService({
+      graph,
+      pty,
+      promptSettlement,
+      baseUrl: 'http://127.0.0.1:4610',
+      dataDir,
+      // A real provider name, so `supportsPositionalPrompt` says yes. The
+      // binary is never executed: `spawnIfAbsent` is mocked, and the PATH
+      // preflight is stubbed so the suite keeps working on a machine that has
+      // not installed the CLI (the header promise of this file).
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, TM8_AGENT_CMD: 'claude' },
+      bootSettlementMs: 1,
+    });
+    vi.spyOn(
+      service as unknown as { assertAgentRuntime: () => Promise<void> },
+      'assertAgentRuntime',
+    ).mockResolvedValue(undefined);
+    vi.spyOn(pty, 'beginPromptHandoff').mockImplementation(() => {});
+    vi.spyOn(pty, 'spawnIfAbsent').mockReturnValue({ reused: false });
+    vi.spyOn(pty, 'waitForBootSettlement').mockResolvedValue(null);
+    const deliver = vi.spyOn(pty, 'deliverPrompt').mockResolvedValue(true);
+
+    await expect(
+      service.spawn(AUTH, {
+        ...REQUEST,
+        taskIds: ['66666666-6666-4666-8666-666666666666'],
+      }),
+    ).resolves.toMatchObject({ reused: false });
+
+    // The assignment is in the command line...
+    const spawned = vi.mocked(pty.spawnIfAbsent).mock.calls[0]?.[0];
+    expect(spawned?.command).toContain('<tm8_task_prompt count="1">');
+    expect(spawned?.command).toContain('--append-system-prompt');
+    // ...and nothing was typed into the terminal.
+    expect(deliver).not.toHaveBeenCalled();
+    expect(promptSettlement.awaitOutcome).not.toHaveBeenCalled();
+    expect(graph.transitions.map((transition) => transition.status)).toEqual(['running']);
+  });
+
   it('retries a failed terminal-state write after a spawn error', async () => {
     service = new SpawnService({
       graph,

@@ -166,4 +166,94 @@ describe('PtyHostService onPromptSettled -- two-signal prompt delivery', () => {
       reason: 'session_killed_with_prompt_queued',
     });
   }, 10000);
+
+  /**
+   * ARRIVAL CONFIRMATION on a spawn's first turn.
+   *
+   * The regression: the submit verifier can only ask "is our text still at the
+   * cursor?", and a body that never reached the composer answers that exactly
+   * as a submitted one does. So a first turn written into a not-yet-drawn
+   * composer settled as `delivered`, the session went `running`, and the agent
+   * sat at an empty prompt with its task nowhere — the live failure on sessions
+   * 01a035b9 / 01a035d3.
+   */
+  it('reports unknown/body_never_reached_composer when a first turn never reaches the composer', async () => {
+    const settled: Array<{ sessionId: string; deliveryId: string; outcome: string; reason?: string }> = [];
+    host = new PtyHostService({
+      logger: quiet,
+      onPromptSettled: (sessionId, deliveryId, outcome, reason) => {
+        settled.push({ sessionId, deliveryId, outcome, reason });
+      },
+    });
+    const sessionId = 'settle-swallowed-first-turn';
+    // A booting agent, modelled honestly: it SPEAKS once (so the cold gate's
+    // `everSpoke` requirement is satisfied and the process is not mistaken for
+    // inert), then falls quiet past the cold idle window (so the gate releases
+    // and we write), then swallows every byte written to it without ever
+    // rendering one. Raw mode is what makes that true — it turns off the tty's
+    // own echo, so nothing our writes contain can ever appear at the cursor,
+    // which is precisely a TUI that has not drawn its composer yet.
+    host.spawn({
+      sessionId,
+      command: `node -e "process.stdout.write('booting\\n'); process.stdin.setRawMode(true); process.stdin.resume(); setInterval(() => {}, 1000)"`,
+      cwd: '/tmp',
+      env: {},
+    });
+
+    const admitted = await host.deliverPrompt(
+      sessionId,
+      'first turn that never lands',
+      'send',
+      'delivery-arrival',
+      true, // requireReadyOutput — spawn's first turn
+    );
+    expect(admitted).toBe(true);
+
+    await waitFor(() => settled.length === 1, 60000);
+    expect(settled[0]?.outcome).toBe('unknown');
+    expect(settled[0]?.reason).toBe('body_never_reached_composer');
+  }, 70000);
+
+  /**
+   * The other half of the same contract: arrival confirmation must not turn a
+   * working first turn into a failure. A child that echoes what it is given —
+   * the same shape every real agent composer has — still settles `delivered`.
+   */
+  it('still reports delivered for a first turn that does reach the composer', async () => {
+    const settled: Array<{ sessionId: string; deliveryId: string; outcome: string; reason?: string }> = [];
+    host = new PtyHostService({
+      logger: quiet,
+      onPromptSettled: (sessionId, deliveryId, outcome, reason) => {
+        settled.push({ sessionId, deliveryId, outcome, reason });
+      },
+    });
+    const sessionId = 'settle-arrival-ok';
+    const chunks: Buffer[] = [];
+    // Speaks a banner first, exactly as a real agent does at boot: the cold gate
+    // refuses to write a first turn into a process that has never emitted a byte
+    // (`agent_never_became_ready`), so a fixture that only ever answers input
+    // could never receive one.
+    host.spawn({
+      sessionId,
+      command: `printf 'ready\\n'; while IFS= read -r line; do printf 'GOT: %s\\n' "$line"; done`,
+      cwd: '/tmp',
+      env: {},
+    });
+    host.onFrames(sessionId, (f) => chunks.push(f));
+    const seen = () => Buffer.concat(chunks).toString('utf8');
+
+    const admitted = await host.deliverPrompt(
+      sessionId,
+      'first turn that lands',
+      'send',
+      'delivery-arrival-ok',
+      true, // requireReadyOutput — spawn's first turn
+    );
+    expect(admitted).toBe(true);
+
+    await waitFor(() => seen().includes('GOT: first turn that lands'), 30000);
+    await waitFor(() => settled.length === 1, 30000);
+    expect(settled[0]?.outcome).toBe('delivered');
+    expect(settled[0]?.reason).toBeUndefined();
+  }, 40000);
 });

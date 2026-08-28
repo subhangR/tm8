@@ -105,10 +105,33 @@ export interface BytesResult {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/**
+ * Operations whose SERVER-SIDE work legitimately outlives the default deadline.
+ *
+ * `execution.spawn` does not answer when the process starts — it answers when
+ * the agent's first turn has verifiably reached its composer, because a spawn
+ * that returns before that is exactly the "session came up empty" failure the
+ * settlement loop exists to prevent. That wait is bounded by
+ * `SpawnService.firstPromptSettlementMs` (~150s worst case for a cold agent
+ * boot). Holding it to the same 15s as a graph read made `tm8 session spawn`
+ * report a TIMEOUT for a spawn that was proceeding normally and did in fact
+ * produce a working session — the caller is told the launch failed while the
+ * agent is booting fine, and there is nothing in the error to tell the two
+ * apart. Measured live 2026-08-24 spawning onto a scratch-workdir entity.
+ *
+ * These are per-operation FLOORS on the default only: an explicit `--timeout`
+ * still wins, so an operator can always impose a shorter deadline.
+ */
+const SLOW_OPERATION_TIMEOUT_MS: Partial<Record<OperationName, number>> = {
+  'execution.spawn': 180_000,
+  'execution.resume': 180_000,
+};
+
 export class Tm8Client {
   private readonly baseUrl: string;
   private readonly token: string | undefined;
   private readonly timeoutMs: number;
+  private readonly timeoutExplicit: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly fresh: boolean;
   private readonly cache: ReadCache;
@@ -117,9 +140,23 @@ export class Tm8Client {
     this.baseUrl = opts.baseUrl;
     this.token = opts.token;
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    // Remembered so the per-operation floors below apply to the DEFAULT only.
+    // An operator who passed `--timeout` said a number out loud and gets it.
+    this.timeoutExplicit = opts.timeoutMs !== undefined;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.fresh = opts.fresh ?? false;
     this.cache = opts.cache ?? readCache;
+  }
+
+  /**
+   * The deadline this operation actually gets: the configured one, raised to a
+   * per-operation floor for the few commands whose server-side work is a
+   * verified agent launch rather than a graph round trip. Never lowers a
+   * deadline, and never overrides an explicit `--timeout`.
+   */
+  private deadlineFor(name: OperationName): number {
+    if (this.timeoutExplicit) return this.timeoutMs;
+    return Math.max(this.timeoutMs, SLOW_OPERATION_TIMEOUT_MS[name] ?? 0);
   }
 
   /** Invoke a catalog operation by NAME. The only way out of this package. */
@@ -295,7 +332,7 @@ export class Tm8Client {
     if (this.token) headers.authorization = `Bearer ${this.token}`;
 
     const controller = new AbortController();
-    const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
+    const timeoutMs = opts.timeoutMs ?? this.deadlineFor(name);
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     // Only the SIZE of the request body is journalled, never its content and
     // never the headers — `authorization` is set two lines above.

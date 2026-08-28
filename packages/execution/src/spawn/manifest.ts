@@ -742,13 +742,42 @@ export function withAgentResume(
  * The positional goes LAST, after every flag, because both CLIs stop parsing
  * options at the first non-option argument.
  *
- * PRODUCTION NOTE (2026-08-16): SpawnService passes an empty `task` when its
- * PromptSettlementWaiter is wired, launches the interactive provider with this
- * function's system configuration, then submits the task through the PTY
- * closed loop and waits for its outcome before recording `running`. Positional
- * task delivery remains the compatibility path for legacy embedders without a
- * settlement callback, and the focused unit surface for provider argv.
+ * PRODUCTION NOTE (2026-08-24): positional task delivery is the DEFAULT again,
+ * for every provider this function knows how to configure. The 2026-08-16 shape
+ * — blank the positional, launch an idle REPL, then type the task into the TUI
+ * through the PTY closed loop — bought a verified submit receipt at the cost of
+ * making the first turn racy: the readiness gate releases on output silence,
+ * and a booting claude-code can fall quiet several seconds before its composer
+ * accepts input, so the task was written into a terminal that discarded it. The
+ * session then reported `running` with an EMPTY prompt (live sessions 01a035b9
+ * and 01a035d3, 2026-08-24: complete task prompts in both launch records, no
+ * first turn in either transcript, operator pasted the task in by hand).
+ *
+ * argv cannot lose a race it does not run: the prompt exists at the agent's
+ * first token, before any terminal is drawn. That is also why the SYSTEM half
+ * never failed while the task half did — the system half was always in argv.
+ * The PTY closed loop keeps its real job, delivering prompts to an agent that
+ * is already live, and remains the first-turn path for operator wrappers whose
+ * flag vocabulary this function refuses to guess (see `supportsPositionalPrompt`).
  */
+/**
+ * Whether this launch's actual binary takes its first user turn as a trailing
+ * positional argument — i.e. whether {@link withAgentPrompt} will embed `task`.
+ *
+ * Shares `withAgentPrompt`'s resolution of which binary is really being run so
+ * the two cannot drift: a caller that trusts this and skips its own first-turn
+ * delivery would otherwise strand the assignment the moment the rule changed
+ * in one place only. Returns false for `echo-agent` (it reads the typed
+ * manifest) and for any operator `TM8_AGENT_CMD` wrapper.
+ */
+export function supportsPositionalPrompt(
+  launch: ResolvedLaunchConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
+  return raw === 'claude' || raw === 'codex';
+}
+
 export function withAgentPrompt(
   command: string,
   prompts: { system: string; task: string },
@@ -758,11 +787,11 @@ export function withAgentPrompt(
   const system = prompts.system.trim();
   const task = prompts.task.trim();
   if (system === '' && task === '') return command;
-  const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
 
   // echo-agent reads the typed manifest directly. An operator-provided wrapper
   // is a complete command whose private flag vocabulary tm8 must not guess.
-  if (raw !== 'claude' && raw !== 'codex') return command;
+  if (!supportsPositionalPrompt(launch, env)) return command;
+  const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
 
   const parts = [command];
   if (system !== '') {
