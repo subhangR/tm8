@@ -36,7 +36,7 @@ import type {
   MoveEntityInput, NotificationItem, Page, PaletteAction, PatchEdgeInput,
   PatchEntityInput, PatchMessageInput, PatchTaskInput, PlacementInput,
   PointEventView, PostMessageInput, PresenceSnapshot, PresenceWorkspaceEvent,
-  PullInput, GrantPointsInput, ReactionInput, SavedView, SavedViewInput,
+  ProjectFromRepo, PullInput, GrantPointsInput, ReactionInput, SavedView, SavedViewInput,
   SpaceId, SpaceNavigation, SpaceSettings, SpaceSummary, TaskAxis,
   TaskAxisInput, TrackingRefreshInput, UndoToken, Unsubscribe, WorkInput,
   WorkspaceEvent, EntitySummary, Connections, CommandContext,
@@ -136,6 +136,21 @@ export interface CollabFacade {
   trackingRefresh(input: TrackingRefreshInput): Promise<CommandResult>;
   markRead(anchorId: EntityId, ctx?: CommandContext): Promise<CommandResult>;
   markNotificationRead(notificationId: string, ctx?: CommandContext): Promise<CommandResult>;
+  /**
+   * POST /v2/spaces/:spaceId/projects/from-repo — clone a GitHub repository
+   * into this Space as a project and link it, in one step.
+   *
+   * `repoUrl` is the only input BY DESIGN, not for brevity: the server derives
+   * the working directory under a managed root, which is precisely why this
+   * needs no node-admin where `projects.create` does. The result is always an
+   * untrusted project. Requires the caller's own GitHub credential, and
+   * refuses with `forbidden` + `reason: 'no_github_credential'` when there is
+   * none. See migration 173.
+   */
+  createProjectFromRepo(
+    spaceId: SpaceId,
+    input: { repoUrl: string; name?: string },
+  ): Promise<ProjectFromRepo>;
   createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis>;
   updateTaskAxis(spaceId: SpaceId, axisId: string, input: Partial<TaskAxisInput>): Promise<TaskAxis>;
   deleteTaskAxis(spaceId: SpaceId, axisId: string): Promise<void>;

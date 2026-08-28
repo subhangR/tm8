@@ -43,9 +43,9 @@ describe('the default is unknown, and unknown is never upgraded', () => {
     // 137 -> 138: execution.dispatch (public, `session dispatch`).
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(rows).toHaveLength(172); // +3 148 (spaces.workflows)
+    expect(rows).toHaveLength(173); // +3 148 (spaces.workflows)
     expect(unavailable.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
-    expect(unknown).toHaveLength(170) /* 167 -> 170 (148): the three spaces.workflows rows, non-reserved */;
+    expect(unknown).toHaveLength(171) /* 167 -> 170 (148): the three spaces.workflows rows, non-reserved */;
     // The point of the field: NOTHING is optimistically available.
     expect(rows.filter((r) => r.availability === 'available')).toHaveLength(0);
   });
@@ -167,7 +167,7 @@ describe('/health is a cache-invalidation EPOCH, never a per-operation claim', (
     const rows = discovery(l).filter((r) => r.availability !== 'unavailable');
     // Knowing 28 handlers exist tells you nothing about WHICH 28.
     expect(rows.every((r) => r.availability === 'unknown')).toBe(true);
-    expect(rows).toHaveLength(170) /* 167 -> 170 (148): the three spaces.workflows rows, non-reserved */;
+    expect(rows).toHaveLength(171) /* 167 -> 170 (148): the three spaces.workflows rows, non-reserved */;
   });
 
   it('the implementation epoch key is distinctly prefixed and cannot read as a capabilityEpoch', () => {

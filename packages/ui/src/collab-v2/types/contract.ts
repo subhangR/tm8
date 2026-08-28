@@ -428,6 +428,24 @@ export interface SavedViewInput extends CommandContext {
 // ---------------------------------------------------------------------------
 
 /** GET /v2/spaces */
+/**
+ * The result of attaching a GitHub repository to a Space self-serve.
+ *
+ * `trust` is carried even though it is never a choice at this door — it is
+ * always `'untrusted'` — because a caller who then tries to spawn a session
+ * against this project will be refused, and the reason belongs on screen
+ * before that happens rather than after.
+ */
+export interface ProjectFromRepo {
+  projectId: string;
+  spaceId: SpaceId;
+  name: string;
+  repoUrl: string | null;
+  /** Server-derived, under a managed root. Never chosen by the caller. */
+  workingDir: string;
+  trust: 'trusted' | 'untrusted';
+}
+
 export interface SpaceSummary {
   id: SpaceId;
   name: string;

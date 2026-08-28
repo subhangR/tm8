@@ -1174,7 +1174,8 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
   'projects.createFromRepo': {
-    cmd: null,
+    cmd: ['project', 'add-repo'],
+    syn: 'tm8 project add-repo <owner/repo|https://github.com/owner/repo> [--space <space-id>] [--name <name>] [--mutation-id <id>]',
     sum: 'Clone a GitHub repository into a Space as a project, without node-admin',
     authz: 'space',
     input: 'bound',
@@ -2148,7 +2149,7 @@ export const CATALOG_DIGEST =
   // hand-derived.
   // Re-measured 148 (+ the three spaces.workflows rows) — read from the
   // regenerated conformance manifest, never hand-derived.
-  'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417';
+  'sha256:ec4fd371a01c12a2cd617154fc026906d23015cfe2e21738d761a31b16ee7986';
 
 export const GRAMMAR_VERSION = '2';
 

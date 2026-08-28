@@ -25,7 +25,7 @@ import {
   type PatchEdgeInput, type PatchEntityInput, type PatchMessageInput,
   type PatchTaskInput, type PlacementInput, type PointEventView,
   type PostMessageInput, type PresenceSnapshot, type PullInput,
-  type GrantPointsInput, type ReactionInput, type SavedView, type SavedViewInput,
+  type GrantPointsInput, type ProjectFromRepo, type ReactionInput, type SavedView, type SavedViewInput,
   type SpaceId, type SpaceNavigation, type NavChannelNode, type SpaceSettings,
   type SpaceSummary, type TaskAxis, type TaskAxisInput, type TrackingRefreshInput,
   type UndoToken, type WorkInput, type WorkspaceEvent, type PullState,
@@ -1902,6 +1902,47 @@ export class MockWorld {
       this.pending.push({ type: 'notification.read', eventId: this.nextEventId(), notification: this.notificationItem(rec) });
     }
     return this.result({ patchIds: [], cmid: ctx.clientMutationId, op: 'notification.read' });
+  }
+
+  // --- projects -------------------------------------------------------------
+
+  /**
+   * Mirrors the server's refusals rather than only its happy path, because the
+   * settings section's error copy is what this mock exists to exercise: an
+   * origin that is not a github.com owner/repo is `invalid_input`, and the
+   * derived working directory is echoed so a reader can see the caller never
+   * chose it. Trust is hardcoded here for the same reason it is hardcoded in
+   * migration 173 -- a self-serve project is never trusted.
+   */
+  createProjectFromRepo(
+    spaceId: SpaceId,
+    input: { repoUrl: string; name?: string } & CommandContext,
+  ): ProjectFromRepo {
+    assertInput('createProjectFromRepo', input, COMMAND_FIELDS.createProjectFromRepo);
+    const replay = this.replayValue<ProjectFromRepo>('project.fromRepo', input);
+    if (replay) return replay;
+    if (!this.spaces.has(spaceId)) throw new CollabError('not_found', `space ${spaceId} not found`);
+
+    const trimmed = input.repoUrl.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
+    const path = trimmed.replace(/^https:\/\/github\.com\//i, '').replace(/^github\.com\//i, '');
+    const segments = path.split('/').filter((segment) => segment !== '');
+    if (/^(https?|ssh|file):/i.test(trimmed) && !/^https:\/\/github\.com\//i.test(trimmed)) {
+      throw new CollabError('invalid_input', 'only github.com repositories can be linked');
+    }
+    if (segments.length !== 2 || segments.some((segment) => !/^[A-Za-z0-9._-]+$/.test(segment))) {
+      throw new CollabError('invalid_input', 'repoUrl must name exactly one owner and one repository');
+    }
+    const [owner, repo] = segments as [string, string];
+
+    const result: ProjectFromRepo = {
+      projectId: this.nextId('project'),
+      spaceId,
+      name: input.name?.trim() || repo,
+      repoUrl: `https://github.com/${owner}/${repo}.git`,
+      workingDir: `/var/lib/tm8/projects/${spaceId}/${owner}-${repo}`,
+      trust: 'untrusted',
+    };
+    return this.remember('project.fromRepo', input, result);
   }
 
   // --- axes & saved views ---------------------------------------------------

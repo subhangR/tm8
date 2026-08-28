@@ -150,7 +150,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // catalog rows, the same sugar posture as `worktree status` over entities.get.
     // 156 -> 159 (148): space workflow list|set|delete over the three
     // spaces.workflows rows.
-    expect(COMMAND_PATHS).toHaveLength(159);
+    expect(COMMAND_PATHS).toHaveLength(160);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

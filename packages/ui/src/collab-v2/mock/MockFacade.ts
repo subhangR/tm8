@@ -19,7 +19,7 @@ import {
   type PatchEdgeInput, type PatchEntityInput, type PatchMessageInput,
   type PatchTaskInput, type PlacementInput, type PointEventView,
   type PostMessageInput, type PresenceSnapshot, type PresenceWorkspaceEvent,
-  type PullInput, type ReactionInput, type SavedView, type SavedViewInput,
+  type ProjectFromRepo, type PullInput, type ReactionInput, type SavedView, type SavedViewInput,
   type SpaceId, type SpaceNavigation, type SpaceSettings, type SpaceSummary,
   type TaskAxis, type TaskAxisInput, type TrackingRefreshInput, type UndoToken,
   type Unsubscribe, type WorkInput, type WorkspaceEvent,
@@ -260,6 +260,7 @@ export class MockFacade implements CollabFacade {
   markNotificationRead(notificationId: string, ctx?: CommandContext): Promise<CommandResult> {
     return this.command(() => this.world.markNotificationRead(notificationId, ctx));
   }
+  createProjectFromRepo(spaceId: SpaceId, input: { repoUrl: string; name?: string }): Promise<ProjectFromRepo> { return this.command(() => this.world.createProjectFromRepo(spaceId, input)); }
   createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis> { return this.command(() => this.world.createTaskAxis(spaceId, input)); }
   updateTaskAxis(spaceId: SpaceId, axisId: string, input: Partial<TaskAxisInput>): Promise<TaskAxis> {
     return this.command(() => this.world.updateTaskAxis(spaceId, axisId, input));

@@ -40,7 +40,7 @@ import {
   type PatchEntityInput, type PatchMessageInput, type PatchTaskInput,
   type PlacementInput, type PointEventView, type PostMessageInput,
   type PresenceSnapshot, type PresenceWorkspaceEvent, type PullInput,
-  type GrantPointsInput, type ReactionInput, type SavedView, type SavedViewInput,
+  type GrantPointsInput, type ProjectFromRepo, type ReactionInput, type SavedView, type SavedViewInput,
   type SpaceId, type SpaceNavigation, type SpaceSettings, type SpaceSummary,
   type TaskAxis, type TaskAxisInput, type TrackingRefreshInput, type UndoToken,
   type Unsubscribe, type WorkInput, type WorkspaceEvent,
@@ -536,6 +536,29 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
     return { patches: [] };
   }
   markNotificationRead(_n: string, _c?: CommandContext): Promise<CommandResult> { return notImplemented('markNotificationRead'); }
+  /**
+   * The wire result nests the project (`{project, spaceId, projectId}`); the
+   * seam flattens it, because `ProjectFromRepo` is what the settings section
+   * renders and a nested shape would put wire structure into a component.
+   */
+  async createProjectFromRepo(
+    spaceId: SpaceId,
+    input: { repoUrl: string; name?: string },
+  ): Promise<ProjectFromRepo> {
+    const wire = await this.client.post<{
+      project: { name: string; repoUrl: string | null; workingDir: string; trust: 'trusted' | 'untrusted' };
+      spaceId: SpaceId;
+      projectId: string;
+    }>(`/v2/spaces/${spaceId}/projects/from-repo`, input);
+    return {
+      projectId: wire.projectId,
+      spaceId: wire.spaceId,
+      name: wire.project.name,
+      repoUrl: wire.project.repoUrl,
+      workingDir: wire.project.workingDir,
+      trust: wire.project.trust,
+    };
+  }
   createTaskAxis(_s: SpaceId, _i: TaskAxisInput): Promise<TaskAxis> { return notImplemented('createTaskAxis'); }
   updateTaskAxis(_s: SpaceId, _a: string, _i: Partial<TaskAxisInput>): Promise<TaskAxis> { return notImplemented('updateTaskAxis'); }
   deleteTaskAxis(_s: SpaceId, _a: string): Promise<void> { return notImplemented('deleteTaskAxis'); }

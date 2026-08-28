@@ -12,6 +12,7 @@ export { SpaceProfileSection, type SpaceProfileSectionProps } from './SpaceProfi
 export { MembersSection, type MembersSectionProps } from './MembersSection';
 export { InvitesSection, type InvitesSectionProps } from './InvitesSection';
 export { TaskAxesSection, type TaskAxesSectionProps } from './TaskAxesSection';
+export { ProjectRepoSection, type ProjectRepoSectionProps } from './ProjectRepoSection';
 
 /** ViewRegistry fragment: the `settings` center view. */
 export const settingsViews: ViewRegistry = { settings: SettingsScreen };

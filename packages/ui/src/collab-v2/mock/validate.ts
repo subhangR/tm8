@@ -274,6 +274,10 @@ export const COMMAND_FIELDS: Record<string, FieldTable> = {
   trackingRefresh: {
     entityIds: { spec: { t: 'array', items: STR } },
   },
+  createProjectFromRepo: {
+    repoUrl: { spec: STR, required: true },
+    name: { spec: STR },
+  },
   createTaskAxis: {
     name: { spec: STR, required: true },
     axisValues: { spec: { t: 'array', items: STR }, required: true },

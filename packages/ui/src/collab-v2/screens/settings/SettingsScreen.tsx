@@ -10,6 +10,7 @@ import { EntityPanelSkeleton } from '../../entity';
 import { useAsyncValue, type ShellViewProps } from '../../shell';
 import { InvitesSection } from './InvitesSection';
 import { MembersSection } from './MembersSection';
+import { ProjectRepoSection } from './ProjectRepoSection';
 import { SpaceProfileSection } from './SpaceProfileSection';
 import { TaskAxesSection } from './TaskAxesSection';
 
@@ -37,6 +38,12 @@ export function SettingsScreen({ facade, spaceId, onOpenEntity }: ShellViewProps
   return (
     <div className="cv2-set" data-testid="view-settings">
       <SpaceProfileSection space={settings.space} />
+      <ProjectRepoSection
+        facade={facade}
+        spaceId={spaceId}
+        connectedRepo={settings.space.githubRepo}
+        onChanged={reload}
+      />
       <MembersSection
         spaceId={spaceId}
         members={settings.members ?? []}

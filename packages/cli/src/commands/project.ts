@@ -334,6 +334,35 @@ async function projectCreate(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `tm8 project add-repo <owner/repo|url>` — the self-serve door.
+ *
+ * Deliberately takes NO `--working-dir` and NO `--trust`. Both omissions are
+ * the feature rather than an unfinished flag set: the server derives the
+ * directory under a managed root (which is why this needs no node-admin,
+ * unlike `project create`), and the project is always created untrusted
+ * because `channelTags.ts` auto-selects any trusted project to spawn tagged
+ * teammates against. Promoting trust stays a separate, deliberate node-admin
+ * act through `project update`. See migration 173.
+ */
+async function projectAddRepo(cmd: CommandContext): Promise<ExitCode> {
+  const repoUrl = requireArg(cmd.args[0], 'project add-repo', '<owner/repo|https://github.com/owner/repo>');
+  const spaceId = requireSpace(cmd.ctx);
+  const body: Record<string, unknown> = {
+    repoUrl,
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  const name = cmd.options.value('name');
+  if (name !== undefined) body.name = name;
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'projects.createFromRepo', {
+    params: { spaceId },
+    body: withActor(cmd, body),
+  });
+  cmd.out.data(data, renderProjectFromRepo);
+  return EXIT_OK;
+}
+
 async function projectUpdate(cmd: CommandContext): Promise<ExitCode> {
   const projectId = requireArg(cmd.args[0], 'project update', '<project-resource-id>');
   const rawWorkingDir = cmd.options.value('working-dir');
@@ -654,6 +683,25 @@ function renderLink(dto: unknown): string {
   ].join('\n');
 }
 
+/**
+ * Says the trust level out loud even though it is never a choice here. A
+ * caller who then tries to spawn against this project will be refused, and
+ * the reason should already be on screen rather than discovered later.
+ */
+function renderProjectFromRepo(dto: unknown): string {
+  const d = (dto ?? {}) as { project?: ProjectRow; projectId?: unknown; spaceId?: unknown };
+  const project = d.project ?? {};
+  return [
+    `projectId (ProjectResource): ${String(d.projectId)}`,
+    `spaceId: ${String(d.spaceId)}`,
+    `name: ${String(project.name)}`,
+    `repoUrl: ${String(project.repoUrl)}`,
+    `workingDir (server-derived): ${String(project.workingDir)}`,
+    `trust: ${String(project.trust)} — self-serve projects are always untrusted;`
+      + ' a node admin promotes with `tm8 project update <id> --trust trusted`',
+  ].join('\n');
+}
+
 function renderCorrection(dto: unknown): string {
   const d = (dto ?? {}) as { artifactId?: unknown; projectId?: unknown; outcome?: unknown; edge?: { id?: unknown } | null };
   const lines = [
@@ -678,6 +726,7 @@ export const PROJECT_COMMANDS: CommandModule[] = [
   { path: ['project', 'file-history'], run: projectFileHistory },
   { path: ['project', 'blame'], run: projectBlame },
   { path: ['project', 'update'], run: projectUpdate },
+  { path: ['project', 'add-repo'], run: projectAddRepo },
   { path: ['project', 'link'], run: projectLink },
   { path: ['project', 'unlink'], run: projectUnlink },
   { path: ['project', 'association', 'correct'], run: projectAssociationCorrect },

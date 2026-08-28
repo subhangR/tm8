@@ -105,6 +105,19 @@ begin
         where project_id = project.id
      );
 
+  -- `spaces.github_repo` is a LABEL on the space (001_core_graph.sql:226), set
+  -- at create/update time and never derived from linked projects. Settings
+  -- renders it as "the repository for this space", so connecting one and
+  -- leaving the label empty would make that line permanently wrong.
+  --
+  -- COALESCE, never overwrite: the column may already carry a value a human
+  -- typed, and a second connected repository must not silently relabel the
+  -- space. First one to arrive fills it; after that this is a no-op.
+  update public.spaces
+     set github_repo = p_repo_url
+   where id = p_space_id
+     and (github_repo is null or btrim(github_repo) = '');
+
   select * into project from public.projects where id = project.id;
 
   result := jsonb_build_object(

@@ -160,7 +160,7 @@ describe('what this node is, measured rather than assumed', () => {
     // MEASURED off /health on main (routes, not catalog rows) — the same
     // number event/message pin, so the three files cannot silently diverge.
         // 156 -> 157 (2026-08-13, forge write): the tracking.pr.merge route.
-    expect(h.operations).toBe(171) /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */ /* 162→165 2026-08-16 W4/132: spaces.taskWorkflows.* */ /* 157→158 2026-08-13: #188 chat route */;
+    expect(h.operations).toBe(172) /* 171→172: projects.createFromRepo */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */ /* 162→165 2026-08-16 W4/132: spaces.taskWorkflows.* */ /* 157→158 2026-08-13: #188 chat route */;
     // `implemented` is registry.size — MOUNTED handlers, not behaviourally
     // implemented. Asserted as a floor only, never quoted as an implemented count.
     expect(h.implemented).toBeGreaterThan(0);

@@ -158,8 +158,9 @@ const RESOURCE = {
 };
 
 describe('the project module registers exactly its projected paths', () => {
-  it('claims the eleven project rows and nothing else', () => {
+  it('claims the twelve project rows and nothing else', () => {
     expect(PROJECT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
+      'project add-repo',
       'project association correct',
       'project blame',
       'project branches',
@@ -507,6 +508,49 @@ describe('tm8 project link — two identifier domains, never interchangeable', (
   it('requires a Space in context', async () => {
     const r = await invoke(['project', 'link', PROJECT]);
     expect(r.code).toBe(2);
+    expect(requests).toEqual([]);
+  });
+});
+
+describe('tm8 project add-repo — the self-serve door', () => {
+  it('binds the Space-scoped from-repo path and sends only the repo url', async () => {
+    respond = () => ({ body: {
+      spaceId: SPACE, projectId: PROJECT, patches: [],
+      project: {
+        id: PROJECT, name: 'notes', repoUrl: 'https://github.com/tarkesh/notes.git',
+        workingDir: `/var/lib/tm8/projects/${SPACE}/tarkesh-notes`, trust: 'untrusted',
+      },
+    } });
+    const r = await invoke(['project', 'add-repo', 'tarkesh/notes', '--space', SPACE]);
+    expect(r.code).toBe(0);
+    expect(requests[0]?.method).toBe('POST');
+    expect(requests[0]?.path).toBe(bindPath('projects.createFromRepo', { spaceId: SPACE }));
+    const body = requests[0]?.body as Record<string, unknown>;
+    expect(body.repoUrl).toBe('tarkesh/notes');
+    // The two fields whose ABSENCE is the security property: a caller-chosen
+    // path is what makes `projects.create` node-admin-only, and a caller-chosen
+    // trust would let a self-serve project be spawned against from any Space.
+    expect(body).not.toHaveProperty('workingDir');
+    expect(body).not.toHaveProperty('trust');
+  });
+
+  it('names the server-derived directory and the untrusted result', async () => {
+    respond = () => ({ body: {
+      spaceId: SPACE, projectId: PROJECT, patches: [],
+      project: {
+        id: PROJECT, name: 'notes', repoUrl: 'https://github.com/tarkesh/notes.git',
+        workingDir: `/var/lib/tm8/projects/${SPACE}/tarkesh-notes`, trust: 'untrusted',
+      },
+    } });
+    const r = await invoke(['project', 'add-repo', 'tarkesh/notes', '--space', SPACE]);
+    expect(r.stdout).toContain('tarkesh-notes');
+    expect(r.stdout).toMatch(/workingDir \(server-derived\)/);
+    expect(r.stdout).toContain('untrusted');
+  });
+
+  it('requires a Space in context and a repository argument', async () => {
+    expect((await invoke(['project', 'add-repo', 'tarkesh/notes'])).code).toBe(2);
+    expect((await invoke(['project', 'add-repo', '--space', SPACE])).code).toBe(2);
     expect(requests).toEqual([]);
   });
 });

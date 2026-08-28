@@ -119,4 +119,54 @@ describe('Space Settings', () => {
     await waitFor(() => expect(screen.queryByTestId(`settings-axis-${manual.name}`)).toBeNull());
     expect((await facade.getTaskAxes(facade.ids.space)).some((a) => a.id === manual.id)).toBe(false);
   });
+  /**
+   * The connect form is the whole self-serve path, so these cover what a user
+   * can actually get wrong rather than only the happy case. The trust line is
+   * asserted because a project connected here is never trusted, and someone
+   * who then tries to run an agent against it needs to have been told.
+   */
+  it('connects a GitHub repository and reports it as untrusted', async () => {
+    const facade = createFacade();
+    renderWith(facade, <SettingsScreen {...viewProps(facade, { view: 'settings' })} />);
+    await screen.findByTestId('settings-repo');
+
+    fireEvent.change(screen.getByLabelText('GitHub repository'), {
+      target: { value: 'tarkesh/notes' },
+    });
+    fireEvent.click(screen.getByTestId('settings-repo-connect'));
+
+    const result = await screen.findByTestId('settings-repo-result');
+    expect(result).toHaveTextContent('https://github.com/tarkesh/notes.git');
+    expect(result).toHaveTextContent('untrusted');
+  });
+
+  it('refuses an origin that is not a github.com owner/repo', async () => {
+    const facade = createFacade();
+    renderWith(facade, <SettingsScreen {...viewProps(facade, { view: 'settings' })} />);
+    await screen.findByTestId('settings-repo');
+
+    fireEvent.change(screen.getByLabelText('GitHub repository'), {
+      target: { value: 'https://gitlab.com/tarkesh/notes' },
+    });
+    fireEvent.click(screen.getByTestId('settings-repo-connect'));
+
+    const error = await screen.findByTestId('settings-repo-error');
+    expect(error).toHaveTextContent(/github/i);
+    expect(screen.queryByTestId('settings-repo-result')).toBeNull();
+  });
+
+  /**
+   * The form asks for a repository and NOTHING else. A working-directory input
+   * here would reintroduce exactly the thing that makes `projects.create`
+   * node-admin-only, so its absence is a property worth pinning.
+   */
+  it('offers no way to choose a working directory or a trust level', async () => {
+    const facade = createFacade();
+    renderWith(facade, <SettingsScreen {...viewProps(facade, { view: 'settings' })} />);
+    const section = await screen.findByTestId('settings-repo');
+
+    expect(within(section).getAllByRole('textbox')).toHaveLength(1);
+    expect(within(section).queryByLabelText(/working directory/i)).toBeNull();
+    expect(within(section).queryByLabelText(/trust/i)).toBeNull();
+  });
 });
