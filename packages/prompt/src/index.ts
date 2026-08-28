@@ -522,6 +522,20 @@ export function commandSurface(hasSession: boolean): CommandDoc[] {
       usage: 'tm8 message send --to <anchor-entity-id> "<body>"',
       what: 'durable communication — a result, a milestone or a blocker is a message on an anchor',
     },
+    // The second undiscoverable-by-accident path, and it is here for the same
+    // reason `message send` is — not as an operation inventory (§9 rule 1 still
+    // stands; the other 80 rows stay behind `tm8 help`).
+    //
+    // Every harness tm8 spawns brings its OWN artifact/canvas tool. So an agent
+    // told "make me an artifact" does not experience a gap it could resolve with
+    // `tm8 help` — it believes it already has the verb, reaches for the native
+    // one, and publishes somewhere tm8 cannot see. Discovery cannot fix a verb
+    // an agent never knows to look up. This is the `task link-pr` precedent
+    // exactly: a deliverable nobody can see did not happen.
+    {
+      usage: 'tm8 artifact publish <dir> --name "<name>"',
+      what: 'publish a directory of HTML/JS/CSS AS A TM8 ARTIFACT — the only way a built page becomes an entity in this space; your harness\'s own artifact/canvas tool publishes elsewhere and leaves nothing in tm8',
+    },
   ];
   if (hasSession) {
     cmds.push({
