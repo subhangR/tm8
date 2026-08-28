@@ -583,6 +583,7 @@ export function entitiesCreate(deps: FacadeDeps): OperationHandler {
               JSON.stringify(acceptanceCriteria(content)),
               content.pointsEstimate ?? null,
               content.dueDate ?? null,
+              content.startDate ?? null,
               attach?.entityId ?? null,
               attach?.edgeType ?? 'attached_to',
               envelope.clientMutationId ?? null,
@@ -683,6 +684,8 @@ export function entitiesPatch(deps: FacadeDeps): OperationHandler {
           // An explicit `dueDate: null` means CLEAR, which `coalesce` in the
           // RPC cannot express — hence the separate flag.
           content.dueDate === null,
+          content.startDate ?? null,
+          content.startDate === null,
           envelope.clientMutationId ?? null,
         ]);
       } else if (kind === 'doc') {

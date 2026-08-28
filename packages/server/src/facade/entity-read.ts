@@ -88,6 +88,7 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.memories, 0) as memories,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
+  t.start_date,
   t.completion_gate,
   d.title as doc_title, d.body as doc_body, d.format as doc_format,
   ch.name as channel_name, ch.topic as channel_topic,
@@ -223,6 +224,7 @@ export interface EntityRow {
   acceptance_criteria: AcceptanceCriterion[] | null;
   points_estimate: number | null;
   due_date: Date | string | null;
+  start_date: Date | string | null;
   doc_title: string | null;
   doc_body: string | null;
   doc_format: string | null;
@@ -1284,6 +1286,7 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         priority: (row.priority ?? 'medium') as 'low' | 'medium' | 'high' | 'urgent',
         axes: row.task_axes ?? {},
         dueDate: dateOnly(row.due_date),
+        startDate: dateOnly(row.start_date),
         assignees: (ctx.relations.assignees.get(row.id) ?? []).map((id) => actorOf(ctx.actors, id)),
         assignments: (ctx.relations.assignments.get(row.id) ?? []).map((assignment): TaskAssignment => ({
           assignee: actorOf(ctx.actors, assignment.assigneeId),

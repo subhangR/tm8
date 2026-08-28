@@ -216,7 +216,8 @@ export interface TaskAssignment {
 
 export type CoreEntityState =
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
-      axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
+      axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
+      assignees: ActorSummary[];
       /** Additive: absent on payloads produced before assignment provenance shipped. */
       assignments?: TaskAssignment[];
       acceptance: { total: number; completed: number };
@@ -864,7 +865,7 @@ export interface CollectionQuery {
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
   groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
-  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
+  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority';
   cursor?: Cursor; limit?: number;
 }
 
@@ -1941,6 +1942,7 @@ export interface CreateTaskInput extends CommandContext {
   acceptanceCriteria?: Array<Pick<AcceptanceCriterion, 'text'> & Partial<AcceptanceCriterion>>;
   pointsEstimate?: number | null;
   dueDate?: string | null;
+  startDate?: string | null;
   /** Creates the task and the edge atomically (channel-create / promote-message). */
   attachTo?: { entityId: EntityId; edgeType: 'attached_to' | 'relates_to' };
 }
@@ -1955,6 +1957,8 @@ export interface PatchTaskInput extends CommandContext {
   acceptanceCriteria?: AcceptanceCriterion[];
   pointsEstimate?: number | null;
   dueDate?: string | null;
+  /** Explicit `null` CLEARS, exactly as `dueDate` does. */
+  startDate?: string | null;
 }
 
 /**
