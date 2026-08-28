@@ -82,6 +82,17 @@ export interface RequestContext {
   readonly headers: IncomingHttpHeaders;
   readonly method: string;
   readonly path: string;
+  /**
+   * Aborted when THE CALLER STOPS WAITING — the socket closed before the
+   * response finished. Not aborted by a response completing normally.
+   *
+   * Most handlers never touch it: the database layer reads the same signal
+   * ambiently (`db/request-scope.ts`) and cancels abandoned READS on its own,
+   * which is where the waste actually was. It is exposed here for handlers that
+   * do their own long work — a fan-out, an outbound fetch — and would otherwise
+   * have no way to notice that nobody wants the result.
+   */
+  readonly signal: AbortSignal;
 }
 
 /** A JSON result — the frame wraps `data` in the DEV-6 `{data, requestId}` envelope. */

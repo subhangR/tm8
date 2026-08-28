@@ -54,6 +54,16 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   '53400': 'limit_exceeded',
   '54000': 'payload_too_large',
   '0A000': 'not_implemented',
+  // 57014 query_canceled — the statement was stopped before it finished. Two
+  // things raise it and both belong here: `statement_timeout` firing (the
+  // server's backstop, `DB_STATEMENT_TIMEOUT_MS`), and the cancel a read gets
+  // when its client hangs up (db/cancel.ts). `upstream_unavailable` is right
+  // for either — the node produced no answer, and asking again is a real
+  // attempt, so it is retryable. Mapping it also keeps the deliberate case out
+  // of `translateDbError`'s "unmapped SQLSTATE" console.error, which would
+  // otherwise log a line per abandoned read: noise proportional to load,
+  // arriving exactly when the log is least readable.
+  '57014': 'upstream_unavailable',
 };
 
 /** Translate a driver error carrying a SQLSTATE into the taxonomy. */

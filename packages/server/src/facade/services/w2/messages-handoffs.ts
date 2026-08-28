@@ -24,6 +24,7 @@ import { incomingMessageInjection, utf8Bytes, type IncomingMessageFacts } from '
 
 import { MICROS } from '../../entity-read.js';
 import type { DbClaims, Querier } from '../../../db/types.js';
+import { runDetached } from '../../../db/request-scope.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import {
   claimsFor,
@@ -671,7 +672,14 @@ export class W2MessagesHandoffsService {
       }
       return existing.promise;
     }
-    const promise = this.runHandoffDispatch(claims, dispatch);
+    // DETACHED (db/request-scope.ts) because this promise is CACHED in
+    // `pendingHandoffs` and handed to whoever asks next: a second caller with
+    // the same fingerprint awaits the promise the FIRST caller created. Leaving
+    // it in the first request's scope would let that caller's disconnect cancel
+    // a dispatch a different, still-connected caller is waiting on. The first
+    // caller still awaits it and still sees its own failures — detaching
+    // removes the cancellation inheritance, not the result.
+    const promise = runDetached(() => this.runHandoffDispatch(claims, dispatch));
     const pending = { fingerprint: fp, promise };
     this.pendingHandoffs.set(dispatch.handoffId, pending);
     const cleanup = (): void => {

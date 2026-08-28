@@ -42,6 +42,7 @@ export { loadActivity } from './handlers/activity.js';
 
 import { HandlerRegistry } from './registry.js';
 import type { Db } from '../db/types.js';
+import { runDetached } from '../db/request-scope.js';
 import type { ServerConfig } from '../http/config.js';
 import { createLoopbackOwnerResolver } from '../identity/loopback.js';
 import type { FacadeDeps } from './deps.js';
@@ -213,7 +214,14 @@ export function registerFacadeHandlers(
       ?? (async (ctx) => (ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null)),
     ...(deps.chat ? {
       onMessagesCommitted: (identityId, messages) => {
-        void deps.chat!.orchestrator.wakeForMessages(identityId, messages);
+        // DETACHED: waking an agent outlives the post that triggered it, and is
+        // not what the poster's socket is waiting for. Without this, the
+        // poster closing their tab would cancel the wake's reads —
+        // db/request-scope.ts explains why the scope is ambient and why
+        // crossing out of it has to be said out loud.
+        runDetached(() => {
+          void deps.chat!.orchestrator.wakeForMessages(identityId, messages);
+        });
       },
     } : {}),
   });
