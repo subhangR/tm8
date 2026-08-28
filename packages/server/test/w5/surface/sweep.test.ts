@@ -857,7 +857,28 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // THIS NUMBER ASSUMES THIS BRANCH IS THE NEXT MIGRATION TO LAND. If #517
     // lands first it adds two files and the merged tree is 161, not 159.
     // Re-measure on the merged tree; do not adjust by arithmetic.
-    expect(server.appliedMigrations.length).toBe(159);
+    //
+    // 159 -> 161 (2026-08-28), and TWO steps again with only one of them mine.
+    // This branch owns 173_linked_mirrors_schedule_their_own_hydration.sql. The
+    // other +1 is main's own: #523 landed 172_task_start_date.sql while this
+    // branch was open and did NOT move this pin, so main is red here at 159
+    // before this branch is even considered — the same arrears the rows above
+    // record for #447 and #504.
+    //
+    // RENUMBERED 172 -> 173 BEFORE LANDING, and this is the fourth time this
+    // file has had to record that. This branch originally took 172 by checking
+    // every open PR for a db/migrations addition — correct at the time, 169 and
+    // 170 being spoken for by #517 and 171 being main's highest. #523 then
+    // merged 172 from a branch that was open in parallel, which no CI run on
+    // either side could see: `pull_request` builds the merge of ONE pr into its
+    // base, and the duplicate exists only in a tree neither build constructs.
+    // Caught by re-deriving the union against origin/main AFTER #523 landed,
+    // not by a gate. MEASURED, never derived by arithmetic:
+    //   origin/main @ 2a773fdc: ls db/migrations/*.sql | wc -l -> 160 (pin says 159, RED on main)
+    //   this branch rebased:    ls db/migrations/*.sql | wc -l -> 161
+    // Same caveat as ever: if #517 lands first it adds two files and the merged
+    // tree is 163, not 161. Re-measure on the merged tree.
+    expect(server.appliedMigrations.length).toBe(161);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
