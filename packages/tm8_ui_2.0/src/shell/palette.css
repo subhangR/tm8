@@ -20,6 +20,9 @@
 }
 
 .cv2-root .pal {
+  /* Overflow guard (fixmap): percentage chain, never vh (Chrome zoom law shell.css:949). */
+  max-height: 100%;
+  overflow-y: auto;
   width: 560px;
   max-width: calc(100vw - 32px);
   display: flex;
