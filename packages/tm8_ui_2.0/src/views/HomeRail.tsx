@@ -24,10 +24,15 @@
  * hold their own `useState` and drift apart on the first toggle, so the flag
  * is READ ONCE in the host and handed down. The storage key is unchanged.
  */
-import { KindIcon, type HomeRailGroup } from '../domain';
+import {
+  entityNavigationLabel,
+  type EntityNavigationGroup,
+  KindIcon,
+} from '../domain';
+import { EntityNavigationMetrics } from '../navigation';
 
 export interface HomeRailProps {
-  groups: readonly HomeRailGroup[];
+  groups: readonly EntityNavigationGroup[];
   /** The active KIND root, or null while Chats is the root (no rail row is
    *  active then — chats live in the list header, not the rail). */
   activeKind: string | null;
@@ -38,6 +43,8 @@ export interface HomeRailProps {
 }
 
 export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleCollapsed }: HomeRailProps) {
+  const kindCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+
   return (
     <nav
       className={`hr-rail${collapsed ? ' hr-rail--collapsed' : ''}`}
@@ -45,23 +52,50 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
       data-testid="home-rail"
       data-collapsed={collapsed ? 'true' : 'false'}
     >
+      {!collapsed ? (
+        <div className="hr-rail__mast k-hero k-accent-top">
+          <span className="hr-rail__mast-label k-label">Browse</span>
+          <span className="hr-rail__mast-count">{kindCount} entity types</span>
+        </div>
+      ) : null}
       <div className="hr-rail__scroll">
         {groups.map((group) => (
-          <div key={group.id} className="hr-rail__group" role="group" aria-label={group.label}>
-            {!collapsed ? <span className="hr-rail__eyebrow">{group.label}</span> : null}
-            {group.kinds.map((config) => (
+          <div
+            key={group.id}
+            className="hr-rail__group"
+            role="group"
+            aria-label={`${group.label}: ${group.description}`}
+          >
+            {!collapsed ? (
+              <span className="hr-rail__grouphead">
+                <span className="hr-rail__eyebrow">{group.label}</span>
+                <EntityNavigationMetrics
+                  total={group.total}
+                  unseen={group.unseen}
+                  live={group.live}
+                />
+              </span>
+            ) : null}
+            {group.items.map((item) => (
               <button
-                key={config.kind}
+                key={item.config.kind}
                 type="button"
-                className="hr-rail__row"
-                aria-current={config.kind === activeKind ? 'true' : undefined}
-                title={config.labelPlural}
-                onClick={() => onSelect(config.kind)}
+                className="hr-rail__row k-press"
+                aria-current={item.config.kind === activeKind ? 'page' : undefined}
+                aria-label={entityNavigationLabel(item)}
+                title={entityNavigationLabel(item)}
+                onClick={() => onSelect(item.config.kind)}
               >
                 <span className="hr-rail__glyph" aria-hidden>
-                  <KindIcon kind={config.kind} />
+                  <KindIcon kind={item.config.kind} />
                 </span>
-                <span className="hr-rail__label">{config.labelPlural}</span>
+                <span className="hr-rail__label">{item.config.labelPlural}</span>
+                <EntityNavigationMetrics
+                  total={item.counts?.total}
+                  unseen={item.counts?.unseen}
+                  live={item.live}
+                  className="hr-rail__metrics"
+                />
               </button>
             ))}
           </div>
@@ -69,11 +103,13 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
       </div>
       <button
         type="button"
-        className="hr-rail__toggle"
+        className="hr-rail__toggle k-press"
         aria-expanded={!collapsed}
+        aria-label={collapsed ? 'Expand entity navigation' : 'Collapse entity navigation'}
         title={collapsed ? 'Expand the rail' : 'Collapse the rail'}
         onClick={onToggleCollapsed}
       >
+        {!collapsed ? <span className="hr-rail__toggle-label">Collapse</span> : null}
         <span aria-hidden>{collapsed ? '»' : '«'}</span>
       </button>
     </nav>

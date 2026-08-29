@@ -50,6 +50,7 @@ export const LEGACY_HOME_TAB_KINDS: Readonly<Record<string, string>> = {
 interface HomeRailGroupSpec {
   id: string;
   label: string;
+  description: string;
   kinds: readonly string[];
 }
 
@@ -63,16 +64,19 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
   {
     id: 'work',
     label: 'Work',
+    description: 'Plan, run, and ship the work in this space.',
     kinds: ['task', 'work_session', 'doc', 'project', 'pull_request', 'worktree', 'commit'],
   },
   {
     id: 'library',
     label: 'Library',
+    description: 'Reusable context, resources, and automations.',
     kinds: ['file', 'artifact', 'memory', 'collection', 'spell', 'skill', 'loop'],
   },
   {
     id: 'people',
     label: 'People',
+    description: 'Teammates, memberships, and shared conversations.',
     kinds: ['team_member', 'member', 'channel'],
   },
 ];
@@ -80,6 +84,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
 export interface HomeRailGroup {
   id: string;
   label: string;
+  description: string;
   kinds: readonly KindConfig[];
 }
 
@@ -91,6 +96,7 @@ export function homeRailGroups(): HomeRailGroup[] {
   const groups: HomeRailGroup[] = HOME_RAIL_GROUP_SPINE.map((spec) => ({
     id: spec.id,
     label: spec.label,
+    description: spec.description,
     kinds: spec.kinds.flatMap((kind) => {
       const config = byKind.get(kind);
       if (!config) return [];
@@ -99,7 +105,14 @@ export function homeRailGroups(): HomeRailGroup[] {
     }),
   }));
   const rest = eligible.filter((config) => !placed.has(config.kind));
-  if (rest.length > 0) groups.push({ id: 'more', label: 'More', kinds: rest });
+  if (rest.length > 0) {
+    groups.push({
+      id: 'more',
+      label: 'More',
+      description: 'Additional entity types configured for this space.',
+      kinds: rest,
+    });
+  }
   return groups.filter((group) => group.kinds.length > 0);
 }
 
