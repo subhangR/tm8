@@ -13,14 +13,21 @@ function ruleBody(selector: string): string {
 }
 
 describe('MaestroTaskTile geometry contract', () => {
-  it('reserves a five-slot cluster from its rendered child count at each floating breakpoint', () => {
+  it('charges hidden controls no title width and reserves their measured width only when revealed', () => {
+    const tile = ruleBody('.cv2-root .pn-tt');
+    expect(tile).toMatch(/--tt-actions-reserve:\s*8px/);
+    expect(tile).toMatch(/--tt-actions-revealed-reserve:\s*35px/);
+
     const fiveSlots = ':has(> .pn-tt__actions > :nth-child(5):last-child)';
     const escaped = fiveSlots.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     expect(CSS).toMatch(
-      new RegExp(`${escaped}\\s*\\{\\s*--tt-actions-reserve:\\s*131px`),
+      new RegExp(`${escaped}\\s*\\{\\s*--tt-actions-revealed-reserve:\\s*131px`),
     );
-    expect(CSS).toMatch(/@container task-tile \(max-width: 360px\)[\s\S]*?:nth-child\(5\):last-child\)\s*\{\s*--tt-actions-reserve:\s*127px/);
-    expect(CSS).toMatch(/@container task-tile \(max-width: 200px\)[\s\S]*?:nth-child\(5\):last-child\)\s*\{\s*--tt-actions-reserve:\s*104px/);
+    expect(CSS).toMatch(/@container task-tile \(max-width: 360px\)[\s\S]*?:nth-child\(5\):last-child\)\s*\{\s*--tt-actions-revealed-reserve:\s*127px/);
+    expect(CSS).toMatch(/@container task-tile \(max-width: 200px\)[\s\S]*?:nth-child\(5\):last-child\)\s*\{\s*--tt-actions-revealed-reserve:\s*104px/);
+
+    expect(CSS).toMatch(/\.pn-tt:hover \.pn-tt__main,[\s\S]*?\.pn-tt:focus-within \.pn-tt__main,[\s\S]*?\.pn-tt\[data-details='open'\] \.pn-tt__main\s*\{\s*--tt-actions-reserve:\s*var\(--tt-actions-revealed-reserve\)/);
+    expect(CSS).toMatch(/@media \(pointer: coarse\)[\s\S]*?\.pn-tt__main\s*\{\s*--tt-actions-reserve:\s*var\(--tt-actions-revealed-reserve\)/);
   });
 
   it('keeps the disclosure in flow instead of positioning it over status', () => {
