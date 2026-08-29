@@ -29,7 +29,7 @@
   position: relative;
   overflow: hidden;
   border-bottom-color: var(--pn-line);
-  background: color-mix(in srgb, var(--pn-brand) 3%, var(--pn-card));
+  background: var(--pn-card);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-crumb {
@@ -53,10 +53,10 @@
   display: grid;
   place-items: center;
   box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--pn-brand) 24%, var(--pn-line));
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-md);
-  background: var(--pn-brand-soft);
-  color: var(--pn-brand);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-header__ref {
@@ -64,7 +64,7 @@
   padding: 2px 6px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-xs);
-  background: color-mix(in srgb, var(--pn-card) 72%, transparent);
+  background: var(--pn-card);
   font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
@@ -117,28 +117,34 @@
   box-sizing: border-box;
   padding-inline: var(--pn-space-3);
   border: 0;
-  border-radius: var(--pn-r-sm);
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   color: var(--pn-ink-3);
   transition:
-    background var(--pn-dur-fast) var(--pn-ease-standard),
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
     color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-tab:hover {
-  background: var(--pn-hover);
+  background: transparent;
+  color: var(--pn-ink);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-tab--active {
-  background: var(--pn-brand-soft);
-  color: var(--pn-brand);
+  background: transparent;
+  border-bottom-color: var(--pn-brand);
+  color: var(--pn-ink);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-tab__count {
-  min-inline-size: 18px;
-  padding: 1px 5px;
-  border-radius: var(--pn-r-pill);
-  background: color-mix(in srgb, var(--pn-ink) 7%, transparent);
-  color: currentColor;
+  min-inline-size: 0;
+  max-inline-size: 5ch;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--pn-ink-4);
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: center;
 }
 
@@ -177,6 +183,20 @@
   background: var(--pn-brand-2);
 }
 
+/* One verb leads. Later primary-labelled registry actions remain available,
+   but render as neutral bordered buttons so a row never shouts two answers. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-actions--inline .pn-btn--primary ~ .pn-btn--primary {
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-actions--inline .pn-btn--primary ~ .pn-btn--primary:hover {
+  border-color: var(--pn-line-2);
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end .kit-iconbtn {
   min-inline-size: 28px;
   min-block-size: 28px;
@@ -188,7 +208,7 @@
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls {
   padding: 10px var(--pn-space-4);
-  background: color-mix(in srgb, var(--pn-surface) 82%, var(--pn-card));
+  background: var(--pn-card);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure,
@@ -222,7 +242,7 @@
   padding: 3px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
-  background: color-mix(in srgb, var(--pn-card) 76%, transparent);
+  background: var(--pn-card);
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scrollbar-width: thin;
@@ -270,14 +290,9 @@
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-body {
   min-inline-size: 0;
-  padding: var(--pn-space-6) var(--pn-space-5) var(--pn-space-8);
-  gap: var(--pn-space-4);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--pn-brand) 3%, var(--pn-paper)),
-      var(--pn-paper) 180px
-    );
+  padding: var(--pn-space-4) var(--pn-space-4) var(--pn-space-6);
+  gap: var(--pn-space-3);
+  background: var(--pn-paper);
   scrollbar-gutter: stable;
 }
 
@@ -287,10 +302,11 @@
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-grid, .sb-description, .sb-section, .pn-fold) {
   box-sizing: border-box;
-  padding: var(--pn-space-5);
-  border-radius: var(--pn-r-lg);
-  border-color: color-mix(in srgb, var(--pn-line-2) 68%, var(--pn-line));
-  box-shadow: var(--pn-sh-sm);
+  padding: var(--pn-space-3);
+  border-radius: var(--pn-r-md);
+  border-color: var(--pn-line);
+  background: var(--pn-card);
+  box-shadow: none;
   /* A CARD IS NEVER SHRUNK TO HIDE ITS CONTENT. `.sb-body` is a fixed-height
      scrolling flex column, so every card here is a flex item with the default
      `flex-shrink: 1`. That is survivable only while the item keeps its
@@ -307,27 +323,24 @@
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-description, .sb-section, .pn-fold) {
-  transition:
-    border-color var(--pn-dur-fast) var(--pn-ease-standard),
-    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-description, .sb-section, .pn-fold):focus-within {
-  border-color: color-mix(in srgb, var(--pn-focus) 38%, var(--pn-line));
-  box-shadow: var(--pn-sh-md);
+  border-color: var(--pn-focus);
+  box-shadow: none;
 }
 
 /* Compact facts remain deliberately quieter than the brief and progress. */
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-grid {
-  gap: var(--pn-space-1);
-  background: color-mix(in srgb, var(--pn-card) 74%, transparent);
+  gap: 0;
+  background: var(--pn-card);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__cell {
-  min-block-size: 36px;
+  min-block-size: 42px;
   box-sizing: border-box;
-  padding-block: var(--pn-space-1);
-  padding-inline: 0;
+  padding: var(--pn-space-2);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__label {
@@ -365,7 +378,7 @@
   padding: var(--pn-space-3) var(--pn-space-4);
   border-color: var(--pn-line-2);
   border-radius: var(--pn-r-md);
-  background: color-mix(in srgb, var(--pn-card) 94%, transparent);
+  background: var(--pn-card);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-body);
   line-height: 1.65;
@@ -396,13 +409,13 @@
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-description .fn-tile__face {
-  background: color-mix(in srgb, var(--pn-card) 82%, transparent);
+  background: var(--pn-card);
   border-radius: var(--pn-r-md);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-description .fn-tile--clip {
   border: 1px solid var(--pn-line);
-  background: color-mix(in srgb, var(--pn-card) 78%, transparent);
+  background: var(--pn-card);
 }
 
 /* --- Acceptance / definition of done ------------------------------------ */
@@ -428,9 +441,11 @@
   grid-template-columns: 1fr minmax(180px, 44%);
   align-items: center;
   gap: var(--pn-space-4);
-  padding: var(--pn-space-4);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
+  padding-block: var(--pn-space-2) var(--pn-space-3);
+  padding-inline: 0;
+  border: 0;
+  border-bottom: 1px solid var(--pn-line);
+  border-radius: 0;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__summary-copy {
@@ -545,10 +560,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
-  padding: var(--pn-space-3);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  background: color-mix(in srgb, var(--pn-surface) 58%, transparent);
+  padding: var(--pn-space-2) 0 0;
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+  border-radius: 0;
+  background: transparent;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__grouphead {
@@ -559,13 +575,16 @@
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__groupcount {
-  min-inline-size: 22px;
-  padding: 1px 6px;
-  border-radius: var(--pn-r-pill);
-  background: color-mix(in srgb, var(--pn-ink) 7%, transparent);
+  min-inline-size: 0;
+  max-inline-size: 5ch;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: center;
 }
 
@@ -595,12 +614,12 @@
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip:hover {
-  border-color: color-mix(in srgb, var(--pn-brand) 34%, var(--pn-line));
+  border-color: var(--pn-line-2);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip--live {
-  background: color-mix(in srgb, var(--pn-run) 9%, var(--pn-card));
-  border-color: color-mix(in srgb, var(--pn-run) 30%, var(--pn-line));
+  background: var(--pn-card);
+  border-color: var(--pn-line-2);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip__top {
@@ -702,7 +721,7 @@
   padding: 3px var(--pn-space-2);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
-  background: color-mix(in srgb, var(--pn-card) 72%, transparent);
+  background: var(--pn-card);
   font-size: var(--pn-fs-fine);
   font-weight: 600;
   color: var(--pn-ink-3);
@@ -727,12 +746,7 @@
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-feed {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--pn-brand) 2%, var(--pn-card)),
-      var(--pn-card) 140px
-    );
+  background: var(--pn-card);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-row--activity {
@@ -742,15 +756,16 @@
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-composer {
   padding: var(--pn-space-4) var(--pn-space-5) var(--pn-space-3);
-  background: color-mix(in srgb, var(--pn-surface) 84%, var(--pn-card));
-  box-shadow: 0 -2px 8px color-mix(in srgb, var(--pn-ink) 5%, transparent);
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  box-shadow: none;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-composer__card {
   border-color: var(--pn-line-2);
-  border-radius: var(--pn-r-lg);
+  border-radius: var(--pn-r-md);
   background: var(--pn-card);
-  box-shadow: var(--pn-sh-md);
+  box-shadow: none;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-host-error {
@@ -776,10 +791,10 @@
   flex-direction: row;
   align-items: center;
   gap: var(--pn-space-2);
-  padding: 3px;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  background: color-mix(in srgb, var(--pn-surface) 76%, transparent);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end > .hon-disabled-group .hon-disabled--inline {
@@ -821,22 +836,22 @@
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-skel--card {
   block-size: 96px;
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-lg);
+  border-radius: var(--pn-r-md);
   background: var(--pn-card);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-state {
   margin: var(--pn-space-6);
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-lg);
+  border-radius: var(--pn-r-md);
   background: var(--pn-card);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-foot {
   block-size: 32px;
-  background: color-mix(in srgb, var(--pn-surface) 88%, var(--pn-card));
+  background: var(--pn-card);
 }
 
 /* One task-local focus grammar. It deliberately includes every authoring and
@@ -885,12 +900,12 @@
   }
 
   .cv2-root .pn-panel[data-archetype='subtree'] .sb-body {
-    padding: var(--pn-space-4) var(--pn-space-3) var(--pn-space-6);
+    padding: var(--pn-space-3) var(--pn-space-3) var(--pn-space-5);
     gap: var(--pn-space-3);
   }
 
   .cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-grid, .sb-description, .sb-section, .pn-fold) {
-    padding: var(--pn-space-4);
+    padding: var(--pn-space-3);
   }
 
   .cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__summary {
@@ -927,6 +942,10 @@
 
   .cv2-root .pn-panel[data-archetype='subtree'] .pn-tab {
     padding-inline: var(--pn-space-2);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-tab__count {
+    display: none;
   }
 
   .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls {

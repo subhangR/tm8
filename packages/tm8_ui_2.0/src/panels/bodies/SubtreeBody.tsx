@@ -1191,7 +1191,7 @@ function RunsStrip({
             /* The MEASURED-LIVE group keeps its test seam and renders only on
                a live verdict — never from the stored status. */
             <div
-              className="sb-runs__group sb-runs__group--live k-tint-run"
+              className="sb-runs__group sb-runs__group--live"
               data-testid="live-session-section"
             >
               <RunGroupHead label="Live now" count={liveShown.length} />
@@ -1281,7 +1281,7 @@ function RunChip({
   return (
     <button
       type="button"
-      className={live ? 'sb-runchip sb-runchip--live k-lift k-press' : 'sb-runchip k-lift k-press'}
+      className={live ? 'sb-runchip sb-runchip--live k-press' : 'sb-runchip k-press'}
       data-testid={live ? 'live-session-card' : 'run-row'}
       title={name}
       aria-label={name}

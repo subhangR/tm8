@@ -373,7 +373,7 @@
      hidden` below is what makes this cut the terminal's black box, so the
      canvas corners follow this number and no other. */
   border-radius: 6px;
-  box-shadow: var(--pn-sh-md);
+  box-shadow: none;
   overflow: hidden;
 }
 .cv2-root .pn-panel--peek { width: 440px; }
@@ -949,7 +949,7 @@
   background: var(--pn-card);
   color: var(--pn-ink);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  box-shadow: none;
 }
 
 /* The graph arm gives the canvas the whole body. A canvas measures itself from
@@ -4385,24 +4385,22 @@
    · hex-ban.test.ts — colours are var()/color-mix only.
    ========================================================================== */
 
-/* --- W3C·1 CONTENT SECTIONS AS GLASS CARDS --------------------------------
+/* --- W3C·1 CONTENT SECTIONS AS BOUNDED GROUPS -----------------------------
    The subtree Content tab's section blocks — MetaGrid (`.sb-grid`),
    description (`.sb-description`), runs (`.sb-section`) and every fold
    (acceptance / subtree / git / memories / collections / linked, all
-   `.pn-fold`) — each become one card. The 12px between cards is `.pn-body`'s
-   own flex gap; nothing re-declares it. Scoped to `.sb-body` so the
-   artifact frame (`block-artifact-preview`) and the terminal body keep
-   their full-bleed treatment. */
+   `.pn-fold`) — each become one plain bounded group. One 1px edge carries the
+   grouping; neither tint, blur nor shadow competes with the content. Scoped
+   to `.sb-body` so the artifact frame (`block-artifact-preview`) and the
+   terminal body keep their full-bleed treatment. */
 .cv2-root .sb-body > .sb-grid,
 .cv2-root .sb-body > .sb-description,
 .cv2-root .sb-body > .sb-section,
 .cv2-root .sb-body > .pn-fold {
-  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
-  -webkit-backdrop-filter: blur(9px);
-  backdrop-filter: blur(9px);
+  background: var(--pn-card);
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-lg);
-  box-shadow: var(--pn-sh-sm);
+  border-radius: var(--pn-r-md);
+  box-shadow: none;
   padding: var(--pn-space-3);
   /* A CARD KEEPS THE HEIGHT ITS CONTENT ASKED FOR. `.pn-body` is a flex
      COLUMN that scrolls (`overflow: auto`, panels.css ~850), and a flex item's
@@ -4432,29 +4430,38 @@
   border-top: 0;
 }
 
-/* --- W3C·2 PROPERTIES ROWS -------------------------------------------------
-   The MetaGrid's two-column cell grid becomes a single column of hover rows:
-   eyebrow label left, value right, held to the shared 29px list-row floor.
-   `box-sizing: border-box` in the SAME block — the floor must measure the
-   padded box (row-height-parity reads this file as text). */
+/* --- W3C·2 COMPACT PROPERTIES GRID -----------------------------------------
+   Facts stay grouped inside one card, in two columns. Labels lead values and
+   hairlines organise the cells without turning static metadata into a stack
+   of hoverable pseudo-controls. `box-sizing: border-box` remains in the SAME
+   block because row-height-parity reads this file as text. */
 .cv2-root .sb-body > .sb-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
 }
 .cv2-root .sb-body .sb-grid__cell {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--pn-space-2);
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
   min-height: var(--pn-listrow-h);
   box-sizing: border-box;
-  padding: 0 var(--pn-space-2);
-  border-radius: var(--pn-r-sm);
-  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+  padding: var(--pn-space-2);
+  border-right: 1px solid var(--pn-line);
+  border-bottom: 1px solid var(--pn-line);
 }
-.cv2-root .sb-body .sb-grid__cell:hover {
-  background: var(--pn-hover);
+.cv2-root .sb-body .sb-grid__cell:nth-child(even),
+.cv2-root .sb-body .sb-grid__cell:last-child {
+  border-right: 0;
+}
+.cv2-root .sb-body .sb-grid__cell:last-child,
+.cv2-root .sb-body .sb-grid__cell:nth-last-child(2):nth-child(odd) {
+  border-bottom: 0;
+}
+.cv2-root .sb-body .sb-grid__cell:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 .cv2-root .sb-body .sb-grid__label {
   flex: none;
@@ -4508,23 +4515,13 @@
 
 /* --- W3C·4 ACCEPTANCE ROWS -------------------------------------------------
    Criterion rows join the 29px floor (border-box in-block, same guard as
-   above). The NEXT criterion — the first unchecked one — carries a 3px
-   brand accent bar: `:has(:not(:checked))` lights every unchecked row, the
-   sibling rule below puts out all but the first. Checked rows dim to .55;
-   the strike itself stays on `.sb-criterion__text--done` (subtree-body.css).
-   PANEL scope is deliberately kind-blind — the lifecycle split
-   (`data-lifecycle`) is a TILE fact, not an acceptance-row one. */
+   above). Completion already has a checkbox and struck copy, so no extra
+   brand rail is sprayed onto the first incomplete row. */
 .cv2-root .sb-body .sb-criterion {
   min-height: var(--pn-listrow-h);
   box-sizing: border-box;
   padding: 3px var(--pn-space-2);
-  border-left: 3px solid transparent;
-}
-.cv2-root .sb-body .sb-criterion:has(.sb-criterion__box:not(:checked)) {
-  border-left-color: var(--pn-brand);
-}
-.cv2-root .sb-body .sb-criterion:has(.sb-criterion__box:not(:checked)) ~ .sb-criterion:has(.sb-criterion__box:not(:checked)) {
-  border-left-color: transparent;
+  border-left: 0;
 }
 .cv2-root .sb-body .sb-criterion:has(.sb-criterion__box:checked) {
   opacity: 0.55;
