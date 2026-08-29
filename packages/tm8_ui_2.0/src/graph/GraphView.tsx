@@ -570,7 +570,7 @@ export function GraphView(props: GraphViewProps) {
       // edge svg is pointer-events:none, so hits land on the canvas div), so
       // the hand grabbed nothing. The node card is now a role=button DIV, so
       // guard on .gv-node too — otherwise a card press would start a pan.
-      if ((event.target as HTMLElement).closest('button, .gv-node')) return;
+      if ((event.target as HTMLElement).closest('button, summary, .gv-node')) return;
       setPanEase(false); // dragging must track the pointer with no transition lag
       dragState.current = { startX: event.clientX, startY: event.clientY, tx: tf.x, ty: tf.y };
       (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
@@ -592,6 +592,10 @@ export function GraphView(props: GraphViewProps) {
 
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
+      // The Legend moved inside the viewport so its top edge follows the
+      // variable-height honesty banner. Keep its own scroll wheel: canvas zoom
+      // has no claim on chrome positioned over the canvas.
+      if ((event.target as HTMLElement).closest('.gv-legend')) return;
       event.preventDefault();
       setPanEase(false); // manual zoom is instant, never eased
       const { left, top } = vpMetrics();
@@ -612,7 +616,7 @@ export function GraphView(props: GraphViewProps) {
   // chip, or ticker row — single-click selection and pointer-drag are untouched.
   const onDoubleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if ((event.target as HTMLElement).closest('button, .gv-node')) return;
+      if ((event.target as HTMLElement).closest('button, summary, .gv-node')) return;
       setPanEase(false); // discrete zoom, instant
       const { left, top } = vpMetrics();
       const cx = event.clientX - left;
@@ -704,6 +708,9 @@ export function GraphView(props: GraphViewProps) {
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (
+        (event.target as HTMLElement).closest('.gv-legend, .gv-filterdock, .gv-zoomdock')
+      ) return;
       const pan = (dx: number, dy: number) => {
         setPanEase(false);
         setTf((prior) => ({ ...prior, x: prior.x + dx, y: prior.y + dy }));
@@ -1480,9 +1487,9 @@ export function GraphView(props: GraphViewProps) {
 }
 
 /**
- * FilterSelect — a compact multi-select dropdown for the toolbar (user
- * ruling 2026-07-29): face shows `label · visible/total ▾`; the popover is a
- * checkbox list with a "show all" escape once anything is hidden. Esc and
+ * FilterSelect — a compact multi-select dropdown for the toolbar. The face
+ * shows its label at rest and adds `visible/total` only after filtering; the
+ * popover is a checkbox list with a "show all" escape once anything is hidden. Esc and
  * outside-click dismiss (the panels' useDismissable, same behavior as every
  * popover in the app). All state stays the caller's off-set — this renders
  * and forwards, it decides nothing.

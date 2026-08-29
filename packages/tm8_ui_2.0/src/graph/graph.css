@@ -83,8 +83,8 @@
   text-decoration: line-through;
 }
 
-/* Action chips (re-layout, focus breadcrumb) — a gv-filter with a brand-soft
-   fill so it reads as an available action rather than a passive filter. */
+/* Action chips (re-layout, focus breadcrumb) use one accent border rather than
+   another tinted fill, so they read as available without adding a new plane. */
 .gv-filter--action {
   color: var(--pn-brand-2);
   background: var(--pn-card);
@@ -735,10 +735,9 @@
   position: relative;
   flex: none;
 }
-/* Dropdown TRIGGERS are labels wearing the compact button grammar
-   (RECLASSIFICATION 2026-08-29): 28px, r-sm, ui 600 at fs-sm, bordered,
-   hover fill. The visible/total figures inside stay honest either way —
-   only the face's type changed. */
+/* Dropdown TRIGGERS are labels wearing the compact button grammar. An
+   unfiltered trigger carries no redundant total; changed filters disclose the
+   visible/total state after the name. */
 .gv-select__face {
   appearance: none;
   display: inline-flex;
@@ -840,10 +839,9 @@
 }
 
 /* ==========================================================================
-   FLOW-CARD CANVAS (2026-08-28) — the Stitch-direction rework: rich kind-
-   colored entity cards on a dotted grid, curved edges, floating legend /
-   filter dock / zoom dock. Colors resolve through the Astryx palette family
-   tokens (falling back to bridged --pn-* where a family has no analog), so
+   FLOW-CARD CANVAS — calm pass: neutral entity cards on a quiet dotted grid,
+   one organized kind edge, curved edges and compact canvas docks. Family
+   colors resolve through Astryx tokens (falling back to bridged --pn-*), so
    both themes come for free and no hex lives here.
    ========================================================================== */
 
