@@ -433,8 +433,23 @@ export function CraftScreen({
             threads={threads}
             anchorId={selectedId}
             selectedId={activeThreadId}
-            onSelect={(id) => setRequestedThreadId(id)}
-            onNewChat={() => setRequestedThreadId(null)}
+            /* MIRROR OUR OWN VERBS EAGERLY. The surface suppresses the echo
+               publish for selections the HOST just pushed down (its guard's
+               contract is "the host already knows") — so a choice made HERE
+               must update `activeThreadId` here, or the picker title waits
+               for a publish that is deliberately never sent. That is exactly
+               how ＋ became a dead button: it cleared the request, the surface
+               obeyed and suppressed the echo, and the title stayed on the old
+               thread. If the surface resolves somewhere else, its publish
+               (which only fires on divergence) corrects the mirror. */
+            onSelect={(id) => {
+              setActiveThreadId(id);
+              setRequestedThreadId(id);
+            }}
+            onNewChat={() => {
+              setActiveThreadId(null);
+              setRequestedThreadId(null);
+            }}
           />
           <div className="crf-chat__body">
             <ChatHomeSurface

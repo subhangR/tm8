@@ -144,10 +144,18 @@ describe('the craft studio', () => {
         edges: [{ src: 'b', dst: 'a', type: 'depends_on' }],
       },
     });
-    await waitFor(() => expect(view.getByTestId('crf-canvas').textContent).toContain('Ship docs'));
-    const freshCells = view.getByTestId('crf-canvas').querySelectorAll('.crf-cell--fresh');
-    expect(freshCells).toHaveLength(1);
-    expect(freshCells[0]!.textContent).toContain('Ship docs');
+    /* CONVERGE INSIDE waitFor: the fresh-glow is set by an effect AFTER the
+       commit that draws 'Ship docs', so the first frame containing the new
+       card can still glow the PREVIOUS patch's additions. React 19 keeps
+       those two commits distinct where 18 often flushed them together —
+       reading the classes at first sight of the text was reading one commit
+       too early. The glow then holds for 2600ms, so the converged state is
+       comfortably observable. */
+    await waitFor(() => {
+      const freshCells = view.getByTestId('crf-canvas').querySelectorAll('.crf-cell--fresh');
+      expect(freshCells).toHaveLength(1);
+      expect(freshCells[0]!.textContent).toContain('Ship docs');
+    });
     view.unmount();
   });
 

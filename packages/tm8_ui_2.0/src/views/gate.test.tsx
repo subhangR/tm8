@@ -376,11 +376,6 @@ describe('THE GATE — composed T0-1 master screen', () => {
       );
 
       const graph = await waitFor(() => view.getByTestId('graph-screen'));
-      // The lens control replaced the static eyebrow: the first thing the
-      // toolbar says is now which lens the canvas is under, and it must offer
-      // the escape to the whole space.
-      expect(within(graph).getByRole('group', { name: 'Graph lens' })).toBeTruthy();
-      expect(within(graph).getByRole('button', { name: 'Everything' })).toBeTruthy();
       // Widen past the 24h default before asserting on the space's entities —
       // see the docblock. This is the window control, not the lens.
       fireEvent.click(
@@ -392,6 +387,15 @@ describe('THE GATE — composed T0-1 master screen', () => {
       await waitFor(() =>
         expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0),
       );
+      // The flow-card redesign moved the lens out of the toolbar and into the
+      // floating filter dock (All Types / Active Only), which — like the
+      // legend — only exists once the canvas has placed nodes. So these are
+      // asserted AFTER the window widened, not before.
+      const filters = within(graph).getByRole('group', { name: 'Filters' });
+      expect(within(filters).getByRole('button', { name: 'All Types' })).toBeTruthy();
+      expect(
+        within(graph).getByRole('group', { name: 'Legend — click a kind to filter' }),
+      ).toBeTruthy();
       // EDGES, TOO — and this half is not decoration. `graph.query` puts
       // endpoint IDS on the wire and `loadGraph` resolves them against the
       // same response's nodes before anything reaches the store; if that
