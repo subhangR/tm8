@@ -1,33 +1,16 @@
 /* ==========================================================================
-   ASTRYX BRIDGE — Meta Astryx design system, phase-1 adoption.
-   Loads @astryxdesign CSS (all of it @layer'd, so existing un-layered tm8
-   rules always win where both apply) and remaps the `--pn-*` semantic tokens
-   onto Astryx theme tokens wherever a scope opts in via
-   `data-astryx-theme="<theme>"` on a `.cv2-root` element.
-
-   · Dark: Astryx tokens are light-dark() pairs resolved by `color-scheme`,
-     which this file pins to tm8's own scoped `[data-theme="dark"]` state —
-     the OS preference never leaks in (index.html doctrine).
-   · The remap selector doubles the attribute for a deliberate specificity
-     bump over tokens.css (this sheet is @import'd BEFORE tokens.css rules,
-     so it cannot win by source order).
-   · No hex here, by design and by law (hex-ban.test.ts): every value is a
-     var() into the Astryx theme.
-   · Type scale + motion policy (value-identical only, see
-     docs/ui/astryx-adoption.md "typography bridge"): a --pn-fs-*, --pn-lh-*,
-     --pn-track-* or --pn-ease-* token is only bridged when the Astryx var it
-     would resolve to computes to the IDENTICAL value under BOTH loaded
-     themes (neutral AND gothic — they diverge, e.g. --font-size-base is
-     14px under neutral but 16px under gothic). Checked against both theme
-     sources: only --pn-fs-fine qualifies (--font-size-xs is 10px in both).
-     Every other --pn-fs-*, all of --pn-lh-*, all of --pn-track-* (Astryx
-     ships no letter-spacing vars at all) and both --pn-ease-* stay atelier
-     — canvas-measured / no identical Astryx analog. Fallback values are
-     always the current atelier constant, so a missing var can never shift
-     a character.
-   · Unmapped on purpose otherwise (see docs/ui/astryx-adoption.md):
-     --pn-space-* (identical 4px grid already), --pn-brand-rgb (alpha
-     compositor with no var()-able Astryx analog), --pn-x-* (terminal lane).
+   ASTRYX BRIDGE - Meta Astryx design system, Kinetic-Elite posture.
+   Loads the @astryxdesign stylesheets (all of them layered, so existing
+   un-layered tm8 rules always win where both apply) and pins light-dark()
+   resolution to tm8's scoped theme. Since the 2026-08-29 owner ruling,
+   tokens.css (the Kinetic Elite ramp) is the single source of truth for
+   color, type families, radii, shadows and motion - the token mapping below
+   carries ONLY values proven identical under BOTH loaded Astryx themes.
+   History and the per-token divergence tables live in
+   docs/ui/astryx-adoption.md.
+   NOTE for editors: never write a glob ending in star-slash inside a comment
+   in this file - it closes the comment early, breaks the whole tokens.css
+   import chain, and blanks the app (2026-08-29, twice).
    ========================================================================== */
 
 @layer reset, astryx-base, astryx-theme;
@@ -46,75 +29,17 @@
   color-scheme: dark;
 }
 
-/* --- token bridge: --pn-* follows Astryx wherever the scope opts in -------
-   The second selector keeps nested `.cv2-root` re-entries (alwaysDark panels,
-   the terminal, boards that re-open the theme scope) on the bridge — without
-   it they would fall back to tokens.css atelier values. Both forms are
-   (0,3,0) so they beat every tokens.css block regardless of source order. */
+/* --- token bridge: value-identical mappings only ---------------------------
+   OWNER RULING 2026-08-29 (Kinetic Elite): the former full remap pointed
+   every token at Astryx-neutral values, which is why the Kinetic palette
+   could never render - Astryx neutral is a near-grayscale ramp whose accent
+   resolves to black. Astryx CSS stays loaded (its components read the
+   Astryx variables directly and keep working); this block keeps ONLY
+   mappings proven value-identical under BOTH loaded themes, so a theme swap
+   can never shift a pixel. Today that is exactly one token: the fine size
+   (Astryx font-size-xs is 10px under neutral AND gothic). The doubled
+   selector is kept for the day more identical values appear. */
 .cv2-root[data-astryx-theme][data-astryx-theme],
 [data-astryx-theme] .cv2-root.cv2-root {
-  /* 1 · paper & ink → Astryx surfaces and text */
-  --pn-paper: var(--color-background-body);
-  --pn-surface: var(--color-background-surface);
-  --pn-card: var(--color-background-card);
-  --pn-hover: var(--color-overlay-hover);
-  --pn-active: var(--color-overlay-pressed);
-  --pn-line: var(--color-border);
-  --pn-line-2: var(--color-border-emphasized);
-  --pn-ink: var(--color-text-primary);
-  --pn-ink-2: var(--color-text-secondary);
-  --pn-ink-3: var(--color-text-secondary);
-  --pn-ink-4: var(--color-text-disabled);
-
-  /* 2 · brass → accent */
-  --pn-brand: var(--color-accent);
-  --pn-brand-2: var(--color-text-accent);
-  --pn-brand-soft: var(--color-accent-muted);
-
-  /* 3 · functional/status (word + color doctrine unchanged) */
-  --pn-run: var(--color-success);
-  --pn-run-soft: var(--color-success-muted);
-  --pn-wait: var(--color-warning);
-  --pn-wait-soft: var(--color-warning-muted);
-  --pn-block: var(--color-error);
-  --pn-block-soft: var(--color-error-muted);
-  --pn-info: var(--color-text-blue);
-  --pn-info-soft: var(--color-background-blue);
-  --pn-idle: var(--color-text-gray);
-  --pn-idle-soft: var(--color-background-gray);
-  --pn-pr-merged: var(--color-text-purple);
-  --pn-pr-merged-soft: var(--color-background-purple);
-
-  /* 4 · type families (sizes stay canvas-measured — see 5 below) */
-  --pn-ui: var(--font-family-body);
-  --pn-serif: var(--font-family-heading);
-  --pn-mono: var(--font-family-code);
-
-  /* 5 · type scale — value-identical only (both themes checked; see header).
-     --font-size-xs is 0.625rem (10px) under neutral AND gothic — matches
-     --pn-fs-fine exactly, so it bridges. Every other --pn-fs-* diverges
-     between the two themes or has no identical Astryx size at all, so it
-     stays atelier (gap register: docs/ui/astryx-adoption.md). --pn-lh-*,
-     --pn-track-* and --pn-ease-* have no value-identical Astryx analog
-     under both themes either (Astryx ships no letter-spacing vars at all;
-     its lone easing, --ease-standard, is cubic-bezier(0.24,1,0.4,1) —
-     neither --pn-ease-out nor --pn-ease-standard) and stay atelier too. */
   --pn-fs-fine: var(--font-size-xs, 10px);
-
-  /* 6 · radii */
-  --pn-r-xs: var(--radius-inner);
-  --pn-r-sm: var(--radius-inner);
-  --pn-r-md: var(--radius-element);
-  --pn-r-lg: var(--radius-container);
-  --pn-r-pill: var(--radius-full);
-
-  /* 7 · elevation */
-  --pn-sh-sm: var(--shadow-low);
-  --pn-sh-md: var(--shadow-med);
-  --pn-sh-pop: var(--shadow-high);
-
-  /* 8 · motion */
-  --pn-dur-fast: var(--duration-fast);
-  --pn-dur-base: var(--duration-medium);
-  --pn-dur-slow: var(--duration-slow);
 }
