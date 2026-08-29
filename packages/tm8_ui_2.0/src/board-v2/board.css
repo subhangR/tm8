@@ -356,6 +356,9 @@
 .b2__stage {
   position: relative;
   flex: 1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
 }
@@ -449,23 +452,22 @@
 
 /* ---- cards ---- */
 
-/* Astryx card anatomy: card surface + hairline border, `element` radius,
-   resting low elevation that lifts one step on hover (Card `elevation`
-   grammar), all through the bridged tokens so light/dark both follow the
-   active Astryx theme. */
+/* Astryx owns the card surface now: `variant="default"` supplies its semantic
+   background and border, `padding={3}` its spacing-scale inset, and
+   `elevation="low"` its resting shadow. This class only carries behaviour and
+   tm8 state. Public Astryx tokens below lift/focus the same Card without
+   replacing its component anatomy, and resolve through both loaded themes. */
 .b2__card {
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  background: var(--pn-card);
-  padding: 10px 12px;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   cursor: grab;
-  box-shadow: var(--pn-sh-sm);
-  transition: border-color var(--pn-dur-base) var(--pn-ease-out), box-shadow var(--pn-dur-base) var(--pn-ease-out), opacity var(--pn-dur-base) var(--pn-ease-out);
+  transition: border-color var(--pn-dur-fast) var(--ease-standard), box-shadow var(--pn-dur-fast) var(--ease-standard), opacity var(--pn-dur-fast) var(--ease-standard);
 }
 
 .b2__card:hover {
-  border-color: var(--pn-line-2);
-  box-shadow: var(--pn-sh-md);
+  border-color: var(--color-border-emphasized);
+  box-shadow: var(--shadow-med);
 }
 
 .b2__card--dragging {
@@ -478,8 +480,8 @@
 }
 
 .b2__card--focused {
-  border-color: var(--pn-brand);
-  box-shadow: var(--pn-sh-sm), 0 0 0 2px var(--pn-brand-soft);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-muted), var(--shadow-low);
 }
 
 .b2__card-title {
@@ -500,7 +502,7 @@
 }
 
 .b2__card-title:hover {
-  color: var(--pn-brand);
+  color: var(--color-text-accent);
 }
 
 .b2__card-meta {
@@ -536,6 +538,26 @@
 .b2__card-accept > :first-child {
   width: 44px;
   min-width: 44px;
+}
+
+/* The card's state changes carry no information that must animate. Keep the
+   Astryx geometry and focus treatment, but remove transitions for people who
+   ask the platform for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .b2__skeleton {
+    animation: none;
+  }
+
+  .b2__card {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .b2__card--focused {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 
 /* -- v2 additions ---------------------------------------------------------- */
@@ -574,7 +596,7 @@
   inset-block: 10px;
   inset-inline-end: 12px;
   width: calc((100% - 24px - (var(--b2-cols, 1) - 1) * 12px) / var(--b2-cols, 1));
-  min-width: 272px;
+  min-width: min(272px, calc(100% - 24px));
   max-width: calc(100% - 24px);
   display: flex;
   flex-direction: column;
@@ -590,9 +612,13 @@
 }
 
 /* The panel supplies its own header and scroll; this host only bounds it. */
-.b2__panel > * {
+.b2__panel > .pn-panel {
   flex: 1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
 }
 
 /* THE ✕ STAYS INSIDE AT EVERY WIDTH DOWN TO THE 272px FLOOR.
@@ -609,9 +635,10 @@
    wrapping inside the narrower box instead of propping the row wide. The
    `.b2 .b2__panel` compound outranks `.cv2-root .pn-*` regardless of which
    stylesheet lands second. */
-.b2 .b2__panel .pn-panel { min-width: 0; }
 .b2 .b2__panel .pn-head__row { min-width: 0; }
-.b2 .b2__panel .pn-head__row > * {
+.b2 .b2__panel .pn-head__title,
+.b2 .b2__panel .au-title,
+.b2 .b2__panel .au-title-input {
   min-width: 0;
   flex-shrink: 1;
   overflow-wrap: anywhere;
@@ -619,4 +646,4 @@
 /* The bar that actually holds ✕: the tab strip is the one flexible child and
    already scrolls; the end cluster must never be pushed past the clip. */
 .b2 .b2__panel .pn-panelbar { min-width: 0; }
-.b2 .b2__panel .pn-panelbar > * { min-width: 0; }
+.b2 .b2__panel .pn-panelbar__end { min-width: 0; }
