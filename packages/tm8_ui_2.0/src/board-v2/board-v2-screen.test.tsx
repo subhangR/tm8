@@ -25,12 +25,14 @@
  *   'Wire palette to real command registry'  blocked   → in_progress
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, waitFor, within, type RenderResult } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor, within, type RenderResult } from '@testing-library/react';
 import { GateApp } from '../views/GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget } from '../routes';
-import { FIXTURE_SPACE_ID } from '../fixtures';
+import { createFixtureSeam } from '../data';
+import type { Seam } from '../data/seam';
+import { FIXTURE_SPACE_ID, taskUuidTitle } from '../fixtures';
 
 const SPACE = FIXTURE_SPACE_ID;
 const GUIDE = 'Session tree guide lines';
@@ -63,8 +65,13 @@ afterEach(() => {
   cleanup();
 });
 
-async function mountBoard(): Promise<RenderResult> {
-  const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/board-v2`)} />);
+async function mountBoard(seam?: Seam): Promise<RenderResult> {
+  const view = render(
+    <GateApp
+      routerTarget={createMemoryTarget(`#/s/${SPACE}/board-v2`)}
+      {...(seam ? { seam } : {})}
+    />,
+  );
   await waitFor(() => view.getByTestId('board-v2-screen'));
   // Loaded, not just mounted: skeletons gone means the first reads answered.
   await waitFor(() => expect(view.queryAllByTestId('b2-skeleton')).toHaveLength(0));
@@ -85,6 +92,9 @@ const column = (view: RenderResult, key: string) => {
   expect(col).toBeDefined();
   return within(col!);
 };
+
+const cardButton = (view: RenderResult, title: string): HTMLButtonElement =>
+  view.getByRole('button', { name: title }) as HTMLButtonElement;
 
 describe('the category board', () => {
   it('renders the closed four in reading order; empty categories included, no uncategorised column for a fully-categorised kind', async () => {
@@ -147,19 +157,10 @@ describe('the category board', () => {
 
   it('§8.1 — mod+arrow moves the focused card through the SAME dispatch', async () => {
     const view = await mountBoard();
-    const body = view.getByLabelText('Tasks board');
-    // Focus starts at To Do (empty); walk right to In Progress, walk DOWN to
-    // the guide-lines card (order is the server's), then move it one LEFT.
-    fireEvent.keyDown(body, { key: 'ArrowRight' });
-    const focusedIsGuide = () =>
-      view
-        .getAllByTestId('b2-card')
-        .some((c) => c.className.includes('b2__card--focused') && c.textContent?.includes(GUIDE));
-    for (let i = 0; i < 4 && !focusedIsGuide(); i += 1) {
-      fireEvent.keyDown(body, { key: 'ArrowDown' });
-    }
-    expect(focusedIsGuide()).toBe(true);
-    fireEvent.keyDown(body, { key: 'ArrowLeft', ctrlKey: true });
+    const trigger = cardButton(view, GUIDE);
+    act(() => trigger.focus());
+    expect(document.activeElement).toBe(trigger);
+    fireEvent.keyDown(trigger, { key: 'ArrowLeft', ctrlKey: true });
     await waitFor(() => {
       expect(column(view, 'to_do').getByText(GUIDE)).toBeTruthy();
       expect(column(view, 'in_progress').queryByText(GUIDE)).toBeNull();
@@ -216,7 +217,6 @@ describe('the universal kind selector', () => {
     await waitFor(() =>
       expect(column(view, 'to_do').getAllByTestId('b2-card').length).toBeGreaterThan(0));
 
-    const body = view.getByLabelText('Docs board');
     /* THE COLUMN MOVED, THE ASSERTION DID NOT. This walked four columns right
        to reach 'No status yet' and pushed LEFT out of it. Docs sit in To Do
        now — their phase-5 seed — and To Do is where focus already is, because
@@ -230,7 +230,9 @@ describe('the universal kind selector', () => {
        152) but no settable CONTROL yet" — was true when it was written and
        sat one line under an assertion that docs were uncategorised. Only one
        of those two could be right. */
-    fireEvent.keyDown(body, { key: 'ArrowRight', ctrlKey: true });
+    const trigger = within(column(view, 'to_do').getAllByTestId('b2-card')[0]!).getByRole('button');
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'ArrowRight', ctrlKey: true });
     const refusal = await waitFor(() => view.getByTestId('b2-refusal'));
     expect(refusal.textContent).toMatch(/no settable control yet/i);
     // And nothing moved: every doc still sits in To Do.
@@ -297,6 +299,105 @@ describe('the client-appended tab', () => {
 });
 
 describe('a card opens its entity ON the board', () => {
+  it('uses the Astryx Card root without losing tm8 list, drag, or containment hooks', async () => {
+    const view = await mountBoard();
+    const card = view.getAllByTestId('b2-card')[0]!;
+
+    expect(card.classList.contains('astryx-card')).toBe(true);
+    expect(card.getAttribute('data-variant')).toBe('default');
+    expect(card.getAttribute('role')).toBe('listitem');
+    expect(card.getAttribute('draggable')).toBe('true');
+    expect(card.getAttribute('data-entity')).toBeTruthy();
+    expect(within(card).getByRole('button')).toBeTruthy();
+    expect(view.getByLabelText('Tasks board').getAttribute('role')).toBe('region');
+    view.unmount();
+  });
+
+  it('keeps roving state on the actually focused card trigger', async () => {
+    const view = await mountBoard();
+    const queued = cardButton(view, 'Name the empty states');
+    act(() => queued.focus());
+
+    fireEvent.keyDown(queued, { key: 'ArrowRight' });
+
+    const focused = await waitFor(() => {
+      expect(document.activeElement).not.toBe(queued);
+      return document.activeElement as HTMLElement;
+    });
+    expect(focused.matches('[data-b2-card-trigger]')).toBe(true);
+    expect(focused).not.toBe(queued);
+    expect(focused.closest('[data-column="in_progress"]')).not.toBeNull();
+    expect(focused.closest('[data-testid="b2-card"]')?.classList.contains('b2__card--focused')).toBe(true);
+    view.unmount();
+  });
+
+  it('tracks the moving entity, blocks a pending repeat, announces it, then moves it again', async () => {
+    const base = createFixtureSeam();
+    const realWork = base.commands.work.bind(base.commands);
+    let releaseWrite: (() => void) | undefined;
+    const seam: Seam = {
+      ...base,
+      commands: {
+        ...base.commands,
+        work: (...args: Parameters<typeof base.commands.work>) =>
+          new Promise((resolve, reject) => {
+            releaseWrite = () => void realWork(...args).then(resolve, reject);
+          }),
+      },
+    };
+    const view = await mountBoard(seam);
+    let trigger = cardButton(view, GUIDE);
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'ArrowLeft', ctrlKey: true });
+
+    trigger = cardButton(view, GUIDE);
+    const pendingCard = trigger.closest('[data-testid="b2-card"]')!;
+    expect(pendingCard.getAttribute('draggable')).toBe('false');
+    expect(pendingCard.getAttribute('aria-busy')).toBe('true');
+    expect(view.getByTestId('b2-move-status').textContent).toMatch(/^Moving /);
+
+    // A second command while the first write is live does not retarget from
+    // the optimistic column or launch another write.
+    fireEvent.keyDown(trigger, { key: 'ArrowRight', ctrlKey: true });
+    expect(column(view, 'to_do').getByText(GUIDE)).toBeTruthy();
+    expect(view.getByTestId('b2-move-status').textContent).toMatch(/already moving/i);
+
+    expect(releaseWrite).toBeTypeOf('function');
+    releaseWrite!();
+    await waitFor(() => expect(cardButton(view, GUIDE).closest('[data-testid="b2-card"]')?.getAttribute('draggable')).toBe('true'));
+    expect(view.getByTestId('b2-move-status').textContent).toMatch(/^Moved /);
+
+    trigger = cardButton(view, GUIDE);
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'ArrowRight', ctrlKey: true });
+    await waitFor(() => expect(column(view, 'in_progress').getByText(GUIDE)).toBeTruthy());
+    expect(document.activeElement?.getAttribute('data-entity')).toBe(trigger.getAttribute('data-entity'));
+    view.unmount();
+  });
+
+  it('renders the summary metadata matrix structurally from fields, not task-specific branches', async () => {
+    const view = await mountBoard();
+    const card = cardButton(view, taskUuidTitle.title).closest('[data-testid="b2-card"]')!;
+
+    expect(within(card).getByText('urgent').classList.contains('astryx-badge')).toBe(true);
+    expect(card.querySelector('.b2__card-due time')).not.toBeNull();
+    const progress = within(card).getByRole('progressbar', { name: 'Acceptance: 2 of 4 met' });
+    expect(progress.getAttribute('aria-valuenow')).toBe('2');
+    expect(progress.getAttribute('aria-valuemax')).toBe('4');
+    expect(within(card).getByText('2/4')).toBeTruthy();
+    expect(within(card).getByTestId('avatar-stack').children).toHaveLength(2);
+    view.unmount();
+  });
+
+  it('renders Astryx ProgressBar under a div wrapper, never invalid span > div markup', async () => {
+    const view = await mountBoard();
+    const progress = view.getAllByRole('progressbar')[0]!;
+    const wrapper = progress.closest('.b2__card-accept');
+    expect(wrapper?.tagName).toBe('DIV');
+    expect(wrapper?.querySelector(':scope > div')).not.toBeNull();
+    view.unmount();
+  });
+
   it('presses a card into the shared detail panel WITHOUT leaving the board, and Esc gives the board back', async () => {
     const view = await mountBoard();
     expect(view.queryByTestId('b2-entity-panel')).toBeNull();
@@ -306,10 +407,14 @@ describe('a card opens its entity ON the board', () => {
     fireEvent.change(view.getByLabelText('Filter cards by title'), { target: { value: 'guide' } });
     await waitFor(() => expect(view.getAllByTestId('b2-card')).toHaveLength(1));
 
-    fireEvent.click(within(view.getAllByTestId('b2-card')[0]!).getByText(GUIDE));
+    const opener = cardButton(view, GUIDE);
+    act(() => opener.focus());
+    fireEvent.click(opener);
 
     // The panel is open, and the board it opened over is still underneath.
-    await waitFor(() => view.getByTestId('b2-entity-panel'));
+    const panel = await waitFor(() => view.getByTestId('b2-entity-panel'));
+    expect(panel.getAttribute('aria-labelledby')).toBe('b2-entity-panel-title');
+    expect(document.activeElement).toBe(panel);
     expect(view.getByTestId('board-v2-screen')).toBeTruthy();
     expect(columnKeys(view)).toEqual(CATEGORY_KEYS);
     expect((view.getByLabelText('Filter cards by title') as HTMLInputElement).value).toBe('guide');
@@ -321,7 +426,26 @@ describe('a card opens its entity ON the board', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(view.queryByTestId('b2-entity-panel')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
     expect(view.getByTestId('board-v2-screen')).toBeTruthy();
+    view.unmount();
+  });
+
+  it('does not steal hjkl, arrows, or Enter from editable descendants in the detail panel', async () => {
+    const view = await mountBoard();
+    const opener = cardButton(view, GUIDE);
+    fireEvent.click(opener);
+    const panel = await waitFor(() => view.getByTestId('b2-entity-panel'));
+    const editor = document.createElement('input');
+    panel.append(editor);
+    editor.focus();
+
+    for (const key of ['h', 'j', 'k', 'l', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter']) {
+      expect(fireEvent.keyDown(editor, { key })).toBe(true);
+      expect(document.activeElement).toBe(editor);
+      expect(view.getByTestId('b2-entity-panel')).toBe(panel);
+    }
+    expect(column(view, 'in_progress').getByText(GUIDE)).toBeTruthy();
     view.unmount();
   });
 

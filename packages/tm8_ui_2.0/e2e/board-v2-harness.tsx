@@ -35,13 +35,23 @@ const REASONS: DetailReasons = {
 function Harness() {
   const seam = useMemo(() => createFixtureSeam(), []);
   const data = useGateData({ leftKind: 'task', rightKind: 'task', seam });
+  // GateApp sets the legacy theme bridge only for dark; the light theme is
+  // the absence of data-theme. Keep this browser harness parametrically exact
+  // so `?theme=light` and `?theme=dark` exercise the shipping selectors.
+  const theme = new URLSearchParams(window.location.search).get('theme');
 
   if (!data.ready) {
     return <div data-testid="harness-booting">booting…</div>;
   }
 
   return (
-    <div className="cv2-root" data-astryx-theme="neutral" data-testid="harness-ready" style={{ position: 'fixed', inset: 0, display: 'flex' }}>
+    <div
+      className="cv2-root"
+      data-astryx-theme="neutral"
+      data-theme={theme === 'dark' ? 'dark' : undefined}
+      data-testid="harness-ready"
+      style={{ position: 'fixed', inset: 0, display: 'flex' }}
+    >
       <BoardV2Screen
         data={data}
         viewerMemberId="ada"
