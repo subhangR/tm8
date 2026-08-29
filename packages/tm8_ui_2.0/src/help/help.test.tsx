@@ -337,6 +337,59 @@ describe('the help screen', () => {
   });
 });
 
+describe('prompts inside help (the chip retired 2026-08-29)', () => {
+  /*
+   * 'prompts' is a RESERVED slug, not a plate: the codec passes the segment
+   * through verbatim, the screen claims it before the dead-slug correction
+   * runs, and the reader pane hosts the live catalog. The plate registry
+   * stays pinned at 55 — these cases assert the guest mount, not a 56th page.
+   */
+  it('help/prompts renders the prompt catalog inside the reader pane', () => {
+    onHelp('prompts');
+    const view = render(<HelpScreen />);
+
+    /* The catalog is IN the reader pane — the same surface a plate uses — not
+       an overlay over the guide. */
+    const reader = view.getByTestId('help-reader');
+    expect(reader.querySelector('[data-testid="prompts-screen"]')).toBeTruthy();
+    /* Not presented as a plate: no sandboxed frame, no "Plate N of 55". */
+    expect(view.queryByTestId('help-plate')).toBeNull();
+    /* Mounted WITHOUT `onClose`: the ✕ belonged to the retired overlay, and
+       the way out of the catalog is Help's own chrome. */
+    expect(view.queryByLabelText('Close prompts')).toBeNull();
+
+    /* The shelf's annex entry is the door, and it reads as current — while
+       the phone shelf deliberately has no entry (the pr-* grid has no stacked
+       mode), so this entry is the desktop contents' own. */
+    expect(view.getByTestId('help-prompts-entry').getAttribute('aria-current')).toBe('page');
+
+    /* The address survives as written — linkable, reloadable, Back-able. */
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: 'prompts' });
+    view.unmount();
+  });
+
+  it('the dead-slug redirect still degrades unknown slugs but never eats prompts', async () => {
+    /* The reserved slug matches no plate BY DESIGN, which is exactly the shape
+       the correction effect fires on — so the exemption is the whole feature:
+       mount, let effects run, and the URL must still say prompts. */
+    onHelp('prompts');
+    const view = render(<HelpScreen />);
+    await Promise.resolve();
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: 'prompts' });
+    expect(view.getByTestId('help-reader').querySelector('[data-testid="prompts-screen"]')).toBeTruthy();
+    view.unmount();
+
+    /* And the correction itself is not weakened: a genuinely dead slug still
+       degrades to the front page, as a replace. */
+    onHelp('prompts-but-misspelled-or-retired');
+    const degraded = render(<HelpScreen />);
+    await waitFor(() => expect(navStore.getState().view).toEqual({ view: 'help', plate: null }));
+    expect(navStore.getState().history).toBe('replace');
+    expect(degraded.getByTestId('help-home')).toBeTruthy();
+    degraded.unmount();
+  });
+});
+
 describe('the help route', () => {
   it('mounts the shelf at #/s/{s}/help', async () => {
     /* The tab-mount wiring end to end: contract ref → route codec →

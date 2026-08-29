@@ -29,8 +29,9 @@ import {
 } from 'react';
 
 import { PanelResizer, VectorIcon, usePanelWidth } from '../kit';
-import { KIND_ART } from '../domain';
+import { KIND_ART, SURFACE_ART } from '../domain';
 import { navStore, useNavStore } from '../stores/navStore';
+import { PromptsScreen } from '../prompts';
 import { HelpHome } from './HelpHome';
 import { HelpPlate } from './HelpPlate';
 import { HELP_SET, type HelpChapter, type HelpPage, type HelpSet } from './help-set';
@@ -40,6 +41,17 @@ const CONTENTS_DEFAULT = 376;
 const CONTENTS_MIN = 280;
 const READER_MIN = 420;
 const PANE_CHROME = 8 + 1;
+
+/**
+ * 'prompts' IS A RESERVED SLUG, NOT A PLATE (2026-08-29, the chip's
+ * retirement). The route codec passes any trailing segment through verbatim,
+ * so `/help/prompts` arrives here as `view.plate === 'prompts'` with no codec
+ * change — this screen claims it BEFORE the dead-slug correction can degrade
+ * it, and hosts the prompt catalog in the reader pane. It stays outside
+ * `HELP_SET` deliberately: the plate registry is pinned at 55 vendored
+ * artifacts and the catalog is a live surface, not a published page.
+ */
+const PROMPTS_SLUG = 'prompts';
 
 export interface HelpScreenProps {
   /** On a phone, the shelf and the open plate occupy one surface each. */
@@ -60,6 +72,8 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
   const selectedChapter = selected
     ? set.chapters.find((chapter) => chapter.id === selected.sectionId) ?? null
     : null;
+  /** The reserved non-plate address — the prompt catalog in the reader pane. */
+  const promptsOpen = openSlug === PROMPTS_SLUG;
 
   /** Opening a plate is USER navigation: a push, so Back returns to the last one. */
   const open = useCallback((slug: string | null) => {
@@ -74,9 +88,12 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
    * a URL that shares the wrong thing. `replace` rather than `push` because the
    * reader did not navigate here: Back must still leave Help instead of
    * bouncing between two spellings of the same screen.
+   *
+   * `PROMPTS_SLUG` is exempt: it matches no plate BY DESIGN — it is the
+   * catalog's address, not a dead link — so the correction must never eat it.
    */
   useEffect(() => {
-    if (view.view !== 'help' || view.plate === null || selected) return;
+    if (view.view !== 'help' || view.plate === null || view.plate === PROMPTS_SLUG || selected) return;
     navStore.setState((state) => ({
       view: { view: 'help', plate: null },
       history: 'replace',
@@ -107,6 +124,11 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
   );
 
   if (stacked) {
+    /* `/help/prompts` ON A PHONE lands on the shelf below: `selected` is null
+       for the reserved slug, the correction effect leaves the address alone,
+       and the stacked shelf offers no prompts entry (see `HelpContents`) — the
+       catalog's three-pane `pr-*` grid has no stacked mode, so the gate is
+       deliberate, not an accident of the branch. */
     return (
       <div className="hlp-root hlp-root--stacked" data-testid="help-screen" data-stacked="true">
         {selected && selectedChapter ? (
@@ -147,11 +169,13 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
         onReset={contentsPref.reset}
       />
       <section
-        className="hlp-reader"
-        aria-labelledby={selected ? 'hlp-reader-title' : 'hlp-home-title'}
+        className={`hlp-reader ${promptsOpen ? 'hlp-reader--prompts' : ''}`}
+        aria-labelledby={selected || promptsOpen ? 'hlp-reader-title' : 'hlp-home-title'}
         data-testid="help-reader"
       >
-        {selected && selectedChapter ? (
+        {promptsOpen ? (
+          <PromptsReader />
+        ) : selected && selectedChapter ? (
           <>
             <ReaderHeader
               page={selected}
@@ -209,7 +233,76 @@ function HelpContents({ set, selectedSlug, onSelect, stacked }: {
           />
         ))}
       </div>
+      {stacked ? null : (
+        /* NO PROMPTS ENTRY ON THE PHONE SHELF — the catalog's three-pane
+           `pr-*` grid has no stacked mode, and a door to a surface that cannot
+           lay out on this screen would be a control that performs badly by
+           design. The gate is deliberate, not an accident: the entry returns
+           when the catalog grows a one-column shape. */
+        <PromptsShelfEntry
+          active={selectedSlug === PROMPTS_SLUG}
+          onOpen={() => onSelect(PROMPTS_SLUG)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * THE ANNEX — the one shelf entry that is NOT a plate. It sits in its own
+ * small section under the ten chapters because it is a different kind of
+ * thing: a live catalog read from the composers, not a vendored page, so it
+ * carries no plate number, no `data-help-page` (the arrow-key ring traverses
+ * the READING ORDER, which this is outside of) and no `help-row` testid (the
+ * suite counts those against the 55-plate registry).
+ */
+function PromptsShelfEntry({ active, onOpen }: { active: boolean; onOpen(): void }) {
+  return (
+    <section className="hlp-annex" aria-labelledby="hlp-annex-title" data-testid="help-annex">
+      <div className="hlp-rule"><span id="hlp-annex-title">Beyond the guide</span></div>
+      <button
+        type="button"
+        className={`hlp-row ${active ? 'hlp-row--active' : ''}`}
+        data-testid="help-prompts-entry"
+        aria-current={active ? 'page' : undefined}
+        onClick={onOpen}
+      >
+        <span className="hlp-row__n" aria-hidden>◆</span>
+        <VectorIcon paths={SURFACE_ART.terminal} className="hlp-row__mark" />
+        <span className="hlp-row__text">
+          <span className="hlp-row__title">Prompts</span>
+          <span className="hlp-row__excerpt">
+            Every system prompt tm8 sends an agent, and every operation the CLI can
+            describe — read live from the composers themselves.
+          </span>
+        </span>
+        <span className="hlp-row__arrow" aria-hidden>→</span>
+      </button>
+    </section>
+  );
+}
+
+/**
+ * The catalog, hosted in the reader pane. A ReaderHeader-equivalent head keeps
+ * the pane's grammar — crumb, one titled heading the section is labelled by —
+ * but no plate number, no progress and no steps: the catalog is outside the
+ * reading order and inventing a "Plate 56" would be a lie. `PromptsScreen` is
+ * mounted WITHOUT `onClose` (its ✕ belonged to the retired overlay); the way
+ * out is Help's own chrome, exactly like every plate.
+ */
+function PromptsReader() {
+  return (
+    <>
+      <header className="hlp-reader__head">
+        <div className="hlp-reader__identity">
+          <p className="hlp-reader__crumb"><span>Annex</span><span aria-hidden>◆</span><span>Beyond the guide</span></p>
+          <h1 id="hlp-reader-title" className="hlp-reader__title">System prompts</h1>
+        </div>
+      </header>
+      <div className="hlp-prompts-host" data-testid="help-prompts-host">
+        <PromptsScreen />
+      </div>
+    </>
   );
 }
 

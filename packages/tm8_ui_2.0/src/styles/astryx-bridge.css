@@ -13,8 +13,19 @@
      so it cannot win by source order).
    · No hex here, by design and by law (hex-ban.test.ts): every value is a
      var() into the Astryx theme.
-   · Unmapped on purpose (phase 2, see docs/ui/astryx-adoption.md):
-     --pn-fs-* / --pn-lh-* / --pn-track-* (canvas-measured type scale),
+   · Type scale + motion policy (value-identical only, see
+     docs/ui/astryx-adoption.md "typography bridge"): a --pn-fs-*, --pn-lh-*,
+     --pn-track-* or --pn-ease-* token is only bridged when the Astryx var it
+     would resolve to computes to the IDENTICAL value under BOTH loaded
+     themes (neutral AND gothic — they diverge, e.g. --font-size-base is
+     14px under neutral but 16px under gothic). Checked against both theme
+     sources: only --pn-fs-fine qualifies (--font-size-xs is 10px in both).
+     Every other --pn-fs-*, all of --pn-lh-*, all of --pn-track-* (Astryx
+     ships no letter-spacing vars at all) and both --pn-ease-* stay atelier
+     — canvas-measured / no identical Astryx analog. Fallback values are
+     always the current atelier constant, so a missing var can never shift
+     a character.
+   · Unmapped on purpose otherwise (see docs/ui/astryx-adoption.md):
      --pn-space-* (identical 4px grid already), --pn-brand-rgb (alpha
      compositor with no var()-able Astryx analog), --pn-x-* (terminal lane).
    ========================================================================== */
@@ -74,10 +85,21 @@
   --pn-pr-merged: var(--color-text-purple);
   --pn-pr-merged-soft: var(--color-background-purple);
 
-  /* 4 · type families (sizes stay canvas-measured — phase 2) */
+  /* 4 · type families (sizes stay canvas-measured — see 5 below) */
   --pn-ui: var(--font-family-body);
   --pn-serif: var(--font-family-heading);
   --pn-mono: var(--font-family-code);
+
+  /* 5 · type scale — value-identical only (both themes checked; see header).
+     --font-size-xs is 0.625rem (10px) under neutral AND gothic — matches
+     --pn-fs-fine exactly, so it bridges. Every other --pn-fs-* diverges
+     between the two themes or has no identical Astryx size at all, so it
+     stays atelier (gap register: docs/ui/astryx-adoption.md). --pn-lh-*,
+     --pn-track-* and --pn-ease-* have no value-identical Astryx analog
+     under both themes either (Astryx ships no letter-spacing vars at all;
+     its lone easing, --ease-standard, is cubic-bezier(0.24,1,0.4,1) —
+     neither --pn-ease-out nor --pn-ease-standard) and stay atelier too. */
+  --pn-fs-fine: var(--font-size-xs, 10px);
 
   /* 6 · radii */
   --pn-r-xs: var(--radius-inner);

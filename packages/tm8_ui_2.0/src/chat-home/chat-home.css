@@ -1247,16 +1247,33 @@ button.tch-entity-chip:hover {
 .tch-center > * { flex: 1; min-width: 0; min-height: 0; }
 .tch-transcript[data-hidden] { display: none; }
 
+/* TIER 2 on the Chats root (Kinetic W4): the same 36px hairline verb the
+   hosted list's search row speaks — one grammar for the pane's find box on
+   every root. 12px above (tier gap from the root strip), 8px below to its
+   thread list. */
 .tch-find {
   flex: none;
-  margin: var(--pn-space-2) var(--pn-space-3);
-  padding: 5px 9px;
+  margin: var(--pn-space-3) var(--pn-space-3) var(--pn-space-2);
+  padding: 0 var(--pn-space-3);
+  min-height: 36px;
+  box-sizing: border-box;
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-md);
   background: var(--pn-card);
   color: var(--pn-ink);
   font: inherit;
   font-size: var(--pn-fs-micro);
+  transition:
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.tch-find:focus-visible {
+  outline: none;
+  border-color: var(--pn-focus, var(--pn-brand-2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-focus, var(--pn-brand-2)) 20%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tch-find { transition: none; }
 }
 
 /* 16px is the iOS focus-zoom threshold, not a type choice: Safari zooms the page

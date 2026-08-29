@@ -15,6 +15,7 @@ import {
   sessionStale,
   docLayoutSpec,
   taskGuideLines,
+  taskQueued,
   taskTombstone,
   taskUuidTitle,
   teamMemberForge,
@@ -430,11 +431,19 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       /* The blast-radius guard. `CATEGORY_TABS` is one array shared by twenty
          kinds; this fix changes WHERE ONE KIND OPENS, not what the four bands
          mean. A task is born `open` → To Do, so landing there is landing on the
-         backlog and must stay that way. */
+         backlog and must stay that way.
+
+         `taskQueued` (a `to_do` row), NOT `taskGuideLines` (an `in_progress`
+         one): since the 2026-08-29 landing correction an unpicked default tab
+         holds its seat only while its band has rows — an empty default over a
+         populated kind auto-corrects to the first band with content, which is
+         the honest half of the same ruling and is pinned in
+         list-honest-default.test.tsx. This case asserts the DEFAULT itself:
+         with a backlog present, a task list still opens on it. */
       expect(getKind('task').list.defaultCategory).toBeUndefined();
 
       const { getByRole } = render(
-        <EntityListPanel kind="task" rowsFor={bandedRowsFor([taskGuideLines])} ctx={ctx} />,
+        <EntityListPanel kind="task" rowsFor={bandedRowsFor([taskQueued])} ctx={ctx} />,
       );
       expect(getByRole('tab', { selected: true }).textContent).toContain('To Do');
     });
@@ -1512,6 +1521,14 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // Not a DisabledIconControl any more — a real button carrying the word.
     const button = within(bar).getByRole('button', { name: /terminate/i });
     expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]')).toHaveLength(0);
+    /* AUDIT 2026-08-29 #2 — the assertion moved WITH the behaviour. Terminate
+       now takes a one-step confirm (`ActionDef.confirm`): the first press only
+       ARMS the control ("sure?"), because an instantly-committing safety verb
+       one slip away from Close was itself a filed defect. The verb still
+       commits, and still commits THROUGH this wiring — on the second press. */
+    fireEvent.click(button);
+    expect(fired).toEqual([]);
+    expect(button.getAttribute('data-armed')).toBe('true');
     fireEvent.click(button);
     expect(fired).toEqual(['terminate']);
   });

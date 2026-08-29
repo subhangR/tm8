@@ -127,11 +127,12 @@ export function TranscriptSurface({
   // decides the interval.
   const isLive = liveness === 'live';
   const {
-    state, entries, hasOlder, olderCount, pagedBack, older, loadOlder, resumeLive, refresh,
+    state, entries, hasOlder, canLoadOlder, olderCount, pagedBack, older, loadOlder, resumeLive,
+    refresh,
   } = useSessionTranscript(seam, sessionId, { intervalMs: isLive ? POLL_MS : null });
 
-  const { scrollRef, sentinelRef, follow } = useTranscriptScroll({
-    entries, olderCount, hasOlder, loadOlder,
+  const { scrollRef, sentinelRef, follow, requestOlder } = useTranscriptScroll({
+    entries, olderCount, hasOlder: canLoadOlder, loadOlder,
     // A stalled walk disables the sentinel for the same reason it disables the
     // button: asking again asks for identical bytes.
     busy: older.phase === 'loading' || older.phase === 'stalled',
@@ -154,8 +155,9 @@ export function TranscriptSurface({
             <TranscriptTop
               sentinelRef={sentinelRef}
               hasOlder={hasOlder}
+              canLoadOlder={canLoadOlder}
               older={older}
-              onLoadOlder={loadOlder}
+              onLoadOlder={requestOlder}
               paused={pagedBack && isLive}
               onResume={backToNewest}
             />
@@ -217,6 +219,22 @@ function useTranscriptScroll({
   const prevOlder = useRef(olderCount);
   const prevHeight = useRef(0);
   const prevTop = useRef(0);
+  /**
+   * THE READER'S ANCHOR — which turn was first visible when they asked for
+   * older ones, and where its top sat in the viewport (audit 2026-08-29:
+   * "Load earlier turns … teleports scroll to the bottom, losing the reader's
+   * place"). Captured at REQUEST time, because that is the last moment the
+   * pre-prepend geometry can be measured — a function component has no
+   * pre-commit hook to read it in later. On the prepend, the same turn is
+   * found again by index arithmetic (`index + prepended`: windows abut and
+   * older turns arrive strictly ABOVE, so the shift is exactly the number of
+   * prepended entries) and pinned back to the recorded viewport offset. The
+   * height-delta correction below stays as the fallback for a capture that
+   * could not be taken or a turn that is gone.
+   */
+  const anchor = useRef<{ index: number; top: number; count: number } | null>(null);
+  const entriesLen = useRef(entries.length);
+  entriesLen.current = entries.length;
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -239,10 +257,31 @@ function useTranscriptScroll({
     const el = scrollRef.current;
     if (!el) return;
     if (olderCount > prevOlder.current) {
-      // A PREPEND. Hold the distance from the bottom: everything that was on
-      // screen stays exactly where the reader left it, and the new turns fill
-      // the space above.
-      el.scrollTop = prevTop.current + (el.scrollHeight - prevHeight.current);
+      // A PREPEND. Pin the reader to the turn they were looking at: the turn
+      // that was first visible at request time is found again at
+      // `index + prepended` and put back at the same viewport offset. Falls
+      // back to holding the height delta when no anchor was captured (a
+      // sentinel-less environment, or a turn that vanished under a resume).
+      const held = anchor.current;
+      anchor.current = null;
+      let pinned = false;
+      if (held) {
+        const prepended = entries.length - held.count;
+        const turns = el.querySelectorAll('.tr-turn');
+        const node = prepended > 0 ? turns[held.index + prepended] : undefined;
+        if (node) {
+          const delta =
+            node.getBoundingClientRect().top - el.getBoundingClientRect().top - held.top;
+          el.scrollTop += delta;
+          pinned = true;
+        }
+      }
+      if (!pinned) {
+        // Hold the distance from the bottom: everything that was on screen
+        // stays where the reader left it, and the new turns fill the space
+        // above.
+        el.scrollTop = prevTop.current + (el.scrollHeight - prevHeight.current);
+      }
     } else if (following.current) {
       el.scrollTop = el.scrollHeight;
     }
@@ -267,10 +306,34 @@ function useTranscriptScroll({
    * does not have one — would otherwise leave the reader with no way to ask at
    * all, and the failure would be silent.
    */
-  const asks = useRef(loadOlder);
-  useEffect(() => {
-    asks.current = loadOlder;
+  /**
+   * ASK FOR OLDER TURNS, WITH THE READER'S PLACE RECORDED FIRST. Every road
+   * into the walk goes through here — the boundary's button and the sentinel
+   * alike — so the prepend correction above always has an anchor to pin to.
+   * The first turn whose bottom edge is inside the viewport is "the turn the
+   * reader is on"; its index and viewport offset are the whole capture.
+   */
+  const requestOlder = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) {
+      anchor.current = null;
+      const containerTop = el.getBoundingClientRect().top;
+      const turns = el.querySelectorAll('.tr-turn');
+      for (let i = 0; i < turns.length; i += 1) {
+        const rect = turns[i]!.getBoundingClientRect();
+        if (rect.bottom > containerTop) {
+          anchor.current = { index: i, top: rect.top - containerTop, count: entriesLen.current };
+          break;
+        }
+      }
+    }
+    loadOlder();
   }, [loadOlder]);
+
+  const asks = useRef(requestOlder);
+  useEffect(() => {
+    asks.current = requestOlder;
+  }, [requestOlder]);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -294,7 +357,7 @@ function useTranscriptScroll({
     following.current = true;
   }, []);
 
-  return { scrollRef, sentinelRef, follow };
+  return { scrollRef, sentinelRef, follow, requestOlder };
 }
 
 /**
@@ -310,6 +373,7 @@ function useTranscriptScroll({
 function TranscriptTop({
   sentinelRef,
   hasOlder,
+  canLoadOlder,
   older,
   onLoadOlder,
   paused,
@@ -317,6 +381,8 @@ function TranscriptTop({
 }: {
   sentinelRef: RefObject<HTMLDivElement | null>;
   hasOlder: boolean;
+  /** The walk can actually be asked for — see `SessionTranscriptRead`. */
+  canLoadOlder: boolean;
   older: OlderRead;
   onLoadOlder: () => void;
   paused: boolean;
@@ -354,6 +420,13 @@ function TranscriptTop({
                 Earlier turns exist above this line, but they cannot be reached:{' '}
                 {older.message ?? 'the walk could not step past this point'}.
               </span>
+            ) : !canLoadOlder ? (
+              /* THE LINK IS NOT DRAWN WHEN THE CLICK WOULD BE A NO-OP. The
+                 page claims older turns but returned no cursor to ask with
+                 (`windowStart: null`), so `loadOlder` would refuse silently —
+                 the dead control the audit flagged. The honesty text replaces
+                 it: nothing here can be loaded, and the line says so. */
+              <span data-testid="transcript-no-earlier">no earlier turns</span>
             ) : (
               <>
                 Earlier turns exist above this line.{' '}

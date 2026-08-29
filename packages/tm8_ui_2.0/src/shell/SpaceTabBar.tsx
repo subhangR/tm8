@@ -89,12 +89,6 @@ export interface SpaceTabBarProps {
   /** Account menu — theme's home per D1. */
   onOpenAccount?(): void;
   onOpenPalette?(): void;
-  /**
-   * Opens the prompt catalog — every system prompt tm8 sends an agent.
-   * Optional like the rest of the bar's callbacks, so a bar rendered without a
-   * host (every existing shell test) simply does not show the control.
-   */
-  onOpenPrompts?(): void;
   /** Monogram for the account avatar. */
   accountInitial?: string;
   /**
@@ -124,8 +118,11 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
           type="button"
           className="shell-tabbar__mark shell-tabbar__mark--door"
           data-testid="go-home"
-          aria-label="tm8 — back to conversations"
-          title="Back to conversations"
+          /* The tooltip names the DESTINATION by the tab row's own word for it
+             ("Home"), so the mark and the tab cannot describe one place two
+             ways. */
+          aria-label="tm8 — Home"
+          title="Home"
           onClick={props.onGoHome}
         >
           <BrandMark />
@@ -160,17 +157,9 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
 
       <div className="shell-tabbar__spacer" />
 
-      {props.onOpenPrompts ? (
-        <button
-          type="button"
-          className="shell-tabbar__prompts"
-          onClick={props.onOpenPrompts}
-          data-testid="open-prompts"
-          title="System prompts — everything tm8 says to an agent"
-        >
-          prompts
-        </button>
-      ) : null}
+      {/* RETIRED 2026-08-29: Prompts now lives inside Help — keep no duplicate
+          door in chrome. The catalog, its `/help/prompts` address and its tests
+          remain; only this dedicated chip is gone. */}
 
       <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
         / palette · ⌘K
@@ -191,7 +180,9 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
         title={props.onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'}
         onClick={props.onOpenInbox ?? ((event) => event.preventDefault())}
       >
-        <span aria-hidden="true">◹</span>
+        {/* ▣ — a tray, not an arrow. The old ◹ sat beside the ↗ copy-link
+            control: two arrows, unrelated meanings, and ◹ read as "share". */}
+        <span aria-hidden="true">▣</span>
       </button>
 
       {props.shareSlot ?? null}

@@ -5,8 +5,8 @@
  * ONE fact per space survives here: which population Home's left column
  * lists when the address does not say — `CHATS_ROOT` or a collection kind.
  * It round-trips localStorage because a root NAME cannot go stale, and it is
- * what keeps a bare `/home` link personal (R10: first visit opens on Chats,
- * remembered thereafter).
+ * what keeps a bare `/home` link personal (first visit opens on Tasks —
+ * Kinetic W4's ruling, superseding R10's Chats — remembered thereafter).
  *
  * EVERYTHING ELSE THIS STORE HELD MOVED TO THE ROUTE (D1, the LLD's central
  * reconciliation): region B's occupant is the centre trail (`p`, stack top
@@ -21,6 +21,7 @@
  */
 import {
   CHATS_ROOT,
+  DEFAULT_HOME_KIND,
   LEGACY_HOME_TAB_KINDS,
   isHomeRootKind,
   type HomeRoot,
@@ -28,8 +29,9 @@ import {
 
 export type { HomeRoot };
 
-/** D15: the default root is Chats (R10 — land on the conversation surface). */
-export const DEFAULT_HOME_ROOT: HomeRoot = CHATS_ROOT;
+/** Kinetic W4 (superseding D15/R10's Chats): the default root is the default
+ *  KIND — Tasks. Land on the work list; Chats stays one header cell away. */
+export const DEFAULT_HOME_ROOT: HomeRoot = DEFAULT_HOME_KIND;
 
 /* The key deliberately keeps the tab-era name: stored legacy values are
    readable and `normalizeHomeRoot` maps them forward. */

@@ -90,6 +90,20 @@ const ZOOM_MAX = 1.75;
 const PAN_STEP = 80;
 
 /**
+ * ONE lens vocabulary (AUDIT 2). The filter dock, the honesty banner and every
+ * empty state must name a lens with the SAME words, or an instruction points at
+ * a control that does not exist — the banner used to say "Switch to Everything"
+ * over a dock whose button says "All Types" and an empty state whose escape
+ * said "Show everything". The dock's words are the canon because the dock is
+ * the control the reader will actually find.
+ */
+const LENS_WORDS: Record<LensId, string> = {
+  live: 'Live',
+  working: 'Active Only',
+  all: 'All Types',
+};
+
+/**
  * StatusSource → the EntityState member it names (the chrome.tsx pattern —
  * keyed by SOURCE, never by kind; adding a kind touches neither).
  */
@@ -845,8 +859,14 @@ export function GraphView(props: GraphViewProps) {
           {model.outOfLens > 0 && (
             <>
               {model.outOfLens} of {model.visibleTotal} outside this lens —{' '}
-              {lensSpec(lens).label} shows {lensSpec(lens).hint.toLowerCase()}{' '}
-              Switch to Everything to see them.{' '}
+              {LENS_WORDS[lens]} shows {lensSpec(lens).hint.toLowerCase()}{' '}
+              {/* AUDIT 2: the instruction IS the control — the sentence stays,
+                  and its verb performs the switch it names (role=status may
+                  contain a button). Same words as the filter dock, always. */}
+              <button type="button" className="gv-banner__act" onClick={() => chooseLens('all')}>
+                Switch to {LENS_WORDS.all}
+              </button>{' '}
+              to see them.{' '}
             </>
           )}
           {model.truncated > 0 && (
@@ -868,13 +888,24 @@ export function GraphView(props: GraphViewProps) {
                empty answer is the true one; the escape sits right under it. */
             <>
               <p className="gv-empty__title">
-                Nothing matches the {lensSpec(lens).label} lens right now.
+                Nothing matches the {LENS_WORDS[lens]} lens right now.
               </p>
               <p className="gv-empty__detail">
                 {lensSpec(lens).hint} {model.visibleTotal} entities are in this space.
               </p>
-              <button type="button" className="gv-filter" onClick={() => chooseLens('all')}>
-                Show everything
+              {/* AUDIT 1: switching the lens alone kept the narrow time window,
+                  which landed the reader on a SECOND empty state — the escape
+                  widens both in one act, and says both. */}
+              <button
+                type="button"
+                className="gv-filter"
+                onClick={() => {
+                  chooseLens('all');
+                  chooseWindow('all');
+                }}
+              >
+                Switch to {LENS_WORDS.all}
+                {windowId === 'all' ? '' : ', all time'}
               </button>
             </>
           ) : model.outOfWindow === model.visibleTotal && model.visibleTotal > 0 ? (
@@ -907,7 +938,36 @@ export function GraphView(props: GraphViewProps) {
               </button>
             </>
           ) : (
-            <p className="gv-empty__title">The graph draws itself as work happens.</p>
+            /* THE TERMINAL RUNG (AUDIT 1). Reachable when a narrower the other
+               escapes never touch emptied the canvas — "My Nodes" matching
+               nothing, a focus whose node left the data — so it carries its own
+               way out: reset every narrower this component owns and re-read the
+               widest window. The ladder never dead-ends. When the host handed
+               us no entities at all there is nothing an escape could show, and
+               drawing one would be a button that does nothing. */
+            <>
+              <p className="gv-empty__title">The graph draws itself as work happens.</p>
+              {props.nodes.length > 0 ? (
+                <>
+                  <p className="gv-empty__detail">
+                    {props.nodes.length} entities are loaded; none are in this view.
+                  </p>
+                  <button
+                    type="button"
+                    className="gv-filter"
+                    title={`${LENS_WORDS.all}, all time, everyone's — every narrower reset`}
+                    onClick={() => {
+                      setMyOnly(false);
+                      clearFocus();
+                      chooseLens('all');
+                      chooseWindow('all');
+                    }}
+                  >
+                    Show the whole space
+                  </button>
+                </>
+              ) : null}
+            </>
           )}
         </div>
       ) : (
@@ -1214,7 +1274,7 @@ export function GraphView(props: GraphViewProps) {
               aria-pressed={lens === 'all' && !myOnly}
               onClick={() => { chooseLens('all'); setMyOnly(false); }}
             >
-              All Types
+              {LENS_WORDS.all}
             </button>
             <button
               type="button"
@@ -1223,7 +1283,7 @@ export function GraphView(props: GraphViewProps) {
               title={lensSpec('working').hint}
               onClick={() => { chooseLens('working'); setMyOnly(false); }}
             >
-              Active Only
+              {LENS_WORDS.working}
             </button>
             {props.viewerId ? (
               <button

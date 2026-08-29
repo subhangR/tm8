@@ -499,6 +499,22 @@ export interface BoardSnapshot {
   retry?: () => void;
 }
 
+/** How long a destructive row verb's trace stays on screen. */
+const ROW_NOTICE_MS = 5000;
+
+/**
+ * The aftermath of a destructive row verb (audit finding 3): Archive and the
+ * tick both remove the row from the open band the instant they land, and until
+ * this existed the panel said NOTHING — the row vanished and the only path
+ * back was knowing the Archived filter exists. `undo` is present exactly when
+ * the row executor contract carries the inverse verb.
+ */
+interface RowVerbNotice {
+  text: string;
+  /** Present ⇒ the inverse verb is one click away for ROW_NOTICE_MS. */
+  undo?: () => void;
+}
+
 export function EntityListPanel(props: EntityListPanelProps) {
   const config = getKind(props.kind);
   const list = config.list;
@@ -556,6 +572,57 @@ export function EntityListPanel(props: EntityListPanelProps) {
     defaultTabId,
     isCategoryTab,
   );
+
+  /**
+   * Every tab's count, computed ONCE per render and shared by the four
+   * surfaces that read it (tabs, footer, selector total — and now the landing
+   * correction below). They were three calls to the same function; with paging
+   * state joined in it is now enough work to be worth not tripling, and
+   * sharing also makes it structurally impossible for the tab and the footer
+   * to disagree.
+   */
+  const tabCounts = (list.categories ?? []).map((tab) => ({
+    tab,
+    ...tabCount(props, config, tab),
+  }));
+  /* The selector total's `+` — carried only when a tab's number is still the
+     loaded length rather than the server's. Once every tab reports an exact
+     total the sum IS exact, and the hedge disappears on its own. */
+  const anyTabTruncated = tabCounts.some((c) => !c.exact && c.label.endsWith('+'));
+
+  /**
+   * THE LANDING TAB MUST NOT BE AN EMPTY BAND OVER A POPULATED KIND — the
+   * empty-default-tab audit finding (2026-08-29), measured on six screens:
+   * Commits, Files, Artifacts and Memories are all seeded `done` at birth
+   * (`kind_seeds_done`, 152), so each opened on "To Do 0 — No X here yet —
+   * create one" while its own footer said "3 done". Existing content
+   * invisible, and the empty-state copy a lie about the data on screen.
+   *
+   * The correction is DERIVED, never persisted, and it defers to both of the
+   * standing contracts:
+   *
+   *   · A VIEWER'S EXPLICIT PICK ALWAYS WINS (task 01a02470). The correction
+   *     runs only while `usePanelChoice` holds nothing for this kind — a
+   *     stored tab, even an empty one the viewer chose to look at, is shown
+   *     as stored. Not writing the corrected id back is what keeps the
+   *     viewer's first real click the first thing ever persisted.
+   *   · THE REGISTRY DEFAULT KEEPS ITS SEAT while its bucket has rows
+   *     (work_session = In Progress): the correction fires only when the
+   *     resolved default's own count is zero, so it can only ever move OFF a
+   *     band that has nothing to show.
+   *
+   * "First" is first in the shared tab order, so the correction is as
+   * deterministic as the row it reads. All counts zero (a genuinely empty
+   * kind, or counts not yet loaded) corrects nothing — there is no better tab
+   * to claim, and the moment a count lands the derivation re-runs.
+   */
+  const storedTab = hasStoredTabChoice(config.kind, isCategoryTab);
+  const categoryCount = (id: string): number => tabCounts.find((c) => c.tab.id === id)?.n ?? 0;
+  const firstNonEmptyTab = tabCounts.find((c) => c.n > 0)?.tab.id;
+  const openTabId =
+    !storedTab && categoryCount(categoryTabId) === 0 && firstNonEmptyTab !== undefined
+      ? firstNonEmptyTab
+      : categoryTabId;
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set((list.sections ?? []).filter((s) => s.collapsedByDefault).map((s) => s.id)),
   );
@@ -588,6 +655,88 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const setPicker = props.onPicker ?? setLocalPicker;
 
   /**
+   * DESTRUCTIVE ROW VERBS LEAVE A TRACE (audit finding 3). Archive and the
+   * tick remove the row from the open band the moment they commit — correct,
+   * and previously silent, which read as the row simply vanishing. The panel
+   * now interposes on the two dedicated executors it already owns the wiring
+   * for and states what happened for {@link ROW_NOTICE_MS}.
+   *
+   * UNDO IS OFFERED WHERE THE CONTRACT HAS AN INVERSE, and only there:
+   *
+   *   · `onArchive` is DOCUMENTED as the archive/restore pair — the cluster
+   *     itself dispatches `restore` through the same prop on an archived row —
+   *     so Archive's undo is `onArchive('restore', id)`: the same executor,
+   *     the inverse verb, no new host surface.
+   *   · `onComplete(id)` carries NO inverse. `commands.complete` is the only
+   *     operation permitted to write `done` (useRowLifecycle's map) and no
+   *     un-complete verb exists in the row executor contract, so the notice
+   *     states where the row went instead of offering an undo it cannot
+   *     honestly perform.
+   *
+   * The interposition is pass-through-first: the host's executor runs exactly
+   * as it did (same ref, same id — the dispatch tests hold), and the notice is
+   * about the REQUEST. A server refusal still arrives through the host's own
+   * failure notice, which outranks this trace.
+   */
+  const [rowNotice, setRowNotice] = useState<RowVerbNotice | null>(null);
+  useEffect(() => {
+    if (rowNotice === null) return;
+    const timer = setTimeout(() => setRowNotice(null), ROW_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [rowNotice]);
+
+  const hostArchive = props.onArchive;
+  const hostComplete = props.onComplete;
+  const noticingArchive = useMemo(
+    () =>
+      hostArchive === undefined
+        ? undefined
+        : (ref: ActionRef, entityId: string): void => {
+            hostArchive(ref, entityId);
+            /* Only the DESTRUCTIVE direction earns the trace: `restore` puts
+               the row back where the viewer is already looking. The pair are
+               ACTION ids (registry verbs), not kind literals — the same two
+               the cluster's own `archived ? 'restore' : 'archive'` spells. */
+            if (ref === 'archive') {
+              setRowNotice({
+                text: 'Archived',
+                undo: () => {
+                  hostArchive('restore', entityId);
+                  setRowNotice(null);
+                },
+              });
+            }
+          },
+    [hostArchive],
+  );
+  /* The Done tab's own word, so the trace names the band the row moved to in
+     the vocabulary the tab row above already uses. */
+  const doneTabLabel = (list.categories ?? []).find((tab) => tab.id === 'done')?.label ?? 'Done';
+  const noticingComplete = useMemo(
+    () =>
+      hostComplete === undefined
+        ? undefined
+        : (entityId: string): void => {
+            hostComplete(entityId);
+            setRowNotice({ text: `Completed — now under ${doneTabLabel}` });
+          },
+    [hostComplete, doneTabLabel],
+  );
+  /**
+   * The props the ROW SURFACES receive — identical to the host's except that
+   * the two destructive executors pass through the trace above. Built by
+   * conditional spread so an unwired executor stays ABSENT (the not-wired
+   * refusals downstream key on that), and handed to every mount that renders
+   * tiles (bands and board alike) so the cluster, the expanded strip and a
+   * board card all share one interposition.
+   */
+  const rowProps: EntityListPanelProps = {
+    ...props,
+    ...(noticingArchive ? { onArchive: noticingArchive } : {}),
+    ...(noticingComplete ? { onComplete: noticingComplete } : {}),
+  };
+
+  /**
    * The open tab — AND `null` IN BOARD MODE, deliberately.
    *
    * A board's COLUMNS are a partition of the status axis. So is the tab row.
@@ -603,7 +752,16 @@ export function EntityListPanel(props: EntityListPanelProps) {
    * gesture with it. The board owns the axis while it is on screen; `CategoryTabs`
    * is not rendered, so nothing draws a control that is not in effect.
    */
-  const activeTab = mode === 'board' ? null : (list.categories?.find((t) => t.id === categoryTabId) ?? null);
+  const activeTab = mode === 'board' ? null : (list.categories?.find((t) => t.id === openTabId) ?? null);
+  /* The honest empty-state facts for the open tab: which OTHER bands hold rows
+     right now, in tab order. Read by the tab band's empty state (the copy half
+     of the landing-correction finding) — the sentence on screen must agree
+     with the counts on screen. */
+  const rowsElsewhere = activeTab
+    ? tabCounts
+        .filter((c) => c.tab.id !== activeTab.id && c.n > 0)
+        .map((c) => ({ label: c.tab.label, n: c.n }))
+    : [];
   const members = props.members ?? EMPTY_MEMBERS;
 
   /**
@@ -643,21 +801,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
     });
   }, [members]);
 
-  /**
-   * Every tab's count, computed ONCE per render and shared by the three
-   * surfaces that show it (tabs, footer, selector total). They were three
-   * calls to the same function; with paging state joined in it is now enough
-   * work to be worth not tripling, and sharing also makes it structurally
-   * impossible for the tab and the footer to disagree.
-   */
-  const tabCounts = (list.categories ?? []).map((tab) => ({
-    tab,
-    ...tabCount(props, config, tab),
-  }));
-  /* The selector total's `+` — carried only when a tab's number is still the
-     loaded length rather than the server's. Once every tab reports an exact
-     total the sum IS exact, and the hedge disappears on its own. */
-  const anyTabTruncated = tabCounts.some((c) => !c.exact && c.label.endsWith('+'));
+  /* `tabCounts` (and its `anyTabTruncated` hedge) moved above the landing
+     correction, which is the fourth reader of the same one-per-render array. */
 
   return (
     <section
@@ -705,7 +850,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
       {mode === 'board' ? null : (
         <CategoryTabs
           tabs={list.categories}
-          activeTabId={categoryTabId}
+          activeTabId={openTabId}
           onTab={setCategoryTabId}
           tabLabel={(tab: StatusCategoryTab) =>
             tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
@@ -764,10 +909,30 @@ export function EntityListPanel(props: EntityListPanelProps) {
         <LensNote set={lensSet} filter={lensFilter} props={props} config={config} />
       ) : null}
 
+      {/* The destructive-verb trace (audit finding 3). `role="status"` so the
+          removal is announced without stealing focus; `lp__lensnote` because
+          this is the same quiet in-panel note the lens honesty line uses — no
+          new floating surface, nothing portalled, nothing on document.body. */}
+      {rowNotice ? (
+        <div className="lp__lensnote lp__rownotice" role="status" data-testid="row-verb-notice">
+          {rowNotice.text}
+          {rowNotice.undo ? (
+            <button
+              type="button"
+              className="lp__chip lp__rownotice-undo"
+              data-testid="row-verb-undo"
+              onClick={rowNotice.undo}
+            >
+              Undo
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="lp__body">
         {mode === 'board' && list.board ? (
           <BoardBody
-            props={props}
+            props={rowProps}
             config={config}
             tab={activeTab}
             onTab={setCategoryTabId}
@@ -816,7 +981,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
                   return next;
                 })
               }
-              props={props}
+              props={rowProps}
               config={config}
               query={query}
             />
@@ -834,9 +999,12 @@ export function EntityListPanel(props: EntityListPanelProps) {
               lensFilter,
             )}
             sort={sortKey}
-            props={props}
+            props={rowProps}
             config={config}
             query={query}
+            {...(activeTab
+              ? { tabFacts: { label: activeTab.label, elsewhere: rowsElsewhere } }
+              : {})}
           />
         )}
       </div>
@@ -1045,6 +1213,30 @@ function tabCount(
     label: countLabel(loaded, page),
     exact: page?.total !== undefined,
   };
+}
+
+/**
+ * HAS THE VIEWER EVER PICKED A CATEGORY TAB FOR THIS KIND — the question the
+ * landing correction turns on, and one `usePanelChoice` cannot answer: its
+ * return conflates "nothing stored" with "the viewer stored the default", and
+ * only the second may pin an empty band open (a pick always wins).
+ *
+ * The key mirrors the hook's exactly — `CHOICE_PREFIX` in `kit/PanelResizer`
+ * plus the `list-category.${kind}` id the panel passes it. The prefix is not
+ * exported and this is a read-only peek at presence, so the spelling is
+ * repeated here rather than widening the kit surface for one caller; the
+ * validity predicate is the same one the hook runs, so a tab id a retired
+ * build wrote reads as "nothing remembered" on both paths.
+ */
+function hasStoredTabChoice(kind: string, valid: (candidate: string) => boolean): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = window.localStorage.getItem(`tm8ui.panel-choice.list-category.${kind}`);
+    return raw !== null && valid(raw);
+  } catch {
+    // Private mode / blocked storage: nothing can have been remembered.
+    return false;
+  }
 }
 
 /**
@@ -2473,6 +2665,7 @@ function Band({
   props,
   config,
   query,
+  tabFacts,
 }: {
   label: string | null;
   /**
@@ -2489,6 +2682,14 @@ function Band({
   config: KindConfig;
   /** Present ⇒ an empty band means "no matches", not "nothing here". */
   query?: string;
+  /**
+   * The open category tab's word and its siblings' live counts, passed only by
+   * the TAB band (the sectionless mount whose emptiness IS the tab's). An
+   * empty tab over a populated kind must never claim "no X here yet" — the
+   * footer two rows down is simultaneously printing "3 done" — so the empty
+   * state names the tab and points at the bands that do hold rows.
+   */
+  tabFacts?: { label: string; elsewhere: readonly { label: string; n: number }[] };
 }) {
   const rows = filter === null ? NO_ROWS : props.rowsFor(filter, sort);
   const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
@@ -2539,6 +2740,16 @@ function Band({
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
             sentence={`No ${config.labelPlural.toLowerCase()} match “${query.trim()}”. Clear the search to see them all.`}
+          />
+        ) : tabFacts && tabFacts.elsewhere.length > 0 ? (
+          /* An empty TAB over a populated kind. "No X here yet — create one"
+             was a lie the footer contradicted on the same screen; the honest
+             sentence names the band and says where the rows are. */
+          <EmptyBody
+            glyph={<KindIcon kind={config.kind} size={22} />}
+            sentence={`Nothing in ${tabFacts.label} — ${tabFacts.elsewhere
+              .map((other) => `${other.n} in ${other.label}`)
+              .join(' · ')}.`}
           />
         ) : (
           <EmptyBody
@@ -3070,6 +3281,19 @@ export function Tile({
    */
   const archived = row.deletedAt != null;
   const completed = row.category === 'done';
+  /**
+   * THE FACT AND ITS COSTUME ARE TWO THINGS (audit finding 2). `completed`
+   * stays the one definition above — `category === 'done'`, every kind. What
+   * is NOT universal is whether done earns the strikethrough: on a `work`
+   * kind a done row is finished and the strike is right; on a `library` kind
+   * (registry `list.lifecycle` — file, artifact, memory, collection, spell,
+   * skill) rows are seeded `done` at birth (`kind_seeds_done`, 152), so the
+   * same treatment crossed out every healthy row and read as deleted. The
+   * divergence is REGISTRY DATA (§15.2), and the tile publishes it as
+   * `data-lifecycle` so styling can key on the same fact.
+   */
+  const lifecycle = list.lifecycle ?? 'work';
+  const struck = completed && lifecycle === 'work';
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
   // Session tiles carry the same chip slot: the index resolves a session's
@@ -3208,7 +3432,7 @@ export function Tile({
         attention={attention}
         selected={selected}
         archived={archived}
-        completed={completed}
+        completed={struck}
         live={live}
         streaming={streaming}
         statusTone={statusTone}
@@ -3255,7 +3479,7 @@ export function Tile({
         attention={attention}
         attentionReason={row.badges.attention?.latestReason}
         archived={archived}
-        completed={completed}
+        completed={struck}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
@@ -3383,6 +3607,10 @@ export function Tile({
         .join(' ')}
       data-testid="list-tile"
       data-depth={depth}
+      /* The registry's lifecycle answer, CSS-consumable — the one attribute
+         finding 2 hangs styling on, so a stylesheet can key `[data-lifecycle=
+         'library']` without this file ever naming a kind. */
+      data-lifecycle={lifecycle}
       data-tree={config.list.tree ? 'true' : undefined}
       data-children={childCount > 0 ? childCount : undefined}
       data-flow={flowRef ? 'open' : undefined}
@@ -3450,8 +3678,10 @@ export function Tile({
                  strikethrough (this row FINISHED); `--archived` only dims
                  (this row was FILED AWAY). The one class used to be named
                  `--done` and was driven by `deletedAt`, so archiving struck a
-                 row through as though it had been completed. */
-              completed ? 'lp__title--completed' : '',
+                 row through as though it had been completed. `struck`, not
+                 `completed`: a library kind's done is storage, not finishing
+                 — see the lifecycle note above. */
+              struck ? 'lp__title--completed' : '',
               archived ? 'lp__title--archived' : '',
             ]
               .filter(Boolean)

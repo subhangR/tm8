@@ -39,7 +39,6 @@ import { CopyLinkControl } from '../share';
 import { useShellKind } from '../mobile';
 import { MobileShell } from './MobileShell';
 import { isUnbuiltViewRef } from './view-ref-screens';
-import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
@@ -351,7 +350,6 @@ export function GateApp(props: GateAppProps = {}) {
   const [homeFocus, setHomeFocus] = usePanelFlag('home-focus', false);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
-  const [promptsOpen, setPromptsOpen] = useState(false);
   /**
    * WHICH SCREEN IS SHOWING — now DERIVED from `navStore`, not held here.
    *
@@ -1320,7 +1318,7 @@ export function GateApp(props: GateAppProps = {}) {
       kb.setContext({
         textEntry,
         modalDepth:
-          paletteOpen || promptsOpen || (launch.isModalOpen?.() ?? false) ? 1 : 0,
+          paletteOpen || (launch.isModalOpen?.() ?? false) ? 1 : 0,
       });
       // Legacy ⌘\ stays honored even if the binding table names it
       // differently — losing a shipped shortcut would be its own regression.
@@ -1348,7 +1346,7 @@ export function GateApp(props: GateAppProps = {}) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [paletteOpen, promptsOpen, launch, onDashboard, setHomeFocus, setMenuCollapsed]);
+  }, [paletteOpen, launch, onDashboard, setHomeFocus, setMenuCollapsed]);
 
   /**
    * Kind refs resolve through the DOMAIN REGISTRY (§15.2) — shell never maps a
@@ -1530,22 +1528,45 @@ export function GateApp(props: GateAppProps = {}) {
   }, [paletteQuery, data.rowsFor]);
 
   const paletteViews = useMemo<PaletteView[]>(
-    () => [
+    () => {
       /* Revision 11: Home leads — it is the landing screen, and the palette
          should offer the way back to it from anywhere. */
-      { id: 'view:dashboard', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.dashboard} /> },
-      { id: 'view:workspace', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
-      { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
-      { id: 'view:channels', label: 'Channels', glyph: <VectorIcon paths={VIEW_ART.channels} /> },
-      // Both rows are now MOUNTED views, so the palette offers them as live
-      // destinations. A palette row for a ref that falls through to the
-      // unbuilt-view card would be discovery pointing at a placeholder.
-      { id: 'view:messages', label: 'Messages', glyph: <VectorIcon paths={VIEW_ART.messages} /> },
-      { id: 'view:inbox', label: 'Inbox', glyph: <VectorIcon paths={VIEW_ART.inbox} /> },
-      ...allKinds()
-        .filter((row) => !row.kind.startsWith('c:'))
-        .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> })),
-    ],
+      const screens: PaletteView[] = [
+        { id: 'view:dashboard', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.dashboard} /> },
+        { id: 'view:workspace', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+        { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
+        { id: 'view:channels', label: 'Channels', glyph: <VectorIcon paths={VIEW_ART.channels} /> },
+        // Both rows are now MOUNTED views, so the palette offers them as live
+        // destinations. A palette row for a ref that falls through to the
+        // unbuilt-view card would be discovery pointing at a placeholder.
+        { id: 'view:messages', label: 'Messages', glyph: <VectorIcon paths={VIEW_ART.messages} /> },
+        { id: 'view:inbox', label: 'Inbox', glyph: <VectorIcon paths={VIEW_ART.inbox} /> },
+      ];
+      /* ROUTABLE KINDS ONLY (palette audit #2). `navigateTo({type:'kind'})`
+         refuses any kind whose registry row carries `slug: null` — routeViewOf
+         has no route to build — so a palette row for one (`message`,
+         `voice_channel`) was a live-looking control that closed the palette and
+         went NOWHERE. Same principle as the comment above: no discovery
+         pointing at a placeholder. This dead twin is also what made 'Messages'
+         render twice with zero distinction. */
+      const kindRows: PaletteView[] = allKinds()
+        .filter((row) => !row.kind.startsWith('c:') && row.slug !== null)
+        .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> }));
+      /* THE SURVIVING TWIN IS REAL: 'Channels' the screen resolves to the
+         space's first channel and its full-screen chat (see channelEntities),
+         while 'Channels' the kind opens the `k/channels` collection. One word
+         for two live destinations is a coin-flip, so each row carries its
+         scope — found by collision against the registry labels rather than
+         hand-kept, and named by what each side opens: the screen row is the
+         chat surface, the kind row is the collection browse. */
+      for (const kindRow of kindRows) {
+        const twin = screens.find((s) => s.label === kindRow.label);
+        if (!twin) continue;
+        twin.label = `${twin.label} — chat`;
+        kindRow.label = `${kindRow.label} — browse`;
+      }
+      return [...screens, ...kindRows];
+    },
     [],
   );
   const openPaletteView = useCallback((id: string) => {
@@ -1826,7 +1847,6 @@ export function GateApp(props: GateAppProps = {}) {
           onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
-          onOpenPrompts={() => setPromptsOpen(true)}
           // D1: theme's one home is the account menu. No tab-bar toggle.
           onOpenAccount={toggleTheme}
           // T3-3, user-ordered 2026-07-29: the real account menu — signed-in
@@ -2557,7 +2577,6 @@ export function GateApp(props: GateAppProps = {}) {
           onOpenView={openPaletteView}
           onDismiss={() => setPaletteOpen(false)}
         />
-        <PromptsOverlay open={promptsOpen} onClose={() => setPromptsOpen(false)} />
         <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
         <AddServerDialog
           open={addServerOpen}
