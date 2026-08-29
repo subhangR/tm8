@@ -35,7 +35,7 @@ describe('kit primitives', () => {
     );
     const badge = container.querySelector('.kit-label-count');
     expect(getByText('Sessions').className).toBe('kit-label-count__label');
-    expect(container.querySelector('.kit-label-count__quantity')?.textContent).toBe('· 2,281 new');
+    expect(container.querySelector('.kit-label-count__quantity')?.textContent).toBe('2,281 new');
     expect(badge?.getAttribute('title')).toBe('Sessions: 2,281 new');
   });
 
