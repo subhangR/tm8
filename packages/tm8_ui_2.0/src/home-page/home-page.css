@@ -206,43 +206,47 @@
    exact counters, arranged for comparison rather than wayfinding. Its
    percentage ceiling preserves the conversation on short viewports; every
    kind remains reachable by scrolling inside the map. */
+/* The surface is a CARD: one hairline, one flat fill. It used to carry the
+   kit's `k-hero` brand→violet wash under a 2px `k-accent-top` gradient rule —
+   decoration that spent the reader's only accent colour on a container rather
+   than on anything meaningful inside it (owner, 2026-08-29: "minimal colors,
+   cards grouped with borders"). Both classes are gone from the markup, so the
+   border `k-hero` used to supply is declared here. */
 .cv2-root .hp-overview {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 9px;
   flex: 0 1 auto;
   max-height: 38%;
   min-width: 0;
   margin: 7px 7px 0;
-  padding: 13px 14px 14px;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-lg);
+  background: var(--pn-card);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 .cv2-root .hp-overview__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex: none;
 }
-.cv2-root .hp-overview__copy { min-width: 0; }
-.cv2-root .hp-overview__copy h2 {
-  margin: 3px 0 0;
-  color: var(--pn-ink);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-title);
+/* An eyebrow that names the surface, not a headline that sells it. */
+.cv2-root .hp-overview__title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-label);
   font-weight: 750;
-  letter-spacing: var(--pn-track-tight);
-  line-height: var(--pn-lh-tight);
-}
-.cv2-root .hp-overview__copy p,
-.cv2-root .hp-overview__family p {
-  margin: 3px 0 0;
-  color: var(--pn-ink-3);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-fine);
-  line-height: var(--pn-lh-body);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
 }
 .cv2-root .hp-overview__pulse {
   display: flex;
@@ -257,27 +261,39 @@
   gap: 8px;
   min-width: 0;
 }
+/* A group box: one hairline, no fill, no shadow. The tinted fill and the drop
+   shadow were two more ways of saying the same "these belong together" the
+   border already says. */
 .cv2-root .hp-overview__family {
   min-width: 0;
-  padding: 10px;
+  padding: 9px 10px 10px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
-  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
-  box-shadow: var(--pn-sh-sm);
+  background: transparent;
 }
+/* Active speaks with the border alone — the accent stays reserved for the
+   selected ROW, which is the thing the reader actually chose. */
 .cv2-root .hp-overview__family[data-active='true'] {
   border-color: color-mix(in srgb, var(--pn-brand) 42%, var(--pn-line));
-  background: color-mix(in srgb, var(--pn-brand) 5%, var(--pn-card));
 }
 .cv2-root .hp-overview__family-head {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
 }
-.cv2-root .hp-overview__family-head > div { min-width: 0; }
+/* The group's NAME takes the room and the count gives way — `WORK2281` in the
+   owner's screenshot was this heading with `min-width: 0` and no clip, so the
+   box shrank while the glyphs kept painting straight through the gap and into
+   the number. Clipping is what makes a min-width of 0 honest. */
 .cv2-root .hp-overview__family h3 {
   margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--pn-ink);
   font-family: var(--pn-caps);
   font-size: var(--pn-fs-label);
@@ -285,29 +301,32 @@
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
 }
-.cv2-root .hp-overview__family p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* One noun per line. Two columns is what cut these to `Tas…`, `Do…`, `Pul…`,
+   `Wor…`, `Co…` — nine of the map's nineteen nouns unreadable in a control
+   whose whole job is to be a menu of nouns. A full-width row also puts every
+   mark in one column and every count on one right edge, which is the
+   "organised" the reporter asked for. */
 .cv2-root .hp-overview__kinds {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  margin-top: 9px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  margin-top: 7px;
 }
+/* THE LAW, in three declarations: the mark never shrinks, the name takes all
+   remaining room, and the count is capped so it can never take the name's.
+   See `.hr-rail__row`, which states the same law for the rail. */
 .cv2-root .hp-overview__kind {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  min-height: 30px;
-  padding: 5px 7px;
+  min-height: 28px;
+  padding: 4px 7px;
   border: 1px solid transparent;
   border-radius: var(--pn-r-sm);
-  background: var(--pn-surface);
+  background: transparent;
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-label);
@@ -316,12 +335,10 @@
   cursor: pointer;
 }
 .cv2-root .hp-overview__kind:hover {
-  border-color: var(--pn-line-2);
   background: var(--pn-hover);
   color: var(--pn-ink);
 }
 .cv2-root .hp-overview__kind[aria-current='page'] {
-  border-color: color-mix(in srgb, var(--pn-brand) 40%, var(--pn-line));
   background: var(--pn-brand-soft);
   color: var(--pn-ink);
   box-shadow: inset 2px 0 0 var(--pn-brand);
@@ -333,20 +350,35 @@
 .cv2-root .hp-overview__kind:disabled { cursor: default; opacity: 0.72; }
 .cv2-root .hp-overview__kind-mark {
   display: inline-flex;
+  flex: none;
   color: var(--pn-ink-3);
 }
 .cv2-root .hp-overview__kind[aria-current='page'] .hp-overview__kind-mark { color: var(--pn-brand); }
 .cv2-root .hp-overview__kind-mark .kit-vicon { width: 16px; height: 16px; }
 .cv2-root .hp-overview__kind-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The overview's two-column chips have less trailing room than rail rows.
-   Activity retains its visible word; the exact total remains in the complete
-   accessible name and the family aggregate above. */
-.cv2-root .hp-overview__kind .enav-metric--total { display: none; }
+/* The count is capped at a third of the row and clips inside that cap, so no
+   number — however many digits, however many chips — can reach into the noun's
+   space. Without a ceiling here the count track is sized to its content and
+   only the name is left to absorb the deficit, which is exactly how the rail
+   rendered `: 577 · 471 new · 17 live` with the word "Sessions" gone. */
+.cv2-root .hp-overview__kind > .enav-metrics,
+.cv2-root .hp-overview__family-head > .enav-metrics,
+.cv2-root .hr-rail__grouphead > .enav-metrics,
+.cv2-root .hr-rail__row > .hr-rail__metrics {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 33%;
+  overflow: hidden;
+}
+/* The total now READS on the row — it is the row's one number. It used to be
+   hidden here because the "N new" pill had already taken the trailing room. */
+.cv2-root .hp-overview__kind .enav-metric--total { color: var(--pn-ink-3); }
 
 @media (max-width: 900px) {
   .cv2-root .hp-overview__head { align-items: stretch; }
@@ -420,11 +452,8 @@
   width: var(--hp-rail, 72px);
   min-height: 0;
   border-right: 1px solid var(--pn-line);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--pn-brand) 2%, var(--pn-surface)),
-    var(--pn-surface) 28%
-  );
+  /* Flat. The brand-tinted gradient was a colour that carried no fact. */
+  background: var(--pn-surface);
 }
 .cv2-root .hr-rail:not(.hr-rail--collapsed) { width: var(--hp-rail, 208px); }
 .cv2-root .hr-rail__mast {
@@ -461,7 +490,13 @@
    ink-2, not an 8.5px whisper in ink-4. It has to hold its own against the
    14/600 rows below it. */
 .cv2-root .hr-rail__eyebrow {
+  flex: 1 1 auto;
   min-width: 0;
+  /* `WORK2281`: with min-width 0 and no clip the box shrank but the letters
+     kept painting, straight across the 8px gap and into the group's count. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--pn-ink-2);
   font-family: var(--pn-caps);
   font-size: var(--pn-fs-micro);
@@ -481,9 +516,14 @@
 /* Kinetic I1 label grammar: 14/600 full ink (the rail is primary navigation,
    not secondary chrome), on a 32px row with an 18px mark. border-box because
    the 32px floor must include the 1px selection border. */
+/* THE LAW: the mark is fixed, the NAME takes every remaining pixel, and the
+   count is capped and clipped (see the shared `.enav-metrics` cap above). This
+   row was a `18px minmax(0, 1fr) auto` grid, where the count track is sized to
+   its content and the name track is the only one that can absorb a deficit —
+   so the name is always what dies. It did: the owner's expanded rail rendered
+   this row as `: 577 · 471 new · 17 live`, with "Sessions" gone entirely. */
 .cv2-root .hr-rail__row {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -507,28 +547,42 @@
   gap: 2px;
   padding: 7px 2px 6px;
 }
+/* Collapsed stacks the row, so the expanded row's horizontal flex grammar
+   (name grows, count is pushed to the right edge) has to be handed back —
+   `flex: 1 1 auto` down a column stretches the word's box vertically. */
 .cv2-root .hr-rail--collapsed .hr-rail__label {
+  flex: none;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--pn-fs-micro);
 }
+.cv2-root .hr-rail--collapsed .hr-rail__metrics { margin-left: 0; }
+/* Collapsed the rail is 72px of wayfinding: mark, word, and at most the one
+   count that is time-sensitive. The total reads on the map beside it and on
+   this same row the moment the rail expands, so repeating it here bought
+   nothing and cost the row its width — `72 new` and `18 live` laid side by
+   side inside 56px of content box is what clipped at both edges. */
 .cv2-root .hr-rail--collapsed .enav-metric--total { display: none; }
-.cv2-root .hr-rail--collapsed .hr-rail__metrics { gap: 2px; }
-.cv2-root .hr-rail--collapsed .hr-rail__metrics .enav-metric--new,
+.cv2-root .hr-rail--collapsed .hr-rail__metrics {
+  gap: 2px;
+  max-width: 100%;
+  overflow: hidden;
+}
 .cv2-root .hr-rail--collapsed .hr-rail__metrics .enav-metric--live {
   min-height: 16px;
   padding: 2px 4px;
 }
 .cv2-root .hr-rail__label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .cv2-root .hr-rail__glyph { display: inline-flex; flex: none; }
-.cv2-root .hr-rail__metrics { justify-self: end; }
+.cv2-root .hr-rail__metrics { margin-left: auto; }
 /* The mark is drawn at 18 (I1): the CSS wins over the SVG's own 14px
    width/height attributes, so no component edit is needed. */
 .cv2-root .hr-rail__glyph .kit-vicon { width: 18px; height: 18px; }

@@ -69,11 +69,7 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
             {!collapsed ? (
               <span className="hr-rail__grouphead">
                 <span className="hr-rail__eyebrow">{group.label}</span>
-                <EntityNavigationMetrics
-                  total={group.total}
-                  unseen={group.unseen}
-                  live={group.live}
-                />
+                <EntityNavigationMetrics total={group.total} live={group.live} />
               </span>
             ) : null}
             {group.items.map((item) => (
@@ -90,9 +86,13 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
                   <KindIcon kind={item.config.kind} />
                 </span>
                 <span className="hr-rail__label">{item.config.labelPlural}</span>
+                {/* ONE number per row — see the note in `HomePage`. Expanded,
+                    this row used to carry a total AND an "N new" pill, and the
+                    pair squeezed the word "Sessions" clean off its own row
+                    (owner screenshot, 2026-08-29: `: 577 · 471 new · 17 live`).
+                    A nav row that does not say what it is, is not a nav row. */}
                 <EntityNavigationMetrics
                   total={item.counts?.total}
-                  unseen={item.counts?.unseen}
                   live={item.live}
                   className="hr-rail__metrics"
                 />
