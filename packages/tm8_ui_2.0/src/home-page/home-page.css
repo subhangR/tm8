@@ -212,20 +212,25 @@
    than on anything meaningful inside it (owner, 2026-08-29: "minimal colors,
    cards grouped with borders"). Both classes are gone from the markup, so the
    border `k-hero` used to supply is declared here. */
+/* The CARD does not scroll; the families region inside it does. When the card
+   itself was the scroller, its header — the surface's name and the "Open
+   Workspace" escape hatch, the one control that takes the reader out of a
+   full map — scrolled away with the content. A header that leaves when you
+   look down is a header you have to scroll back up to use. */
 .cv2-root .hp-overview {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
   flex: 0 1 auto;
   max-height: 38%;
+  min-height: 0;
   min-width: 0;
   margin: 7px 7px 0;
-  padding: 11px 12px 12px;
+  padding: 10px 12px 11px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-lg);
   background: var(--pn-card);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 .cv2-root .hp-overview__head {
   display: flex;
@@ -255,18 +260,49 @@
   gap: 10px;
   flex: none;
 }
+/* THE MAP SCROLLS HONESTLY, OR IT DOES NOT SCROLL AT ALL.
+   The owner's card was cut mid-row — `Co… 222 new` sliced in half by the
+   panel's bottom edge — and the only signal that anything continued below was
+   a scrollbar pinned to the far right of a 1580px-wide card, twelve hundred
+   pixels from the row it was explaining. A cut with no signal beside it does
+   not read as "there is more", it reads as broken.
+
+   Two answers, in order. FIRST the map is made to fit: one grid row of family
+   cards, plain-text counts instead of 26px pills, so nothing is cut at a
+   normal window (measured below). SECOND, for the widths where it still
+   cannot fit, the cut says so itself — the pair of `local` covers scroll with
+   the content and uncover a fixed shading exactly at the edge that is hiding
+   something, full width, right where the cut happens. No content, no shading:
+   the signal is derived from the overflow rather than asserted alongside it. */
 .cv2-root .hp-overview__families {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 8px;
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
+  background:
+    linear-gradient(var(--pn-card) 40%, transparent) top / 100% 14px no-repeat local,
+    linear-gradient(transparent, var(--pn-card) 60%) bottom / 100% 14px no-repeat local,
+    linear-gradient(color-mix(in srgb, var(--pn-ink) 15%, transparent), transparent)
+      top / 100% 9px no-repeat scroll,
+    linear-gradient(transparent, color-mix(in srgb, var(--pn-ink) 15%, transparent))
+      bottom / 100% 9px no-repeat scroll;
 }
 /* A group box: one hairline, no fill, no shadow. The tinted fill and the drop
    shadow were two more ways of saying the same "these belong together" the
    border already says. */
 .cv2-root .hp-overview__family {
+  container-type: inline-size;
+  container-name: hp-family;
+  align-content: start;
   min-width: 0;
-  padding: 9px 10px 10px;
+  padding: 8px 10px 9px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
   background: transparent;
@@ -362,19 +398,53 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The count is capped at a third of the row and clips inside that cap, so no
-   number — however many digits, however many chips — can reach into the noun's
-   space. Without a ceiling here the count track is sized to its content and
-   only the name is left to absorb the deficit, which is exactly how the rail
-   rendered `: 577 · 471 new · 17 live` with the word "Sessions" gone. */
+/* A COUNT IS NEVER CLIPPED. It shrinks to nothing or it stays whole.
+   `overflow: hidden` on a number does not truncate a fact the way an ellipsis
+   truncates a word — it manufactures a different, entirely plausible number.
+   `577` clipped to its first two glyphs reads `57`, and nothing on screen says
+   so. That is the one failure mode a count has that a noun does not, and it is
+   why the count keeps its intrinsic width here while the NAME absorbs any
+   deficit with a visible ellipsis. When even that is unaffordable the count is
+   dropped whole, by the width budget below — never sliced.
+
+   This is the brief's cautionary tale applied. `--tt-actions-reserve` was a
+   correct rule (titles must not share pixels with hover actions) shipped
+   without the width at which it stops being affordable, and at 211px it ate
+   the row it was protecting. So every rule here is stated together with its
+   budget. */
 .cv2-root .hp-overview__kind > .enav-metrics,
 .cv2-root .hp-overview__family-head > .enav-metrics,
 .cv2-root .hr-rail__grouphead > .enav-metrics,
 .cv2-root .hr-rail__row > .hr-rail__metrics {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 33%;
-  overflow: hidden;
+  flex: none;
+  white-space: nowrap;
+}
+/* THE WIDTH BUDGET, measured against the longest noun the registry can hand
+   this card. "Interaction profiles" is 19 characters at 12px/600 ≈ 133px; the
+   row spends 16px on its mark, 8px on the gap to the name, 8px before the
+   count and 14px of its own padding, and the card spends 20px more. So a card
+   narrower than ~200px cannot seat that noun beside any count at all, and
+   below 232px it cannot seat it beside a wide one (`2281 · 17 live` ≈ 74px).
+   At that point THE COUNT GOES, whole — the law's own remedy. Every exact
+   figure survives in the row's accessible name and hover text, both built by
+   `entityNavigationLabel`, so dropping the glyphs drops no information. */
+@container hp-family (max-width: 232px) {
+  .cv2-root .hp-overview__kind > .enav-metrics { display: none; }
+}
+/* The count on a map row is TEXT, not a badge. A pill costs a 1px border,
+   3px of padding and an 18px floor — it turned a 26px word into a 47px row,
+   and nineteen of them tinted the calmest surface on the page brand-blue for
+   no fact the plain digits were not already stating. Removing the chrome is
+   what buys the map the vertical budget it was overrunning: seven rows at 47px
+   do not fit under a 38% ceiling and seven at 28px do. The activity count
+   keeps its word and its run colour, because that one IS a fact. */
+.cv2-root .hp-overview__kind .enav-metric--new,
+.cv2-root .hp-overview__kind .enav-metric--live {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
 }
 /* The total now READS on the row — it is the row's one number. It used to be
    hidden here because the "N new" pill had already taken the trailing room. */
