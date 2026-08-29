@@ -105,7 +105,7 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
         type="button"
         className="hr-rail__toggle k-press"
         aria-expanded={!collapsed}
-        aria-label={collapsed ? 'Expand entity navigation' : 'Collapse entity navigation'}
+        aria-label={collapsed ? 'Expand the rail' : 'Collapse the rail'}
         title={collapsed ? 'Expand the rail' : 'Collapse the rail'}
         onClick={onToggleCollapsed}
       >

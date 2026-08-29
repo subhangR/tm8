@@ -63,7 +63,7 @@ describe('HomeRail entity navigation', () => {
 
     fireEvent.click(within(rail).getByRole('button', { name: entityNavigationLabel(target) }));
     expect(onSelect).toHaveBeenCalledWith(target.config.kind);
-    fireEvent.click(within(rail).getByRole('button', { name: 'Expand entity navigation' }));
+    fireEvent.click(within(rail).getByRole('button', { name: 'Expand the rail' }));
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(within(rail).getByText(target.config.labelPlural)).toBeTruthy();
   });

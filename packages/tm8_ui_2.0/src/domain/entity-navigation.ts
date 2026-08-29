@@ -85,7 +85,11 @@ export function composeEntityNavigation(
 export function summarizeEntityNavigation(
   groups: readonly EntityNavigationGroup[],
 ): EntityNavigationSummary {
-  const counted = groups.every((group) => group.total !== undefined && group.unseen !== undefined);
+  const countedGroups = groups.filter(
+    (group): group is EntityNavigationGroup & { total: number; unseen: number } =>
+      group.total !== undefined && group.unseen !== undefined,
+  );
+  const counted = countedGroups.length === groups.length;
   const liveGroups = groups.filter(
     (group): group is EntityNavigationGroup & { live: number } => group.live !== undefined,
   );
@@ -93,8 +97,8 @@ export function summarizeEntityNavigation(
     kinds: groups.reduce((sum, group) => sum + group.items.length, 0),
     ...(counted
       ? {
-          total: groups.reduce((sum, group) => sum + group.total, 0),
-          unseen: groups.reduce((sum, group) => sum + group.unseen, 0),
+          total: countedGroups.reduce((sum, group) => sum + group.total, 0),
+          unseen: countedGroups.reduce((sum, group) => sum + group.unseen, 0),
         }
       : {}),
     ...(liveGroups.length > 0

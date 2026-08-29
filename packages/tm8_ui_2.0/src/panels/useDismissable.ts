@@ -32,6 +32,8 @@ export function useDismissable(
    */
   ref: RefObject<HTMLElement | null> | readonly RefObject<HTMLElement | null>[],
   onDismiss: () => void,
+  /** Menus move focus into their items; Escape returns it to their trigger. */
+  escapeFocusRef?: RefObject<HTMLElement | null>,
 ): void {
   useEffect(() => {
     if (!open) return;
@@ -42,6 +44,7 @@ export function useDismissable(
       e.preventDefault();
       e.stopPropagation();
       onDismiss();
+      escapeFocusRef?.current?.focus();
     };
     const onPointerDown = (e: PointerEvent) => {
       if (!(e.target instanceof Node)) return;
@@ -57,5 +60,5 @@ export function useDismissable(
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('pointerdown', onPointerDown, true);
     };
-  }, [open, ref, onDismiss]);
+  }, [open, ref, onDismiss, escapeFocusRef]);
 }
