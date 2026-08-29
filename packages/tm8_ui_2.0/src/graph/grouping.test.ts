@@ -139,16 +139,47 @@ describe('the band layout', () => {
   });
 
   it('never overlaps two bands, and never overlaps two cards', () => {
-    const m = grouped('kind');
-    const bands = [...m.groups].sort((a, b) => a.y - b.y);
-    for (let i = 1; i < bands.length; i += 1) {
-      expect(bands[i].y).toBeGreaterThanOrEqual(bands[i - 1].y + bands[i - 1].h);
+    for (const by of DIMENSIONS) {
+      const m = grouped(by);
+      // Bands pack into ROWS, so this is a rectangle test, not a vertical one.
+      for (let i = 0; i < m.groups.length; i += 1) {
+        for (let j = i + 1; j < m.groups.length; j += 1) {
+          const a = m.groups[i];
+          const b = m.groups[j];
+          const overlaps =
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          expect(overlaps).toBe(false);
+        }
+      }
+      const seen = new Set<string>();
+      for (const p of m.placed) {
+        const key = `${p.x},${p.y}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
     }
-    const seen = new Set<string>();
-    for (const p of m.placed) {
-      const key = `${p.x},${p.y}`;
-      expect(seen.has(key)).toBe(false);
-      seen.add(key);
+  });
+
+  it('packs narrow bands side by side instead of giving each a wasted row', () => {
+    // THE DEFECT THIS REPLACED: every band took a full row, so a one-node band
+    // reserved as much vertical canvas as a twenty-node one, and the reader
+    // scrolled past empty space to reach the next band.
+    const m = grouped('kind');
+    const rows = new Map<number, number>();
+    for (const g of m.groups) rows.set(g.y, (rows.get(g.y) ?? 0) + 1);
+    expect(Math.max(...rows.values())).toBeGreaterThan(1);
+    // The canvas is strictly shorter than the one-per-row stack would be.
+    expect(m.height).toBeLessThan(m.groups.reduce((sum, g) => sum + g.h, 0));
+  });
+
+  it('keeps every band inside the reported canvas', () => {
+    for (const by of DIMENSIONS) {
+      const m = grouped(by);
+      for (const g of m.groups) {
+        expect(g.x).toBeGreaterThanOrEqual(32);
+        expect(g.x + g.w).toBeLessThanOrEqual(m.width);
+        expect(g.y + g.h).toBeLessThanOrEqual(m.height);
+      }
     }
   });
 
