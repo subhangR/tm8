@@ -914,29 +914,32 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
       );
     });
 
-    placed = [];
-    let bandY = MARGIN;
-    for (const key of keys) {
+    // MEASURE every band first, then PACK them into rows — two passes, because
+    // a band's width is not known until its islands are laid out, and packing
+    // needs every width before it can decide what shares a row.
+    //
+    // Stacking bands one-per-row (the first shape of this) wasted the canvas:
+    // a ONE-NODE band still reserved a whole row, so seven status bands over 35
+    // nodes produced a 2,936px canvas whose right two-thirds was empty and
+    // whose reader had to scroll past mostly nothing to reach the next band.
+    // Bands now pack exactly the way islands already pack in the ungrouped
+    // path, and for the same reason.
+    interface MeasuredBand {
+      key: string;
+      meta: GroupAssignment;
+      ids: EntityId[];
+      collapsed: boolean;
+      pos: Map<EntityId, { x: number; y: number }> | null;
+      w: number;
+      h: number;
+    }
+
+    const measured: MeasuredBand[] = keys.map((key) => {
       const ids = members.get(key)!;
       const meta = assign.get(ids[0])!;
-      const collapsed = collapsedGroups.has(key);
-      if (collapsed) {
+      if (collapsedGroups.has(key)) {
         collapsedCount += ids.length;
-        groups.push({
-          key,
-          label: meta.label,
-          ...(meta.kindRef ? { kindRef: meta.kindRef } : {}),
-          ...(meta.actorRef ? { actorRef: meta.actorRef } : {}),
-          residual: meta.residual,
-          x: MARGIN,
-          y: bandY,
-          w: GROUP_MIN_W,
-          h: GROUP_HEADER,
-          count: ids.length,
-          collapsed: true,
-        });
-        bandY += GROUP_HEADER + GROUP_GAP;
-        continue;
+        return { key, meta, ids, collapsed: true, pos: null, w: GROUP_MIN_W, h: GROUP_HEADER };
       }
 
       // Islands WITHIN the band: the same roots the topological pass found,
@@ -955,39 +958,70 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
       );
 
       const laid = layoutBand(islands, edges);
-      const contentX = MARGIN + GROUP_PAD;
-      const contentY = bandY + GROUP_HEADER;
-      for (const id of ids) {
-        const p = laid.pos.get(id)!;
-        const entity = byId.get(id)!;
-        placed.push({
-          entity,
-          x: contentX + p.x,
-          y: contentY + p.y,
-          heat: heatOf(entity.activityAt, now),
-          onBlockedPath: blockedIds.has(id),
-          ghost: entity.deletedAt !== null,
-          componentId: componentIndexOf(id),
-          groupKey: key,
-          ...decorate(entity),
-        });
-      }
-      const bandW = Math.max(laid.w + GROUP_PAD * 2, GROUP_MIN_W);
-      const bandH = GROUP_HEADER + laid.h + GROUP_PAD;
-      groups.push({
+      return {
         key,
-        label: meta.label,
-        ...(meta.kindRef ? { kindRef: meta.kindRef } : {}),
-        ...(meta.actorRef ? { actorRef: meta.actorRef } : {}),
-        residual: meta.residual,
-        x: MARGIN,
-        y: bandY,
-        w: bandW,
-        h: bandH,
-        count: ids.length,
+        meta,
+        ids,
         collapsed: false,
+        pos: laid.pos,
+        w: Math.max(laid.w + GROUP_PAD * 2, GROUP_MIN_W),
+        h: GROUP_HEADER + laid.h + GROUP_PAD,
+      };
+    });
+
+    // PACK. Left-to-right in band order, wrapping at MAX_ROW_W, so reading
+    // order survives: a row reads across, then the next row down. A band wider
+    // than the budget on its own still gets its own row rather than being
+    // squeezed — clipping content to tidy a frame would hide nodes.
+    placed = [];
+    let cursorX = MARGIN;
+    let cursorY = MARGIN;
+    let rowH = 0;
+    for (const band of measured) {
+      if (cursorX > MARGIN && cursorX + band.w > MAX_ROW_W) {
+        cursorX = MARGIN;
+        cursorY += rowH + GROUP_GAP;
+        rowH = 0;
+      }
+      const bandX = cursorX;
+      const bandY = cursorY;
+
+      if (!band.collapsed) {
+        const contentX = bandX + GROUP_PAD;
+        const contentY = bandY + GROUP_HEADER;
+        for (const id of band.ids) {
+          const p = band.pos!.get(id)!;
+          const entity = byId.get(id)!;
+          placed.push({
+            entity,
+            x: contentX + p.x,
+            y: contentY + p.y,
+            heat: heatOf(entity.activityAt, now),
+            onBlockedPath: blockedIds.has(id),
+            ghost: entity.deletedAt !== null,
+            componentId: componentIndexOf(id),
+            groupKey: band.key,
+            ...decorate(entity),
+          });
+        }
+      }
+
+      groups.push({
+        key: band.key,
+        label: band.meta.label,
+        ...(band.meta.kindRef ? { kindRef: band.meta.kindRef } : {}),
+        ...(band.meta.actorRef ? { actorRef: band.meta.actorRef } : {}),
+        residual: band.meta.residual,
+        x: bandX,
+        y: bandY,
+        w: band.w,
+        h: band.h,
+        count: band.ids.length,
+        collapsed: band.collapsed,
       });
-      bandY += bandH + GROUP_GAP;
+
+      cursorX += band.w + GROUP_GAP;
+      rowH = Math.max(rowH, band.h);
     }
     // Every visible node now lives in a band, so nothing is loose.
     groupedShelf = [];
