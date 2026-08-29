@@ -1871,11 +1871,13 @@ export function ChatHomeScreen({
                     className="tch-attach"
                     inputClassName="tch-attach__input"
                     onChoose={attachments.addFiles}
-                  />
+                  >
+                    <span aria-hidden>+</span>
+                  </ChooseFilesControl>
                 ) : (
                   <DisabledIconControl
                     label="Attach a file"
-                    glyph="＋"
+                    glyph="+"
                     reason={{
                       cause: 'Uploading isn’t wired on this surface',
                       remedy: 'this chat was mounted without an attachment port',
