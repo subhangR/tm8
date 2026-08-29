@@ -138,15 +138,15 @@ export interface ChatHomeScreenProps {
   /** SELECTING (D7): puts a task/session row's entity in region B. Absent ⇒
    *  those rows render disabled-with-reason, never dead. */
   onSelectEntity?: ((id: string) => void) | undefined;
-  /** The host clears region B back to the chat — a chat row click or ＋ New
+  /** The host clears region B back to the chat — a chat row click or + New
    *  chat calls it, so the conversation pane (D8: mounted, hidden) returns. */
   onShowChat?: (() => void) | undefined;
-  /** R5: the kind cell's `＋` — the host's `useNewTask` create-immediately
+  /** R5: the kind cell's `+` — the host's `useNewTask` create-immediately
    *  flow for the CELL's kind (D2/D3 generalized). Absent ⇒ disabled with
    *  `newEntityUnavailable`'s reason, never hidden. */
   onNewEntity?: (() => void) | undefined;
   newEntityUnavailable?: { cause: string; remedy: string } | null;
-  /** The kind menu's PER-ROW ＋ — the cell's verb, for any kind in the list.
+  /** The kind menu's PER-ROW + — the cell's verb, for any kind in the list.
    *  See `ListRootHeader.onCreateKind` for why an absent one hides the row
    *  controls rather than refusing fourteen times. */
   onCreateKind?: ((kind: string) => void) | undefined;
@@ -170,7 +170,7 @@ export interface ChatHomeScreenProps {
   routeThreadId?: EntityId | null;
   /**
    * USER thread selection, reported so the address can carry it: a row
-   * click, ＋ New chat (null — back to the composer), and the send that
+   * click, + New chat (null — back to the composer), and the send that
    * creates a root. The auto-open deliberately does NOT report — a default
    * is not a navigation.
    */
@@ -187,7 +187,7 @@ export interface ChatHomeScreenProps {
    *
    * Solo hands selection to the host outright. `routeThreadId` becomes
    * AUTHORITATIVE rather than advisory — including `null`, which means the
-   * new-conversation composer (the host's ＋ New chat) rather than the
+   * new-conversation composer (the host's + New chat) rather than the
    * merely-bare address it means everywhere else. There is no second
    * selector left to disagree with it.
    */
@@ -1449,7 +1449,7 @@ export function ChatHomeScreen({
         two views of it).
         Switching the root is BROWSING — it re-lists this column only (D6);
         clicking a row is SELECTING — it puts that entity in region B (D7).
-        The two ＋ buttons in the header are the single exception to D6:
+        The two + buttons in the header are the single exception to D6:
         each takes region B AND switches this column to its own root (D10).
 
         NO COUNTS ON THE ROOT LABELS (D16): the only number obtainable is
@@ -1485,9 +1485,9 @@ export function ChatHomeScreen({
           second grid — so the id stays unique. */}
       {soloConversation ? null : (
       <aside id="home-view-list" className="tch-sidebar" aria-label="Tasks, chats and sessions">
-        {/* THE ROOT HEADER (task 01a00932 R5) — two cells, [Chats ＋] and
-            [Kind ＋ ▾]. Each cell's LABEL switches the root (browsing, D6);
-            each cell's ＋ CREATES (the D10 exception: it takes region B and
+        {/* THE ROOT HEADER (task 01a00932 R5) — two cells, [Chats +] and
+            [Kind + ▾]. Each cell's LABEL switches the root (browsing, D6);
+            each cell's + CREATES (the D10 exception: it takes region B and
             lands the column on its own root). The caret only ever SWITCHES —
             picking a kind from the menu never creates (R5). Labels only, no
             counts (D16).

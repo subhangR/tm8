@@ -115,13 +115,13 @@ describe('Chat Home stability', () => {
     );
     const enabled = wired.getByRole('button', { name: 'Attach a file' });
     expect(enabled.textContent).toBe('+');
-    expect(enabled.textContent).not.toContain('＋');
+    expect(enabled.textContent).not.toContain('\uFF0B');
     wired.unmount();
 
     const refused = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
     const disabled = refused.getByRole('button', { name: 'Attach a file' });
     expect(disabled.textContent).toContain('+');
-    expect(disabled.textContent).not.toContain('＋');
+    expect(disabled.textContent).not.toContain('\uFF0B');
   });
 
   it('settles to idle when the done frame lands during the post-turn read', async () => {

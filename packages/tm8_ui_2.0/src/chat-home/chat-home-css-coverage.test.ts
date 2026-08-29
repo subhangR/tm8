@@ -146,6 +146,17 @@ const PRE_EXISTING_ORPHANS = new Set([
 ]);
 
 describe('chat-home CSS coverage', () => {
+  it('keeps the fullwidth plus code point out of every runtime source', () => {
+    const fullwidthPlus = String.fromCodePoint(0xff0b);
+    const offenders = filesUnder(
+      DIR,
+      (name) => /\.(?:css|ts|tsx)$/.test(name) && !name.includes('.test.'),
+    )
+      .filter((file) => readFileSync(file, 'utf8').includes(fullwidthPlus))
+      .map(rel);
+    expect(offenders).toEqual([]);
+  });
+
   it('a class a component writes is styled, or declared unstyled on purpose', () => {
     const styled = classesStyled();
     const undeclared = [...classesUsed()]

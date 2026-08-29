@@ -4,8 +4,8 @@
  * 01a00932 — rulings R3/R4/R5, plus the surviving lettered rulings D6–D10,
  * D15/D16).
  *
- * The header is two cells: [Chats ＋] and [Kind ＋ ▾]. A cell's LABEL
- * switches the root (browsing, D6); its ＋ creates (the D10 exception); the
+ * The header is two cells: [Chats +] and [Kind + ▾]. A cell's LABEL
+ * switches the root (browsing, D6); its + creates (the D10 exception); the
  * caret menu only ever SWITCHES — picking a kind never creates (R5). Every
  * kind root's list content is the host's `renderRootList` (the workspace's
  * own EntityListPanel); the tab-era built-in task/session rows are retired.
@@ -44,7 +44,7 @@ function renderHome(over: Partial<ChatHomeScreenProps> = {}) {
 }
 
 describe('Home root column', () => {
-  it('R5/D16: the header is [Chats ＋][Kind ＋ ▾] — two root tabs, labels only, no counts', () => {
+  it('R5/D16: the header is [Chats +][Kind + ▾] — two root tabs, labels only, no counts', () => {
     const view = renderHome();
     const tabs = view.getAllByRole('tab');
     expect(tabs.map((tab) => tab.textContent)).toEqual(['Chats', 'Tasks']);
@@ -89,7 +89,7 @@ describe('Home root column', () => {
     expect(view.queryByRole('menu', { name: 'Entity lists' })).toBeNull();
   });
 
-  it('D10/D3: the kind cell ＋ creates immediately AND lands the column on its root', () => {
+  it('D10/D3: the kind cell + creates immediately AND lands the column on its root', () => {
     const onNewEntity = vi.fn();
     const onRoot = vi.fn();
     const view = renderHome({ root: 'chats', onRoot, onNewEntity });
@@ -98,7 +98,7 @@ describe('Home root column', () => {
     expect(onRoot).toHaveBeenCalledWith('task');
   });
 
-  it('D10: ＋ New chat takes B AND flips the column to Chats — the one D6 exception', () => {
+  it('D10: + New chat takes B AND flips the column to Chats — the one D6 exception', () => {
     const onShowChat = vi.fn();
     const onRoot = vi.fn();
     const view = renderHome({ root: 'task', onRoot, onShowChat });
@@ -108,12 +108,12 @@ describe('Home root column', () => {
   });
 
   /**
-   * THE MENU'S PER-ROW ＋ (user ruling 2026-08-19).
+   * THE MENU'S PER-ROW + (user ruling 2026-08-19).
    *
    * This NARROWS R5 rather than reversing it — the row's LABEL still only ever
    * switches, which the test above pins. What is new is a SECOND control per
    * row, so making a doc from a list of tasks costs one press instead of
-   * switch-then-find-the-＋.
+   * switch-then-find-the-+.
    *
    * The rows are queried by `aria-label` and never by position: the birth
    * control is deliberately not a `menuitem` (the label is the menu item), so
@@ -126,25 +126,25 @@ describe('Home root column', () => {
       return within(view.getByRole('menu', { name: 'Entity lists' }));
     };
 
-    it('every row carries one, and SESSIONS carry a terminal rather than a ＋', () => {
+    it('every row carries one, and SESSIONS carry a terminal rather than a +', () => {
       const view = renderHome({ root: 'task', onCreateKind: vi.fn() });
       const menu = openMenu(view);
       expect(menu.getByRole('button', { name: 'New task' })).toBeTruthy();
       expect(menu.getByRole('button', { name: 'New doc' })).toBeTruthy();
       /* Sessions are STARTED, not authored — the registry says so through
-         `list.quickStart`, and the row wears that verb's own label. A ＋ here
+         `list.quickStart`, and the row wears that verb's own label. A + here
          would promise an entity this flow cannot make. */
       expect(menu.queryByRole('button', { name: 'New session' })).toBeNull();
       expect(menu.getByRole('button', { name: 'Terminal' })).toBeTruthy();
     });
 
-    it('pressing a row’s ＋ births THAT kind and lands the column on its root', () => {
+    it('pressing a row’s + births THAT kind and lands the column on its root', () => {
       const onCreateKind = vi.fn();
       const onRoot = vi.fn();
       const view = renderHome({ root: 'task', onRoot, onCreateKind });
       fireEvent.click(openMenu(view).getByRole('button', { name: 'New doc' }));
       expect(onCreateKind).toHaveBeenCalledWith('doc');
-      /* D10, same as the cell's ＋: a new doc landing in a list of tasks would
+      /* D10, same as the cell's +: a new doc landing in a list of tasks would
          be a row the column cannot show. */
       expect(onRoot).toHaveBeenCalledWith('doc');
       expect(view.queryByRole('menu', { name: 'Entity lists' })).toBeNull();
@@ -172,7 +172,7 @@ describe('Home root column', () => {
       const view = renderHome({ root: 'task' });
       const menu = openMenu(view);
       expect(menu.queryByRole('button', { name: 'New doc' })).toBeNull();
-      /* The cell's own ＋ still says it, once, out loud. */
+      /* The cell's own + still says it, once, out loud. */
       expect(view.getByRole('button', { name: 'New task' })).toBeTruthy();
     });
 
@@ -187,7 +187,7 @@ describe('Home root column', () => {
     });
   });
 
-  it('honesty: the kind ＋ without a wire renders disabled WITH the reason, never hidden', () => {
+  it('honesty: the kind + without a wire renders disabled WITH the reason, never hidden', () => {
     const view = renderHome({
       newEntityUnavailable: { cause: 'Creating is not wired here', remedy: 'no executor' },
     });
