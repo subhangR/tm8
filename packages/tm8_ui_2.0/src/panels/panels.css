@@ -3420,8 +3420,8 @@
      aligned at 76px and lets a longer label take real space instead of
      overlapping; the line's own 8px gap then always separates label from
      value. */
-  min-width: 76px;
-  font-size: 9.5px;
+  min-width: 84px;
+  font-size: var(--pn-fs-fine);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
