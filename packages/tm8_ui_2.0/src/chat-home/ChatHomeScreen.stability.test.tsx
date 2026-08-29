@@ -39,6 +39,24 @@ function gateReads(port: ChatHomePort): { port: ChatHomePort; release(): void; r
   };
 }
 
+/** Holds the opening roster read while the rest of Home is free to settle. */
+function gateTeammates(port: ChatHomePort): { port: ChatHomePort; release(): void } {
+  let releaseRead = (): void => {};
+  const hold = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  return {
+    port: {
+      ...port,
+      listTeammates: async (spaceId) => {
+        await hold;
+        return port.listTeammates(spaceId);
+      },
+    },
+    release: releaseRead,
+  };
+}
+
 describe('Chat Home stability', () => {
   it('shows a loading indicator while the thread snapshot is read', async () => {
     const { port } = createChatHomeFixturePort();
@@ -50,6 +68,60 @@ describe('Chat Home stability', () => {
       act(() => gated.release());
       expect(view.queryByTestId('chat-detail-loading')).toBeNull();
     });
+  });
+
+  it('never calls the teammate roster empty before its opening read settles', async () => {
+    const { port } = createChatHomeFixturePort([]);
+    const gated = gateTeammates(port);
+    const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getByText('Loading agent teammates…')).toBeTruthy());
+    expect(view.queryByText('No agent teammate is available in this space.')).toBeNull();
+
+    /* The select owns its own empty note. Opening it during the same wait must
+       stay a loading fact too, rather than exposing a second false empty. */
+    fireEvent.click(view.getByTestId('tch-teammate'));
+    expect(view.queryByText('No agent teammate is available in this space.')).toBeNull();
+    expect(view.getAllByText('Loading agent teammates…')).toHaveLength(2);
+
+    act(() => gated.release());
+    await waitFor(() => expect(view.getByRole('option', { name: /Forge/ })).toBeTruthy());
+    expect(view.queryByText('No agent teammate is available in this space.')).toBeNull();
+  });
+
+  it('states that the teammate roster is empty only after a successful empty read', async () => {
+    const { port } = createChatHomeFixturePort([]);
+    const emptyRoster: ChatHomePort = {
+      ...port,
+      listTeammates: async () => [],
+    };
+    const view = render(<ChatHomeScreen port={emptyRoster} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() =>
+      expect(view.getByText('No agent teammate is available in this space.')).toBeTruthy(),
+    );
+    expect(view.queryByText('Loading agent teammates…')).toBeNull();
+  });
+
+  it('uses a Latin-safe plus in both attachment-control branches', () => {
+    const { port } = createChatHomeFixturePort([]);
+    const wired = render(
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        attach={() => { throw new Error('unused'); }}
+      />,
+    );
+    const enabled = wired.getByRole('button', { name: 'Attach a file' });
+    expect(enabled.textContent).toBe('+');
+    expect(enabled.textContent).not.toContain('＋');
+    wired.unmount();
+
+    const refused = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    const disabled = refused.getByRole('button', { name: 'Attach a file' });
+    expect(disabled.textContent).toContain('+');
+    expect(disabled.textContent).not.toContain('＋');
   });
 
   it('settles to idle when the done frame lands during the post-turn read', async () => {

@@ -290,6 +290,12 @@ type ComposerPhase =
   | 'streaming'
   | 'stopped-continuable';
 
+type TeammateRosterRead = {
+  port: ChatHomePort;
+  spaceId: SpaceId | string;
+  status: 'loaded' | 'failed';
+};
+
 export function ChatHomeScreen({
   port,
   spaceId,
@@ -332,6 +338,14 @@ export function ChatHomeScreen({
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
+  const [teammateRosterRead, setTeammateRosterRead] = useState<TeammateRosterRead | null>(null);
+  /* A roster belongs to BOTH the port and the space that produced it. A prop
+     change makes the previous answer pending immediately, during render — a
+     passive effect is too late because the composer paints before it runs. */
+  const teammateRosterStatus =
+    teammateRosterRead?.port === port && teammateRosterRead.spaceId === spaceId
+      ? teammateRosterRead.status
+      : 'pending';
   const [selectedRootId, setSelectedRootId] = useState<EntityId | null>(null);
   /* "NOTHING HAS BEEN CHOSEN YET" IS A THIRD STATE, and it used to collide with
      the second one. `selectedRootId === null` is exactly what New conversation
@@ -463,8 +477,11 @@ export function ChatHomeScreen({
     spaceRef.current = spaceId;
     knownRootsRef.current = new Set();
     setThreads([]);
+    setTeammates([]);
+    setTeammateId('');
     setSelectedRootId(null);
     setDetail(null);
+    setLoading(true);
   }, [spaceId]);
 
   useEffect(() => {
@@ -687,8 +704,25 @@ export function ChatHomeScreen({
     let alive = true;
     setLoading(true);
     setLoadError(null);
-    void Promise.all([port.listThreads(spaceId), port.listTeammates(spaceId)])
-      .then(([nextThreads, nextTeammates]) => {
+    const teammateRead = port.listTeammates(spaceId);
+    /* Settle the roster from ITS OWN read, not from the combined Home read.
+       A thread-list failure is not evidence that the roster is empty, and a
+       roster failure is not an empty roster. On success, options land before
+       the `loaded` marker so even an unbatched renderer cannot expose an empty
+       assertion between the two writes. */
+    void teammateRead.then(
+      (nextTeammates) => {
+        if (!alive) return;
+        setTeammates(nextTeammates);
+        setTeammateId(nextTeammates[0]?.id ?? '');
+        setTeammateRosterRead({ port, spaceId, status: 'loaded' });
+      },
+      () => {
+        if (alive) setTeammateRosterRead({ port, spaceId, status: 'failed' });
+      },
+    );
+    void Promise.all([port.listThreads(spaceId), teammateRead])
+      .then(([nextThreads]) => {
         if (!alive) return;
         /* SEED `knownRootsRef` FROM THE SAME READ that fills the list, so the
            two never disagree about what the sidebar knows. This is the read
@@ -697,7 +731,6 @@ export function ChatHomeScreen({
            "new root" for every root it has in fact just been given. */
         knownRootsRef.current = new Set(nextThreads.map((thread) => thread.rootId));
         setThreads(nextThreads);
-        setTeammates(nextTeammates);
         /* COLD START (ruled 2026-08-15): the most recent conversation opens
            itself, so the right pane is never empty on launch. `listThreads`
            returns most-recent-first; no conversations at all lands on the new
@@ -722,7 +755,6 @@ export function ChatHomeScreen({
         if (selectionSpaceRef.current !== spaceId) {
           chooseRoot(nextThreads[0]?.rootId ?? null);
         }
-        setTeammateId(nextTeammates[0]?.id ?? '');
       })
       .catch((error: unknown) => {
         if (alive) setLoadError(describeError(error));
@@ -1027,9 +1059,19 @@ export function ChatHomeScreen({
     element.scrollTop = height;
   }, [detail, thinking]);
 
+  /* PENDING, FAILED and LOADED-EMPTY are three different roster facts. The
+     composer is mounted while the opening read runs, so deriving its copy
+     from `teammates.length` would turn the array's initial value into a false
+     claim about the space for the whole network wait. */
+  const teammateRosterNote =
+    teammateRosterStatus === 'pending'
+      ? 'Loading agent teammates…'
+      : teammateRosterStatus === 'failed'
+        ? 'Agent teammates could not be loaded.'
+        : 'No agent teammate is available in this space.';
   const selectionUnavailable =
-    teammateId === ''
-      ? 'No agent teammate is available in this space.'
+    teammateRosterStatus !== 'loaded' || teammateId === ''
+      ? teammateRosterNote
       : !selectedModel
         ? 'No model is available from the launch catalog.'
         : null;
@@ -1050,7 +1092,9 @@ export function ChatHomeScreen({
   const shownModelId = activeConfig?.model ?? modelId;
   const shownMode = activeConfig?.mode ?? chatMode;
   const teammateOptions = useMemo(() => {
-    const base = teammates.map((teammate) => ({
+    /* Never carry the previous port/space's roster through a prop change. The
+       keyed status turns pending during render, before the clearing effect. */
+    const base = (teammateRosterStatus === 'loaded' ? teammates : []).map((teammate) => ({
       id: teammate.id,
       label: teammate.label,
       actor: { id: teammate.id, avatar: teammate.avatar },
@@ -1062,7 +1106,7 @@ export function ChatHomeScreen({
           actor: { id: activeConfig.teammateId, avatar: null },
         }, ...base]
       : base;
-  }, [teammates, activeConfig]);
+  }, [teammates, teammateRosterStatus, activeConfig]);
   const modelOptions = useMemo(() => {
     const base = models.map((model) => ({
       id: model.model,
@@ -1924,7 +1968,7 @@ export function ChatHomeScreen({
                     value={shownTeammateId}
                     onChange={(id) => setTeammateId(id as EntityId)}
                     disabled={pinned}
-                    emptyNote="No agent teammate is available in this space."
+                    emptyNote={teammateRosterNote}
                   />
                   <ComposerSelect
                     label="Chat model"
