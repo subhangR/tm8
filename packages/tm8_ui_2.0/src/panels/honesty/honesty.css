@@ -254,15 +254,21 @@
   font-weight: 600;
 }
 .cv2-root .hon-tip__remedy {
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  color: var(--pn-ink-4);
+  /* RECLASSIFIED (owner screenshot, 2026-08-29): a remedy is a SENTENCE the
+     user must read, not data — ui face at a readable size. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
 }
 
-/* Inline caption under an inline-form control. */
+/* Inline caption under an inline-form control. RECLASSIFIED (owner
+   screenshot, 2026-08-29): honesty captions are explanatory PROSE ("a
+   session's state is observed, not chosen…") — mono at 9.5px read as debug
+   output. ui face, fs-label, relaxed line-height for multi-line reasons. */
 .cv2-root .hon-caption {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: 1.45;
   color: var(--pn-ink-3);
 }
 .cv2-root .hon-disabled-group {
