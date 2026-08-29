@@ -2,7 +2,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
-import { ALL_MODES, allKinds, getKind, resolveAction, type ActionContext, type QueryFilter } from '../domain';
+import {
+  ALL_MODES,
+  allKinds,
+  getKind,
+  homeRailGroups,
+  resolveAction,
+  type ActionContext,
+  type QueryFilter,
+} from '../domain';
 import { REASONS as DOMAIN_REASONS } from '../domain';
 import {
   FIXTURE_SPACE_ID,
@@ -1170,6 +1178,53 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(container.querySelector('.lp__kindmenu')).not.toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(container.querySelector('.lp__kindmenu')).toBeNull();
+    expect(document.activeElement).toBe(kindButton);
+  });
+
+  it('shares Home’s entity hierarchy and keyboard model in every list switcher', () => {
+    const groups = homeRailGroups();
+    const current = groups[0]!.kinds[0]!;
+    const destination = groups[1]!.kinds[0]!;
+    const onKindChange = vi.fn();
+    const { container, getByRole } = render(
+      <EntityListPanel
+        kind={current.kind}
+        rowsFor={rowsFor([])}
+        ctx={ctx}
+        onKindChange={onKindChange}
+      />,
+    );
+
+    const trigger = container.querySelector('.lp__kind') as HTMLButtonElement;
+    expect(trigger.textContent).toContain(groups[0]!.label);
+    fireEvent.click(trigger);
+
+    const menu = getByRole('menu', { name: 'Entity types' });
+    const renderedGroups = within(menu).getAllByRole('group');
+    expect(renderedGroups).toHaveLength(groups.length);
+    for (const [index, group] of groups.entries()) {
+      expect(renderedGroups[index]!.getAttribute('aria-label')).toBe(
+        `${group.label}: ${group.description}`,
+      );
+      expect(within(renderedGroups[index]!).getAllByRole('menuitem')).toHaveLength(
+        group.kinds.length,
+      );
+    }
+
+    const items = within(menu).getAllByRole('menuitem') as HTMLButtonElement[];
+    const currentItem = items.find((item) => item.getAttribute('aria-current') === 'page');
+    expect(document.activeElement).toBe(currentItem);
+    fireEvent.keyDown(currentItem!, { key: 'End' });
+    expect(document.activeElement).toBe(items.at(-1));
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(document.activeElement).toBe(items[0]);
+
+    const destinationItem = items.find((item) => item.dataset.kind === destination.kind);
+    expect(destinationItem).toBeTruthy();
+    fireEvent.click(destinationItem!);
+    expect(onKindChange).toHaveBeenCalledWith(destination.kind);
+    expect(container.querySelector('.lp__kindmenu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('CONSUMER COVERAGE: every TileBadgeSource the registry emits has a renderer', () => {

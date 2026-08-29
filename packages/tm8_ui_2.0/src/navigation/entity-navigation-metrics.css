@@ -1,0 +1,57 @@
+/* One count grammar for every entity-navigation altitude. Status words stay
+   visible; only numeric data uses mono. */
+.cv2-root .enav-metrics {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  line-height: 1;
+}
+.cv2-root .enav-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.cv2-root .enav-metric__value {
+  font-family: var(--pn-mono);
+  font-variant-numeric: tabular-nums;
+}
+.cv2-root .enav-metric__unit { font-family: var(--pn-ui); }
+.cv2-root .enav-metric--total { color: var(--pn-ink-3); }
+.cv2-root .enav-metric--new,
+.cv2-root .enav-metric--live {
+  box-sizing: border-box;
+  min-height: 18px;
+  padding: 3px 5px;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+}
+.cv2-root .enav-metric--new {
+  color: var(--pn-brand);
+  background: color-mix(in srgb, var(--pn-brand) 7%, transparent);
+}
+.cv2-root .enav-metric--live {
+  color: var(--pn-run);
+  background: color-mix(in srgb, var(--pn-run) 7%, transparent);
+}
+.cv2-root .enav-metrics--full {
+  gap: 7px;
+  font-size: var(--pn-fs-fine);
+}
+
+@media (forced-colors: active) {
+  .cv2-root .enav-metric--new,
+  .cv2-root .enav-metric--live {
+    color: CanvasText;
+    background: Canvas;
+    border-color: CanvasText;
+  }
+}

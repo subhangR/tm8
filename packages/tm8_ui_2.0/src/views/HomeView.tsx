@@ -52,6 +52,7 @@ import { navStore, useNavStore } from '../stores/navStore';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
 import {
   CHATS_ROOT,
+  composeEntityNavigation,
   DEFAULT_HOME_KIND,
   homeRailGroups,
   homeRootKinds,
@@ -113,11 +114,11 @@ export const HOME_LIST_MAX = 560;
 export const HOME_LIST_CHROME = 8;
 
 /* The rail's two widths, which the SOLVER needs and CSS used to own alone
-   (`home-page.css`'s `.hr-rail` 72 / 172). Duplicating a floor in a
+   (`home-page.css`'s `.hr-rail` 72 / 208). Duplicating a floor in a
    stylesheet is exactly what geometry.ts's standing rule forbids, so they
    live here now and are handed to CSS as `--hp-rail`. */
 export const HOME_RAIL_COLLAPSED = 72;
-export const HOME_RAIL_EXPANDED = 172;
+export const HOME_RAIL_EXPANDED = 208;
 
 export interface HomeViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -212,6 +213,19 @@ function homeViewOf(root: HomeRoot): NavView {
 
 export function HomeView(props: HomeViewProps) {
   const { data, reasons, onNotice } = props;
+
+  /* One navigation projection feeds BOTH Home altitudes. Counts remain
+     absent until the server answered; only registry-declared live kinds see
+     the seam's live population. */
+  const navigationGroups = useMemo(
+    () =>
+      composeEntityNavigation(
+        homeRailGroups(),
+        data.countsFor,
+        (config) => (config.list.liveTreatment ? data.liveIds.length : undefined),
+      ),
+    [data.countsFor, data.liveIds.length],
+  );
 
   /* THE TRAILS — route state, read live (D1). B is the stack; C is `r`. */
   const navView = useNavStore((s) => s.view);
@@ -673,7 +687,7 @@ export function HomeView(props: HomeViewProps) {
      the ask, and a 72px strip left standing is not a collapse. */
   const rail = focus ? null : (
     <HomeRail
-      groups={homeRailGroups()}
+      groups={navigationGroups}
       activeKind={root === CHATS_ROOT ? null : root}
       onSelect={setRoot}
       collapsed={railCollapsed}
@@ -833,6 +847,9 @@ export function HomeView(props: HomeViewProps) {
       <HomePage
         data={data}
         chat={props.chat(openEntity, regions)}
+        navigationGroups={navigationGroups}
+        activeKind={root === CHATS_ROOT ? null : root}
+        onOpenKind={setRoot}
         rail={rail}
         listRail={listRail}
         focus={focus}

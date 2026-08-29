@@ -1517,9 +1517,12 @@
    ========================================================================== */
 
 .cv2-root .lp {
+  --lp-selector-h: 48px;
+
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
 
   /* Floors are law (L4 / 02-LAYOUT §6): left 200, right 220. Titles
      ellipsize; dots, words and actions never collapse to zero. */
@@ -1529,83 +1532,181 @@
   border-radius: var(--pn-r-md);
   overflow: hidden;
 }
+.cv2-root .lp--compact { --lp-selector-h: 42px; }
 
 .cv2-root .lp__selector {
   flex: none;
-  height: 36px;
+  box-sizing: border-box;
+  height: var(--lp-selector-h);
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--pn-line);
   position: relative;
 }
-.cv2-root .lp--compact .lp__selector { height: 34px; }
 .cv2-root .lp__kind {
   appearance: none;
   border: 0;
   background: none;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-family: inherit;
+  gap: 7px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 36px;
+  font-family: var(--pn-ui);
   /* I2/wave-3: the panel's own name is interactive text — the 13px floor. */
   font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink);
   cursor: pointer;
-  padding: 3px 7px;
-  margin-left: -7px;
-  border-radius: 6px;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border-radius: var(--pn-r-sm);
+  text-align: left;
 }
 .cv2-root .lp__kind:hover { background: var(--pn-hover); }
-.cv2-root .lp__kind-glyph { color: var(--pn-ink-3); }
-.cv2-root .lp__caret { color: var(--pn-ink-4); font-size: 10px; }
-.cv2-root .lp__spacer { flex: 1; min-width: 0; }
-/* '● N live' — rows ∩ the seam live set. Never a count of records that CLAIM
-   to be running, which would silently include every stale session. */
-.cv2-root .lp__livecount {
+.cv2-root .lp__kind:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .lp__kind-glyph {
+  display: inline-flex;
   flex: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  color: var(--pn-run);
+  color: var(--pn-brand);
+}
+.cv2-root .lp__kindcopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1;
+}
+.cv2-root .lp__kindfamily {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--pn-ink-4);
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cv2-root .lp__kindname {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .lp__caret {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-fine);
+}
+.cv2-root .lp__spacer { flex: 1; min-width: 0; }
+.cv2-root .lp__selector-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+}
+.cv2-root .lp__selector-metrics > span {
+  display: inline-flex;
 }
 .cv2-root .lp__kindmenu {
   position: absolute;
-  top: 34px;
+  top: calc(var(--lp-selector-h) - 1px);
   left: 6px;
   z-index: 20;
+  box-sizing: border-box;
   list-style: none;
   margin: 0;
-  padding: 4px;
-  min-width: 168px;
+  width: min(288px, calc(100% - 12px));
+  max-height: 320px;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: 8px;
+  border-radius: var(--pn-r-md);
   box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .lp__kindgroup,
+.cv2-root .lp__kindgroup-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cv2-root .lp__kindgroup + .lp__kindgroup {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--pn-line);
+}
+.cv2-root .lp__kindgroup-head {
+  position: sticky;
+  top: -6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 7px 5px;
+  background: var(--pn-card);
+}
+.cv2-root .lp__kindgroup-label { color: var(--pn-ink-3); }
+.cv2-root .lp__kindgroup-count {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+  font-variant-numeric: tabular-nums;
 }
 .cv2-root .lp__kindopt {
   appearance: none;
-  border: 0;
+  border: 1px solid transparent;
   background: none;
   width: 100%;
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 4px 8px;
-  border-radius: 5px;
-  font: inherit;
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: 4px 7px;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
   /* Menu items are interactive text: the 13px floor at label weight (wave 3). */
   font-size: var(--pn-fs-sm);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--pn-ink-2);
   cursor: pointer;
   text-align: left;
 }
 .cv2-root .lp__kindopt:hover { background: var(--pn-hover); }
-.cv2-root .lp__kindopt--current { background: var(--pn-hover); font-weight: 600; color: var(--pn-ink); }
+.cv2-root .lp__kindopt:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -1px;
+}
+.cv2-root .lp__kindopt--current {
+  background: var(--pn-brand-soft);
+  border-color: color-mix(in srgb, var(--pn-brand) 22%, transparent);
+  color: var(--pn-ink);
+}
+.cv2-root .lp__kindopt > svg { flex: none; }
+.cv2-root .lp__kindopt-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .lp__kindopt-current {
+  flex: none;
+  margin-left: auto;
+  color: var(--pn-brand);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+}
 /* A DISABLED OPTION MUST LOOK DISABLED. The viewer-scoped filters ("me")
    render with the native `disabled` attribute while the workspace has no
    resolved viewer, but no rule drew that fact — a blocked option was
@@ -1618,6 +1719,16 @@
   cursor: not-allowed;
 }
 .cv2-root .lp__kindopt:disabled:hover { background: none; }
+
+@media (forced-colors: active) {
+  .cv2-root .lp__kindopt--current {
+    border-color: Highlight;
+    color: HighlightText;
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+  .cv2-root .lp__kindopt--current .lp__kindopt-current { color: HighlightText; }
+}
 
 .cv2-root .lp__actions {
   flex: none;
@@ -2800,14 +2911,6 @@
   line-height: 1.5;
   color: var(--pn-ink-4);
 }
-/* Kind-selector total, beside the kind name. */
-.cv2-root .lp__total {
-  flex: none;
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  color: var(--pn-ink-4);
-}
-
 /* Lifecycle tier tabs — their OWN row (D41). Tabs are the lifecycle band;
    the filter chips below narrow within it. T0-1 draws both. */
 .cv2-root .lp__tierrow {

@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { AcceptanceCriterion, EdgeView, EntityDetail, EntitySummary } from '@tm8/contract';
+import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
-import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
+import { Avatar, Chip, Eyebrow, Markdown, Timestamp } from '../../kit';
 import type { FileUploadTask } from '../../files/upload';
 import { ProseField, type TriggerOption } from '../../rich-input';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
@@ -223,7 +224,7 @@ export function SubtreeBody({
 
   return (
     <div
-      className="pn-body pn-body--measured sb-body"
+      className="pn-body pn-body--measured sb-body k-enter"
       id="tabpanel-content"
       role="tabpanel"
       aria-labelledby="tab-content"
@@ -240,15 +241,16 @@ export function SubtreeBody({
         onAttached={onAttached}
         attachmentSlot={attachmentSlot}
       />
-      {/* Keyed by entity: the `+N more` overflow must not ride from one task
-          onto the next in the same panel slot. */}
-      <RunsStrip key={detail.id} runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
       <AcceptanceSection
         detail={detail}
         draft={criteriaDraft}
         onChange={onCriteriaChange}
         unavailableReason={criteriaUnavailableReason}
       />
+      {/* Definition precedes execution: the conditions for done stay directly
+          below the brief, then the runs that are trying to satisfy them. The
+          strip remains keyed so `+N more` cannot ride between task entities. */}
+      <RunsStrip key={detail.id} runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
       <SubtreeSection
         detail={detail}
         childWork={childWork}
@@ -574,9 +576,13 @@ function DescriptionEditor({
     /* `data-attachment-drophost`: this body opts its description block in as
        the attachment strip's drop target — the strip finds the marker, never
        a body class name, so it stays agnostic of its host's anatomy. */
-    <div className="sb-description" data-testid="task-description-editor" data-attachment-drophost="">
+    <div
+      className="sb-description k-hero k-accent-top"
+      data-testid="task-description-editor"
+      data-attachment-drophost=""
+    >
       <div className="sb-description__head">
-        <span className="sb-description__label">Description</span>
+        <span className="sb-description__label k-label">Description</span>
         <StanceControl
           editing={showEditor}
           // Nothing to leave the editor FOR while the text is empty, so the
@@ -646,7 +652,7 @@ function StanceControl({
   return (
     <button
       type="button"
-      className="sb-description__stance"
+      className="sb-description__stance k-btn k-btn--ghost k-btn--sm"
       data-testid="task-description-stance"
       onClick={onToggle}
     >
@@ -701,6 +707,19 @@ function AcceptanceSection({
   if (!Array.isArray(persisted)) return null;
   const criteria = (draft ?? persisted) as readonly AcceptanceCriterion[];
   const completed = criteria.filter((c) => c.done).length;
+  const remaining = criteria.length - completed;
+  const progressState =
+    criteria.length === 0 ? 'empty' : remaining === 0 ? 'completed' : 'in-progress';
+  const progressCopy =
+    progressState === 'empty'
+      ? 'Ready to define'
+      : progressState === 'completed'
+        ? 'All criteria met'
+        : `${remaining} ${remaining === 1 ? 'criterion' : 'criteria'} remaining`;
+  const progressLabel =
+    criteria.length === 0
+      ? 'Acceptance: no criteria defined'
+      : `Acceptance: ${completed} of ${criteria.length} criteria met`;
   /*
    * A REASON WINS OVER A HANDLER. `disabled={!onChange}` alone left a caller
    * that passed BOTH with live, clickable boxes wearing a refusal tooltip —
@@ -724,16 +743,43 @@ function AcceptanceSection({
       id="acceptance"
       label="ACCEPTANCE"
       count={`${completed}/${criteria.length}`}
-      /* The SubtreeSection law, applied here now that this fold HOLDS an
-         affordance: no rows AND a LIVE add row ⇒ empty (the affordance
-         survives behind the reveal); a REFUSED add row keeps the fold
-         visible, because hiding it would hide the refusal's reason. */
-      empty={criteria.length === 0 && editable}
-      defaultOpen={criteria.length > 0}
+      /* Acceptance is task-defining, not secondary disclosure. Its empty
+         state is itself actionable, so it remains visible instead of hiding
+         the one place a criterion can be added behind the empty-fold toggle. */
+      empty={false}
+      defaultOpen
       testId="acceptance-section"
     >
+      <div
+        className={`sb-acceptance__summary k-accent-top ${progressState === 'completed' ? 'k-tint-run' : 'k-tint-brand'}`}
+        data-testid="acceptance-progress"
+        data-state={progressState}
+        data-completed={completed}
+        data-total={criteria.length}
+      >
+        <div className="sb-acceptance__summary-copy">
+          <span className="k-label">Definition of done</span>
+          <strong>{progressCopy}</strong>
+        </div>
+        <div className="sb-acceptance__meter">
+          <div className="sb-acceptance__bar">
+            <ProgressBar
+              value={completed}
+              max={Math.max(criteria.length, 1)}
+              label={progressLabel}
+              isLabelHidden
+            />
+          </div>
+          <span className="sb-acceptance__fraction" aria-hidden>
+            {`${completed}/${criteria.length}`}
+          </span>
+        </div>
+      </div>
       {criteria.length === 0 ? (
-        <p className="pn-section__empty">No acceptance criteria on this yet.</p>
+        <div className="sb-acceptance__empty" data-testid="acceptance-empty">
+          <p className="pn-section__empty">No acceptance criteria on this yet.</p>
+          <span>Write the first observable outcome below.</span>
+        </div>
       ) : (
         <>
           {editable ? (
@@ -742,7 +788,7 @@ function AcceptanceSection({
             <div className="sb-acceptance__head">
               <button
                 type="button"
-                className="sb-description__stance"
+                className="sb-description__stance k-btn k-btn--ghost k-btn--sm"
                 data-testid="acceptance-stance"
                 onClick={() => setEditing(!editing)}
               >
@@ -821,7 +867,7 @@ function AcceptanceSection({
                   {box}
                   <input
                     type="text"
-                    className="sb-criterion__reword"
+                    className="sb-criterion__reword k-input k-input--sm"
                     data-testid="acceptance-reword"
                     aria-label={`Reword criterion: ${criterion.text}`}
                     value={criterion.text}
@@ -835,7 +881,7 @@ function AcceptanceSection({
                   />
                   <button
                     type="button"
-                    className="sb-criterion__remove"
+                    className="sb-criterion__remove k-btn k-btn--ghost k-btn--sm"
                     data-testid="acceptance-remove"
                     aria-label={`Remove criterion: ${criterion.text}`}
                     title="Remove this criterion"
@@ -870,7 +916,7 @@ function AcceptanceSection({
         <div className="sb-addcriterion" data-testid="acceptance-add-row">
           <input
             type="text"
-            className="sb-addcriterion__input"
+            className="sb-addcriterion__input k-input k-input--sm"
             data-testid="acceptance-add-input"
             aria-label="New acceptance criterion"
             placeholder="＋ add criterion"
@@ -885,7 +931,7 @@ function AcceptanceSection({
               nothing to explain about an empty box beyond its own emptiness. */}
           <button
             type="button"
-            className="sb-addcriterion__commit"
+            className="sb-addcriterion__commit k-btn k-btn--secondary k-btn--sm"
             data-testid="acceptance-add"
             disabled={addText.trim() === ''}
             onClick={commitAdd}
@@ -1033,9 +1079,10 @@ function SubtreeRow({ child, onOpenEntity }: { child: EntitySummary; onOpenEntit
 }
 
 // ---------------------------------------------------------------------------
-// RUNS — one always-visible dot-chip cluster, still the two-source region
-// (D6, brief §2.7). Replaces the old LIVE SESSION card row + full-width RUNS
-// rows: live first and tinted, six chips shown, the rest behind `+N more`.
+// RUNS — one always-visible execution region, still the two-source region
+// (D6, brief §2.7). Measured live work, measured history and unresolved
+// liveness are separate groups so visual hierarchy never overstates a stored
+// session status. Six cards are shown, the rest behind `+N more`.
 // ---------------------------------------------------------------------------
 
 const RUN_CHIP_CAP = 6;
@@ -1084,13 +1131,26 @@ function RunsStrip({
     return typeof summary.createdAt === 'string' ? summary.createdAt : '';
   };
   const sorted = [...runs].sort((a, b) => {
-    const rank = (verdictOf(a) === 'live' ? 0 : 1) - (verdictOf(b) === 'live' ? 0 : 1);
+    const rankOf = (run: EntitySummary): number => {
+      const verdict = verdictOf(run);
+      if (verdict === 'live') return 0;
+      if (verdict === 'stale' || verdict === 'not-running') return 1;
+      return 2;
+    };
+    const rank = rankOf(a) - rankOf(b);
     return rank !== 0 ? rank : stampOf(b).localeCompare(stampOf(a));
   });
   const shown = expanded ? sorted : sorted.slice(0, RUN_CHIP_CAP);
   const overflow = sorted.length - shown.length;
   const liveShown = shown.filter((run) => verdictOf(run) === 'live');
-  const restShown = shown.filter((run) => verdictOf(run) !== 'live');
+  const historyShown = shown.filter((run) => {
+    const verdict = verdictOf(run);
+    return verdict === 'stale' || verdict === 'not-running';
+  });
+  const unresolvedShown = shown.filter((run) => {
+    const verdict = verdictOf(run);
+    return verdict == null || verdict === 'unknown';
+  });
 
   return (
     <section className="sb-section sb-runs" data-testid="runs-section">
@@ -1098,25 +1158,52 @@ function RunsStrip({
       {runs.length === 0 ? (
         <p className="pn-section__empty">No runs recorded against this.</p>
       ) : (
-        <div className="sb-runs__chips">
+        <div className="sb-runs__groups">
           {liveShown.length > 0 ? (
-            /* The MEASURED-LIVE cluster keeps its own testid (it renders only
-               on a live verdict, exactly as the old promoted card did — D6:
-               never off the stored status). `display: contents`, so the chips
-               flow in the one cluster. */
-            <span className="sb-runs__live" data-testid="live-session-section">
-              {liveShown.map((run) => (
-                <RunChip key={run.id} run={run} verdict="live" onOpenEntity={onOpenEntity} />
-              ))}
-            </span>
+            /* The MEASURED-LIVE group keeps its test seam and renders only on
+               a live verdict — never from the stored status. */
+            <div
+              className="sb-runs__group sb-runs__group--live k-tint-run"
+              data-testid="live-session-section"
+            >
+              <RunGroupHead label="Live now" count={liveShown.length} />
+              <div className="sb-runs__cards" role="list" aria-label="Live runs">
+                {liveShown.map((run) => (
+                  <div role="listitem" key={run.id}>
+                    <RunChip run={run} verdict="live" onOpenEntity={onOpenEntity} />
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : null}
-          {restShown.map((run) => (
-            <RunChip key={run.id} run={run} verdict={verdictOf(run)} onOpenEntity={onOpenEntity} />
-          ))}
+          {historyShown.length > 0 ? (
+            <div className="sb-runs__group" data-testid="run-history-section">
+              <RunGroupHead label="History" count={historyShown.length} />
+              <div className="sb-runs__cards" role="list" aria-label="Run history">
+                {historyShown.map((run) => (
+                  <div role="listitem" key={run.id}>
+                    <RunChip run={run} verdict={verdictOf(run)} onOpenEntity={onOpenEntity} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {unresolvedShown.length > 0 ? (
+            <div className="sb-runs__group" data-testid="run-unresolved-section">
+              <RunGroupHead label="Liveness unresolved" count={unresolvedShown.length} />
+              <div className="sb-runs__cards" role="list" aria-label="Runs with unresolved liveness">
+                {unresolvedShown.map((run) => (
+                  <div role="listitem" key={run.id}>
+                    <RunChip run={run} verdict={verdictOf(run)} onOpenEntity={onOpenEntity} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {overflow > 0 ? (
             <button
               type="button"
-              className="sb-runchip sb-runchip--more"
+              className="sb-runchip sb-runchip--more k-press"
               onClick={() => setExpanded(true)}
             >
               +{overflow} more
@@ -1125,6 +1212,15 @@ function RunsStrip({
         </div>
       )}
     </section>
+  );
+}
+
+function RunGroupHead({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="sb-runs__grouphead">
+      <span className="k-label">{label}</span>
+      <span className="sb-runs__groupcount">{count}</span>
+    </div>
   );
 }
 
@@ -1141,6 +1237,13 @@ function RunChip({
   const treatment = verdict != null ? config.list.liveTreatment?.(verdict) : undefined;
   const state = run.state as unknown as Record<string, unknown>;
   const model = typeof state.model === 'string' ? state.model : null;
+  const summary = run as unknown as Record<string, unknown>;
+  const startedAt =
+    typeof state.startedAt === 'string'
+      ? state.startedAt
+      : typeof summary.createdAt === 'string'
+        ? summary.createdAt
+        : null;
   const live = verdict === 'live';
   const word = treatment ? treatment.shortLabel ?? treatment.label : null;
   /* The accessible name carries what the narrow chip cannot: title, model and
@@ -1150,7 +1253,7 @@ function RunChip({
   return (
     <button
       type="button"
-      className={live ? 'sb-runchip sb-runchip--live' : 'sb-runchip'}
+      className={live ? 'sb-runchip sb-runchip--live k-lift k-press' : 'sb-runchip k-lift k-press'}
       data-testid={live ? 'live-session-card' : 'run-row'}
       title={name}
       aria-label={name}
@@ -1166,6 +1269,14 @@ function RunChip({
         />
         <span className="sb-runchip__title">{run.title}</span>
       </span>
+      {model || startedAt ? (
+        <span className="sb-runchip__meta">
+          {model ? <span className="sb-runchip__model">{model}</span> : null}
+          {startedAt ? (
+            <Timestamp className="sb-runchip__time" at={startedAt} prefix="started" />
+          ) : null}
+        </span>
+      ) : null}
       {treatment ? (
         <span
           className={`sb-word sb-word--${treatment.tone} sb-runchip__word`}
