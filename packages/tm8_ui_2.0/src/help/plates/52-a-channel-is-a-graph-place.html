@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:,">
+<title>A channel is a graph place · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style id="artifact-style">
+/* Content layer: the foundation above is intentionally unchanged. */
+.intro-row { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin: 16px 0 0; }
+.truth-note { max-width:none; }
+.demo-heading { justify-content:space-between; flex-wrap:wrap; }
+.demo-heading__views { display:inline-flex; gap:4px; font-family:var(--body-face); }
+.channel-demo { position:relative; overflow:hidden; }
+.channel-replica { padding:0; border:1px dashed var(--pn-ink-3); overflow:hidden; }
+.channel-bar { min-height:52px; display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--pn-surface); border-bottom:1px solid var(--pn-line); }
+.channel-bar__mark { width:29px; height:29px; display:grid; place-items:center; border:1px solid var(--pn-line-2); border-radius:7px; color:var(--pn-brand); background:var(--pn-brand-soft); }
+.channel-bar__title { font-weight:650; line-height:1.15; }
+.channel-bar__id { display:block; font:9px/1.35 var(--pn-mono); color:var(--pn-ink-3); overflow-wrap:anywhere; }
+.ghost-label { margin-left:auto; border:1px dashed var(--pn-ink-3); border-radius:999px; padding:2px 7px; color:var(--pn-ink-2); font:600 9px var(--pn-mono); letter-spacing:.08em; text-transform:uppercase; }
+.channel-grid { min-height:448px; display:grid; grid-template-columns:180px minmax(0,1fr) 238px; }
+.channel-rail { padding:12px; background:var(--pn-surface); border-right:1px solid var(--pn-line); }
+.rail-label { margin:0 0 7px; color:var(--pn-ink-3); font:600 9px var(--pn-mono); letter-spacing:.09em; text-transform:uppercase; }
+.channel-link { display:flex; align-items:center; gap:7px; min-width:0; margin:3px 0; padding:7px 8px; border:1px solid transparent; border-radius:6px; color:var(--pn-ink-2); font-size:12px; }
+.channel-link.is-current { border-color:var(--pn-line-2); background:var(--pn-card); color:var(--pn-ink); font-weight:600; }
+.channel-link--child { margin-left:14px; }
+.channel-link__id { display:block; color:var(--pn-ink-3); font:8px var(--pn-mono); overflow:hidden; text-overflow:ellipsis; }
+.roster { display:flex; flex-direction:column; align-items:flex-start; gap:7px; margin-top:18px; }
+.roster .who { background:var(--pn-card); border-color:var(--pn-line); color:var(--pn-ink-2); white-space:nowrap; }
+.roster .who__kind { color:var(--pn-ink-3); }
+.channel-stream { padding:14px; background:var(--pn-paper); overflow:hidden; }
+.stream-caption { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 12px; color:var(--pn-ink-3); font:600 9px var(--pn-mono); letter-spacing:.08em; text-transform:uppercase; }
+.stream-list { display:flex; flex-direction:column; gap:11px; }
+.stream-turn { border-left:2px solid transparent; padding-left:0; }
+.stream-turn--reply { margin-left:24px; padding-left:12px; border-left-color:var(--pn-line-2); }
+.stream-turn .pn-bubble { max-width:none; margin-left:26px; }
+.stream-turn--task .pn-bubble { border-color:var(--pn-brand); background:var(--pn-brand-soft); }
+.message-id { display:block; margin:4px 0 0 26px; color:var(--pn-ink-3); font:8.5px/1.35 var(--pn-mono); overflow-wrap:anywhere; }
+.task-share { display:grid; gap:6px; }
+.task-share .pn-echip { max-width:100%; width:max-content; }
+.entity-ledger { padding:12px; border-left:1px solid var(--pn-line); background:var(--pn-card); }
+.ledger-list { display:grid; gap:8px; }
+.ledger-item { border:1px solid var(--pn-line); border-radius:7px; padding:8px; background:var(--pn-surface); }
+.ledger-item__top { display:flex; align-items:center; gap:6px; color:var(--pn-ink); font-size:11px; font-weight:650; }
+.ledger-item__kind { margin-left:auto; color:var(--pn-ink-3); font:8px var(--pn-mono); text-transform:uppercase; }
+.ledger-item code { display:block; margin-top:5px; padding:0; border:0; background:none; color:var(--pn-ink-3); font:8.5px/1.35 var(--pn-mono); overflow-wrap:anywhere; }
+[data-view-panel="stream"] .stage { transform:translateY(8px); }
+.stage { opacity:0; pointer-events:none; visibility:hidden; transition:opacity var(--dur-slow) var(--ease-out), visibility 0s linear var(--dur-slow); }
+[data-view-panel="stream"] .stage { transition:opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out), visibility 0s linear var(--dur-slow); }
+.stage.is-visible { opacity:1; pointer-events:auto; visibility:visible; transition-delay:0s; }
+[data-view-panel="stream"] .stage.is-visible { transform:translateY(0); }
+[data-view-panel="stream"] .stage:not(.is-visible) { display:none; }
+.map-panel { min-height:448px; display:grid; place-items:center; padding:14px; background:var(--pn-paper); overflow-x:auto; }
+.map-panel .gfx { max-width:760px; }
+.map-panel .gedge.stage { stroke-dasharray:260; stroke-dashoffset:260; transition:opacity var(--dur-slow) var(--ease-out), stroke-dashoffset var(--dur-slow) var(--ease-out), visibility 0s linear var(--dur-slow); }
+.map-panel .gedge.stage.is-visible { stroke-dashoffset:0; }
+.map-legend { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:0 8px 10px; color:var(--pn-ink-3); font:9px var(--pn-mono); }
+.map-key { display:inline-flex; align-items:center; gap:5px; }
+.map-key::before { content:""; width:18px; border-top:1px solid var(--pn-ink-3); }
+.map-key--accent::before { border-color:var(--pn-brand); }
+.map-key--thread::before { border-top-style:dashed; }
+.mobile-map-hint { display:none; margin-left:auto; color:var(--pn-ink-2); }
+.demo-caption { min-height:2.7em; margin:12px 2px 0; }
+.view-note { margin-left:auto; font:11px var(--mono); color:var(--muted); }
+.equal-citizens { display:grid; grid-template-columns:1fr auto 1fr; gap:16px; align-items:stretch; }
+.citizen { position:relative; }
+.citizen__kind { display:flex; align-items:center; gap:8px; margin:0 0 10px; }
+.citizen__kind .ki { color:var(--accent); }
+.citizen__id { display:block; margin:10px 0; font-size:11px; overflow-wrap:anywhere; }
+.equals-mark { display:grid; place-items:center; color:var(--accent-ink); font:400 34px var(--serif); }
+.fact-list { margin:10px 0 0; padding-left:20px; }
+.fact-list li { margin:5px 0; }
+.truth-table { width:100%; border-collapse:collapse; margin-top:14px; font-size:14px; }
+.truth-table th, .truth-table td { padding:10px 12px; text-align:left; vertical-align:top; border-top:1px solid var(--line); }
+.truth-table th { width:24%; font:600 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.truth-table code { font-size:11.5px; }
+.help-map { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.help-map span { border:1px solid var(--line); border-radius:999px; padding:3px 9px; color:var(--muted); font-size:13px; }
+.sr-only { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; margin:-1px!important; overflow:hidden!important; clip:rect(0,0,0,0)!important; white-space:nowrap!important; border:0!important; }
+@media (prefers-color-scheme: dark) {
+  .pn.channel-replica {
+    --pn-paper:#1D1912; --pn-surface:#1B1810; --pn-card:#221E15;
+    --pn-hover:#262117; --pn-active:#302A1D; --pn-line:#2C2719; --pn-line-2:#3B3524;
+    --pn-ink:#EFE9DB; --pn-ink-2:#BDB5A2; --pn-ink-3:#8C8470; --pn-ink-4:#665E4C;
+    --pn-run:#5CB381; --pn-run-soft:rgba(92,179,129,.17); --pn-wait:#D9AA49; --pn-wait-soft:rgba(217,170,73,.18);
+    --pn-block:#DA7D6A; --pn-block-soft:rgba(218,125,106,.17); --pn-info:#6F9FC7; --pn-info-soft:rgba(111,159,199,.17);
+    --pn-idle:#7A7360; --pn-idle-soft:rgba(122,115,96,.2); --pn-brand:#E0A45A; --pn-brand-soft:rgba(224,164,90,.15);
+  }
+}
+@media (max-width: 820px) {
+  .channel-grid { grid-template-columns:150px minmax(0,1fr); }
+  .entity-ledger { grid-column:1 / -1; border-left:0; border-top:1px solid var(--pn-line); }
+  .ledger-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .hub-note { display:none; }
+}
+@media (max-width: 560px) {
+  main { padding:20px 14px 56px; }
+  header.site { padding-left:14px; padding-right:14px; }
+  h1 { font-size:36px; }
+  h2 { font-size:25px; }
+  .plate { margin-left:-7px; margin-right:-7px; padding:5px; }
+  .channel-grid { display:block; min-height:0; }
+  .channel-rail { border-right:0; border-bottom:1px solid var(--pn-line); }
+  .roster { flex-direction:row; flex-wrap:wrap; margin-top:10px; }
+  .channel-stream { padding:11px; }
+  .stream-turn--reply { margin-left:12px; }
+  .entity-ledger { padding:10px; }
+  .ledger-list { grid-template-columns:1fr; }
+  .map-panel { min-height:360px; display:block; padding:6px; }
+  .map-panel .gfx { min-width:620px; }
+  .mobile-map-hint { display:inline; }
+  .tmc { flex-wrap:wrap; }
+  .tmc input[type="range"] { min-width:130px; }
+  .view-note { width:100%; margin:7px 0 0; }
+  .equal-citizens { grid-template-columns:1fr; }
+  .equals-mark { min-height:24px; }
+  .truth-table, .truth-table tbody, .truth-table tr, .truth-table th, .truth-table td { display:block; }
+  .truth-table th { width:auto; padding-bottom:2px; }
+  .truth-table td { padding-top:2px; border-top:0; }
+  .truth-table tr { border-top:1px solid var(--line); padding:7px 0; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm8 <i>·</i> Help</span>
+  <span class="crumb">A channel is a graph place</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+
+<svg id="tm8-icons" aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ki-task" viewBox="0 0 16 16"><path d="M3.4 5.6a2.2 2.2 0 0 1 2.2-2.2h4.8a2.2 2.2 0 0 1 2.2 2.2v4.8a2.2 2.2 0 0 1-2.2 2.2H5.6a2.2 2.2 0 0 1-2.2-2.2z"/><path d="M6 8.1 7.4 9.5 10.1 6.6"/></symbol>
+  <symbol id="ki-channel" viewBox="0 0 16 16"><path d="M6.4 3 5.2 13"/><path d="M11 3 9.8 13"/><path d="M3.6 6.4h9.2"/><path d="M3.1 9.6h9.2"/></symbol>
+  <symbol id="ki-message" viewBox="0 0 16 16"><path d="M13.2 9.6a1.9 1.9 0 0 1-1.9 1.9H6.5L3.4 13.8V5.1a1.9 1.9 0 0 1 1.9-1.9h6a1.9 1.9 0 0 1 1.9 1.9z"/></symbol>
+  <symbol id="ki-member" viewBox="0 0 16 16"><path d="M8 8.3a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z"/><path d="M3.3 13.6a4.7 4.7 0 0 1 9.4 0"/></symbol>
+  <symbol id="ki-team_member" viewBox="0 0 16 16"><path d="M8 2.6v1.8"/><path d="M4.4 4.4h7.2a1.6 1.6 0 0 1 1.6 1.6v5a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6V6a1.6 1.6 0 0 1 1.6-1.6z"/><path d="M6.2 7.8v1.2"/><path d="M9.8 7.8v1.2"/></symbol>
+</svg>
+
+<main id="main">
+  <p class="kicker" style="margin:26px 0 0">Collaboration · 52 / 55</p>
+  <h1>A channel is a graph place</h1>
+  <p class="lede">A channel is not a chat list. It is a durable entity where people, teammates, messages, subchannels, threads, and shared work keep their own identities and relationships.</p>
+  <div class="ink-legend" role="note" aria-label="Truth status legend">
+    <span><span class="swatch swatch--solid"></span><b>Solid ink</b> — shipped graph semantics</span>
+    <span><span class="swatch swatch--ghost"></span><b>Ghost ink</b> — the depicted channel interface is designed, not shipped</span>
+    <span class="stamp">verified against the live edge registry on 2026-08-20</span>
+  </div>
+
+  <section aria-labelledby="demo-title">
+    <h2 id="demo-title" class="demo-heading"><span><span class="no">01</span>Build the place</span><span class="demo-heading__views" role="group" aria-label="Choose channel representation"><button class="btn btn--primary" type="button" data-view="stream" aria-pressed="true">Stream</button><button class="btn" type="button" data-view="map" aria-pressed="false">Identity map</button></span></h2>
+    <p>Drive one sequence. A subchannel branches off, a reply becomes a thread, and a task enters the channel without losing its task identity. Switch to the identity map at any step to see what the stream is made of.</p>
+
+    <figure class="plate">
+      <div class="channel-demo" id="channel-demo" data-replay data-view-mode="stream">
+        <div class="pn channel-replica" data-view-panel="stream">
+          <div class="channel-bar">
+            <span class="channel-bar__mark" aria-hidden="true"><svg class="ki"><use href="#ki-channel"/></svg></span>
+            <span><span class="channel-bar__title"># incident-response</span><code class="channel-bar__id">01a09c10-1000-7000-8000-aaaaaaaaaaa1 · channel · v4</code></span>
+            <span class="ghost-label">UI · designed</span>
+          </div>
+          <div class="channel-grid">
+            <aside class="channel-rail" aria-label="Channel roster and hierarchy">
+              <p class="rail-label">Channels</p>
+              <div class="channel-link is-current"><svg class="ki" aria-hidden="true"><use href="#ki-channel"/></svg><span># incident-response<span class="channel-link__id">…aaa1</span></span></div>
+              <div class="channel-link channel-link--child stage" data-from="1"><svg class="ki" aria-hidden="true"><use href="#ki-channel"/></svg><span># redirect-lab<span class="channel-link__id">…bbb2 · child</span></span></div>
+              <div class="roster" aria-label="Channel roster">
+                <p class="rail-label" style="width:100%;margin-top:8px">Roster · has_member</p>
+                <span class="who who--member"><span class="who__avatar">MV</span>Mara <span class="who__kind">member</span></span>
+                <span class="who who--member"><span class="who__avatar">TI</span>Theo <span class="who__kind">member</span></span>
+                <span class="who who--teammate"><span class="who__avatar">JU</span>Juniper <span class="who__kind">teammate</span></span>
+              </div>
+            </aside>
+
+            <div class="channel-stream" aria-label="Designed channel stream">
+              <p class="stream-caption"><span>Durable stream</span><span>anchor · …aaa1</span></p>
+              <div class="stream-list">
+                <article class="stream-turn stage" data-from="0">
+                  <div class="pn-turn__byline"><span class="pn-avatar pn-avatar--human pn-avatar--tone-info" aria-hidden="true">MV</span><strong>Mara Voss</strong><time datetime="2026-08-20T10:12:00Z">10:12</time></div>
+                  <div class="pn-bubble">The redirect loop is back after the password change.</div>
+                  <code class="message-id">message · 01a09c30-3000-7000-8000-ddddddddddd4</code>
+                </article>
+
+                <article class="stream-turn stream-turn--reply stage" data-from="2">
+                  <div class="pn-turn__byline"><span class="pn-avatar pn-avatar--agent pn-avatar--tone-brand" aria-hidden="true">JU</span><strong>Juniper</strong><time datetime="2026-08-20T10:13:00Z">10:13</time><span class="pn-pill pn-pill--info">reply</span></div>
+                  <div class="pn-bubble">I can reproduce it. I’m tracing the cookie rotation.</div>
+                  <code class="message-id">message · …eee5 · parentMessageId …ddd4</code>
+                </article>
+
+                <article class="stream-turn stream-turn--task stage" data-from="3">
+                  <div class="pn-turn__byline"><span class="pn-avatar pn-avatar--human pn-avatar--tone-run" aria-hidden="true">TI</span><strong>Theo Iwu</strong><time datetime="2026-08-20T10:15:00Z">10:15</time></div>
+                  <div class="pn-bubble task-share"><span>Keep the work with the conversation:</span><span class="pn-echip"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg><span>Fix login redirect loop</span><span class="pn-echip__kind">task</span></span><code>01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11 · v4</code></div>
+                  <code class="message-id">message · 01a09c32-5000-7000-8000-fffffffffff6</code>
+                </article>
+
+                <article class="stream-turn stream-turn--reply stage" data-from="4">
+                  <div class="pn-turn__byline"><span class="pn-avatar pn-avatar--agent pn-avatar--tone-brand" aria-hidden="true">JU</span><strong>Juniper</strong><time datetime="2026-08-20T10:16:00Z">10:16</time><span class="pn-pill pn-pill--run"><span class="pn-pill__dot"></span>working</span></div>
+                  <div class="pn-bubble">I’ll take the task. The thread and the task remain separately addressable.</div>
+                  <code class="message-id">message · …1117 · working_on → task …9e11</code>
+                </article>
+              </div>
+            </div>
+
+            <aside class="entity-ledger" aria-label="Durable identity ledger">
+              <p class="rail-label">Address book · solid truth</p>
+              <div class="ledger-list">
+                <div class="ledger-item stage" data-from="0"><div class="ledger-item__top"><svg class="ki" aria-hidden="true"><use href="#ki-channel"/></svg>Incident response<span class="ledger-item__kind">channel</span></div><code>id …aaa1<br>version 4<br>has_member → Mara, Theo, Juniper</code></div>
+                <div class="ledger-item stage" data-from="1"><div class="ledger-item__top"><svg class="ki" aria-hidden="true"><use href="#ki-channel"/></svg>Redirect lab<span class="ledger-item__kind">channel</span></div><code>id …bbb2<br>parentId …aaa1</code></div>
+                <div class="ledger-item stage" data-from="2"><div class="ledger-item__top"><svg class="ki" aria-hidden="true"><use href="#ki-message"/></svg>Reply<span class="ledger-item__kind">message</span></div><code>id …eee5<br>anchorId …aaa1<br>parentMessageId …ddd4</code></div>
+                <div class="ledger-item stage" data-from="3"><div class="ledger-item__top"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg>Login loop<span class="ledger-item__kind">task</span></div><code>id …9e11 · version 4<br>attached_to → …aaa1</code></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <div class="pn channel-replica" data-view-panel="map" hidden>
+          <div class="channel-bar">
+            <span class="channel-bar__mark" aria-hidden="true"><svg class="ki"><use href="#ki-channel"/></svg></span>
+            <span><span class="channel-bar__title">The same place, as identities and relationships</span><code class="channel-bar__id">not a second system · the stream is already the graph</code></span>
+            <span class="pill pill--ok">shipped semantics</span>
+          </div>
+          <div class="map-panel">
+            <svg class="gfx" viewBox="0 0 780 430" role="img" aria-labelledby="map-title map-desc">
+              <title id="map-title">Identity map of the incident-response channel</title>
+              <desc id="map-desc">A channel entity is connected to three roster members, a child channel, two threaded messages, and an attached task. Each has its own durable id. The map fills in as the sequence advances.</desc>
+
+              <g class="gedge stage" data-from="0"><line x1="306" y1="206" x2="154" y2="104"/><text x="175" y="142">has_member</text></g>
+              <g class="gedge stage" data-from="0"><line x1="345" y1="195" x2="340" y2="96"/><text x="349" y="145">has_member</text></g>
+              <g class="gedge stage" data-from="0"><line x1="402" y1="200" x2="530" y2="101"/><text x="438" y="138">has_member</text></g>
+              <g class="gedge gedge--accent stage" data-from="1"><line x1="430" y1="240" x2="610" y2="240"/><text x="486" y="229">hierarchy · parentId</text></g>
+              <g class="gedge stage" data-from="2"><line x1="332" y1="257" x2="215" y2="344"/><text x="218" y="287">anchored_to</text></g>
+              <g class="gedge gedge--ghost stage" data-from="2"><line x1="282" y1="354" x2="428" y2="354"/><text x="304" y="343">reply · parentMessageId</text></g>
+              <g class="gedge stage" data-from="2"><line x1="390" y1="260" x2="478" y2="338"/><text x="410" y="289">anchored_to</text></g>
+              <g class="gedge gedge--accent stage" data-from="3"><line x1="375" y1="270" x2="375" y2="383"/><text x="385" y="320">attached_to</text></g>
+              <g class="gedge gedge--accent stage" data-from="4"><line x1="548" y1="116" x2="437" y2="389"/><text x="487" y="273">working_on</text></g>
+
+              <g class="gnode is-active stage" data-from="0" transform="translate(300,200)"><rect width="160" height="62"/><svg class="ki" x="12" y="21" width="16" height="16" viewBox="0 0 16 16"><use href="#ki-channel"/></svg><text x="38" y="26">incident-response</text><text class="gnode__kind" x="38" y="43">channel · …aaa1 · v4</text></g>
+              <g class="gnode stage" data-from="0" transform="translate(78,60)"><rect width="130" height="48"/><svg class="ki" x="10" y="15" width="16" height="16" viewBox="0 0 16 16"><use href="#ki-member"/></svg><text x="34" y="21">Mara Voss</text><text class="gnode__kind" x="34" y="36">member</text></g>
+              <g class="gnode stage" data-from="0" transform="translate(278,48)"><rect width="130" height="48"/><svg class="ki" x="10" y="15" width="16" height="16" viewBox="0 0 16 16"><use href="#ki-member"/></svg><text x="34" y="21">Theo Iwu</text><text class="gnode__kind" x="34" y="36">member</text></g>
+              <g class="gnode stage" data-from="0" transform="translate(500,62)"><rect width="138" height="54"/><svg class="ki" x="10" y="18" width="16" height="16" viewBox="0 0 16 16"><use href="#ki-team_member"/></svg><text x="34" y="22">Juniper</text><text class="gnode__kind" x="34" y="39">team_member</text></g>
+              <g class="gnode stage" data-from="1" transform="translate(610,210)"><rect width="142" height="58"/><svg class="ki" x="10" y="19" width="16" height="16" viewBox="0 0 16 16"><use href="#ki-channel"/></svg><text x="34" y="23">redirect-lab</text><text class="gnode__kind" x="34" y="41">channel · …bbb2</text></g>
+              <g class="gnode stage" data-from="2" transform="translate(92,332)"><rect width="190" height="54"/><svg class="ki" x="10" y="17" width="16" height="16" viewBox="0 0 16 16"><use href="#ki-message"/></svg><text x="34" y="21">“The loop is back.”</text><text class="gnode__kind" x="34" y="39">message · …ddd4</text></g>
+              <g class="gnode stage" data-from="2" transform="translate(428,332)"><rect width="188" height="54"/><svg class="ki" x="10" y="17" width="16" height="16" viewBox="0 0 16 16"><use href="#ki-message"/></svg><text x="34" y="21">“I can reproduce it.”</text><text class="gnode__kind" x="34" y="39">message · …eee5</text></g>
+              <g class="gnode is-active stage" data-from="3" transform="translate(282,382)"><rect width="188" height="48"/><svg class="ki" x="10" y="15" width="16" height="16" viewBox="0 0 16 16"><use href="#ki-task"/></svg><text x="34" y="20">Fix login redirect loop</text><text class="gnode__kind" x="34" y="36">task · …9e11 · v4</text></g>
+            </svg>
+          </div>
+          <div class="map-legend" aria-hidden="true"><span class="map-key">registered relationship</span><span class="map-key map-key--accent">structural/work relationship</span><span class="map-key map-key--thread">reply field, not a registry edge</span><span class="mobile-map-hint">Scroll the map →</span></div>
+        </div>
+
+        <p class="caption demo-caption" data-replay-caption aria-live="polite">The channel starts as an addressable entity with a roster of members and teammates.</p>
+        <div class="tmc" role="group" aria-label="Channel graph sequence controls">
+          <button class="btn tmc-play" type="button">Play</button>
+          <button class="btn tmc-step" type="button">Step</button>
+          <label class="sr-only" for="channel-scrub">Choose sequence step</label>
+          <input id="channel-scrub" class="tmc-scrub" type="range" min="0" max="4" value="0" step="1">
+          <span class="tmc-count" aria-hidden="true">1 / 5</span>
+        </div>
+      </div>
+      <figcaption>Fig. 1 · The interface is a dashed, honest proposal. The identities and relationships it reveals are solid, shipped graph semantics. Motion starts, teaches, and settles.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="citizens-title">
+    <h2 id="citizens-title"><span class="no">02</span>Equal citizens, different fields</h2>
+    <p>“Equal” means both can be named, addressed, related, and returned later. It does not mean a message and a task have the same schema.</p>
+    <div class="equal-citizens">
+      <article class="card citizen">
+        <h3 class="citizen__kind" style="margin-top:0"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg>Entity</h3>
+        <code class="citizen__id">01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11</code>
+        <p>A task keeps its kind, version, status, and relationships when it is attached to a channel. Sharing does not flatten it into message text.</p>
+      </article>
+      <div class="equals-mark" aria-hidden="true">=</div>
+      <article class="card citizen">
+        <h3 class="citizen__kind" style="margin-top:0"><svg class="ki" aria-hidden="true"><use href="#ki-message"/></svg>Message</h3>
+        <code class="citizen__id">01a09c30-3000-7000-8000-ddddddddddd4</code>
+        <p>A message is also an entity. It keeps an author and durable id, and the server projects its anchor as <code>anchored_to</code>.</p>
+      </article>
+    </div>
+
+    <table class="truth-table">
+      <tbody>
+        <tr><th scope="row">Channel</th><td>An entity with a durable id and version. <code>has_member</code> links members and teammates; it is a roster, not an ACL or subscription.</td></tr>
+        <tr><th scope="row">Subchannel</th><td>Another <code>channel</code> whose <code>parentId</code> points to a channel in the same Space. Hierarchy remains same-kind.</td></tr>
+        <tr><th scope="row">Thread</th><td>Durable messages on the channel anchor. A reply carries its parent message id; <code>anchored_to</code> is the server-derived graph projection.</td></tr>
+        <tr><th scope="row">Shared task</th><td>The task stays a task. <code>attached_to</code> can target a channel and powers channel context shelves; a stream reference points back to the same task id.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section aria-labelledby="address-title">
+    <h2 id="address-title"><span class="no">03</span>The address survives the moment</h2>
+    <p>You can post to the channel because every entity is an anchor: <code>tm8 message send --to &lt;channel-id&gt; "Investigating the redirect"</code>. Later, the channel, the task, and each message still have their own durable handles. The conversation is not froth around the graph; it is part of the graph.</p>
+    <div class="gap-card truth-note"><b>Honest status</b>The server-side channel kind, hierarchy, roster relationship, message anchoring, reply threading, and context attachment are shipped. The channel interface depicted above is next-phase work, so its frame is dashed. Voice channels are outside this lesson.</div>
+    <p><span class="stamp">source · Section 8 — Collaboration · approved 2026-08-20</span></p>
+    <div class="help-map" aria-label="Related tm8 Help topics">
+      <span data-help-role="sibling">The ladder</span>
+      <span data-help-role="sibling">A space with people in it</span>
+      <span data-help-role="sibling">The mention that acts</span>
+      <span data-help-role="sibling">Channels are still the graph</span>
+    </div>
+  </section>
+</main>
+
+<footer class="site">Last updated 2026-08-20 · A channel is a graph place · tm8 Help v1 · <span class="stamp">graph semantics verified on the live Server</span></footer>
+
+<script id="tm8-foundation-js">
+/* ============================================================
+   tm8 Help — FOUNDATION SCRIPT (v2 — unchanged from v1)
+   Lift this <script> verbatim. Provides:
+   - TM8.reduced()          honest prefers-reduced-motion check
+   - TM8.stepper(root,opts) the ONE sequence driver (play/step/scrub)
+   - toggle2 wiring         the ONE "type / comes back" toggle
+   - TM8_MOCK               the shared Northlake mock workspace
+   ============================================================ */
+(function () {
+  'use strict';
+  var TM8 = {};
+  var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  TM8.reduced = function (el) {
+    return mq.matches || !!(el && el.closest && el.closest('.force-reduced'));
+  };
+
+  /* The standard control cluster. root contains .tmc-play, .tmc-step,
+     .tmc-scrub, .tmc-count. opts = { frames, render(i), intervalMs?, captions?[] }.
+     Play runs ONCE to the last frame and stops (starts, teaches, settles).
+     Under reduced motion, Play advances frame by frame with no animation. */
+  TM8.stepper = function (root, opts) {
+    var frames = opts.frames, i = 0, timer = null;
+    var play = root.querySelector('.tmc-play');
+    var step = root.querySelector('.tmc-step');
+    var scrub = root.querySelector('.tmc-scrub');
+    var count = root.querySelector('.tmc-count');
+    var cap = root.querySelector('[data-replay-caption]');
+    function render() {
+      opts.render(i);
+      if (scrub) scrub.value = String(i);
+      if (count) count.textContent = (i + 1) + ' / ' + frames;
+      if (cap && opts.captions) cap.textContent = opts.captions[i] || '';
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (play) play.textContent = 'Play';
+    }
+    function set(n) { i = Math.max(0, Math.min(frames - 1, n)); render(); }
+    if (play) play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      if (i >= frames - 1) set(0);
+      play.textContent = 'Pause';
+      var ms = opts.intervalMs || 1400;
+      if (TM8.reduced(root)) ms = Math.max(ms, 1800); /* no motion: give reading time */
+      timer = setInterval(function () {
+        if (i >= frames - 1) { stop(); return; }
+        set(i + 1);
+      }, ms);
+    });
+    if (step) step.addEventListener('click', function () { stop(); set(i >= frames - 1 ? 0 : i + 1); });
+    if (scrub) scrub.addEventListener('input', function () { stop(); set(parseInt(scrub.value, 10) || 0); });
+    render();
+    return { set: set, stop: stop };
+  };
+
+  /* toggle2: [data-toggle2] with button[data-pane] + [data-pane-id] panes */
+  TM8.wireToggles = function (scope) {
+    (scope || document).querySelectorAll('[data-toggle2]').forEach(function (box) {
+      var btns = box.querySelectorAll('button[data-pane]');
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          btns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+          box.querySelectorAll('[data-pane-id]').forEach(function (p) {
+            p.classList.toggle('is-shown', p.getAttribute('data-pane-id') === b.getAttribute('data-pane'));
+          });
+        });
+      });
+    });
+  };
+
+  /* ---- TM8_MOCK: the Northlake workspace (fiction; DTO-true shapes) ----
+     Shapes follow tm8.entity-context.v1 output, trimmed to rendered fields.
+     Ids are v7-shaped and fake. Model ids are NOT invented: teammates carry
+     provider only; harvest exact model ids from the live catalog if needed. */
+  var SPACE = '01a09e00-0000-7000-8000-1c2d3e4f5a6b';
+  function member(id, name, initials) {
+    return { id: id, kind: 'member', displayName: name, initials: initials, isAgent: false };
+  }
+  function teammate(id, name, initials, provider, role) {
+    return { id: id, kind: 'team_member', displayName: name, initials: initials,
+             isAgent: true, provider: provider, role: role || null, avatar: null,
+             ownerMemberId: '01a09e01-1111-7111-8111-aaaaaaaaaaa1' };
+  }
+  var MARA = member('01a09e01-1111-7111-8111-aaaaaaaaaaa1', 'Mara Voss', 'MV');
+  var THEO = member('01a09e02-2222-7222-8222-bbbbbbbbbbb2', 'Theo Iwu', 'TI');
+  var JUNIPER = teammate('01a09e10-3333-7333-8333-ccccccccccc3', 'Juniper', 'JU', 'claude-code');
+  var CALLISTO = teammate('01a09e11-4444-7444-8444-ddddddddddd4', 'Callisto', 'CA', 'codex');
+  var DISPATCHER = teammate('01a09e12-5555-7555-8555-eeeeeeeeeee5', 'Dispatcher', 'DI', 'claude-code', 'routes, never works');
+  var DREAMER = teammate('01a09e13-6666-7666-8666-fffffffffff6', 'Dreamer', 'DR', 'claude-code', 'tends memories, never deletes');
+  function task(id, title, status, category, priority, assignees, accDone, accTotal, version, extra) {
+    var t = {
+      id: id, spaceId: SPACE, kind: 'task', title: title, parentId: null,
+      visibility: 'space', version: version, category: category,
+      counters: { likes: 0, dislikes: 0, stars: 0, points: 0,
+        messages: (extra && extra.messages) || 0,
+        humanMessages: (extra && extra.humanMessages) || 0,
+        agentMessages: (extra && extra.agentMessages) || 0,
+        docs: 0, memories: 0, viewerReaction: null },
+      state: { kind: 'task', status: status, priority: priority, axes: {},
+        dueDate: null, assignees: assignees,
+        assignments: assignees.map(function (a) {
+          return { assignee: a, assignedBy: MARA, assignedAt: '2026-08-19T10:04:00.000Z' };
+        }),
+        acceptance: { total: accTotal, completed: accDone },
+        completionGate: (extra && extra.gate) || 'none' }
+    };
+    return t;
+  }
+  window.TM8_MOCK = {
+    space: { id: SPACE, name: 'Northlake' },
+    members: [MARA, THEO],
+    teammates: [JUNIPER, CALLISTO, DISPATCHER, DREAMER],
+    tasks: [
+      task('01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11', 'Fix login redirect loop', 'working', 'in_progress', 'high', [JUNIPER], 1, 3, 4, { messages: 3, humanMessages: 1, agentMessages: 2 }),
+      task('01a09f22-5d10-7b22-9c3f-1e4a6b8d0f22', 'Ship invite flow', 'in_review', 'in_progress', 'medium', [CALLISTO, THEO], 4, 4, 7, { gate: 'pr_merged' }),
+      task('01a09f23-6e20-7c33-8d40-2f5b7c9e1a33', 'Write release notes', 'open', 'to_do', 'low', [], 0, 2, 1),
+      task('01a09f24-7f30-7d44-9e51-3a6c8d0f2b44', 'Retire legacy webhook', 'done', 'done', 'medium', [JUNIPER], 2, 2, 9)
+    ],
+    session: {
+      id: '01a09f40-8a40-7e55-8f62-4b7d9e1a3c55', spaceId: SPACE, kind: 'work_session',
+      title: 'Juniper — login redirect loop', version: 2,
+      state: { kind: 'work_session', teammate: JUNIPER, provider: 'claude-code',
+               accessMode: 'fullAccess', workdir: 'worktree', live: true }
+    },
+    messages: [
+      { id: '01a09f50-9b50-7f66-8a73-5c8e0f2b4d66', kind: 'message',
+        author: MARA, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:12:00.000Z',
+        body: 'The loop only happens after a password change — can you check the session cookie path?' },
+      { id: '01a09f51-0c60-7a77-8b84-6d9f1a3c5e77', kind: 'message',
+        author: JUNIPER, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:14:00.000Z',
+        body: 'Confirmed. The redirect target is cached before the credential rotates. Fixing in the worktree; acceptance 1/3 done.' },
+      { id: '01a09f52-1d70-7b88-8c95-7e0a2b4d6f88', kind: 'message',
+        author: THEO, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:20:00.000Z',
+        body: 'Nice — leave the guard behind a comment, QA wants to trace it.' }
+    ]
+  };
+  window.TM8 = TM8;
+  document.addEventListener('DOMContentLoaded', function () { TM8.wireToggles(document); });
+}());
+</script>
+<script id="artifact-js">
+(function () {
+  'use strict';
+  function ready() {
+    var root = document.getElementById('channel-demo');
+    var viewButtons = document.querySelectorAll('[data-view]');
+    var viewPanels = root.querySelectorAll('[data-view-panel]');
+    viewButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        var view = button.getAttribute('data-view');
+        root.setAttribute('data-view-mode', view);
+        viewButtons.forEach(function (other) {
+          var selected = other === button;
+          other.setAttribute('aria-pressed', String(selected));
+          other.classList.toggle('btn--primary', selected);
+        });
+        viewPanels.forEach(function (panel) {
+          panel.hidden = panel.getAttribute('data-view-panel') !== view;
+        });
+        if (view === 'map') {
+          requestAnimationFrame(function () {
+            var scroller = root.querySelector('.map-panel');
+            scroller.scrollLeft = Math.max(0, (scroller.scrollWidth - scroller.clientWidth) / 2);
+          });
+        }
+      });
+    });
+
+    TM8.stepper(root, {
+      frames: 5,
+      intervalMs: 1250,
+      captions: [
+        'The channel starts as an addressable entity with a roster of members and teammates.',
+        'A subchannel is another channel with a same-kind parent in the same Space.',
+        'A reply keeps its own message id and its parent message id; both remain anchored to the channel.',
+        'The shared task stays a task. attached_to connects it to the channel; the stream points to the same id.',
+        'Juniper can work on that task while every channel, message, and task remains separately addressable.'
+      ],
+      render: function (step) {
+        root.setAttribute('data-step', String(step));
+        root.querySelectorAll('[data-from]').forEach(function (item) {
+          var visible = Number(item.getAttribute('data-from')) <= step;
+          item.classList.toggle('is-visible', visible);
+          item.setAttribute('aria-hidden', String(!visible));
+        });
+      }
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready);
+  else ready();
+}());
+</script>
+</body>
+</html>

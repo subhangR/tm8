@@ -285,7 +285,6 @@ export function GraphScreen(props: GraphScreenProps) {
       onSelect={(id) => setSelectedId(id)}
       livenessOf={data.livenessOf}
       selectedId={selectedId}
-      viewerId={props.chat?.viewerMemberId ?? null}
       {...(props.window === undefined ? {} : { window: props.window })}
       {...(props.onChooseWindow === undefined ? {} : { onChooseWindow: props.onChooseWindow })}
       {...(props.atCeiling === undefined ? {} : { atCeiling: props.atCeiling })}

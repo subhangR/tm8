@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>The Dispatcher · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style id="dispatcher-style">
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.intro-stamp { margin: -12px 0 28px; }
+.routing-problem { max-width: 64ch; font-size: 18px; }
+.routing-problem strong { font-family: var(--serif); font-weight: 500; }
+.route-machine { margin-top: 18px; overflow: hidden; }
+.route-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.route-head p { margin: 0; }
+.route-stage-label { font: 600 10px var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--accent-ink); }
+.route-grid { display: grid; grid-template-columns: minmax(0, .95fr) 48px minmax(0, 1.18fr) 48px minmax(0, 1fr); gap: 10px; align-items: stretch; padding: 22px 0 18px; }
+.route-lane { min-width: 0; }
+.route-lane + .route-lane { border-left: 1px solid var(--line); padding-left: 14px; }
+.route-lane__title { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; font: 600 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.route-lane__title .ki { color: var(--accent); }
+.entity-node { position: relative; display: flex; gap: 9px; align-items: center; width: 100%; min-width: 0; padding: 10px 11px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 5px; color: var(--ink); transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out), border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out); }
+.entity-node .ki { color: var(--accent); }
+.entity-node__copy { min-width: 0; }
+.entity-node__title { display: block; font-weight: 600; line-height: 1.25; }
+.entity-node__kind { display: block; margin-top: 2px; font: 600 8.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.entity-node__dot { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+.entity-node.is-picked { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); box-shadow: inset 0 0 0 1px var(--accent); }
+.entity-node.is-muted { opacity: .48; }
+.appear { opacity: 0; transform: translateY(7px); pointer-events: none; }
+.appear.is-visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.edge-stack { display: grid; gap: 6px; margin-top: 8px; }
+.edge-note { display: flex; align-items: center; gap: 7px; min-width: 0; font: 10px var(--mono); color: var(--muted); }
+.edge-note::before { content: ""; width: 18px; border-top: 1px solid var(--accent); flex: none; }
+.edge-note code { font-size: 10px; padding: 0 3px; }
+.request-boundary { display: grid; gap: 6px; margin-top: 10px; }
+.boundary-row { padding: 7px 9px; border-left: 2px solid var(--line-strong); background: color-mix(in srgb, var(--line) 24%, transparent); font-size: 12px; }
+.boundary-row b { display: block; font: 600 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.boundary-row--trusted { border-color: var(--accent-2); }
+.boundary-row--material { border-color: var(--warn); }
+.roster { display: grid; gap: 8px; margin-top: 10px; }
+.candidate { position: relative; display: flex; align-items: center; gap: 8px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px; transition: opacity var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.candidate .who { border: 0; padding: 0; background: transparent; }
+.candidate__fit { margin-left: auto; font: 600 8.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.candidate.is-picked { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); transform: translateX(3px); }
+.candidate.is-picked .candidate__fit { color: var(--accent-ink); }
+.candidate.is-muted { opacity: .48; }
+.memory-shelf { display: grid; gap: 6px; margin-top: 12px; }
+.memory-chip { display: flex; align-items: center; gap: 7px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 12px; transition: opacity var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.memory-chip .ki { color: var(--accent); }
+.memory-chip.is-picked { color: var(--ink); border-color: var(--accent); transform: translateX(3px); }
+.route-bridge { display: flex; align-items: center; justify-content: center; min-width: 0; }
+.route-bridge svg { width: 100%; height: 58px; overflow: visible; }
+.route-bridge path { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 90; stroke-dashoffset: 90; transition: stroke-dashoffset var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out); opacity: 0; }
+.route-bridge path.is-visible { stroke-dashoffset: 0; opacity: 1; }
+.route-bridge text { fill: var(--muted); font: 8.5px var(--mono); text-anchor: middle; opacity: 0; transition: opacity var(--dur-base) var(--ease-out); }
+.route-bridge text.is-visible { opacity: 1; }
+.thread-result { margin-top: 4px; padding-top: 18px; border-top: 1px solid var(--line); }
+.thread-result .pn { padding: 0; overflow: hidden; }
+.thread-result .pn-thread { gap: 10px; }
+.thread-result .pn-turn--reply { margin-left: 26px; padding-left: 12px; border-left: 1px solid var(--pn-line-2); }
+.thread-result .pn-bubble { max-width: 76ch; }
+.thread-label { padding: 9px 12px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); font: 600 9.5px var(--pn-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pn-ink-3); }
+.route-caption { max-width: none; min-height: 3.1em; margin: 2px 0 0; font-size: 15px; color: var(--ink); }
+.route-caption b { font: 600 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--accent-ink); margin-right: 8px; }
+.route-caption--reduced { display: none; }
+.exchange-grid { display: grid; grid-template-columns: .85fr 1.15fr; gap: 18px; align-items: start; }
+.exchange-grid > *, .toggle2__panes, .toggle2__panes > *, .term { min-width: 0; }
+.exchange-copy { padding-top: 8px; }
+.exchange-copy p { max-width: 48ch; }
+.toggle-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.fact-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+.fact { padding-top: 12px; border-top: 1px solid var(--line-strong); }
+.fact b { display: block; margin-bottom: 4px; font-family: var(--serif); font-weight: 600; }
+.fact p { margin: 0; font-size: 14px; color: var(--muted); }
+.route-rule { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-ink); }
+.route-rule::before { content: ""; width: 28px; border-top: 1px solid var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  .route-caption--motion { display: none; }
+  .route-caption--reduced { display: block; }
+}
+@media (max-width: 760px) {
+  header.site { height: auto; min-height: 54px; flex-wrap: wrap; align-items: baseline; padding-bottom: 10px; }
+  header.site .hub-note { flex: 1 0 100%; margin-left: 0; }
+  main { padding: 22px 18px 56px; }
+  h1 { font-size: 36px; }
+  .route-machine { padding: 16px; }
+  .route-grid { grid-template-columns: 1fr; gap: 8px; padding-top: 18px; }
+  .route-lane + .route-lane { border-left: 0; padding-left: 0; }
+  .route-lane { border-top: 1px solid var(--line); padding-top: 14px; }
+  .route-lane:first-child { border-top: 0; padding-top: 0; }
+  .route-bridge { height: 38px; }
+  .route-bridge svg { width: 48px; transform: rotate(90deg); }
+  .thread-result .pn-turn--reply { margin-left: 10px; }
+  .exchange-grid { grid-template-columns: 1fr; }
+  .fact-list { grid-template-columns: 1fr; }
+  .tmc { flex-wrap: wrap; }
+  .tmc input[type="range"] { order: 3; flex-basis: calc(100% - 24px); margin: 8px 12px; }
+  .tmc .tmc-count { margin-left: auto; }
+}
+@media (max-width: 380px) {
+  .term { font-size: 12px; }
+  .who__kind { display: none; }
+  .candidate { align-items: flex-start; }
+  .candidate__fit { white-space: nowrap; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm8 <i>·</i> Help</span>
+  <span class="crumb">The Dispatcher</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+
+<svg aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ki-task" viewBox="0 0 16 16"><path d="M3.4 5.6a2.2 2.2 0 0 1 2.2-2.2h4.8a2.2 2.2 0 0 1 2.2 2.2v4.8a2.2 2.2 0 0 1-2.2 2.2H5.6a2.2 2.2 0 0 1-2.2-2.2z"/><path d="M6 8.1 7.4 9.5 10.1 6.6"/></symbol>
+  <symbol id="ki-work_session" viewBox="0 0 16 16"><path d="M2.4 5.2a2 2 0 0 1 2-2h7.2a2 2 0 0 1 2 2v5.6a2 2 0 0 1-2 2H4.4a2 2 0 0 1-2-2z"/><path d="M5.2 7.4 6.9 9 5.2 10.6"/><path d="M8.4 10.6h2.6"/></symbol>
+  <symbol id="ki-message" viewBox="0 0 16 16"><path d="M13.2 9.6a1.9 1.9 0 0 1-1.9 1.9H6.5L3.4 13.8V5.1a1.9 1.9 0 0 1 1.9-1.9h6a1.9 1.9 0 0 1 1.9 1.9z"/></symbol>
+  <symbol id="ki-team_member" viewBox="0 0 16 16"><path d="M8 2.6v1.8"/><path d="M4.4 4.4h7.2a1.6 1.6 0 0 1 1.6 1.6v5a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6V6a1.6 1.6 0 0 1 1.6-1.6z"/><path d="M6.2 7.8v1.2"/><path d="M9.8 7.8v1.2"/></symbol>
+  <symbol id="ki-memory" viewBox="0 0 16 16"><path d="M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z"/></symbol>
+</svg>
+
+<main id="main">
+  <p class="kicker" style="margin:26px 0 0">Section 5 · Coordination · Plate 38</p>
+  <h1>The Dispatcher</h1>
+  <p class="lede">You know the work needs doing, but not who should do it. Dispatch turns that uncertainty into a visible route: an existing teammate, the memories they need, a fresh work session, and a reason recorded on the task.</p>
+  <p class="intro-stamp"><span class="stamp">verified against the live command catalog and graph rules on 2026-08-20</span></p>
+
+  <p class="routing-problem"><strong>Choosing a teammate is judgment.</strong> A bad route often looks fine at first: a session starts, a status turns green, and the mismatch stays hidden until the work fails. The Dispatcher exists to make that choice with more context—and leave the choice on the record.</p>
+
+  <section aria-labelledby="route-title">
+    <h2 id="route-title"><span class="no">01</span>Watch one route form</h2>
+    <p>Press <strong>Play route</strong> or step through it. The task title suggests invite-screen work; the memory graph reveals that session TTL and cookie policy are the real center of gravity.</p>
+
+    <div class="term" aria-label="Dispatch command">
+      <div class="term__bar" aria-hidden="true"><span class="term__name">tm8 — northlake</span><span class="term__tag">pty</span></div>
+      <pre><span class="p">tm8 session dispatch 01a09f61-3a20-7c33-8d40-2f5b7c9e1a61 --note "Keep the public invite API unchanged."</span></pre>
+    </div>
+
+    <div class="panel route-machine" id="route-machine" role="group" aria-labelledby="route-machine-title" aria-describedby="route-summary">
+      <div class="route-head">
+        <p id="route-machine-title" class="route-stage-label">A dispatch through the Northlake graph</p>
+        <p class="caption mono">Task → Dispatcher → worker session</p>
+      </div>
+
+      <div class="route-grid" aria-hidden="true">
+        <div class="route-lane">
+          <p class="route-lane__title"><svg class="ki"><use href="#ki-task"/></svg>Request</p>
+          <div class="entity-node">
+            <svg class="ki"><use href="#ki-task"/></svg>
+            <span class="entity-node__copy"><span class="entity-node__title">Harden invite session TTL</span><span class="entity-node__kind">task · 01a09f61…</span></span>
+          </div>
+          <div class="request-boundary appear" data-appear="1">
+            <div class="boundary-row boundary-row--trusted"><b>Trusted route</b>Mara Voss · member → Dispatcher session<br><code>task_id</code> and <code>subject_id</code></div>
+            <div class="boundary-row boundary-row--material"><b>Requester material</b>“Keep the public invite API unchanged.”</div>
+          </div>
+          <div class="edge-stack appear" data-appear="1">
+            <span class="edge-note"><code>anchored_to</code> task</span>
+            <span class="edge-note">request stored before delivery</span>
+          </div>
+          <div class="memory-shelf appear" data-appear="4">
+            <div class="memory-chip is-picked"><svg class="ki"><use href="#ki-memory"/></svg>Auth incident notes</div>
+            <div class="memory-chip is-picked"><svg class="ki"><use href="#ki-memory"/></svg>Session cookie decision</div>
+          </div>
+          <div class="edge-stack appear" data-appear="4">
+            <span class="edge-note"><code>remembers</code> memory × 2</span>
+          </div>
+        </div>
+
+        <div class="route-bridge">
+          <svg viewBox="0 0 100 58" preserveAspectRatio="none">
+            <path data-appear="1" d="M5 29 H86 M78 20 L88 29 L78 38"/>
+            <text data-appear="1" x="46" y="17">dispatch request</text>
+          </svg>
+        </div>
+
+        <div class="route-lane">
+          <p class="route-lane__title"><svg class="ki"><use href="#ki-work_session"/></svg>Dispatcher</p>
+          <div class="entity-node appear" data-appear="1">
+            <svg class="ki"><use href="#ki-work_session"/></svg>
+            <span class="entity-node__copy"><span class="entity-node__title">Dispatcher — intake</span><span class="entity-node__kind">work_session · live and reused</span></span>
+            <span class="entity-node__dot"></span>
+          </div>
+
+          <div class="roster appear" data-appear="2">
+            <span class="caption mono">Roster · existing teammates</span>
+            <div class="candidate" id="candidate-juniper">
+              <span class="who who--teammate"><span class="who__avatar">JU</span>Juniper <span class="who__kind">teammate</span></span>
+              <span class="candidate__fit">auth + backend</span>
+            </div>
+            <div class="candidate" id="candidate-callisto">
+              <span class="who who--teammate"><span class="who__avatar">CA</span>Callisto <span class="who__kind">teammate</span></span>
+              <span class="candidate__fit">client + QA</span>
+            </div>
+          </div>
+
+          <div class="memory-shelf appear" data-appear="3">
+            <span class="caption mono">Memory graph · fit evidence</span>
+            <div class="memory-chip" id="memory-auth"><svg class="ki"><use href="#ki-memory"/></svg>Auth incident notes · Juniper</div>
+            <div class="memory-chip" id="memory-cookie"><svg class="ki"><use href="#ki-memory"/></svg>Session cookie decision · Juniper</div>
+            <div class="memory-chip" id="memory-ui"><svg class="ki"><use href="#ki-memory"/></svg>Invite-screen QA · Callisto</div>
+          </div>
+          <p class="route-rule appear" data-appear="4">Reuse Juniper; do not create a teammate</p>
+        </div>
+
+        <div class="route-bridge">
+          <svg viewBox="0 0 100 58" preserveAspectRatio="none">
+            <path data-appear="5" d="M5 29 H86 M78 20 L88 29 L78 38"/>
+            <text data-appear="5" x="46" y="17">execution.spawn</text>
+          </svg>
+        </div>
+
+        <div class="route-lane">
+          <p class="route-lane__title"><svg class="ki"><use href="#ki-work_session"/></svg>Routed work</p>
+          <div class="entity-node appear" data-appear="4" id="picked-teammate">
+            <svg class="ki"><use href="#ki-team_member"/></svg>
+            <span class="entity-node__copy"><span class="entity-node__title">Juniper</span><span class="entity-node__kind">team_member · reused</span></span>
+          </div>
+          <div class="entity-node appear" data-appear="5" style="margin-top:8px">
+            <svg class="ki"><use href="#ki-work_session"/></svg>
+            <span class="entity-node__copy"><span class="entity-node__title">Juniper — TTL hardening</span><span class="entity-node__kind">work_session · newly spawned</span></span>
+            <span class="entity-node__dot"></span>
+          </div>
+          <div class="edge-stack appear" data-appear="5">
+            <span class="edge-note"><code>working_on</code> task</span>
+            <span class="edge-note"><code>dispatched_by</code> Dispatcher session</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="thread-result appear" data-appear="6" aria-hidden="true">
+        <div class="pn">
+          <div class="thread-label">Task discussion · reply thread</div>
+          <div class="pn-thread">
+            <div class="pn-turn">
+              <div class="pn-turn__byline"><span class="pn-avatar pn-avatar--human pn-avatar--tone-info">MV</span><strong>Mara Voss</strong><span>member</span><time>10:12</time></div>
+              <div class="pn-bubble">Dispatch requested for this task. Pick the teammate, attach the memories they need, spawn them, and reply here with who and why.</div>
+            </div>
+            <div class="pn-turn pn-turn--agent pn-turn--reply">
+              <div class="pn-turn__byline"><span class="pn-avatar pn-avatar--agent pn-avatar--tone-brand">DI</span><strong>Dispatcher</strong><span>teammate · reply to Mara</span><time>10:13</time></div>
+              <div class="pn-bubble">Routed to Juniper. The task crosses session TTL and cookie policy, matching Juniper’s backend focus and two existing memories; Callisto’s invite-screen QA context is useful later, but not the best primary fit.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="route-caption route-caption--motion" data-route-caption aria-live="polite"><b>01 · Intake</b>The task is real; the right teammate is still a judgment call.</p>
+      <p class="route-caption route-caption--reduced" data-route-caption-reduced aria-live="polite"><b>Still frames</b>Use Step or the range control. Every route state remains available without animation.</p>
+      <div class="tmc" role="group" aria-label="Dispatch route controls">
+        <button class="btn btn--primary tmc-play" type="button">Play route</button>
+        <button class="btn tmc-step" type="button">Step</button>
+        <label style="display:contents"><span class="visually-hidden">Dispatch route frame</span><input class="tmc-scrub" type="range" min="0" max="6" value="0" step="1"></label>
+        <span class="tmc-count" aria-hidden="true">1 / 7</span>
+      </div>
+
+      <ol id="route-summary" class="visually-hidden">
+        <li>A task is handed to session dispatch.</li>
+        <li>The server stores a message on the task and delivers trusted routing control to a Dispatcher session; the requester note remains untrusted material.</li>
+        <li>Dispatcher reads the existing teammate roster.</li>
+        <li>Dispatcher reads the memory graph for evidence of fit.</li>
+        <li>Dispatcher chooses existing teammate Juniper and makes the task remember the two needed memories.</li>
+        <li>Dispatcher spawns a new Juniper work session; working_on and server-recorded dispatched_by edges preserve the route.</li>
+        <li>Dispatcher replies on the task thread with who it chose and why. Dispatcher never performs the task.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section aria-labelledby="exchange-title">
+    <h2 id="exchange-title"><span class="no">02</span>The public command stays small</h2>
+    <div class="exchange-grid">
+      <div class="exchange-copy">
+        <p>You provide the subject, not the teammate. If you already know who should work, use <code>session spawn</code>; choosing a teammate is the entire point of <code>session dispatch</code>.</p>
+        <p>The response reports the derived task, the Dispatcher session, delivery, and whether that Dispatcher session had to be started. The actual routing result arrives later as a threaded message on the task.</p>
+        <p class="route-rule">routes; never does the work</p>
+      </div>
+      <div class="panel" data-toggle2>
+        <div class="toggle-buttons" role="group" aria-label="Command exchange">
+          <button class="btn" type="button" data-pane="typed" aria-pressed="true">What you type</button>
+          <button class="btn" type="button" data-pane="returned" aria-pressed="false">What comes back</button>
+        </div>
+        <div class="toggle2__panes">
+          <div data-pane-id="typed" class="is-shown">
+            <div class="term" style="margin:0"><div class="term__bar" aria-hidden="true"><span class="term__name">tm8 — northlake</span><span class="term__tag">pty</span></div><pre><span class="p">tm8 session dispatch 01a09f61-3a20-7c33-8d40-2f5b7c9e1a61 --note "Keep the public invite API unchanged."</span></pre></div>
+          </div>
+          <div data-pane-id="returned">
+            <div class="term" style="margin:0"><div class="term__bar" aria-hidden="true"><span class="term__name">tm8 — northlake</span><span class="term__tag">pty</span></div><pre><span class="out">task 01a09f61-3a20-7c33-8d40-2f5b7c9e1a61  dispatcher 01a09f70-8b40-7e55-8f62-4b7d9e1a3c70  delivered</span></pre></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="record-title">
+    <h2 id="record-title"><span class="no">03</span>What stays on the record</h2>
+    <p>The route is more than a running terminal. It leaves graph evidence that another person—or the next agent—can inspect later.</p>
+    <div class="fact-list">
+      <div class="fact"><b>The request survives delivery trouble.</b><p>The message is stored on the task before terminal delivery. An <code>undelivered</code> result is degraded, not erased.</p></div>
+      <div class="fact"><b>The route has lineage.</b><p>The worker session points to the Dispatcher session with the server-recorded <code>dispatched_by</code> edge.</p></div>
+      <div class="fact"><b>The judgment is readable.</b><p>Dispatcher replies on the request thread with the teammate, memories, and reason. Its rounded-square avatar marks teammate authorship structurally.</p></div>
+    </div>
+    <div class="gap-card"><b>Honest boundary.</b> Dispatch does not guarantee that a suitable teammate exists. Dispatcher must say so instead of creating a teammate, editing someone’s prompt or model, routing badly, or doing the task itself.</div>
+  </section>
+</main>
+
+<footer class="site">Last updated 2026-08-20 · The Dispatcher · tm8 Help v1 · <span class="stamp">command and edges verified 2026-08-20</span></footer>
+
+<script>
+(function () {
+  'use strict';
+
+  var root = document.getElementById('route-machine');
+  var play = root.querySelector('.tmc-play');
+  var step = root.querySelector('.tmc-step');
+  var scrub = root.querySelector('.tmc-scrub');
+  var count = root.querySelector('.tmc-count');
+  var caption = root.querySelector('[data-route-caption]');
+  var reducedQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var frameMatch = window.location.hash.match(/^#frame-([1-7])$/);
+  var frame = frameMatch ? Number(frameMatch[1]) - 1 : 0;
+  var timer = null;
+  var captions = [
+    '<b>01 · Intake</b>The task is real; the right teammate is still a judgment call.',
+    '<b>02 · Store, then deliver</b>The request becomes a message on the task before trusted routing control reaches a live Dispatcher session.',
+    '<b>03 · Read the roster</b>Dispatcher chooses from existing teammates. It does not create or rewrite one.',
+    '<b>04 · Read the memory graph</b>The title suggests UI work; the attached evidence points to session policy and auth.',
+    '<b>05 · Reuse and attach</b>Juniper is the best fit. The task remembers two relevant memories so the new session receives them.',
+    '<b>06 · Spawn the worker</b>A new Juniper work session starts. working_on and dispatched_by preserve task and routing lineage.',
+    '<b>07 · Record why</b>Dispatcher replies on the task thread with who, which memories, and why—then stops routing. Juniper does the work.'
+  ];
+
+  function setVisibility(el, visible) {
+    el.classList.toggle('is-visible', visible);
+  }
+
+  function render() {
+    root.querySelectorAll('[data-appear]').forEach(function (el) {
+      setVisibility(el, Number(el.getAttribute('data-appear')) <= frame);
+    });
+    var juniper = document.getElementById('candidate-juniper');
+    var callisto = document.getElementById('candidate-callisto');
+    juniper.classList.toggle('is-picked', frame >= 4);
+    callisto.classList.toggle('is-muted', frame >= 4);
+    document.getElementById('memory-auth').classList.toggle('is-picked', frame >= 4);
+    document.getElementById('memory-cookie').classList.toggle('is-picked', frame >= 4);
+    document.getElementById('memory-ui').classList.toggle('is-muted', frame >= 4);
+    document.getElementById('picked-teammate').classList.toggle('is-picked', frame >= 4);
+    scrub.value = String(frame);
+    count.textContent = (frame + 1) + ' / 7';
+    caption.innerHTML = captions[frame];
+  }
+
+  function stop() {
+    if (timer !== null) {
+      window.clearInterval(timer);
+      timer = null;
+    }
+    play.textContent = reducedQuery.matches ? 'Next still' : 'Play route';
+  }
+
+  function advance() {
+    frame = frame >= 6 ? 0 : frame + 1;
+    render();
+  }
+
+  play.addEventListener('click', function () {
+    if (reducedQuery.matches) {
+      stop();
+      advance();
+      return;
+    }
+    if (timer !== null) {
+      stop();
+      return;
+    }
+    if (frame >= 6) frame = 0;
+    render();
+    play.textContent = 'Pause';
+    timer = window.setInterval(function () {
+      frame += 1;
+      render();
+      if (frame >= 6) stop();
+    }, 1350);
+  });
+
+  step.addEventListener('click', function () {
+    stop();
+    advance();
+  });
+
+  scrub.addEventListener('input', function () {
+    stop();
+    frame = Math.max(0, Math.min(6, Number(scrub.value) || 0));
+    render();
+  });
+
+  function motionChanged() {
+    stop();
+    play.textContent = reducedQuery.matches ? 'Next still' : 'Play route';
+  }
+  if (typeof reducedQuery.addEventListener === 'function') reducedQuery.addEventListener('change', motionChanged);
+  window.addEventListener('hashchange', function () {
+    var match = window.location.hash.match(/^#frame-([1-7])$/);
+    if (!match) return;
+    stop();
+    frame = Number(match[1]) - 1;
+    render();
+  });
+
+  document.querySelectorAll('[data-toggle2]').forEach(function (box) {
+    var buttons = box.querySelectorAll('button[data-pane]');
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        buttons.forEach(function (other) {
+          other.setAttribute('aria-pressed', String(other === button));
+        });
+        box.querySelectorAll('[data-pane-id]').forEach(function (pane) {
+          pane.classList.toggle('is-shown', pane.getAttribute('data-pane-id') === button.getAttribute('data-pane'));
+        });
+      });
+    });
+  });
+
+  motionChanged();
+  render();
+}());
+</script>
+</body>
+</html>

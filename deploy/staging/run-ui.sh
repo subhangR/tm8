@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tm8 STAGING UI — 8888, vite dev with HMR over packages/tm8-ui.
+# tm8 STAGING UI — 8888, vite dev with HMR over packages/tm8_ui_2.0.
 #
 # NOT `vite preview` and NOT a built bundle: prod serves a frozen dist, staging
 # serves the source. Edit a .tsx and the browser updates.
@@ -12,5 +12,5 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
-cd "$TM8_STAGING_ROOT/packages/tm8-ui"
+cd "$TM8_STAGING_ROOT/packages/tm8_ui_2.0"
 exec node_modules/.bin/vite --port 8888 --strictPort --host 127.0.0.1

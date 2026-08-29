@@ -1,0 +1,109 @@
+P2 STATUS — live bytes: YES. keyboard round-trip: YES. protocol match: EXACT, no drift found.
+
+=== WHAT'S DONE ===
+
+Full transplant landed in packages/tm8-ui/src/terminal/ (fully mine, uncommitted):
+- pty/ptyTransport.ts, pty/writeScheduler.ts, pty/visibilityDriver.ts, pty/ptyProtocol.ts,
+  pty/runtime.ts, pty/terminalSize.ts — verbatim from packages/ui, byte-handling laws
+  untouched (offset snapped to attached.next, epoch equality-only, persistent per-session
+  TextDecoder, MAX_PENDING_BYTES 256KB / MAX_PENDING_ENTRIES 1024, flush-before-suspend,
+  offset-0 requestFullReplay on eviction). Brought their three test files over too
+  (added @vitest-environment jsdom pragma — this package's default vitest env is node,
+  packages/ui's is jsdom, so the harvested tests needed that one line each).
+- LiveTerminal.tsx — the SessionTerminal port, adapted to mount into tm8-ui's existing
+  TerminalHost (hostRef) instead of rendering its own div. cursorBlink: false hard-coded
+  (maestro ef0dcbe), never a setting. Exposes blur() via forwardRef/useImperativeHandle
+  for the exit-terminal chip.
+- terminalTheme.ts — fixed render constants + buildTerminalTheme(el) that resolves
+  xterm's ITheme from --pn-x-term-* CSS custom properties at mount (this package's own
+  no-branching.test.ts §14 bans literal hex outside styles/tokens.css and
+  styles/canvas-extra.css; xterm's canvas renderer can't resolve a bare var(...) string,
+  so it's read off computed style instead). NOT a persisted settings store like
+  packages/ui's — tm8-ui has no settings panel yet, so I didn't carry that speculative
+  surface forward.
+- clipboardPaste.ts / clipboardImages.ts / domUtils.ts — ported, notifications.ts
+  simplified to console logging (tm8-ui has no toast store; the two call sites are both
+  non-fatal).
+- liveTerminalFlag.ts — the dev-flag gate (VITE_TM8_LIVE_TERMINAL=1 or
+  localStorage['tm8-ui:live-terminal']='1'), off by default.
+- Fixed .term-host CSS (was flex-centered, fought an appended xterm element — now
+  position:relative, ghost text absolutely overlaid instead).
+- Applied lane P4's reclaim-on-activation fix in sendResize(): serverPtySizes is now
+  read BEFORE it's overwritten, ptyDiffers ORed into the early-return guard. Matches
+  the audit's described shape.
+
+Out-of-lane files (already brokered per your last message, listed for completeness):
+package.json (xterm deps), styles/canvas-extra.css (added the ANSI-16 --pn-x-term-*
+custom property set the transplant needed — bg/ghost were already there, fg/cursor/
+selection/16 ANSI slots were not), TerminalBody.tsx (sessionId + dev-flag mount +
+exit-chip wiring).
+
+Tests: 754/754 green (node ./node_modules/.bin/vitest run), including the repo's own
+architecture guards (no-branching.test.ts's kind-literal and hex-ban scans). Both
+typecheck lanes clean (tsc -p tsconfig.json / tsconfig.test.json --noEmit). Never touched
+root typecheck.
+
+=== VERIFICATION, WITH OBSERVATIONS NOT ADJECTIVES ===
+
+Spawned two real work_sessions against your shared :4610 node via curl POST
+/v2/execution/spawn (space 019f98d5-739e-7adf-9b19-8c54e78d4271, project
+019f98d5-73b0-7e7f-ae0d-19e1e6997cec — had to resolve the actual public.projects row via
+space_projects join; the project ENTITY id from `entities` alone 404s the spawn handler's
+own linkage check, distinct tables). Verified with a throwaway harness
+(packages/tm8-ui/terminal-dev.html + src/terminal-dev.tsx, same spirit as your
+scratch-p1-run-src — never landed, mounts <LiveTerminal sessionId=... live /> directly so
+I didn't have to fight the Frontend lane for the fixture-vs-real-seam wiring).
+
+1. RAW SERVER-SIDE PROTOCOL CHECK (node WebSocket, no browser): connected to
+   /v2/ws?sessionId=<id>, got TEXT size{80,24}, TEXT attached{base:0,gap:0,next:1131,
+   hasReplay:true,epoch:"<uuid>-1"}, then binary frames — exactly your documented
+   handshake order, delta path (gap===0). Sent a binary frame ("echo ROUNDTRIP_OK123\r")
+   800ms after attach; got a wave of new binary frames back within ~1s showing the TUI
+   redrawing — proves the round trip end to end independent of my client code.
+
+2. BROWSER CLIENT, FRESH MOUNT: navigated to the harness against a live session; first
+   paint showed the REAL current Codex TUI state (banner, model line, prior prompt text)
+   via replay hydration — not a blank box, not a stale placeholder.
+
+3. BROWSER CLIENT, KEYBOARD ROUND-TRIP: clicked into the terminal (confirmed via
+   document.activeElement that focus landed on .xterm-helper-textarea), typed
+   "hello from browser client" — it appeared live in the Codex prompt line on screen.
+   Confirms term.onData -> ptyTransport.write() -> binary WS frame -> PtyHostService ->
+   process -> echoed back -> rendered, actually works, not just wired.
+
+4. EXIT-TERMINAL CHIP + PHYSICAL CHORD: clicked the harness's blur button
+   (calls the same handleRef.current.blur() the real chip will call) — focus moved off
+   the textarea (document.activeElement became the button). Separately pressed physical
+   Ctrl+backtick with focus back in the terminal — focus moved to <body>, and the
+   on-screen prompt text was UNCHANGED (no stray backtick character), confirming
+   attachCustomKeyEventHandler's `return false` really does keep those bytes off the PTY.
+   Both paths go through keyboard/contract.ts's isTerminalBlurChord, not a reinvented
+   matcher.
+
+5. OFFSET-RESUME / REPLAY, observed twice: two separate fresh-tab navigations to two
+   different sessions each produced attached{hasReplay:true} + exactly one binary replay
+   frame + correct on-screen state — this is the "kill and reattach" path exercised for
+   real (a fresh tab is a fresh socket at offset 0), not simulated.
+
+6. ONE THING THAT COST ME TIME, not a code bug: my early browser attempts against my
+   FIRST spawned session (agentTool omitted, defaulted to claude-code/sonnet) looked like
+   a dead round-trip — screen didn't change after Enter. Root cause: that specific
+   session had already exited server-side (checked work_sessions.status via psql) between
+   my screenshot and my keystroke — a session-lifetime issue, not a transport issue. Once
+   I retested against a session confirmed `status='running'` via DB, everything above
+   worked first try. Flagging in case P1/P3 want to know some spawned sessions are
+   dying within ~1-3 minutes unprompted (exit_code and error columns both NULL on the
+   failed rows I saw, e.g. entity_id 019fa9c7-2252-7534-8cb7-d5937c097c87).
+
+=== ANSWERS TO YOUR THREE QUESTIONS ===
+
+- Live bytes rendering in the browser: YES, twice, against two different real sessions.
+- Typing round-trips through the PTY: YES, visually confirmed on screen.
+- Anything about the WS attach not matching your documented protocol: NO drift found.
+  size -> attached{base,gap,next,hasReplay,epoch} -> one binary replay -> live binaries,
+  offset raw-byte semantics, epoch equality-only reset — all matched exactly as you
+  specified, verified against the live server, not just read off the source.
+
+Not blocked. Ready for the milestone verification pass whenever P3/P4's server changes
+land and it restarts — nothing in my directory depends on server internals beyond the
+documented wire contract, which held.

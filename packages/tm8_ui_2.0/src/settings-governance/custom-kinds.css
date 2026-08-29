@@ -1,0 +1,231 @@
+/* ===========================================================================
+   CUSTOM KINDS — the `kinds` settings section's own stylesheet.
+
+   WHY IT EXISTS RATHER THAN A FEW MORE RULES IN `governance.css`.
+   `governance.css` is shared with `ProjectsTrustScreen` and
+   `InteractionProfilesScreen`, both of which are being reworked in parallel
+   lanes; every rule added there is a merge conflict with two other seats and a
+   change to two screens nobody in this lane looked at. SECTION-CONTRACT.md §5
+   rules the split, and this file is imported from `CustomKindsScreen.tsx`
+   itself — never from `index.ts`, which is also shared.
+
+   SCOPE: every rule is prefixed `set-kinds` and nested under `.cv2-root`, the
+   themed root everything in this package is scoped to (and which carries the
+   single `zoom: 1.1` lever — so measure with `offsetWidth`, never with a
+   client rect).
+
+   TOKENS ONLY. `src/hex-ban.test.ts` walks this file and fails on a raw hex.
+   =========================================================================== */
+
+/* The section body: ONE column, in reading order. It used to be `.gov-screen`
+   — three `flex: 1 1 340px` columns with their own `padding` — inside a card
+   that stops at 1080px less a 160px nav, so the three columns wrapped into a
+   different ragged 2+1 at every window width and the section carried a second
+   pad inside the shell's own gutters. The stack has neither problem, and the
+   frame's `--set-measure` already caps how wide it may get. */
+.cv2-root .set-kinds {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* -- a labelled group of related fields ------------------------------------ */
+
+.cv2-root .set-kinds__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Groups are separated by the SIBLING hairline, not the bounding one: they are
+   repeated regions inside one card, and `--pn-line` here would read as a set
+   of stacked cards rather than as one record with sections. */
+.cv2-root .set-kinds__group + .set-kinds__group {
+  border-top: 1px solid var(--pn-x-hairline-soft);
+  padding-top: 12px;
+}
+
+.cv2-root .set-kinds__legend {
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+/* `.gov-field-block` is `flex: 1 1 160px`, which is right inside
+   `.gov-form__pair` (a ROW, where 160px is a width) and wrong inside a group
+   (a COLUMN, where 160px becomes a HEIGHT basis). Measured in Chrome
+   2026-08-16: the glyph block rendered 160px tall around 87px of content —
+   73px of dead paper between the glyph row and SCHEMA. */
+.cv2-root .set-kinds__group > .gov-field-block {
+  flex: none;
+}
+
+/* THE MEASURE, one level in. `--set-measure` caps the section body at 860px,
+   which is the right cap for a two-column record and much too wide for a line
+   of explanatory prose — at 860px a 10.5px hint runs past 130 characters. The
+   `ch` unit ties the cap to this text's own size rather than to a pixel count
+   that stops being true when the type scale moves. */
+.cv2-root .set-kinds__hint,
+.cv2-root .set-kinds .gov-prose,
+.cv2-root .set-kinds .hon-caption {
+  max-width: 64ch;
+  text-wrap: pretty;
+}
+
+.cv2-root .set-kinds__hint {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+/* -- the authoring form ----------------------------------------------------- */
+
+.cv2-root .set-kinds__form {
+  gap: 12px;
+}
+
+/* The submit and the verdict that gates it, together at the foot of the form.
+   The refusal used to sit in the card's HEADER, above the sentence explaining
+   why it is refused — the answer printed above the question. */
+.cv2-root .set-kinds__submit {
+  display: flex;
+  /* A COLUMN, not a row. As a row the refusal's own caption and the verdict
+     sentence sat side by side as two 300-400px prose blocks with no rule
+     between them, and neither read as the continuation of the button. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  border-top: 1px dotted var(--pn-line);
+  padding-top: 10px;
+}
+
+.cv2-root .set-kinds__add {
+  align-self: flex-start;
+}
+
+/* The glyph overflow. `DisabledAction` is a COLUMN (control over caption), so
+   as a flex item in the glyph row it is 44px tall against 26px buttons and its
+   caption drags the row to 784px — measured. Given its own full-width line
+   underneath, laid out as a row, it reads as the footnote it is. */
+.cv2-root .set-kinds .gov-glyphs .hon-disabled-group {
+  flex-basis: 100%;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A FIELD ROW IS A TABLE ROW, so it is a grid and not a wrapping flex line.
+   As flex, each row sized its own name input from whatever was left after that
+   row's own controls — so a row with enum values had a 470px name box and the
+   row under it 660px, and the type selects, `req` toggles and `✕` buttons sat
+   at three different x positions down a column a person reads vertically.
+   Five fixed tracks put them in one column at every width; the enum values and
+   any issue text take their own full-width sub-row rather than competing for
+   the first one. */
+.cv2-root .set-kinds__field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 92px auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv2-root .set-kinds__enum,
+.cv2-root .set-kinds__field > .gov-issues {
+  grid-column: 1 / -1;
+}
+
+/* The enum values got a visible label. It was a bare mono input whose only
+   explanation was a `sev1·sev2·sev3` placeholder — which disappears the moment
+   you type, taking the "separate them with ·" instruction with it. */
+.cv2-root .set-kinds__enum {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 32px; /* clears the handle track, so it reads as a continuation */
+}
+
+.cv2-root .set-kinds__enum-label {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+.cv2-root .set-kinds__field-name {
+  min-width: 0;
+}
+
+.cv2-root .set-kinds__field .gov-select {
+  width: 100%;
+}
+
+/* `⠿ req opt ✕` were 9px glyphs with 2px of padding — under 14px of target on
+   a row a person is expected to hit repeatedly. This is not a full 44px touch
+   target (this canvas is a dense desktop surface and a 44px control would be
+   taller than the row it sits in); it is the largest target the row's own
+   height allows. */
+.cv2-root .set-kinds__tap {
+  min-width: 26px;
+  min-height: 24px;
+  padding: 4px 6px;
+  border-radius: var(--pn-r-sm);
+}
+
+.cv2-root .set-kinds__tap:hover {
+  background: var(--pn-hover);
+}
+
+/* The handle IS a control — it moves its row with the arrow keys. The shared
+   sheet gives it `cursor: grab`, which is the oracle's drawing of a drag that
+   was never built; a grab cursor over something that cannot be grabbed is the
+   enabled-inert lie in cursor form, and this screen's own docblock says so. */
+.cv2-root .set-kinds__handle {
+  cursor: default;
+  min-height: 24px;
+  padding: 4px;
+}
+
+/* -- the preview / payload card -------------------------------------------- */
+
+.cv2-root .set-kinds__preview {
+  gap: 12px;
+}
+
+/* The groups inside this card carry the rhythm now, so the inner regions must
+   not re-pad: `.gov-payload` brings `padding: 13px 14px` of its own, which
+   nested inside a group is 27px of gutter on one side of a `<pre>`. */
+.cv2-root .set-kinds__preview .gov-payload {
+  padding: 0;
+  gap: 6px;
+}
+
+/* A bounded pane, per SECTION-CONTRACT.md §3: it has a `max-height` of its own
+   and is NOT `flex: 1` inside the section scroller, so it takes its own
+   overflow instead of competing for the scroller's. Without the cap a
+   twelve-field draft's payload is ~60 lines and pushes everything below it off
+   the section. */
+.cv2-root .set-kinds__preview .gov-pre {
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* -- the list, and the state most spaces are actually in -------------------- */
+
+.cv2-root .set-kinds__list .gov-empty {
+  padding: 12px 14px;
+}
+
+/* `SectionAbsent` brings its own box; the `gov-empty` wrapper around it is
+   there for the `empty-region` test id and must not add a second one. */
+.cv2-root .set-kinds__list .gov-empty .set-absent {
+  margin: 0;
+}

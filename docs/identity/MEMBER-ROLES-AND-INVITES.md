@@ -59,7 +59,7 @@ tm8 space invite create [<space-id>] [--role <admin|member>] [--max-uses n] [--e
 tm8 space invite resolve <code>          # no space, no credential needed
 ```
 
-### UI (`packages/tm8-ui`)
+### UI (`packages/tm8_ui_2.0`)
 
 Seam **Amendment 11**: `setMemberRole`, `createInvite`, `revokeInvite`,
 `redeemInvite` under `commands`, plus `previewInvite` with the reads. The
@@ -147,7 +147,7 @@ TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_roles_check TM8_TEST_DB=tm8_r
   node --test db/test/member_roles.test.mjs
 
 # UI
-cd packages/tm8-ui && npx vitest run src/settings-space src/data
+cd packages/tm8_ui_2.0 && npx vitest run src/settings-space src/data
 ```
 
 The DB suite needs `tm8_app` to be able to log in. On a cluster where it has no

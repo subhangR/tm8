@@ -30,8 +30,8 @@ import {
   type LensId,
 } from './relevance';
 
-export const NODE_W = 284;
-export const NODE_H = 156;
+export const NODE_W = 240;
+export const NODE_H = 124;
 const H_GAP = 44;
 const V_GAP = 72;
 const ISLAND_GAP = 96;

@@ -8,7 +8,7 @@
  * Each one is here because getting it wrong would mislead a reader rather than
  * merely look wrong.
  */
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionTranscriptPage } from '@tm8/contract';
 import { TranscriptSurface } from './TranscriptSurface';
@@ -286,11 +286,11 @@ describe('the Transcript surface', () => {
         });
         const seam = { transcript, commands: { prompt: vi.fn() } } as never;
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        await vi.advanceTimersByTimeAsync(0);
         fireEvent.click(screen.getByTestId('transcript-load-older'));
-        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        await vi.advanceTimersByTimeAsync(5_000);
         release!();
-        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        await vi.advanceTimersByTimeAsync(0);
 
         // The window landed rather than being discarded...
         expect(screen.getByText('the middle turn')).toBeTruthy();
@@ -352,18 +352,18 @@ describe('the Transcript surface', () => {
           opts?.before === undefined ? Promise.resolve(tail) : Promise.resolve(stuck));
         const seam = { transcript, commands: { prompt: vi.fn() } } as never;
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        await vi.advanceTimersByTimeAsync(0);
 
         fireEvent.click(screen.getByTestId('transcript-load-older'));
-        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        await vi.advanceTimersByTimeAsync(0);
         expect(screen.getByTestId('transcript-stalled')).toBeTruthy();
 
         // The poll never paused — no window was ever held — so the tail moves.
         tail = moved;
-        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        await vi.advanceTimersByTimeAsync(5_000);
 
         // The poll's render and the lift it triggers are separate rounds.
-        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        await vi.advanceTimersByTimeAsync(0);
 
         // A different cursor is on offer, so the refusal no longer applies.
         expect(screen.queryByTestId('transcript-stalled')).toBeNull();
@@ -385,9 +385,9 @@ describe('the Transcript surface', () => {
       try {
         const { seam, transcript } = pagingSeam(windows());
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        await vi.advanceTimersByTimeAsync(0);
         fireEvent.click(screen.getByTestId('transcript-load-older'));
-        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        await vi.advanceTimersByTimeAsync(0);
 
         const afterWalk = transcript.mock.calls.length;
         await vi.advanceTimersByTimeAsync(30_000);
@@ -398,7 +398,7 @@ describe('the Transcript surface', () => {
         // Resuming drops the walk and re-reads the tail — the one refresh that
         // cannot leave a gap.
         fireEvent.click(screen.getByRole('button', { name: /back to the newest turns/i }));
-        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        await vi.advanceTimersByTimeAsync(0);
         expect(transcript.mock.calls.length).toBeGreaterThan(afterWalk);
         expect(screen.queryByTestId('transcript-poll-paused')).toBeNull();
         expect(screen.queryByText('the middle turn')).toBeNull();

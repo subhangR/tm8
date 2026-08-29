@@ -26,7 +26,7 @@ import { useDismissable } from '../useDismissable';
  */
 export function useReasonDisclosure(): {
   open: boolean;
-  ref: RefObject<HTMLSpanElement | null>;
+  ref: RefObject<HTMLSpanElement>;
   /** Spread onto the refused control. */
   triggerProps: {
     onClick: (e: { stopPropagation: () => void }) => void;
@@ -34,7 +34,7 @@ export function useReasonDisclosure(): {
     'aria-expanded': boolean;
   };
   /** Spread onto the wrapper that CSS keys the open state off. */
-  hostProps: { ref: RefObject<HTMLSpanElement | null>; 'data-reason-open': 'true' | undefined };
+  hostProps: { ref: RefObject<HTMLSpanElement>; 'data-reason-open': 'true' | undefined };
 } {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);

@@ -1,0 +1,372 @@
+/* ==========================================================================
+   SESSION GRAPH — the fourth chip on a work session.
+   Tokens only (§14 hex ban); no `minmax(0, …)` tracks (L4 floors are law).
+   Structure is a three-band column: a header that states the finding, a
+   canvas that draws it, and a footer that names every way the drawing is
+   incomplete. The canvas is the only band that grows.
+   ========================================================================== */
+
+.sg-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--pn-surface);
+}
+
+/* --- states -------------------------------------------------------------- */
+
+.sg-loading,
+.sg-empty {
+  margin: 0;
+  padding: var(--pn-space-6);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+}
+
+/* --- header: the finding, then the controls ------------------------------ */
+
+.sg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-3) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+
+.sg-head__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The headline is the answer to "what does this session do", so it carries
+   the serif voice the rest of the workspace reserves for content. */
+.sg-head__line {
+  margin: 0;
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-h3);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+}
+
+.sg-head__sep { color: var(--pn-ink-4); }
+.sg-head__label { color: var(--pn-ink); }
+
+/* Counts are the measured part of the sentence — mono says "this is a
+   number I read", not "this is a word I chose". */
+.sg-head__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  color: var(--pn-brand);
+}
+
+.sg-head__sub {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.sg-head__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+/* --- hop control: a segmented switch, because depth is one choice of three */
+
+.sg-hops {
+  display: inline-flex;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  overflow: hidden;
+}
+
+.sg-hops__opt {
+  appearance: none;
+  border: 0;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  padding: var(--pn-space-1) var(--pn-space-2);
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.sg-hops__opt:first-child { border-left: 0; }
+.sg-hops__opt:hover { background: var(--pn-hover); }
+
+.sg-hops__opt--on {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  font-weight: 600;
+}
+
+/* --- buttons -------------------------------------------------------------- */
+
+.sg-btn {
+  appearance: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  padding: var(--pn-space-1) var(--pn-space-2);
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.sg-btn:hover { background: var(--pn-hover); }
+.sg-btn[aria-busy='true'] { color: var(--pn-ink-3); cursor: progress; }
+.sg-btn--tight { padding: var(--pn-space-1); min-width: 26px; }
+
+.sg-zoom {
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* --- relation filters ----------------------------------------------------- */
+
+.sg-relations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-2) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.sg-rel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  appearance: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  padding: 2px var(--pn-space-2);
+  cursor: pointer;
+}
+
+.sg-rel:hover { background: var(--pn-hover); }
+
+/* Hidden is DIMMED, never removed — a filter the viewer cannot see is a
+   filter the viewer will mistake for an empty session (L6). */
+.sg-rel--off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.sg-rel__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-ink-4);
+}
+
+.sg-rel__n {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+/* --- canvas --------------------------------------------------------------- */
+
+.sg-canvas {
+  flex: 1 1 auto;
+  min-height: 240px;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  background: var(--pn-paper);
+}
+
+.sg-canvas:active { cursor: grabbing; }
+
+.sg-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Hop guides. They are scenery, not data — the faintest line in the system. */
+.sg-ring {
+  fill: none;
+  stroke: var(--pn-line);
+  stroke-dasharray: 2 6;
+}
+
+.sg-link {
+  fill: none;
+  stroke: var(--pn-line-2);
+  stroke-width: 1.4;
+}
+
+/* --- cells ---------------------------------------------------------------- */
+
+.sg-cell { cursor: pointer; }
+
+.sg-cell:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+.sg-box {
+  fill: var(--pn-card);
+  stroke: var(--pn-line-2);
+  stroke-width: 1;
+}
+
+.sg-cell:hover .sg-box { stroke: var(--pn-ink-3); }
+
+/* Depth reads as weight: the further out, the quieter the border. */
+.sg-box[data-hop='2'] { stroke: var(--pn-line); }
+.sg-box[data-hop='3'] { stroke: var(--pn-line); opacity: 0.85; }
+
+/* A hub is a landmark the traversal deliberately stopped at, so it is drawn
+   SOLID and heavy — its branch ending is a decision, not a gap. */
+.sg-box[data-hub='true'] {
+  stroke: var(--pn-ink-4);
+  stroke-width: 1.5;
+}
+
+/* A node whose own edges were never read gets a dashed border: its branch
+   ENDS here, and that must not read as "leaf". */
+.sg-box[data-unread='true'] {
+  stroke-dasharray: 4 3;
+}
+
+.sg-cell--focus .sg-box {
+  fill: var(--pn-brand-soft);
+  stroke: var(--pn-brand);
+  stroke-width: 1.5;
+}
+
+.sg-cell--selected .sg-box {
+  stroke: var(--pn-brand);
+  stroke-width: 2;
+}
+
+.sg-box--fold {
+  fill: var(--pn-hover);
+  stroke: var(--pn-line-2);
+  stroke-dasharray: 3 3;
+}
+
+.sg-icon {
+  fill: none;
+  stroke: var(--pn-ink-3);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sg-title {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  fill: var(--pn-ink);
+}
+
+.sg-meta {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  fill: var(--pn-ink-3);
+}
+
+/* THE STATE WORD CARRIES ITS TONE, and it is the only coloured text on a card.
+   A canvas where a blocked task and a running session read alike is a canvas
+   you have to click through; the tones are the ones the pills already use, so
+   the same state is the same colour wherever it appears. */
+.sg-state { font-weight: 600; }
+.sg-state--run   { fill: var(--pn-run); }
+.sg-state--wait  { fill: var(--pn-wait); }
+.sg-state--block { fill: var(--pn-block); }
+.sg-state--info  { fill: var(--pn-info); }
+.sg-state--idle  { fill: var(--pn-idle); }
+.sg-state--brand { fill: var(--pn-brand-2); }
+
+/* The kind's OWN facts — priority, model, PR state, whatever it declares. Mono
+   because they are mostly values rather than prose, and quieter than the state
+   so the card still has one thing that reads first. */
+.sg-facts {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  fill: var(--pn-ink-2);
+}
+
+.sg-facts--faint { fill: var(--pn-ink-4); }
+
+.sg-count,
+.sg-badge {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  fill: var(--pn-ink-2);
+}
+
+.sg-badge--faint { fill: var(--pn-ink-4); }
+
+/* --- selection card ------------------------------------------------------- */
+
+.sg-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-4);
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+
+.sg-card__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.sg-card__title {
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-title);
+  color: var(--pn-ink);
+}
+
+.sg-card__facts {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.sg-card__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  margin-left: auto;
+}
+
+/* --- footer: the incompleteness ledger ------------------------------------ */
+
+.sg-foot {
+  padding: var(--pn-space-2) var(--pn-space-4);
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.sg-foot__note {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-3);
+}

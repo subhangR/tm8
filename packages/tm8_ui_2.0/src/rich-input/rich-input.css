@@ -1,0 +1,476 @@
+/**
+ * rich-input — the shared trigger popover and attachment chips.
+ *
+ * Token-only (the package hex guard walks this file). The popover geometry
+ * and the keyboard-highlight rule are transcribed from the channel composer's
+ * `chs-mention-picker`, which is the one picker users have already learned —
+ * same card, same brand highlight, same capped width and the same reason for
+ * it (a name and its one-line reason belong together; a full-width row
+ * strands the reason a screen away from the name).
+ */
+
+/* The positioning context a host wraps its textarea in. */
+.ri-host {
+  position: relative;
+}
+
+/**
+ * THE ONE CHAT BOX (`ComposerCard`) — the shell Chat Home drew first, now
+ * shared with the channel and thread composers. `overflow` stays visible
+ * because the skill picker pins above the field (`.ri-host` + `.ri-popover`),
+ * and `hidden` clips an absolutely positioned descendant.
+ */
+.ri-card {
+  overflow: visible;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-md);
+}
+
+.ri-card:focus-within { border-color: var(--pn-brand); }
+
+.ri-card textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 58px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font: 13px/1.45 var(--pn-ui);
+  padding: 11px 12px 4px;
+}
+
+/* THE PHONE'S COMPOSER, and 16px here is a behavioural threshold rather than a
+   type choice: iOS Safari zooms the page whenever a text field under 16px takes
+   focus. Inside a `100dvh` frame with `overflow: hidden` that zoom has no way
+   out — no scroll to pan with, no affordance to undo it — so the user taps the
+   box to write a message and the whole app is the wrong size from then on.
+   This is the field the phone actually composes into (measured at 13px on the
+   Home screen at 390x844); desktop keeps 13px. */
+.cv2-root .mobile-frame .ri-card textarea {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.ri-card textarea::placeholder { color: var(--pn-ink-4); }
+
+.ri-card__foot {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 3px 7px 6px 11px;
+}
+
+/* Chips and the paste refusal sit ABOVE the field, inside the composer card,
+   so an attachment reads as part of the message being written. */
+.ri-card .ri-attachments { padding: 9px 11px 0; }
+
+/**
+ * THE FOOT'S TWO UNIVERSAL CONTROLS — attach, and the primary action.
+ *
+ * PROMOTED HERE RATHER THAN LIFTED A THIRD TIME. Chat Home drew `.tch-attach`
+ * and `.tch-send`; the channel composer drew `.chs-iconbtn` and its own send;
+ * the transcript composer was about to draw a third pair. Three copies of one
+ * treatment is the drift `ComposerCard` already exists to stop, and the CARD
+ * is shared while the CONTROLS INSIDE IT were not, which is precisely the
+ * seam a reader would expect to be shared.
+ *
+ * IT LIVES IN THIS FILE FOR A LOADING REASON, not a filing one — the same one
+ * the phone rules at the end of this file give: `chat-home.css` is only in the
+ * document once the lazy chat home has mounted, and `channel-screen.css` only
+ * once a channel has. `rich-input/index.ts` imports this file, so it is
+ * present wherever a composer is.
+ *
+ * WHAT IS NOT DONE HERE, stated so the omission is a decision and not a
+ * half-finish: Chat Home and the channel are NOT converted onto these classes.
+ * `.tch-send` carries a running-turn variant and a ribbon mark, `.chs-iconbtn`
+ * is a different shape used in six other places on its screen, and both have
+ * phone rules and container queries keyed to their own names. Converting them
+ * is a real change with its own verification, and doing it as a side effect of
+ * a transcript task is how a shared class ends up half-adopted. The next
+ * surface to draw a composer foot should use THESE.
+ */
+.ri-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* NOT SHRINKABLE. A 24px square with the default `flex-shrink: 1` is a 24px
+     square right up until the row runs out of room, and then it is a squashed
+     glyph — the box is the affordance, so it holds its size. */
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: var(--pn-space-1);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-label) var(--pn-ui);
+  cursor: pointer;
+}
+.ri-attach:hover:not(:disabled) { border-color: var(--pn-line-2); color: var(--pn-ink); }
+.ri-attach:disabled { opacity: 0.42; cursor: default; }
+.ri-attach:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+/* Reachable by its accessible name, invisible on screen — see
+   `files/ChooseFilesControl` for why the input is not `display: none`. */
+.ri-attach__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/**
+ * SEND NEVER GIVES. This is the rule the chat composer's overlap bug (#442)
+ * was missing, carried here so the next foot does not rediscover it: every
+ * other item in `.ri-card__foot` is a flex item with the automatic
+ * `min-width: auto` and therefore holds its content width, which leaves Send
+ * as the ONLY item with any give. Squeezed, its label wraps to two lines, the
+ * button grows, the row still does not fit, and `.ri-card` is
+ * `overflow: visible` so the neighbour PAINTS underneath it rather than being
+ * clipped. `flex: none` plus `nowrap` means the primary action keeps one line
+ * and its full footprint at every width.
+ */
+.ri-send {
+  flex: none;
+  margin-left: var(--pn-space-2);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.ri-send:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.ri-send:disabled { opacity: 0.42; cursor: default; }
+
+/* The give in the row is the SPACER, which has no content to protect. It also
+   carries the `auto` margin that pushes Send to the right edge — so when the
+   row runs out of slack the gap collapses and the controls still do not touch,
+   because Send keeps its own margin. */
+.ri-card__foot .ri-foot-gap { flex: 1 1 auto; min-width: 0; }
+
+.ri-popover {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-width: 420px;
+  z-index: 30;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+}
+
+.ri-popover__query {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-ink-4);
+  font-size: 10.5px;
+}
+
+.ri-popover [role='listbox'] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 238px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+}
+
+.ri-popover button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  padding: 6px 9px;
+  cursor: pointer;
+  text-align: left;
+}
+.ri-popover button:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
+
+/**
+ * THE KEYBOARD HIGHLIGHT. Without this the arrow keys move an invisible
+ * cursor and Enter commits a row the user cannot see — the navigation is
+ * only as useful as this rule. Toned with the brand accent so it outranks
+ * the hover tint when the mouse happens to rest on a different row.
+ */
+.ri-popover button[data-active='true'] {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+}
+
+.ri-popover__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ri-popover__meta {
+  color: var(--pn-ink-4);
+  font: 9px var(--pn-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.ri-popover__empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--pn-ink-4);
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------------------- */
+
+.ri-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ri-attachments__refusal {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-block);
+  font-size: 11px;
+}
+.ri-attachments__refusal button {
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.ri-attachments__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ri-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.ri-attachment[data-phase='failed'] { border-color: var(--pn-block); }
+.ri-attachment__name { color: var(--pn-ink-2); overflow-wrap: anywhere; }
+.ri-attachment__error { color: var(--pn-block); }
+.ri-attachment button {
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-size: 10px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+
+/* ── the prose field (`ProseField`) ──────────────────────────────────────
+   A textarea, its popover, and one line beneath for what the uploads are
+   doing. The field itself carries NO styling of its own: the host passes its
+   own class down, so a dialog box still looks like a dialog box and a task
+   description still looks like a task description. */
+.ri-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ri-field__hint,
+.ri-field__why {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0 0;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+}
+
+.ri-field__hint { color: var(--pn-ink-4); }
+.ri-field__why { color: var(--pn-block); }
+
+.ri-field__why button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-026, DEF-039.
+
+   `.ri-card` is the ONE chat box, shared by Chat Home, the channel composer
+   and the thread composer, and Lane A owns all three. Scoped to the
+   `data-shell` marker so desktop is untouched.
+   ========================================================================== */
+
+/* UNPIN THE FOOT BEFORE ANYTHING INSIDE IT GROWS. This is the trap the shell
+   contract names: `.lp__actions` was `height: 34px` + `overflow: hidden` and
+   sliced its contents through the middle of the glyphs while `overflowCount`
+   scored the screen 0 — no metric in this program can see vertical clipping
+   (DEF-037), so a foot that clipped a 44px Send would have PASSED the tap
+   census with the button cut in half.
+
+   `.ri-card__foot` is already `min-height` rather than `height`, so it grows.
+   What it does NOT do is wrap: it is a single flex line holding attach, the
+   skill sigil, three thread-setting triggers, the phase label and Send. At
+   44px each those no longer fit 390px, and a nowrap flex line resolves that by
+   COMPRESSING its children — which would have taken the width back off the
+   targets this change exists to grow, silently, and left the row measuring
+   under the bar again on the narrower viewport only.
+
+   So the row wraps, and the floor is restated at 44 so it is not a number that
+   quietly stopped being true. */
+.cv2-root[data-shell='mobile'] .ri-card__foot {
+  flex-wrap: wrap;
+  row-gap: var(--pn-space-1);
+  min-height: var(--mobile-touch-min);
+}
+
+/* DEF-039 — the composer's own literals. These name a pixel size rather than a
+   scale step, so the token lift on `.tch-root` cannot reach them, and they
+   render INSIDE the chat screens the row is counted on: the attachment chips
+   and the paste refusal sit above the field, and the skill picker's query line
+   and per-option meta sit above that. 12px is the derived floor (nothing at 12
+   or above appears in any of the run's 283 tinyText findings); the refusal is
+   prose and takes 13 for the same reason `.tch-thread-refusal` does. */
+.cv2-root[data-shell='mobile'] .ri-attachments__refusal { font-size: 13px; }
+.cv2-root[data-shell='mobile'] .ri-attachment { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-attachment button { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-popover__query { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-popover__meta { font: 12px var(--pn-mono); }
+.cv2-root[data-shell='mobile'] .ri-popover__empty { font-size: 13px; }
+.cv2-root[data-shell='mobile'] .ri-field__hint,
+.cv2-root[data-shell='mobile'] .ri-field__why { font-size: 12px; }
+
+/* THE PROMOTED FOOT CONTROLS TAKE THE SAME FLOOR the per-screen copies do.
+   Written here beside the classes themselves so a surface that adopts
+   `.ri-attach`/`.ri-send` is phone-correct on arrival rather than measuring
+   under the 44px bar until somebody runs the census on it. */
+.cv2-root[data-shell='mobile'] .ri-attach {
+  width: auto;
+  height: auto;
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}
+.cv2-root[data-shell='mobile'] .ri-send {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+  font-size: 13px;
+}
+
+/* The attachment chip's remove button and the popover's rows are controls, not
+   copy. The popover rows are already 36px; on a phone they take the floor. */
+.cv2-root[data-shell='mobile'] .ri-popover button { min-height: var(--mobile-touch-min); }
+.cv2-root[data-shell='mobile'] .ri-attachment button {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}
+.cv2-root[data-shell='mobile'] .ri-attachments__refusal button {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}
+
+
+/* --- the trigger popover, with the keyboard up --------------------------- */
+
+/* THE SLASH / MENTION PICKER IS NOT CONVERTED TO A SHEET, AND THAT IS A
+   DELIBERATE READING OF THE CONTRACT RATHER THAN AN OMISSION. Contract §4
+   names anchored popovers as the thing a sheet replaces — specifically the
+   ones that "do not survive the trip to a 390px HEADER", which is why the
+   account menu is a sheet. That is a menu hanging off a small trigger, and
+   `ComposerSelect`'s three thread-setting menus ARE that case and have been
+   moved (see the docblock at its render).
+
+   This one is a different animal: it is full-width, anchored above a
+   full-width composer, and it is driven ENTIRELY BY THE TEXTAREA — the hook's
+   keyboard contract gives it no focusable parts, and the reader filters it by
+   continuing to type. A `MobileSheet` is `aria-modal` with a backdrop over the
+   screen that opened it, so making this one a sheet would cover the composer
+   the reader is typing into and put focus outside the modal it claims to trap
+   — it would break the interaction it exists to serve, in exchange for a rule
+   written about a different shape. Raised with the coordinator rather than
+   decided quietly, and NOT forked: the sheet rule is applied where the
+   contract's own words put it.
+
+   What it DOES need is to stop being taller than the room it has. The frame is
+   `calc(100dvh - var(--mobile-keyboard-inset))`, so with the keyboard up it is
+   a few hundred pixels tall, and a 238px list above a composer would not fit.
+   Composed against the PUBLISHED TOKEN — no second `visualViewport` listener,
+   per contract §3, and no measurement in this file at all. The 0.4 is the
+   share of the frame the list may take: the composer with 44px controls plus
+   the header is most of the rest, and a picker that took half would leave the
+   writer unable to see the line being completed. */
+.cv2-root[data-shell='mobile'] .ri-popover [role='listbox'] {
+  max-height: min(238px, calc((100dvh - var(--mobile-keyboard-inset, 0px)) * 0.4));
+}
+
+
+/* The refused-attach control. `DisabledIconControl` renders `.hon-disabled`
+   rather than `.tch-attach`, so it is a SECOND control in the same composer
+   slot and the `.tch-attach` floor does not reach it — it is sized to 26px by
+   the `.ri-card__foot .hon-disabled` rule in `channel-screen.css`.
+
+   IT LIVES HERE RATHER THAN IN `chat-home.css` FOR A LOADING REASON, not a
+   filing one. `chat-home.css` is imported by `ChatHomeScreen` and so is only
+   in the document once the lazy chat home has mounted; the channel screen
+   draws the same composer foot and imports `channel-screen.css` instead. A
+   phone rule for a SHARED composer control written in either of those applies
+   on one of the two surfaces and is silently absent on the other — which
+   presents as the same component measuring differently on two screens, with
+   nothing in the CSS to suggest why. `rich-input/index.ts` imports this file,
+   so it is present wherever a composer is.
+
+   IT IS GROWN AT ALL, which is a deliberate reading of ledger RULE R2 rather
+   than a contradiction of it. R2 excludes disabled controls from the 44px bar
+   because there is nothing to tap, and growing a dead control only produces a
+   bigger dead control. This one is not dead: it carries a REASON the reader is
+   meant to be able to open (the `useReasonDisclosure` seam DEF-032 is about),
+   so a finger does have somewhere to land and the thing it lands on should be
+   findable by it. */
+.cv2-root[data-shell='mobile'] .ri-card__foot .hon-disabled {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}

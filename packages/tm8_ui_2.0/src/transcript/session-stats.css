@@ -1,0 +1,244 @@
+/* THE EXITED-SESSION POST-MORTEM.
+ *
+ * Every colour resolves through a token, so both themes come free and the
+ * package's hex ban (`hex-ban.test.ts`) has nothing to find. The four token
+ * kinds borrow the existing STATE hues rather than introducing a palette: they
+ * are already distinguishable from each other in both themes, which is the only
+ * property a proportion bar needs from a colour.
+ *
+ * Left-aligned, unlike the centred fallback it sits under: a column of figures
+ * that is centred cannot be scanned down, and scanning down is the entire use
+ * of this panel. */
+
+.cv2-root .sst {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4);
+  width: 100%;
+  text-align: left;
+}
+
+.cv2-root .sst__caveats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .sst__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding-top: var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+
+.cv2-root .sst__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+  margin: 0;
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .sst__total {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--pn-ink);
+}
+
+/* --- the proportion bar --------------------------------------------------- */
+
+.cv2-root .sst__bar {
+  display: flex;
+  overflow: hidden;
+  height: 6px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-line);
+}
+.cv2-root .sst__bar-seg {
+  min-width: 1px;
+}
+.cv2-root .sst__bar-seg[data-kind='inputTokens'] {
+  background: var(--pn-info);
+}
+.cv2-root .sst__bar-seg[data-kind='outputTokens'] {
+  background: var(--pn-run);
+}
+.cv2-root .sst__bar-seg[data-kind='cacheReadTokens'] {
+  background: var(--pn-brand);
+}
+.cv2-root .sst__bar-seg[data-kind='cacheCreationTokens'] {
+  background: var(--pn-wait);
+}
+
+/* --- the figure grid ------------------------------------------------------ */
+
+.cv2-root .sst__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--pn-space-2);
+  margin: 0;
+}
+
+.cv2-root .sst__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cv2-root .sst__cell-label {
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .sst__cell-value {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  color: var(--pn-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* HOLLOW READS AS ABSENT, NOT AS SMALL. The dimmed ink is the visual half of
+   the claim `data-hollow` makes structurally: nothing was reported. A `0` in
+   this slot keeps full ink, because a measured zero is a measurement. */
+.cv2-root .sst__cell[data-hollow='true'] .sst__cell-value {
+  color: var(--pn-ink-4);
+}
+
+/* --- tools ---------------------------------------------------------------- */
+
+.cv2-root .sst__tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cv2-root .sst__tool {
+  display: grid;
+  grid-template-columns: minmax(0, 8rem) 1fr auto;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .sst__tool-name {
+  overflow: hidden;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .sst__tool-bar {
+  height: 4px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  box-shadow: inset 0 0 0 1px rgba(var(--pn-brand-rgb), 0.35);
+}
+
+.cv2-root .sst__tool-count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- models --------------------------------------------------------------- */
+
+.cv2-root .sst__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cv2-root .sst__chip {
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+}
+
+/* --- files ---------------------------------------------------------------- */
+
+.cv2-root .sst__files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cv2-root .sst__file {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+}
+
+/* The tail of a path identifies a file; its head identifies the monorepo. So
+   the ellipsis goes on the LEFT and the filename always survives. */
+.cv2-root .sst__file-path {
+  overflow: hidden;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-2);
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .sst__file-delta {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- notes ---------------------------------------------------------------- */
+
+.cv2-root .sst__note {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+
+.cv2-root .sst__note[data-tone='warn'] {
+  color: var(--pn-wait);
+}
+
+.cv2-root .sst__note[data-tone='bad'] {
+  color: var(--pn-block);
+}
+
+.cv2-root .sst__note-cause {
+  color: var(--pn-ink-2);
+  font-weight: 600;
+}
+
+.cv2-root .sst__note-remedy {
+  color: var(--pn-ink-3);
+}

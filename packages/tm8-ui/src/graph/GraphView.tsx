@@ -64,11 +64,6 @@ export interface GraphViewProps {
   /** The aside's current selection — the matching node wears a persistent ring. */
   selectedId?: EntityId | null;
   /**
-   * The viewer, for the filter dock's "My Nodes" — nodes the viewer created or
-   * is assigned to. Absent ⇒ the pill is not drawn (never enabled-and-inert).
-   */
-  viewerId?: string | null;
-  /**
    * THE WINDOW IS A READ, SO ITS STATE LIVES ABOVE THIS COMPONENT.
    *
    * Choosing "last day" re-queries the space for entities active since then;
@@ -227,19 +222,10 @@ export function GraphView(props: GraphViewProps) {
   const frozenRef = useRef<Readonly<Record<string, { x: number; y: number }>> | null>(null);
   const panEaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* "My Nodes" (filter dock): the viewer's own slice — created-by or assigned.
-     Structural read of `state.assignees`; kinds without assignees simply match
-     on creator, no kind is named. */
-  const [myOnly, setMyOnly] = useState(false);
-  const effectiveNodes = useMemo(() => {
-    const base = props.nodes.map((n) => (touched[n.id] ? { ...n, activityAt: touched[n.id] } : n));
-    if (!myOnly || !props.viewerId) return base;
-    return base.filter((n) => {
-      if (n.createdBy.id === props.viewerId) return true;
-      const assignees = (n.state as { assignees?: readonly { id: string }[] } | undefined)?.assignees;
-      return Array.isArray(assignees) && assignees.some((a) => a.id === props.viewerId);
-    });
-  }, [props.nodes, touched, myOnly, props.viewerId]);
+  const effectiveNodes = useMemo(
+    () => props.nodes.map((n) => (touched[n.id] ? { ...n, activityAt: touched[n.id] } : n)),
+    [props.nodes, touched],
+  );
   const allEdges = useMemo(() => [...props.edges, ...extraEdges], [props.edges, extraEdges]);
 
   const kindsPresent = useMemo(
@@ -699,8 +685,24 @@ export function GraphView(props: GraphViewProps) {
   return (
     <div className="gv-root" data-testid="graph-view">
       <div className="gv-toolbar">
-        {/* THE LENS moved to the canvas's filter dock (bottom-left) — the bar
-            keeps the window, the search and the counts. */}
+        {/* THE LENS. First control in the bar because it is the first decision:
+            what is this canvas about? Everything downstream (filters, search,
+            zoom) refines the answer. Each lens says exactly what it seeds on,
+            so no one has to guess why something is or isn't drawn. */}
+        <div className="gv-lens" role="group" aria-label="Graph lens">
+          {LENSES.map((spec) => (
+            <button
+              key={spec.id}
+              type="button"
+              className={spec.id === lens ? 'gv-lens__opt gv-lens__opt--on' : 'gv-lens__opt'}
+              aria-pressed={spec.id === lens}
+              title={spec.hint}
+              onClick={() => chooseLens(spec.id)}
+            >
+              {spec.label}
+            </button>
+          ))}
+        </div>
         {/* THE WINDOW, beside the lens because they are two halves of one
             question and neither is a refinement of the other: the lens picks
             the KIND of interest, the window picks HOW RECENT. Kept as its own
@@ -806,6 +808,11 @@ export function GraphView(props: GraphViewProps) {
           onToggle={(id) => setTypesOff((prior) => toggle(prior, id))}
           onShowAll={() => setTypesOff(new Set())}
         />
+        <div className="gv-toolbar__zoom">
+          <IconBtn label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</IconBtn>
+          <IconBtn label="Zoom in" onClick={() => zoomBy(1.2)}>+</IconBtn>
+          <IconBtn label="Fit graph" onClick={fit}>⤢</IconBtn>
+        </div>
       </div>
 
       {/* THREE EXCLUSIONS, THREE SENTENCES. `outOfWindow` means it is older than
@@ -1018,8 +1025,7 @@ export function GraphView(props: GraphViewProps) {
                   tabIndex={0}
                   className={cls}
                   aria-current={selected ? 'true' : undefined}
-                  data-family={row.graphFamily ?? 'gray'}
-                  style={{ left: p.x, top: p.y, width: NODE_W, minHeight: NODE_H }}
+                  style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }}
                   onClick={() => onSelect(p.entity.id)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -1062,48 +1068,6 @@ export function GraphView(props: GraphViewProps) {
                     </span>
                   </span>
                   <span className="gv-node__title">{p.entity.title}</span>
-                  {/* THE BODY SLOT — structural, kind-blind: whatever facts the
-                      summary carries are drawn; absent facts draw nothing.
-                      Acceptance → a real progress bar; a LIVE session's model →
-                      the mono activity line; a due date → the overdue-aware
-                      chip. No kind is named (§15.2). */}
-                  {(() => {
-                    const st = p.entity.state as Partial<{
-                      acceptance: { total: number; completed: number };
-                      dueDate: string | null;
-                      model: string;
-                    }> | undefined;
-                    const acc = st?.acceptance;
-                    if (acc && acc.total > 0) {
-                      const pct = Math.round((acc.completed / acc.total) * 100);
-                      return (
-                        <span className="gv-node__body gv-node__body--progress">
-                          <span className="gv-node__bar" aria-hidden>
-                            <i style={{ width: `${pct}%` }} />
-                          </span>
-                          <span className="gv-node__bodymeta">{pct}% · {acc.completed}/{acc.total} criteria</span>
-                        </span>
-                      );
-                    }
-                    if (liveness === 'live' && st?.model) {
-                      return (
-                        <span className="gv-node__body gv-node__body--snippet">
-                          <span className="gv-node__snippet">▸ running · {st.model}</span>
-                        </span>
-                      );
-                    }
-                    if (st?.dueDate) {
-                      const over = new Date(st.dueDate).getTime() < new Date(now).getTime();
-                      return (
-                        <span className="gv-node__body">
-                          <span className={over ? 'gv-node__due gv-node__due--over' : 'gv-node__due'}>
-                            due <Timestamp at={st.dueDate} now={now} />
-                          </span>
-                        </span>
-                      );
-                    }
-                    return null;
-                  })()}
                   <span className="gv-node__foot">
                     <Avatar
                       actorId={p.entity.createdBy.id}
@@ -1153,82 +1117,6 @@ export function GraphView(props: GraphViewProps) {
             })}
           </div>
         </div>
-      )}
-
-      {model.placed.length > 0 && (
-        <>
-          {/* LEGEND — top-right floating card. Each row is a real toggle bound
-              to the same kind filter the toolbar owns; a dimmed row means that
-              kind is filtered out, not absent. */}
-          <div className="gv-legend" role="group" aria-label="Legend — click a kind to filter">
-            <span className="gv-legend__title">Legend</span>
-            {kindsPresent.map((k) => {
-              const row = getKind(k);
-              const off = kindsOff.has(k);
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  className={off ? 'gv-legend__row gv-legend__row--off' : 'gv-legend__row'}
-                  aria-pressed={!off}
-                  onClick={() =>
-                    setKindsOff((current) => {
-                      const next = new Set(current);
-                      if (next.has(k)) next.delete(k);
-                      else next.add(k);
-                      return next;
-                    })
-                  }
-                >
-                  <i data-family={row.graphFamily ?? 'gray'} aria-hidden />
-                  {row.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* FILTER DOCK — bottom-left. The lens lives here now: All Types /
-              Active Only, plus My Nodes when a viewer is known. */}
-          <div className="gv-filterdock" role="group" aria-label="Filters">
-            <span className="gv-filterdock__label">Filters</span>
-            <button
-              type="button"
-              className={lens === 'all' && !myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
-              aria-pressed={lens === 'all' && !myOnly}
-              onClick={() => { chooseLens('all'); setMyOnly(false); }}
-            >
-              All Types
-            </button>
-            <button
-              type="button"
-              className={lens !== 'all' && !myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
-              aria-pressed={lens !== 'all' && !myOnly}
-              title={lensSpec('working').hint}
-              onClick={() => { chooseLens('working'); setMyOnly(false); }}
-            >
-              Active Only
-            </button>
-            {props.viewerId ? (
-              <button
-                type="button"
-                className={myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
-                aria-pressed={myOnly}
-                title="Only what you created or are assigned to"
-                onClick={() => setMyOnly((v) => !v)}
-              >
-                My Nodes
-              </button>
-            ) : null}
-          </div>
-
-          {/* ZOOM DOCK — bottom-right, off the toolbar so the canvas controls
-              sit where the hand already is. */}
-          <div className="gv-zoomdock">
-            <IconBtn label="Zoom in" onClick={() => zoomBy(1.2)}>+</IconBtn>
-            <IconBtn label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</IconBtn>
-            <IconBtn label="Fit graph" onClick={fit}>⤢</IconBtn>
-          </div>
-        </>
       )}
 
       {model.shelf.length > 0 && (

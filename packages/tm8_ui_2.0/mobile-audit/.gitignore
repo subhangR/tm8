@@ -1,0 +1,7 @@
+# Every run writes `<label>.json` and a full `screens/` set (5MB of retina PNGs).
+# Only the BEFORE is checked in: `baseline.json`, and the six screens that show
+# what it looks like. A lane's own run is evidence for its task message, not for
+# this tree — post it, do not commit it.
+*.json
+!baseline.json
+screens/

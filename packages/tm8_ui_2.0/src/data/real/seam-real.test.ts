@@ -1,0 +1,532 @@
+/**
+ * seam-real.ts — assembly, the C-4 menu fallback, and the three wires.
+ *
+ * ZERO NETWORK: `createRealSeam` REQUIRES `fetch` and `webSocketFactory`, so
+ * every test here supplies fakes and the module has no way to construct a real
+ * transport on its own. That requirement is itself asserted below — it is the
+ * positive control for the whole "prepare, not wire" claim.
+ */
+import { describe, expect, it } from 'vitest';
+import { CollabError } from '@tm8/contract';
+import { createRealSeam, deriveWsUrl, type RealSeam, type RealSeamOptions } from './seam-real';
+import { FakeClock, fakeFetch, fakeSocketPool, flush, type FakeFetch, type FakeReply, type FakeSocketPool } from './test-support';
+
+interface Harness {
+  seam: RealSeam;
+  f: FakeFetch;
+  pool: FakeSocketPool;
+  clock: FakeClock;
+}
+
+function mk(route: (url: string, method: string) => FakeReply, over: Partial<RealSeamOptions> = {}): Harness {
+  const clock = new FakeClock();
+  const pool = fakeSocketPool();
+  const f = fakeFetch((call) => route(call.url, call.method));
+  const seam = createRealSeam({
+    baseUrl: '',
+    wsUrl: 'ws://fake.invalid/v2/ws',
+    fetch: f.fetch,
+    webSocketFactory: pool.factory,
+    timers: clock.timers,
+    now: clock.now,
+    random: clock.random,
+    ...over,
+  });
+  return { seam, f, pool, clock };
+}
+
+const ok = (data: unknown): FakeReply => ({ data });
+const err = (status: number, code: string): FakeReply => ({
+  status, error: { code, message: code, requestId: 'r', retryable: false },
+});
+
+// ---------------------------------------------------------------------------
+
+describe('seam-real: menu() — the ONE soft fallback (LLD C-4)', () => {
+  it('resolves null for 501 not_implemented', async () => {
+    const { seam } = mk(() => err(501, 'not_implemented'));
+    await expect(seam.menu('sp-1')).resolves.toBeNull();
+  });
+
+  it('resolves null for 404 not_found — deliberately INDISTINGUISHABLE from 501', async () => {
+    const { seam } = mk(() => err(404, 'not_found'));
+    await expect(seam.menu('sp-1')).resolves.toBeNull();
+  });
+
+  it('rejects on any other code — the fallback is not a swallow-everything', async () => {
+    const { seam } = mk(() => err(403, 'forbidden'));
+    await expect(seam.menu('sp-1')).rejects.toBeInstanceOf(CollabError);
+  });
+
+  it('a transport failure is NOT a missing menu', async () => {
+    const { seam } = mk(() => ({ networkError: 'ECONNREFUSED' }));
+    const e = await seam.menu('sp-1').catch((x: unknown) => x) as CollabError;
+    expect(e.code).toBe('upstream_unavailable');
+  });
+
+  it('the control: a real menu comes back as itself', async () => {
+    const menu = { schemaVersion: 1, groups: [], revision: 3 };
+    const { seam } = mk(() => ok(menu));
+    await expect(seam.menu('sp-1')).resolves.toEqual(menu);
+  });
+});
+
+describe('seam-real: openSpace', () => {
+  it('discards retained history off-React and resumes from its high-water', async () => {
+    const delivered: number[] = [];
+    const { seam, pool } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        return ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' });
+      }
+      if (url.includes('/events')) {
+        return ok({
+          items: [{
+            type: 'entity.upsert', spaceId: 'sp-1', seq: 37,
+            occurredAt: '2026-07-28T12:00:00.000Z', schemaVersion: 1,
+            entity: { id: 'old' },
+          }],
+          nextCursor: '37',
+        });
+      }
+      return ok({});
+    });
+    seam.onEvent((event) => delivered.push(event.seq));
+    await seam.openSpace('sp-1');
+    expect(delivered).toEqual([]);
+    pool.last().openIt();
+    expect(pool.last().frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 37 },
+    ]);
+  });
+
+  it('subscribes, resumes and starts the liveness cadence', async () => {
+    const { seam, pool, f } = mk((url) =>
+      url.includes('/execution/liveness')
+        ? ok({ liveEntityIds: ['ws-1'], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' })
+        : ok({}));
+
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    await flush();
+
+    expect(pool.last().frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 0 },
+    ]);
+    expect(f.calls.map((c) => c.url)).toContain('/v2/spaces/sp-1/execution/liveness');
+    expect(seam.liveness.statusOf({ id: 'ws-1', status: 'running' })).toBe('live');
+  });
+
+  it('does not discard post-baseline events by rescanning history on a retry', async () => {
+    let eventPolls = 0;
+    const { seam } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        return ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' });
+      }
+      if (url.includes('/events')) {
+        eventPolls += 1;
+        return ok({ items: [], nextCursor: '0' });
+      }
+      return ok({});
+    });
+    await seam.openSpace('sp-1');
+    seam.closeSpace('sp-1');
+    await seam.openSpace('sp-1');
+    expect(eventPolls).toBe(1);
+
+    seam.invalidateSpaceBaseline?.('sp-1');
+    await seam.openSpace('sp-1');
+    expect(eventPolls).toBe(2);
+  });
+
+  /**
+   * One cold open, counting round trips. `hwm` is spread into the liveness
+   * reply, so `{}` reproduces a node that has no such field at all.
+   */
+  async function coldOpen(hwm: Record<string, unknown>): Promise<{
+    eventPolls: number; livenessReads: number; frames: Array<Record<string, unknown>>;
+    delivered: number[];
+  }> {
+    let eventPolls = 0;
+    let livenessReads = 0;
+    const delivered: number[] = [];
+    const { seam, pool } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        livenessReads += 1;
+        return ok({
+          liveEntityIds: [], nodeBootId: 'boot-A',
+          checkedAt: '2026-07-28T12:00:00.000Z', ...hwm,
+        });
+      }
+      if (url.includes('/events')) {
+        eventPolls += 1;
+        return ok({
+          items: [{
+            type: 'entity.upsert', spaceId: 'sp-1', seq: 37,
+            occurredAt: '2026-07-28T12:00:00.000Z', schemaVersion: 1,
+            entity: { id: 'old' },
+          }],
+          nextCursor: '37',
+        });
+      }
+      return ok({});
+    });
+    seam.onEvent((event) => delivered.push(event.seq));
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    return { eventPolls, livenessReads, frames: pool.last().frames(), delivered };
+  }
+
+  it('seeds the cursor from the liveness eventHwm — ZERO bootstrap pages, ZERO extra round trips', async () => {
+    // The point of the mark: `openSpace` is TOLD where the log ends instead of
+    // paging 500 rows at a time until it finds out. At ~108k retained events
+    // the walk was ~217 sequential round trips to compute one integer.
+    const seeded = await coldOpen({ eventHwm: 4242 });
+    const walked = await coldOpen({ eventHwm: null });
+
+    expect(seeded.eventPolls).toBe(0);
+    expect(walked.eventPolls).toBeGreaterThan(0);
+    // ...and the mark rides a read `openSpace` already awaited, so the saving
+    // is not paid for elsewhere: the two paths make the SAME liveness reads.
+    expect(seeded.livenessReads).toBe(walked.livenessReads);
+    // History still never reaches Zustand/React — the property the walk
+    // existed to protect, now held by starting live delivery AT the mark.
+    expect(seeded.delivered).toEqual([]);
+    expect(seeded.frames).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 4242 },
+    ]);
+  });
+
+  it.each([
+    ['null — the node cannot establish the mark', { eventHwm: null }],
+    ['absent — an older node has no such field', {}],
+    ['not a seq — a string is not a mark', { eventHwm: '4242' }],
+  ])('does NOT read a missing eventHwm as zero: %s ⇒ the walk still runs', async (_label, hwm) => {
+    // Seeding 0 here would replay the entire retained log through React. The
+    // fallback is the expensive-but-correct answer, and it must survive.
+    const { eventPolls, frames } = await coldOpen(hwm);
+    expect(eventPolls).toBeGreaterThan(0);
+    expect(frames).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 37 },
+    ]);
+  });
+
+  it('SURVIVES a liveness read that fails — today every one of them 404s', async () => {
+    // execution.liveness has no server route yet (LLD §13). If openSpace
+    // awaited the snapshot, every openSpace would reject against a real node.
+    const { seam, pool } = mk((url) => (url.includes('/execution/liveness') ? err(404, 'not_found') : ok({})));
+    await expect(seam.openSpace('sp-1')).resolves.toBeUndefined();
+    pool.last().openIt();
+    await flush();
+    expect(seam.getConnection()).toEqual({ phase: 'live' });
+    expect(seam.liveness.statusOf({ id: 'ws-1', status: 'running' })).toBe('unknown');
+  });
+
+  it('rejects for a space with a RECORDED refusal rather than re-opening into silence', async () => {
+    const { seam, pool } = mk(() => ok({}));
+    const refusals: string[] = [];
+    seam.realControls.onSpaceRefused((spaceId) => refusals.push(spaceId));
+
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    pool.last().deliver({ type: 'control.refused', frame: 'subscribe', spaceId: 'sp-1', reason: 'forbidden' });
+    expect(refusals).toEqual(['sp-1']);
+
+    const e = await seam.openSpace('sp-1').catch((x: unknown) => x) as CollabError;
+    expect(e).toBeInstanceOf(CollabError);
+    expect(e.code).toBe('forbidden');
+  });
+});
+
+describe('seam-real: the three wires', () => {
+  it('wire 1 — an HTTP transport failure drives polling→offline', async () => {
+    let reachable = true;
+    const { seam, pool, clock } = mk(() => (reachable ? ok({ items: [], nextCursor: '0' }) : { networkError: 'down' }));
+
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    await flush();
+    expect(seam.getConnection().phase).toBe('live');
+
+    pool.last().drop();
+    await flush();
+    expect(seam.getConnection().phase).toBe('polling');
+
+    reachable = false;
+    clock.advance(1_500);
+    await flush();
+    expect(seam.getConnection().phase).toBe('offline');
+  });
+
+  it('wire 2 — a work_session upsert on the stream triggers a liveness re-read', async () => {
+    const { seam, pool, f } = mk((url) =>
+      url.includes('/execution/liveness')
+        ? ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' })
+        : ok({}));
+
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    await flush();
+    const before = f.calls.filter((c) => c.url.includes('liveness')).length;
+
+    pool.last().deliver({
+      type: 'entity.upsert', spaceId: 'sp-1', seq: 1, occurredAt: 'x', schemaVersion: 1,
+      entity: { id: 'ws-1', state: { kind: 'work_session' } },
+    });
+    await flush();
+
+    expect(f.calls.filter((c) => c.url.includes('liveness')).length).toBe(before + 1);
+  });
+
+  it('wire 3 — a reconnect triggers a liveness re-read', async () => {
+    const { seam, pool, clock, f } = mk((url) =>
+      url.includes('/execution/liveness')
+        ? ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' })
+        : ok({ items: [], nextCursor: '0' }));
+
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    await flush();
+    pool.last().drop();
+    await flush();
+    const before = f.calls.filter((c) => c.url.includes('liveness')).length;
+
+    clock.advance(10_000);
+    await flush();
+    pool.last().openIt();
+    await flush();
+
+    expect(f.calls.filter((c) => c.url.includes('liveness')).length).toBe(before + 1);
+  });
+});
+
+describe('seam-real: commands that adapt the server shape', () => {
+  it('upsertReadMark does not send the caller lastReadAt (strict schema; server stamps it)', async () => {
+    const { seam, f } = mk(() => ok({}));
+    await seam.commands.upsertReadMark('a-1', '2026-07-28T11:00:00.000Z');
+    expect(f.last().url).toBe('/v2/read-marks/a-1');
+    expect(f.last().body).not.toHaveProperty('lastReadAt');
+    expect(Object.keys(f.last().body as object)).toEqual(['clientMutationId']);
+  });
+
+  it('editMessage returns a CommandResult carrying the server MessageView as the patch', async () => {
+    const view = { id: 'm-1', title: 'edited' };
+    const { seam } = mk(() => ok(view));
+    await expect(seam.commands.editMessage('m-1', { clientMutationId: 'c', expectedVersion: 1, body: 'x' }))
+      .resolves.toEqual({ patches: [view] });
+  });
+
+  it('execution.prompt passes the permanent 403 through unchanged', async () => {
+    const { seam } = mk(() => err(403, 'forbidden'));
+    const e = await seam.commands.prompt('ws-1', { clientMutationId: 'c', body: 'hi' } as never)
+      .catch((x: unknown) => x) as CollabError;
+    expect(e.code).toBe('forbidden');
+  });
+});
+
+describe('seam-real: wsUrl derivation refuses to guess', () => {
+  it('derives ws:// and wss:// from an absolute base, using the catalog path', () => {
+    expect(deriveWsUrl('http://127.0.0.1:4610')).toBe('ws://127.0.0.1:4610/v2/ws');
+    expect(deriveWsUrl('https://tm8.example')).toBe('wss://tm8.example/v2/ws');
+    expect(deriveWsUrl('http://x.test/')).toBe('ws://x.test/v2/ws');
+  });
+
+  it('derives from the page origin when the base is relative', () => {
+    expect(deriveWsUrl('', 'http://127.0.0.1:4612')).toBe('ws://127.0.0.1:4612/v2/ws');
+  });
+
+  it('THROWS rather than inventing a URL — a wrong socket URL looks like a flaky network', () => {
+    expect(() => deriveWsUrl('')).toThrow(CollabError);
+    expect(() => deriveWsUrl('/v2')).toThrow(/wsUrl is required/);
+  });
+
+  it('never puts the per-server pass on the browser event-socket URL', async () => {
+    const { seam, pool } = mk(() => ok({}), { getAuthToken: () => 'tm8s_session.secret/value' });
+    await seam.openSpace('sp-1');
+    expect(pool.urls).toEqual(['ws://fake.invalid/v2/ws']);
+    expect(pool.urls.join('')).not.toContain('tm8s_');
+  });
+
+  it('keeps the loopback auto-owner socket unchanged when no pass exists', async () => {
+    const { seam, pool } = mk(() => ok({}), { getAuthToken: () => null });
+    await seam.openSpace('sp-1');
+    expect(pool.urls).toEqual(['ws://fake.invalid/v2/ws']);
+  });
+});
+
+describe('seam-real: prepare-not-wire is a type-level property', () => {
+  /* AMENDED 2026-07-29 (brokered: bridge lane closed by user; FE-authored
+   * under master endorsement [master->fe 45], the flag-gated last-mile).
+   * The ORIGINAL assertion here was the inverse — `createRealSeam` NOT
+   * exported — encoding Phase-1's "prepared, not wired" decision. That
+   * decision was REOPENED by the endorsement: the index now exports the
+   * constructor, and the flag-gated selection (off by default) lives in
+   * views/, outside this lane. What this suite actually guards is UNCHANGED
+   * and stated by the header above: nothing in src/data can reach the
+   * network ALONE — construction requires explicitly injected fetch and
+   * WebSocket factories with no defaults. The export moved; the property
+   * did not. (The original assertion broke in-tree when the export landed
+   * without this amendment — the guard and the value must move as one
+   * commit, and this text is the record that they now do.) */
+  it('IS exported from the data-layer index — wire-behind-flag per [master->fe 45]', async () => {
+    const index = await import('../index');
+    expect(Object.keys(index)).toContain('createRealSeam');
+    expect(Object.keys(index)).toContain('browserWebSocketFactory');
+  });
+
+  it('the seam surface matches the locked interface, method for method', () => {
+    const { seam } = mk(() => ok({}));
+    expect(Object.keys(seam.commands).sort()).toEqual([
+      // Amendment 5 (2026-08-04): the RELATIONSHIP write side. `assignees` is
+      // a projection of `assigned_to` edges, so every surface could show an
+      // assignment and none could make one — the seam had the reads and not
+      // the writes. `deleteEdge` serves BOTH unassign and detach; detach never
+      // deletes the file behind the `attached_to` link. Assignment and
+      // attachment reached this op from two different features at once; it is
+      // ONE Amendment 5, not two. Sorts around `createEntity` / `deleteEntity`,
+      // beside the entity verbs they mirror.
+      // 2026-08-12: the collection-membership pair — sugar over the `contains`
+      // edge (auto-position on add, remove addressed by the pair). They sort
+      // beside the edge verbs they specialize.
+      'addToCollection',
+      'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
+      // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
+      // D5). It sorts next to `deleteEntity` and reads nothing like it, which
+      // is precisely why this list is hand-maintained: the seam cannot gain a
+      // command without someone writing the line.
+      //
+      // It is NOT a variant of `spawn`, and its RETURN TYPE is where that is
+      // enforced — it answers `ExecutionDispatchResult`, a delivery verdict,
+      // not a `CommandResult`. It creates no session and leaves no patches to
+      // reconcile, so nothing may journal it optimistically.
+      'dispatch',
+      'editMessage',
+      // Git UI wave (2026-08-09): the session git rail's four verbs — the #76
+      // verbs behind the facade, for surfaces with no machine to run git on.
+      // Amendment 8 (2026-08-09): Tier 2 completion — gitBranch,
+      // gitCherryPick, gitStash join the rail's verbs.
+      'gitBranch', 'gitCheckpoint', 'gitCherryPick', 'gitCommit', 'gitMerge', 'gitRollback',
+      'gitStash',
+      'markRead',
+      // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
+      // the counterpart to `gitMerge`'s deliberate exclusion from the tracking
+      // side. It sorts between `markRead` and `moveEntity`, beside nothing it
+      // resembles: `gitMerge` merges a session's worktree on this machine,
+      // while this lands code on someone else's base branch through GitHub.
+      // Two verbs spelled alike, one machine apart — which is exactly why this
+      // list is hand-maintained.
+      'mergePullRequest',
+      'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
+      // Amendment 2 (2026-07-31): the artifacts preview decisions were
+      // ratified, so the Run button gained its one command (seam.ts header).
+      'previewArtifact',
+      // Amendment 12 (2026-08-17): the artifact viewer's other two ops gain
+      // their first UI callers — the revision switcher's read and download's
+      // raw zip bytes. Catalog READS riding the commands group deliberately;
+      // the amendment on `listArtifactRevisions` records why.
+      'listArtifactRevisions', 'exportArtifactRevision',
+      'prompt', 'react',
+      // `resolveAttention` shipped into the seam without this lock being
+      // updated, so the guard was red in-tree before the attention inbox
+      // landed. Recorded here rather than silently corrected.
+      'removeFromCollection',
+      'resolveAttention',
+      // 2026-08-01: resume — the exited card's button. Sorts AFTER
+      // restoreEntity ('rest' < 'resu'), which is not where it reads like it
+      // belongs. Locked here the same way, so the seam cannot gain a command
+      // without this list saying so.
+      'restoreEntity', 'resume', 'spawn',
+      // Amendment 11 (118): the membership verbs. `settings-space/reasons.ts`
+      // had said since 2026-07-29 that "the seam has no membership verb at
+      // all", and every role and invite control on the settings surface
+      // rendered disabled-with-reason because of it. These four close exactly
+      // that gap: `createInvite`, `redeemInvite`, `revokeInvite`,
+      // `setMemberRole`. The list is `.sort()`ed at the end rather than kept
+      // in hand-maintained alphabetical order, because four insertions at four
+      // different points is how a list like this acquires a silent duplicate.
+      'createInvite', 'redeemInvite', 'revokeInvite', 'setMemberRole',
+      // W2 (2026-08-16): the task-axis registry's writes, over the catalog
+      // ops that existed all along (`spaces.taskAxes.*`) — the settings shell
+      // stops refusing with the measured-false AXES_UNREADABLE. The READ has
+      // no verb: axes ride `spaceSettings()`. Same `.sort()`-at-the-end
+      // posture as the membership four, for the same silent-duplicate reason.
+      'createTaskAxis', 'updateTaskAxis', 'deleteTaskAxis',
+      // W4 (2026-08-16): the task-workflow registry's writes, over
+      // `spaces.taskWorkflows.upsert|delete` (migration 132). The READ has no
+      // verb for the same reason as axes: workflows ride `spaceSettings()`.
+      'upsertTaskWorkflow', 'deleteTaskWorkflow',
+      // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
+      // write half of the chat-home bridge. Sorts between spawn and
+      // startTerminal.
+      'startChatThread',
+      // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
+      // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
+      // belongs and is a coincidence worth not relying on.
+      //
+      // It is NOT `spawn` with the agent fields left null, and the INPUT TYPE
+      // is where that is enforced: `ExecutionTerminalStartInput` has no
+      // `teamMemberId`, no `model`, no `agentTool` and no `mode` to leave null.
+      // A seam method taking `ExecutionSpawnInput` with those omitted would be
+      // one optional-field edit away from a terminal that spawns an agent.
+      'startTerminal',
+      'terminate',
+      // 2026-08-16 (attention history): `updateAttentionRequest` — the
+      // PER-REQUEST write. `resolveAttention` above is the bulk verb and
+      // cannot address one row or say 'dismissed', so a quarter of the status
+      // enum had no UI path.
+      'updateAttentionRequest',
+      // Amendment 4 (2026-08-01): updateProfile — identity display (067).
+      // The viewer's OWN profile row; the op names no subject by design.
+      'updateProfile',
+      'upsertReadMark', 'work',
+    ].sort());
+    expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
+    // Amendment 3 (2026-08-01, attachments): `downloadHref` — the one seam
+    // member that answers a URL rather than a DTO, because `files.download`
+    // answers raw bytes and a browser reaches those through `href`/`src`.
+    // Locked here so the file group cannot grow a verb in silence.
+    expect(Object.keys(seam.files).sort()).toEqual([
+      'abort', 'complete', 'downloadHref', 'putBytes', 'uploadInit',
+    ]);
+    for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
+      'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',
+      'connections', 'activity', 'messages', 'home', 'handoffs', 'journal', 'launch', 'inbox', 'feed',
+      // Amendment 11 (118): `previewInvite` sits with the READS, not under
+      // `commands`, because it writes nothing — and it is the only read on
+      // this seam that answers before the caller is anybody on the node.
+      'previewInvite',
+      'delivery', 'attentionRequests']) {
+      expect(typeof (seam as unknown as Record<string, unknown>)[m]).toBe('function');
+    }
+  });
+
+  /**
+   * Amendment 5 — DETACH ON THE WIRE. The method and the path are the whole
+   * risk here: `edges.delete` is DELETE /v2/edges/:edgeId, and a detach that
+   * POSTed, or that put the FILE's id in the path, would be green on every
+   * spy-based test and would remove the wrong thing (or nothing) in
+   * production. The body carries the mutation id because the server binds
+   * `RequiredCommandContextSchema` and refuses without it.
+   */
+  it('detach speaks DELETE /v2/edges/:edgeId and carries the mutation id', async () => {
+    const { seam, f } = mk(() => ok({ patches: [] }));
+    await seam.commands.deleteEdge('edge-7', { clientMutationId: 'cmid-detach' });
+    const call = f.calls[f.calls.length - 1]!;
+    expect(call.method).toBe('DELETE');
+    expect(call.url).toBe('/v2/edges/edge-7');
+    expect(call.body).toEqual({ clientMutationId: 'cmid-detach' });
+  });
+
+  it('dispose tears down both managers', async () => {
+    const { seam, pool, clock } = mk(() => ok({}));
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    seam.dispose();
+    expect(pool.last().closeCalls).toBe(1);
+    clock.advance(300_000);
+    expect(clock.pending()).toBe(0);
+  });
+});

@@ -85,7 +85,7 @@ export function NodeRoom(props: NodeRoomProps) {
   const notes = props.notes ?? false;
   return (
     <div
-      className="cv2-root fn-node" data-astryx-theme="neutral"
+      className="cv2-root fn-node"
       data-theme="dark"
       data-always-dark="true"
       data-testid="node-room"

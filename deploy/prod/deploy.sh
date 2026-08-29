@@ -30,11 +30,11 @@
 #   3  link deps     hardlink node_modules — root AND every workspace package.
 #                    bun's isolated linker needs a real node_modules inside each
 #                    package (packages/server/node_modules/@tm8/contract, the
-#                    tm8-ui .bin/vite shim). Copying only the root one produces a
+#                    tm8_ui_2.0 .bin/vite shim). Copying only the root one produces a
 #                    tree where `tsc -b` cannot find @tm8/contract and vite
 #                    cannot resolve itself.
 #   4  build         tsc -b --force (contract→cli) + a SEPARATE `vite build` for
-#                    packages/tm8-ui. `bun run build` is tsc only; skipping the
+#                    packages/tm8_ui_2.0. `bun run build` is tsc only; skipping the
 #                    vite half ships a stale UI against a new server and is the
 #                    classic silent failure here.
 #   5  backup        pg_dump tm8_stable before anything touches the schema
@@ -128,7 +128,7 @@ prod_pids() {
   {
     supervisor_pids "$root"
     pgrep -f "$root/packages/server/dist/index.js" || true
-    pgrep -f "$root/packages/tm8-ui/node_modules/.bin/vite" || true
+    pgrep -f "$root/packages/tm8_ui_2.0/node_modules/.bin/vite" || true
     pgrep -f "$root/node_modules/.bun/@esbuild" || true
   } | sort -u
   return 0
@@ -433,13 +433,13 @@ ln -sf index.js packages/cli/dist/tm8
 ok "tsc -b"
 
 info "ui (vite build — this is a SEPARATE build; \`bun run build\` is tsc only) …"
-(cd packages/tm8-ui && node_modules/.bin/vite build) \
+(cd packages/tm8_ui_2.0 && node_modules/.bin/vite build) \
   || die "vite build failed — prod is untouched and still serving the previous build"
 ok "vite build"
 
 [[ -f "$NEXT/packages/server/dist/index.js"    ]] || die "build produced no packages/server/dist/index.js"
-[[ -f "$NEXT/packages/tm8-ui/dist/index.html"  ]] || die "build produced no packages/tm8-ui/dist/index.html"
-ok "artifacts present: server/dist/index.js, tm8-ui/dist/index.html"
+[[ -f "$NEXT/packages/tm8_ui_2.0/dist/index.html"  ]] || die "build produced no packages/tm8_ui_2.0/dist/index.html"
+ok "artifacts present: server/dist/index.js, tm8_ui_2.0/dist/index.html"
 
 if (( BUILD_ONLY )); then
   elapsed=$(( $(date +%s) - started_at ))

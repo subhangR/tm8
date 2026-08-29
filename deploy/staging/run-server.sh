@@ -4,7 +4,7 @@
 # scripts/dev.mjs does the reload half: `tsc -b --watch` over
 # packages/{contract,server}/src and a SIGTERM+restart of the server whenever
 # its dist changes. --server-only because dev.mjs's UI branch points at
-# packages/ui (the legacy oracle); the product UI is packages/tm8-ui and is
+# packages/ui (the legacy oracle); the product UI is packages/tm8_ui_2.0 and is
 # started by run-ui.sh instead.
 #
 # dev.mjs resolves env with the real process environment winning over every

@@ -261,11 +261,6 @@ describe('R15 — a cold entry steps UP, and up is a replace', () => {
     const target = createMemoryTarget(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('entity-view'));
-    /* React 19: the seed effect that opens the addressed entity settles a
-       beat later than the screen's first paint — step up before it lands and
-       the pop precedes the open it undoes. The passing sibling above always
-       settled here; this test needs the same beat. */
-    await settle();
     await act(async () => {
       screenStackStore.getState().pop(screenKeyOf.kind('task'));
     });
@@ -281,10 +276,8 @@ describe('R15 — a cold entry steps UP, and up is a replace', () => {
     });
     await settle();
 
-    /* Two real navigations once a history exists, not two more replaces.
-       React 19 commits the store→hash effect later than 18 did — wait for
-       the pushes rather than reading the ledger synchronously. */
-    await waitFor(() => expect(target.entries.length).toBe(afterUp + 2));
+    /* Two real navigations once a history exists, not two more replaces. */
+    expect(target.entries.length).toBe(afterUp + 2);
     view.unmount();
   });
 });

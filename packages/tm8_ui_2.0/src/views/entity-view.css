@@ -1,0 +1,180 @@
+/* ==========================================================================
+   ENTITY VIEW — the per-kind screen (WORK-TAB RULING 2026-08-15, Phase 3 of
+   the redesign; supersedes the 2026-07-31 centre-is-the-entity arrangement).
+   THREE REGIONS, left to right:
+
+     ev-list    the EntityListPanel — the CENTRE now; the collection is the
+                subject of this screen and takes what the columns leave
+     ev-detail  the detail panel — a viewer-set reading width on the right
+     ev-aux     the third column, only while something in the detail asked
+                for it; it never reserves width it is not using.
+
+   Colors are tokens only (the package hex guard scans this file).
+   ========================================================================== */
+
+.cv2-root .ev-root {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  /* The launch sheet (`.ls`, position:absolute) overlays THIS view now, so
+     the root is its containing block — same shape as the workspace centre. */
+  position: relative;
+  background: var(--pn-paper);
+}
+
+/* --- CENTRE: the collection ----------------------------------------------
+   The list/board IS the subject of this screen (Phase 3), so it is the one
+   flexible region: it takes whatever the detail and aux columns leave. The
+   old collapse-to-a-strip chrome retired with the flip — the detail column is
+   the one that opens and closes now. */
+.cv2-root .ev-list {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .ev-list > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- BOARD LAYOUT: one region, not three ----------------------------------
+   The list rail is a NAVIGATOR and 320px is the right width for one. A board
+   is not a navigator — its unit is a column with a 236px floor, so two of them
+   do not fit in the rail and the surface reads as a cramped strip. In board
+   mode the panel takes the whole screen and the centre is not rendered at all
+   (EntityView returns null for it); a card opens the aux column instead, which
+   is why the board keeps its width even with something open beside it. */
+.cv2-root .ev-root[data-layout='board'] .ev-list {
+  flex: 1;
+  width: auto;
+  /* The aux column draws its own border-left; keeping this one too would put
+     two rules between the board and the panel beside it. */
+  border-right: none;
+  background: var(--pn-paper);
+}
+
+/* --- RIGHT: the detail panel ----------------------------------------------
+   A viewer-set READING width (Phase 3), solved in `EntityView` and handed
+   down as `--ev-detail` — the same trade `WorkspaceGrid` makes with
+   `--ws-left`, because the drag has to clamp against the centre's floor and a
+   literal in a stylesheet cannot be clamped against. No measure cap inside:
+   the panel keeps its OWN internal reading measures, and capping at this
+   level would also shrink a terminal body — which inverts D63 ("nothing
+   outbids the terminal"). */
+.cv2-root .ev-detail {
+  flex: none;
+  width: var(--ev-detail, 560px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-paper);
+}
+.cv2-root .ev-detail > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- RIGHT: the aux column ------------------------------------------------
+   Z3 geometry from the canvas — 440 peek, 320 floor — because this column is
+   the same READING WIDTH the workspace's stacked panel uses, and the content
+   in it (a related entity, a thread, a set of backlinks) is the same content. */
+.cv2-root .ev-aux {
+  flex: none;
+  width: var(--ev-aux, 420px);
+  min-width: var(--ev-aux-min, 320px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .ev-aux__head {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+.cv2-root .ev-aux__crumb {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .ev-aux__spacer {
+  flex: 1;
+  min-width: 0;
+}
+.cv2-root .ev-aux__esc {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.cv2-root .ev-aux__close {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.cv2-root .ev-aux__close:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .ev-aux__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .ev-aux__body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- narrow ---------------------------------------------------------------
+   Both side columns drop to their floors before the CENTRE gives up any width,
+   because the centre is the subject of the screen.
+
+   THE STEP-DOWN LADDER THAT USED TO LIVE HERE IS GONE, and its removal is the
+   point of this change rather than a side effect. Three `@media` rules used to
+   restate 360/260/320 as literals, which meant a width the viewer dragged was
+   silently overwritten the moment the window crossed a breakpoint — the
+   control appeared to work and then undid itself. `EntityView` now solves both
+   columns against a MEASURED root (`useElementWidth`) and the centre's floor,
+   so narrowing shrinks them to exactly their floors with no breakpoint
+   involved. That is the same law the workspace's geometry solver states:
+   breakpoints are DERIVED by measurement, never asserted in a stylesheet.
+
+   ONE RULE SURVIVES, and only because it is not a width. Below 1040 with an
+   aux column open there is genuinely not enough room for three columns above
+   their floors, and the DETAIL — reachable again in one click by re-selecting
+   the row — is the one that yields, because the list is the SUBJECT of this
+   screen now (Phase 3) and the aux is what the viewer just asked for. It is
+   HIDDEN, not narrowed to something unreadable. Scoped to the three-column
+   layout: the board renders no detail column at all. */
+@media (max-width: 1040px) {
+  .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .ev-detail { display: none; }
+  .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .kit-resizer[aria-label*='detail'] {
+    display: none;
+  }
+}

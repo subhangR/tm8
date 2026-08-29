@@ -1,0 +1,357 @@
+/* ==========================================================================
+   GOVERNED BODY — the `governed` archetype's interior.
+   Source: T0-4 Entity Detail Panels Hi-Fi, frame "Governed & fallback kinds",
+   the PROJECT card (oracle lines 671–712; the body region is 690–708). Every
+   value below is EXTRACTED from that markup's inline styles with the line
+   cited; nothing here is eyeballed.
+
+   COLOURS ARE TOKENS ONLY — §14, and the package guard at src/hex-ban.test.ts
+   scans this file. The oracle's bytes map onto the ramp exactly:
+     #FFFFFF = --pn-card · #E7E3D9 = --pn-line · #F2EFE8 = --pn-hover
+     #23201B = --pn-ink · #5B564C = --pn-ink-2 · #8E897B = --pn-ink-3
+     #B7B2A4 = --pn-ink-4 · #3E8E5A = --pn-run · #BD8A2A = --pn-wait
+     rgba(62,142,90,.12) = --pn-run-soft
+   TWO VALUES THE RAMP HAS NO ENTRY FOR, both on the trust card:
+     rgba(62,142,90,.06) — its fill (line 693)
+     rgba(62,142,90,.35) — its edge (line 693)
+   They are DERIVED from --pn-run with color-mix at the oracle's own alphas,
+   not measured as new colours and not hand-typed as hex. This is deliberate
+   and it is the reason no --pn-x-* token is added here: a color-mix over a
+   token follows the token through the theme flip, where a second measured
+   constant would need a dark twin and could drift from --pn-run. The
+   precedent is panels.css:547-548, which derives the same shape from
+   --pn-wait. Consequence, stated rather than assumed: in dark these fills
+   resolve from the dark --pn-run, which is what "dark is free if you use
+   tokens" means — NOT VERIFIED BY EYE (see the handover's NOT-CHECKED).
+
+   The micro-type literals (12/11.5/11/10/9.5px) are D5-verbatim and stay as
+   written: the global scale is the single `zoom` lever on .cv2-root, never a
+   per-element bump, which is what keeps a canvas diff comparable.
+
+   CLASS PREFIX `gb-`, NOT `gv-`: graph.css already owns the `gv-` namespace
+   (.gv-node, .gv-edge*, .gv-banner, .gv-empty, ...). No exact collision
+   existed when I checked, but two features sharing a prefix in one global
+   stylesheet is a collision waiting for its third class.
+
+   THE HAIRLINE RULE: --pn-line BOUNDS a component (the path row, the trust
+   card, the session rows are each bounded cards) and --pn-x-hairline-soft
+   only SEPARATES repeated siblings inside one. The unlink footer's rule
+   (line 704) separates the footer region from the body above it — a boundary
+   between regions of one component — so it is --pn-line, which is also what
+   the oracle draws there.
+   ========================================================================== */
+
+/* The body's own stack. `pn-body` already carries the oracle's padding 12 /
+   gap 12 / overflow auto (line 690); only what it has no home for is here. */
+.cv2-root .gb-body {
+  min-width: 0;
+}
+
+/* ---- PATH ROW (line 691) + repo line (line 692) ------------------------- */
+
+.cv2-root .gb-pathgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The mono path box: a bounded component, so --pn-line (line 691 draws
+   1px #E7E3D9, radius 8, padding 8/10, gap 8). */
+.cv2-root .gb-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.cv2-root .gb-path--hollow {
+  /* An absence is STATED, not shouted (the empty-state law): same box, no
+     card fill, so the row keeps its place in the stack without claiming to
+     hold a value. */
+  background: transparent;
+}
+.cv2-root .gb-path__value {
+  font-family: var(--pn-mono);
+  font-size: 11.5px;
+  color: var(--pn-ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The ⧉ affordance (line 691): ink-4, brand on hover. */
+.cv2-root .gb-path__copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--pn-ink-4);
+  font: inherit;
+  font-size: 11px;
+}
+.cv2-root .gb-path__copy:hover,
+.cv2-root .gb-path__copy:focus-visible {
+  color: var(--pn-brand-2);
+}
+.cv2-root .gb-path__copied {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+}
+
+/* The repo line (line 692): 12px UI face, mono value at 11px/ink-2. */
+.cv2-root .gb-repo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+  min-width: 0;
+}
+.cv2-root .gb-repo__glyph {
+  flex: none;
+}
+.cv2-root .gb-repo__value {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .gb-repo__open {
+  flex: none;
+  font-size: 10px;
+  color: var(--pn-ink-4);
+  text-decoration: none;
+}
+.cv2-root .gb-repo__open:hover,
+.cv2-root .gb-repo__open:focus-visible {
+  color: var(--pn-brand-2);
+}
+
+/* ---- TRUST CARD (lines 693–696) ---------------------------------------- */
+
+.cv2-root .gb-trust {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: var(--pn-r-md);
+  padding: 10px 12px;
+  border: 1px solid var(--pn-line);
+}
+/* TRUSTED — the oracle's green card (line 693). See the header note on the
+   two derived alphas. */
+.cv2-root .gb-trust--on {
+  border-color: color-mix(in srgb, var(--pn-run) 35%, transparent);
+  background: color-mix(in srgb, var(--pn-run) 6%, transparent);
+}
+/* UNTRUSTED — NOT DRAWN BY THE ORACLE, which only ever shows the trusted
+   card. Built on the idle ramp at the same alphas: an untrusted root is a
+   governed DEFAULT, not an error, so it must not wear the block tone. This
+   is a ruling I made alone; it is one class to change. */
+.cv2-root .gb-trust--off {
+  border-color: color-mix(in srgb, var(--pn-idle) 45%, transparent);
+  background: color-mix(in srgb, var(--pn-idle) 8%, transparent);
+}
+/* NO RECORD READ — neither answer. No tinted fill at all, because a tint here
+   is what would make an unread state look like a decided one. */
+.cv2-root .gb-trust--hollow {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--pn-line-2);
+}
+.cv2-root .gb-trust__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cv2-root .gb-trust__spacer {
+  flex: 1;
+}
+/* The consequence sentence (line 695): 11.5px / 1.5 / ink-2. */
+.cv2-root .gb-trust__note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+
+/* ---- LIVE SESSIONS (lines 697–703) ------------------------------------- */
+
+.cv2-root .gb-sessions {
+  display: flex;
+  flex-direction: column;
+  /* The oracle spends this gap as padding-bottom:5px on the eyebrow (line
+     698); as a flex gap it is the same 5px and it survives an absent
+     eyebrow. */
+  gap: 5px;
+}
+.cv2-root .gb-sessions__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* Each row is its own bounded card (line 700: 1px #E7E3D9, radius 7, padding
+   6/9, gap 7) — NOT siblings separated by a soft hairline, which is why
+   --pn-line is right here and --pn-x-hairline-soft would not be. */
+.cv2-root .gb-sessions__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  min-width: 0;
+  cursor: pointer;
+}
+.cv2-root .gb-sessions__row:hover,
+.cv2-root .gb-sessions__row:focus-visible {
+  background: var(--pn-hover);
+}
+/* The un-wired variant keeps every byte of the row EXCEPT the pointer
+   affordance — the row is still readable data, it is only not a door. */
+.cv2-root .gb-sessions__row--static {
+  cursor: default;
+}
+.cv2-root .gb-sessions__row--static:hover {
+  background: var(--pn-card);
+}
+.cv2-root .gb-sessions__glyph {
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.cv2-root .gb-sessions__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.cv2-root .gb-sessions__sep {
+  color: var(--pn-ink-4);
+  flex: none;
+}
+.cv2-root .gb-sessions__word {
+  flex: none;
+  font-weight: 600;
+}
+.cv2-root .gb-sessions__ago {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  margin-left: auto;
+  flex: none;
+}
+.cv2-root .gb-sessions__nowire {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  flex: none;
+}
+
+/* The verdict dot (line 700: 7px, 50%, #3E8E5A + pnPulse on the live one).
+   Tone is DATA on the element, so the colour cannot disagree with the word
+   beside it — both come from one `presentationStyle` call. */
+.cv2-root .gb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--pn-idle);
+}
+.cv2-root .gb-dot[data-tone='run'] {
+  background: var(--pn-run);
+}
+.cv2-root .gb-dot[data-tone='wait'] {
+  background: var(--pn-wait);
+}
+.cv2-root .gb-dot[data-tone='block'] {
+  background: var(--pn-block);
+}
+/* A hollow dot is the "proven not running / not measured" geometry the
+   presentation module already decides — a ring, never a fill. */
+.cv2-root .gb-dot[data-dot='hollow'] {
+  background: transparent;
+  border: 1px solid var(--pn-ink-4);
+}
+.cv2-root .gb-dot[data-dot='hollow'][data-tone='run'] {
+  border-color: var(--pn-run);
+}
+.cv2-root .gb-dot[data-dot='hollow'][data-tone='wait'] {
+  border-color: var(--pn-wait);
+}
+/* The oracle's `pnPulse` (line 700) already lives in kit.css, transplanted
+   from the canvas helmet verbatim — so this USES it rather than declaring a
+   third copy of the same three lines (kit.css:13 and home.css:396 are the
+   existing two). The reduced-motion stop is NOT in the oracle; it is
+   authored, and it is a thing a canvas legitimately does not draw. */
+.cv2-root .gb-dot--pulse {
+  animation: pnPulse 1.6s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .gb-dot--pulse {
+    animation: none;
+  }
+}
+
+.cv2-root .gb-sessions__word[data-tone='run'] {
+  color: var(--pn-run);
+}
+.cv2-root .gb-sessions__word[data-tone='wait'] {
+  color: var(--pn-wait);
+}
+.cv2-root .gb-sessions__word[data-tone='block'] {
+  color: var(--pn-block);
+}
+.cv2-root .gb-sessions__word[data-tone='idle'] {
+  color: var(--pn-ink-3);
+}
+
+/* ---- UNLINK FOOTER (lines 704–707) ------------------------------------- */
+
+/* The rule above the footer is the oracle's own (line 704: border-top 1px
+   #E7E3D9, padding-top 9). */
+.cv2-root .gb-unlink {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-top: 1px solid var(--pn-line);
+  padding-top: 9px;
+}
+
+/* The live verb, on the rare path where one is both wired and permitted. The
+   oracle never draws it enabled (line 705 is the refused state), so this is
+   built from the panel family's text-control vocabulary rather than measured:
+   flagged as authored, not extracted. */
+.cv2-root .gb-verb {
+  align-self: flex-start;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.cv2-root .gb-verb:hover,
+.cv2-root .gb-verb:focus-visible {
+  background: var(--pn-hover);
+}

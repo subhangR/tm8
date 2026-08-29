@@ -315,7 +315,7 @@ function TranscriptTop({
   paused,
   onResume,
 }: {
-  sentinelRef: RefObject<HTMLDivElement | null>;
+  sentinelRef: RefObject<HTMLDivElement>;
   hasOlder: boolean;
   older: OlderRead;
   onLoadOlder: () => void;

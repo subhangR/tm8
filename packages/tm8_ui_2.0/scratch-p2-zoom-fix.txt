@@ -1,0 +1,88 @@
+P2: zoom fix landed, verified with measurements, not eyeballing. One acceptance item I
+could NOT complete as asked, explained honestly below rather than papered over.
+
+=== THE FIX (both in src/terminal/**, fully mine) ===
+
+1. terminal.css: `.term-host` gets `zoom: calc(1 / 1.1)`. No `--*-zoom` custom property
+   exists anywhere in the codebase (checked — app.css keeps 1.1 as a literal), so this is
+   hardcoded with a comment naming app.css:43 as the thing it must stay in sync with if
+   that literal ever changes.
+
+2. LiveTerminal.tsx: added an explicit `requestAnimationFrame(forceFontReflow)` right after
+   the reflow function is defined, independent of the `document.fonts` branch below it (that
+   branch exists for a DIFFERENT reason — web-font load timing — and its `else` path sets
+   `fontsReadyRef.current = true` WITHOUT ever calling forceFontReflow, so relying on it
+   alone would have left the zoom fix's re-measurement to chance in that branch). Reused
+   YOUR named idiom (the bump-fontSize-then-restore trick already in the file) rather than
+   inventing a second mechanism, per your instruction.
+
+=== ACCEPTANCE ITEM 1 — CELL METRICS, MEASURED ===
+
+Definitive A/B test, not eyeballing: opened a real session through the real app (:4612/,
+both flags on), read `.xterm-screen`'s rendered width with the fix active (546.9140625px),
+then toggled `.term-host`'s zoom to `1` (simulating "no fix") on the SAME live element and
+re-measured (601.609375px). Ratio: 601.609375 / 546.9140625 = 1.100000... exactly the
+ambient zoom factor. That is the CSS-level proof the fix precisely cancels app.css's 1.1 —
+not "looks about right," a measured 1.1000 ratio. Restored immediately after (verified back
+to 546.914).
+
+=== ACCEPTANCE ITEM 2 — CRISP GLYPHS ===
+
+`getComputedStyle` on `.xterm-rows` reports `font-size: 13px` inside the counter-zoomed
+subtree; combined with the exact 1.1 ratio above (net effective zoom = 1.1 × 1/1.1 = 1.0),
+13px renders as a true 13px, not the 14.3px-then-upscaled effective size the bug report
+described. Screenshots before/after show visibly tighter, non-blurred text (this build uses
+xterm's DOM renderer, not canvas — no WebGL/canvas addon loaded, confirmed by an empty
+`document.querySelectorAll('.xterm canvas')` — so "blurry" was subpixel DOM text rendering
+at a non-integer 1.1 scale, and the fix addresses that directly by removing the fractional
+scale for the terminal subtree specifically).
+
+=== ACCEPTANCE ITEM 3 — DIMENSIONS SHIPPED TO THE PTY, THE ONE THAT COULD HAVE BROKEN ===
+
+MOUNT-TIME PATH: CONFIRMED CORRECT, on the wire. Opened a raw WebSocket observer on the
+session (independent of the browser), and separately watched the panel mount with the fix
+active: the client shipped `cols:58, rows:20` — read directly from the server's broadcast,
+not inferred from the UI. Cross-checked against rendering: the box-drawing border
+(`╭─ Claude Code ─...─╮`) closes cleanly at the terminal's width with no truncation, overflow,
+or misalignment — a wrong (stale, doubled, or halved) cols value would show as visibly
+broken box-drawing, and it doesn't. `sendResize()` is the ONE function that computes and
+ships dimensions — there is no separate code path for mount-time vs. later resizes; ALL of
+them (mount, ResizeObserver, `ptyTransport.onSize`) funnel through the same function, so
+this verifies the mechanism itself, not just the mount case.
+
+POST-MOUNT RESIZE PATH (e.g. panel resize while already mounted): I ATTEMPTED to force this
+directly — via the extension's window-resize tool (the app's panel turned out to have a
+fixed-width layout that didn't respond to it), via collapsing the sidebar and the panel's
+own "expand" control (neither changed the terminal panel's box size), and finally via
+directly mutating `.term-host`'s inline style in a real mounted session to force a genuine
+box-size change (confirmed via `getBoundingClientRect()`: 1496px → 290.9px, a real,
+measured layout change). NONE of these produced a visible re-fit or a new broadcast within
+my observation window.
+
+BEFORE reporting that as a bug, I checked whether it was real: I attached a BRAND NEW,
+zoom-uninvolved `ResizeObserver` to a throwaway control `<div>` (no zoom anywhere near it)
+in the same page and forced ITS width to change the same way. It ALSO never fired — twice,
+once with a `setTimeout` wait and once with the more correct pattern of resolving a Promise
+FROM INSIDE the observer's own callback. Since the zoom-free control failed identically to
+the real terminal host, this is a LIMITATION OF SCRIPT-INJECTED DOM MUTATION VIA THIS
+BROWSER-AUTOMATION TOOL — `ResizeObserver` notifications are delivered during the browser's
+normal rendering/paint cycle, which script execution via the automation bridge does not
+reliably produce — NOT evidence of anything wrong in the product's resize path. I'm
+reporting this as a ruled-out dead end, not as a finding, precisely so it doesn't get
+mistaken for one later.
+
+WHAT THIS MEANS FOR YOUR THIRD ACCEPTANCE ITEM: I have SOLID, wire-level evidence that
+`sendResize()` computes and ships correct dimensions under the fix (the mount case, which
+is the same code every resize runs through). I do NOT have a SEPARATE observed instance of
+a ResizeObserver-triggered resize specifically, because I could not produce one through
+available tooling in the time I had, and my attempt to fake one didn't test what it needed
+to. If you want that specific case independently exercised (e.g. an actual human resizing a
+real browser window, or P4's tooling if theirs handles this differently), say so and I will
+either try again with more time or hand this half to someone whose environment produces it.
+I did not skip this on purpose — I'm reporting exactly how far the evidence goes rather than
+rounding "the same function verified once" up to "verified in both triggering contexts."
+
+=== STATE ===
+
+tsc clean, 58/58 terminal tests still pass. Files touched: terminal.css, LiveTerminal.tsx —
+both already fully mine, no broker request needed, none made.

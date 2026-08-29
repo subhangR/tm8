@@ -1,0 +1,619 @@
+/**
+ * D67 — the host executor behind the expanded row's state dropdown and its
+ * archive control.
+ *
+ * WHY THIS IS A HOOK IN `views/` AND NOT LOGIC IN THE PANEL. `EntityListPanel`
+ * never taps the seam — every signal it draws is injected, and every write it
+ * offers leaves through a callback. That is what lets the same panel render
+ * against the fixture seam, the real seam and a test double without knowing
+ * which. So the panel decides WHAT was asked for (which row, which value,
+ * which verb, all from registry data) and this decides what that MEANS as a
+ * seam call.
+ *
+ * THE VERB → CALL MAP IS THE WHOLE POINT, because the three writes are NOT
+ * interchangeable:
+ *
+ *   set-state → `commands.work`      no version guard; also maintains the
+ *                                    actor's `working_on` edge server-side.
+ *   complete  → `commands.complete`  version-guarded AND gated: the server
+ *                                    refuses unless every acceptance criterion
+ *                                    is checked. It is the ONLY operation
+ *                                    permitted to write `done`.
+ *   set-value → `commands.patchEntity`    a CONTENT edit, version-guarded, and
+ *                                    sparse (the node COALESCEs the fields the
+ *                                    patch omits) — so one field moves and the
+ *                                    rest of the record is not restated.
+ *   assign    → `commands.createEdge` / `commands.deleteEdge`  one edge at a
+ *                                    time; `state.assignees` is a PROJECTION of
+ *                                    `assigned_to`, so there is no array to PUT.
+ *   archive   → `commands.deleteEntity`   the shared tombstone.
+ *   restore   → `commands.restoreEntity`  its inverse.
+ *
+ * THE PANEL NAMES THE FIELD, THIS NAMES THE CALL. `setValue` is handed the
+ * registry's `source` ("priority") and `assign` the registry's `edgeType`
+ * ("assigned_to"); neither is spelled here, so a second value control or a
+ * second relationship needs registry data and not an edit to this file — the
+ * same rule that keeps `EntityListPanel` free of kind literals.
+ *
+ * EVERY FAILURE SURFACES. A refusal here is usually a real server invariant
+ * (an unmet acceptance criterion, a kind whose lifecycle is command-owned),
+ * which is precisely the class of thing a user must be told about rather than
+ * left to infer from a row that did not move.
+ */
+import { useCallback, useMemo } from 'react';
+import type { ActorSummary, CommandResult, EntityId, EntitySummary } from '@tm8/contract';
+import { nextMutationId } from '../authoring';
+import { allKinds } from '../domain';
+import type { ActionRef, SetStateOutcome } from '../domain';
+import type { Notice } from '../shell/notices';
+import type { GateData } from './useGateData';
+
+/**
+ * EVERY DELETE ON THIS SEAM NEEDS ONE, and the three that omitted it were all
+ * guaranteed 400s. `entities.delete`, `entities.restore` and `edges.delete`
+ * all bind `RequiredCommandContextSchema` (server `input-schemas.ts:149,150,165`),
+ * which is `.strict()` with `clientMutationId: z.string().min(1)`. The server
+ * synthesizes an id ONLY when idempotency is off (`idempotency.ts:23`) and
+ * `TM8_IDEMPOTENCY_ENABLED` defaults to TRUE (`config.ts:239`) — so on a
+ * default-configured node an omitted context arrives as `{}` and earns
+ * `invalid_input`, which this hook then reports as "Could not unassign".
+ *
+ * `nextMutationId` is the SAME minter the authoring lane uses, deliberately:
+ * ids carrying only a counter collide across principals and
+ * `require_replay_principal` refuses the second human's write as a replay
+ * (see its docblock in `authoring/commands.ts`). A second convention here
+ * would be a second way to get that wrong.
+ */
+const commandContext = () => ({ clientMutationId: nextMutationId() });
+
+/**
+ * `ActorSummary` narrows `kind` to exactly these two, so a registry naming a
+ * third assignable kind is a defect in the registry and NOT something this
+ * file may cast away: `row.kind as ActorSummary['kind']` would mislabel it
+ * silently, and a mislabelled actor is drawn with the wrong provenance mark —
+ * an agent shown as a human. Validated once, loudly, below.
+ */
+const ACTOR_KINDS: readonly ActorSummary['kind'][] = ['member', 'team_member'];
+
+function isActorKind(kind: string): kind is ActorSummary['kind'] {
+  return (ACTOR_KINDS as readonly string[]).includes(kind);
+}
+
+/** The server's own `MAX_LIMIT` (`facade/context.ts:139`). Asking for more is a 400. */
+const MAX_EDGE_PAGE = 200;
+
+export interface RowLifecycle {
+  /**
+   * Bound to `EntityListPanel.onSetState`.
+   *
+   * RETURNS the outcome, because the board renders refusals INLINE at the
+   * refusing column (doc 06 §1.5 — no toasts on the board) and so needs to
+   * know. `opts.notify: false` suppresses the notice for exactly that caller;
+   * the dropdown path passes nothing and keeps its notice. One executor, two
+   * refusal surfaces, zero double-reporting.
+   */
+  setState: (
+    entityId: string,
+    next: string,
+    via: ActionRef,
+    opts?: { notify?: boolean },
+  ) => Promise<SetStateOutcome>;
+  /**
+   * Bound to `EntityListPanel.onArchive` — NOT to the general `onAction`.
+   *
+   * Binding this to `onAction` would tell the panel that EVERY registry verb
+   * now has a host, and the panel would enable them: the Sessions header's
+   * `quickLaunch` lit up as a working control that this executor does not own
+   * and would have dropped on the floor. An executor advertises only the verbs
+   * it can actually perform.
+   */
+  archive: (ref: ActionRef, entityId: string) => void;
+  /**
+   * Bound to `EntityListPanel.onComplete` — the row cluster's TICK.
+   *
+   * ITS OWN EXECUTOR, and not `setState(id, 'done', 'complete')` reached
+   * through the dropdown, for two reasons that are both about the COLLAPSED
+   * row it fires from:
+   *
+   *   1. There is no dropdown there to reach it through. The tick is a
+   *      one-click verb in the hover cluster; `setState` is the strip's.
+   *   2. `setState`'s completion arm REFUSES an unhydrated row — it needs the
+   *      DETAIL's version and will not guess one. That is the correct rule for
+   *      the strip (whose mount already asked for the detail) and the wrong
+   *      answer here, because a collapsed row is unhydrated BY DEFINITION: its
+   *      capabilities now ride the summary, so the tick draws enabled on a row
+   *      whose detail nobody ever read. Refusing it would mean a control that
+   *      lights up correctly and then tells you to open the row instead.
+   *
+   * So this READS BEFORE WRITING when the detail is not cached — the same
+   * bargain `setAxis` makes, and for the same reason: one `entity()` round trip
+   * buys a real `expectedVersion`, and the guard still turns a racing write
+   * into a reported `version_conflict` rather than a silent overwrite.
+   */
+  complete: (entityId: string) => void;
+  /**
+   * Bound to `EntityListPanel.onSetValue` — a registry `ValueControl` write.
+   *
+   * `label` rides along beside `source` because a failure notice is USER copy:
+   * `source` is the wire field name and titling a notice with it produced
+   * "priority could not be changed", lowercase mid-sentence. Both come off the
+   * same registry control, so they cannot disagree.
+   *
+   * RETURNS the outcome for the same reason `setState` does: the Board tab
+   * renders refusals INLINE at the refusing column and rolls its optimistic
+   * move back, so it passes `{notify: false}` and consumes the result; every
+   * pre-existing caller ignores the return and keeps its notice.
+   */
+  /**
+   * `next: null` CLEARS the field, and reaches here only from a registry
+   * `dateControls` picker: an enum `ValueControl` has nothing in the contract
+   * that clears it, while `tasks.due_date` is nullable and the server's
+   * `update_task_content` reads an explicit `null` — and nothing else — as a
+   * clear. It rides THIS executor rather than a parallel one because the patch
+   * is byte-for-byte the same sparse content write; the difference is which
+   * control produced the value. See `ControlHost.onSetValue`.
+   */
+  setValue: (
+    entityId: string,
+    source: string,
+    next: string | null,
+    label: string,
+    opts?: { notify?: boolean },
+  ) => Promise<SetStateOutcome>;
+  /**
+   * Bound to `EntityListPanel.onSetAxis` — ONE axis of the row's `state.axes`
+   * record, set or cleared (`null`).
+   *
+   * NOT `setValue` with a different field name, because the write differs in
+   * shape: the server stores axes as ONE jsonb that `update_task_content`
+   * replaces wholesale (`axes = coalesce(p_axes, axes)`, 038:389), so this
+   * executor MERGES the change into the stored record before patching — one
+   * axis moves, the others survive. The version guard is what keeps the
+   * read-merge-write honest: a concurrent axis write lands as
+   * `version_conflict` and is reported, never silently overwritten.
+   *
+   * Returns the outcome for the BOARD (W3), which renders refusals inline at
+   * the refusing column with `{notify: false}` — the same contract as
+   * `setState`. The strip's picker ignores the return and keeps its notice.
+   */
+  setAxis: (
+    entityId: string,
+    axisName: string,
+    next: string | null,
+    label: string,
+    opts?: { notify?: boolean },
+  ) => Promise<SetStateOutcome>;
+  /**
+   * Bound to `EntityListPanel.onAssign` — ONE actor's edge, added or removed.
+   * Outcome returned for the board's inline-refusal path, exactly as above.
+   */
+  assign: (
+    entityId: string,
+    actorId: string,
+    edgeType: string,
+    assigned: boolean,
+    opts?: { notify?: boolean },
+  ) => Promise<SetStateOutcome>;
+  /**
+   * Bound to `EntityListPanel.onMembership` — ONE curated-set membership,
+   * added or removed, through the `collections.addItem`/`removeItem` pair
+   * (migration 100). NOT `assign` with different literals: the edge runs
+   * FROM the set TO the row, add auto-positions server-side, and remove is
+   * addressed by the (set, row) pair so no edge-id read precedes it.
+   */
+  membership: (entityId: string, setId: string, member: boolean) => void;
+  /**
+   * Bound to `EntityListPanel.membershipSets` — one bounded recency page of
+   * every set kind the registry's `list.membership` declarations name.
+   * Same posture as `assignable`: empty means not loaded (or none exist),
+   * and the control states which; it fills in as the kind hydrates.
+   */
+  membershipSets: readonly EntitySummary[];
+  /**
+   * Bound to `EntityListPanel.assignableActors` — everyone the menu may offer.
+   *
+   * EMPTY MEANS NOT LOADED, and the panel refuses in those words rather than
+   * drawing an empty menu that claims the space has nobody in it. It fills in
+   * as the roster kinds hydrate (`rowsFor` reads a key it has not seen), so the
+   * refusal is transient by construction.
+   */
+  assignable: readonly ActorSummary[];
+}
+
+export interface RowLifecycleOptions {
+  data: GateData;
+  viewerMemberId?: string | null;
+  onNotice: (notice: Notice) => void;
+}
+
+export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycleOptions): RowLifecycle {
+  const { seam, reconcileCommand } = data;
+
+  const report = useCallback(
+    (id: string, title: string, error: unknown) => {
+      onNotice({
+        id: `${title}:${id}`,
+        tone: 'error',
+        title,
+        body: String((error as { message?: string })?.message ?? error),
+        ttlMs: 6_000,
+      });
+    },
+    [onNotice],
+  );
+
+  const settle = useCallback(
+    (id: string, title: string, run: Promise<CommandResult>, notify = true): Promise<SetStateOutcome> =>
+      run
+        .then((result): SetStateOutcome => {
+          reconcileCommand(result);
+          return { ok: true };
+        })
+        .catch((error: unknown): SetStateOutcome => {
+          if (notify) report(id, title, error);
+          return { ok: false, reason: String((error as { message?: string })?.message ?? error) };
+        }),
+    [reconcileCommand, report],
+  );
+
+  const setState = useCallback(
+    (entityId: string, next: string, via: ActionRef, opts?: { notify?: boolean }): Promise<SetStateOutcome> => {
+      const id = entityId as EntityId;
+      const notify = opts?.notify ?? true;
+
+      if (via === 'complete') {
+        /**
+         * The version comes from the DETAIL, not the summary, and its absence
+         * is refused rather than guessed. `complete` is version-guarded, and a
+         * fabricated `expectedVersion` would either fail the guard or — worse,
+         * if it happened to match — complete a task against a state the user
+         * never saw. A row whose detail is not hydrated genuinely cannot be
+         * completed yet, which is the same rule the panel's capability gate
+         * already applies to every other verb.
+         */
+        const version = data.detailOf(entityId)?.version;
+        if (version === undefined) {
+          const reason =
+            'Its current version is not loaded, and completing without one could overwrite a change you have not seen. Open the task, then complete it.';
+          if (notify) {
+            onNotice({
+              id: `complete-unhydrated:${entityId}`,
+              tone: 'error',
+              title: 'Cannot complete this task yet',
+              body: reason,
+              ttlMs: 6_000,
+            });
+          }
+          return Promise.resolve({ ok: false, reason });
+        }
+        return settle(
+          entityId,
+          'Task could not be completed',
+          seam.commands.complete(id, {
+            expectedVersion: version,
+            // Attribution, and the points award rides it. Unknown viewer ⇒
+            // empty, which the server accepts: it completes the task and pays
+            // nobody, rather than crediting whoever happens to be calling.
+            completerIds: viewerMemberId ? [viewerMemberId as EntityId] : [],
+          }),
+          notify,
+        );
+      }
+
+      return settle(
+        entityId,
+        'State could not be changed',
+        // `next` is a registry-declared id for this kind's own state field;
+        // the seam types it as WorkStatus, which is what that vocabulary is.
+        seam.commands.work(id, { status: next as never }),
+        notify,
+      );
+    },
+    [data, onNotice, seam, settle, viewerMemberId],
+  );
+
+  const archive = useCallback(
+    (ref: ActionRef, entityId: string) => {
+      const id = entityId as EntityId;
+      if (ref === 'archive') {
+        void settle(entityId, 'Could not archive', seam.commands.deleteEntity(id, commandContext()));
+        return;
+      }
+      void settle(entityId, 'Could not restore', seam.commands.restoreEntity(id, commandContext()));
+    },
+    [seam, settle],
+  );
+
+  const complete = useCallback(
+    (entityId: string) => {
+      const id = entityId as EntityId;
+      /* The cached detail when there is one, one read when there is not — see
+         the interface docblock for why the strip's refuse-if-unhydrated rule
+         is the wrong answer for a collapsed row. */
+      const cached = data.detailOf(entityId);
+      const source: Promise<{ version: number }> =
+        cached !== undefined ? Promise.resolve(cached) : seam.entity(id);
+      void settle(
+        entityId,
+        'Task could not be completed',
+        source.then((detail) =>
+          seam.commands.complete(id, {
+            expectedVersion: detail.version,
+            // Attribution, exactly as `setState`'s completion arm: unknown
+            // viewer ⇒ empty, which completes the task and pays nobody rather
+            // than crediting whoever happens to be calling.
+            completerIds: viewerMemberId ? [viewerMemberId as EntityId] : [],
+          }),
+        ),
+      );
+    },
+    [data, seam, settle, viewerMemberId],
+  );
+
+  const setValue = useCallback(
+    (
+      entityId: string,
+      source: string,
+      next: string | null,
+      label: string,
+      opts?: { notify?: boolean },
+    ): Promise<SetStateOutcome> => {
+      const id = entityId as EntityId;
+      const notify = opts?.notify ?? true;
+      /**
+       * THE CACHED VERSION IS THE ONLY VERSION — there is no `entity()`
+       * fallback, because in production there is nothing for it to fall back
+       * from. `RowValueControl` refuses with CheckingPermission the moment
+       * `capabilitiesOf(row.id)` is `undefined` (`EntityListPanel.tsx:1472`),
+       * and all three call sites wire that to `data.detailOf(id)?.capabilities`
+       * (`WorkspaceView.tsx:405,488`, `EntityView.tsx:379`). Capabilities
+       * present therefore IMPLIES the detail is cached, which implies the
+       * version is defined: a fallback read here could only ever fire behind a
+       * control the user could not have clicked.
+       *
+       * The refusal below is what an unreachable case is allowed to cost. It
+       * is not a guess and not a second read — the panel gate and this
+       * executor are separate modules, and if that invariant is ever broken
+       * this says so instead of patching against a version nobody saw.
+       */
+      const version = data.detailOf(entityId)?.version;
+      if (version === undefined) {
+        const reason =
+          'This row’s current version is not loaded, and writing without one could overwrite a change you have not seen. Open the row, then try again.';
+        if (notify) {
+          onNotice({
+            id: `value-unhydrated:${entityId}`,
+            tone: 'error',
+            title: `${label} could not be changed`,
+            body: reason,
+            ttlMs: 6_000,
+          });
+        }
+        return Promise.resolve({ ok: false, reason });
+      }
+      return settle(
+        entityId,
+        `${label} could not be changed`,
+        // Sparse: the node COALESCEs the fields the patch omits, so one field
+        // moves and the rest of the record is not restated. The guard still
+        // does its job — a concurrent edit lands as `version_conflict`, which
+        // surfaces as a notice rather than a silent overwrite.
+        seam.commands.patchEntity(id, { expectedVersion: version, content: { [source]: next } }),
+        notify,
+      );
+    },
+    [data, onNotice, seam, settle],
+  );
+
+  const setAxis = useCallback(
+    (
+      entityId: string,
+      axisName: string,
+      next: string | null,
+      label: string,
+      opts?: { notify?: boolean },
+    ): Promise<SetStateOutcome> => {
+      const id = entityId as EntityId;
+      const notify = opts?.notify ?? true;
+      /* MAY READ BEFORE WRITING — the one deliberate difference from
+         `setValue`, whose no-fallback rule stands on its gate: the picker
+         refuses until the detail is cached. The BOARD has no such gate (a
+         dragged card's detail is usually not hydrated), and the merge needs
+         the CURRENT axes record regardless, because `update_task_content`
+         replaces the jsonb wholesale. So an uncached row costs one
+         `entity()` read, and the version guard still catches a write racing
+         it. Outcome is RETURNED for the board's inline refusal (§1.5). */
+      const cached = data.detailOf(entityId);
+      const source: Promise<{ version: number; state: unknown }> =
+        cached !== undefined ? Promise.resolve(cached) : seam.entity(id);
+      return settle(
+        entityId,
+        `${label} could not be changed`,
+        source.then((detail) => {
+          /* Structural read (§15.2): the axes record is addressed by name,
+             never by narrowing the state union to a kind. */
+          const stored = (detail.state as Record<string, unknown>).axes;
+          const axes: Record<string, string> = {};
+          if (stored !== null && typeof stored === 'object') {
+            for (const [name, value] of Object.entries(stored as Record<string, unknown>)) {
+              if (typeof value === 'string') axes[name] = value;
+            }
+          }
+          if (next === null) delete axes[axisName];
+          else axes[axisName] = next;
+          return seam.commands.patchEntity(id, { expectedVersion: detail.version, content: { axes } });
+        }),
+        notify,
+      );
+    },
+    [data, seam, settle],
+  );
+
+  const assign = useCallback(
+    (
+      entityId: string,
+      actorId: string,
+      edgeType: string,
+      assigned: boolean,
+      opts?: { notify?: boolean },
+    ): Promise<SetStateOutcome> => {
+      const id = entityId as EntityId;
+      const notify = opts?.notify ?? true;
+
+      if (assigned) {
+        return settle(
+          entityId,
+          'Could not assign',
+          // UPSERT on (src, dst, type) server-side, so a double-click adds
+          // nothing twice and needs no read first.
+          seam.commands.createEdge({ srcId: id, dstId: actorId as EntityId, type: edgeType }),
+          notify,
+        );
+      }
+
+      /**
+       * Removal is addressed by the EDGE's id, which only `connections()`
+       * knows — `state.assignees` is the projection and carries the actor,
+       * never the edge. So an unassign is a read then a write, and an edge
+       * that is already gone is reported rather than swallowed: the row shows
+       * an assignment the node does not have, and the user should be told
+       * that instead of watching a chip refuse to move.
+       *
+       * THE READ IS FILTERED, AND THE ERROR TEXT IS WHY. An unfiltered
+       * `connections()` is capped at the server's `DEFAULT_LIMIT` of 50 across
+       * every edge type on the entity (`facade/context.ts:138`), so on a busy
+       * task the assignment could sit off the first page and this would throw
+       * "no longer on this node" about an edge that is plainly still there —
+       * a false statement to the user, dressed as a diagnosis. Naming the type
+       * and the direction bounds the page by ASSIGNEES rather than by edges,
+       * so "absent from the page" and "absent from the node" mean the same
+       * thing again. (`ConnectionOpts` in `data/seam.ts` carries them.)
+       */
+      return settle(
+        entityId,
+        'Could not unassign',
+        seam
+          .connections(id, { types: [edgeType], direction: 'outgoing', limit: MAX_EDGE_PAGE })
+          .then((page) => {
+            const edge = page.items.find(
+              (e) => e.type === edgeType && e.target.id === actorId && e.source.id === entityId,
+            );
+            if (!edge) {
+              throw new Error('That assignment is no longer on this node — reload the list to see who is assigned.');
+            }
+            return seam.commands.deleteEdge(edge.id, commandContext());
+          }),
+        notify,
+      );
+    },
+    [seam, settle],
+  );
+
+  const membership = useCallback(
+    (entityId: string, setId: string, member: boolean) => {
+      const id = entityId as EntityId;
+      const collectionId = setId as EntityId;
+      const settled = member
+        ? settle(
+            entityId,
+            'Could not add to collection',
+            // UPSERT on the (set, row, type) triple server-side — a re-add
+            // re-positions rather than duplicating, so no read precedes this.
+            seam.commands.addToCollection(collectionId, {
+              clientMutationId: nextMutationId(),
+              entityId: id,
+            }),
+          )
+        : settle(
+            entityId,
+            'Could not remove from collection',
+            // Pair-addressed: the whole reason removeItem exists is that this
+            // caller never saw the edge row, so there is no id to name.
+            seam.commands.removeFromCollection(collectionId, id, commandContext()),
+          );
+      void settled.then((outcome) => {
+        // The ✓ marks read the row's own connections, which a summary patch
+        // does not carry — re-read the detail so the menu the user is still
+        // holding open reflects the write.
+        if (outcome.ok) data.refetchDetail(entityId);
+      });
+    },
+    [data, seam, settle],
+  );
+
+  /**
+   * The union of every assign control's `actorKinds`, resolved once — the
+   * registry decides who is assignable and this file only reads it, which is
+   * the same rule that keeps the panel free of kind literals.
+   */
+  const rosterKinds = useMemo(() => {
+    const declared = [...new Set(allKinds().flatMap((k) => k.list.assignControl?.actorKinds ?? []))];
+    const unrepresentable = declared.filter((kind) => !isActorKind(kind));
+    if (unrepresentable.length > 0) {
+      // LOUD, not silent. The registry is static, so this either throws on the
+      // first render in dev and test or it never throws at all — which makes it
+      // a build-shaped failure, not a runtime risk. The alternative was a cast
+      // that drew the new kind with a fabricated `kind` and `isAgent`.
+      throw new Error(
+        `assignControl.actorKinds names ${unrepresentable.join(', ')}, which ActorSummary cannot represent ` +
+          `(it is '${ACTOR_KINDS.join("' | '")}'). Widen the contract type before making that kind assignable.`,
+      );
+    }
+    return declared.filter(isActorKind);
+  }, []);
+
+  /**
+   * The roster the assign menu offers.
+   *
+   * IT PREFERS THE ACTOR THE SPACE ALREADY LOADED. `data.members` is the real
+   * membership projection (`useGateData.ts:267`) and carries the AVATAR the
+   * server resolved; an `EntitySummary` does not carry one at all, so a roster
+   * built purely from `rowsFor` draws every face blank and quietly discards
+   * the avatars PR #12 merged.
+   *
+   * IT STILL WALKS `rowsFor` FOR THE KINDS. `data.members` is `public.members`
+   * — the HUMAN membership rows — so it does not contain `team_member`
+   * actors, and using it alone would drop every agent from a menu the registry
+   * says agents belong in. So: the registry names the kinds, the rows name the
+   * population, and `members` supplies the real actor wherever it has one.
+   */
+  const assignable = useMemo(() => {
+    const loaded = new Map(data.members.map((actor) => [actor.id as string, actor]));
+    return rosterKinds.flatMap((kind) =>
+      data.rowsFor(kind)(undefined).map(
+        (row): ActorSummary =>
+          loaded.get(row.id) ?? {
+            id: row.id as EntityId,
+            // `kind` here is the ROSTER kind — the registry key this group was
+            // read under, already proven representable above — not the row's
+            // own unchecked string.
+            kind,
+            displayName: row.title,
+            avatar: null,
+            // The server derives it the same way (`seam-fixture.ts:620`, and
+            // `ActorSummary.ownerMemberId` "present for a team_member").
+            isAgent: kind === 'team_member',
+          },
+      ),
+    );
+  }, [data, rosterKinds]);
+
+  /**
+   * The sets the membership menus offer — the union of `list.membership`
+   * declarations across the registry, hydrated through the same `rowsFor`
+   * read every list panel uses (a key it has not seen schedules its own
+   * query, so no `ensureKind` call is owed here). One page per set kind,
+   * recency-ordered: the honest bounded list, since `search.query` is
+   * reserved.
+   */
+  const setKinds = useMemo(
+    () => [...new Set(allKinds().flatMap((k) => (k.list.membership ? [k.list.membership.setKind] : [])))],
+    [],
+  );
+  const membershipSets = useMemo(
+    () => setKinds.flatMap((kind) => data.rowsFor(kind)(undefined)),
+    [data, setKinds],
+  );
+
+  return { setState, archive, complete, setValue, setAxis, assign, assignable, membership, membershipSets };
+}

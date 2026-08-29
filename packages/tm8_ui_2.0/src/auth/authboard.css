@@ -1,0 +1,187 @@
+/* ==========================================================================
+   THE REVIEW BOARD — DEV-ONLY CHROME. Not product, and deliberately not
+   themed like it: the board furniture reads as a contact sheet so nothing on
+   it can be mistaken for the app.
+
+   Tokens only, same as everywhere — src/hex-ban.test.ts scans this file too
+   (verified by injecting a hex and watching it go red, 2026-07-29).
+   ========================================================================== */
+
+.cv2-root .authboard {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  padding: 40px 44px 72px;
+  background: var(--pn-paper);
+  min-height: 100%;
+  overflow-y: auto;
+}
+
+.cv2-root .authboard__head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 880px;
+}
+.cv2-root .authboard__eyebrow {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+.cv2-root .authboard__title {
+  font-family: var(--pn-serif);
+  font-size: 27px;
+  font-weight: 500;
+  line-height: var(--pn-lh-tight);
+  color: var(--pn-ink);
+}
+.cv2-root .authboard__note {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+}
+.cv2-root .authboard__note code {
+  font-family: var(--pn-mono);
+  font-size: 12px;
+  color: var(--pn-brand-2);
+}
+
+.cv2-root .authboard__frame {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cv2-root .authboard__label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.cv2-root .authboard__id {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.4);
+  border-radius: var(--pn-r-xs);
+  padding: 2px 7px;
+}
+.cv2-root .authboard__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .authboard__flow {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .authboard__pair {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+/* The oracle's specimen viewport: --pn-line-2 edge, r8, --pn-sh-md, clipped. */
+.cv2-root .authboard__viewport {
+  position: relative;
+  flex: none;
+  max-width: 100%;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 8px;
+  box-shadow: var(--pn-sh-md);
+  overflow: hidden;
+}
+/* ZOOM DOES NOT COMPOUND HERE, and this is the rule that stops it.
+   app.css declares `.cv2-root { zoom: 1.1 }` (D60, user-ruled). Each viewport
+   mounts AuthFlow with its own `.cv2-root` so the two themes can differ, and
+   that nested scope matches the same selector — so without this reset the
+   board would render every frame at 1.21× while the app renders 1.1×, and a
+   pixel diff taken from the board would be wrong by 10% on every measurement
+   with nothing on screen to say so. `zoom: 1` means "no ADDITIONAL zoom": the
+   board's own outer 1.1 still applies, so total scale matches the app exactly.
+   This is the hazard `AuthFlowProps.rootScope` exists for, hit from the other
+   side — the board cannot use `inherit`, because it needs per-viewport themes. */
+.cv2-root .authboard__viewport > .cv2-root {
+  height: 100%;
+  zoom: 1;
+}
+
+/* ── the skeleton backdrop (oracle L152–L156, L221–L226) ───────────────── */
+/* Review furniture. The oracle draws grey blocks behind its dialogs because a
+   canvas has no live app; product passes the real workspace through
+   AuthFlow's `backdrop` prop instead. */
+
+.cv2-root .authboard-skel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-paper);
+}
+.cv2-root .authboard-skel__bar {
+  height: 34px;
+  flex: none;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .authboard-skel[data-wide] .authboard-skel__bar {
+  height: 38px;
+}
+.cv2-root .authboard-skel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.cv2-root .authboard-skel__rail {
+  width: 40px;
+  flex: none;
+  background: var(--pn-surface);
+  border-right: 1px solid var(--pn-line);
+}
+.cv2-root .authboard-skel[data-wide] .authboard-skel__rail {
+  width: 44px;
+}
+.cv2-root .authboard-skel__list {
+  width: 120px;
+  flex: none;
+  background: var(--pn-surface);
+  border-right: 1px solid var(--pn-line);
+}
+.cv2-root .authboard-skel[data-wide] .authboard-skel__list {
+  width: 180px;
+}
+.cv2-root .authboard-skel__right {
+  width: 170px;
+  flex: none;
+  background: var(--pn-surface);
+  border-left: 1px solid var(--pn-line);
+}
+.cv2-root .authboard-skel__center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+/* The ink strip is the terminal, and the terminal is near-black in BOTH
+   themes — --pn-x-term-bg is the name canvas-extra.css gives that. */
+.cv2-root .authboard-skel__strip {
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  background: var(--pn-x-term-bg);
+  opacity: 0.85;
+}
+.cv2-root .authboard-skel__canvas {
+  flex: 1;
+  border-radius: 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+}

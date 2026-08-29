@@ -264,7 +264,7 @@ function LoopTextField({
   hint,
   onChange,
 }: {
-  inputRef?: RefObject<HTMLInputElement | null>;
+  inputRef?: RefObject<HTMLInputElement>;
   label: string;
   value: string;
   problem?: string | null;

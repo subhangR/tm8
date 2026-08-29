@@ -57,7 +57,7 @@ function Preview() {
   const noop = () => undefined;
 
   return (
-    <div className="cv2-root" data-astryx-theme="neutral" data-theme={theme} style={{ minHeight: '100vh' }}>
+    <div className="cv2-root" data-theme={theme} style={{ minHeight: '100vh' }}>
       <div style={{ padding: 16, display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 12 }}>
         <button type="button" onClick={() => setThemeState(theme === 'light' ? 'dark' : 'light')}>
           {`theme: ${theme}`}

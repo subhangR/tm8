@@ -1,0 +1,173 @@
+/* Branch topology — every colour resolves through a token (§14 hex ban). */
+
+.brt {
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-surface);
+  margin-top: var(--pn-space-2);
+}
+
+.brt__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  /* "stale after 30d" sits after a flex:1 spacer; without wrapping it is the
+     first thing pushed past the right edge on a narrow card. */
+  flex-wrap: wrap;
+}
+
+.brt__trunk,
+.brt__source,
+.brt__meta {
+  min-width: 0;
+}
+
+.brt__trunk {
+  font: 600 var(--pn-fs-sm) / var(--pn-lh-snug) var(--pn-ui);
+  color: var(--pn-ink);
+}
+
+.brt__source,
+.brt__meta {
+  font: var(--pn-fs-micro) / var(--pn-lh-snug) var(--pn-mono);
+  color: var(--pn-ink-3);
+}
+
+.brt__spacer {
+  flex: 1;
+}
+
+.brt__mono {
+  font: var(--pn-fs-mono) / var(--pn-lh-snug) var(--pn-mono);
+}
+
+.brt__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.brt__row {
+  padding: var(--pn-space-2) var(--pn-space-3);
+}
+
+.brt__row + .brt__row {
+  border-top: 1px solid var(--pn-line);
+}
+
+.brt__row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+/* THE SHRINK RULE, and the bug it fixes. `.brt__name` and `.brt__subject`
+   already carried `overflow: hidden; text-overflow: ellipsis`, but a flex
+   item's `min-width` defaults to `auto` — its own content width — so neither
+   could ever shrink and the ellipsis never engaged. A branch called
+   `tm8/01a00b26-…-settings-linked-projects` therefore pushed the ahead/behind
+   column off the card instead of truncating: measured 1123px of content in an
+   1080px box at 1508x882. `min-width: 0` is what lets the declared ellipsis
+   actually happen. */
+.brt__name {
+  color: var(--pn-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The pills and the drift column state facts about the branch; they truncate
+   to nothing useful, so they hold their size and the NAME yields instead. */
+.brt__row-head .kit-pill {
+  flex: 0 0 auto;
+}
+
+.brt__drift {
+  font: var(--pn-fs-mono) / var(--pn-lh-snug) var(--pn-mono);
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.brt__drift--trunk,
+.brt__drift-vs {
+  color: var(--pn-ink-4);
+}
+
+.brt__row-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-1);
+  margin-top: 2px;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-sm) / var(--pn-lh-snug) var(--pn-ui);
+  min-width: 0;
+}
+
+/* `0 1` and not `1 1`: the meta row is a SENTENCE — date · subject · upstream.
+   Letting the subject grow pushed the upstream to the far edge and stranded
+   its `·` separator out there with it, which read as an accidental second
+   column. It shrinks when it must and packs left otherwise. */
+.brt__subject {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The date is ten fixed characters. Letting it shrink broke `2026-08-11`
+   across two lines and made the meta row two rows tall for no reason. */
+.brt__row-meta > .brt__mono:first-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* The upstream ref is the one long thing left; it yields after the subject. */
+.brt__row-meta > .brt__mono:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brt__dot {
+  color: var(--pn-ink-4);
+  flex: 0 0 auto;
+}
+
+.brt__no-upstream {
+  font: var(--pn-fs-micro) / var(--pn-lh-snug) var(--pn-mono);
+  color: var(--pn-ink-4);
+  flex: 0 0 auto;
+}
+
+.brt__empty,
+.brt__loading,
+.brt__truncated,
+.brt__error {
+  margin: 0;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font: var(--pn-fs-sm) / var(--pn-lh-body) var(--pn-ui);
+  color: var(--pn-ink-3);
+}
+
+.brt__error {
+  color: var(--pn-block);
+}
+
+.brt__truncated {
+  border-top: 1px solid var(--pn-line);
+  color: var(--pn-wait);
+}
+
+/* The settings-shell section's own rules moved to `project-branches.css` —
+   they are used ONLY by `ProjectBranchesSection`, whereas everything above is
+   shared with `git/ProjectGitScreen.tsx`. Keeping the shared and the
+   section-only rules in one file is how `.brt-section { overflow: auto }`
+   survived into a `SectionFrame` body as a second scroller. */

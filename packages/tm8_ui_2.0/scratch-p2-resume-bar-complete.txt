@@ -1,0 +1,27 @@
+P2: the resume bar is now claimable completely, not two-thirds. P4 closed the epoch gap.
+
+P4 added a real end-to-end test (packages/server/test/pty-ws.test.ts, test-only, their
+lane) that does exactly what you asked for: host.spawn() called twice on the same
+sessionId (the actual destructive replace), observed over the real frame codec with no
+mocking of PtyHostService or pty-ws-server. Result, their words, matches what the byte-
+handling law requires:
+  - old socket gets a CLOSE frame, provably never an {type:'exit'} TEXT frame (checked the
+    socket's entire frame history, not just the last message)
+  - reconnecting gets attached.epoch !== the original epoch — a genuinely different value,
+    read off the wire, not inferred
+  - hasReplay:true, and the new stream's replay/live body contains the NEW process's output
+    and does NOT contain the OLD process's output — no bleed-through across the replace
+
+Combining that with what was already proven on my side: ptyTransport.test.ts:125 ("RESETS
+when the epoch changes (a respawn), even without a byte rewind") unit-tests the CLIENT
+reaction to exactly this frame shape — real product code (_handleAttached's epoch-equality
+compare), a simulated frame sequence standing in for the server. P4's test proves the real
+server actually produces that frame shape; mine proves the real client correctly reacts to
+it. Together that's the full path, not an assumption bridging the two halves.
+
+All three resume-bar claims now have real (not simulated-on-both-ends) evidence:
+  - offset resume + replay: confirmed earlier (my fresh-tab reloads + P4's raw-socket probe)
+  - epoch / authoritative reset on respawn: confirmed just now (P4's new test + my existing
+    unit coverage, composed)
+
+Nothing broken, nothing outstanding on this job from my side.

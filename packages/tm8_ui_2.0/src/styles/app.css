@@ -1,0 +1,66 @@
+/* Host-frame reset, mirroring the canvases' helmet rule
+   (html,body{margin:0;padding:0;height:100%;overflow:hidden}).
+   Everything visual lives under .cv2-root via tokens.css — this file must
+   stay this small. */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   ROOT SCALE — USER-RULED EXPERIMENT, NOT A LAW (2026-07-28).
+
+   The user's bar is pixel-parity with the T0-1 canvas and their report was
+   "letters are too small". Measured first: our font-size value SET is IDENTICAL
+   to the oracle's on every built surface, so nothing is drifting per element —
+   the canvas simply presents fit-to-width on claude.ai while the app renders
+   1:1. The user chose "try 1.1, eyeball it live".
+
+   `zoom` is the whole lever ON PURPOSE. It scales px literals, spacing, radii
+   and borders uniformly, which is exactly the canvas-presentation effect being
+   matched — and it leaves every measured literal in place, so D5's
+   canvas-measured micro sizes (9.5 / 10 / 11.5px) stay verbatim in the source
+   and every future canvas diff still compares like with like. A rem re-basing
+   would rewrite those literals and destroy that, and was explicitly not wanted
+   for an eyeball test.
+
+   Applied to `.cv2-root` rather than a mount wrapper because it is the single
+   element every surface already lives under (GateApp.tsx:145) and it is the
+   theme scope, so nothing can render outside the scaled subtree — verified: no
+   createPortal and no document.body mounting anywhere in src/.
+
+   EXPERIMENTAL: this is a taste test the user asked to see live, not a ruled
+   constant. If it stays, it needs a ledger entry of its own.
+   --------------------------------------------------------------------------- */
+.cv2-root {
+  zoom: 1.1;
+}
+
+/* THE NESTED-SCOPE RESET — the bug the paragraph above walked straight into.
+   `.cv2-root` is BOTH the UI-scale hook and the theme scope, and the theme
+   scope is deliberately re-opened inside itself: EntityDetailPanel puts
+   `cv2-root` on the work_session panel to make it dark, and AlwaysDark opens a
+   third one around the terminal host. `zoom` MULTIPLIES down the ancestor
+   chain, so each of those re-applied the 1.1.
+
+   MEASURED, not reasoned: the work_session panel rendered at 1.21 (1.1²) while
+   every other panel rendered at 1.1, and the xterm host at 1.331 before its own
+   reciprocal — which is precisely the user's report, "the terminal is a bit
+   zoomed in … only the terminal, rest is good", and why the reciprocal in
+   terminal.css looked applied and still left the glyphs oversized.
+
+   A nested scope must re-declare TOKENS and nothing else. One `zoom: 1` here
+   is the fix for every nesting depth at once, and it is what makes
+   terminal.css's `calc(1 / 1.1)` finally land on a true 1.0 — i.e. xterm at a
+   physical 13px, which is maestro main's DEFAULT_TERMINAL_FONT_SIZE at its
+   `--app-zoom-scale: 1.0`. Same number, same screen. */
+.cv2-root .cv2-root {
+  zoom: 1;
+}

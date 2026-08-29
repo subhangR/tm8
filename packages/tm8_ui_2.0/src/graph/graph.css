@@ -1,0 +1,896 @@
+/**
+ * Graph view (◉) — ATELIER paper-and-ink. Tokens only (hex is banned outside
+ * tokens.css). Realtime is a RESTRAINED overlay: ink freshness for recency,
+ * the pulse dot + one marching-dash for genuine liveness, brass rings for
+ * arrivals. No glow, no bounce; prefers-reduced-motion collapses every
+ * animation to an instant state change.
+ */
+
+.gv-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+  overflow: hidden;
+}
+
+/* -- toolbar -------------------------------------------------------------- */
+
+.gv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.gv-toolbar__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.gv-toolbar__spacer { flex: 1; }
+
+.gv-toolbar__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  flex-wrap: wrap;
+}
+
+.gv-toolbar__zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+
+.gv-filter {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 2px var(--pn-space-2);
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.gv-filter:hover { background: var(--pn-hover); }
+
+.gv-filter--edge {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.gv-filter--off {
+  color: var(--pn-ink-4);
+  background: transparent;
+  border-style: dashed;
+  text-decoration: line-through;
+}
+
+/* Action chips (re-layout, focus breadcrumb) — a gv-filter with a brand-soft
+   fill so it reads as an available action rather than a passive filter. */
+.gv-filter--action {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+}
+.gv-filter--action:hover {
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.55);
+}
+
+/* -- the lens ---------------------------------------------------------------
+   A segmented control, not a dropdown: there are three options, the current one
+   must be readable at a glance, and switching is the most common action on this
+   toolbar. Sits first in the bar because it is the first question the canvas
+   answers — what is this view about? */
+
+.gv-lens {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  background: var(--pn-surface-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+}
+
+.gv-lens__opt {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  padding: 2px var(--pn-space-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.gv-lens__opt:hover { color: var(--pn-ink-1); background: var(--pn-hover); }
+
+.gv-lens__opt--on,
+.gv-lens__opt--on:hover {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+}
+
+/* The folded-count affordance inside the count line: a plain-text button, so it
+   reads as part of the sentence it belongs to rather than as a control. */
+.gv-toolbar__fold {
+  font: inherit;
+  color: var(--pn-ink-3);
+  background: none;
+  border: 0;
+  padding: 0 0 0 2px;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.gv-toolbar__fold:hover { color: var(--pn-brand-2); }
+
+/* -- honesty banner + empty state ----------------------------------------- */
+
+.gv-banner {
+  padding: var(--pn-space-2) var(--pn-space-4);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+  background: var(--pn-wait-soft);
+  border-bottom: 1px solid var(--pn-line);
+  flex: none;
+}
+
+.gv-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-3);
+}
+
+.gv-empty__title {
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-h3);
+  color: var(--pn-ink-3);
+  margin: 0;
+}
+
+.gv-empty__detail {
+  max-width: 42rem;
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  text-align: center;
+}
+
+/* -- canvas ---------------------------------------------------------------- */
+
+.gv-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.gv-viewport:active { cursor: grabbing; }
+
+.gv-viewport:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+.gv-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+/* Applied ONLY during a programmatic reveal-pan (aside open / resize) so it
+   eases; manual drag/zoom clear the flag so they track instantly. */
+.gv-canvas--ease {
+  transition: transform var(--pn-dur-base) var(--pn-ease-out);
+}
+
+/* -- edges ------------------------------------------------------------------ */
+
+.gv-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.gv-edge__line {
+  fill: none;
+  stroke: var(--pn-line-2);
+  stroke-width: 1.5;
+  transition: opacity var(--pn-dur-base) var(--pn-ease-standard);
+}
+
+.gv-arrowhead { fill: var(--pn-line-2); }
+
+.gv-edge__label {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  fill: var(--pn-ink-3);
+  paint-order: stroke;
+  stroke: var(--pn-paper);
+  stroke-width: 3px;
+}
+
+.gv-edge--blocked .gv-edge__line { stroke: var(--pn-block); stroke-width: 2; }
+.gv-edge--blocked .gv-edge__label { fill: var(--pn-block); }
+.gv-arrowhead--blocked { fill: var(--pn-block); }
+
+/* The ONE sustained animation on the canvas: a live working thread. Gated on
+   the seam's liveness verdict in the component — never on recency. */
+.gv-edge--live .gv-edge__line {
+  stroke: var(--pn-run);
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+  animation: gv-march 1.4s linear infinite;
+}
+.gv-edge--live .gv-edge__label { fill: var(--pn-run); }
+
+@keyframes gv-march {
+  to { stroke-dashoffset: -24; }
+}
+
+.gv-edge--dim { opacity: 0.18; }
+
+/* -- nodes ------------------------------------------------------------------ */
+
+.gv-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  text-align: left;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+  cursor: pointer;
+  transition:
+    opacity var(--pn-dur-base) var(--pn-ease-standard),
+    border-color var(--pn-dur-slow) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.gv-node:hover { box-shadow: var(--pn-sh-md); }
+
+.gv-node:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* Ink freshness — recency as border weight, NEVER the only carrier (the
+   timestamp word rides the footer of every card). */
+.gv-node--fresh { border-color: var(--pn-ink-3); }
+.gv-node--warm { border-color: var(--pn-line-2); }
+.gv-node--rest { border-color: var(--pn-line); }
+
+.gv-node--blocked { border-color: var(--pn-block); }
+
+.gv-node--ghost {
+  border-style: dashed;
+  opacity: 0.55;
+  background: var(--pn-surface);
+}
+
+.gv-node--dim { opacity: 0.25; }
+
+/* Search: unmatched nodes read like a hover-neighborhood miss (same opacity);
+   matched nodes carry a SUBTLE persistent brass outline — 1px at reduced alpha,
+   deliberately weaker than the 2px selected ring. Declared before the selected
+   block so a selected+matched node keeps the full ring (source-order wins). */
+.gv-node--unmatched { opacity: 0.25; }
+.gv-node--match {
+  box-shadow: 0 0 0 1px rgba(var(--pn-brand-rgb), 0.55), var(--pn-sh-sm);
+}
+.gv-node--match:hover {
+  box-shadow: 0 0 0 1px rgba(var(--pn-brand-rgb), 0.55), var(--pn-sh-md);
+}
+
+/* Materialize: fade + 4px rise with a brass ring that decays. */
+.gv-node--new {
+  animation:
+    gv-rise var(--pn-dur-base) var(--pn-ease-out),
+    gv-ring 2s var(--pn-ease-standard);
+}
+
+.gv-node--flash { animation: gv-ring 1.8s var(--pn-ease-standard); }
+
+/* Selected — the node bound to the aside wears a PERSISTENT brass ring
+   (box-shadow, never a border, so content never shifts), visually distinct
+   from the decaying gv-node--flash pulse. Selection outranks hover-dimming:
+   a selected node never fades below legibility even inside a dimmed
+   neighborhood. */
+.gv-node--selected {
+  box-shadow: 0 0 0 2px var(--pn-brand), var(--pn-sh-sm);
+}
+.gv-node--selected:hover {
+  box-shadow: 0 0 0 2px var(--pn-brand), var(--pn-sh-md);
+}
+.gv-node--selected.gv-node--dim,
+.gv-node--selected.gv-node--unmatched {
+  opacity: 0.8;
+}
+
+/* Focus affordance — a small ⌖ button in the card's bottom-right (clear of the
+   status pills up top). Hidden until the card is hovered/focused so it never
+   competes with the card content; the pressed state stays lit while focus mode
+   is on. It is a REAL nested button (the card is a role=button div). */
+.gv-node__focus {
+  position: absolute;
+  right: var(--pn-space-1);
+  bottom: var(--pn-space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.gv-node:hover .gv-node__focus,
+.gv-node:focus-within .gv-node__focus,
+.gv-node__focus:focus-visible {
+  opacity: 1;
+}
+
+/* ON A TOUCH DEVICE THIS BUTTON WAS SIMPLY INVISIBLE. It is `opacity: 0` until
+   `:hover`, and a finger produces no hover — so the only ways to reveal it were
+   two things a touch device cannot do. It stayed hit-testable the whole time,
+   which is worse than being hidden: the control was there, it worked, and
+   nothing on screen said so.
+
+   `(pointer: coarse)` rather than the mobile shell, deliberately — the graph has
+   no phone port and serves the refusal screen at 390px, so scoping this under
+   `.mobile-frame` would fix nothing. Where it IS reachable on touch is the
+   coarse-pointer tablet, which runs the DESKTOP shell at 768px. That is the
+   surface this rule is for.
+
+   Revealed at rest rather than on tap: there is no second gesture to spend on
+   disclosing a control, and a graph node is not a control the user is hunting
+   for — it has to be visible to be found. */
+@media (pointer: coarse) {
+  .gv-node__focus {
+    opacity: 1;
+  }
+  /* 44px of hit area around a box that stays 20px. Taken as a transparent
+     outset rather than as padding, because this element carries a visible
+     border and a background — padding would drag both out to 44px and redraw
+     the control, which is exactly what must not change. */
+  .gv-node__focus::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+}
+.gv-node__focus:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.gv-node__focus--on {
+  opacity: 1;
+  color: var(--pn-brand-2);
+  border-color: rgba(var(--pn-brand-rgb), 0.4);
+  background: var(--pn-brand-soft);
+}
+
+@keyframes gv-rise {
+  from { opacity: 0; translate: 0 4px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes gv-ring {
+  0% { box-shadow: 0 0 0 2px var(--pn-brand); }
+  100% { box-shadow: 0 0 0 2px rgba(var(--pn-brand-rgb), 0); }
+}
+
+.gv-node__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.gv-node__glyph { color: var(--pn-ink-3); flex: none; }
+
+.gv-node__kind {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.gv-node__pills {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  margin-left: auto;
+  flex: none;
+}
+
+.gv-node__title {
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
+  color: var(--pn-ink);
+  line-height: var(--pn-lh-snug);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  flex: 1;
+  min-height: 0;
+}
+
+.gv-node__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.gv-node__meta {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.gv-node__meta--ghost { color: var(--pn-block); }
+
+/* The hub badge — "◈27". Deliberately quiet: it explains the partition, it does
+   not claim the node is more important than the work around it. */
+.gv-node__meta--hub { color: var(--pn-ink-2); }
+
+/* The fold badge — "+12" on a hub that swallowed twelve leaves. Brand-soft so
+   it reads as an available expansion, and it must stay legible when the card is
+   dimmed by a hover neighborhood or a search miss (see the --dim rules). */
+.gv-node__folded {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-pill);
+  padding: 0 6px;
+  margin-left: auto;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.gv-node__folded:hover { border-color: rgba(var(--pn-brand-rgb), 0.65); }
+
+/* -- shelf ------------------------------------------------------------------ */
+
+.gv-shelf {
+  position: absolute;
+  left: var(--pn-space-4);
+  bottom: var(--pn-space-4);
+  max-width: 46%;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+
+.gv-shelf__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+/* -- ticker ----------------------------------------------------------------- */
+
+/* Right rail — stacks the minimap above the ticker, both kept visible, in the
+   bottom-right corner opposite the shelf. */
+.gv-rail {
+  position: absolute;
+  right: var(--pn-space-4);
+  bottom: var(--pn-space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--pn-space-2);
+  max-width: 44%;
+}
+
+.gv-ticker {
+  width: 300px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--pn-space-2);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-md);
+}
+
+.gv-ticker__row {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 2px var(--pn-space-1);
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: gv-rise var(--pn-dur-base) var(--pn-ease-out);
+}
+
+.gv-ticker__row:hover { background: var(--pn-hover); color: var(--pn-ink); }
+
+.gv-ticker__row:first-child { color: var(--pn-ink); }
+
+/* -- the full-width screen (D65 pattern: canvas + Z3 aside + Z4 full) ------- */
+
+.gv-screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+.gv-screen__split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.gv-screen__canvas {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* EntityView geometry: peek ≈440px, floor 320. */
+.gv-screen__aside {
+  width: 440px;
+  min-width: 320px;
+  flex: none;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.gv-screen__full-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  height: 42px;
+  padding: 0 var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  flex: none;
+}
+
+.gv-screen__collapse {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 2px var(--pn-space-2);
+  cursor: pointer;
+}
+
+.gv-screen__collapse:hover { background: var(--pn-hover); }
+
+.gv-screen__crumb {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.gv-screen__spacer { flex: 1; }
+
+.gv-screen__esc {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 var(--pn-space-1);
+}
+
+.gv-screen__full-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+}
+
+/* -- motion honesty --------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .gv-node--new,
+  .gv-node--flash,
+  .gv-ticker__row,
+  .gv-edge--live .gv-edge__line {
+    animation: none;
+  }
+  .gv-node,
+  .gv-edge__line,
+  .gv-filter,
+  .gv-canvas--ease,
+  .gv-node__focus {
+    transition: none;
+  }
+}
+
+/* --- FilterSelect (user ruling 2026-07-29: chips → compact multi-selects) --- */
+.gv-select {
+  position: relative;
+  flex: none;
+}
+.gv-select__face {
+  appearance: none;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gv-select__face:hover {
+  background: var(--pn-hover);
+}
+/* Filtered state is a FACT the face carries — a hidden filter that only the
+   popover reveals is how "where did my nodes go" happens. */
+.gv-select__face--filtered {
+  color: var(--pn-brand-2);
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+  background: var(--pn-brand-soft);
+}
+.gv-select__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 180px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 8px;
+  box-shadow: var(--pn-sh-pop);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.gv-select__all {
+  appearance: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pn-line);
+  padding: 4px 8px 6px;
+  margin-bottom: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+.gv-select__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gv-select__row:hover {
+  background: var(--pn-hover);
+}
+.gv-select__row input {
+  accent-color: var(--pn-brand);
+}
+.gv-select__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   FLOW-CARD CANVAS (2026-08-28) — the Stitch-direction rework: rich kind-
+   colored entity cards on a dotted grid, curved edges, floating legend /
+   filter dock / zoom dock. Colors resolve through the Astryx palette family
+   tokens (falling back to bridged --pn-* where a family has no analog), so
+   both themes come for free and no hex lives here.
+   ========================================================================== */
+
+.gv-root [data-family='blue']    { --gvf: var(--color-icon-blue,   var(--pn-info));      --gvf-soft: var(--color-background-blue,   var(--pn-info-soft)); }
+.gv-root [data-family='green']   { --gvf: var(--color-icon-green,  var(--pn-run));       --gvf-soft: var(--color-background-green,  var(--pn-run-soft)); }
+.gv-root [data-family='orange']  { --gvf: var(--color-icon-orange, var(--pn-wait));      --gvf-soft: var(--color-background-orange, var(--pn-wait-soft)); }
+.gv-root [data-family='red']     { --gvf: var(--color-icon-red,    var(--pn-block));     --gvf-soft: var(--color-background-red,    var(--pn-block-soft)); }
+.gv-root [data-family='purple']  { --gvf: var(--color-icon-purple, var(--pn-pr-merged)); --gvf-soft: var(--color-background-purple, var(--pn-pr-merged-soft)); }
+.gv-root [data-family='teal']    { --gvf: var(--color-icon-teal,   var(--pn-run));       --gvf-soft: var(--color-background-teal,   var(--pn-run-soft)); }
+.gv-root [data-family='cyan']    { --gvf: var(--color-icon-cyan,   var(--pn-info));      --gvf-soft: var(--color-background-cyan,   var(--pn-info-soft)); }
+.gv-root [data-family='yellow']  { --gvf: var(--color-icon-yellow, var(--pn-wait));      --gvf-soft: var(--color-background-yellow, var(--pn-wait-soft)); }
+.gv-root [data-family='pink']    { --gvf: var(--color-icon-pink,   var(--pn-brand-2));   --gvf-soft: var(--color-background-pink,   var(--pn-brand-soft)); }
+.gv-root [data-family='gray']    { --gvf: var(--pn-ink-3);                               --gvf-soft: var(--pn-hover); }
+
+/* The dotted drafting grid. Dots are hairline-colored so they survive both
+   themes without a hex. */
+.gv-viewport {
+  background-image: radial-gradient(var(--pn-line) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+  background-position: 9px 9px;
+}
+
+/* The card. Left accent names the kind before a single word is read. */
+.gv-node {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-left: 4px solid var(--gvf);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-sm);
+  padding: var(--pn-space-3) var(--pn-space-3) var(--pn-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-out), border-color var(--pn-dur-fast) var(--pn-ease-out);
+}
+.gv-node:hover { box-shadow: var(--pn-sh-md); border-color: var(--pn-line-2); border-left-color: var(--gvf); }
+.gv-node--selected { box-shadow: var(--pn-sh-md), 0 0 0 2px var(--pn-brand-soft); border-color: var(--pn-brand); border-left-color: var(--gvf); }
+
+.gv-node__head { display: flex; align-items: center; gap: 6px; }
+.gv-node__glyph { color: var(--gvf); display: inline-flex; }
+.gv-node__kind {
+  font-size: var(--pn-fs-fine);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gvf);
+}
+.gv-node__pills { margin-left: auto; display: inline-flex; gap: 4px; }
+
+.gv-node__title {
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Structural body slot */
+.gv-node__body { display: flex; flex-direction: column; gap: 4px; }
+.gv-node__bar {
+  display: block; height: 5px; border-radius: var(--pn-r-pill);
+  background: var(--pn-hover); overflow: hidden;
+}
+.gv-node__bar i { display: block; height: 100%; border-radius: inherit; background: var(--gvf); }
+.gv-node__bodymeta { font-size: var(--pn-fs-fine); color: var(--pn-ink-3); font-family: var(--pn-mono); }
+.gv-node__snippet {
+  display: block;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gv-node__due { font-size: var(--pn-fs-fine); font-family: var(--pn-mono); color: var(--pn-ink-3); }
+.gv-node__due--over { color: var(--pn-block); }
+
+.gv-node__foot { margin-top: auto; display: flex; align-items: center; gap: 8px; }
+
+/* Edges: quiet curves, arrowheads a shade darker; labels unchanged. */
+.gv-edge__line { stroke: var(--pn-line-2); stroke-width: 1.6; fill: none; }
+.gv-arrowhead { fill: var(--pn-ink-4, var(--pn-ink-3)); }
+
+/* --- floating chrome ------------------------------------------------------ */
+.gv-legend {
+  position: absolute; top: 58px; right: 14px; z-index: 6;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg); box-shadow: var(--pn-sh-sm);
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 2px;
+  max-height: 46vh; overflow-y: auto;
+}
+.gv-legend__title {
+  font-size: var(--pn-fs-sm); font-weight: 650; color: var(--pn-ink);
+  border-bottom: 1px solid var(--pn-line); padding-bottom: 6px; margin-bottom: 4px;
+}
+.gv-legend__row {
+  display: flex; align-items: center; gap: 8px;
+  border: none; background: none; cursor: pointer; text-align: left;
+  font: 500 var(--pn-fs-label) var(--pn-ui); color: var(--pn-ink);
+  padding: 4px 2px; border-radius: var(--pn-r-xs);
+}
+.gv-legend__row:hover { background: var(--pn-hover); }
+.gv-legend__row i { width: 12px; height: 12px; border-radius: 4px; background: var(--gvf); flex: none; }
+.gv-legend__row--off { opacity: 0.35; }
+
+.gv-filterdock {
+  position: absolute; left: 14px; bottom: 14px; z-index: 6;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill); box-shadow: var(--pn-sh-sm);
+  padding: 5px 6px 5px 14px;
+}
+.gv-filterdock__label {
+  font-size: var(--pn-fs-sm); font-weight: 650; color: var(--pn-ink);
+  padding-right: 10px; border-right: 1px solid var(--pn-line); margin-right: 4px;
+}
+.gv-filterdock__opt {
+  border: none; background: none; cursor: pointer;
+  font: 500 var(--pn-fs-label) var(--pn-ui); color: var(--pn-ink-2);
+  padding: 6px 12px; border-radius: var(--pn-r-pill);
+}
+.gv-filterdock__opt:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.gv-filterdock__opt--on { background: var(--pn-info-soft); color: var(--pn-info); font-weight: 600; }
+
+.gv-zoomdock {
+  position: absolute; right: 14px; bottom: 14px; z-index: 6;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md); box-shadow: var(--pn-sh-sm); padding: 4px;
+}

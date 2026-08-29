@@ -1,0 +1,25 @@
+P2: fixed the flag bug you found. Confirmed live on the SAME running :4612 instance you
+tested against — no restart needed, Vite HMR'd it.
+
+Root cause was exactly what you diagnosed: isLiveTerminalEnabled() short-circuited on
+`!import.meta.env.DEV`, and this process reports DEV:false/PROD:true despite MODE:
+'development'. Changed the gate to `import.meta.env.MODE === 'production'` instead — same
+intent (refuse a real prod build), but MODE was the one field you measured reporting
+correctly, so it's no longer a single point of failure against whatever inherited
+NODE_ENV produced that inconsistent combination.
+
+Verified the fix actually reached the running server, not just my source tree:
+  curl -s http://127.0.0.1:4612/src/terminal/liveTerminalFlag.ts
+now shows the compiled function checking `import.meta.env.MODE === "production"`, not
+`.DEV`. Same env dump line you quoted is still there (DEV:false, MODE:'development',
+PROD:true) — I didn't touch that, it's the launch environment's, not mine to fix — but
+with MODE as the gate it now evaluates non-production correctly on this process.
+
+Should unblock: localStorage['tm8-ui:live-terminal']='1' + a reload should now actually
+reach the localStorage check instead of dying at the DEV gate. Doesn't touch the
+fixture-seam gap I already flagged — that's still open and still the reason a real
+session id won't resolve through the actual shell yet, only through terminal-dev.html or
+once useGateData.ts's seam is flipped.
+
+File: packages/tm8-ui/src/terminal/liveTerminalFlag.ts (fully mine, uncommitted).
+tsc + the 54 terminal tests still green after the change.

@@ -1,0 +1,255 @@
+/* ===========================================================================
+   T2-1b · MEMBERS & ROLES — the section's own layout, owned by this lane.
+
+   It lives beside the component and is imported BY the component
+   (SECTION-CONTRACT.md §5): `settings.css` is the shared frame and eleven
+   other lanes are editing their own sections in parallel, so a rule that only
+   this section needs must not be written there.
+
+   WHAT WAS MEASURED BEFORE THIS FILE (real Chrome, §8 recipe, card at its
+   1080px cap; `offsetWidth`, never `getBoundingClientRect`, because
+   `.cv2-root` carries zoom: 1.1):
+
+     · the section body SCROLLED SIDEWAYS at every viewport —
+       scrollWidth 1160 against clientWidth 919 at 1508×882, and 948 against
+       707 at 900×600. Cause: `.hon-tip` is `position: absolute; left: 0;
+       max-width: 260px`, and the two controls carrying one sit at the row's
+       RIGHT edge, so each refusal reason hung 241px past the scroller. The
+       reason was therefore unreachable without scrolling to find it — a
+       refusal you cannot read is the defect this whole treatment exists to
+       prevent, so the fix flips the tip rather than clipping it.
+     · rows sat on no common baseline: role controls measured 18 / 20 / 20px
+       and rows 43 / 45 / 45px, because the locked owner pill is a padded
+       span and the live control is a native <select>.
+     · the role column was ragged: the owner's select rendered 172px wide
+       (its longest option text sizes it) against 75px on the rows below.
+     · the ROLES legend ran 866px — over `--set-measure` (860px) — because
+       the body is full-bleed and the legend was inheriting that.
+
+   COLOUR: tokens only. `src/hex-ban.test.ts` walks this file.
+   =========================================================================== */
+
+.set-members {
+  /* One control height for the three things in the right-hand cluster, so the
+     locked pill, the live select and the remove ✕ share a centre line. */
+  --set-members-ctl-h: 24px;
+  /* Wide enough for the longest role word plus a native select's arrow. Fixed
+     rather than auto: a column whose width depends on which row you are
+     looking at is not a column. */
+  --set-members-role-w: 116px;
+  --set-members-when-w: 52px;
+  --set-members-x-w: 28px;
+}
+
+/* --- the table ----------------------------------------------------------- */
+
+/* The row and its header share ONE template, which is the whole point of
+   naming it here: a header that disagrees with its rows by a pixel reads as
+   two unrelated strips rather than as a table. */
+.set-members__row,
+.set-members__head {
+  display: grid;
+  grid-template-columns:
+    22px
+    minmax(0, 1fr)
+    var(--set-members-role-w)
+    var(--set-members-when-w)
+    var(--set-members-x-w);
+  align-items: center;
+  column-gap: 14px;
+  /* The gutter is the shared token, not a similar-looking number: these rows
+     are full-bleed (`pad={false}`) and carry their own, so the hairline
+     reaches the card edge and reads as a table rule. */
+  padding: 0 var(--set-gutter);
+  box-sizing: border-box;
+}
+
+/* The header exists to give `3w` a name. It is aria-hidden: every cell below
+   already carries its own accessible name (the select is labelled, the age
+   spells itself out, the ✕ names who it would remove), so announcing the
+   column words again would be duplication rather than help. */
+.set-members__head {
+  padding-top: 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.set-members__col {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--pn-ink-4);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.set-members__col--when { text-align: right; }
+
+.set-members__row {
+  padding-top: 7px;
+  padding-bottom: 7px;
+  min-height: 40px;
+  /* Repeated siblings inside one component ⇒ the soft hairline, D-law 4. */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+/* The table's own closing rule. `:last-child` and not `:last-of-type`: the
+   measured prose block below is a div too, so `of-type` would put the closing
+   rule under the LEGEND instead of under the last member. */
+.set-members__row:last-child { border-bottom: 1px solid var(--pn-line); }
+
+.set-members__who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.set-members__name {
+  font-size: 12.5px; /* oracle L53 */
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.set-members__handle {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+/* --- the right-hand cluster ---------------------------------------------- */
+
+/* The three controls used to sit in a flex run at 9px each with nothing
+   saying which was which. They are columns now, and every one of them is
+   `--set-members-ctl-h` tall so the row has a single centre line. */
+.set-members__cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: var(--set-members-ctl-h);
+}
+.set-members__cell--when { justify-content: flex-end; }
+.set-members__cell--x { justify-content: flex-end; }
+
+.set-members__when {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* The role control, whichever of the three forms it takes — a native select,
+   a locked pill inside `DisabledIconControl`, or a hollow marker. All three
+   fill the column, so the column has one left edge and one right edge.
+   `.cv2-root` is in the selector on purpose wherever this overrides a shared
+   sheet: CSS import order across modules is not something a section lane can
+   rely on, and a specificity win is. */
+.set-members__cell--role > .hon-disabled,
+.set-members__cell--role > .hon-hollow-inline,
+.set-members__cell--role > select.set-role {
+  box-sizing: border-box;
+  height: var(--set-members-ctl-h);
+  width: 100%;
+  min-width: 0;
+}
+.cv2-root .set-members__cell--role > .hon-disabled { padding: 0; }
+.set-members__cell--role .set-role {
+  box-sizing: border-box;
+  height: 100%;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.set-members__cell--role > select.set-role {
+  appearance: auto;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  padding: 0 4px 0 8px;
+  cursor: pointer;
+}
+.set-members__cell--role > select.set-role:disabled { cursor: progress; opacity: 0.6; }
+
+.cv2-root .set-members__cell--x > .hon-disabled {
+  height: var(--set-members-ctl-h);
+  width: var(--set-members-ctl-h);
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--pn-r-sm);
+}
+
+/* THE 241px FIX. `.hon-tip` opens rightwards from its control's left edge and
+   is up to 260px wide; both controls that carry one sit at the row's right
+   edge, so every reason hung past the scroller and took the section's
+   horizontal scrollbar with it. Opening leftwards from the right edge keeps
+   the reason inside the card, which is the only place it can be read. */
+.cv2-root .set-members__row .hon-tip {
+  left: auto;
+  right: 0;
+}
+
+/* --- the row's own error line -------------------------------------------- */
+
+/* `set_member_role`'s refusal used to be a fifth flex item, so the server's
+   sentence competed with the controls for the same line and squeezed them.
+   It spans the grid instead: a whole line under the row it belongs to. */
+.set-members__error {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--pn-block);
+  text-wrap: pretty;
+}
+
+/* --- the prose below the table ------------------------------------------- */
+
+/* The body is full-bleed for the ROWS. Prose is not rows: it is read, so it
+   is measured. This is the wrapper that does it, since `SectionFrame`'s own
+   measure had to be turned off for the table above. */
+.set-members__measure {
+  box-sizing: border-box;
+  max-width: var(--set-measure);
+  margin-inline: auto;
+  padding: 14px var(--set-gutter) 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.set-members__legend-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.set-members__legend-role {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  width: 58px;
+  flex: none;
+  text-transform: lowercase;
+}
+.set-members__legend-what {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+  min-width: 0;
+  text-wrap: pretty;
+}
+.set-members__legend-role--absent { color: var(--pn-ink-4); }
+
+.set-members__note {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+  margin: 0;
+}

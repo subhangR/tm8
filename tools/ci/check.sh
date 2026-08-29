@@ -91,15 +91,15 @@ fi
 # --- 2. typecheck: per-package scoped tsc -b, SEQUENTIAL --------------------
 # Order matters: contract first (everything references it), then dependents.
 #
-# The three groups below (TSC_PROJECTS, packages/ui, packages/tm8-ui) are
+# The three groups below (TSC_PROJECTS, packages/ui, packages/tm8_ui_2.0) are
 # mirrored by the root `bun run typecheck` shorthand, in this same order, as
-# typecheck:core -> typecheck:ui -> typecheck:tm8-ui. Keep them in step. The
+# typecheck:core -> typecheck:ui -> typecheck:tm8-ui-2.0. Keep them in step. The
 # shorthand used to cover TSC_PROJECTS only, and a green there read as "my
 # types are fine" while both UIs went unchecked until push time — that gap
 # cost two lanes a day in 2026-08 and produced a whole follow-up task built on
 # the belief that the GATE had the hole. It did not; the shorthand did.
 #
-# The order is also load-bearing, not cosmetic: packages/tm8-ui resolves
+# The order is also load-bearing, not cosmetic: packages/tm8_ui_2.0 resolves
 # @tm8/contract through its BUILT dist/*.d.ts, so it must run after the
 # contract is built or it reports errors for fields that exist in source.
 TSC_PROJECTS=(
@@ -132,10 +132,16 @@ fi
 # The production UI owns the launch builder. Keep it in the merge gate after
 # the contract build so additions such as execution.spawn credential provenance
 # cannot land on one side of the seam without the other.
-if [ -f packages/tm8-ui/tsconfig.json ]; then
-  run_stage "typecheck packages/tm8-ui" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
+#
+# packages/tm8_ui_2.0 (the Astryx redesign) is the product UI; packages/tm8-ui
+# is the frozen 1.0 snapshot, kept for rollback and reference like packages/ui.
+# The snapshot declares React 18 while the workspace pins 19 via root overrides,
+# so gating it would fail on React-19 type/flush semantics its code predates —
+# it is deliberately NOT typechecked or tested here.
+if [ -f packages/tm8_ui_2.0/tsconfig.json ]; then
+  run_stage "typecheck packages/tm8_ui_2.0" ./node_modules/.bin/tsc -p packages/tm8_ui_2.0/tsconfig.json --noEmit
 else
-  skip "typecheck packages/tm8-ui" "production UI is absent"
+  skip "typecheck packages/tm8_ui_2.0" "production UI is absent"
 fi
 
 # --- 3. tests ---------------------------------------------------------------
@@ -183,7 +189,11 @@ TEST_PACKAGES=(
   # on a shared dev box are not a substitute: measured at load average 139 on
   # 8 cores, the same commit produced anywhere from 6 to 94 failures, because
   # every test with a timeout loses that race eventually.
-  packages/tm8-ui
+  #
+  # 2026-08-29: the entry moved from packages/tm8-ui to packages/tm8_ui_2.0
+  # when the product UI moved. tm8-ui is now the frozen 1.0 snapshot (React 18,
+  # pre-Astryx) and is excluded for the same reason packages/ui is.
+  packages/tm8_ui_2.0
   tools/conformance
 )
 for pkg in "${TEST_PACKAGES[@]}"; do

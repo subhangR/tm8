@@ -1,0 +1,143 @@
+/* ==========================================================================
+   CANVAS-EXTRA — canvas-measured colors that tokens.css does NOT define,
+   declared ONCE as custom properties so no component ever inlines a raw hex.
+   Grew past "four" at P2 (live-terminal transplant): xterm needs a full
+   ITheme (fg/cursor/selection/16 ANSI slots), added below as the same
+   `--pn-x-term-*` family rather than a second extension file.
+
+   WHY THIS FILE EXISTS. tokens.css is a byte-verbatim transplant (A0's
+   byte-equality test guards it), so it cannot grow. But the canvases paint
+   two regions with colors the token ramp has no entry for: the terminal
+   "black box" is darker than any paper token in BOTH themes, and T4's
+   caution fill is warmer than --pn-wait-soft over card. LLD §14 bans raw hex
+   in src/ outside styles/tokens.css because a hundred transcriptions would
+   otherwise drift into a hundred palettes — that is the rule's actual point,
+   and one named, auditable extension file serves it exactly as well as zero
+   would. The §15.2 hex-ban exclusion therefore names TWO files: tokens.css
+   and this one. Nothing else in src/ may carry a color literal.
+
+   WHAT IS *NOT* HERE, deliberately:
+   - Alpha variants of brand: use rgba(var(--pn-brand-rgb), α) — tokens.css
+     ships --pn-brand-rgb for precisely this, and it re-themes for free.
+   - Alpha variants of run/wait/block/idle: use
+     color-mix(in srgb, var(--pn-wait) 40%, transparent) — derived, so it
+     re-themes for free too.
+   - The dark ramp for always-dark regions (terminal strip, live-session bar,
+     roster): NOT duplicated here. Those regions open a nested
+     `.cv2-root[data-theme="dark"]` scope, which re-declares the real dark
+     tokens via tokens.css's own selector. See terminal.css.
+   - #1D1912 is NOT scaffolding. This comment used to call it "the demo board
+     behind every canvas frame … never shipped", and that misclassification is
+     why the divergence went uncaught through every earlier review: a
+     correct-sounding comment closed the question. T0-1 paints it on
+     `<!-- CENTER: ink stage -->` and pairs it as `zBg: dk ? '#1D1912' :
+     '#F4F2EC'` — i.e. it IS the dark counterpart of --pn-paper. User ruled the
+     canvas wins (2026-07-28); the value now lives in tokens.css where it
+     belongs, not here.
+   ========================================================================== */
+
+.cv2-root {
+  /* The xterm host / black box. Near-black in BOTH themes by design — the
+     established terminal contrast, deliberately outside the paper ramp.
+     T0-2 draws two near-blacks: #0D0B08 for the reserved/placeholder host and
+     #131009 for live scrollback. Phase 1 ships the static host only, so
+     --pn-x-term-bg is the one in use; the live value is declared now so the
+     transport transplant at integration has a name to bind to rather than a
+     fresh literal. (T0-2 spec AMBIGUITY 2: the two values may be drift rather
+     than intent — resolving that is an integration-time question, and keeping
+     both named is what makes it answerable.) */
+  --pn-x-term-bg: #0D0B08;
+  --pn-x-term-live-bg: #131009;
+
+  /* Ghost text inside the empty host ("▉ xterm canvas — verbatim
+     transplant"). Placeholder only: real terminal text color comes from
+     xterm.js, never from CSS. */
+  --pn-x-term-ghost: #4A4334;
+
+  /* T4's caution fill — the OFFLINE banner and the `? unknown` delivery-facet
+     row. Warmer and lighter than color-mix over --pn-card lands, so it is a
+     measured value, not a derivation. This is the fill that keeps `unknown`
+     reading as a warning and never as success. */
+  --pn-x-warn-fill: #FFF8EC;
+
+  /* R5 parity (user directive, routed [master->fe 43]): the primary create
+     chip ("+ New" / "+ Launch") is an INK chip in the canvas, and its hover
+     is a measured value — style-hover="background:#3A362E" on the create
+     chip in T0-1 Workspace Hi-Fi. The chip's own fill/text are --pn-ink /
+     --pn-paper (already tokens); only the hover needed a home here. */
+  --pn-x-btn-ink-hover: #3A362E;
+
+  /* READER prose ink (T0-4 doc column) — a MEASURED PAIR, not derivable:
+     color-mix lands 2-7 units off per channel at every ratio (ReaderBody
+     handover). Light #3A362E (oracle T0-4:349,1007), dark #D8D0BE (:1345).
+     TRAP, stated because it already nearly happened: --pn-x-btn-ink-hover
+     ALSO carries #3A362E in light for an unrelated reason (the ink-chip
+     hover) and derives ink→paper in dark — do NOT alias these two; same
+     light byte, different meanings, different dark halves. */
+  --pn-x-prose-ink: #3A362E;
+
+  /* P2 (live-terminal transplant): xterm's ITheme cannot take a raw hex
+     literal in TS source (§14), and it cannot resolve a `var(...)` string
+     passed to its canvas renderer either — colors are read from these custom
+     properties via getComputedStyle() at mount, against an element inside
+     the always-dark `.cv2-root` scope, and handed to xterm as resolved
+     values. This is the "Warm Atelier" palette (the terminal-family default
+     carried over from packages/ui's useTerminalSettingsStore), tokenized
+     here rather than left as literals in a component. Standard ANSI
+     numbering: 0-7 are the regular 16-color set, 8-15 their bright twins. */
+  --pn-x-term-fg: #D9D2C4;
+  --pn-x-term-cursor: #E0A45A;
+  --pn-x-term-cursor-accent: #131009;
+  --pn-x-term-sel-bg: rgba(224, 164, 90, 0.22);
+  --pn-x-term-sel-fg: #F3EEE2;
+  /* SOFT ROW HAIRLINE — the divider BETWEEN sibling rows inside one list.
+     Measured: T0-1 paints `border-bottom:1px solid #F0EDE4` on 15 row sites
+     (list tiles carrying `border-left:2px solid {{s.bar}}`, field rows,
+     activity rows). It is NOT --pn-line: the oracle reserves #E7E3D9 for
+     COMPONENT edges — panel header, action bar, tab strip, chips, cards —
+     and uses this lighter value only to separate repeated siblings. The rule
+     that falls out, and the one that scopes any future use: --pn-line BOUNDS
+     a component, this SEPARATES siblings within one. Never apply it blanket. */
+  --pn-x-hairline-soft: #F0EDE4;
+  /* Dark Terminate hover. The canvas draws this one DARK-ONLY
+     (`color:#DA7D6A` = --pn-block dark, `style-hover="color:#E89A89"`), so the
+     LIGHT value here is a DERIVATION, not a measurement — block lifted toward
+     paper so it tracks the light ramp. The measured value is in the dark block. */
+  --pn-x-block-hover: color-mix(in srgb, var(--pn-block) 82%, var(--pn-paper));
+  --pn-x-term-ansi-0: #322D24;
+  --pn-x-term-ansi-1: #CB7059;
+  --pn-x-term-ansi-2: #74B083;
+  --pn-x-term-ansi-3: #D2A24C;
+  --pn-x-term-ansi-4: #6E9BC4;
+  --pn-x-term-ansi-5: #B98BC0;
+  --pn-x-term-ansi-6: #6FB2A8;
+  --pn-x-term-ansi-7: #CFC8BA;
+  --pn-x-term-ansi-8: #6B6453;
+  --pn-x-term-ansi-9: #DC8B73;
+  --pn-x-term-ansi-10: #8FC79C;
+  --pn-x-term-ansi-11: #E6B968;
+  --pn-x-term-ansi-12: #88B0D6;
+  --pn-x-term-ansi-13: #CCA0D2;
+  --pn-x-term-ansi-14: #86C4BA;
+  --pn-x-term-ansi-15: #EFE9DB;
+}
+
+/* Dark counterparts. The terminal blacks do NOT flip — that is the whole
+   point of the black box. Only the caution fill rejoins the theme, derived
+   from the dark wait ramp so it tracks any future token change. */
+.cv2-root[data-theme='dark'],
+[data-theme='dark'] .cv2-root {
+  --pn-x-warn-fill: color-mix(in srgb, var(--pn-wait) 14%, var(--pn-card));
+  /* Dark ink-chip hover is a DERIVATION, not a measurement (the canvas is
+     light-only): ink nudged toward paper, so it tracks the dark ramp. */
+  --pn-x-btn-ink-hover: color-mix(in srgb, var(--pn-ink) 86%, var(--pn-paper));
+  /* The oracle pairs the hairline explicitly: `zHair: dk ? '#262117' : '#F0EDE4'`
+     — and #262117 IS the dark --pn-hover, exactly. So this DERIVES rather than
+     restating the literal: one source, and it tracks any future ramp change. */
+  --pn-x-hairline-soft: var(--pn-hover);
+  /* MEASURED (unlike the light counterpart above): T0-1 draws the Terminate
+     hover only in dark, `style-hover="color:#E89A89"` over #DA7D6A. */
+  --pn-x-block-hover: #E89A89;
+  /* MEASURED dark half of the reader prose pair (oracle T0-4:1345). */
+  --pn-x-prose-ink: #D8D0BE;
+}

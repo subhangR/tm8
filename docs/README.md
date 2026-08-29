@@ -16,7 +16,7 @@ using it.
 | [`api-and-cli/`](api-and-cli/) | The operation catalog and the CLI grammar built on it | [`API-CATALOG-GROUPED-GUIDE.md`](api-and-cli/API-CATALOG-GROUPED-GUIDE.md) |
 | [`harness/`](harness/) | How an agent session is composed, prompted and discovers commands | [`HARNESS-ARCHITECTURE-EXPLAINED.md`](harness/HARNESS-ARCHITECTURE-EXPLAINED.md) |
 | [`chat-and-messaging/`](chat-and-messaging/) | Messages, channels, the chat surface, session↔session communication | [`CHAT-SYSTEM-DESIGN.md`](chat-and-messaging/CHAT-SYSTEM-DESIGN.md) |
-| [`ui/`](ui/) | The UI spec, the gap audit, and the build orchestration behind `packages/tm8-ui` | [`UI-SPEC-FINAL.md`](ui/UI-SPEC-FINAL.md) |
+| [`ui/`](ui/) | The UI spec, the gap audit, and the build orchestration behind `packages/tm8_ui_2.0` | [`UI-SPEC-FINAL.md`](ui/UI-SPEC-FINAL.md) |
 | [`identity/`](identity/) | Who is acting, everywhere — auth, actors, agent identity | [`IDENTITY-DESIGN.md`](identity/IDENTITY-DESIGN.md) |
 | [`remote/`](remote/) | Phase 2: reaching a tm8 node that is not on this machine | [`REMOTE-END-TO-END-DESIGN.md`](remote/REMOTE-END-TO-END-DESIGN.md) |
 | [`features/`](features/) | One directory per shipped or designed feature | [`features/README.md`](features/) |
