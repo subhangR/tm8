@@ -90,7 +90,8 @@ describe('premium task detail — one coherent surface', () => {
      * clipped every pixel of it with no way to scroll.
      *
      * jsdom cannot measure that, so the guard is on the mechanism: no clipping
-     * utility on this card. `flex: none` in task-detail.css is the other half.
+     * utility on this card. The shared panels.css card rule supplies the
+     * `flex-shrink: 0` half.
      */
     const description = within(panel).getByTestId('task-description-editor');
     expect(description.className).not.toContain('k-accent-top');

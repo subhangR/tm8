@@ -584,8 +584,8 @@ function DescriptionEditor({
        and did: measured 2026-08-29 against prod `6423d07d`, the card rendered
        32px tall around 282px of description, clipping the ENTIRE brief with no
        way to scroll it back. The gradient hero went with it under the owner's
-       "fewer colours" ruling. `flex: none` in task-detail.css is the standing
-       guard so no future decoration can collapse a card this way again. */
+       "fewer colours" ruling. The shared `.sb-body` card rule in panels.css
+       pins `flex-shrink: 0` so no future decoration can collapse it again. */
     <div
       className="sb-description"
       data-testid="task-description-editor"

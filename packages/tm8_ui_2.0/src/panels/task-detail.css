@@ -307,19 +307,6 @@
   border-color: var(--pn-line);
   background: var(--pn-card);
   box-shadow: none;
-  /* A CARD IS NEVER SHRUNK TO HIDE ITS CONTENT. `.sb-body` is a fixed-height
-     scrolling flex column, so every card here is a flex item with the default
-     `flex-shrink: 1`. That is survivable only while the item keeps its
-     content-based automatic minimum size — and per Flexbox §4.5 an item loses
-     it the moment its own `overflow` stops being `visible`. Any decoration
-     that clips (a gradient accent bar, a rounded tint, a future `overflow:
-     hidden`) therefore silently licenses this column to crush the card to
-     nothing: measured 2026-08-29 on prod `6423d07d`, the description card sat
-     32px tall around 282px of prose and clipped all of it, unscrollable.
-     Pinning `flex: none` makes the column scroll — which is what it is for —
-     instead of the cards collapsing, and it holds no matter what is applied
-     on top later. */
-  flex: none;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-description, .sb-section, .pn-fold) {
