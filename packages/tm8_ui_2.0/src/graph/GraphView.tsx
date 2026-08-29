@@ -804,7 +804,7 @@ export function GraphView(props: GraphViewProps) {
               island and hub counts remain in the accessible label + tooltip;
               action-bearing exceptions below stay visible because they carry
               their own remedy. The name wins the width budget. */}
-          {model.placed.length} nodes
+          Nodes · {model.placed.length}
           {/* The declutter states its own price, always. A number nobody can
               account for is the thing this whole change exists to remove. */}
           {model.foldedCount > 0 && (
@@ -814,7 +814,7 @@ export function GraphView(props: GraphViewProps) {
               onClick={toggleFold}
               title="Leaves with a single connection are folded onto their neighbor, which carries the count. Click to draw every one as its own card."
             >
-              · {model.foldedCount} folded
+              · Folded · {model.foldedCount}
             </button>
           )}
           {!fold && (
@@ -831,8 +831,9 @@ export function GraphView(props: GraphViewProps) {
               onClick={() => setCollapsedGroups(new Set())}
               title="Nodes inside bands you collapsed. Click to open every band."
             >
-              · {model.collapsedCount} in collapsed{' '}
-              {model.groups.filter((g) => g.collapsed).length === 1 ? 'band' : 'bands'}
+              · Collapsed{' '}
+              {model.groups.filter((g) => g.collapsed).length === 1 ? 'band' : 'bands'} ·{' '}
+              {model.collapsedCount}
             </button>
           )}
         </span>
@@ -1274,7 +1275,7 @@ export function GraphView(props: GraphViewProps) {
                             <i style={{ width: `${pct}%` }} />
                           </span>
                           <span className="gv-node__bodymeta">
-                            {acc.completed} of {acc.total} criteria
+                            Criteria · {acc.completed} of {acc.total}
                           </span>
                         </span>
                       );
@@ -1335,7 +1336,7 @@ export function GraphView(props: GraphViewProps) {
                           expandHub(p.entity.id);
                         }}
                       >
-                        {p.folded.nodes.length} folded
+                        Neighbors · {p.folded.nodes.length}
                       </button>
                     )}
                   </span>

@@ -74,6 +74,7 @@ describe('calm graph chrome', () => {
 
   it('omits redundant filter totals until the filter changes', () => {
     mountHonestCanvas();
+    expect(screen.getByText(/^Nodes · \d+/)).toBeTruthy();
     const trigger = screen.getByRole('button', { name: 'Entities' });
     expect(trigger.textContent).not.toMatch(/\d+\/\d+/);
 
