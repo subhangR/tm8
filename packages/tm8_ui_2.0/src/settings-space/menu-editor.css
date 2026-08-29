@@ -1,0 +1,314 @@
+/* THE MENU EDITOR'S OWN LAYOUT — owned by the menu lane, imported from
+   `MenuEditor.tsx`, never from `index.ts`.
+
+   WHY IT IS A SEPARATE FILE. `settings.css` is the shared frame and twelve
+   lanes are editing their sections in parallel; a rule I need is not worth a
+   twelve-way merge conflict. SECTION-CONTRACT.md §5.
+
+   WHY EVERY OVERRIDE IS SCOPED UNDER `.set-menu`. The rules below restate
+   properties `settings.css` already declares on the same single-class
+   selectors (`.set-grip`, `.set-menu__editor`, …). Which file wins would then
+   depend on import ORDER — and the order differs between the two entry points
+   this component has: `index.ts` imports `settings.css` first, but
+   `settings.test.tsx` imports `MenuEditor` directly and gets this file first.
+   Two classes beat one in every order, so the cascade stops being a fact about
+   the bundler. */
+
+/* --- the section's own three bands --------------------------------------- */
+
+.set-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  /* The split below asks about the width of THIS box, not of the window. The
+     card is inset by a 160px nav and its own gutters, so a viewport media
+     query answers a question nobody asked: at a 900px window the columns have
+     707px, and a `max-width: 700px` media query would collapse them anyway. */
+  container-type: inline-size;
+  container-name: setmenu;
+}
+
+/* Alerts are full width and FIRST. They used to live in a third column
+   (`.set-menu__states`, `flex: 1 1 280px`) which was measured at 883x0 on a
+   1508px window — an empty element that had wrapped onto its own line — and at
+   433x387 on a 900px window, where an EMPTY column was reserving 433px beside
+   the preview. A conflict banner is about the whole section, so it is drawn
+   across the whole section, and when there is nothing to say it occupies
+   nothing. */
+.set-menu__alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* --- the toolbar --------------------------------------------------------- */
+
+/* The head this replaces put a `DisabledAction` — a control PLUS its prose
+   caption — into a flex row beside the title, so the save reason rendered as a
+   four-line paragraph wedged between `discard` and the card edge and drove the
+   header to ~120px. The caption is a caption: it gets its own line under the
+   controls, and a measure. */
+.set-menu__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.set-menu__ident {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.set-menu__count {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+}
+
+/* Dirty state belongs NEXT TO DISCARD — the control that acts on it — not
+   only in the preview's footer at the far bottom of the other column. */
+.set-menu__dirty {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+/* §7.3: no line of prose past the measure. The save reason is the longest
+   string on this screen, and in the old head it set the header's width. The cap
+   is well INSIDE `--set-measure` (860px) because this is a caption at 10px, not
+   body copy at 12px — the measure is a character count, so a smaller face
+   reaches it sooner. */
+.set-menu__save {
+  min-width: 0;
+  max-width: min(100%, 620px);
+}
+
+/* --- the split ----------------------------------------------------------- */
+
+/* A GRID, not the old `flex-wrap` row. The flex version gave the editor
+   `flex: 1 1 470px` with `max-width: 470px`, so it could never use the space it
+   was given: measured 472px wide inside an 883px row, leaving 173px of blank
+   paper to the right of the preview. A `1fr` track spends the width it has. */
+.set-menu__cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+.set-menu .set-menu__editor {
+  /* Was `flex: 1 1 470px; max-width: 470px`. The grid track sizes it now. */
+  flex: none;
+  max-width: none;
+  min-width: 0;
+}
+
+/* SECTION-CONTRACT §3, the rule this section is most exposed to. The preview
+   is the one internally scrolling pane on the screen, so it carries a bounded
+   height OF ITS OWN — never `flex: 1` inside the section scroller, which would
+   resolve to content height and clip instead of scroll.
+
+   Sticky because a LIVE preview you have to scroll away from the editor to
+   reach is not live. */
+.set-menu .set-menu__preview {
+  flex: none;
+  position: sticky;
+  top: 0;
+  min-width: 0;
+  /* Bounded against the viewport so it still fits the 600px-tall window in
+     §7.2, and against a literal so it does not become a 900px ribbon on a tall
+     display. */
+  max-height: min(52vh, 460px);
+}
+.set-menu .set-prev__body {
+  /* `flex: 1` here was the §3 violation: inside a pane with no definite height
+     it resolves to content height, the `overflow: auto` never engages, and the
+     pane grows instead of scrolling. The parent's `max-height` gives it real
+     overflow to distribute. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* THE NARROW CASE — declared AFTER the rules it overrides, so the cascade does
+   not depend on the query. Below this the two panes genuinely cannot both be
+   read, so they stack. 560px is chosen from the panes themselves — a 260px
+   preview plus the ~290px the editor needs before its rows wrap — not from a
+   device width. At the §7.2 sizes the columns have 883px (1508x882) and 671px
+   (900x600), so both stay side by side; the stack is for a genuinely small
+   card, not for the small window. */
+@container setmenu (max-width: 560px) {
+  .set-menu__cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Sticky is meaningless once the preview is BELOW the thing it previews. */
+  .set-menu .set-menu__preview {
+    position: static;
+    max-height: none;
+  }
+  /* The bound has to move WITH it: §3 wants the pane sized, and `max-height:
+     none` above would otherwise leave the scroller with nothing to distribute. */
+  .set-menu .set-prev__body {
+    max-height: 320px;
+  }
+}
+
+/* The editor's rows do NOT scroll. There is one scroller for the section
+   (`.set-section__scroll`) and one bounded pane (the preview); a third, nested
+   inside the first, is the exact defect §3 names. */
+.set-menu .set-menu__rows {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+  padding: 6px 0;
+}
+
+/* --- groups read as groups ----------------------------------------------- */
+
+/* §7.5. The rows were one flat ribbon of `.set-row`s: six groups and their
+   items with nothing but left padding to say which item belonged to which
+   group. */
+.set-menu__grp + .set-menu__grp {
+  border-top: 1px solid var(--pn-x-hairline-soft);
+  margin-top: 2px;
+  padding-top: 2px;
+}
+
+.set-menu__empty {
+  padding: 8px 14px 14px;
+}
+
+/* --- hit areas ----------------------------------------------------------- */
+
+/* MEASURED at 8x11 CSS px in Chrome: the grip is the primary drag target on a
+   drag-and-reorder surface and it was smaller than the glyph's own em box.
+   24x24 is the floor, and `flex: none` keeps it there when a long group label
+   squeezes the row. */
+.set-menu .set-grip {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -5px;
+  border-radius: var(--pn-r-xs);
+  /* A drag handle that also pans the page fires both gestures on a trackpad. */
+  touch-action: none;
+}
+.set-menu .set-grip:hover:not(:disabled) {
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
+
+/* THE TOUCH REORDER PATH. Under a fine pointer these do not exist and the row is
+   byte-identical to what it was: the grip drags, alt+arrow moves. Under a coarse
+   pointer the grip is the one thing that CANNOT work — HTML5 drag-and-drop
+   produces no events from a finger — so it steps aside for two buttons that do.
+   See MenuEditor's Grip for why buttons rather than a touch drag. */
+.set-menu .set-grip-wrap {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+.set-menu .set-move {
+  display: none;
+}
+@media (pointer: coarse) {
+  .set-menu .set-grip {
+    display: none;
+  }
+  .set-menu .set-move {
+    display: inline-flex;
+    /* SIDE BY SIDE, not stacked. Stacking is the tidier shape and it is wrong:
+       the 44px floor is a floor on the SMALLER side of a control, so two stacked
+       buttons sharing 44px of height are two 22px targets, and a thumb misses
+       vertically exactly as easily as horizontally. Side by side each one is a
+       real 44px square. */
+    align-items: center;
+    margin-left: -5px;
+  }
+  .set-menu .set-move__btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--pn-ink-3);
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    font-size: 10px;
+    line-height: 1;
+    border-radius: var(--pn-r-xs);
+    cursor: pointer;
+  }
+  .set-menu .set-move__btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+
+/* Measured at 16x12. Same argument, and these two are destructive. */
+.set-menu .set-row__x,
+.set-menu .set-row__pencil {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* `discard` measured 58x17 and the three creators 81x21. Both classes are
+   SHARED with `ModelsSection`, so the fix is scoped to this section rather than
+   applied to the shared rule — another lane owns how they read on its screen. */
+.set-menu .set-ghost,
+.set-menu .set-add {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The row's own padding has to give the 24px controls room without the rows
+   growing into a list you have to scroll twice as far. */
+.set-menu .set-row--group {
+  padding: 2px 10px 2px 14px;
+}
+.set-menu .set-row--item {
+  padding: 1px 10px 1px 30px;
+}
+.set-menu .set-row--child {
+  padding: 1px 10px 1px 48px;
+}
+
+/* --- messages that do not move the rows ---------------------------------- */
+
+/* The add-child affordance swaps between a short live button and a long
+   refusal ("＋ add child — this row has 8 of 8"). Both are laid out in a fixed
+   band so the rows under them do not jump when a cap is reached. */
+.set-menu__childbar {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+}
+
+/* The creators are a footer of the editor panel, not a row in the list. */
+.set-menu .set-add-bar {
+  margin-top: 0;
+  border-top: 1px solid var(--pn-line);
+}

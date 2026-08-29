@@ -1,0 +1,32 @@
+P2: status on the epoch/respawn job — in progress, not blocked, coordinating with P4.
+
+FINDING: the destructive PtyHostService.spawn() replace path (the one that actually mints a
+new epoch) has NO reachable trigger through the real catalog today. execution.spawn always
+creates a new work_session/sessionId; SpawnService.spawn() only ever calls the
+reattach-safe pty.spawnIfAbsent(); reconcileNodeGhosts() explicitly skips sessions with a
+live PTY. I greped every caller — nothing in the current wiring calls the destructive branch
+twice for one sessionId. So I can't exercise this from the browser or via curl against the
+shared :4610 node the way I've tested everything else.
+
+Also, per the new governance rule, I can't construct PtyHostService directly myself by
+adding a file to packages/server/test/ or packages/execution/src — that's brokered
+territory, and it's genuinely P4's lane this session anyway.
+
+WHAT'S ALREADY PROVEN (so this isn't starting from zero): the CLIENT-SIDE algorithm is
+already unit-tested against exactly an epoch change, with a simulated frame sequence, in
+ptyTransport.test.ts:125 ("RESETS when the epoch changes (a respawn), even without a byte
+rewind") — real product code, `_handleAttached`, just driven by a FakeWebSocket rather than
+a real server. So the remaining gap is narrow and specific: does the REAL PtyHostService +
+pty-ws-server actually produce that transition faithfully (different epoch, close-without-
+exit, coherent replay) when a real process gets replaced.
+
+ACTION TAKEN: sent P4 a concrete split proposal — they extend their existing
+pty-ws.test.ts-style harness (host.spawn() called twice on one sessionId, exactly the shape
+their file already has for everything else) to capture the raw-wire evidence, since that's
+squarely their lane and tooling. I offered to independently read the same sequence with my
+own raw WS script, and to drive the FULL visual proof (xterm actually repainting cleanly)
+through my terminal-dev.html harness if they can give me a real reachable URL for it — that
+doesn't require touching :4612 itself, just a port to point a script at.
+
+Will report the observation (not adjectives) once P4 responds or gives me a port to test
+against myself.

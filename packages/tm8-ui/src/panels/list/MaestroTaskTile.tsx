@@ -5,7 +5,7 @@ import { Avatar } from '../../kit';
 import './maestro-task-tile.css';
 
 export interface MaestroTaskTileProps {
-  rootRef: RefObject<HTMLDivElement | null>;
+  rootRef: RefObject<HTMLDivElement>;
   id: string;
   title: string;
   depth: number;

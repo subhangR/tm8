@@ -1,0 +1,36 @@
+.copy-link {
+  font: inherit;
+}
+
+.copy-link__button {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.copy-link__status {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.copy-link--manual {
+  display: grid;
+  gap: 0.25rem;
+  min-width: min(24rem, 100%);
+}
+
+.copy-link__instruction {
+  font-size: 0.75rem;
+}
+
+.copy-link__field {
+  box-sizing: border-box;
+  font: inherit;
+  min-width: 0;
+  width: 100%;
+}

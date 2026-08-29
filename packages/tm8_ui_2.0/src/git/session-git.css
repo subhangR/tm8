@@ -1,0 +1,394 @@
+/* ==========================================================================
+   SESSION GIT RAIL — status header, dirty files, verbs, and the diff.
+
+   COLOURS ARE TOKENS (hex-ban applies): status pills reuse the kit pill
+   tones — `run` for ahead/landed, `wait` for behind, `info` for dirty,
+   `block` for conflict — the SAME vocabulary the PR chips speak, so one
+   green means one thing everywhere. See GIT-UI.md.
+
+   SCOPE. Every selector leads with `.cv2-root` (mandatory theme/zoom scope).
+   The diff scrolls inside DiffView's own container; this rail never scrolls
+   horizontally itself.
+   ========================================================================== */
+
+.cv2-root .pn-git {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-4);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .pn-git__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-git__branch {
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  color: var(--pn-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cv2-root .pn-git__branch-glyph {
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-git__counts {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.cv2-root .pn-git__base {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__files li {
+  display: flex;
+  gap: var(--pn-space-2);
+  padding: 1px 0;
+}
+
+.cv2-root .pn-git__file-status {
+  color: var(--pn-info);
+  white-space: pre;
+}
+
+.cv2-root .pn-git__file-path {
+  color: var(--pn-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .pn-git__conflict {
+  border: 1px solid var(--pn-block);
+  background: var(--pn-block-soft);
+  padding: var(--pn-space-3);
+}
+
+.cv2-root .pn-git__conflict-title {
+  margin: 0 0 var(--pn-space-2);
+  color: var(--pn-block);
+  font-weight: 600;
+}
+
+.cv2-root .pn-git__conflict ul {
+  margin: 0;
+  padding-left: var(--pn-space-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-3);
+}
+
+.cv2-root .pn-git__verb {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 1px solid var(--pn-line);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.cv2-root .pn-git__verb:hover:not(:disabled) {
+  color: var(--pn-ink);
+  border-color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-git__verb:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cv2-root .pn-git__verb--danger {
+  color: var(--pn-block);
+  border-color: var(--pn-block);
+}
+
+.cv2-root .pn-git__rollback-group,
+.cv2-root .pn-git__commit-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-git__ref-input,
+.cv2-root .pn-git__message-input {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line);
+  padding: 3px 6px;
+  min-width: 0;
+}
+
+.cv2-root .pn-git__ref-input {
+  width: 150px;
+}
+
+.cv2-root .pn-git__message-input {
+  width: 200px;
+}
+
+.cv2-root .pn-git__confirm {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-git__confirm-text {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  max-width: 46ch;
+}
+
+.cv2-root .pn-git__note {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__remedy {
+  margin: var(--pn-space-1) 0 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__error {
+  margin: 0;
+  color: var(--pn-block);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__receipt {
+  margin: 0;
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__diff-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-git__diff-section .pn-git__verb {
+  align-self: flex-start;
+}
+
+.cv2-root .pn-git__diff-digest {
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__empty {
+  margin: var(--pn-space-4);
+}
+
+/* ── Tier 2 completion: cherry-pick / branch ops / stash ─────────────────── */
+
+.cv2-root .pn-git__branch-create,
+.cv2-root .pn-git__branch-rename,
+.cv2-root .pn-git__branch-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+
+.cv2-root .pn-git__force {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__stash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-git__stash .pn-git__verb {
+  align-self: flex-start;
+}
+
+.cv2-root .pn-git__stash-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .pn-git__stash-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__stash-subject {
+  color: var(--pn-ink-2);
+}
+
+/* Tier-2 disclosure — the map's AGREE±: the rail stays scannable, the
+   completion verbs live one twist away. */
+.pn-git__more { margin-top: 6px; }
+.pn-git__more-summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  user-select: none;
+}
+.pn-git__more[open] .pn-git__more-summary { opacity: 1; }
+
+/* -- graph facts: commits, PRs, lane entity (renders with OR without a
+      worktree — the graph half of the rail) ------------------------------- */
+.pn-git__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding-top: var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+.pn-git__facts-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+.pn-git__facts-row--commits {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+.pn-git__facts-label {
+  font-size: var(--pn-fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+.pn-git__lane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+.pn-git__commit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+.pn-git__commit-list li {
+  display: flex;
+  gap: var(--pn-space-2);
+  align-items: baseline;
+  min-width: 0;
+}
+.pn-git__commit-sha {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  flex-shrink: 0;
+}
+.pn-git__commit-message {
+  font-size: var(--pn-fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -- the ONE lane line (107): `⎇ branch · [worktree|shared|scratch]`,
+      identical on the session tile and atop the Git tab. No lane fact ⇒ the
+      component renders nothing — honest absence draws no placeholder. ------ */
+.pn-lane {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+.pn-lane__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The worktree mark sits in the branch's own ink rather than a status tone:
+   the ordinary lane should read as quietly as the branch name it qualifies. */
+.cv2-root .pn-lane__worktree-mark {
+  color: var(--pn-ink-2);
+  flex: none;
+}
+/* The shared mark reads at the same volume as the worktree mark beside it —
+   one glyph, one ink, no status tone shouting over the branch name. */
+.cv2-root .pn-lane__shared-mark {
+  color: var(--pn-ink-2);
+  flex: none;
+}
+
+/* -- transcript-observed file changes (renders with OR without a worktree) -- */
+.pn-git__change-totals { display: inline-flex; gap: var(--pn-space-2); }
+.pn-git__added { color: var(--pn-run); font-family: var(--pn-mono); font-size: var(--pn-fs-micro); }
+.pn-git__removed { color: var(--pn-block); font-family: var(--pn-mono); font-size: var(--pn-fs-micro); }
+.pn-git__change-source { flex-basis: 100%; }
+.pn-git__change-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; width: 100%; }
+.pn-git__change-summary {
+  display: flex; align-items: baseline; gap: var(--pn-space-2);
+  cursor: pointer; user-select: none; min-width: 0;
+}
+.pn-git__change-path {
+  font-family: var(--pn-mono); font-size: var(--pn-fs-sm); color: var(--pn-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pn-git__change-counts { display: inline-flex; gap: var(--pn-space-2); flex-shrink: 0; align-items: baseline; }
+.pn-git__change-file[open] .pn-git__change-summary { margin-bottom: 4px; }

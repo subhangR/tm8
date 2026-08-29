@@ -1648,7 +1648,7 @@ export function GateApp(props: GateAppProps = {}) {
        `:has()` selector because a `:has()` that stops matching fails silently
        back to a zoomed phone. */
     return (
-      <div className="cv2-root" data-shell="mobile" data-astryx-theme="neutral" data-theme={theme === 'dark' ? 'dark' : undefined}>
+      <div className="cv2-root" data-shell="mobile" data-theme={theme === 'dark' ? 'dark' : undefined}>
         <MobileShell
           data={data}
           spaceId={data.spaceId}
@@ -1739,7 +1739,7 @@ export function GateApp(props: GateAppProps = {}) {
    */
   if (joinCode !== null) {
     return (
-      <div className="cv2-root" data-astryx-theme="neutral" data-theme={theme === 'dark' ? 'dark' : undefined}>
+      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
         <JoinScreen
           code={joinCode}
           onPreview={(code) => data.seam.previewInvite(code)}
@@ -1784,7 +1784,6 @@ export function GateApp(props: GateAppProps = {}) {
        scope INSIDE this shell, where a 100% height would be wrong. */
     <div
       className="cv2-root shell-scope"
-      data-astryx-theme="neutral"
       data-theme={theme === 'dark' ? 'dark' : undefined}
     >
       <div className="shell-root">

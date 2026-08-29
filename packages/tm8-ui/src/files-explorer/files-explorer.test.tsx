@@ -148,9 +148,6 @@ describe('roots, breadcrumbs, modes', () => {
   it('gallery mode draws image tiles from the port href and no <img> for non-images', async () => {
     render(<FilesExplorerScreen port={stubPort()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'gallery' }));
-    /* React 19: the listing lands in a later commit than the mode flip —
-       wait for the tiles rather than reading the DOM synchronously. */
-    await waitFor(() => expect(document.querySelectorAll('img.fx-thumb')).toHaveLength(1));
     const imgs = document.querySelectorAll('img.fx-thumb');
     expect(imgs).toHaveLength(1);
     expect((imgs[0] as HTMLImageElement).src).toContain('/v2/files/e:b.png/download');
@@ -159,8 +156,8 @@ describe('roots, breadcrumbs, modes', () => {
   it('tree mode renders a real tree role', async () => {
     render(<FilesExplorerScreen port={stubPort()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'tree' }));
-    expect(await screen.findByRole('tree', { name: 'Folder tree' })).toBeTruthy();
-    await waitFor(() => expect(screen.getAllByRole('treeitem')).toHaveLength(2));
+    expect(screen.getByRole('tree', { name: 'Folder tree' })).toBeTruthy();
+    expect(screen.getAllByRole('treeitem')).toHaveLength(2);
   });
 });
 
@@ -289,9 +286,6 @@ describe('conflict preflight dialog', () => {
       },
     });
     render(<FilesExplorerScreen port={port} />);
-    /* The collision is judged against the LISTING — under React 19 the input
-       appears before the listing's commit, so earn the listing first. */
-    await screen.findByText('a.txt');
     const input = (await screen.findByTestId('fx-file-input')) as HTMLInputElement;
     Object.defineProperty(input, 'files', { value: [new File(['1'], 'a.txt'), new File(['2'], 'new.txt')] });
     fireEvent.change(input);
@@ -317,9 +311,6 @@ describe('upload queue ledger', () => {
       },
     });
     render(<FilesExplorerScreen port={port} />);
-    /* The collision is judged against the LISTING — under React 19 the input
-       appears before the listing's commit, so earn the listing first. */
-    await screen.findByText('a.txt');
     const input = (await screen.findByTestId('fx-file-input')) as HTMLInputElement;
     Object.defineProperty(input, 'files', { value: [new File(['1'], 'solo.txt')] });
     fireEvent.change(input);

@@ -1,0 +1,324 @@
+.project-onboard__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: var(--pn-space-4);
+  background: color-mix(in srgb, var(--pn-ink) 58%, transparent);
+}
+
+.project-onboard {
+  width: min(620px, 100%);
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: auto;
+  color: var(--pn-ink);
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+}
+
+.project-onboard__header,
+.project-browser__head,
+.project-onboard__footer,
+.project-onboard__folder-row,
+.project-browser__actions,
+.project-browser__new > div {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.project-onboard__header {
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.project-onboard__header h2 {
+  margin: 2px 0 0;
+  font: 500 22px/1.2 var(--pn-serif);
+}
+
+.project-onboard__eyebrow {
+  font: 9px/1.4 var(--pn-mono);
+  letter-spacing: .12em;
+  color: var(--pn-ink-4);
+}
+
+.project-onboard__close {
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: 24px/1 var(--pn-ui);
+  cursor: pointer;
+}
+
+.project-onboard__form,
+.project-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px 20px;
+}
+
+.project-onboard__form > label:not(.project-onboard__trust),
+.project-onboard__field,
+.project-browser__new {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: 600 11px/1.4 var(--pn-ui);
+  color: var(--pn-ink-2);
+}
+
+.project-onboard input,
+.project-browser__new input {
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font: 12px/1.4 var(--pn-ui);
+}
+
+.project-onboard input:focus-visible,
+.project-onboard button:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+.project-onboard__folder-row {
+  align-items: stretch;
+}
+
+.project-onboard__folder-row code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 8px 10px;
+  color: var(--pn-ink-3);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font: 10px/1.5 var(--pn-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-onboard__button,
+.project-browser__roots button,
+.project-browser__list button {
+  padding: 7px 11px;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font: 600 11px/1.2 var(--pn-ui);
+  cursor: pointer;
+}
+
+.project-onboard__button:hover,
+.project-browser__roots button:hover,
+.project-browser__list button:hover {
+  background: var(--pn-hover);
+}
+
+.project-onboard__button:disabled,
+.project-onboard__close:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.project-onboard__button--primary {
+  color: var(--pn-paper);
+  background: var(--pn-brand);
+  border-color: var(--pn-brand);
+}
+
+.project-onboard__button--primary:hover {
+  background: var(--pn-brand-2);
+}
+
+.project-onboard__trust {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+
+.project-onboard__trust input {
+  margin-top: 2px;
+}
+
+.project-onboard__trust span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+}
+
+.project-onboard small,
+.project-onboard__note,
+.project-browser__new span {
+  margin: 0;
+  color: var(--pn-ink-4);
+  font: 9.5px/1.45 var(--pn-mono);
+}
+
+.project-onboard__error {
+  margin: 0;
+  padding: 9px 11px;
+  color: var(--pn-block);
+  background: color-mix(in srgb, var(--pn-block) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-block) 35%, transparent);
+  border-radius: var(--pn-r-sm);
+  font: 10.5px/1.45 var(--pn-ui);
+}
+
+/*
+ * A broad working directory is ALLOWED, so this must not read as a refusal the
+ * way `__error` does — it is the consequence stated before the click, in the
+ * caution ramp (`--pn-wait`, the amber the status pills already use for stale)
+ * rather than the block ramp. NOT `--pn-warn`: that token does not exist, which
+ * is why the one other reference to it in the tree carries a fallback.
+ */
+.project-onboard__warning {
+  margin: 0;
+  padding: 9px 11px;
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
+  border-radius: var(--pn-r-sm);
+  font: 10.5px/1.45 var(--pn-ui);
+}
+
+.project-onboard__footer {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.project-browser__head {
+  justify-content: space-between;
+}
+
+.project-browser__roots {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.project-browser__roots button {
+  flex: 0 0 auto;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+}
+
+.project-browser__path {
+  overflow: hidden;
+  padding: 8px 10px;
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+  border-radius: var(--pn-r-sm);
+  font: 10px/1.4 var(--pn-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-browser__list {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+
+.project-browser__list li + li {
+  border-top: 1px solid var(--pn-x-hairline-soft);
+}
+
+.project-browser__list button {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+}
+
+.project-browser__empty {
+  padding: 14px;
+  color: var(--pn-ink-4);
+  font: 10px/1.4 var(--pn-mono);
+}
+
+.project-browser__new {
+  padding-top: 2px;
+}
+
+.project-browser__new input {
+  flex: 1;
+}
+
+@media (max-width: 560px) {
+  .project-onboard__folder-row,
+  .project-browser__new > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+/* --- Create Space: the optional project section (2026-08-12) ------------- */
+
+.project-onboard__section {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+}
+
+.project-onboard__section > legend {
+  padding: 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.project-onboard__radio {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.project-onboard__radio input {
+  width: auto;
+}
+
+.project-onboard__upload-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The file inputs are driven by their wrapping label, which is styled as a
+   button; the raw control would otherwise show the browser's own chrome. */
+.project-onboard__upload-row input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.project-onboard__upload-row > label {
+  position: relative;
+  cursor: pointer;
+}

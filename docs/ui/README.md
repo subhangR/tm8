@@ -1,7 +1,7 @@
 # UI
 
 The specification for the tm8 web UI, the audit of what actually exists, and the
-program that built it. The live package is `packages/tm8-ui`.
+program that built it. The live package is `packages/tm8_ui_2.0`.
 
 | Document | What it is |
 |---|---|
@@ -29,7 +29,7 @@ audits, and the graph-view design track. Start with
 
 ## Two packages, and only one of them is the product
 
-- `packages/tm8-ui` — **the product.**
+- `packages/tm8_ui_2.0` — **the product.**
 - `packages/ui` — the transplanted Collab V2 module. It is still consulted as an
   oracle for parity, but it is not what ships. A whole feature has been built into
   the wrong one before; check which package you are in before you start.
@@ -37,4 +37,4 @@ audits, and the graph-view design track. Start with
 ## Note on verification
 
 No vitest test in this repo can catch a layout defect. Pixel claims need a real
-browser against real markup — see the harnesses in `packages/tm8-ui/e2e/`.
+browser against real markup — see the harnesses in `packages/tm8_ui_2.0/e2e/`.

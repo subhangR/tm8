@@ -395,7 +395,7 @@ TM8_PROJECT_DIR=${TM8_ENV_PROJECT_DIR}
 
 # Serve the built UI from the server itself, so the API origin is also a working
 # app origin and no proxy is required to see something.
-TM8_UI_DIR=${TM8_ENV_CHECKOUT}/packages/tm8-ui/dist
+TM8_UI_DIR=${TM8_ENV_CHECKOUT}/packages/tm8_ui_2.0/dist
 
 TM8_LAUNCH_BOOTSTRAP=1
 TM8_SESSION_CAP=unlimited
@@ -721,8 +721,8 @@ if [[ "$MODE" == status ]]; then
   [[ -f "$TM8_ENV_CHECKOUT/packages/server/dist/index.js" ]] \
     && ok "server build present" || warn "no server build (packages/server/dist/index.js)"
   if (( BUILD_UI )); then
-    [[ -f "$TM8_ENV_CHECKOUT/packages/tm8-ui/dist/index.html" ]] \
-      && ok "UI bundle present" || warn "no UI bundle (packages/tm8-ui/dist/index.html)"
+    [[ -f "$TM8_ENV_CHECKOUT/packages/tm8_ui_2.0/dist/index.html" ]] \
+      && ok "UI bundle present" || warn "no UI bundle (packages/tm8_ui_2.0/dist/index.html)"
   fi
 
   if command -v systemctl >/dev/null && systemctl list-unit-files "$UNIT_NAME" >/dev/null 2>&1; then
@@ -1216,15 +1216,15 @@ if (( DO_BUILD )); then
   info "tsc -b (contract → cli) …"
   act bun run build || die "tsc -b failed — fix the type errors above and re-run"
   did "server + CLI built"
-  # `bun run build` is tsc ONLY. Prod serves TM8_UI_DIR=packages/tm8-ui/dist, so
+  # `bun run build` is tsc ONLY. Prod serves TM8_UI_DIR=packages/tm8_ui_2.0/dist, so
   # skipping this second build ships a stale UI against a new server with no
   # error anywhere — the classic silent half-deploy.
   if (( BUILD_UI )); then
     info "vite build (a SEPARATE build — \`bun run build\` does not touch the UI) …"
-    act_sh "cd '$TM8_ENV_CHECKOUT/packages/tm8-ui' && bun run build" \
+    act_sh "cd '$TM8_ENV_CHECKOUT/packages/tm8_ui_2.0' && bun run build" \
       || die "vite build failed"
-    (( DRY_RUN )) || [[ -f packages/tm8-ui/dist/index.html ]] \
-      || die "vite build reported success but packages/tm8-ui/dist/index.html is missing"
+    (( DRY_RUN )) || [[ -f packages/tm8_ui_2.0/dist/index.html ]] \
+      || die "vite build reported success but packages/tm8_ui_2.0/dist/index.html is missing"
     did "UI bundle built"
   else
     dim "$SLOT serves the UI with vite dev against source — no bundle needed"

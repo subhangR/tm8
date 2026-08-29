@@ -1,0 +1,241 @@
+/* THE ROOT HEADER (task 01a00932 R5): [Chats ＋][Kind ＋ ▾]. Two segmented
+   cells sharing one strip — the label half switches the root, the ＋ half
+   creates, the caret opens the kind menu. Labels only — no counts (D16). */
+/* Lifted verbatim out of `chat-home.css` when the Work tab adopted this same
+   header (task 01a0102f). The `tch-` prefix is now a misnomer — it names the
+   chat-home surface that FIRST drew the bar, not the only one that draws it.
+   The names stayed anyway: renaming them would have rewritten Home's DOM, and
+   the one constraint on that task was that Home not change. A prefix that
+   lies about its origin is cheaper than a Home regression nobody asked for. */
+/* THE ROOT HEADER LINE — the segmented tablist, plus the hosted list's layout
+   switcher pinned to the right. The margin moved OFF `.tch-roots` and onto
+   this bar so both halves share one line box; the tablist keeps its own
+   border and background, which is what makes the switcher read as beside the
+   segmented control rather than inside it. */
+.tch-rootbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+  margin: var(--pn-space-2) var(--pn-space-3) 0;
+}
+/* The tablist takes the slack and any aside takes its natural width: the kind
+   label already ellipsizes (`.tch-rootcell__label`), so a long plural like
+   "Work sessions" shortens itself rather than pushing the aside out of the
+   280px column. */
+.tch-rootbar > .tch-roots { flex: 1; min-width: 0; }
+
+.tch-roots {
+  display: flex;
+  gap: 4px;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+.tch-rootcell {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+}
+.tch-rootcell--kind { flex: 1; min-width: 0; }
+.tch-rootcell__label,
+.tch-rootcell__plus,
+.tch-rootcell__caret {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tch-rootcell__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tch-rootcell--kind .tch-rootcell__label { flex: 1; }
+.tch-rootcell__plus,
+.tch-rootcell__caret {
+  flex: none;
+  padding: 4px 5px;
+}
+.tch-rootcell__plus[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.tch-rootcell__label:hover,
+.tch-rootcell__plus:hover,
+.tch-rootcell__caret:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.tch-rootcell--active { background: var(--pn-active); }
+.tch-rootcell--active .tch-rootcell__label { color: var(--pn-ink); }
+.tch-rootcell__glyph { display: inline-flex; flex: none; }
+
+/* The kind menu — a portal-free popover is safe here: the sidebar clips
+   nothing (`.tch-sidebar` declares no overflow), unlike the panel tiles.
+   The Work tab's column repeats that promise: `.ws-listcol` sets no overflow
+   either, which is the precondition this rule quietly depends on. */
+.tch-rootmenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 168px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-shadow-2, 0 8px 24px rgba(16, 18, 24, 0.16));
+}
+/* A menu ROW is two controls now (user ruling 2026-08-19): the label switches
+   the root, the birth half makes one. Same anatomy as the cell outside. */
+.tch-rootitem {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.tch-rootitem > .tch-rootopt { flex: 1; min-width: 0; }
+.tch-rootopt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.tch-rootopt:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-rootopt--current { background: var(--pn-active); color: var(--pn-ink); }
+
+/* HOVER-REVEALED, and it keeps its BOX while hidden — `display: none` would
+   reflow every row's label the moment the pointer entered it, so the menu
+   would twitch under the cursor. Opacity leaves the layout alone. */
+.tch-rootopt__birth {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  /* ONE COLUMN FOR EVERY ROW. The glyph is per-kind — `＋` is fullwidth and
+     `▮` is not — so sizing to content made the control jump 6px sideways as
+     the pointer travelled from Sessions to its neighbours. The floor is the
+     wider of the two, and the label (flex: 1) absorbs the difference. */
+  min-inline-size: 29px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+/* `:focus-within` on the ROW, not `:focus-visible` on the button: a keyboard
+   tab must not land on an invisible control, and the row is what owns the
+   reveal. It also covers the button's own focus, which is the case that
+   matters — the label and the ＋ are both in the tab order. */
+.tch-rootitem:hover .tch-rootopt__birth,
+.tch-rootitem:focus-within .tch-rootopt__birth { opacity: 1; }
+.tch-rootopt__birth:hover { background: var(--pn-hover); color: var(--pn-ink); }
+/* A refused row's control is DIMMED, not un-hidden. The dim belongs to the
+   revealed state only: written as a bare `opacity: .55` it outranked the
+   base `opacity: 0` and left the one refused row as the only ＋ visible on a
+   closed menu — the exact inverse of the intent. */
+.tch-rootopt__birth[aria-disabled='true'] { cursor: not-allowed; }
+.tch-rootitem:hover .tch-rootopt__birth[aria-disabled='true'],
+.tch-rootitem:focus-within .tch-rootopt__birth[aria-disabled='true'] { opacity: 0.55; }
+
+/* A TAP IS NOT A HOVER. On a touch pointer the reveal never fires — the first
+   tap would land on the row's label and switch the root instead — so the
+   control is simply always there. Same rule the attachment strip's paperclip
+   settled on. */
+@media (hover: none) {
+  .tch-rootopt__birth { opacity: 1; }
+}
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-027, DEF-039.
+
+   OWNERSHIP EXCEPTION, and it is recorded in the ledger's map rather than
+   discovered here as a merge conflict: this file lives in `src/panels/`, which
+   is Lane B's directory, but every class in it is `tch-` — Lane A's chat
+   namespace — and nothing outside the chat root bar draws them. Lane A owns
+   this file and `ListRootHeader.tsx` for this program. Lane B does not edit
+   either. Confirmed by the coordinator.
+   ========================================================================== */
+
+/* "Chats" measured 41x22 and the new-chat ＋ 23x22 — and the ＋ is the entry
+   point to the product's core action.
+
+   NO CONTAINER TO UNPIN, CHECKED RATHER THAN ASSUMED: `.tch-roots` is
+   `padding: 2px` with a 1px border and no height, and `.tch-rootcell` is
+   `align-items: stretch` with none either, so the strip takes the height of
+   whatever these cells become. This is the case the shell's §7a warns about
+   and it is the benign half of it.
+
+   The bar is ALREADY 44 tall on this phone, so this costs no vertical room:
+   it was grown to that floor by the view switcher (`.lp__views`) that used to
+   sit beside these cells, and the floor stayed when the switcher was removed
+   on 2026-08-19. */
+.cv2-root[data-shell='mobile'] .tch-rootcell__label,
+.cv2-root[data-shell='mobile'] .tch-rootcell__plus,
+.cv2-root[data-shell='mobile'] .tch-rootcell__caret {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  justify-content: center;
+  /* DEF-039: this label is one of the 11px text nodes counted on chat-home. */
+  font-size: 13px;
+}
+
+/* The kind cell's label is `flex: 1` and ellipsises a long plural; a
+   `min-inline-size` floor on it would fight that, so it keeps the floor on the
+   BLOCK axis only. It is wide by construction — the row it shares is the whole
+   bar — and the ledger's bar is the smaller side. */
+.cv2-root[data-shell='mobile'] .tch-rootcell--kind .tch-rootcell__label {
+  min-inline-size: 0;
+  justify-content: flex-start;
+}
+
+/* THE BAR WRAPS. At 390 the strip can hold [Chats ＋] and [◫ Kind ＋ ▾] and
+   the layout switcher, and at 44px each that is six controls across 366px of
+   content width. Chat Home draws only the Chats cell (the run measured no
+   caret there), so it fits — but the Work tab draws the kind cell too and this
+   is the same bar. Wrapping is what keeps the sixth control on the screen
+   instead of past the right edge, where `.mobile-frame`'s `overflow: hidden`
+   would destroy it while a document-level measure read 0 (ledger RULE R3). */
+.cv2-root[data-shell='mobile'] .tch-rootbar {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+/* The kind menu's rows are controls. Both halves of them. */
+.cv2-root[data-shell='mobile'] .tch-rootopt {
+  min-block-size: var(--mobile-touch-min);
+  font-size: 13px;
+}
+.cv2-root[data-shell='mobile'] .tch-rootopt__birth {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  /* The phone shell is driven by a data attribute, not by the pointer media
+     query, so the reveal is unpinned here too — a simulated shell on a mouse
+     would otherwise hide a control the ledger counts as tappable. */
+  opacity: 1;
+}

@@ -154,7 +154,7 @@ a single agent; this is the check that says so.
 | A spawned session sits at `running` and never finishes | No agent CLI the host is logged in to. tm8 runs the host's `claude`/`codex`; with none, the spawn's PTY comes up (so tm8 reads it as "running") but the agent immediately refuses in the terminal. Run `tm8 doctor`. |
 | Messages send but never appear in a terminal | `tm8_delivery_worker` cannot authenticate. See [above](#why-loopback-trust-is-a-real-step). |
 | `503` on `/v2/execution/spawn`, or "spawning is broken" | node-pty's `spawn-helper` lost its executable bit. `bash scripts/repair-node-pty.sh`. |
-| Server is new but the UI is stale | `bun run build` is **tsc only**. The UI needs its own `vite build` (`cd packages/tm8-ui && bun run build`). |
+| Server is new but the UI is stale | `bun run build` is **tsc only**. The UI needs its own `vite build` (`cd packages/tm8_ui_2.0 && bun run build`). |
 | `psql: command not found`, or a version mismatch | A bare `psql` is whichever formula got linked. Set `TM8_PSQL` to a versioned path. |
 | The unit is `inactive` after a "restart" | Something signalled the process. A clean Node exit is status 0, so `Restart=on-failure` does not bring it back. Use `systemctl` only. |
 

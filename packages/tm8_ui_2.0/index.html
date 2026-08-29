@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- `viewport-fit=cover` lets the page paint into the display cutout and the
+         home-indicator strip, which is what makes `env(safe-area-inset-*)` return
+         anything other than 0. src/mobile/mobile.css already spends those insets
+         on the header and tab bar; without this attribute they are all zero and
+         an installed app renders inside letterboxed bars. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- #FBFAF6 is --pn-surface, the background of `.mobile-frame__header`, which
+         is the element sitting directly under the status bar (it carries the
+         safe-area top padding). Matching it here is what makes the status bar
+         continuous with the header instead of a band of a different white.
+         Deliberately NOT paired with a prefers-color-scheme dark variant: the
+         app does not follow the OS scheme — dark is a scoped token override on
+         specific surfaces, not a document theme — so a dark status bar would sit
+         above a light paper app. -->
+    <meta name="theme-color" content="#FBFAF6" />
+
+    <!-- Fonts are self-hosted from /fonts (see src/styles/fonts.css); there is
+         no third-party font origin left to preconnect to. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="/fonts/HankenGrotesk-400-latin.woff2" />
+
+    <link rel="icon" href="/favicon.ico" sizes="48x48 32x32 16x16" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- iOS reads none of the manifest. Standalone launch, the status bar style
+         and the home-screen icon are all these three tags and nothing else.
+         `black-translucent` puts the app's own paper under the status bar rather
+         than an opaque black band — correct only because the header above is
+         already padded by the safe-area inset. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="tm8" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+
+    <title>tm8</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

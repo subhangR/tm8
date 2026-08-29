@@ -1,0 +1,797 @@
+/**
+ * THE SESSION STORE — what the gate is, stated once, in the place that
+ * implements it.
+ *
+ * THE GATE IS SERVER-BACKED. The four operations the old localStorage gate
+ * named as missing — `auth.signup`, `auth.login`, `auth.logout`,
+ * `auth.session.get` — exist and are what this module calls (Identity v2
+ * Stage 1, doc 4 §6). Creating an account creates it ON THE SERVER; signing
+ * in exchanges the password for a `tm8s_…` bearer pass the server can revoke;
+ * signing out revokes it. The password itself is never stored anywhere on
+ * this browser — the server keeps a scrypt hash, this browser keeps the pass.
+ *
+ * THE PASS IS PER SERVER (`pass-store.ts`). This browser can point at the
+ * local node or at any named server connection, and a pass minted by one is
+ * meaningless at another. Every call this module makes is routed to the
+ * ACTIVE server — the one the workspace is pointed at — through the same
+ * relay the app itself uses.
+ *
+ * THE LOOPBACK PATH IS UNTOUCHED (D1, law T-L7). A request carrying no pass
+ * resolves server-side to the loopback auto-owner, so a single machine with
+ * no accounts behaves exactly as before: the CLI and the API need no
+ * credential, and `auth.signup` from this gate is authorized as the node
+ * owner. On a server where the caller is NOT the owner, signup is refused by
+ * the node-admin gate (F1 — never open self-registration), and the refusal is
+ * shown rather than translated into something softer.
+ *
+ * TWO RECORDS, NOT ONE — the pass and the known-accounts list are stored
+ * separately, exactly as the account/session split worked before: sign-out
+ * must clear the pass WITHOUT forgetting which accounts have signed in here,
+ * or the gate could no longer offer "sign back in as @amber" after sign-out.
+ */
+import { CollabError } from '@tm8/contract';
+import type {
+  AuthLoginResult,
+  AuthSessionGetResult,
+  AuthSignupResult,
+} from '@tm8/contract';
+import { createHttpClient, type HttpClient } from '../data/real/http';
+import { LOCAL_SERVER_ID, readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
+import { endSession } from './session-reset';
+import {
+  KNOWN_ACCOUNTS_KEY,
+  PASSES_STORAGE_KEY,
+  clearServerPass,
+  noteKnownAccount,
+  readKnownAccounts,
+  readServerPass,
+  resetPassStore,
+  writeServerPass,
+  type GateAccount,
+  type KnownAccount,
+  type ServerPass,
+} from './pass-store';
+
+export type { GateAccount, KnownAccount, ServerPass } from './pass-store';
+
+/** LEGACY keys from the retired browser-local gate. Cleared on reset, never read. */
+export const LEGACY_ACCOUNTS_STORAGE_KEY = 'tm8ui.auth.accounts';
+export const LEGACY_ACCOUNT_STORAGE_KEY = 'tm8ui.auth.account';
+export const LEGACY_SESSION_STORAGE_KEY = 'tm8ui.auth.session';
+
+/** The reload check's answer: which handle this browser is signed in as, where. */
+export interface StoredSession {
+  serverId: string;
+  handle: string;
+  signedInAt: string;
+}
+
+/**
+ * Every failure this module can produce, as data. The UI maps these to copy;
+ * having them enumerated here is what stops a new failure mode reaching the
+ * screen as an untranslated exception.
+ */
+export type AuthFailure =
+  | { kind: 'password-too-short'; min: number }
+  | { kind: 'name-required' }
+  | { kind: 'account-exists'; handle: string }
+  | { kind: 'bad-credentials' }
+  | { kind: 'storage-blocked' }
+  | { kind: 'server-refused'; message: string }
+  | { kind: 'server-unreachable'; message: string };
+
+export type AuthResult<T> = { ok: true; value: T } | { ok: false; failure: AuthFailure };
+
+/** Matches the server's own floor: `AuthSignupInput.password` is `.min(8)`. */
+export const MIN_PASSWORD_LENGTH = 8;
+
+/* ── the wire ──────────────────────────────────────────────────────────── */
+
+/**
+ * A catalog-bound client against the ACTIVE server, built per call. Cheap by
+ * design (`createHttpClient` holds no connection), and rebuilding it each
+ * time is what makes a server switch or a fresh sign-in take effect without
+ * any cache to invalidate. `getAuthToken` reads the pass store so the calls
+ * that must carry the pass (logout, session.get) carry the current one.
+ */
+function clientForActiveServer(): { client: HttpClient; serverId: string } {
+  const serverId = readActiveServerId();
+  const client = createHttpClient({
+    baseUrl: routeBaseUrlFor(serverId),
+    fetch: (url, init) => globalThis.fetch(url, init),
+    getAuthToken: () => readServerPass(serverId)?.token ?? null,
+  });
+  return { client, serverId };
+}
+
+/**
+ * The same client with NO pass attached — for the two calls that EXCHANGE a
+ * credential rather than present one (`auth.login`, `auth.signup`).
+ *
+ * Attaching the stored pass there was a real lockout (2026-08-15): a
+ * server-side credential reset revokes every session, the browser still holds
+ * the revoked token, and the server refuses the bearer with `unauthenticated`
+ * BEFORE it reads the password — so the correct new password is reported as
+ * wrong, and nothing the viewer types can ever succeed until they clear
+ * storage by hand. A sign-in must stand on the credential alone.
+ */
+function bareClientForActiveServer(): { client: HttpClient; serverId: string } {
+  const serverId = readActiveServerId();
+  const client = createHttpClient({
+    baseUrl: routeBaseUrlFor(serverId),
+    fetch: (url, init) => globalThis.fetch(url, init),
+    getAuthToken: () => null,
+  });
+  return { client, serverId };
+}
+
+function toGateAccount(account: {
+  username: string;
+  displayName: string | null;
+  accountId: string;
+  identityId: string;
+  isOwner: boolean;
+  isNodeAdmin: boolean;
+}): GateAccount {
+  return {
+    handle: account.username,
+    displayName: account.displayName ?? account.username,
+    accountId: account.accountId,
+    identityId: account.identityId,
+    isOwner: account.isOwner,
+    isNodeAdmin: account.isNodeAdmin,
+  };
+}
+
+/**
+ * Wire error → failure. `unauthenticated` on a login IS the credential
+ * refusal, and the server deliberately says nothing about which half was
+ * wrong (no account enumeration) — this mapping preserves that. Everything
+ * else is surfaced as the server's own words: a refusal this gate cannot
+ * explain is still one the viewer can act on, and paraphrasing it would
+ * manufacture precision.
+ */
+function failureFrom(err: unknown, act: 'signup' | 'login' | 'logout'): AuthFailure {
+  if (err instanceof CollabError) {
+    if (err.code === 'unauthenticated' && act === 'login') return { kind: 'bad-credentials' };
+    if (err.code === 'upstream_unavailable') {
+      return { kind: 'server-unreachable', message: err.message };
+    }
+    return { kind: 'server-refused', message: err.message };
+  }
+  return {
+    kind: 'server-unreachable',
+    message: err instanceof Error ? err.message : String(err),
+  };
+}
+
+/** `amber Smith` → `ambersmith`. The oracle writes handles as `@amber`. */
+export function handleFrom(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '');
+}
+
+/* ── reads ─────────────────────────────────────────────────────────────── */
+
+/** The signed-in account on the active server, or null. Synchronous — the
+ * no-flash first render depends on it. */
+export function readActiveAccount(): GateAccount | null {
+  return readServerPass(readActiveServerId())?.account ?? null;
+}
+
+/** Every account that has signed in on this browser, for the active server. */
+export function readKnownAccountsHere(): KnownAccount[] {
+  return readKnownAccounts(readActiveServerId());
+}
+
+/** Synchronous session read — the stored pass, as a fact about this browser.
+ * `verifyStoredSession` is the server's word on whether it still stands. */
+export function readStoredSession(): StoredSession | null {
+  const serverId = readActiveServerId();
+  const pass = readServerPass(serverId);
+  return pass ? { serverId, handle: pass.account.handle, signedInAt: pass.signedInAt } : null;
+}
+
+export type SessionVerdict =
+  | { state: 'valid'; account: GateAccount }
+  | { state: 'invalid' }
+  | { state: 'unreachable'; message: string }
+  | { state: 'signed-out' };
+
+/**
+ * THE RELOAD CHECK — `auth.session.get` under the stored pass. A revoked or
+ * expired pass comes back `unauthenticated`, and the stale record is cleared
+ * so the gate closes NOW rather than on the first failed mutation. An
+ * unreachable node is NOT a sign-out: the local pass and the node's
+ * reachability are different facts, and conflating them would eject the
+ * viewer every time the node hiccups.
+ */
+export async function verifyStoredSession(): Promise<SessionVerdict> {
+  const { client, serverId } = clientForActiveServer();
+  const pass = readServerPass(serverId);
+  if (!pass) return { state: 'signed-out' };
+
+  try {
+    const result = await client.call<AuthSessionGetResult>('auth.session.get');
+    const account = toGateAccount(result.account);
+    // The server's copy wins — a display name edited elsewhere lands here on
+    // the next reload rather than fossilising at what sign-in saw. But ONLY
+    // onto the pass that was verified: the viewer may have signed out (or in
+    // as someone else) while this call was in flight, and a stale write-back
+    // here would resurrect a session the viewer already ended.
+    const current = readServerPass(serverId);
+    if (current && current.token === pass.token) {
+      writeServerPass(serverId, { ...current, account });
+    }
+    return { state: 'valid', account };
+  } catch (err) {
+    if (err instanceof CollabError && err.code === 'unauthenticated') {
+      // Same in-flight guard: only the verified pass may be cleared.
+      const current = readServerPass(serverId);
+      if (current && current.token === pass.token) {
+        clearServerPass(serverId);
+        // A pass that has stopped being anybody's ends a session just as
+        // surely as the button does, and the module-level stores must not
+        // survive it — see `session-reset.ts`. `expired`, so the address is
+        // left alone: the server ended this, the viewer did not ask, and
+        // signing back in should return them to the page they were reading.
+        endSession('expired');
+        notify();
+      }
+      return { state: 'invalid' };
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return { state: 'unreachable', message };
+  }
+}
+
+/* ── the three verbs ───────────────────────────────────────────────────── */
+
+function storePass(
+  serverId: string,
+  login: AuthLoginResult,
+): AuthResult<GateAccount> {
+  const account = toGateAccount(login.account);
+  const pass: ServerPass = {
+    token: login.token,
+    account,
+    sessionId: login.session.sessionId,
+    expiresAt: login.session.expiresAt,
+    signedInAt: new Date().toISOString(),
+  };
+  // Write and CHECK. If storage refuses, the caller must learn now — a pass
+  // this browser cannot keep would eject the viewer on their next reload with
+  // no explanation. The minted session is revoked again so it does not linger
+  // server-side as a session nothing holds.
+  if (!writeServerPass(serverId, pass)) {
+    const { client } = clientForActiveServer();
+    void client
+      .call('auth.logout', { body: { sessionId: login.session.sessionId } })
+      .catch(() => {});
+    return { ok: false, failure: { kind: 'storage-blocked' } };
+  }
+  noteKnownAccount(serverId, {
+    handle: account.handle,
+    displayName: account.displayName,
+    lastSignedInAt: pass.signedInAt,
+  });
+  // A deliberate sign-in (or claim) is the one act that says "resume me here",
+  // so it lifts the "signed out on purpose" opt-out the loopback probe honours.
+  // Without this a viewer who signed out of a loopback node and then signed
+  // back in with their password would find themselves gated again on the next
+  // reload, the pass notwithstanding. See `signOutOfServer`.
+  clearAutoOwnerSuppression(serverId);
+  notify();
+  return { ok: true, value: account };
+}
+
+/**
+ * `auth.signup` + `auth.login`, in that order. Signup is node-admin gated in
+ * SQL under the CALLER's claims: from a loopback machine the credential-free
+ * request is the auto-owner and passes; anywhere else it is refused, and the
+ * documented provisioning path (an admin runs `tm8 auth signup`, then the
+ * person redeems a space invite) is the answer — see
+ * `docs/identity/PROVISION-SECOND-ACCOUNT.md`.
+ */
+export async function createServerAccount(
+  name: string,
+  password: string,
+): Promise<AuthResult<GateAccount>> {
+  const handle = handleFrom(name);
+  if (!handle) return { ok: false, failure: { kind: 'name-required' } };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { ok: false, failure: { kind: 'password-too-short', min: MIN_PASSWORD_LENGTH } };
+  }
+
+  /* BARE on purpose: signup rides the caller's claims (loopback auto-owner),
+     and a stale revoked pass in storage would be refused before those claims
+     are ever resolved — same lockout class as the login below. */
+  const { client, serverId } = bareClientForActiveServer();
+  try {
+    await client.call<AuthSignupResult>('auth.signup', {
+      body: { username: handle, password, displayName: name.trim() },
+    });
+  } catch (err) {
+    if (err instanceof CollabError && err.code === 'conflict') {
+      return { ok: false, failure: { kind: 'account-exists', handle } };
+    }
+    return { ok: false, failure: failureFrom(err, 'signup') };
+  }
+
+  try {
+    const login = await client.call<AuthLoginResult>('auth.login', {
+      body: { username: handle, password, kind: 'browser' },
+    });
+    return storePass(serverId, login);
+  } catch (err) {
+    return { ok: false, failure: failureFrom(err, 'login') };
+  }
+}
+
+/** `auth.login` — the password for a `tm8s_…` pass, stored per server. */
+export async function signInToServer(
+  handle: string,
+  password: string,
+): Promise<AuthResult<GateAccount>> {
+  const username = handleFrom(handle);
+  if (!username) return { ok: false, failure: { kind: 'name-required' } };
+
+  /* BARE on purpose — see `bareClientForActiveServer`: a login must stand on
+     the credential alone, never on a stored pass a reset may have revoked. */
+  const { client, serverId } = bareClientForActiveServer();
+  try {
+    const login = await client.call<AuthLoginResult>('auth.login', {
+      body: { username, password, kind: 'browser' },
+    });
+    return storePass(serverId, login);
+  } catch (err) {
+    return { ok: false, failure: failureFrom(err, 'login') };
+  }
+}
+
+/**
+ * `auth.logout`, then the pass is gone either way. The revoke is
+ * fire-and-forget ON PURPOSE: the viewer asked to leave, and holding the UI
+ * hostage to a slow node would keep them visibly signed in after the act.
+ * If the revoke is lost the pass still ages out server-side (`expiresAt`),
+ * and the local copy is already destroyed — the asymmetry favours the viewer.
+ *
+ * Exported standalone as well as through the hook because the coordinator's
+ * mount may call it from a menu outside the gate's React tree. The
+ * subscription below keeps both paths in sync.
+ *
+ * THE PASS WAS NEVER THE WHOLE SESSION, and for a long time this function
+ * behaved as though it were. `navStore` and `screenStackStore` are
+ * module-level, so clearing only the pass left the next viewer on this browser
+ * holding the last one's open panels and screen stacks. `endSession` is the one
+ * reset both ends of a session run; its module states what it forgets, what it
+ * keeps, and why the address goes with it here (D74).
+ */
+export function signOutOfServer(): void {
+  const { client, serverId } = clientForActiveServer();
+  const pass = readServerPass(serverId);
+  const wasAutoOwner = !!readCachedAutoOwner(serverId);
+
+  // SIGNED OUT ON PURPOSE — the flag that keeps sign-out from being a no-op on
+  // the one machine it matters most. On a loopback single-player node the
+  // server resolves the very next credential-free request as the auto-owner
+  // and would sign the viewer straight back in, so clearing a pass (or leaving
+  // an auto-owner session) is not enough — the gate must be told this exit was
+  // deliberate and must not auto-resume. `signInToServer` / `claimNodeOnServer`
+  // clear it (`storePass`), because a deliberate sign-IN is the one act that
+  // says "resume me here". It is set for a BEARER sign-out too: a claimed
+  // loopback node would bounce a bearer sign-out back into auto-owner just the
+  // same. See `useAuthSession`'s loopback probe.
+  suppressAutoOwner(serverId);
+  clearCachedAutoOwner(serverId);
+
+  if (pass) {
+    // Capture-free: the client's getAuthToken still reads the store, so the
+    // revoke must be DISPATCHED before the pass is cleared.
+    void client.call('auth.logout', { body: {} }).catch(() => {
+      // The pass is gone locally regardless; a lost revoke expires server-side.
+    });
+    clearServerPass(serverId);
+  }
+  // The auto-owner arm carries no pass and no session to revoke, but the
+  // viewer's context must be forgotten exactly as a pass sign-out forgets it —
+  // the machine may be handed over. BEFORE `notify`, deliberately: the
+  // notification is what swaps the gate back to its signed-out frame, and no
+  // render may run between the session going and the state it authorised going
+  // with it.
+  if (pass || wasAutoOwner) endSession('signed-out');
+  notify();
+}
+
+/* ── change notification ───────────────────────────────────────────────── */
+
+/**
+ * `signOut()` is callable from outside React (the exported verb), so the hook
+ * cannot rely on its own setState to hear about it. This is the smallest
+ * mechanism that keeps every mounted gate consistent with the store — and the
+ * `storage` event is subscribed too, so signing out in one tab returns the
+ * others to the gate rather than leaving a live app behind a dead pass.
+ */
+type Listener = () => void;
+const listeners = new Set<Listener>();
+
+export function subscribeToSession(fn: Listener): () => void {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
+
+function notify(): void {
+  for (const fn of [...listeners]) fn();
+}
+
+/** Called by the hook on mount; idempotent. */
+export function watchCrossTabSignOut(): () => void {
+  if (typeof window === 'undefined' || !window.addEventListener) return () => {};
+  const onStorage = (e: StorageEvent) => {
+    // The auto-owner keys join the pass keys here: an auto-owner sign-out in
+    // another tab carries NO pass change, so without these a second tab would
+    // keep showing the app after the first tab deliberately left.
+    if (
+      e.key === PASSES_STORAGE_KEY ||
+      e.key === KNOWN_ACCOUNTS_KEY ||
+      e.key === AUTO_OWNER_CACHE_KEY ||
+      e.key === AUTO_OWNER_SUPPRESS_KEY ||
+      e.key === null
+    )
+      notify();
+  };
+  window.addEventListener('storage', onStorage);
+  return () => window.removeEventListener('storage', onStorage);
+}
+
+/** Test/dev affordance: forget every pass, plus the retired local-gate keys. */
+export function resetLocalAuth(): void {
+  resetPassStore();
+  try {
+    window.localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_ACCOUNTS_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_ACCOUNT_STORAGE_KEY);
+    window.localStorage.removeItem(AUTO_OWNER_CACHE_KEY);
+    window.localStorage.removeItem(AUTO_OWNER_SUPPRESS_KEY);
+  } catch {
+    // Nothing to do; the records were unreachable to begin with.
+  }
+  notify();
+}
+
+/* ── the node's own claim state (first-run) ─────────────────────────────── */
+
+/**
+ * WHY THIS EXISTS AT ALL. The gate used to choose between "create the first
+ * account" and "sign in" from `readKnownAccountsHere()` — a BROWSER-LOCAL
+ * list. That is not a fact about the node, and it was wrong in both
+ * directions: a fresh browser profile against a populated node offered a
+ * signup that then conflicted, and a stale entry pinned a browser to the
+ * sign-in card forever. `auth.claim.status` is the node answering for itself.
+ */
+export interface NodeClaim {
+  claimed: boolean;
+  mode: 'single' | 'multi';
+  signupPath: 'claim' | 'invite' | 'admin';
+}
+
+/** Per-server, so switching servers cannot show one node's state for another. */
+export const NODE_CLAIM_CACHE_KEY = 'tm8ui.auth.nodeclaim.v1';
+
+type ClaimCache = Record<string, NodeClaim>;
+
+function readClaimCache(): ClaimCache {
+  try {
+    const raw = window.localStorage.getItem(NODE_CLAIM_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as ClaimCache) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The LAST KNOWN answer, synchronously.
+ *
+ * This is a cache and is treated as one: it exists so a reload paints the
+ * right frame immediately instead of blanking while the node is asked, and the
+ * live answer overwrites it as soon as it lands. It is never the basis for a
+ * refusal — the SERVER refuses a claim on a claimed node, not this record —
+ * so a stale or forged cache entry costs a wrong frame for one paint and
+ * cannot authorize anything.
+ */
+export function readCachedNodeClaim(): NodeClaim | null {
+  return readClaimCache()[readActiveServerId()] ?? null;
+}
+
+function writeCachedNodeClaim(serverId: string, claim: NodeClaim): void {
+  try {
+    const cache = readClaimCache();
+    cache[serverId] = claim;
+    window.localStorage.setItem(NODE_CLAIM_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // A browser that refuses storage still works; it just re-asks every load.
+  }
+}
+
+/**
+ * Ask the active server whether it has been claimed. Claim-free — this is the
+ * one question a caller can ask before it knows who anybody is.
+ *
+ * Returns null when the node could not be asked. The caller must NOT read that
+ * as "unclaimed": offering a claim ceremony to someone whose node is merely
+ * unreachable promises an act that cannot succeed.
+ */
+export async function fetchNodeClaim(): Promise<NodeClaim | null> {
+  const { client, serverId } = clientForActiveServer();
+  try {
+    const result = await client.call<NodeClaim>('auth.claim.status');
+    writeCachedNodeClaim(serverId, result);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `auth.claim` — the first-run ceremony, and the reason the sign-in card is no
+ * longer a dead end on a node nobody can reach over loopback.
+ *
+ * The token is the authorization, so this works from a phone or through a
+ * reverse proxy. Claiming signs you in, so the pass is stored exactly as
+ * `signInToServer` stores one.
+ */
+export async function claimNodeOnServer(
+  token: string,
+  name: string,
+  password: string,
+): Promise<AuthResult<GateAccount>> {
+  const handle = handleFrom(name);
+  if (!handle) return { ok: false, failure: { kind: 'name-required' } };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { ok: false, failure: { kind: 'password-too-short', min: MIN_PASSWORD_LENGTH } };
+  }
+
+  const { client, serverId } = clientForActiveServer();
+  try {
+    const claimed = await client.call<AuthLoginResult>('auth.claim', {
+      body: { token: token.trim(), username: handle, password, displayName: name.trim(), kind: 'browser' },
+    });
+    // The node is claimed now by definition — record it before storing the
+    // pass so a storage failure still leaves the gate showing sign-in rather
+    // than re-offering a ceremony whose token is already burned.
+    //
+    // `mode` and `signupPath` are RE-READ from the server rather than assumed.
+    // An earlier revision hardcoded `single`/`admin` here, which meant a
+    // successful claim on a MULTI node wrote `single` into the cache — the
+    // gate guessing again, which is the exact habit this module was rewritten
+    // to break. A failed refresh leaves the previous cached values rather than
+    // inventing new ones; `claimed` is the only field this act actually knows.
+    const refreshed = await fetchNodeClaim().catch(() => null);
+    if (!refreshed) {
+      const prior = readCachedNodeClaim();
+      writeCachedNodeClaim(serverId, {
+        claimed: true,
+        mode: prior?.mode ?? 'single',
+        signupPath: prior?.signupPath ?? 'admin',
+      });
+    }
+    return storePass(serverId, claimed);
+  } catch (err) {
+    return { ok: false, failure: failureFrom(err, 'login') };
+  }
+}
+
+/* ── the loopback auto-owner (a sessionless signed-in identity) ──────────── */
+
+/**
+ * WHY THIS EXISTS. FIRST-RUN-CLAIM-DESIGN D3 / journey §5.1 step 3, verbatim:
+ * "Day to day on the box: localhost:8888 → loopback → no gate, straight into
+ * the app. They never type the password again on that machine." The server
+ * already delivers half of that — a credential-free loopback caller resolves to
+ * the node owner (`auth.session.get` answers `authKind: 'auto-owner'` with the
+ * account and a null session). But the GATE never asked: it read the stored
+ * pass, a browser-local value, so the owner saw a password card forever on
+ * their own machine. That is the SAME defect class §1.1 of that doc names — the
+ * gate asking `localStorage` a question only the server can answer — and this
+ * is the completion of §4.2's lane: §4.2 fixed WHICH card a signed-out gate
+ * shows; this fixes WHETHER a card is shown at all, by asking the node.
+ *
+ * `auth.session.get` with NO pass is the one question that discovers it: on a
+ * loopback single-player node it answers `auto-owner`; in `multi` mode or from
+ * a remote origin the auto-owner arm is off and the node answers
+ * `unauthenticated` (→ `gated`); an unreachable node throws. The decision is
+ * therefore the SERVER'S, never a browser inference about loopback.
+ */
+export type AutoOwnerVerdict =
+  | { state: 'auto-owner'; account: GateAccount }
+  | { state: 'unclaimed' } // the node resolves the auto-owner, but has not been claimed — the claim ceremony must win, or the first-run password is never set
+  | { state: 'gated' } // the node answered, but will not vouch for a credential-free caller
+  | { state: 'unreachable' }; // the node could not be asked
+
+/**
+ * The last known auto-owner account, per server — a fact about the NODE,
+ * cached exactly like the claim status (`readCachedNodeClaim`) and for the same
+ * reason: a warm reload paints the app immediately instead of blanking while
+ * the node is asked. It is NEVER an authorization input — the SERVER resolves
+ * auto-owner on every request the app then makes, this record only decides the
+ * first paint — so a stale entry costs one wrong paint (corrected the moment
+ * the live probe lands) and can grant nothing. The reload check below
+ * (`fetchAutoOwnerSession`) treats it exactly as `verifyStoredSession` treats a
+ * stored pass.
+ */
+export const AUTO_OWNER_CACHE_KEY = 'tm8ui.auth.autoowner.v1';
+
+/**
+ * SIGNED OUT ON PURPOSE, per server. Written by `signOutOfServer`, cleared by a
+ * deliberate sign-in or claim (`storePass`). Its whole job is to stop the
+ * loopback probe from instantly undoing a sign-out on a single-player node.
+ * See `signOutOfServer` and the probe in `useAuthSession`.
+ */
+export const AUTO_OWNER_SUPPRESS_KEY = 'tm8ui.auth.autoowner-suppressed.v1';
+
+type AutoOwnerCache = Record<string, GateAccount>;
+
+function readAutoOwnerCache(): AutoOwnerCache {
+  try {
+    const raw = window.localStorage.getItem(AUTO_OWNER_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as AutoOwnerCache) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The last auto-owner account for a server, or null. Synchronous — the
+ * no-flash first render depends on it, exactly as it depends on the stored pass. */
+export function readCachedAutoOwner(serverId = readActiveServerId()): GateAccount | null {
+  return readAutoOwnerCache()[serverId] ?? null;
+}
+
+function writeCachedAutoOwner(serverId: string, account: GateAccount): void {
+  try {
+    const cache = readAutoOwnerCache();
+    cache[serverId] = account;
+    window.localStorage.setItem(AUTO_OWNER_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // A browser that refuses storage still works; it just re-asks every load.
+  }
+}
+
+function clearCachedAutoOwner(serverId: string): void {
+  try {
+    const cache = readAutoOwnerCache();
+    if (!(serverId in cache)) return;
+    delete cache[serverId];
+    window.localStorage.setItem(AUTO_OWNER_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Nothing to do; the record was unreachable to begin with.
+  }
+}
+
+function readSuppressed(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(AUTO_OWNER_SUPPRESS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Was the viewer deliberately signed out on this server? */
+export function isAutoOwnerSuppressed(serverId = readActiveServerId()): boolean {
+  return readSuppressed()[serverId] === true;
+}
+
+function suppressAutoOwner(serverId: string): void {
+  try {
+    const all = readSuppressed();
+    if (all[serverId] === true) return;
+    all[serverId] = true;
+    window.localStorage.setItem(AUTO_OWNER_SUPPRESS_KEY, JSON.stringify(all));
+  } catch {
+    // A browser that refuses storage cannot persist the opt-out across reloads;
+    // within the session the in-memory hook state still holds it.
+  }
+}
+
+/** Cleared by a deliberate sign-in or claim — see `storePass`. */
+function clearAutoOwnerSuppression(serverId: string): void {
+  try {
+    const all = readSuppressed();
+    if (!(serverId in all)) return;
+    delete all[serverId];
+    window.localStorage.setItem(AUTO_OWNER_SUPPRESS_KEY, JSON.stringify(all));
+  } catch {
+    // Nothing to do; the record was unreachable to begin with.
+  }
+}
+
+/**
+ * The auto-owner arm resolves the loopback peer, so it can only ever apply to
+ * THIS browser's own node (`LOCAL_SERVER_ID` routes to the page origin). A
+ * named `server_connection` reaches its node through the relay and is never a
+ * loopback peer, so probing one is a wasted round trip that can only ever come
+ * back `gated`. This is NOT a browser inference about the node's MODE — the
+ * server still decides that, and answers `gated` for a local node in `multi`
+ * mode — it is only a decision about WHERE the question can have a yes.
+ */
+export function loopbackAutoOwnerPossible(serverId = readActiveServerId()): boolean {
+  return serverId === LOCAL_SERVER_ID && !isAutoOwnerSuppressed(serverId);
+}
+
+/**
+ * THE LOOPBACK RELOAD CHECK — `auth.session.get` with NO pass, the mirror of
+ * `verifyStoredSession`. The bare client is deliberate (as for `auth.login`):
+ * the auto-owner identity stands on the loopback peer alone, never on a stored
+ * pass. The four verdicts map exactly as the pass reload check's do, with one
+ * addition the pass check has no analogue for — `unclaimed`:
+ *
+ *   `auto-owner`  — the node vouches for this credential-free caller AND has
+ *                   been claimed. Cached and rendered as a signed-in,
+ *                   sessionless identity.
+ *   `unclaimed`   — the node resolves the auto-owner (that is HOW the owner row
+ *                   is minted on first run) but `auth.claim.status` says it has
+ *                   never been claimed. Signing in here would bury the claim
+ *                   ceremony: the node would never get a password, and the
+ *                   first off-box login over the tailnet would meet a sign-in
+ *                   card with no credential behind it — §1's original dead end,
+ *                   restored by a different route (FIRST-RUN-CLAIM-DESIGN §5.1
+ *                   step 4, D3). So the claim card must win while `claimed` is
+ *                   false; auto-owner resumes the instant the node is claimed.
+ *                   Treated like `gated` by the gate — no sign-in, cache cleared.
+ *   `gated`       — the node answered but will not (`multi` mode, or the
+ *                   caller is not loopback). The cache is cleared, so a warm
+ *                   browser that rendered the app from a stale entry is signed
+ *                   out NOW, exactly as a revoked pass closes the gate.
+ *   `unreachable` — the node could not be asked. NOT a sign-out and NOT a
+ *                   sign-in: a warm browser stays on its cached answer, a cold
+ *                   browser stays signed out. Reachability is not identity —
+ *                   the same ruling `verifyStoredSession` makes — and rendering
+ *                   an unreachable node as auto-owner would promise an app that
+ *                   cannot load, the mirror of offering a claim ceremony that
+ *                   cannot succeed.
+ *
+ * The claim status is fetched TOGETHER with the identity: auto-owner is only a
+ * sign-in on a claimed node, so both facts must be in hand before the gate acts
+ * on either — otherwise the app flashes before the claim card. The `auth.session.get`
+ * answer is settled first (it decides whether the claim question even matters),
+ * then the claim question is asked; on loopback that second hop is negligible.
+ */
+export async function fetchAutoOwnerSession(): Promise<AutoOwnerVerdict> {
+  const { client, serverId } = bareClientForActiveServer();
+  try {
+    const result = await client.call<AuthSessionGetResult>('auth.session.get');
+    if (result.authKind !== 'auto-owner') {
+      clearCachedAutoOwner(serverId);
+      return { state: 'gated' };
+    }
+    // AUTO-OWNER, BUT ONLY ON A CLAIMED NODE. Prefer the live claim answer,
+    // fall back to the cache — a warm claimed node whose `claim.status` flaked
+    // must still sign the owner in on its last-known `claimed: true`.
+    const claim = (await fetchNodeClaim()) ?? readCachedNodeClaim();
+    if (claim?.claimed === false) {
+      // The node has not been claimed. Withhold the app so the claim card wins.
+      clearCachedAutoOwner(serverId);
+      return { state: 'unclaimed' };
+    }
+    if (!claim) {
+      // The node vouched for the caller but its claim state could not be read
+      // AT ALL (no live answer, no cache). Do NOT sign in on an unknown claim
+      // state: an unclaimed first-run node is exactly where a blind sign-in
+      // buries the ceremony, and a transport-honest card is recoverable on the
+      // next load whereas a buried ceremony is not. Same ruling as `unreachable`
+      // — a warm auto-owner stays in on its cache, a cold browser stays out.
+      return { state: 'unreachable' };
+    }
+    const account = toGateAccount(result.account);
+    writeCachedAutoOwner(serverId, account);
+    return { state: 'auto-owner', account };
+  } catch (err) {
+    if (err instanceof CollabError && err.code === 'unauthenticated') {
+      clearCachedAutoOwner(serverId);
+      return { state: 'gated' };
+    }
+    return { state: 'unreachable' };
+  }
+}

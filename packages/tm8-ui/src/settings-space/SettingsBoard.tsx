@@ -48,10 +48,10 @@ function Pane({ label, children }: { label: string; children: ReactNode }) {
 function Both({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-      <div className="cv2-root" data-astryx-theme="neutral" data-theme="light">
+      <div className="cv2-root" data-theme="light">
         <Pane label={`${label} · light`}>{children}</Pane>
       </div>
-      <div className="cv2-root" data-astryx-theme="neutral" data-theme="dark">
+      <div className="cv2-root" data-theme="dark">
         <Pane label={`${label} · dark`}>{children}</Pane>
       </div>
     </div>

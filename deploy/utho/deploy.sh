@@ -29,7 +29,7 @@
 # THE FIVE THINGS THAT MAKE THE OBVIOUS RECIPE WRONG
 #
 #  1. STAGING HAS NO UI BUILD; PROD'S IS SEPARATE. `bun run build` is `tsc -b`
-#     only. Prod serves TM8_UI_DIR=packages/tm8-ui/dist, so prod needs a second,
+#     only. Prod serves TM8_UI_DIR=packages/tm8_ui_2.0/dist, so prod needs a second,
 #     explicit `vite build` — skip it and you ship a stale UI against a new server
 #     with no error anywhere. Staging runs vite DEV against source, so the
 #     checkout alone updates its UI and a build there is wasted work.
@@ -318,12 +318,21 @@ rok "server + CLI built"
 
 if [[ "$BUILD_UI" == 1 ]]; then
   # Prod only. `bun run build` above is tsc -b and does NOT touch the UI; prod
-  # serves packages/tm8-ui/dist, so skipping this ships a stale UI, silently.
+  # serves packages/tm8_ui_2.0/dist, so skipping this ships a stale UI, silently.
   say "building the UI bundle (separate vite build — prod serves dist)"
-  runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8-ui' && umask 022 && bun run build >/dev/null" \
+  runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8_ui_2.0' && umask 022 && bun run build >/dev/null" \
     || rdie "vite build failed — nothing has been stopped"
-  [[ -f "$DIR/packages/tm8-ui/dist/index.html" ]] || rdie "vite build reported success but dist/index.html is missing"
+  [[ -f "$DIR/packages/tm8_ui_2.0/dist/index.html" ]] || rdie "vite build reported success but dist/index.html is missing"
   rok "UI bundle built"
+
+  # The env file predates the tm8_ui_2.0 relocation and is root-owned, so the
+  # checkout update alone cannot move TM8_UI_DIR — and a stale pointer serves
+  # the frozen 1.0 snapshot with every other check green. Fix it here, where we
+  # are root anyway. Idempotent: a no-op once the env file already points right.
+  if grep -q "packages/tm8-ui/dist" "$ENVFILE"; then
+    sed -i 's|packages/tm8-ui/dist|packages/tm8_ui_2.0/dist|' "$ENVFILE"
+    rok "TM8_UI_DIR moved to packages/tm8_ui_2.0/dist in $ENVFILE"
+  fi
 else
   say "staging runs vite DEV against source — no UI build (the checkout already updated it)"
 fi

@@ -77,10 +77,10 @@ faithfully deliver roster events to a server that does not have your code.
 ## 4. Start the UI
 
 ```sh
-cd packages/tm8-ui && bun run dev          # :4612
+cd packages/tm8_ui_2.0 && bun run dev          # :4612
 ```
 
-`packages/ui` (:4611) is the legacy oracle. Voice lives only in `packages/tm8-ui`.
+`packages/ui` (:4611) is the legacy oracle. Voice lives only in `packages/tm8_ui_2.0`.
 
 ## 5. Create a voice channel
 

@@ -2,12 +2,12 @@
 # tm8 STAGING environment — the LIVE tree.
 #
 # Staging is not a build. It runs straight out of this working tree, so an edit
-# to packages/server or packages/tm8-ui shows up on staging without a deploy.
+# to packages/server or packages/tm8_ui_2.0 shows up on staging without a deploy.
 # That is the whole point of it: prod (7777/7778) is a frozen snapshot under
 # ~/.local/share/tm8-stable and never reloads; staging is where you watch your
 # changes land.
 #
-#   staging UI      http://127.0.0.1:8888   (vite dev, HMR, packages/tm8-ui)
+#   staging UI      http://127.0.0.1:8888   (vite dev, HMR, packages/tm8_ui_2.0)
 #   staging server  http://127.0.0.1:8887   (node + tsc -b --watch, auto-restart)
 #   staging DB      tm8_staging @ 5442      (created fresh 2026-07-31, migrated from 001)
 #   staging data    ~/.tm8-staging          (ISOLATED — shares nothing with prod)
@@ -52,5 +52,5 @@ export TM8_IDEMPOTENCY_ENABLED=0
 # only: the sandbox is untouched and the frame stays opaque-origin.
 export TM8_PREVIEW_FRAME_ANCESTORS="http://127.0.0.1:${TM8_UI_PORT} http://localhost:${TM8_UI_PORT}"
 
-# The vite dev proxy target (packages/tm8-ui/vite.config.ts reads this).
+# The vite dev proxy target (packages/tm8_ui_2.0/vite.config.ts reads this).
 export TM8_SERVER_ORIGIN="http://127.0.0.1:8887"

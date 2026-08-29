@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A reader-driven tm8 Help explainer for session dispatch: route an entity through the Dispatcher, preserve context, and record why.">
+<title>Dispatch · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style id="dispatch-styles">
+/* Dispatch-specific composition. The binding foundation above remains verbatim. */
+.sr-only { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; margin:-1px!important; overflow:hidden!important; clip:rect(0,0,0,0)!important; white-space:nowrap!important; border:0!important; }
+.intro-meta { display:flex; flex-wrap:wrap; align-items:center; gap:9px; margin:18px 0 8px; }
+.dispatch-press { position:relative; margin:0; padding:0; overflow:hidden; border-color:var(--line-strong); }
+.press-head { display:flex; align-items:flex-start; justify-content:space-between; gap:22px; padding:20px 22px 16px; border-bottom:1px solid var(--line); }
+.press-head h2 { margin:0 0 4px; font-size:24px; }
+.press-head p { margin:0; color:var(--muted); font-size:14px; }
+.press-state { flex:none; min-width:132px; text-align:right; }
+.press-state strong { display:block; font:600 11px var(--mono); letter-spacing:.11em; text-transform:uppercase; color:var(--accent-ink); }
+.press-state span { display:block; margin-top:3px; font:12px var(--mono); color:var(--muted); }
+.journey { position:relative; margin:0 24px; height:64px; display:flex; align-items:center; }
+.journey::before { content:""; position:absolute; left:12px; right:12px; top:31px; height:1px; background:var(--line-strong); }
+.journey-fill { position:absolute; left:12px; top:30px; width:0; height:2px; background:var(--accent); transition:width var(--dur-slow) var(--ease-out); }
+.journey-mark { position:absolute; left:12px; top:21px; width:21px; height:21px; border:1.5px solid var(--accent); border-radius:50%; background:var(--surface); display:grid; place-items:center; font:700 9px var(--mono); color:var(--accent-ink); transform:translateX(-50%); transition:left var(--dur-slow) var(--ease-out); }
+.journey-stops { position:relative; z-index:1; width:100%; display:flex; justify-content:space-between; padding:0 4px; }
+.journey-stops span { width:16px; height:16px; border:1px solid var(--line-strong); border-radius:50%; background:var(--surface); transition:border-color var(--dur-fast), background var(--dur-fast); }
+.journey-stops span.is-past { border-color:var(--accent); box-shadow:inset 0 0 0 4px var(--surface); background:var(--accent); }
+.route-canvas { display:grid; grid-template-columns:1.02fr .9fr 1.18fr 1fr; gap:1px; margin:0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--line); }
+.station { position:relative; min-width:0; min-height:318px; padding:17px 16px 18px; background:var(--surface); }
+.station::before { content:attr(data-letter); position:absolute; right:11px; top:9px; font:400 24px var(--serif); color:color-mix(in srgb,var(--line-strong) 55%,transparent); }
+.station-label { margin:0 0 13px; font:600 9.5px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+.entity-card, .choice, .memory-slip, .why-note { border:1px solid var(--line); border-radius:3px; background:var(--bg); padding:10px 11px; margin-top:9px; transition:opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+.entity-card { display:flex; align-items:flex-start; gap:9px; }
+.entity-card .ki { margin-top:2px; color:var(--accent-ink); }
+.entity-card strong { display:block; font-size:13.5px; line-height:1.25; }
+.entity-card small, .choice small, .memory-slip small { display:block; margin-top:3px; color:var(--muted); font:9.5px/1.35 var(--mono); }
+.entity-card[data-arrive], .why-note[data-arrive] { opacity:.23; transform:translateY(9px); border-style:dashed; }
+.entity-card.is-visible, .why-note.is-visible { opacity:1; transform:translateY(0); border-style:solid; }
+.derived-mark { color:var(--accent-ink); font:10px var(--mono); margin:8px 0 -2px; opacity:.25; transition:opacity var(--dur-base); }
+.derived-mark.is-visible { opacity:1; }
+.dispatcher-seal { display:grid; place-items:center; width:86px; height:86px; margin:18px auto 13px; border:1px solid var(--accent); border-radius:50%; color:var(--accent-ink); text-align:center; font:600 10px/1.3 var(--mono); letter-spacing:.08em; text-transform:uppercase; background:var(--surface); transition:transform var(--dur-slow) var(--ease-out), box-shadow var(--dur-slow) var(--ease-out); }
+.dispatcher-seal.is-reading { transform:rotate(-2deg) scale(1.03); box-shadow:inset 0 0 0 5px color-mix(in srgb,var(--accent) 9%,transparent); }
+.dispatcher-rule { max-width:none; margin:0 auto; text-align:center; color:var(--muted); font-size:13px; }
+.dispatcher-rule strong { color:var(--ink); }
+.capacity { display:flex; justify-content:center; margin-top:13px; }
+.choice { display:flex; align-items:center; gap:8px; opacity:.55; }
+.choice .who__avatar { flex:none; }
+.choice.is-selected { opacity:1; border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }
+.choice.is-selected::after { content:"picked"; margin-left:auto; font:600 8.5px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--accent-ink); }
+.evidence-rule { margin:15px 0 8px; border:0; border-top:1px solid var(--line); }
+.memory-slip { position:relative; padding-right:28px; opacity:.48; }
+.memory-slip .ki { color:var(--accent-2); }
+.memory-slip.is-selected { opacity:1; border-color:var(--accent-2); transform:translateX(-3px); }
+.memory-slip.is-selected::after { content:"✓"; position:absolute; right:9px; top:9px; color:var(--ok); font-weight:700; }
+.edge-label { opacity:.22; margin:8px 0 0; font:9px var(--mono); color:var(--muted); text-align:center; transition:opacity var(--dur-base); }
+.edge-label.is-visible { opacity:1; }
+.session-card.is-visible { border-color:var(--accent); }
+.session-card .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; background:var(--ok); }
+.why-note { font-size:13px; line-height:1.42; }
+.why-note b { display:block; margin-bottom:3px; font:600 9px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--accent-ink); }
+.press-caption { min-height:70px; padding:16px 22px 6px; font-size:15px; }
+.press-caption strong { color:var(--accent-ink); }
+.dispatch-press .tmc { margin:8px 22px 22px; }
+.fact-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; border:1px solid var(--line); background:var(--line); margin-top:20px; }
+.fact-strip > div { background:var(--surface); padding:13px 15px; }
+.fact-strip b { display:block; margin-bottom:3px; font:600 9.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--accent-ink); }
+.fact-strip span { color:var(--muted); font-size:13.5px; }
+.return-note { border-left:2px solid var(--accent); padding:2px 0 2px 14px; margin:15px 0; max-width:68ch; }
+.route-table { width:100%; border-collapse:collapse; margin-top:14px; font-size:14px; }
+.route-table th, .route-table td { text-align:left; vertical-align:top; border-top:1px solid var(--line); padding:10px 12px 10px 0; }
+.route-table th { width:20%; font:600 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.route-table td:nth-child(2) { width:30%; }
+.route-table code { white-space:nowrap; }
+.compare { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+.compare h3 { margin:0 0 8px; font-size:20px; }
+.compare p { font-size:14.5px; color:var(--muted); }
+.compare .card:first-child { border-color:var(--accent); }
+.quiet-list { margin:12px 0 0; padding-left:20px; }
+.quiet-list li { margin:6px 0; }
+@media (max-width:860px) {
+  .route-canvas { grid-template-columns:1fr 1fr; }
+  .station { min-height:280px; }
+  .fact-strip { grid-template-columns:1fr; }
+}
+@media (max-width:620px) {
+  header.site { height:auto; min-height:54px; align-items:center; padding:10px 16px; }
+  header.site .hub-note { display:none; }
+  main { padding:20px 14px 56px; }
+  h1 { font-size:36px; }
+  .press-head { display:block; padding:17px 16px 14px; }
+  .press-state { text-align:left; margin-top:10px; }
+  .journey { margin:0 16px; }
+  .route-canvas { grid-template-columns:1fr; }
+  .station { min-height:0; padding:15px 14px 17px; }
+  .dispatch-press .tmc { margin:8px 14px 16px; flex-wrap:wrap; }
+  .tmc .btn { flex:1 1 auto; justify-content:center; }
+  .tmc input[type="range"] { flex-basis:calc(100% - 70px); margin:9px 10px; }
+  .press-caption { min-height:96px; padding:14px 16px 6px; }
+  .compare { grid-template-columns:1fr; }
+  .route-table, .route-table tbody, .route-table tr, .route-table th, .route-table td { display:block; width:100%; }
+  .route-table tr { border-top:1px solid var(--line); padding:10px 0; }
+  .route-table th, .route-table td { border:0; padding:2px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journey-mark { display:none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg id="tm8-icons" aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ki-task" viewBox="0 0 16 16"><path d="M3.4 5.6a2.2 2.2 0 0 1 2.2-2.2h4.8a2.2 2.2 0 0 1 2.2 2.2v4.8a2.2 2.2 0 0 1-2.2 2.2H5.6a2.2 2.2 0 0 1-2.2-2.2z"/><path d="M6 8.1 7.4 9.5 10.1 6.6"/></symbol>
+  <symbol id="ki-work_session" viewBox="0 0 16 16"><path d="M2.4 5.2a2 2 0 0 1 2-2h7.2a2 2 0 0 1 2 2v5.6a2 2 0 0 1-2 2H4.4a2 2 0 0 1-2-2z"/><path d="M5.2 7.4 6.9 9 5.2 10.6"/><path d="M8.4 10.6h2.6"/></symbol>
+  <symbol id="ki-doc" viewBox="0 0 16 16"><path d="M9 2.6H5.2a1.4 1.4 0 0 0-1.4 1.4v8a1.4 1.4 0 0 0 1.4 1.4h5.6a1.4 1.4 0 0 0 1.4-1.4V5.6z"/><path d="M9 2.6v3h3.2"/><path d="M6 9h4"/><path d="M6 11.2h2.6"/></symbol>
+  <symbol id="ki-channel" viewBox="0 0 16 16"><path d="M6.4 3 5.2 13"/><path d="M11 3 9.8 13"/><path d="M3.6 6.4h9.2"/><path d="M3.1 9.6h9.2"/></symbol>
+  <symbol id="ki-voice_channel" viewBox="0 0 16 16"><path d="M8 2.6a1.9 1.9 0 0 1 1.9 1.9v3.2a1.9 1.9 0 0 1-3.8 0V4.5A1.9 1.9 0 0 1 8 2.6z"/><path d="M4.6 7.4a3.4 3.4 0 0 0 6.8 0"/><path d="M8 10.8v2.6"/><path d="M6 13.4h4"/></symbol>
+  <symbol id="ki-message" viewBox="0 0 16 16"><path d="M13.2 9.6a1.9 1.9 0 0 1-1.9 1.9H6.5L3.4 13.8V5.1a1.9 1.9 0 0 1 1.9-1.9h6a1.9 1.9 0 0 1 1.9 1.9z"/></symbol>
+  <symbol id="ki-member" viewBox="0 0 16 16"><path d="M8 8.3a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z"/><path d="M3.3 13.6a4.7 4.7 0 0 1 9.4 0"/></symbol>
+  <symbol id="ki-team_member" viewBox="0 0 16 16"><path d="M8 2.6v1.8"/><path d="M4.4 4.4h7.2a1.6 1.6 0 0 1 1.6 1.6v5a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6V6a1.6 1.6 0 0 1 1.6-1.6z"/><path d="M6.2 7.8v1.2"/><path d="M9.8 7.8v1.2"/></symbol>
+  <symbol id="ki-pull_request" viewBox="0 0 16 16"><path d="M4.9 5.6a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M11.1 5.6a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M4.9 13.8a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M4.9 5.6v4.8"/><path d="M11.1 5.6v1.4a2.6 2.6 0 0 1-2.6 2.6H4.9"/></symbol>
+  <symbol id="ki-commit" viewBox="0 0 16 16"><path d="M8 2.2v3"/><path d="M8 10.8v3"/><path d="M8 10.7a2.7 2.7 0 1 0 0-5.4 2.7 2.7 0 0 0 0 5.4z"/></symbol>
+  <symbol id="ki-file" viewBox="0 0 16 16"><path d="M11.8 7.9 7.4 12.3a2.7 2.7 0 0 1-3.8-3.8l5.3-5.3a1.8 1.8 0 0 1 2.5 2.5l-5.3 5.3a.9.9 0 0 1-1.3-1.3l4.7-4.7"/></symbol>
+  <symbol id="ki-spell" viewBox="0 0 16 16"><path d="M3.2 12.8 9.6 6.4"/><path d="M11.8 2.4l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L8.9 5.3l2.05-.85z"/><path d="M5.6 3.4v1.7"/><path d="M4.75 4.25h1.7"/></symbol>
+  <symbol id="ki-skill" viewBox="0 0 16 16"><path d="M8 4.4c-1.3-1-2.8-1.5-4.8-1.5v8.4c2 0 3.5.5 4.8 1.5"/><path d="M8 4.4c1.3-1 2.8-1.5 4.8-1.5v8.4c-2 0-3.5.5-4.8 1.5"/><path d="M8 4.4v8.4"/></symbol>
+  <symbol id="ki-collection" viewBox="0 0 16 16"><path d="M3 3h4.2v4.2H3z"/><path d="M8.8 3H13v4.2H8.8z"/><path d="M3 8.8h4.2V13H3z"/><path d="M8.8 8.8H13V13H8.8z"/></symbol>
+  <symbol id="ki-project" viewBox="0 0 16 16"><path d="M2.6 5.2a1.4 1.4 0 0 1 1.4-1.4h2.1l1.5 1.8h4.4a1.4 1.4 0 0 1 1.4 1.4v4.6a1.4 1.4 0 0 1-1.4 1.4H4a1.4 1.4 0 0 1-1.4-1.4z"/></symbol>
+  <symbol id="ki-interaction_profile" viewBox="0 0 16 16"><path d="M2.8 5.4h10.4"/><path d="M2.8 10.6h10.4"/><path d="M6.2 7a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/><path d="M10 12.2a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/></symbol>
+  <symbol id="ki-loop" viewBox="0 0 16 16"><path d="M8 3.2a4.8 4.8 0 1 0 4.53 3.2M12.8 3.2v3.2h-3.2"/></symbol>
+  <symbol id="ki-memory" viewBox="0 0 16 16"><path d="M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z"/></symbol>
+  <symbol id="ki-graph" viewBox="0 0 16 16"><path d="M4.3 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M11.7 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M11.7 13.6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M6.1 4.2h3.8"/><path d="M11.7 7.8v2.2"/></symbol>
+  <symbol id="ki-artifact" viewBox="0 0 16 16"><path d="M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z"/><path d="M2.6 5.3 8 8.2l5.4-2.9"/><path d="M8 8.2v5.4"/></symbol>
+  <symbol id="ki-worktree" viewBox="0 0 16 16"><path d="M6.2 5.8h5.6a1.4 1.4 0 0 1 1.4 1.4v5.6a1.4 1.4 0 0 1-1.4 1.4H6.2a1.4 1.4 0 0 1-1.4-1.4V7.2a1.4 1.4 0 0 1 1.4-1.4z"/><path d="M10.4 5.8V4.2a1.4 1.4 0 0 0-1.4-1.4H4.2a1.4 1.4 0 0 0-1.4 1.4V9a1.4 1.4 0 0 0 1.4 1.4h.6"/></symbol>
+  <symbol id="ki-custom" viewBox="0 0 16 16"><path d="M8 2.6 13.4 8 8 13.4 2.6 8z"/></symbol>
+</svg>
+<header class="site">
+  <span class="brand">tm8 <i>Help</i></span>
+  <span class="crumb">/ Dispatch</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+<main id="main">
+  <div class="kicker">Section 3 · Teammates &amp; Sessions · 22 of 55</div>
+  <h1>Dispatch</h1>
+  <p class="lede">Give tm8 the work before you know who should take it. The space’s Dispatcher routes the entity, prepares the context, and records its reason; it does not do the work.</p>
+  <div class="intro-meta" aria-label="Dispatch facts">
+    <span class="pill pill--accent">routing verb</span>
+    <span class="pill"><span class="pill__dot pill__dot--hollow"></span>no teammate picker</span>
+    <span class="pill pill--ok">durable request</span>
+    <span class="stamp">live CLI contract checked 2026-08-20</span>
+  </div>
+
+  <section aria-labelledby="route-title" style="margin-top:34px">
+    <figure class="dispatch-press" id="dispatch-press" data-frame="0">
+      <div class="press-head">
+        <div>
+          <h2 id="route-title"><span class="no">01</span>The routing pass</h2>
+          <p>Drive one request from subject to worker. Each movement leaves graph evidence behind.</p>
+        </div>
+        <div class="press-state" aria-hidden="true"><strong id="state-name">Hand off</strong><span>request 01 · Northlake</span></div>
+      </div>
+
+      <div class="journey" aria-hidden="true">
+        <span class="journey-fill"></span>
+        <span class="journey-mark">D</span>
+        <div class="journey-stops"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      </div>
+
+      <div class="route-canvas" aria-hidden="true">
+        <div class="station" data-letter="I">
+          <p class="station-label">Anchor · input</p>
+          <div class="entity-card">
+            <svg class="ki"><use href="#ki-doc"/></svg>
+            <div><strong>Release brief</strong><small>doc · subject entity</small></div>
+          </div>
+          <div class="derived-mark" data-arrive="1">↓ derived server-side</div>
+          <div class="entity-card" data-arrive="1">
+            <svg class="ki"><use href="#ki-task"/></svg>
+            <div><strong>Prepare the release</strong><small>task · routing anchor</small></div>
+          </div>
+          <div class="entity-card" data-arrive="1">
+            <svg class="ki"><use href="#ki-message"/></svg>
+            <div><strong>Dispatch request stored</strong><small>message → anchored_to → task</small></div>
+          </div>
+        </div>
+
+        <div class="station" data-letter="II">
+          <p class="station-label">Resident router</p>
+          <div class="dispatcher-seal">Dispatcher<br>routes only</div>
+          <p class="dispatcher-rule"><strong>Reads the field.</strong><br>Roster, memory graph summary, and live capacity arrive in its launch context.</p>
+          <div class="capacity"><span class="pill pill--ok"><span class="pill__dot"></span>session reused</span></div>
+        </div>
+
+        <div class="station" data-letter="III">
+          <p class="station-label">Pick · equip</p>
+          <div class="choice" data-choice="Juniper"><span class="who__avatar" style="border-radius:5px;border:1px solid var(--line-strong)">JU</span><div><strong>Juniper</strong><small>team_member · 1 live lane</small></div></div>
+          <div class="choice"><span class="who__avatar" style="border-radius:5px;border:1px solid var(--line-strong)">CA</span><div><strong>Callisto</strong><small>team_member · 2 live lanes</small></div></div>
+          <hr class="evidence-rule">
+          <div class="memory-slip" data-memory><svg class="ki"><use href="#ki-memory"/></svg> Release checklist<small>memory · verified</small></div>
+          <div class="memory-slip" data-memory><svg class="ki"><use href="#ki-memory"/></svg> Voice &amp; changelog rules<small>memory · current</small></div>
+          <p class="edge-label" data-edge="remembers">task — <code>remembers</code> → memory</p>
+        </div>
+
+        <div class="station" data-letter="IV">
+          <p class="station-label">Spawn · explain</p>
+          <div class="entity-card session-card" data-arrive="4">
+            <svg class="ki"><use href="#ki-work_session"/></svg>
+            <div><strong><span class="live-dot"></span>Juniper · release</strong><small>work_session · worker</small></div>
+          </div>
+          <p class="edge-label" data-edge="dispatched">worker session — <code>dispatched_by</code> → dispatcher session</p>
+          <div class="why-note" data-arrive="5"><b>Why · task message</b>Picked Juniper: release context matches; one lane is free. Attached 2 memories. Spawned a worker session.</div>
+        </div>
+      </div>
+
+      <ol class="sr-only">
+        <li>You dispatch a launchable entity. A non-task subject is derived to a task server-side.</li>
+        <li>The request is stored as a durable task message and delivered to a live Dispatcher session. If none is alive, the server spawns one first.</li>
+        <li>The Dispatcher reads the teammate roster, memory-graph summary, and live-session capacity, then chooses a teammate.</li>
+        <li>The Dispatcher selects useful memories and adds task remembers edges so those memories enter the worker’s launch context.</li>
+        <li>The Dispatcher spawns the worker session. The worker session records a dispatched_by edge to the Dispatcher session.</li>
+        <li>The Dispatcher posts who it chose and why on the task anchor. It does no implementation work itself.</li>
+      </ol>
+
+      <figcaption class="press-caption" aria-live="polite" aria-atomic="true" data-replay-caption></figcaption>
+      <div class="tmc" aria-label="Routing replay controls">
+        <button class="btn tmc-play" type="button">Play routing</button>
+        <button class="btn tmc-step" type="button">Next step</button>
+        <label class="sr-only" for="route-scrub">Routing step</label>
+        <input class="tmc-scrub" id="route-scrub" type="range" min="0" max="5" value="0" step="1">
+        <span class="tmc-count" aria-hidden="true">1 / 6</span>
+      </div>
+    </figure>
+    <div class="fact-strip" aria-label="Three rules of dispatch">
+      <div><b>The caller chooses nothing</b><span>No teammate, model, or memory flags belong to dispatch.</span></div>
+      <div><b>The request survives delivery</b><span>An undelivered PTY push still leaves the durable task message.</span></div>
+      <div><b>The router stops at spawn</b><span>The selected worker session performs the task; Dispatcher does not.</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="contract-title">
+    <h2 id="contract-title"><span class="no">02</span>The command’s honest boundary</h2>
+    <p>The command acknowledges routing to the Dispatcher. It does not wait for the later worker choice, and its result does not claim that work started.</p>
+    <div class="toggle2" data-toggle2>
+      <div class="tmc" role="group" aria-label="Show command or result">
+        <button class="btn" type="button" data-pane="typed" aria-pressed="true">What you type</button>
+        <button class="btn" type="button" data-pane="returned" aria-pressed="false">What comes back</button>
+      </div>
+      <div class="toggle2__panes">
+        <div class="is-shown" data-pane-id="typed">
+          <div class="term"><div class="term__bar"><span class="term__name">Northlake · dispatch request</span><span class="term__tag">CLI</span></div><pre><span class="p">tm8 session dispatch 01a09f30-7e20-7c33-8d40-2f5b7c9e1a33 \
+  --note "Release work; preserve the approved voice" \
+  --mutation-id dispatch-release-brief-01</span></pre></div>
+          <p class="caption">Any launchable entity may be the subject. Use <code>--force-new-task</code> only when you intend a fresh derived task instead of reusing one open derivation.</p>
+        </div>
+        <div data-pane-id="returned">
+          <div class="term"><div class="term__bar"><span class="term__name">execution.dispatch · accepted</span><span class="term__tag">result shape</span></div><pre><span class="out">{
+  "taskId": "01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11",
+  "dispatcherSessionId": "01a09f40-8a40-7e55-8f62-4b7d9e1a3c55",
+  "dispatcherSpawned": false,
+  "requestMessageId": "01a09f50-9b50-7f66-8a73-5c8e0f2b4d66",
+  "delivery": "delivered"
+}</span></pre></div>
+          <p class="return-note"><code>delivery: delivered</code> means the request reached the Dispatcher session. It does not mean a worker finished—or even that the later worker session id is known in this response.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="evidence-title">
+    <h2 id="evidence-title"><span class="no">03</span>What remains in the graph</h2>
+    <p>Dispatch is observable because routing leaves typed evidence. The prose reason lives beside those edges on the task anchor.</p>
+    <div class="plate" style="padding:8px 18px 14px;overflow-x:auto">
+      <table class="route-table">
+        <thead><tr><th>Evidence</th><th>Shape</th><th>What it proves</th></tr></thead>
+        <tbody>
+          <tr><th>Derived task</th><td><code>task</code> → <code>derived_from</code> → subject</td><td>A non-task launch subject gained the task used as the dispatch anchor.</td></tr>
+          <tr><th>Memory set</th><td><code>task</code> → <code>remembers</code> → <code>memory</code></td><td>The chosen memories feed the worker’s launch context after its persona working set.</td></tr>
+          <tr><th>Route provenance</th><td><code>work_session</code> → <code>dispatched_by</code> → <code>work_session</code></td><td>The worker session was spawned by that Dispatcher session.</td></tr>
+          <tr><th>Reason</th><td><code>message</code> → <code>anchored_to</code> → <code>task</code></td><td>Who was chosen and why is durable on the same anchor as the work.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="choice-title">
+    <h2 id="choice-title"><span class="no">04</span>Dispatch or spawn?</h2>
+    <div class="compare">
+      <article class="card"><h3>Dispatch</h3><p>Use it when the question is “someone should do this; choose well.” Hand tm8 only the subject and an optional note.</p><code>tm8 session dispatch &lt;subject-id&gt;</code></article>
+      <article class="card"><h3>Spawn</h3><p>Use it when you already know the teammate and launch configuration. Naming the worker yourself is manual spawning, not dispatch.</p><code>tm8 session spawn …</code></article>
+    </div>
+    <div class="gap-card" style="margin-top:18px"><b>Boundary, by design</b>Dispatcher can inspect routing context, attach memories, spawn, and reply. It does not edit the product, perform the task, create teammates, or hide an undelivered request.</div>
+    <ul class="quiet-list">
+      <li>The first dispatch in a space may be slower because the server may need to start the resident Dispatcher session and wait for it to settle.</li>
+      <li>Liveness is probed; a stored <code>work_session.status</code> alone is not trusted.</li>
+      <li>If delivery reports <code>undelivered</code>, the stored request remains recoverable on the task anchor.</li>
+    </ul>
+  </section>
+</main>
+<footer class="site">Last updated 2026-08-20 · Dispatch · tm8 Help v1 · <span class="stamp">CLI and edge registry verified</span></footer>
+<script id="tm8-foundation-js">
+/* ============================================================
+   tm8 Help — FOUNDATION SCRIPT (v2 — unchanged from v1)
+   Lift this <script> verbatim. Provides:
+   - TM8.reduced()          honest prefers-reduced-motion check
+   - TM8.stepper(root,opts) the ONE sequence driver (play/step/scrub)
+   - toggle2 wiring         the ONE "type / comes back" toggle
+   - TM8_MOCK               the shared Northlake mock workspace
+   ============================================================ */
+(function () {
+  'use strict';
+  var TM8 = {};
+  var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  TM8.reduced = function (el) {
+    return mq.matches || !!(el && el.closest && el.closest('.force-reduced'));
+  };
+
+  /* The standard control cluster. root contains .tmc-play, .tmc-step,
+     .tmc-scrub, .tmc-count. opts = { frames, render(i), intervalMs?, captions?[] }.
+     Play runs ONCE to the last frame and stops (starts, teaches, settles).
+     Under reduced motion, Play advances frame by frame with no animation. */
+  TM8.stepper = function (root, opts) {
+    var frames = opts.frames, i = 0, timer = null;
+    var play = root.querySelector('.tmc-play');
+    var step = root.querySelector('.tmc-step');
+    var scrub = root.querySelector('.tmc-scrub');
+    var count = root.querySelector('.tmc-count');
+    var cap = root.querySelector('[data-replay-caption]');
+    function render() {
+      opts.render(i);
+      if (scrub) scrub.value = String(i);
+      if (count) count.textContent = (i + 1) + ' / ' + frames;
+      if (cap && opts.captions) cap.textContent = opts.captions[i] || '';
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (play) play.textContent = 'Play';
+    }
+    function set(n) { i = Math.max(0, Math.min(frames - 1, n)); render(); }
+    if (play) play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      if (i >= frames - 1) set(0);
+      play.textContent = 'Pause';
+      var ms = opts.intervalMs || 1400;
+      if (TM8.reduced(root)) ms = Math.max(ms, 1800); /* no motion: give reading time */
+      timer = setInterval(function () {
+        if (i >= frames - 1) { stop(); return; }
+        set(i + 1);
+      }, ms);
+    });
+    if (step) step.addEventListener('click', function () { stop(); set(i >= frames - 1 ? 0 : i + 1); });
+    if (scrub) scrub.addEventListener('input', function () { stop(); set(parseInt(scrub.value, 10) || 0); });
+    render();
+    return { set: set, stop: stop };
+  };
+
+  /* toggle2: [data-toggle2] with button[data-pane] + [data-pane-id] panes */
+  TM8.wireToggles = function (scope) {
+    (scope || document).querySelectorAll('[data-toggle2]').forEach(function (box) {
+      var btns = box.querySelectorAll('button[data-pane]');
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          btns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+          box.querySelectorAll('[data-pane-id]').forEach(function (p) {
+            p.classList.toggle('is-shown', p.getAttribute('data-pane-id') === b.getAttribute('data-pane'));
+          });
+        });
+      });
+    });
+  };
+
+  /* ---- TM8_MOCK: the Northlake workspace (fiction; DTO-true shapes) ----
+     Shapes follow tm8.entity-context.v1 output, trimmed to rendered fields.
+     Ids are v7-shaped and fake. Model ids are NOT invented: teammates carry
+     provider only; harvest exact model ids from the live catalog if needed. */
+  var SPACE = '01a09e00-0000-7000-8000-1c2d3e4f5a6b';
+  function member(id, name, initials) {
+    return { id: id, kind: 'member', displayName: name, initials: initials, isAgent: false };
+  }
+  function teammate(id, name, initials, provider, role) {
+    return { id: id, kind: 'team_member', displayName: name, initials: initials,
+             isAgent: true, provider: provider, role: role || null, avatar: null,
+             ownerMemberId: '01a09e01-1111-7111-8111-aaaaaaaaaaa1' };
+  }
+  var MARA = member('01a09e01-1111-7111-8111-aaaaaaaaaaa1', 'Mara Voss', 'MV');
+  var THEO = member('01a09e02-2222-7222-8222-bbbbbbbbbbb2', 'Theo Iwu', 'TI');
+  var JUNIPER = teammate('01a09e10-3333-7333-8333-ccccccccccc3', 'Juniper', 'JU', 'claude-code');
+  var CALLISTO = teammate('01a09e11-4444-7444-8444-ddddddddddd4', 'Callisto', 'CA', 'codex');
+  var DISPATCHER = teammate('01a09e12-5555-7555-8555-eeeeeeeeeee5', 'Dispatcher', 'DI', 'claude-code', 'routes, never works');
+  var DREAMER = teammate('01a09e13-6666-7666-8666-fffffffffff6', 'Dreamer', 'DR', 'claude-code', 'tends memories, never deletes');
+  function task(id, title, status, category, priority, assignees, accDone, accTotal, version, extra) {
+    var t = {
+      id: id, spaceId: SPACE, kind: 'task', title: title, parentId: null,
+      visibility: 'space', version: version, category: category,
+      counters: { likes: 0, dislikes: 0, stars: 0, points: 0,
+        messages: (extra && extra.messages) || 0,
+        humanMessages: (extra && extra.humanMessages) || 0,
+        agentMessages: (extra && extra.agentMessages) || 0,
+        docs: 0, memories: 0, viewerReaction: null },
+      state: { kind: 'task', status: status, priority: priority, axes: {},
+        dueDate: null, assignees: assignees,
+        assignments: assignees.map(function (a) {
+          return { assignee: a, assignedBy: MARA, assignedAt: '2026-08-19T10:04:00.000Z' };
+        }),
+        acceptance: { total: accTotal, completed: accDone },
+        completionGate: (extra && extra.gate) || 'none' }
+    };
+    return t;
+  }
+  window.TM8_MOCK = {
+    space: { id: SPACE, name: 'Northlake' },
+    members: [MARA, THEO],
+    teammates: [JUNIPER, CALLISTO, DISPATCHER, DREAMER],
+    tasks: [
+      task('01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11', 'Fix login redirect loop', 'working', 'in_progress', 'high', [JUNIPER], 1, 3, 4, { messages: 3, humanMessages: 1, agentMessages: 2 }),
+      task('01a09f22-5d10-7b22-9c3f-1e4a6b8d0f22', 'Ship invite flow', 'in_review', 'in_progress', 'medium', [CALLISTO, THEO], 4, 4, 7, { gate: 'pr_merged' }),
+      task('01a09f23-6e20-7c33-8d40-2f5b7c9e1a33', 'Write release notes', 'open', 'to_do', 'low', [], 0, 2, 1),
+      task('01a09f24-7f30-7d44-9e51-3a6c8d0f2b44', 'Retire legacy webhook', 'done', 'done', 'medium', [JUNIPER], 2, 2, 9)
+    ],
+    session: {
+      id: '01a09f40-8a40-7e55-8f62-4b7d9e1a3c55', spaceId: SPACE, kind: 'work_session',
+      title: 'Juniper — login redirect loop', version: 2,
+      state: { kind: 'work_session', teammate: JUNIPER, provider: 'claude-code',
+               accessMode: 'fullAccess', workdir: 'worktree', live: true }
+    },
+    messages: [
+      { id: '01a09f50-9b50-7f66-8a73-5c8e0f2b4d66', kind: 'message',
+        author: MARA, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:12:00.000Z',
+        body: 'The loop only happens after a password change — can you check the session cookie path?' },
+      { id: '01a09f51-0c60-7a77-8b84-6d9f1a3c5e77', kind: 'message',
+        author: JUNIPER, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:14:00.000Z',
+        body: 'Confirmed. The redirect target is cached before the credential rotates. Fixing in the worktree; acceptance 1/3 done.' },
+      { id: '01a09f52-1d70-7b88-8c95-7e0a2b4d6f88', kind: 'message',
+        author: THEO, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:20:00.000Z',
+        body: 'Nice — leave the guard behind a comment, QA wants to trace it.' }
+    ]
+  };
+  window.TM8 = TM8;
+  document.addEventListener('DOMContentLoaded', function () { TM8.wireToggles(document); });
+}());
+</script>
+<script>
+(function () {
+  'use strict';
+  var root = document.getElementById('dispatch-press');
+  var captions = [
+    'Hand off — You name the subject, not the teammate. A task passes through; another launchable entity derives to a task.',
+    'Store before push — The task becomes the anchor, the request message is durable, and a live Dispatcher is reused or started.',
+    'Read the field — The Dispatcher weighs roster, memory-graph summary, and live capacity, then picks Juniper.',
+    'Prepare context — Selected memories join the task through remembers; they will be auto-injected for the worker.',
+    'Spawn the worker — The new session works the task and records dispatched_by provenance to the Dispatcher session.',
+    'Record why, then stop — The task message names the pick and reason. The Dispatcher has routed; the worker now performs the work.'
+  ];
+  var stateNames = ['Hand off', 'Store request', 'Choose teammate', 'Attach memories', 'Spawn worker', 'Record why'];
+  function reveal(selector, frame, activeClass) {
+    root.querySelectorAll(selector).forEach(function (el) {
+      var at = parseInt(el.getAttribute('data-arrive') || '0', 10);
+      el.classList.toggle(activeClass || 'is-visible', frame >= at);
+    });
+  }
+  window.TM8.stepper(root, {
+    frames: 6,
+    captions: captions,
+    intervalMs: 1250,
+    render: function (i) {
+      root.setAttribute('data-frame', String(i));
+      root.querySelector('.journey-fill').style.width = 'calc((100% - 24px) * ' + (i / 5) + ')';
+      root.querySelector('.journey-mark').style.left = 'calc(12px + (100% - 24px) * ' + (i / 5) + ')';
+      root.querySelectorAll('.journey-stops span').forEach(function (s, n) { s.classList.toggle('is-past', n <= i); });
+      document.getElementById('state-name').textContent = stateNames[i];
+      reveal('[data-arrive]', i);
+      root.querySelector('.dispatcher-seal').classList.toggle('is-reading', i === 2 || i === 3);
+      root.querySelector('[data-choice="Juniper"]').classList.toggle('is-selected', i >= 2);
+      root.querySelectorAll('[data-memory]').forEach(function (m) { m.classList.toggle('is-selected', i >= 3); });
+      root.querySelector('[data-edge="remembers"]').classList.toggle('is-visible', i >= 3);
+      root.querySelector('[data-edge="dispatched"]').classList.toggle('is-visible', i >= 4);
+    }
+  });
+}());
+</script>
+</body>
+</html>

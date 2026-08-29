@@ -1,0 +1,188 @@
+/*
+ * THE MOBILE FRAME — structure only.
+ *
+ * Regions and their floors. No screen styling lives here; Phase 3's screens
+ * bring their own and compose into these slots.
+ *
+ * §14 — every colour resolves through a `--pn-*` token. The package-level
+ * `hex-ban.test.ts` scans this file.
+ *
+ * L4 — every shrinkable track has a floor. The content row is `1fr`, whose
+ * implicit `auto` minimum is the floor; the banned spelling is `minmax(0, 1fr)`,
+ * which collapses the region to zero and makes the screen simply vanish. That
+ * has broken this app three separate times and it will not happen here.
+ */
+
+/*
+ * SAFE-AREA TOKENS (§3.6 — nothing in this codebase handles insets today).
+ *
+ * Declared on the frame rather than in `tokens.css` because the frame is the
+ * only consumer that exists. They are TOKENS and not inline values so §7.3's
+ * drop notice can sit above the tab bar and inside the inset by composing
+ * against the same numbers rather than re-deriving them.
+ *
+ * `env()` resolves to 0 wherever there is no notch or home indicator, so this
+ * is inert on every device that does not need it.
+ */
+.mobile-frame {
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-safe-left: env(safe-area-inset-left, 0px);
+  --mobile-safe-right: env(safe-area-inset-right, 0px);
+
+  /* Chrome floors. Touch targets, not desktop ones. */
+  --mobile-header-min: 44px;
+  /* The tab bar's floor. `MobileShell` no longer FILLS that region (owner
+     ruling 2026-08-19 — the drawer replaced the bar), but the region is still a
+     frame slot and this is still what would size it. */
+  --mobile-tabbar-min: 49px;
+
+  /*
+   * HOW MUCH ROOM THE BOTTOM-RIGHT FLOATING CREATE BUTTON NEEDS, and it is a
+   * FRAME token for the same reason the tab bar's was: two regions compose
+   * against it and neither owns it. The entity list reserves this much padding
+   * so its last row is never trapped under the control (`mobile-screens.css`),
+   * and the notice host below sits above the same number.
+   *
+   * ~72px: a 56px control plus a `--pn-space-3` gap. It REPLACES the tab bar's
+   * ~49px rather than adding to it, so a phone list is net taller than it was.
+   */
+  --mobile-fab-reserve: 72px;
+
+  /*
+   * THE TOUCH FLOOR, AS ONE NAMED NUMBER (shell contract, DEF-013…020).
+   *
+   * The two floors above have been right since the frame landed, and they were
+   * right by carrying the same literal twice. The phone override block in
+   * `mobile-screens.css` needs that number roughly a dozen more times, and a
+   * dozen hand-typed `44px`s is a dozen chances for one of them to become 40
+   * in a hurry and for the instrument to catch it three lanes later.
+   *
+   * IT IS THE FLOOR ON THE SMALLER SIDE, always. A control 120 wide and 22 tall
+   * fails the same thumb the census is measuring — `mobile-header__back` says
+   * this in its own comment and this is the same rule named once.
+   *
+   * WHAT IT IS NOT: a licence for `button { min-height: var(--mobile-touch-min) }`.
+   * A blanket rule inflates the desktop-shared dense components that render
+   * inside sheets and re-triggers the fixed-height clipping class of bug that
+   * `.lp__actions` documents at length. Per-class overrides only — that
+   * constraint is part of the ledger's acceptance, not advice. See CONTRACT.md §6.
+   */
+  --mobile-touch-min: 44px;
+
+  /*
+   * HOW MUCH OF THE FRAME THE SOFT KEYBOARD IS SITTING ON. Published by
+   * `MobileFrame` from `useKeyboardInset`; declared here with a `0px` default so
+   * this stylesheet is correct on its own, before any JS has measured anything,
+   * and so a `calc()` against it can never resolve to an invalid length.
+   */
+  --mobile-keyboard-inset: 0px;
+
+  /*
+   * `100dvh`, NOT `100vh`. On iOS Safari `100vh` is the height the viewport
+   * has with the URL bar HIDDEN, so a `100vh` shell is taller than the screen
+   * whenever the bar is showing — which is most of the time — and the tab bar
+   * ends up underneath it.
+   *
+   * MINUS THE KEYBOARD, which `dvh` does NOT account for and no media query can
+   * see: on iOS the keyboard overlays the layout viewport rather than resizing
+   * it, so a frame sized at exactly `100dvh` puts its own tab bar — and any
+   * bottom-anchored composer — underneath the keyboard. Subtracting the
+   * measured inset makes the frame exactly the part of the screen that is still
+   * visible, which every region below then inherits without knowing why. See
+   * the block over `useKeyboardInset()` in `MobileFrame.tsx`.
+   */
+  height: calc(100dvh - var(--mobile-keyboard-inset, 0px));
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  position: relative;
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  padding-left: var(--mobile-safe-left);
+  padding-right: var(--mobile-safe-right);
+}
+
+.mobile-frame__header {
+  min-height: var(--mobile-header-min);
+  padding-top: var(--mobile-safe-top);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+/*
+ * The one scrolling surface. `min-height: 0` is required on a grid child that
+ * scrolls — without it the row floors at its content height and the whole
+ * frame scrolls instead, taking the tab bar off-screen. This is the floored
+ * spelling of the fix, not the banned `minmax(0, 1fr)` on the track.
+ */
+.mobile-frame__content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-frame__tabbar {
+  min-height: var(--mobile-tabbar-min);
+  padding-bottom: var(--mobile-safe-bottom);
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+/*
+ * THE HOME-INDICATOR INSET IS FOR THE HOME INDICATOR, and while the keyboard is
+ * up there is no home indicator to clear — the keyboard is drawn over it. Left
+ * applied, the bar reserves ~34px of blank paper directly above the keyboard on
+ * every notched device, on the one screen state where vertical room is
+ * scarcest. Zeroed by the same measured number the frame's height uses, so
+ * there is one fact about the keyboard and two consumers of it, not two facts.
+ *
+ * A MARKER ATTRIBUTE, not a selector that reads the inline style. `MobileFrame`
+ * stamps `data-keyboard="up"` from the same measurement — an attribute is
+ * greppable, testable without a layout engine, and cannot quietly stop matching
+ * the way a `[style*=…]` substring match would the first time the number is
+ * formatted differently.
+ */
+.mobile-frame[data-keyboard='up'] .mobile-frame__tabbar {
+  padding-bottom: 0;
+}
+
+/*
+ * Notices sit ABOVE the bottom chrome and inside the bottom inset (§7.3). A
+ * screen cannot place these for itself because a screen does not know what is
+ * down there — which is exactly why this is a frame region.
+ *
+ * THE THING THEY CLEAR CHANGED, so the number they compose against changed with
+ * it. It used to be the tab bar's floor; the bar is gone (owner ruling
+ * 2026-08-19) and the floating create button now occupies that corner, so the
+ * notice clears the FAB's reserve instead. Left as `--mobile-tabbar-min` this
+ * would have been a 49px gap over nothing on the screens with no FAB and a
+ * notice sitting ON the FAB on the screens with one — which is the failure this
+ * whole token arrangement exists to prevent: §7.3's own docblock says a notice
+ * must compose against the same numbers rather than re-deriving them.
+ */
+.mobile-frame__notices {
+  position: absolute;
+  left: var(--mobile-safe-left);
+  right: var(--mobile-safe-right);
+  bottom: calc(var(--mobile-safe-bottom) + var(--mobile-fab-reserve));
+  z-index: 20;
+  pointer-events: none;
+}
+
+.mobile-frame__notices > * {
+  pointer-events: auto;
+}
+
+/*
+ * The sheet host covers the whole frame, TAB BAR INCLUDED. Sheets are the
+ * mobile answer to the desktop pin and the desktop hover-card, and a sheet
+ * that stopped short of the tab bar would read as a panel rather than a modal
+ * surface.
+ */
+.mobile-frame__sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+}

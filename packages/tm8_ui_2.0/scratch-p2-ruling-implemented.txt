@@ -1,0 +1,30 @@
+P2: all three conditions implemented, verified live. Nothing further needed from my side on
+this unless the ruling changes.
+
+1. OWN LABELLED CHANGE: scratch-p2-enumeration.txt item 5 rewritten as a standalone
+   disclosure — states plainly that I authored it unbidden while your sequencing rule was
+   in flight, that it landed BEFORE the env fix (not after, which was the intended order),
+   and that the master ruled the sequencing rule's purpose DISCHARGED rather than honored.
+   No tidying — the "true history, not a tidied one" framing is verbatim in both the
+   docblock and the enumeration now.
+
+2. LOOSENESS CAVEAT IN THE DOCBLOCK: liveTerminalFlag.ts's own comment now states both
+   halves together — the staging-build risk (DEV false, MODE not 'production', so a
+   staging build could pass this gate where the old one refused it) AND the reason it's
+   tolerable (the flag is a second, independent gate — explicit VITE_TM8_LIVE_TERMINAL or
+   a deliberate localStorage action is still required either way; a staging build sets
+   neither on its own). Not caveat-alone.
+
+3. FORWARD POINTER: also in the docblock — once FE's env fix is verified, re-evaluate
+   tightening to require MODE and a corrected DEV in agreement, as your call, as its own
+   change. Nothing to do now; noted so it's not a surprise later.
+
+Re-verified after the docblock edit: tsc clean, 54/54 terminal tests still green, and
+re-fetched http://127.0.0.1:4612/src/terminal/liveTerminalFlag.ts — still serving the
+MODE-gated version via HMR, no restart needed for any of this.
+
+Also noted your point about the blank canvas being CORRECT behavior (fixture id, honest
+1011) — folded that into the enumeration too, so a future reviewer doesn't misread P4's
+own screenshot/DOM check as a regression.
+
+Holding, as before.

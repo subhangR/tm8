@@ -1,0 +1,45 @@
+{
+  "name": "tm8_ui_2.0",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "audit:mobile": "node e2e/mobile-audit.mjs"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "^0.5.0",
+    "@astryxdesign/theme-gothic": "^0.5.0",
+    "@astryxdesign/theme-neutral": "^0.5.0",
+    "@maestro/pty-protocol": "workspace:*",
+    "@stylexjs/stylex": "^0.19.0",
+    "@tm8/cli": "workspace:*",
+    "@tm8/contract": "workspace:*",
+    "@tm8/prompt": "workspace:*",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "mermaid": "^11.16.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "axe-core": "^4.12.1",
+    "jsdom": "^28.1.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.8",
+    "vitest": "^4.0.18"
+  }
+}

@@ -65,7 +65,7 @@ function Column({
   const note = (line: string) => setLog((prev) => [line, ...prev].slice(0, 4));
 
   return (
-    <div className="cv2-root" data-astryx-theme="neutral" data-theme={theme === 'dark' ? 'dark' : undefined}>
+    <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
       <div className="harness-col">
         <div className="harness-cap">{label}</div>
         {/* 280px — the real side-panel width. A control that only fits at

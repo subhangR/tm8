@@ -1,0 +1,298 @@
+/* ==========================================================================
+   THE LAUNCH SHEET, ON A PHONE (Lane C — DEF-004)
+   ==========================================================================
+
+   A SEPARATE FILE ON PURPOSE. `.ls` is authored in `shell/shell.css`, which is
+   the DESKTOP shell's stylesheet and is in daily use; the phone arrangement is
+   a different arrangement of the same markup, and interleaving it there would
+   put two viewports' worth of geometry in one block for the next reader to
+   untangle. Nothing here edits a desktop rule in place — every selector below
+   is additionally qualified, so the desktop cascade is untouched.
+
+   THE SCOPE IS DOUBLE, AND BOTH HALVES ARE DELIBERATE:
+
+     .cv2-root[data-shell='mobile']   — the marker `GateApp` and `MobileFrame`
+                                        stamp. CONSUMED here, never changed:
+                                        it is a shared contract with
+                                        `mobile-screens.css` (20 uses),
+                                        `terminal.css` (21 rule heads) and the
+                                        zoom gate, and moving or re-wrapping it
+                                        breaks all three at once — presenting,
+                                        misleadingly, as "my CSS did not apply".
+     .ls[data-arrangement='phone']    — set by `LaunchSheet` itself only when
+                                        `useMobileSurface().oneSurface` is true.
+
+   Either alone would be enough. Together they mean a rule here cannot reach a
+   desktop mount even if one of the two mechanisms is later changed by somebody
+   who has not read the other.
+
+   WHERE THE SHEET ACTUALLY LIVES. `LaunchSheet` renders this subtree INSIDE
+   `MobileSheet`, which portals into the frame's `.msheet-host`. So the panel's
+   own geometry — its bottom anchoring, its height cap, its scrim, its safe-area
+   padding — belongs to `mobile-screens.css` and is NOT restated here. This file
+   only says what the launch FORM does inside that panel.
+
+   THE TOUCH FLOOR IS PER-CLASS, WHICH IS ACCEPTANCE AND NOT STYLE.
+   `mobile/CONTRACT.md` §6: no blanket `button { min-height: 44px }` (it
+   inflates every dense desktop-shared control that happens to render inside a
+   sheet) and no `::after` hit areas (the instrument measures the ELEMENT's own
+   rect, so a pseudo-element hit area scores as fixed while the thumb still
+   misses). Every floor below names its class and sets the SMALLER side — 120×22
+   fails the same thumb as 22×120. */
+
+/* --- The form's own box --------------------------------------------------
+   Undoing the desktop overlay, not restyling it. `.ls` is `position: absolute`
+   with a 420px width and its own border, radius and pop shadow because on a
+   desktop it floats over the workspace centre. Inside a phone sheet the panel
+   already supplies every one of those, so leaving them on would draw a card
+   inside a card with two borders and two radii — and the absolute positioning
+   would take it out of the panel's flow entirely.
+
+   `overflow: visible` is load-bearing rather than tidy-up: the footer below is
+   `position: sticky` against `.msheet__body`'s scrollport, and a `sticky`
+   element inside an `overflow: hidden` ancestor is silently downgraded to
+   static — the commit control would scroll away with the form and there would
+   be nothing in the DOM to show why. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] {
+  position: static;
+  inset: auto;
+  width: auto;
+  max-width: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+  overflow: visible;
+  z-index: auto;
+}
+
+/* --- One scroller, not two ------------------------------------------------
+   On a desktop `.ls__body` is "the ONLY scrolling region" because the head,
+   the FROM strip and the footer are pinned inside a fixed-height overlay. In a
+   phone sheet `.msheet__body` is already that scroller. Two nested scrollports
+   with a sticky footer between them is a surface where a drag near the bottom
+   edge does one of two different things depending on a boundary nobody can
+   see. So the inner one is switched off and the panel's own scroll carries the
+   whole form. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__body {
+  flex: 0 0 auto;
+  overflow: visible;
+  min-height: 0;
+  gap: 18px;
+  padding: 14px 16px 8px;
+}
+
+/* --- FROM: the provenance strip wraps rather than clips -------------------
+   Three inline items — eyebrow, chip, caption — on one 390px row, where the
+   caption alone is "subject pre-associated — the session links to it". A
+   nowrap row would put the end of that sentence past the right edge, and
+   `.mobile-frame` is `overflow: hidden`, so it would be DESTROYED rather than
+   scrolled to and the document-level overflow measure would still read zero
+   (ledger RULE R3). Wrapping is the whole fix. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__from {
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 10px 16px;
+}
+
+/* Mono strings with no spaces to break at — a model id, a project path, a
+   provider handle — are the ones that reach past the edge. `anywhere` rather
+   than `break-word` so a single long token breaks INSIDE itself instead of
+   claiming a whole line and overflowing anyway. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__caption,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__rowname,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__rowsub,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__chip {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* --- The box model, before anything below adds padding -------------------
+   MEASURED, Case B, `c7c09a38`: eight `.ls__row--inert` roots ending 10px past
+   the frame — `worstRightEdge` 400 of 390 AND 440 of 430. IDENTICAL AT BOTH
+   WIDTHS, which is the signature: a squeeze scales with the viewport, a
+   box-model excess does not. `.mobile-frame` is `overflow: hidden`, so those
+   10px are CLIPPED, not scrolled to.
+
+   THE CAUSE IS THREE ELEMENTS SHARING ONE SHAPE. Each is declared `width: 100%`
+   in `shell.css` and each is given horizontal padding below:
+
+     .ls__row     shell.css:1430  width:100% · padding 7px 10px  -> here 12px  ( 20 -> 24)
+     .ls__select  shell.css       width:100% · padding …30px…10px -> here 34/12 ( 40 -> 46)
+     .ls__search  shell.css       width:100% · padding 6px 10px  -> here 12px  ( 20 -> 24)
+
+   `box-sizing` is NOT `border-box` by default in this app — `maestro-task-tile.css`
+   says so in its own words at :181, having already cost someone a 29px floor
+   that measured 41px. So `width: 100%` PLUS padding is over-wide BY THE PADDING,
+   and raising the padding for a touch target widened the excess.
+
+   ── WHY THIS IS NOT THE `box-sizing` CHANGE THAT WAS WITHDRAWN TONIGHT ─────
+   That one was on `.mobile-frame__tabbar`, a container SIZED BY ITS CHILDREN:
+   both box models give the same used height, so it could not bind and was
+   measured inert before it shipped. These three carry an EXPLICIT `width: 100%`,
+   where `box-sizing` changes the used width by definition. Same property,
+   opposite situation.
+
+   ── WHAT A GREEN RE-CAPTURE WILL AND WILL NOT COVER ───────────────────────
+   Only `.ls__row` has a before-number. `.ls__select` and `.ls__search` render
+   only with a picker open, a state no capture in this program has produced —
+   they are FIXED BY DERIVATION AND UNVERIFIED BY MEASUREMENT. `overflowCount`
+   returning 0 proves `.ls__row` and says nothing about the other two, and the
+   row must not be read as covering them. They are here because fixing only the
+   flagged member is how the other two would have survived a green result. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__row,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__select,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__search {
+  box-sizing: border-box;
+}
+
+/* --- Rows ----------------------------------------------------------------
+   The teammate, project, profile and memory rows are the sheet's primary
+   targets: choosing one IS configuring the launch. They measure ~40px tall on
+   the desktop's 7px padding, which is under the bar on the smaller side. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__row {
+  min-height: 44px;
+  padding: 9px 12px;
+  gap: 10px;
+}
+
+/* THE ROSTER KEEPS ITS CAP, AND THAT IS A DECISION.
+   `.ls__roster` is the one nested scroller left standing. It exists so an
+   unbounded teammate list can never push the model / reasoning / permission
+   controls below the fold, which is a user ruling recorded over the markup —
+   and it holds harder on a phone, not less. It is `overflow-y: auto` and NOT
+   `hidden`, so growing the rows inside it scrolls rather than clipping: this
+   is not the pinned-container trap of CONTRACT.md §6, and the distinction is
+   exactly `auto` vs `hidden`.
+
+   The cap is raised because the rows grew — 218px showed four 40px rows and
+   would show three-and-a-bit 44px ones, and a row sliced through the middle by
+   a scrollport edge is the vertical clipping no metric in this program can
+   see. `overscroll-behavior-y: contain` stops a flick inside the roster from
+   chaining out into the sheet's own scroll and dismissing the reader's place. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__roster {
+  max-height: 268px;
+  overscroll-behavior-y: contain;
+}
+
+/* --- Form controls, and the 16px rule that is NOT about legibility --------
+   iOS Safari ZOOMS THE VIEWPORT when a form control smaller than 16px takes
+   focus, and it does not zoom back out. Every `<select>` and the roster filter
+   are 12px on the desktop sheet, so on the device this arrangement exists for,
+   touching any of them re-scales the whole app under the reader. That maps to
+   `desktop-only affordance` in the ledger's own classification (RULE R6), not
+   to tap-target — the control is not merely small, it behaves correctly on
+   exactly one class of device. 16px is the threshold Safari uses; it is not a
+   taste. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__select,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__search {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+/* THE 34px IS THE CHEVRON'S CLEARANCE AND IT IS DERIVED FROM A FILE THIS ONE
+   DOES NOT OVERRIDE. `shell.css:1462` draws the arrow as a `background`
+   shorthand and reserves space for it with `padding-right: 30px`; the 34 here
+   is that 30 plus the 4px this rule's larger text needs to stop the label
+   running under the glyph.
+
+   BOTH ENDS OR IT DOES NOT COUNT — and this end is the one that changed. If
+   anyone alters that SVG's width or its `right` offset in `shell.css`, this
+   number goes stale SILENTLY: the select still measures 44px, still passes
+   every tap and overflow field this program has, and the text simply runs under
+   the chevron. A READABILITY DEFECT WITH NO METRIC, on a control enlarged
+   specifically for readability.
+
+   It was the only derived number in these three files with no arithmetic
+   written down, which is exactly why my own comment-keyed sweep could not see
+   it: a predicate built from what you remember documenting cannot surprise you. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__select {
+  padding: 10px 34px 10px 12px;
+  margin-top: 8px;
+}
+
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__search {
+  padding: 10px 12px;
+}
+
+/* The access-mode cycle. 2px of vertical padding around a 10px mono label
+   measured ~18px tall — a control whose entire value is that one tap changes
+   the posture, at a size where the tap lands somewhere else. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__accessbtn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 16px;
+  margin: 6px 0 2px;
+  font-size: 12px;
+}
+
+/* "change ▾" — a bare text button with no padding at all, opening the profile
+   and memory pickers. It sits at the END of a row, so it takes the floor on
+   both sides and the row's own 44px keeps it from growing the row further. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__change {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+/* --- The footer: pinned to the scrollport, wrapping, and reachable --------
+   THE COMMIT CONTROL MAY NEVER BE BELOW THE FOLD. On a desktop the footer is
+   pinned by the overlay's fixed height. Here the form scrolls inside the
+   panel, so `sticky` against `.msheet__body` is what keeps Launch on screen
+   however long the project list grows — the same promise, kept by the
+   mechanism this arrangement actually has.
+
+   AND IT WRAPS. Capacity ("node loopback · 8 slots, 3 in use") plus Cancel
+   plus Dispatch plus Launch is far wider than 390 on one line, and the
+   `ls__spacer` between them is `flex: 1`, which on a nowrap row does not
+   prevent the overflow — it guarantees the three buttons are pushed to the far
+   right, i.e. straight off the edge. Wrapping puts the capacity statement on
+   its own line above the three controls, which is also the order T5-5 asks
+   for: capacity is stated BEFORE commitment. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  box-shadow: 0 -1px 0 var(--pn-line);
+}
+
+/* Full width, so the buttons below it start a fresh line rather than trailing
+   whatever the capacity string happened to leave. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__capacity {
+  flex: 1 0 100%;
+  font-size: 10.5px;
+}
+
+/* The spacer's job on a desktop is to push the buttons right. On a wrapped
+   row it would claim an entire line of its own and split the button group
+   across two. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__foot .ls__spacer {
+  display: none;
+}
+
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__cancel,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__dispatch,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__launch {
+  min-height: 44px;
+  /* NOT `min-width: 44px` and then left to size on content. Three buttons
+     sharing one 390px row need to divide it, and `1 1 0` divides it evenly
+     while `flex: none` would let the widest label ("Launching…") decide and
+     push Launch off the edge — which is the DEF-001 failure mode one surface
+     over, arriving by a different route. */
+  flex: 1 1 0;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+/* The refusal must be readable where it is rendered — IN the sheet, never as a
+   toast — so it takes the same wrap treatment as the rest. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__refusalbody,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__profile-empty,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__roster-empty {
+  overflow-wrap: anywhere;
+}

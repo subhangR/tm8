@@ -1,0 +1,482 @@
+/* ==========================================================================
+   AUTHORING — the create and save flows.
+
+   EVERY VALUE HERE IS EXTRACTED FROM THE ORACLE'S INLINE STYLES, and every
+   colour resolves through a token. The package hex guard (src/hex-ban.test.ts)
+   walks this file; it is not excluded and must never need to be.
+
+   ORACLE FILE: "T0-1 workspace structure review (1)/T5-5 T5-6 Launch &
+   Authoring Flows Hi-Fi.dc.html". Three frames, all three cited below by their
+   data-screen-label.
+
+   THE MAPPING FROM MEASURED HEX TO TOKEN, stated once so a reviewer can check
+   it without a colour picker — every oracle value already had a name:
+     #FFFFFF → --pn-card      #FBFAF6 → --pn-surface   #F2EFE8 → --pn-hover
+     #E7E3D9 → --pn-line      #D8D3C6 → --pn-line-2    #23201B → --pn-ink
+     #5B564C → --pn-ink-2     #8E897B → --pn-ink-3     #B7B2A4 → --pn-ink-4
+     #B26A2B → --pn-brand     #9A581F → --pn-brand-2   #BB4D3D → --pn-block
+     rgba(178,106,43,.11) → --pn-brand-soft
+     rgba(178,106,43,.20/.35) → rgba(var(--pn-brand-rgb), α)   [derived; the
+       token file ships --pn-brand-rgb for exactly this, so both re-theme]
+
+   MICRO TYPE SIZES ARE D5-VERBATIM: 9.5 / 11.5 / 12.5 / 13.5 / 14.5px are the
+   canvas's own literals and stay as written. Global scale is the single
+   `zoom: 1.1` lever on .cv2-root (D60); nothing here bumps a size.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   The inline-editable title.
+   Resting state: full-width wrapping title. Editable titles retain the text
+   cursor and keyboard semantics without the canvas's dotted underline.
+   -------------------------------------------------------------------------- */
+.cv2-root .au-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  color: var(--pn-ink);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.cv2-root .au-title--editable {
+  cursor: text;
+}
+
+.cv2-root .au-title--editable:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* T5-6 "Generic create pattern" draws the placeholder title in ink-4 — it is
+   not a name anyone chose. Once a real title exists the field is ordinary ink. */
+.cv2-root .au-title[data-placeholder='true'] {
+  color: var(--pn-ink-4);
+}
+
+/* The editing field — T5-6 "Generic create pattern", header title in edit:
+     height:24px; padding:0 8px; background:#FFFFFF; border:1px solid #B26A2B;
+     border-radius:6px; font-size:13.5px; font-weight:600;
+     box-shadow:0 0 0 2px rgba(178,106,43,.11)
+   6px sits between --pn-r-xs and --pn-r-sm and is kept verbatim per D5.
+   caret-color replaces the oracle's drawn 1.5px brass bar: that bar is a
+   static mock's rendering of a caret, and a real input already has one. */
+.cv2-root .au-title-input {
+  flex: 1 1 auto;
+  min-width: 64px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-brand);
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  caret-color: var(--pn-brand);
+  outline: none;
+}
+
+/* --------------------------------------------------------------------------
+   The "editing" pill — T5-6 "Teammate authoring", panel header:
+     mono 9.5px/600; color #9A581F; background rgba(178,106,43,.11);
+     border-radius 999px; padding 2px 7px; flex:none
+   -------------------------------------------------------------------------- */
+.cv2-root .au-editing {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+/* --------------------------------------------------------------------------
+   Cancel / Save — T5-6 "Teammate authoring", action row.
+   -------------------------------------------------------------------------- */
+.cv2-root .au-btn {
+  flex: none;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 9px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.cv2-root .au-btn:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.cv2-root .au-btn--quiet {
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+}
+
+.cv2-root .au-btn--quiet:hover:not(:disabled) {
+  background: var(--pn-hover);
+}
+
+.cv2-root .au-btn--primary {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+}
+
+.cv2-root .au-btn--primary:hover:not(:disabled) {
+  background: rgba(var(--pn-brand-rgb), 0.2);
+}
+
+/* --------------------------------------------------------------------------
+   The create chip's two new states.
+   NOTE WHAT IS ABSENT: no colour, no radius, no padding, no font on .lp__new.
+   D58 ruled that chip INK from the T0-1 oracle and panels.css owns it; the
+   authoring canvas draws it brass, which is the superseded pixel. This file
+   adds the in-flight treatment and nothing else.
+   -------------------------------------------------------------------------- */
+.cv2-root .au-create--pending {
+  opacity: 0.62; /* T5-5/T5-6's own dimming for a row that cannot be acted on */
+  cursor: progress;
+}
+
+.cv2-root .au-pending {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  align-self: center;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   The designed refusal card — T5-5, the "DESIGNED REFUSAL — NOT A TOAST
+   APOLOGY" block:
+     card #FBFAF6; radius 10px; padding 12px 14px; column; gap 8px
+     dot  9px round #BB4D3D
+     word 12.5px/600 #BB4D3D
+     body 11.5px/1.55 #5B564C; text-wrap:pretty
+     move mono 9.5px #8E897B; 1px #D8D3C6; r6; 2px 9px; #FFFFFF; hover #F2EFE8
+     note mono 9.5px #B7B2A4; align-self:center
+
+   THE ONE DELIBERATE DIVERGENCE: the oracle's card carries
+   `border:1px solid #2C2719` and `box-shadow:0 2px 8px rgba(0,0,0,.5)` because
+   it is drawn on the dark presentation board. #2C2719 is the DARK line token;
+   inside a light panel it would be a near-black frame. The hairline rule
+   settles it: --pn-line BOUNDS a component, and a card is a component. The
+   shadow drops for the same reason — this card is seated in a panel body, not
+   floating over it, and --pn-sh-md is the seated elevation.
+   -------------------------------------------------------------------------- */
+.cv2-root .au-refusal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+}
+
+.cv2-root .au-refusal__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cv2-root .au-refusal__dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--pn-block);
+}
+
+.cv2-root .au-refusal__word {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pn-block);
+}
+
+.cv2-root .au-refusal__body {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+
+.cv2-root .au-refusal__moves {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cv2-root .au-refusal__move {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  padding: 2px 9px;
+  background: var(--pn-card);
+  cursor: pointer;
+}
+
+.cv2-root .au-refusal__move:hover {
+  background: var(--pn-hover);
+}
+
+.cv2-root .au-refusal__note {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  align-self: center;
+}
+
+/* --------------------------------------------------------------------------
+   The editable status pill — T0-4 header: `● working ▾`, cursor:pointer.
+   The caret is the whole affordance; without it the pill is indistinguishable
+   from every read-only status pill in the app.
+   -------------------------------------------------------------------------- */
+.cv2-root .au-status {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
+.cv2-root .au-status__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cv2-root .au-status__caret {
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+/* The picker. --pn-sh-pop is the design system's own "floating over content"
+   elevation (D54 measured it as what distinguishes an overlay from a seated
+   panel), which is what a popover is. */
+.cv2-root .au-status__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  box-shadow: var(--pn-sh-pop);
+  /* L4: a floor, never minmax(0,…) — a picker that can collapse to nothing is
+     a picker whose options silently vanish. */
+  min-width: 128px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.cv2-root .au-status__option {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cv2-root .au-status__option:hover {
+  background: var(--pn-hover);
+}
+
+.cv2-root .au-status__option--on {
+  background: var(--pn-active);
+}
+
+/* ---------------------------------------------------------------------------
+   THE `editFields` DIALOG (`EditEntityDialog`).
+
+   MODAL BECAUSE THE EDIT IS ATOMIC. Everything else in this lane is inline and
+   commits per gesture; this one stages a whole form behind Cancel/Save, so the
+   surface underneath must not accept a competing edit while it is open. The
+   backdrop is what says so, and it is also what makes an outside click mean
+   "cancel" rather than "silently keep a draft you can no longer see".
+
+   TOKENS ONLY (§14). `--pn-card` over `--pn-surface` for the sheet itself: the
+   panel beneath is already `--pn-surface`, and a dialog the same colour as its
+   backdrop reads as a section rather than a layer. The elevation token does the
+   rest — D54 measured `--pn-sh-pop` as the thing that distinguishes an overlay
+   from a seated panel, which is exactly this component's claim.
+--------------------------------------------------------------------------- */
+.cv2-root .au-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pn-space-6);
+  /* The scrim is the ink token at low alpha rather than a black wash: it tints
+     with the theme, so the dark theme does not stack black on near-black. */
+  background: color-mix(in srgb, var(--pn-ink) 34%, transparent);
+}
+
+/* NOTE ON THE SPACE SCALE, because it reads like pixels and is not:
+   `--pn-space-N` is `N * 4px`, so `--pn-space-16` is SIXTY-FOUR pixels. This
+   block was first written with `--pn-space-16` padding on the reading of "16px"
+   and measured at 64px in Firefox — a 605px-wide sheet for two fields. Every
+   value below is the measured one. */
+.cv2-root .au-dialog {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  /* L4: a floor and a ceiling, never minmax(0,…). A dialog that can collapse
+     to nothing is a dialog whose fields silently vanish. */
+  width: min(380px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--pn-space-4);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+}
+
+.cv2-root .au-dialog__title {
+  margin: 0 0 var(--pn-space-1);
+  font-size: var(--pn-fs-h3);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .au-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .au-dialog__label {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+/* Not italic-for-decoration: `<em>` is the markup, and the lighter ink is what
+   keeps "· optional" from reading as part of the field's name. */
+.cv2-root .au-dialog__optional {
+  font-style: normal;
+  color: var(--pn-ink-4);
+}
+
+/* Geometry adapted from `.au-title-input`, the inline editor this dialog is the
+   staged counterpart of — same 8px inset and 6px radius, so the two ways of
+   renaming a channel do not look like two different apps. */
+.cv2-root .au-dialog__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.cv2-root textarea.au-dialog__input {
+  min-height: 48px;
+}
+
+.cv2-root .au-dialog__input:focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
+
+.cv2-root .au-dialog__missing,
+.cv2-root .au-dialog__unavailable {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  text-wrap: pretty;
+}
+
+.cv2-root .au-dialog__missing {
+  color: var(--pn-block);
+}
+
+.cv2-root .au-dialog__unavailable {
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .au-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-1);
+}
+
+.cv2-root .au-dialog__actions button {
+  flex: none;
+  appearance: none;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.cv2-root .au-dialog__actions button:hover:not(:disabled) {
+  background: var(--pn-hover);
+}
+
+/* The INK chip, matching `.lp__new` (D58) — the create and the save of a thing
+   are the same weight of act, and giving them two different primaries would
+   make one of them look like the safer one.
+
+   THE SELECTOR CARRIES `.au-dialog__actions button` DELIBERATELY. Written as
+   `.cv2-root .au-dialog__primary` it LOSES to the rule above on specificity
+   (0,2,1 beats 0,2,0) and the Save button renders as a second Cancel — measured
+   in Firefox as `bg: rgb(255,255,255)` on both buttons, which is exactly the
+   "which one is the real action?" ambiguity the ink chip exists to remove. */
+.cv2-root .au-dialog__actions button.au-dialog__primary {
+  color: var(--pn-paper);
+  background: var(--pn-ink);
+  border-color: var(--pn-ink);
+}
+
+.cv2-root .au-dialog__actions button.au-dialog__primary:hover:not(:disabled) {
+  background: var(--pn-x-btn-ink-hover, var(--pn-ink));
+}
+
+.cv2-root .au-dialog__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,0 +1,309 @@
+/* ==========================================================================
+   THE PANEL BAR ON A PHONE — DEF-001, and this one is a SAFETY control
+   ==========================================================================
+
+   ── WHAT WAS MEASURED, AND WHY IT IS NOT A COSMETIC ROW ───────────────────
+
+   `before-lanes-results.json`, surface `launch-run-session`, viewport
+   phone-390: `div.pn-panelbar__end` sits **67px past the right edge**, and the
+   controls inside it go with it — `kit-iconbtn--danger` 59px over, `✕` 55px,
+   "Open full view" 34px, `⤢` 30px. The attached shot shows **"Terminate"
+   sliced by the right edge.** phone-430 is the same failure with 4 offenders
+   and a worst edge of 29px.
+
+   These are LIVE AGENT SESSIONS. Terminate is how a person stops one that is
+   doing something wrong, and on a phone it was off-screen. That is an
+   operational hazard, not a layout complaint, which is why this lands on its
+   own ahead of the lane work.
+
+   ── WHY THE NUMBER THAT WOULD HAVE CAUGHT IT READS ZERO ───────────────────
+
+   `docOverflow` is **0** on this screen. `.mobile-frame` is `overflow: hidden`,
+   and a hidden container CLIPS instead of extending `scrollWidth`, so a
+   document-level `scrollWidth − clientWidth` stays at zero while content is
+   destroyed past the edge. Only the per-element measure
+   (`getBoundingClientRect().right > innerWidth`) sees it. Ledger RULE R3: no
+   row here may cite a document-level number, and this is the row that rule was
+   written for.
+
+   ── THE CAUSE, WHICH IS ONE DECLARATION ───────────────────────────────────
+
+   `.cv2-root .pn-panelbar` is `height: 30px` with no wrap (`panels.css`),
+   holding three things in one row:
+
+     .pn-tabs             Session · Discussion · Connections · Activity
+     .pn-panelbar__surface  → `display: contents`, so the work-session surface
+                            switch's FIVE chips are direct children of the end
+                            cluster (Terminal/Transcript/Git/Debug/Graph)
+     .pn-panelbar__end    the ActionBar (Terminate), Transfer, ⤢ and ✕
+
+   `.pn-tabs` can shrink and scroll, so it absorbs nothing on its neighbours'
+   behalf: the switch holds its ~300px min-content width, and the end cluster
+   is pushed straight off the viewport. On a desktop panel there is room for
+   all three. At 390 there is not, and the row has no second line to use.
+
+   That fixed height is exactly the pinned container `mobile/CONTRACT.md` §6
+   warns about — "UNPIN A FIXED-HEIGHT CONTAINER BEFORE GROWING ANYTHING
+   INSIDE IT … that is the trap that passes the census while slicing the row,
+   and no metric in this program can see it." So the height is unpinned FIRST,
+   below, and only then is anything inside it allowed to grow.
+
+   ── A SEPARATE FILE, ON PURPOSE ───────────────────────────────────────────
+
+   `panels/panels.css` and `panels/detail/chrome.tsx` are Lane B's under the
+   ledger's ownership map, and this fix was escalated out of the lane structure
+   by the coordinator to land ahead of lane integration. A new file keeps that
+   escalation from colliding with work already in flight in those files —
+   ledger RULE R9's "one file per defect, so there is no shared-file merge
+   conflict, ever". The only edit to a Lane B file is the single import line in
+   `chrome.tsx`, which is the component that renders `.pn-panelbar`.
+
+   ── SCOPE ────────────────────────────────────────────────────────────────
+
+   Every rule is under `.cv2-root[data-shell='mobile']` — the marker `GateApp`
+   and `MobileFrame` stamp. CONSUMED here and never changed: it is a shared
+   contract with `mobile-screens.css` (20 uses), `terminal.css` (21 rule heads)
+   and the zoom gate, and re-shaping it breaks all three at once while
+   presenting as "my CSS did not apply". Desktop, tablet and desktop-narrow are
+   untouched: no rule here can match without that attribute.
+
+   ── WHAT THIS FILE DOES NOT CLAIM TO FIX ─────────────────────────────────
+
+   DEF-007 (the four `pn-tab`s occluded by the primary buttons) and DEF-023
+   (the "Close panel" verb, already ruled `wontfix-removed` on the phone) are
+   Lane B's and are NOT addressed here. Removing ✕ later will make this row
+   shorter; it does not change anything below. */
+
+/* --- 1. UNPIN THE ROW ----------------------------------------------------
+   Before anything inside it is allowed to take its floor. The base rule is
+   `height: 30px` (`panels.css`), and CONTRACT.md §6 requires unpinning a
+   fixed-height container before growing anything inside it.
+
+   ── THE `min-height` BELOW IS DEAD TODAY, AND ITS ORIGINAL REASON WAS WRONG ──
+   This comment used to say the floor was here "so a panel with an empty end
+   cluster keeps the 30px strip it has today". THAT CASE IS ALREADY COVERED
+   FIFTEEN LINES DOWN: `.pn-tabs` gets `flex: 1 1 100%` and its own
+   `min-height: 30px`, and `chrome.tsx:519` renders `.pn-tabs` UNCONDITIONALLY —
+   no condition, always populated from `PANEL_TABS`. Only `.pn-panelbar__end` is
+   conditional. So the row's content is 30 + 8px `padding-block` = 38px before
+   this floor is ever consulted, and IT CANNOT BIND.
+
+   I wrote both declarations in one commit and justified this one with a case
+   the other already handled. Recorded rather than deleted, because it is a real
+   fallback the moment anyone removes the child's floor — the same disposition
+   this codebase applies to `mobile.css`'s `.mobile-frame__tabbar` floor, which
+   is likewise unreachable — now because nothing fills that region at all.
+
+   YOU CANNOT TELL WHETHER A FLOOR BINDS BY READING THE FLOOR. It depends on
+   what else sizes the box, and that is as invisible at fifteen lines as it is
+   across two files. */
+.cv2-root[data-shell='mobile'] .pn-panelbar {
+  height: auto;
+  min-height: 30px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  row-gap: 4px;
+  padding-block: 4px;
+}
+
+/* The tab strip takes the first line whole and keeps its own horizontal
+   scroll for a long kind label. `height: 100%` is meaningless once the row
+   wraps — a wrapped flex item's percentage height resolves against a line
+   box, not the container — so it is restated as an explicit floor. */
+.cv2-root[data-shell='mobile'] .pn-tabs {
+  flex: 1 1 100%;
+  height: auto;
+  min-height: 30px;
+}
+
+/* --- 2. THE CONTROL CLUSTER GETS ITS OWN LINE ---------------------------
+   `flex: 1 1 100%` is what actually moves Terminate back on screen: the
+   cluster stops competing with the tab strip for one 390px line and takes a
+   line of its own, where it wraps internally rather than running off the
+   edge. Right-aligned so the destructive verb stays where it is on every
+   other shell — a control that moves to the opposite corner on one device is
+   a control people press by accident on that device. */
+.cv2-root[data-shell='mobile'] .pn-panelbar__end {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+/* The work-session surface switch rides INSIDE that cluster (its host is
+   `display: contents`). Five chips at ~60px is ~300px of min-content, which is
+   most of a 390px line on its own.
+
+   ── IT TAKES A WHOLE LINE, AND THAT IS A CORRECTION FOUND BY LOOKING ──────
+
+   This first said `flex: 0 1 auto` — share the line, wrap internally if you
+   must — and the build service's AFTER shots showed what that produces at the
+   WIDER viewport. At 390 the chips fill their line and the verbs get the next
+   one. At 430 there is JUST enough room for the chips AND Terminate on one
+   line, so the expand and close icons wrap ALONE onto a third: a nearly empty
+   row carrying two small glyphs at the right edge.
+
+   MEASURED CONSEQUENCE: the bar is 115px at 390 and **137px at 430**. More
+   width bought a TALLER bar. The service flagged the inversion as unexpected
+   and declined to guess at it; the shot is what says why.
+
+   `flex: 1 1 100%` makes it deterministic instead: the switch takes a line,
+   the verb cluster takes a line, at every width. No orphan row, and the two
+   viewports stop disagreeing about the height of the same chrome.
+
+   THE GENERAL FORM, worth keeping: `justify-content: flex-end` plus `wrap`
+   orphans the tail whenever the content is ONE ITEM too wide for a line — and
+   the wider viewport is where that is most likely, not least, because it is
+   where the near-fit happens. A fix verified only at the narrow width ships
+   it.
+
+   ── THIS RULE IS DEAD ON THIS BRANCH AND LIVE ON MAIN. KEPT, NOT DELETED. ──
+   I wrote it in `978f3e82` (DEF-001, merged via #412) when the switch still rode
+   the panel bar on a phone. Three commits later, in `099c3a03`, I made it stop:
+
+     WorkSessionContent.tsx  ridesPanelBar = switchSlot !== null && !oneSurface
+     -> on a phone `oneSurface` is true, so `--bar` is never applied and this
+        rule cannot match. MEASURED, Case A `c7c09a38`: panelSurfaceSlot 1 with
+        bar false — the slot DID render and the clause declined it anyway.
+
+   ON `origin/main` THE DECLINE DOES NOT EXIST. There the class is
+   `switchSlot ? '…--bar' : '…'` with no `oneSurface` term, so `--bar` renders
+   whenever the slot mounts, `panels.css:81` gives those chips 22px, and this
+   rule lays them out. The 22px is REACHABLE on the shipping phone today, and
+   `099c3a03` — written for the transcript work, not for this — is what makes it
+   unreachable. Merging this branch closes that.
+
+   So: same file, same text, two trees, opposite liveness. Kept because deleting
+   it would remove the phone arrangement from the only tree where it still runs,
+   and because it goes live again the day anything passes a slot on a phone
+   without the decline. */
+.cv2-root[data-shell='mobile'] .pn-panelbar__end .pn-surface-switch--bar {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+  row-gap: 3px;
+}
+
+/* --- 3. THE FLOOR, PER CLASS, ON THE CONTAINER JUST UNPINNED ------------
+   ON SCREEN IS NOT THE SAME AS REACHABLE, and for this control the difference
+   is the whole point. `.pn-btn` is `padding: 2px 9px` at 11.5px — about 20px
+   tall. A Terminate that is fully inside the viewport and 20px tall is a
+   Terminate a thumb misses, which for a stop control is the same outcome as
+   the one this row is filed for.
+
+   PER-CLASS, and named: `mobile/CONTRACT.md` §6 forbids a blanket
+   `button { min-height: 44px }` because the phone renders desktop-shared dense
+   components inside sheets and a blanket rule inflates every one of them. It
+   also forbids `::after` hit areas — the instrument measures the ELEMENT's own
+   rect, so a pseudo-element hit area would score as fixed while the thumb
+   still missed. These are real `min-height`s on two named classes, inside the
+   one container, and nowhere else.
+
+   The floor is on the SMALLER side for the icon buttons: 120×22 fails the same
+   thumb as 22×120, so `⤢` takes both dimensions. */
+.cv2-root[data-shell='mobile'] .pn-panelbar__end .pn-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
+.cv2-root[data-shell='mobile'] .pn-panelbar__end .kit-iconbtn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+/* The disabled-with-reason form of a primary verb — an unwired or unavailable
+   Terminate — keeps the same geometry as the live one. R2 excludes disabled
+   elements from the tap bar because there is nothing to tap, but a refusal
+   that is a different SIZE from the control it stands in for makes the row
+   jump as a session changes state, under the reader's thumb. */
+.cv2-root[data-shell='mobile'] .pn-panelbar__end .hon-disabled {
+  min-height: 44px;
+}
+
+/* ==========================================================================
+   --- 4. WHAT IS LEFT OF THIS ROW — user ruling 2026-08-20
+   ==========================================================================
+
+   THE THREE SECTIONS ABOVE ARE NOW UNREACHABLE ON A PHONE, AND ARE KEPT.
+   `TabStrip` renders no `.pn-tabs` and no `.pn-panelbar__end` on `oneSurface`
+   any more — the tabs and the action cluster moved into the floating action
+   menu — so every selector above that names one of those two classes can no
+   longer match on this shell. They are kept for the reason section 2 already
+   states about its own dead rule: the same file serves a tree where they still
+   run, and deleting a phone arrangement from the only place it is written down
+   because one branch stopped reaching it is how the arrangement is lost. They
+   also document the measurement (`115px at 390 and 137px at 430`) that this
+   removal is the successor to.
+
+   WHAT RENDERS HERE INSTEAD is `.pn-panelbar--phone`, holding at most the
+   inline save affordance and the transfer control — and usually neither.
+
+   ── (0,4,0), AND THE REASON IS RECORDED TWO FILES AWAY ────────────────────
+   `panels.css:715` declares `.cv2-root[data-shell='mobile'] .pn-panelbar` at
+   (0,3,0), and `panels.css:688` establishes — from the module graph, not from a
+   guess — that **panels.css is emitted FIRST, so this file loses every tie**.
+   A rule written the obvious way here, `.cv2-root[data-shell='mobile']
+   .pn-panelbar--phone`, is also (0,3,0) and would lose its `min-height` to that
+   rule's 30px: the bar would keep a 30px strip in exactly the state this
+   removal exists to reclaim, and it would look correct in the diff. Both rules
+   below name the base class as well, which makes them (0,4,0) and settles it on
+   specificity rather than on an emission order neither file controls. */
+.cv2-root[data-shell='mobile'] .pn-panelbar.pn-panelbar--phone {
+  min-height: 0;
+  align-items: center;
+  justify-content: flex-end;
+  column-gap: 6px;
+  row-gap: 6px;
+  padding-block: 6px;
+  padding-inline: var(--pn-space-4);
+}
+
+/* NO CHILDREN, NO ROW — not a shorter row.
+   Both children self-gate to `null`: `SaveControls` while the edit is clean,
+   `TransferControl` on a node with no remote server. Neither can be asked in
+   advance from the component (transfer's answer arrives from an async directory
+   read that `src/transfer` owns), so the element renders unconditionally and
+   this removes it. `:empty` is exact here — React renders `null` as no node at
+   all, so a bar with two null children genuinely has no children, not whitespace.
+
+   `display: none` rather than a zero-height, zero-padding version of the row:
+   the base rule also draws a `border-bottom`, and a 1px hairline with nothing
+   above it is a fence around nothing. That hairline separated the tabs from the
+   band; with the tabs gone the band's own top edge is the boundary.
+
+   NOT VERIFIABLE IN VITEST. jsdom loads no stylesheets, so no test in this repo
+   can see that this row occupies zero pixels. What a test CAN see is that the
+   element has zero element children, which is the structural half of the same
+   claim and is asserted. */
+.cv2-root[data-shell='mobile'] .pn-panelbar.pn-panelbar--phone:empty {
+  display: none;
+}
+
+/* --- 5. THE FLOOR, PER CLASS, FOR THE TWO CONTROLS THAT ARE LEFT --------
+   Section 3's argument applies unchanged and is not restated: `mobile/
+   CONTRACT.md` §6 forbids a blanket `button { min-height: 44px }` and forbids
+   `::after` hit areas, so these are real `min-height`s on named classes inside
+   one container.
+
+   `.au-btn` is Save and Cancel. They were never in section 3's list because
+   they were never measured — the census photographed `.pn-panelbar__end` on a
+   session panel, where the title is not editable and `SaveControls` renders
+   nothing. Sized here rather than left to be found later: this row now exists
+   ONLY when they are in it, so an under-sized Save would be the entire content
+   of the only chrome the phone panel has left. */
+.cv2-root[data-shell='mobile'] .pn-panelbar--phone .au-btn {
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+.cv2-root[data-shell='mobile'] .pn-panelbar--phone .kit-iconbtn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}

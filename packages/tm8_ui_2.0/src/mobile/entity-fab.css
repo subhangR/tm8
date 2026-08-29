@@ -1,0 +1,458 @@
+/* ==========================================================================
+   THE ENTITY-DETAIL FAB
+
+   EVERY RULE IS SCOPED `.cv2-root[data-shell='mobile']`, the marker `GateApp`
+   and `MobileFrame` stamp. CONSUMED, never reshaped — it is a shared contract
+   with `mobile-screens.css`, `terminal.css` and the zoom gate, and re-cutting it
+   breaks all three at once while presenting as "my CSS did not apply".
+
+   That scope is the SECOND half of the safety argument, not the whole of it:
+   `EntityFab` returns null without `oneSurface`, so the element is not in the
+   desktop DOM at all. The same statement `mobile-screens.css` makes about
+   `.ev-fab`.
+
+   IMPORTED BY `EntityFab.tsx` ITSELF, not by an aggregate entry. The component
+   is mounted by another lane's file; a sheet reachable only through some
+   `index.ts` would render it unstyled the moment anyone imported the component
+   by path, and the failure looks like a layout bug rather than a missing import.
+
+   THIS FILE ADDS NO SELECTOR THAT COMPETES WITH A SHELL RULE. Every class here
+   is new and `efab`-prefixed. CONTRACT.md §7: a lane selector whose specificity
+   exists to outweigh a shell rule is a shell change, and this file makes no
+   such claim on anything.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. THE LAYER
+
+   ABSOLUTE AGAINST THE VIEW ROOT, NOT FIXED — and `.ev-fab`'s comment
+   (`mobile-screens.css:853`) is the measurement behind it: `fixed` resolves
+   against the VIEWPORT, the frame is shortened by `--mobile-keyboard-inset`, so
+   a fixed control stays put while its screen shrinks and lands under the soft
+   keyboard.
+
+   IT COVERS THE FRAME AND LETS EVERYTHING THROUGH. The scrim needs a box the
+   size of the surface it dims, and the trigger needs to sit above that scrim —
+   both are children of one layer rather than three independently-positioned
+   elements that have to agree about the same corner twice. `pointer-events` is
+   what makes an inset-0 layer safe at rest, and it is the arrangement the shell
+   already uses for its own sheet host (`.msheet-host`, mobile-screens.css:668).
+
+   z-index 15 is `.ev-fab`'s, deliberately: the same layer as the list's create
+   button, and BELOW the sheet at 30 — so Connections and Discussion, which open
+   as sheets from this very menu, cover the button that opened them.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .efab {
+  /* The trigger's own offset, named once because the menu is positioned off it
+     too. Two hand-typed copies of one number is how a "fixed" overlap comes
+     back the first time one of them is nudged. */
+  --efab-base: calc(var(--mobile-safe-bottom, 0px) + var(--pn-space-3));
+
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+  font-family: var(--pn-ui);
+}
+
+.cv2-root[data-shell='mobile'] .efab > * {
+  pointer-events: auto;
+}
+
+/* ONE BUTTON PLUS A GAP HIGHER. Two floating controls on one screen is not a
+   novelty on this shell — the list already carries a create FAB and a narrowing
+   cluster — and work_session needs a second one for its content-surface switch.
+   Only the base moves; every other measurement below is expressed against it. */
+.cv2-root[data-shell='mobile'] .efab--secondary {
+  --efab-base: calc(
+    var(--mobile-safe-bottom, 0px) + var(--pn-space-3) + var(--mobile-fab-size) + var(--pn-space-2)
+  );
+}
+
+/* --------------------------------------------------------------------------
+   2. THE TRIGGER
+
+   56px on both sides, from the frame's own `--mobile-fab-size`, and REAL
+   geometry: comfortably over the 44px floor with no `::after` hit area anywhere
+   near it. CONTRACT.md §6 — the audit measures `getBoundingClientRect()` OF THE
+   ELEMENT, so a pseudo-element would score as fixed while the thumb still
+   missed.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .efab__trigger {
+  position: absolute;
+  inset-block-end: var(--efab-base);
+  inset-inline-end: var(--pn-space-3);
+
+  inline-size: var(--mobile-fab-size);
+  block-size: var(--mobile-fab-size);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  padding: 0;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  font-family: inherit;
+  font-size: var(--pn-fs-h3);
+  line-height: 1;
+  box-shadow: var(--pn-sh-pop);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root[data-shell='mobile'] .efab__trigger:active {
+  transform: scale(0.94);
+}
+
+.cv2-root[data-shell='mobile'] .efab__trigger:focus-visible {
+  outline: 2px solid var(--pn-ink);
+  outline-offset: 2px;
+}
+
+/* THE MARK IS NOT BRAND HERE. This button is FILLED with brand, so the mark's
+   default ink would be its own background and it would disappear into the
+   circle. `--pn-ribbon-ink` hands it a paper ink instead. Both themes are
+   covered because it is a token and not a literal.
+
+   PAPER, NOT CARD, and this is the trap: card is the button's foreground, which
+   is exactly what makes it the tempting wrong answer. `shade()` posterizes
+   AROUND the base ink — down toward black for the unlit half of the band, up
+   toward white for the lit half — and `--pn-card` is #FFFFFF in the LIGHT theme,
+   where the lit branch `c + (255 - c) * f` is 255 for every f, in every channel.
+   That half of the ramp collapses to one flat wall of white BY ARITHMETIC, not
+   by measurement. Paper is the same ink to a reader and keeps the headroom.
+
+   The full derivation, the two tidier rules it refutes ("avoid railed channels",
+   "pick a mid-tone" — both false), and the sweep behind it are in
+   `chat-home.css` over `.tch-send__mark` and in `gate-evidence/chat-ribbon.md`.
+   No digits here on purpose: the count depends on where in the 2s loop you
+   sample, so a number written down is one a re-measurement will disagree with,
+   and then the warning gets distrusted rather than the method. */
+.cv2-root[data-shell='mobile'] .efab__mark {
+  --pn-ribbon-ink: var(--pn-paper);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* The mark is 4:5, so the box is taller than it is wide at equal optical
+     weight. It overflows this box on purpose (`overflow: visible` in the
+     component) — which is what gives a 26px slot a mark that fills the circle
+     without the circle having to grow. */
+  inline-size: 26px;
+  block-size: 26px;
+}
+
+.cv2-root[data-shell='mobile'] .efab__ribbon {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   3. THE SCRIM
+
+   Same ink and same weight as the sheet's and the drawer's — one dimming on
+   this shell, so a cover reads as the same kind of thing whichever surface
+   raised it.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .efab__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  animation: efab-fade var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+@keyframes efab-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* --------------------------------------------------------------------------
+   4. THE STACK
+
+   Bottom-anchored and right-aligned, rising from the button.
+
+   TWO BOXES, AND THE SPLIT IS LOAD-BEARING. `.efab__menu` is pinned between the
+   top of the surface and the trigger and bottom-aligns whatever is in it;
+   `.efab__list` is the box that scrolls. One box that was both
+   `justify-content: flex-end` and `overflow-y: auto` puts the overflowing rows
+   ABOVE scroll offset zero, where scrolling cannot reach them — the stack would
+   silently lose its top rows rather than scroll to them.
+
+   Five rows is the realistic maximum today and this does not assume it: the cap
+   is the room actually available, whatever a kind's registry turns out to hold.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .efab__menu {
+  position: absolute;
+  inset-block-start: var(--pn-space-3);
+  inset-block-end: calc(var(--efab-base) + var(--mobile-fab-size) + var(--pn-space-2));
+  inset-inline-end: var(--pn-space-3);
+
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-end;
+
+  /* The box spans the surface so its content can bottom-align against the
+     trigger, but only the rows inside it are a target. */
+  pointer-events: none;
+}
+
+.cv2-root[data-shell='mobile'] .efab__list {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  /* EVERY CHIP THE WIDTH OF THE WIDEST — `stretch` here, and `.efab__row` and
+     `.efab__item` pass it down rather than hugging their own text. Ragged pill
+     ends read as four unrelated bubbles that happen to be near each other; one
+     column edge reads as a menu, which is what this is. It costs the shorter
+     rows some empty pill, and that space is not wasted: it is where the count
+     sits, right-aligned, so the counts line up too.
+
+     `min-inline-size` gives the short ones a floor so a two-letter verb is not
+     a circle; `max-inline-size` keeps the longest one off the far edge of the
+     frame, and `.efab__label` ellipsises inside it. */
+  align-items: stretch;
+  gap: 6px;
+
+  min-inline-size: 9rem;
+  max-inline-size: min(76vw, 17rem);
+  max-block-size: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  animation: efab-rise var(--pn-dur-base) var(--pn-ease-out);
+}
+
+@keyframes efab-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* The row is a pass-through: it exists because a `role="menu"` wants `li`
+   children, and it hands the chip the full column width the list settled on. */
+.cv2-root[data-shell='mobile'] .efab__row {
+  display: flex;
+}
+
+.cv2-root[data-shell='mobile'] .efab__row > .efab__item {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* --------------------------------------------------------------------------
+   5. THE ROW ITSELF
+
+   44px OF REAL GEOMETRY, on a named class, on this container only. CONTRACT.md
+   §6 forbids a blanket `button { min-height: 44px }` — the phone renders dense
+   desktop-shared components inside sheets and a blanket rule inflates every one
+   of them — and forbids `::after` hit areas outright.
+
+   THE FLOOR IS ON THE REFUSED ROW TOO, and that is the point of putting it on
+   `.efab__item` rather than on a live-only modifier: a refusal that is a
+   different SIZE from the verb it stands in for makes the stack move as an
+   entity changes state, under a thumb that is already reaching for the row that
+   was there a moment ago. `panel-bar-phone.css:220-227` states the same rule for
+   the panel bar's disabled controls.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .efab__item {
+  min-block-size: var(--mobile-touch-min);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--pn-line);
+  padding-inline: var(--pn-space-4);
+  padding-block: 0;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-family: inherit;
+  /* THE TYPE IS THE CHIP. `--pn-fs-title` at 500 is `.t-title`'s weight without
+     its serif — one step up from body, which is what a row of four verbs
+     floating over a dimmed page needs to be read at a glance rather than
+     studied. `--pn-track-tight` is the same tracking every title in this
+     product carries at this size, so the chip is in the family's voice instead
+     of being default-tracked UI text in a pill. */
+  font-size: var(--pn-fs-title);
+  font-weight: 500;
+  letter-spacing: var(--pn-track-tight);
+  line-height: 1.2;
+  text-align: start;
+  /* TWO SHADOWS, NOT ONE. `--pn-sh-md` alone is a soft ambient blur, and over a
+     32%-black scrim a soft blur reads as a smudge rather than as a raised
+     surface. The 1px contact shadow underneath is what gives the chip an edge
+     against the dimmed page it floats over — the same pairing the token itself
+     uses, tightened for a small object seen at arm's length. */
+  box-shadow:
+    0 1px 1px rgba(40, 34, 24, 0.1),
+    var(--pn-sh-md);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    transform var(--pn-dur-fast) var(--pn-ease-standard),
+    background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+/* PRESS FEEDBACK ON THE CHIP, matching the trigger's own `:active` scale. The
+   menu closes on selection, so without it the only report a thumb gets that it
+   hit the row is the menu vanishing — which is also what a mistap on the scrim
+   does. Scaled less than the trigger (0.97 against 0.94): this is a wide, short
+   object and the same factor on it reads as a wobble. */
+.cv2-root[data-shell='mobile'] .efab__item:active {
+  transform: scale(0.97);
+  background: var(--pn-hover);
+}
+
+.cv2-root[data-shell='mobile'] .efab__item:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* THE GLYPH SITS IN A FIXED SLOT, and that is the whole reason it is not just
+   an inline character. `panelMenuItems` fills this from the registry's own
+   `def.icon`, so one menu holds ▶ beside ✎ beside ⏻ — glyphs from different
+   blocks with wildly different advance widths. Left to themselves each one sets
+   its own indent and the labels beneath end up on three different left edges.
+   A 1em box, centred, gives the column one text edge.
+
+   `--pn-ink-2`, not `--pn-ink`: the icon is the label's mark, not a second
+   thing to read, and at full ink it out-weighs the word it belongs to. */
+.cv2-root[data-shell='mobile'] .efab__glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1em;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-title);
+  line-height: 1;
+}
+
+.cv2-root[data-shell='mobile'] .efab__label {
+  /* `min-width: 0` on every flex child that can be squeezed. Without it the
+     default `min-width: auto` makes a long label an unshrinkable item, and the
+     pill grows past the frame instead of ellipsising inside it. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* THE COUNT IS A BADGE, PUSHED TO THE FAR EDGE.
+   `margin-inline-start: auto` is what the stretched column above is FOR: every
+   chip is the same width, so every count lands on the same right edge and the
+   numbers read as a column instead of trailing each label at a different x.
+
+   `min-inline-size: 1.5rem` and `tabular-nums` keep 5 and 52 the same shape —
+   the two states this menu actually shows (Connections counts anything from 0
+   to the low hundreds), and without both, opening the menu on a busier entity
+   visibly re-cuts every badge. */
+.cv2-root[data-shell='mobile'] .efab__count {
+  flex: none;
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-inline-size: 1.5rem;
+  padding-inline: 6px;
+  padding-block: 1px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-hover);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE REFUSAL — flat, quiet, and still legible.
+   NOT `opacity`, which was the shape here until 2026-08-20. Opacity fades the
+   whole chip INCLUDING its border and its shadow toward the scrim behind it, so
+   at 0.45 the row stops reading as an object and starts reading as a rendering
+   fault. Each property is dropped on purpose instead: the fill goes to paper so
+   it sits BEHIND the live chips rather than beside them, the shadow goes
+   entirely because a refusal is not raised off the page, and only the INK is
+   dimmed — to `--pn-ink-3`, which is the ink every other muted-but-readable
+   thing in this product uses.
+
+   The 44px floor above is unconditional and stays that way: a refusal that is a
+   different size from the verb it stands in for makes the stack move as an
+   entity changes state, under a thumb already reaching for the row that was
+   there a moment ago (`panel-bar-phone.css:220-227`, same rule). */
+.cv2-root[data-shell='mobile'] .efab__item[aria-disabled='true'] {
+  background: var(--pn-paper);
+  border-color: var(--pn-line-2);
+  color: var(--pn-ink-3);
+  box-shadow: none;
+  cursor: default;
+}
+
+/* A refused chip does not answer a press, so it must not pretend to. */
+.cv2-root[data-shell='mobile'] .efab__item[aria-disabled='true']:active {
+  transform: none;
+  background: var(--pn-paper);
+}
+
+.cv2-root[data-shell='mobile'] .efab__item[aria-disabled='true'] .efab__glyph,
+.cv2-root[data-shell='mobile'] .efab__item[aria-disabled='true'] .efab__count {
+  color: var(--pn-ink-4);
+}
+
+.cv2-root[data-shell='mobile'] .efab__item[aria-disabled='true'] .efab__count {
+  background: transparent;
+}
+
+/* THE REASON IS ANNOUNCED, NEVER DRAWN — owner ruling 2026-08-20, "no extra
+   text, just disabled, icon". `EntityFab`'s `FabRow` carries the argument for
+   keeping the node at all; this is the standard visually-hidden rule that makes
+   it weightless.
+
+   CLIP, NOT `display: none` AND NOT `visibility: hidden`. Both of those remove
+   the element from the accessibility tree, which would silently delete the one
+   thing the node is still here to do — the row would be dimmed, `aria-describedby`
+   would point at it, and a screen reader would announce nothing.
+
+   IT LIVES IN THIS FILE ON PURPOSE, rather than reusing `panels.css`'s
+   `.sr-only`. This component imports its own stylesheet and nothing else, and a
+   borrowed class fails OPEN: on any screen where that sheet has not loaded the
+   span renders at full size and the caption comes back. */
+.cv2-root[data-shell='mobile'] .efab__reason {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A menu that RISES is saying where it came from, and a viewer who has asked for
+   less motion still needs that answer — so it still appears, it just stops
+   travelling to get there. Verbatim the disposition `mobile-screens.css` takes
+   with the sheet. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root[data-shell='mobile'] .efab__trigger {
+    transition: none;
+  }
+
+  .cv2-root[data-shell='mobile'] .efab__scrim,
+  .cv2-root[data-shell='mobile'] .efab__list {
+    animation: none;
+  }
+}

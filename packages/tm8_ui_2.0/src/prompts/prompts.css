@@ -1,0 +1,528 @@
+/**
+ * Prompts screen — paper & ink, three panes.
+ *
+ * Every colour goes through a --pn-* token (src/hex-ban.test.ts enforces it)
+ * and every scrollable track carries a min-height/min-width floor, because a
+ * zero-floored track is how this shell has been broken before.
+ */
+
+.cv2-root .pr-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  padding: var(--pn-space-6);
+  /* Same scrim the command palette uses — theme-aware, so it dims warm
+     graphite in dark exactly as it dims warm paper in light. */
+  background: color-mix(in srgb, var(--pn-ink) 28%, transparent);
+  animation: pr-fade var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+@keyframes pr-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.cv2-root .pr-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+  outline: none;
+}
+
+.cv2-root .pr-root {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+}
+
+/* -- header ---------------------------------------------------------------- */
+
+.cv2-root .pr-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-5) var(--pn-space-6);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.cv2-root .pr-head__titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cv2-root .pr-head__title {
+  margin: 0;
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-h1);
+  line-height: var(--pn-lh-tight);
+  letter-spacing: var(--pn-track-tight);
+  font-weight: 500;
+}
+
+.cv2-root .pr-head__sub {
+  margin: var(--pn-space-1) 0 0;
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  max-width: 78ch;
+}
+
+.cv2-root .pr-head__sub strong {
+  color: var(--pn-ink-2);
+  font-weight: 600;
+}
+
+.cv2-root .pr-search {
+  flex: 0 0 auto;
+  width: 240px;
+  align-self: center;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  outline: none;
+}
+
+.cv2-root .pr-search:focus-visible {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 3px var(--pn-brand-soft);
+}
+
+/* Mode switch — Prompts ⇄ CLI help. Two catalogs, one chrome. */
+.cv2-root .pr-modes {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+
+.cv2-root .pr-mode {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cv2-root .pr-mode:hover {
+  color: var(--pn-ink);
+}
+
+.cv2-root .pr-mode--on {
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-weight: 600;
+  box-shadow: var(--pn-sh-sm);
+}
+
+.cv2-root .pr-mode__n {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .pr-mode--on .pr-mode__n {
+  color: var(--pn-brand);
+}
+
+.cv2-root .pr-item__op {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .pr-elsewhere {
+  display: block;
+  margin-top: var(--pn-space-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  word-break: break-word;
+}
+
+.cv2-root .pr-item__title--mono,
+.cv2-root .pr-detail__title--mono {
+  font-family: var(--pn-mono);
+  word-break: break-word;
+}
+
+.cv2-root .pr-detail__title--mono {
+  font-size: var(--pn-fs-h3);
+}
+
+.cv2-root .pr-head__sub code {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pr-legend__foot {
+  margin-top: var(--pn-space-4);
+  font-family: var(--pn-mono);
+  word-break: break-all;
+}
+
+.cv2-root .pr-close {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+}
+
+.cv2-root .pr-close:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+/* -- body: three panes with floors ----------------------------------------- */
+
+/**
+ * Three panes, each with a floor (L4) — but the floors must SUM to something
+ * that fits. `.cv2-root` carries `zoom: 1.1`, so a 900px window is really an
+ * 818px budget here; floors of 200+260+360 overflowed it and scrolled the whole
+ * document sideways. 180+240+320 = 740 leaves room, and `overflow-x: auto`
+ * keeps any residual overflow inside the panel instead of on the page.
+ */
+.cv2-root .pr-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 232px) minmax(240px, 340px) minmax(320px, 1fr);
+  overflow-x: auto;
+}
+
+/* -- categories ------------------------------------------------------------ */
+
+.cv2-root .pr-cats {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--pn-space-4) var(--pn-space-3);
+  border-right: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.cv2-root .pr-cat {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  margin-bottom: 2px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink-2);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+}
+
+.cv2-root .pr-cat:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.cv2-root .pr-cat--on {
+  background: var(--pn-active);
+  border-left-color: var(--pn-brand);
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
+.cv2-root .pr-cat__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cv2-root .pr-cat__n {
+  flex: 0 0 auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pr-legend {
+  margin-top: var(--pn-space-6);
+  padding-top: var(--pn-space-4);
+  border-top: 1px solid var(--pn-line);
+}
+
+.cv2-root .pr-legend__row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  margin: var(--pn-space-3) 0 0;
+}
+
+.cv2-root .pr-legend__text {
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-3);
+}
+
+/* -- entry list ------------------------------------------------------------ */
+
+.cv2-root .pr-list {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--pn-space-3);
+  list-style: none;
+  border-right: 1px solid var(--pn-line);
+}
+
+.cv2-root .pr-list__note,
+.cv2-root .pr-list__empty {
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+}
+
+.cv2-root .pr-list__empty {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .pr-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-3);
+  margin-bottom: var(--pn-space-1);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+}
+
+.cv2-root .pr-item:hover {
+  background: var(--pn-hover);
+}
+
+.cv2-root .pr-item--on {
+  background: var(--pn-card);
+  border-color: var(--pn-line-2);
+  box-shadow: var(--pn-sh-sm);
+}
+
+.cv2-root .pr-item__top {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pr-item__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .pr-item__sum {
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* -- detail ---------------------------------------------------------------- */
+
+.cv2-root .pr-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--pn-space-6);
+}
+
+.cv2-root .pr-detail__title {
+  margin: var(--pn-space-1) 0 0;
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-h2);
+  line-height: var(--pn-lh-tight);
+  font-weight: 500;
+}
+
+.cv2-root .pr-detail__sum {
+  margin: var(--pn-space-2) 0 0;
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+  max-width: 72ch;
+}
+
+.cv2-root .pr-facts {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(120px, 1fr);
+  gap: var(--pn-space-2) var(--pn-space-4);
+  margin: var(--pn-space-5) 0 0;
+  padding: var(--pn-space-4);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+}
+
+.cv2-root .pr-fact {
+  display: contents;
+}
+
+.cv2-root .pr-fact dt {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .pr-fact dd {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pr-fact__mono {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  word-break: break-word;
+}
+
+.cv2-root .pr-note {
+  margin: var(--pn-space-4) 0 0;
+  padding: var(--pn-space-3) var(--pn-space-4);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+  background: var(--pn-wait-soft);
+  border-left: 3px solid var(--pn-wait);
+  border-radius: var(--pn-r-xs);
+  max-width: 76ch;
+}
+
+.cv2-root .pr-empty {
+  margin: var(--pn-space-5) 0 0;
+  padding: var(--pn-space-5);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  background: var(--pn-surface);
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  max-width: 76ch;
+}
+
+.cv2-root .pr-textbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-3);
+  margin: var(--pn-space-5) 0 var(--pn-space-2);
+}
+
+.cv2-root .pr-copy {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  padding: 3px var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+}
+
+.cv2-root .pr-copy:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.cv2-root .pr-text {
+  margin: 0;
+  padding: var(--pn-space-4);
+  overflow-x: auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 2;
+}
+
+/* -- top-bar trigger ------------------------------------------------------- */
+
+.cv2-root .shell-tabbar__prompts {
+  flex: 0 0 auto;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-3);
+  padding: 2px 7px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  cursor: pointer;
+}
+
+.cv2-root .shell-tabbar__prompts:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+  border-color: var(--pn-line-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pr-scrim {
+    animation: none;
+  }
+}

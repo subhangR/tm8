@@ -43,7 +43,7 @@ answers `501` to every operation. Run the installer once first.
 | `packages/server` | Graph engine, HTTP/WS facade, event mapper, identity block, derived-truth assembly, sidecar lifecycle, scheduler; serves the built web UI | **node** |
 | `packages/execution` | PTY host (server-side spawn — the only spawn path), SpawnService, manifest composition | **node** |
 | `packages/cli` | Graph CLI + compat adapter + manifest reader (worker init) | node |
-| `packages/tm8-ui` | **The product web app.** Entity-component UI + terminal components; served by vite in dev, as a built bundle in prod | bun/vite |
+| `packages/tm8_ui_2.0` | **The product web app.** Entity-component UI + terminal components; served by vite in dev, as a built bundle in prod | bun/vite |
 | `packages/ui` | Legacy collab-v2 oracle — not served, not built, not started. Reference only (see Hard rules) | — |
 | `db/migrations` | ONE clean migration sequence (no legacy history) | — |
 | `tools/conformance` | Contract conformance suite — runs against any base URL (M1 gate artifact) | bun |
@@ -76,7 +76,7 @@ canonical (ruled 2026-08-12) and now lives in exactly one place.
 - **Runtime split:** `packages/server` and `packages/execution` run under **node**, never bun (node-pty is broken under bun). Everything else may use bun.
 - **No legacy references:** zero Firebase/Supabase references, zero UID-bypass machinery, no imported migration history.
 - Verification is scoped: per-package `tsc -b` / `vitest`. Never run parallel vite builds.
-- **The product UI is `packages/tm8-ui`.** `packages/ui` is the legacy collab-v2
+- **The product UI is `packages/tm8_ui_2.0`.** `packages/ui` is the legacy collab-v2
   oracle — not served, not built, not started. The launchers pointed at the wrong
   one until 2026-08-12.
 - **`bun run build` is `tsc -b` ONLY.** The UI needs its own `vite build`. Skipping

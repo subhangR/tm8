@@ -88,7 +88,7 @@ tm8_env_load() {
       TM8_ENV_PG_CLUSTER=prod
       TM8_ENV_DATABASE=tm8_prod
       TM8_ENV_UNITS="tm8-prod"
-      TM8_ENV_BUILD_UI=1               # prod serves packages/tm8-ui/dist
+      TM8_ENV_BUILD_UI=1               # prod serves packages/tm8_ui_2.0/dist
       TM8_ENV_LOG_LEVEL=info
       TM8_ENV_SERVER_ENV=prod
       ;;

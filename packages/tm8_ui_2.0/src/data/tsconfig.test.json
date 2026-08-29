@@ -1,0 +1,9 @@
+{
+  "//": "Bridge-lane verify gate: typechecks src/data INCLUDING its test files, which the package tsconfig excludes and vitest never typechecks — so without this config the data-layer tests are typed by NOTHING (corpus 02 §15, found the day a green 19/19 suite carried three type errors). Extends the package config so the governing target/lib (ES2021) is enforced, not a looser local choice. Run from packages/tm8-ui: bunx tsc -p src/data/tsconfig.test.json",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "vitest/globals"]
+  },
+  "include": ["."],
+  "exclude": []
+}

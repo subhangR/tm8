@@ -1,0 +1,417 @@
+/* ==========================================================================
+   THE ATTACHMENT TILES — inside an entity panel's content body (2026-08-16
+   addendum: uniform 64px tiles at the bottom of the description block, a
+   dashed ＋ tile as the standing invitation, Remove behind the lightbox).
+
+   NO RAW HEX: `src/hex-ban.test.ts` and this lane's own copy of that guard
+   scan every .css here, so every colour resolves through a `--pn-*` token.
+
+   It is NOT scoped to `.cv2-root` like the panel sheets (the documented
+   exception this file has always carried): the strip renders inside a live
+   panel, and a panel is not guaranteed to sit under that class. Scoping it
+   there is how the styles would silently not apply in the one place they
+   matter. Every selector is `fn-`-prefixed, so nothing global is touched.
+   ========================================================================== */
+
+.fn-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+/* NOTHING ATTACHED — one paperclip, and nothing else (owner ruling
+   2026-08-19). This row used to be `display:none`, which left DROP as the only
+   way to attach; a phone cannot drag a file onto a panel, so on mobile the
+   feature was simply unreachable. The idle row is now the width and height of
+   a single 28px icon: cheaper than the dashed ＋ tile that ruling deleted, and
+   tappable, which the silence was not. */
+.fn-tiles--idle { gap: 0; }
+
+/* The idle affordance: an icon, not a tile. No name row, no dashed frame, no
+   64px column — it sits in the panel like any other quiet icon control, and
+   it is 28px so a thumb can hit it. */
+.fn-tile--clip {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+
+.fn-tile--clip:hover { color: var(--pn-ink); background: var(--pn-hover); }
+
+.fn-tile__face--clip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* --- one tile -------------------------------------------------------------- */
+
+.fn-tile {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.fn-tile__face {
+  position: relative;
+  box-sizing: border-box;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+.fn-tile:hover .fn-tile__face {
+  border-color: var(--pn-line-2);
+}
+.fn-tile:focus-visible {
+  outline: none;
+}
+.fn-tile:focus-visible .fn-tile__face {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+.fn-tile__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fn-tile__glyph {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--pn-ink-3);
+}
+.fn-tile__ext {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-3);
+}
+
+.fn-tile__name {
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--pn-ink-3);
+}
+
+/* --- the ＋ tile ------------------------------------------------------------ */
+
+.fn-plus {
+  position: relative;
+  display: inline-flex;
+}
+.fn-tile--plus .fn-tile__face {
+  border: 1px dashed var(--pn-line-2);
+  background: transparent;
+}
+.fn-tile--plus:hover .fn-tile__face {
+  border-color: var(--pn-brand-2);
+}
+.fn-tile__face--plus {
+  font-size: 18px;
+  color: var(--pn-ink-4);
+}
+.fn-tile--plus:hover .fn-tile__face--plus {
+  color: var(--pn-brand-2);
+}
+
+/* --- the two-item attach menu ---------------------------------------------- */
+
+.fn-menu {
+  position: absolute;
+  top: calc(100% + var(--pn-space-1));
+  left: 0;
+  z-index: 60;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-md);
+}
+.fn-menu__item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px var(--pn-space-2);
+  border-radius: var(--pn-r-xs);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fn-menu__item:hover,
+.fn-menu__item:focus-visible {
+  background: var(--pn-hover);
+  outline: none;
+}
+.fn-menu__label {
+  font-size: 12px;
+  color: var(--pn-ink);
+}
+.fn-menu__hint {
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+
+/* --- pending / failed upload tiles ------------------------------------------ */
+
+.fn-tile--pending {
+  cursor: default;
+}
+.fn-tile__spin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--pn-line-2);
+  border-top-color: var(--pn-brand);
+  animation: fn-tile-spin 800ms linear infinite;
+}
+@keyframes fn-tile-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fn-tile__spin {
+    animation: none;
+  }
+}
+.fn-tile--failed .fn-tile__face {
+  border-color: var(--pn-block);
+  color: var(--pn-block);
+}
+.fn-tile__why {
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--pn-block);
+  overflow-wrap: anywhere;
+}
+.fn-tile__cancel {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.fn-tile__cancel:hover {
+  color: var(--pn-block);
+}
+
+/* The real input stays reachable to assistive tech and to tests; the ＋ tile
+   and menu are the visible affordance. `display:none` would take it out of
+   the accessibility tree AND out of jsdom's reach, so it is clipped instead. */
+.fn-tiles__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* --- the description block as drop target ----------------------------------- */
+
+.fn-drophost--active {
+  outline: 1px dashed var(--pn-brand);
+  outline-offset: 4px;
+  border-radius: var(--pn-r-xs);
+}
+.fn-drophost--active::after {
+  content: 'drop to attach';
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-brand-2);
+}
+/* WHEN THE HOST IS THE WHOLE PANEL, the hint cannot be a flex item: the panel
+   is a column of header/tabs/body/footer, and appending a row to it reflows
+   every one of them mid-drag. It floats over the body instead, and never eats
+   the pointer — a badge that swallowed the drop would be the one bug this
+   whole affordance cannot have. */
+.pn-panel.fn-drophost--active { position: relative; }
+.pn-panel.fn-drophost--active::after {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--pn-space-3);
+  text-align: center;
+  pointer-events: none;
+}
+
+/* --- the lightbox ------------------------------------------------------------ */
+
+.fn-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pn-space-4);
+  background: rgba(40, 34, 24, 0.45);
+}
+.fn-lightbox__dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  max-width: min(720px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  outline: none;
+}
+.fn-lightbox__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.fn-lightbox__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--pn-ink-2);
+}
+.fn-lightbox__close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+}
+.fn-lightbox__close:hover {
+  color: var(--pn-ink);
+  background: var(--pn-hover);
+}
+.fn-lightbox__img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-surface);
+}
+.fn-lightbox__info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: var(--pn-space-2) 0;
+  font-size: 12px;
+}
+.fn-lightbox__info dt {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  align-self: center;
+}
+.fn-lightbox__info dd {
+  margin: 0;
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+.fn-lightbox__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--pn-space-2);
+}
+.fn-lightbox__btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  text-decoration: none;
+  cursor: pointer;
+}
+.fn-lightbox__btn:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.fn-lightbox__btn--remove:hover:not(:disabled) {
+  border-color: var(--pn-block);
+  color: var(--pn-block);
+}
+/* Busy, never natively disabled — the control must stay in the focus trap
+   with its reason reachable while a removal is in flight. */
+.fn-lightbox__btn[aria-busy='true'] {
+  cursor: progress;
+  opacity: 0.6;
+}
+.fn-lightbox__nolink,
+.fn-lightbox__why {
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+.fn-lightbox__why {
+  margin: 0;
+  color: var(--pn-block);
+}

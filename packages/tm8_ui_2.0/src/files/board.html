@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  DEV REVIEW ENTRY for the T3-4 / T3-5 lane. Open at
+  http://127.0.0.1:4612/src/files/board.html
+
+  WHY IT LIVES HERE rather than outside src/ (brief §4.7's preference): Vite
+  serves html entries relative to the project ROOT, and this lane's file
+  ownership is absolute — src/files/ is the only directory it may create in.
+  Putting the entry at the package root would have meant creating a file in
+  someone else's lane to review my own. Named with the lane prefix and
+  excluded from nothing, so the guards see it like any other file here.
+
+  It is NOT product: no route reaches it, main.tsx does not know it exists,
+  and the production build's entry is index.html.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>T3-4 Files · T3-5 Node — review board</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./board.tsx"></script>
+  </body>
+</html>

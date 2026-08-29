@@ -1,0 +1,1376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Four categories, your words · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style id="artifact-style">
+  .lesson-intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 20px;
+    align-items: end;
+    margin-bottom: 22px;
+  }
+  .lesson-intro .lede { margin-bottom: 0; }
+  .law-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-block: 1px solid var(--line-strong);
+    padding: 6px 0;
+    font: 600 10px/1.3 var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .law-key svg { color: var(--accent); }
+
+  .workshop {
+    overflow: hidden;
+    padding: 0;
+    border-color: var(--line-strong);
+  }
+  .workshop__top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line-strong);
+    background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  }
+  .workshop__eyebrow {
+    font: 600 10px/1 var(--mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  .workshop__name {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    padding: 3px 4px;
+    font: 500 18px/1.25 var(--serif);
+  }
+  .workshop__name:hover { border-bottom-color: var(--accent); }
+  .workshop__owned {
+    font: 600 9px/1 var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    border-radius: 999px;
+    padding: 4px 8px;
+  }
+  .workshop__body {
+    display: grid;
+    grid-template-columns: minmax(310px, .82fr) minmax(0, 1.45fr);
+    min-height: 520px;
+  }
+  .workflow-side {
+    padding: 20px;
+    border-right: 1px solid var(--line-strong);
+    background: var(--surface);
+  }
+  .board-side {
+    min-width: 0;
+    padding: 20px;
+    background: color-mix(in srgb, var(--bg) 55%, var(--surface));
+  }
+  .side-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .side-heading h3 { margin: 0; }
+  .side-heading .caption { margin: 0; text-align: right; }
+
+  .category-law {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+    margin-bottom: 16px;
+  }
+  .category-target {
+    min-width: 0;
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+    border: 1px solid var(--line-strong);
+    border-top: 3px solid var(--cat-color, var(--line-strong));
+    border-radius: 3px;
+    background: transparent;
+    color: var(--ink);
+    padding: 8px;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  }
+  .category-target:hover,
+  .category-target[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--cat-color, var(--accent)) 9%, transparent);
+    border-color: var(--cat-color, var(--accent));
+  }
+  .category-target:active { transform: translateY(1px); }
+  .category-target__name {
+    min-width: 0;
+    font: 700 9px/1.25 var(--mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+  .category-target__meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+    font: 9px/1 var(--mono);
+  }
+  .category-target__lock { color: var(--cat-color, var(--accent)); }
+  [data-category="to_do"] { --cat-color: var(--muted); }
+  [data-category="in_progress"] { --cat-color: var(--accent-2); }
+  [data-category="done"] { --cat-color: var(--ok); }
+  [data-category="cancelled"] { --cat-color: var(--danger); }
+
+  .status-lanes {
+    display: grid;
+    gap: 10px;
+  }
+  .status-lane {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+  .status-lane__label {
+    padding-top: 7px;
+    color: var(--muted);
+    font: 600 9px/1.3 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+  .status-lane__tickets {
+    min-height: 38px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    align-items: flex-start;
+    padding: 5px;
+    border-left: 2px solid var(--cat-color, var(--line-strong));
+    background: color-mix(in srgb, var(--cat-color, var(--line)) 5%, transparent);
+  }
+  .status-ticket {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 29px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 5px 9px;
+    background: var(--surface);
+    color: var(--ink);
+    font: 600 11px/1.2 var(--mono);
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .status-ticket:hover { border-color: var(--cat-color, var(--accent)); }
+  .status-ticket[aria-pressed="true"] {
+    border-color: var(--cat-color, var(--accent));
+    background: color-mix(in srgb, var(--cat-color, var(--accent)) 10%, var(--surface));
+    box-shadow: inset 0 0 0 1px var(--cat-color, var(--accent));
+  }
+  .status-ticket__mark {
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid var(--cat-color, var(--muted));
+    border-radius: 50%;
+    background: transparent;
+  }
+  [data-category="in_progress"] .status-ticket__mark { border-radius: 2px; background: var(--cat-color); }
+  [data-category="done"] .status-ticket__mark { border-radius: 0; transform: rotate(45deg); background: var(--cat-color); }
+  [data-category="cancelled"] .status-ticket__mark { border-radius: 0; border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+  .birth-mark {
+    color: var(--accent-ink);
+    font: 800 9px/1 var(--mono);
+    letter-spacing: .08em;
+  }
+
+  .selection-editor {
+    margin-top: 18px;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+  }
+  .selection-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+  }
+  .field-label {
+    display: grid;
+    gap: 4px;
+    color: var(--muted);
+    font: 600 9px/1.3 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .field-label input,
+  .field-label select {
+    width: 100%;
+    min-height: 34px;
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 6px 9px;
+    font: 14px/1.3 var(--body-face);
+  }
+  .edit-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .edit-actions .btn { padding-inline: 9px; font-size: 12px; }
+  .btn[disabled] { opacity: .48; cursor: not-allowed; }
+  .add-status {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 122px auto;
+    gap: 7px;
+    align-items: end;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .change-note {
+    min-height: 2.9em;
+    margin: 12px 0 0;
+    padding: 8px 10px;
+    border-left: 2px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+    color: var(--muted);
+    font: italic 13px/1.45 var(--body-face);
+  }
+
+  .board-scroll {
+    overflow-x: auto;
+    padding: 3px 2px 14px;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  .board {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    min-width: max-content;
+  }
+  .board-col {
+    position: relative;
+    width: 188px;
+    min-height: 310px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--pn-line-2);
+    border-top: 3px solid var(--cat-color, var(--pn-line-2));
+    border-radius: 8px;
+    background: var(--pn-card);
+    transition: border-color var(--dur-fast) var(--ease-out);
+  }
+  .board-col.is-selected { border-color: var(--cat-color, var(--pn-brand)); }
+  .board-col__head {
+    min-height: 54px;
+    padding: 9px 10px 8px;
+    border-bottom: 1px solid var(--pn-line);
+  }
+  .board-col__name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--pn-ink);
+    font: 650 11px/1.25 var(--pn-mono);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .board-col__name svg { width: 13px; height: 13px; color: var(--pn-brand); }
+  .board-col__category {
+    margin-top: 5px;
+    color: var(--pn-ink-3);
+    font: 8.5px/1 var(--pn-mono);
+    letter-spacing: .08em;
+  }
+  .board-col__body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 8px;
+    padding: 9px;
+    background: var(--pn-paper);
+    border-radius: 0 0 7px 7px;
+  }
+  .board-col__empty {
+    margin: auto;
+    color: var(--pn-ink-4);
+    font: italic 11px/1.4 var(--pn-ui);
+    text-align: center;
+  }
+  .board-card { transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
+  .board-card__kind {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 5px;
+    color: var(--pn-ink-3);
+    font: 8.5px/1 var(--pn-mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .board-card__kind svg { width: 12px; height: 12px; color: var(--pn-brand); }
+  .board-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin: 2px 0 12px;
+    color: var(--muted);
+    font: 11px/1.4 var(--mono);
+  }
+  .board-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend-stroke { width: 18px; border-top: 3px solid var(--cat-color); }
+
+  .guide {
+    border-top: 1px solid var(--line-strong);
+    padding: 14px 18px 17px;
+    background: var(--surface);
+  }
+  .guide .tmc { margin-top: 8px; max-width: 620px; }
+  .guide__caption { min-height: 2.8em; margin: 0; }
+
+  .truth-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .truth-card { min-height: 174px; }
+  .truth-card__mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    color: var(--accent-ink);
+    font: 600 10px/1 var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .truth-card h3 { margin: 0 0 8px; }
+  .truth-card p { margin: 0; font-size: 14.5px; }
+  .truth-card--law { border-top: 3px solid var(--accent); }
+  .truth-card--data { border-top: 3px solid var(--accent-2); }
+
+  .shape-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
+    gap: 16px;
+    align-items: start;
+  }
+  .shape-note { display: grid; gap: 12px; }
+  .shape-note .card p { margin: 0; }
+  .view-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .view-strip span {
+    border-block: 1px solid var(--line);
+    padding: 8px 4px;
+    text-align: center;
+    font: 600 10px/1 var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .view-strip span:nth-child(2) { color: var(--accent-ink); border-color: var(--accent); }
+
+  .sr-only {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+
+  @media (max-width: 840px) {
+    .lesson-intro { grid-template-columns: 1fr; align-items: start; }
+    .law-key { width: fit-content; }
+    .workshop__body { grid-template-columns: 1fr; }
+    .workflow-side { border-right: 0; border-bottom: 1px solid var(--line-strong); }
+    .board-col { width: 214px; min-height: 270px; }
+    .truth-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .shape-grid { grid-template-columns: minmax(0, 1fr); }
+    .shape-grid > * { min-width: 0; }
+  }
+  @media (max-width: 560px) {
+    header.site { padding-inline: 16px; }
+    header.site .hub-note { display: none; }
+    main { padding: 20px 16px 56px; }
+    h1 { font-size: 36px; }
+    .workshop__top { align-items: flex-start; flex-wrap: wrap; padding: 13px 14px; }
+    .workshop__eyebrow { width: 100%; }
+    .workshop__name { flex-basis: calc(100% - 90px); }
+    .workflow-side, .board-side { padding: 15px; }
+    .category-law { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .status-lane { grid-template-columns: 1fr; gap: 3px; }
+    .status-lane__label { padding-top: 0; }
+    .selection-grid { grid-template-columns: 1fr; }
+    .add-status { grid-template-columns: 1fr; }
+    .board-col { width: min(82vw, 260px); }
+    .guide { padding-inline: 14px; }
+    .tmc { flex-wrap: wrap; }
+    .tmc input[type="range"] { order: 4; flex-basis: calc(100% - 72px); margin-block: 7px; }
+    .truth-grid { grid-template-columns: 1fr; }
+    .truth-card { min-height: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .status-ticket, .category-target, .board-col, .board-card { transform: none !important; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm8 <i>·</i> Help</span>
+  <span class="crumb">Work / Four categories, your words</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+<svg id="tm8-icons" aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ki-task" viewBox="0 0 16 16"><path d="M3.4 5.6a2.2 2.2 0 0 1 2.2-2.2h4.8a2.2 2.2 0 0 1 2.2 2.2v4.8a2.2 2.2 0 0 1-2.2 2.2H5.6a2.2 2.2 0 0 1-2.2-2.2z"/><path d="M6 8.1 7.4 9.5 10.1 6.6"/></symbol>
+  <symbol id="ki-work_session" viewBox="0 0 16 16"><path d="M2.4 5.2a2 2 0 0 1 2-2h7.2a2 2 0 0 1 2 2v5.6a2 2 0 0 1-2 2H4.4a2 2 0 0 1-2-2z"/><path d="M5.2 7.4 6.9 9 5.2 10.6"/><path d="M8.4 10.6h2.6"/></symbol>
+  <symbol id="ki-doc" viewBox="0 0 16 16"><path d="M9 2.6H5.2a1.4 1.4 0 0 0-1.4 1.4v8a1.4 1.4 0 0 0 1.4 1.4h5.6a1.4 1.4 0 0 0 1.4-1.4V5.6z"/><path d="M9 2.6v3h3.2"/><path d="M6 9h4"/><path d="M6 11.2h2.6"/></symbol>
+  <symbol id="ki-channel" viewBox="0 0 16 16"><path d="M6.4 3 5.2 13"/><path d="M11 3 9.8 13"/><path d="M3.6 6.4h9.2"/><path d="M3.1 9.6h9.2"/></symbol>
+  <symbol id="ki-voice_channel" viewBox="0 0 16 16"><path d="M8 2.6a1.9 1.9 0 0 1 1.9 1.9v3.2a1.9 1.9 0 0 1-3.8 0V4.5A1.9 1.9 0 0 1 8 2.6z"/><path d="M4.6 7.4a3.4 3.4 0 0 0 6.8 0"/><path d="M8 10.8v2.6"/><path d="M6 13.4h4"/></symbol>
+  <symbol id="ki-message" viewBox="0 0 16 16"><path d="M13.2 9.6a1.9 1.9 0 0 1-1.9 1.9H6.5L3.4 13.8V5.1a1.9 1.9 0 0 1 1.9-1.9h6a1.9 1.9 0 0 1 1.9 1.9z"/></symbol>
+  <symbol id="ki-member" viewBox="0 0 16 16"><path d="M8 8.3a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z"/><path d="M3.3 13.6a4.7 4.7 0 0 1 9.4 0"/></symbol>
+  <symbol id="ki-team_member" viewBox="0 0 16 16"><path d="M8 2.6v1.8"/><path d="M4.4 4.4h7.2a1.6 1.6 0 0 1 1.6 1.6v5a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6V6a1.6 1.6 0 0 1 1.6-1.6z"/><path d="M6.2 7.8v1.2"/><path d="M9.8 7.8v1.2"/></symbol>
+  <symbol id="ki-pull_request" viewBox="0 0 16 16"><path d="M4.9 5.6a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M11.1 5.6a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M4.9 13.8a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M4.9 5.6v4.8"/><path d="M11.1 5.6v1.4a2.6 2.6 0 0 1-2.6 2.6H4.9"/></symbol>
+  <symbol id="ki-commit" viewBox="0 0 16 16"><path d="M8 2.2v3"/><path d="M8 10.8v3"/><path d="M8 10.7a2.7 2.7 0 1 0 0-5.4 2.7 2.7 0 0 0 0 5.4z"/></symbol>
+  <symbol id="ki-file" viewBox="0 0 16 16"><path d="M11.8 7.9 7.4 12.3a2.7 2.7 0 0 1-3.8-3.8l5.3-5.3a1.8 1.8 0 0 1 2.5 2.5l-5.3 5.3a.9.9 0 0 1-1.3-1.3l4.7-4.7"/></symbol>
+  <symbol id="ki-spell" viewBox="0 0 16 16"><path d="M3.2 12.8 9.6 6.4"/><path d="M11.8 2.4l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L8.9 5.3l2.05-.85z"/><path d="M5.6 3.4v1.7"/><path d="M4.75 4.25h1.7"/></symbol>
+  <symbol id="ki-skill" viewBox="0 0 16 16"><path d="M8 4.4c-1.3-1-2.8-1.5-4.8-1.5v8.4c2 0 3.5.5 4.8 1.5"/><path d="M8 4.4c1.3-1 2.8-1.5 4.8-1.5v8.4c-2 0-3.5.5-4.8 1.5"/><path d="M8 4.4v8.4"/></symbol>
+  <symbol id="ki-collection" viewBox="0 0 16 16"><path d="M3 3h4.2v4.2H3z"/><path d="M8.8 3H13v4.2H8.8z"/><path d="M3 8.8h4.2V13H3z"/><path d="M8.8 8.8H13V13H8.8z"/></symbol>
+  <symbol id="ki-project" viewBox="0 0 16 16"><path d="M2.6 5.2a1.4 1.4 0 0 1 1.4-1.4h2.1l1.5 1.8h4.4a1.4 1.4 0 0 1 1.4 1.4v4.6a1.4 1.4 0 0 1-1.4 1.4H4a1.4 1.4 0 0 1-1.4-1.4z"/></symbol>
+  <symbol id="ki-interaction_profile" viewBox="0 0 16 16"><path d="M2.8 5.4h10.4"/><path d="M2.8 10.6h10.4"/><path d="M6.2 7a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/><path d="M10 12.2a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/></symbol>
+  <symbol id="ki-loop" viewBox="0 0 16 16"><path d="M8 3.2a4.8 4.8 0 1 0 4.53 3.2M12.8 3.2v3.2h-3.2"/></symbol>
+  <symbol id="ki-memory" viewBox="0 0 16 16"><path d="M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z"/></symbol>
+  <symbol id="ki-graph" viewBox="0 0 16 16"><path d="M4.3 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M11.7 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M11.7 13.6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M6.1 4.2h3.8"/><path d="M11.7 7.8v2.2"/></symbol>
+  <symbol id="ki-artifact" viewBox="0 0 16 16"><path d="M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z"/><path d="M2.6 5.3 8 8.2l5.4-2.9"/><path d="M8 8.2v5.4"/></symbol>
+  <symbol id="ki-worktree" viewBox="0 0 16 16"><path d="M6.2 5.8h5.6a1.4 1.4 0 0 1 1.4 1.4v5.6a1.4 1.4 0 0 1-1.4 1.4H6.2a1.4 1.4 0 0 1-1.4-1.4V7.2a1.4 1.4 0 0 1 1.4-1.4z"/><path d="M10.4 5.8V4.2a1.4 1.4 0 0 0-1.4-1.4H4.2a1.4 1.4 0 0 0-1.4 1.4V9a1.4 1.4 0 0 0 1.4 1.4h.6"/></symbol>
+  <symbol id="ki-custom" viewBox="0 0 16 16"><path d="M8 2.6 13.4 8 8 13.4 2.6 8z"/></symbol>
+</svg>
+
+<main id="main">
+  <p class="kicker" style="margin:26px 0 0">Section 4 · Work · 25</p>
+  <h1>Four categories, your words</h1>
+  <div class="lesson-intro">
+    <p class="lede">You name the statuses. Your workflow chooses the columns. Underneath, four categories keep every entity legible to tm8.</p>
+    <span class="law-key"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg> Four-value law</span>
+  </div>
+
+  <section aria-labelledby="workshop-title" style="margin-top:30px;padding-top:0;border-top:0">
+    <h2 id="workshop-title" class="sr-only">Workflow workshop</h2>
+    <div class="panel workshop" id="workshop">
+      <div class="workshop__top">
+        <span class="workshop__eyebrow">Workflow</span>
+        <label class="sr-only" for="workflow-name">Workflow name</label>
+        <input id="workflow-name" class="workshop__name" value="Northlake release" autocomplete="off">
+        <span class="workshop__owned">your data</span>
+      </div>
+
+      <div class="workshop__body">
+        <div class="workflow-side">
+          <div class="side-heading">
+            <h3>Status map</h3>
+            <p class="caption">Select a status, then choose its category.</p>
+          </div>
+
+          <div class="category-law" id="category-law" role="group" aria-label="The four fixed StatusCategory values"></div>
+          <div class="status-lanes" id="status-lanes" aria-label="Statuses grouped by category"></div>
+
+          <div class="selection-editor" id="selection-editor">
+            <div class="selection-grid">
+              <label class="field-label" for="status-name">Selected status
+                <input id="status-name" autocomplete="off">
+              </label>
+              <span class="pill pill--accent" id="selected-category">to_do</span>
+            </div>
+            <div class="edit-actions" role="group" aria-label="Selected status actions">
+              <button class="btn" id="move-left" type="button" aria-label="Move selected status to the previous category">← category</button>
+              <button class="btn" id="move-right" type="button" aria-label="Move selected status to the next category">category →</button>
+              <button class="btn" id="make-birth" type="button">Make birth state</button>
+              <button class="btn" id="remove-status" type="button">Remove</button>
+            </div>
+          </div>
+
+          <div class="add-status" id="add-status" role="group" aria-label="Add a status to this workflow">
+            <label class="field-label" for="new-status">New status
+              <input id="new-status" placeholder="e.g. waiting on QA" autocomplete="off" required>
+            </label>
+            <label class="field-label" for="new-category">Category
+              <select id="new-category">
+                <option value="to_do">to_do</option>
+                <option value="in_progress">in_progress</option>
+                <option value="done">done</option>
+                <option value="cancelled">cancelled</option>
+              </select>
+            </label>
+            <button class="btn btn--primary" id="add-status-button" type="button">Add status</button>
+          </div>
+          <p class="change-note" id="change-note" aria-live="polite">Ready is the birth state. It is in <code>to_do</code>, as every workflow birth state must be.</p>
+        </div>
+
+        <div class="board-side">
+          <div class="side-heading">
+            <h3>Board</h3>
+            <p class="caption"><span id="board-workflow-name">Northlake release</span> · columns are the workflow</p>
+          </div>
+          <div class="board-legend" aria-label="Category marks">
+            <span data-category="to_do"><i class="legend-stroke"></i>○ to_do</span>
+            <span data-category="in_progress"><i class="legend-stroke"></i>▶ in_progress</span>
+            <span data-category="done"><i class="legend-stroke"></i>✓ done</span>
+            <span data-category="cancelled"><i class="legend-stroke"></i>× cancelled</span>
+          </div>
+          <div class="pn board-scroll" tabindex="0" aria-label="Scrollable task board. Columns follow the current workflow.">
+            <div class="board" id="board"></div>
+          </div>
+          <p class="caption">Edit a status above: its column moves with it. The category rail does not grow, shrink, or accept a fifth value.</p>
+        </div>
+      </div>
+
+      <div class="guide" id="guided-proof">
+        <p class="guide__caption caption" data-replay-caption aria-live="polite">Start with a named workflow. Its statuses become board columns; the four category rails stay fixed.</p>
+        <div class="tmc" role="group" aria-label="Guided proof controls">
+          <button class="btn tmc-play" type="button">Play</button>
+          <button class="btn tmc-step" type="button">Step</button>
+          <label style="display:contents"><span class="sr-only">Scrub proof frames</span>
+            <input class="tmc-scrub" type="range" min="0" max="3" value="0" step="1">
+          </label>
+          <span class="tmc-count" aria-hidden="true">1 / 4</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="distinction-title">
+    <h2 id="distinction-title"><span class="no">01</span>What is law; what is yours</h2>
+    <p>The distinction is structural. A category tells tm8 what a state means. A status gives your team the language it actually uses. A workflow orders those statuses for one kind of entity in a Space.</p>
+    <div class="truth-grid">
+      <article class="card truth-card truth-card--law">
+        <span class="truth-card__mark">fixed · code</span>
+        <h3>Kind</h3>
+        <p><code>task</code> says what shape and operations the entity has. Kinds come from the registry.</p>
+      </article>
+      <article class="card truth-card truth-card--data">
+        <span class="truth-card__mark">open · data</span>
+        <h3>Status</h3>
+        <p><code>in_review</code>, <code>blocked</code>, and <code>shipping</code> are names a workflow owns. Each carries one category.</p>
+      </article>
+      <article class="card truth-card truth-card--law">
+        <span class="truth-card__mark">fixed · four</span>
+        <h3>Category</h3>
+        <p><code>to_do</code>, <code>in_progress</code>, <code>done</code>, or <code>cancelled</code>. There is no fifth lane.</p>
+      </article>
+      <article class="card truth-card truth-card--data">
+        <span class="truth-card__mark">named · data</span>
+        <h3>Workflow</h3>
+        <p>A named, per-Space and per-kind state set. It has exactly one birth state, and that state must map to <code>to_do</code>.</p>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="shape-title">
+    <h2 id="shape-title"><span class="no">02</span>The task carries both answers</h2>
+    <div class="shape-grid">
+      <div class="term">
+        <div class="term__bar" aria-hidden="true"><span class="term__name">entity context — trimmed task excerpt</span><span class="term__tag">json</span></div>
+        <pre><span class="out">{
+  "id": "01a09f22-5d10-7b22-9c3f-1e4a6b8d0f22",
+  "kind": "task",
+  "title": "Ship invite flow",
+  "version": 7,
+  "category": "in_progress",
+  "state": {
+    "kind": "task",
+    "status": "in_review",
+    "priority": "medium",
+    "acceptance": { "total": 4, "completed": 4 }
+  }
+}</span></pre>
+      </div>
+      <div class="shape-note">
+        <div class="card">
+          <p><strong><code>status</code> is the team’s word.</strong> <code>category</code> is the stable meaning tm8 can project across different workflows and entity kinds.</p>
+        </div>
+        <div class="card">
+          <p><strong>The board is one view.</strong> Tree, board, and graph project the same entities; changing the view does not make copies.</p>
+          <div class="view-strip" aria-label="The three task views"><span>Tree</span><span>Board</span><span>Graph</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="skew-title">
+    <h2 id="skew-title"><span class="no">03</span>One honest version note</h2>
+    <div class="gap-card"><b>Version skew.</b> The deployed stable server may still expose the older task-axis surface because its build predates the workflow cutover. Latest main has retired task axes. Help teaches the current model: kind + status + category + workflow.</div>
+    <p class="caption">The category is near-universal across entity kinds, not a task-only field. This workshop uses tasks because a workflow’s columns are easiest to see on the board.</p>
+  </section>
+</main>
+
+<footer class="site">Last updated 2026-08-20 · Four categories, your words · tm8 Help v1 · <span class="stamp">Section 4 model verified 2026-08-20</span></footer>
+
+<script id="tm8-foundation-js">
+/* ============================================================
+   tm8 Help — FOUNDATION SCRIPT (v2 — unchanged from v1)
+   Lift this <script> verbatim. Provides:
+   - TM8.reduced()          honest prefers-reduced-motion check
+   - TM8.stepper(root,opts) the ONE sequence driver (play/step/scrub)
+   - toggle2 wiring         the ONE "type / comes back" toggle
+   - TM8_MOCK               the shared Northlake mock workspace
+   ============================================================ */
+(function () {
+  'use strict';
+  var TM8 = {};
+  var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  TM8.reduced = function (el) {
+    return mq.matches || !!(el && el.closest && el.closest('.force-reduced'));
+  };
+
+  /* The standard control cluster. root contains .tmc-play, .tmc-step,
+     .tmc-scrub, .tmc-count. opts = { frames, render(i), intervalMs?, captions?[] }.
+     Play runs ONCE to the last frame and stops (starts, teaches, settles).
+     Under reduced motion, Play advances frame by frame with no animation. */
+  TM8.stepper = function (root, opts) {
+    var frames = opts.frames, i = 0, timer = null;
+    var play = root.querySelector('.tmc-play');
+    var step = root.querySelector('.tmc-step');
+    var scrub = root.querySelector('.tmc-scrub');
+    var count = root.querySelector('.tmc-count');
+    var cap = root.querySelector('[data-replay-caption]');
+    function render() {
+      opts.render(i);
+      if (scrub) scrub.value = String(i);
+      if (count) count.textContent = (i + 1) + ' / ' + frames;
+      if (cap && opts.captions) cap.textContent = opts.captions[i] || '';
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (play) play.textContent = 'Play';
+    }
+    function set(n) { i = Math.max(0, Math.min(frames - 1, n)); render(); }
+    if (play) play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      if (i >= frames - 1) set(0);
+      play.textContent = 'Pause';
+      var ms = opts.intervalMs || 1400;
+      if (TM8.reduced(root)) ms = Math.max(ms, 1800); /* no motion: give reading time */
+      timer = setInterval(function () {
+        if (i >= frames - 1) { stop(); return; }
+        set(i + 1);
+      }, ms);
+    });
+    if (step) step.addEventListener('click', function () { stop(); set(i >= frames - 1 ? 0 : i + 1); });
+    if (scrub) scrub.addEventListener('input', function () { stop(); set(parseInt(scrub.value, 10) || 0); });
+    render();
+    return { set: set, stop: stop };
+  };
+
+  /* toggle2: [data-toggle2] with button[data-pane] + [data-pane-id] panes */
+  TM8.wireToggles = function (scope) {
+    (scope || document).querySelectorAll('[data-toggle2]').forEach(function (box) {
+      var btns = box.querySelectorAll('button[data-pane]');
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          btns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+          box.querySelectorAll('[data-pane-id]').forEach(function (p) {
+            p.classList.toggle('is-shown', p.getAttribute('data-pane-id') === b.getAttribute('data-pane'));
+          });
+        });
+      });
+    });
+  };
+
+  /* ---- TM8_MOCK: the Northlake workspace (fiction; DTO-true shapes) ----
+     Shapes follow tm8.entity-context.v1 output, trimmed to rendered fields.
+     Ids are v7-shaped and fake. Model ids are NOT invented: teammates carry
+     provider only; harvest exact model ids from the live catalog if needed. */
+  var SPACE = '01a09e00-0000-7000-8000-1c2d3e4f5a6b';
+  function member(id, name, initials) {
+    return { id: id, kind: 'member', displayName: name, initials: initials, isAgent: false };
+  }
+  function teammate(id, name, initials, provider, role) {
+    return { id: id, kind: 'team_member', displayName: name, initials: initials,
+             isAgent: true, provider: provider, role: role || null, avatar: null,
+             ownerMemberId: '01a09e01-1111-7111-8111-aaaaaaaaaaa1' };
+  }
+  var MARA = member('01a09e01-1111-7111-8111-aaaaaaaaaaa1', 'Mara Voss', 'MV');
+  var THEO = member('01a09e02-2222-7222-8222-bbbbbbbbbbb2', 'Theo Iwu', 'TI');
+  var JUNIPER = teammate('01a09e10-3333-7333-8333-ccccccccccc3', 'Juniper', 'JU', 'claude-code');
+  var CALLISTO = teammate('01a09e11-4444-7444-8444-ddddddddddd4', 'Callisto', 'CA', 'codex');
+  var DISPATCHER = teammate('01a09e12-5555-7555-8555-eeeeeeeeeee5', 'Dispatcher', 'DI', 'claude-code', 'routes, never works');
+  var DREAMER = teammate('01a09e13-6666-7666-8666-fffffffffff6', 'Dreamer', 'DR', 'claude-code', 'tends memories, never deletes');
+  function task(id, title, status, category, priority, assignees, accDone, accTotal, version, extra) {
+    var t = {
+      id: id, spaceId: SPACE, kind: 'task', title: title, parentId: null,
+      visibility: 'space', version: version, category: category,
+      counters: { likes: 0, dislikes: 0, stars: 0, points: 0,
+        messages: (extra && extra.messages) || 0,
+        humanMessages: (extra && extra.humanMessages) || 0,
+        agentMessages: (extra && extra.agentMessages) || 0,
+        docs: 0, memories: 0, viewerReaction: null },
+      state: { kind: 'task', status: status, priority: priority, axes: {},
+        dueDate: null, assignees: assignees,
+        assignments: assignees.map(function (a) {
+          return { assignee: a, assignedBy: MARA, assignedAt: '2026-08-19T10:04:00.000Z' };
+        }),
+        acceptance: { total: accTotal, completed: accDone },
+        completionGate: (extra && extra.gate) || 'none' }
+    };
+    return t;
+  }
+  window.TM8_MOCK = {
+    space: { id: SPACE, name: 'Northlake' },
+    members: [MARA, THEO],
+    teammates: [JUNIPER, CALLISTO, DISPATCHER, DREAMER],
+    tasks: [
+      task('01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11', 'Fix login redirect loop', 'working', 'in_progress', 'high', [JUNIPER], 1, 3, 4, { messages: 3, humanMessages: 1, agentMessages: 2 }),
+      task('01a09f22-5d10-7b22-9c3f-1e4a6b8d0f22', 'Ship invite flow', 'in_review', 'in_progress', 'medium', [CALLISTO, THEO], 4, 4, 7, { gate: 'pr_merged' }),
+      task('01a09f23-6e20-7c33-8d40-2f5b7c9e1a33', 'Write release notes', 'open', 'to_do', 'low', [], 0, 2, 1),
+      task('01a09f24-7f30-7d44-9e51-3a6c8d0f2b44', 'Retire legacy webhook', 'done', 'done', 'medium', [JUNIPER], 2, 2, 9)
+    ],
+    session: {
+      id: '01a09f40-8a40-7e55-8f62-4b7d9e1a3c55', spaceId: SPACE, kind: 'work_session',
+      title: 'Juniper — login redirect loop', version: 2,
+      state: { kind: 'work_session', teammate: JUNIPER, provider: 'claude-code',
+               accessMode: 'fullAccess', workdir: 'worktree', live: true }
+    },
+    messages: [
+      { id: '01a09f50-9b50-7f66-8a73-5c8e0f2b4d66', kind: 'message',
+        author: MARA, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:12:00.000Z',
+        body: 'The loop only happens after a password change — can you check the session cookie path?' },
+      { id: '01a09f51-0c60-7a77-8b84-6d9f1a3c5e77', kind: 'message',
+        author: JUNIPER, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:14:00.000Z',
+        body: 'Confirmed. The redirect target is cached before the credential rotates. Fixing in the worktree; acceptance 1/3 done.' },
+      { id: '01a09f52-1d70-7b88-8c95-7e0a2b4d6f88', kind: 'message',
+        author: THEO, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:20:00.000Z',
+        body: 'Nice — leave the guard behind a comment, QA wants to trace it.' }
+    ]
+  };
+  window.TM8 = TM8;
+  document.addEventListener('DOMContentLoaded', function () { TM8.wireToggles(document); });
+}());
+</script>
+<script id="artifact-script">
+(function () {
+  'use strict';
+
+  var CATEGORIES = [
+    { id: 'to_do', label: 'To do', glyph: '○' },
+    { id: 'in_progress', label: 'In progress', glyph: '▶' },
+    { id: 'done', label: 'Done', glyph: '✓' },
+    { id: 'cancelled', label: 'Cancelled', glyph: '×' }
+  ];
+
+  var BASE_STATUSES = [
+    { id: 'backlog', name: 'Backlog', category: 'to_do', birth: false },
+    { id: 'ready', name: 'Ready', category: 'to_do', birth: true },
+    { id: 'building', name: 'Building', category: 'in_progress', birth: false },
+    { id: 'in_review', name: 'In review', category: 'in_progress', birth: false },
+    { id: 'blocked', name: 'Blocked', category: 'in_progress', birth: false },
+    { id: 'done', name: 'Done', category: 'done', birth: false },
+    { id: 'cancelled', name: 'Cancelled', category: 'cancelled', birth: false }
+  ];
+
+  var BASE_TASKS = [
+    { id: 'release-notes', title: 'Write release notes', status: 'backlog', done: 0, total: 2, who: '' },
+    { id: 'migration', title: 'Prepare auth migration', status: 'ready', done: 0, total: 3, who: 'CA' },
+    { id: 'login-loop', title: 'Fix login redirect loop', status: 'building', done: 1, total: 3, who: 'JU' },
+    { id: 'invite-flow', title: 'Ship invite flow', status: 'in_review', done: 4, total: 4, who: 'CA' },
+    { id: 'provider-timeout', title: 'Resolve provider timeout', status: 'blocked', done: 1, total: 2, who: 'JU' },
+    { id: 'legacy-webhook', title: 'Retire legacy webhook', status: 'done', done: 2, total: 2, who: 'JU' },
+    { id: 'stale-beta', title: 'Close stale beta task', status: 'cancelled', done: 0, total: 1, who: '' }
+  ];
+
+  var statuses = clone(BASE_STATUSES);
+  var tasks = clone(BASE_TASKS);
+  var selectedId = 'in_review';
+  var workflowName = 'Northlake release';
+
+  var categoryLaw = document.getElementById('category-law');
+  var statusLanes = document.getElementById('status-lanes');
+  var board = document.getElementById('board');
+  var statusName = document.getElementById('status-name');
+  var selectedCategory = document.getElementById('selected-category');
+  var workflowInput = document.getElementById('workflow-name');
+  var boardWorkflowName = document.getElementById('board-workflow-name');
+  var note = document.getElementById('change-note');
+  var removeButton = document.getElementById('remove-status');
+  var birthButton = document.getElementById('make-birth');
+  var moveLeftButton = document.getElementById('move-left');
+  var moveRightButton = document.getElementById('move-right');
+
+  function clone(value) { return JSON.parse(JSON.stringify(value)); }
+  function esc(value) {
+    return String(value).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  function categoryIndex(id) { return CATEGORIES.findIndex(function (cat) { return cat.id === id; }); }
+  function selected() { return statuses.find(function (status) { return status.id === selectedId; }) || statuses[0]; }
+  function statusTasks(id) { return tasks.filter(function (task) { return task.status === id; }); }
+  function categoryForStatus(id) {
+    var status = statuses.find(function (item) { return item.id === id; });
+    return status ? status.category : 'to_do';
+  }
+  function categoryMeta(id) { return CATEGORIES[categoryIndex(id)] || CATEGORIES[0]; }
+  function orderedStatuses() {
+    return statuses.slice().sort(function (a, b) {
+      var byCategory = categoryIndex(a.category) - categoryIndex(b.category);
+      return byCategory || statuses.indexOf(a) - statuses.indexOf(b);
+    });
+  }
+  function say(message) {
+    note.innerHTML = message;
+  }
+
+  function capturePositions(root, selector, key) {
+    var map = {};
+    root.querySelectorAll(selector).forEach(function (el) { map[el.getAttribute(key)] = el.getBoundingClientRect(); });
+    return map;
+  }
+  function animateFrom(root, selector, key, previous) {
+    if (window.TM8.reduced(root)) return;
+    root.querySelectorAll(selector).forEach(function (el) {
+      var oldBox = previous[el.getAttribute(key)];
+      if (!oldBox) {
+        el.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 180, easing: 'cubic-bezier(.16,1,.3,1)' });
+        return;
+      }
+      var newBox = el.getBoundingClientRect();
+      var dx = oldBox.left - newBox.left;
+      var dy = oldBox.top - newBox.top;
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+        el.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'translate(0,0)' }], { duration: 280, easing: 'cubic-bezier(.16,1,.3,1)' });
+      }
+    });
+  }
+
+  function renderCategoryLaw() {
+    var current = selected();
+    categoryLaw.innerHTML = CATEGORIES.map(function (cat) {
+      var count = statuses.filter(function (status) { return status.category === cat.id; }).length;
+      return '<button class="category-target" type="button" data-category="' + cat.id + '" aria-pressed="' + String(current.category === cat.id) + '" aria-label="Move ' + esc(current.name) + ' to category ' + cat.id + '">' +
+        '<span class="category-target__name">' + cat.glyph + ' ' + cat.id + '</span>' +
+        '<span class="category-target__meta"><span class="category-target__lock" aria-hidden="true">⌁</span> fixed · ' + count + '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function renderLanes(previous) {
+    statusLanes.innerHTML = CATEGORIES.map(function (cat) {
+      var items = statuses.filter(function (status) { return status.category === cat.id; });
+      return '<div class="status-lane" data-category="' + cat.id + '">' +
+        '<div class="status-lane__label">' + cat.glyph + ' ' + esc(cat.label) + '</div>' +
+        '<div class="status-lane__tickets">' + items.map(function (status) {
+          return '<button class="status-ticket" type="button" data-status-id="' + status.id + '" data-category="' + status.category + '" aria-pressed="' + String(status.id === selectedId) + '">' +
+            '<span class="status-ticket__mark" aria-hidden="true"></span>' +
+            '<span data-status-name="' + status.id + '">' + esc(status.name) + '</span>' +
+            (status.birth ? '<span class="birth-mark" title="Birth state">BIRTH</span>' : '') +
+          '</button>';
+        }).join('') + '</div>' +
+      '</div>';
+    }).join('');
+    animateFrom(statusLanes, '.status-ticket', 'data-status-id', previous || {});
+  }
+
+  function renderSelection() {
+    var current = selected();
+    if (!current) return;
+    statusName.value = current.name;
+    selectedCategory.textContent = current.category;
+    var idx = categoryIndex(current.category);
+    moveLeftButton.disabled = idx <= 0 || current.birth;
+    moveRightButton.disabled = idx >= CATEGORIES.length - 1 || current.birth;
+    birthButton.disabled = current.category !== 'to_do' || current.birth;
+    birthButton.textContent = current.birth ? 'Birth state' : 'Make birth state';
+    removeButton.disabled = statusTasks(current.id).length > 0 || current.birth;
+  }
+
+  function renderBoard(previous) {
+    board.innerHTML = orderedStatuses().map(function (status) {
+      var cat = categoryMeta(status.category);
+      var cards = statusTasks(status.id);
+      return '<section class="board-col' + (status.id === selectedId ? ' is-selected' : '') + '" data-status-id="' + status.id + '" data-category="' + status.category + '" aria-labelledby="col-' + status.id + '">' +
+        '<div class="board-col__head">' +
+          '<div class="board-col__name" id="col-' + status.id + '"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg><span data-status-name="' + status.id + '">' + esc(status.name) + '</span></div>' +
+          '<div class="board-col__category">' + cat.glyph + ' ' + status.category + (status.birth ? ' · birth' : '') + '</div>' +
+        '</div>' +
+        '<div class="board-col__body">' + (cards.length ? cards.map(function (task) {
+          return '<article class="pn-tcard board-card" data-task-id="' + task.id + '">' +
+            '<div class="board-card__kind"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg>task</div>' +
+            '<div class="pn-tcard__title">' + esc(task.title) + '</div>' +
+            '<div class="pn-tcard__meta"><span class="pn-tcard__accept">' + task.done + '/' + task.total + ' ✓</span>' +
+              (task.who ? '<span class="pn-avatar pn-avatar--agent pn-avatar--tone-brand" style="margin-left:auto" title="Assigned teammate">' + task.who + '</span>' : '') +
+            '</div></article>';
+        }).join('') : '<p class="board-col__empty">No tasks in this status</p>') + '</div>' +
+      '</section>';
+    }).join('');
+    animateFrom(board, '.board-col', 'data-status-id', previous || {});
+  }
+
+  function renderAll(options) {
+    options = options || {};
+    var previousLanes = options.previousLanes || {};
+    var previousBoard = options.previousBoard || {};
+    renderCategoryLaw();
+    renderLanes(previousLanes);
+    renderSelection();
+    renderBoard(previousBoard);
+    workflowInput.value = workflowName;
+    boardWorkflowName.textContent = workflowName;
+  }
+
+  function rerenderWithMotion() {
+    var laneBoxes = capturePositions(statusLanes, '.status-ticket', 'data-status-id');
+    var boardBoxes = capturePositions(board, '.board-col', 'data-status-id');
+    renderAll({ previousLanes: laneBoxes, previousBoard: boardBoxes });
+  }
+
+  function selectStatus(id) {
+    selectedId = id;
+    renderAll();
+    var current = selected();
+    say('<strong>' + esc(current.name) + '</strong> is a user-named status mapped to <code>' + current.category + '</code>.');
+  }
+
+  function moveSelectedTo(category) {
+    var current = selected();
+    if (!current || current.category === category) return;
+    if (current.birth && category !== 'to_do') {
+      say('The birth state cannot leave <code>to_do</code>. Choose another birth state first.');
+      return;
+    }
+    var old = current.category;
+    current.category = category;
+    rerenderWithMotion();
+    say('<strong>' + esc(current.name) + '</strong> snapped from <code>' + old + '</code> to <code>' + category + '</code>. Its board column moved; the four category rails did not change.');
+  }
+
+  categoryLaw.addEventListener('click', function (event) {
+    var button = event.target.closest('button[data-category]');
+    if (button) moveSelectedTo(button.getAttribute('data-category'));
+  });
+  statusLanes.addEventListener('click', function (event) {
+    var button = event.target.closest('button[data-status-id]');
+    if (button) selectStatus(button.getAttribute('data-status-id'));
+  });
+
+  statusName.addEventListener('input', function () {
+    var current = selected();
+    var next = statusName.value.trimStart();
+    if (!current || !next) return;
+    current.name = next;
+    document.querySelectorAll('[data-status-name="' + current.id + '"]').forEach(function (el) { el.textContent = next; });
+    renderCategoryLaw();
+    say('The status is now named <strong>' + esc(next) + '</strong>. Its category is still <code>' + current.category + '</code>.');
+  });
+  statusName.addEventListener('blur', function () {
+    if (!statusName.value.trim()) { statusName.value = selected().name; }
+  });
+
+  workflowInput.addEventListener('input', function () {
+    var next = workflowInput.value.trimStart();
+    if (!next) return;
+    workflowName = next;
+    boardWorkflowName.textContent = workflowName;
+    say('The workflow is now <strong>' + esc(workflowName) + '</strong>. The four categories remain the same law.');
+  });
+  workflowInput.addEventListener('blur', function () {
+    if (!workflowInput.value.trim()) workflowInput.value = workflowName;
+  });
+
+  moveLeftButton.addEventListener('click', function () {
+    var current = selected();
+    moveSelectedTo(CATEGORIES[Math.max(0, categoryIndex(current.category) - 1)].id);
+  });
+  moveRightButton.addEventListener('click', function () {
+    var current = selected();
+    moveSelectedTo(CATEGORIES[Math.min(CATEGORIES.length - 1, categoryIndex(current.category) + 1)].id);
+  });
+  birthButton.addEventListener('click', function () {
+    var current = selected();
+    if (!current || current.category !== 'to_do') return;
+    statuses.forEach(function (status) { status.birth = status.id === current.id; });
+    rerenderWithMotion();
+    say('<strong>' + esc(current.name) + '</strong> is now the workflow’s one birth state. It remains in <code>to_do</code>.');
+  });
+  removeButton.addEventListener('click', function () {
+    var current = selected();
+    if (!current) return;
+    if (statusTasks(current.id).length) {
+      say('<strong>' + esc(current.name) + '</strong> is still in use. Move its tasks before removing the status.');
+      return;
+    }
+    if (current.birth) {
+      say('A workflow must keep exactly one birth state. Choose another before removing this one.');
+      return;
+    }
+    var removed = current.name;
+    var index = statuses.indexOf(current);
+    statuses.splice(index, 1);
+    selectedId = statuses[Math.max(0, index - 1)].id;
+    rerenderWithMotion();
+    say('<strong>' + esc(removed) + '</strong> was removed from the workflow. Its empty board column folded away.');
+  });
+
+  function addStatus() {
+    var input = document.getElementById('new-status');
+    var select = document.getElementById('new-category');
+    var name = input.value.trim();
+    if (!name) return;
+    var id = 'status-' + Date.now().toString(36);
+    statuses.push({ id: id, name: name, category: select.value, birth: false });
+    selectedId = id;
+    input.value = '';
+    rerenderWithMotion();
+    statusName.focus();
+    say('<strong>' + esc(name) + '</strong> joined <code>' + select.value + '</code>. A new board column opened because columns are the workflow.');
+  }
+
+  document.getElementById('add-status-button').addEventListener('click', addStatus);
+  document.getElementById('new-status').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addStatus();
+    }
+  });
+
+  var PROOF_CAPTIONS = [
+    'Start with a named workflow. Its statuses become board columns; the four category rails stay fixed.',
+    'Add “Shipping” as an in_progress status. A user-owned name opens a new board column.',
+    'Map “Shipping” to done. The column crosses the rule; StatusCategory still has exactly four values.',
+    'Rename the workflow. Workflow and statuses are data; kind and category law remain stable.'
+  ];
+
+  function proofFrame(frame) {
+    statuses = clone(BASE_STATUSES);
+    tasks = clone(BASE_TASKS);
+    workflowName = 'Northlake release';
+    selectedId = 'in_review';
+    if (frame >= 1) {
+      statuses.splice(5, 0, { id: 'shipping', name: 'Shipping', category: frame >= 2 ? 'done' : 'in_progress', birth: false });
+      selectedId = 'shipping';
+    }
+    if (frame >= 3) workflowName = 'Northlake release train';
+    rerenderWithMotion();
+    say(PROOF_CAPTIONS[frame]);
+  }
+
+  window.TM8.stepper(document.getElementById('guided-proof'), {
+    frames: 4,
+    captions: PROOF_CAPTIONS,
+    intervalMs: 1500,
+    render: proofFrame
+  });
+
+  renderAll();
+}());
+</script>
+</body>
+</html>

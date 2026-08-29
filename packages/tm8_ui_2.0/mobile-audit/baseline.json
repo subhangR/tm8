@@ -1,0 +1,4096 @@
+{
+  "label": "baseline",
+  "ref": {
+    "head": "91691dc13572339e84ba12eac042aa257b00dc79",
+    "headShort": "91691dc1",
+    "branch": "feat/mobile-drawer-and-fab",
+    "behindMain": 2,
+    "dirty": false,
+    "dirtyFiles": [],
+    "untrackedCount": 9
+  },
+  "minTapPx": 44,
+  "epsilonPx": 0.5,
+  "space": "sp-atelier",
+  "problems": [],
+  "rows": [
+    {
+      "viewport": "phone-390",
+      "route": "home",
+      "url": "#/s/sp-atelier/home",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Home tab — ChatHomeSurface",
+      "screenshot": "screens/phone-390__home.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 10,
+      "tapTargetsUnderMin": 1,
+      "tapTargetsSmallest": [
+        {
+          "w": 1,
+          "h": 1,
+          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
+          "text": ""
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/home",
+      "firstText": "A | Y | You"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "tasks",
+      "url": "#/s/sp-atelier/k/tasks",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Tasks tab — EntityView",
+      "screenshot": "screens/phone-390__tasks.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 17,
+      "tapTargetsUnderMin": 1,
+      "tapTargetsSmallest": [
+        {
+          "w": 332,
+          "h": 23,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/tasks",
+      "firstText": "ATELIER | Tasks | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "sessions",
+      "url": "#/s/sp-atelier/k/sessions",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Sessions tab — EntityView",
+      "screenshot": "screens/phone-390__sessions.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 14,
+      "tapTargetsUnderMin": 1,
+      "tapTargetsSmallest": [
+        {
+          "w": 332,
+          "h": 23,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/sessions",
+      "firstText": "ATELIER | Sessions | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "channels",
+      "url": "#/s/sp-atelier/channels",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Channels tab — channel EntityView",
+      "screenshot": "screens/phone-390__channels.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 17,
+      "tapTargetsUnderMin": 2,
+      "tapTargetsSmallest": [
+        {
+          "w": 22,
+          "h": 22,
+          "path": "div.lp__tile-main > div.lp__row1 > span.lp__rowactions.lp__cluster > button.lp__rowaction",
+          "text": ""
+        },
+        {
+          "w": 332,
+          "h": 23,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/channels",
+      "firstText": "ATELIER | Channels | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "inbox",
+      "url": "#/s/sp-atelier/inbox",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Inbox tab — InboxView",
+      "screenshot": "screens/phone-390__inbox.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 7,
+      "tapTargetsUnderMin": 3,
+      "tapTargetsSmallest": [
+        {
+          "w": 98,
+          "h": 26,
+          "path": "div.ibx-head > div.ibx-head__line > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
+          "text": "mark all read"
+        },
+        {
+          "w": 127,
+          "h": 26,
+          "path": "span.ibx-seg > span.ibx-seg__off > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
+          "text": "your teammates"
+        },
+        {
+          "w": 59,
+          "h": 26,
+          "path": "div.ibx-head > div.ibx-head__line > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
+          "text": "type ▾"
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/inbox",
+      "firstText": "ATELIER | Inbox | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "workspace",
+      "url": "#/s/sp-atelier/workspace",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "Work tab — no phone port (owner ruling)",
+      "screenshot": "screens/phone-390__workspace.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/workspace",
+      "firstText": "ATELIER | Workspace | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "feed",
+      "url": "#/s/sp-atelier/feed",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-390__feed.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/feed",
+      "firstText": "ATELIER | Feed | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "graph",
+      "url": "#/s/sp-atelier/graph",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-390__graph.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/graph",
+      "firstText": "ATELIER | Graph | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "files",
+      "url": "#/s/sp-atelier/files",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-390__files.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 4,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/files",
+      "firstText": "ATELIER | File browser | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "git",
+      "url": "#/s/sp-atelier/git",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-390__git.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/git",
+      "firstText": "ATELIER | Code | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "messages",
+      "url": "#/s/sp-atelier/messages",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-390__messages.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/messages",
+      "firstText": "ATELIER | Messages | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "board",
+      "url": "#/s/sp-atelier/board",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-390__board.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/board",
+      "firstText": "ATELIER | Board | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "craft",
+      "url": "#/s/sp-atelier/craft",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-390__craft.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/craft",
+      "firstText": "ATELIER | Craft | ↗"
+    },
+    {
+      "viewport": "phone-390",
+      "route": "settings",
+      "url": "#/s/sp-atelier/settings",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-390__settings.png",
+      "pageErrors": [],
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/settings",
+      "firstText": "ATELIER | Settings | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "home",
+      "url": "#/s/sp-atelier/home",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Home tab — ChatHomeSurface",
+      "screenshot": "screens/phone-430__home.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 10,
+      "tapTargetsUnderMin": 1,
+      "tapTargetsSmallest": [
+        {
+          "w": 1,
+          "h": 1,
+          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
+          "text": ""
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/home",
+      "firstText": "A | Y | You"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "tasks",
+      "url": "#/s/sp-atelier/k/tasks",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Tasks tab — EntityView",
+      "screenshot": "screens/phone-430__tasks.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 17,
+      "tapTargetsUnderMin": 1,
+      "tapTargetsSmallest": [
+        {
+          "w": 372,
+          "h": 23,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/tasks",
+      "firstText": "ATELIER | Tasks | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "sessions",
+      "url": "#/s/sp-atelier/k/sessions",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Sessions tab — EntityView",
+      "screenshot": "screens/phone-430__sessions.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 14,
+      "tapTargetsUnderMin": 1,
+      "tapTargetsSmallest": [
+        {
+          "w": 372,
+          "h": 23,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/sessions",
+      "firstText": "ATELIER | Sessions | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "channels",
+      "url": "#/s/sp-atelier/channels",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Channels tab — channel EntityView",
+      "screenshot": "screens/phone-430__channels.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 17,
+      "tapTargetsUnderMin": 2,
+      "tapTargetsSmallest": [
+        {
+          "w": 22,
+          "h": 22,
+          "path": "div.lp__tile-main > div.lp__row1 > span.lp__rowactions.lp__cluster > button.lp__rowaction",
+          "text": ""
+        },
+        {
+          "w": 372,
+          "h": 23,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/channels",
+      "firstText": "ATELIER | Channels | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "inbox",
+      "url": "#/s/sp-atelier/inbox",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Inbox tab — InboxView",
+      "screenshot": "screens/phone-430__inbox.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 7,
+      "tapTargetsUnderMin": 3,
+      "tapTargetsSmallest": [
+        {
+          "w": 98,
+          "h": 26,
+          "path": "div.ibx-head > div.ibx-head__line > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
+          "text": "mark all read"
+        },
+        {
+          "w": 127,
+          "h": 26,
+          "path": "span.ibx-seg > span.ibx-seg__off > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
+          "text": "your teammates"
+        },
+        {
+          "w": 59,
+          "h": 26,
+          "path": "div.ibx-head > div.ibx-head__line > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
+          "text": "type ▾"
+        }
+      ],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/inbox",
+      "firstText": "ATELIER | Inbox | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "workspace",
+      "url": "#/s/sp-atelier/workspace",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "Work tab — no phone port (owner ruling)",
+      "screenshot": "screens/phone-430__workspace.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/workspace",
+      "firstText": "ATELIER | Workspace | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "feed",
+      "url": "#/s/sp-atelier/feed",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-430__feed.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/feed",
+      "firstText": "ATELIER | Feed | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "graph",
+      "url": "#/s/sp-atelier/graph",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-430__graph.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/graph",
+      "firstText": "ATELIER | Graph | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "files",
+      "url": "#/s/sp-atelier/files",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-430__files.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 4,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/files",
+      "firstText": "ATELIER | File browser | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "git",
+      "url": "#/s/sp-atelier/git",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-430__git.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/git",
+      "firstText": "ATELIER | Code | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "messages",
+      "url": "#/s/sp-atelier/messages",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-430__messages.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/messages",
+      "firstText": "ATELIER | Messages | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "board",
+      "url": "#/s/sp-atelier/board",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-430__board.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/board",
+      "firstText": "ATELIER | Board | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "craft",
+      "url": "#/s/sp-atelier/craft",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-430__craft.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/craft",
+      "firstText": "ATELIER | Craft | ↗"
+    },
+    {
+      "viewport": "phone-430",
+      "route": "settings",
+      "url": "#/s/sp-atelier/settings",
+      "expectShell": "mobile",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/phone-430__settings.png",
+      "pageErrors": [],
+      "viewportWidth": 430,
+      "viewportHeight": 932,
+      "innerWidth": 430,
+      "scrollWidth": 430,
+      "bodyScrollWidth": 430,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
+      "shell": "mobile",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/settings",
+      "firstText": "ATELIER | Settings | ↗"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "home",
+      "url": "#/s/sp-atelier/home",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Home tab — ChatHomeSurface",
+      "screenshot": "screens/tablet-768__home.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1056,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 60,
+      "tapTargetsUnderMin": 35,
+      "tapTargetsSmallest": [
+        {
+          "w": 1,
+          "h": 1,
+          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
+          "text": ""
+        },
+        {
+          "w": 9,
+          "h": 839,
+          "path": "div.hp-page > section.hp-chat.hp-chat--full > div.hp-listsep > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 307,
+          "h": 14,
+          "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
+          "text": "Thinking"
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 17,
+          "h": 26,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 226,
+          "h": 20,
+          "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
+          "w": 226,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
+          "w": 60,
+          "h": 22,
+          "path": "div.tch-composer-wrap > nav.tch-tray > div.tch-tray__tabs > button.tch-tray__chat",
+          "text": "⌂ Chat"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/home",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "tasks",
+      "url": "#/s/sp-atelier/k/tasks",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Tasks tab — EntityView",
+      "screenshot": "screens/tablet-768__tasks.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1055,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 27,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 983,
+          "path": "div.shell-root > div.shell-body > div.ev-root > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 284,
+          "h": 18,
+          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
+          "text": "Name the empty states"
+        },
+        {
+          "w": 275,
+          "h": 19,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "filter ▾"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "people ▾"
+        },
+        {
+          "w": 101,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "collections ▾"
+        },
+        {
+          "w": 126,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 1"
+        },
+        {
+          "w": 94,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "In Progress 3"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/tasks",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "sessions",
+      "url": "#/s/sp-atelier/k/sessions",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Sessions tab — EntityView",
+      "screenshot": "screens/tablet-768__sessions.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1055,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 27,
+      "tapTargetsUnderMin": 25,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 983,
+          "path": "div.shell-root > div.shell-body > div.ev-root > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 275,
+          "h": 19,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "filter ▾"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "people ▾"
+        },
+        {
+          "w": 101,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "collections ▾"
+        },
+        {
+          "w": 126,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 0"
+        },
+        {
+          "w": 94,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "In Progress 3"
+        },
+        {
+          "w": 50,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "Done 2"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/sessions",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "channels",
+      "url": "#/s/sp-atelier/channels",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Channels tab — channel EntityView",
+      "screenshot": "screens/tablet-768__channels.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1055,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 27,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 983,
+          "path": "div.shell-root > div.shell-body > div.ev-root > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 126,
+          "h": 18,
+          "path": "div.lp__tile > div.lp__tile-main > div.lp__row1 > button.lp__title",
+          "text": "design"
+        },
+        {
+          "w": 275,
+          "h": 19,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "filter ▾"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "people ▾"
+        },
+        {
+          "w": 101,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "collections ▾"
+        },
+        {
+          "w": 126,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 1"
+        },
+        {
+          "w": 94,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "In Progress 0"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/channels",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "inbox",
+      "url": "#/s/sp-atelier/inbox",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Inbox tab — InboxView",
+      "screenshot": "screens/tablet-768__inbox.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1055,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 19,
+      "tapTargetsUnderMin": 17,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 53,
+          "h": 17,
+          "path": "div.ibx-card > div.ibx-head > div.ibx-head__line > button.ibx-chip",
+          "text": "unread"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        },
+        {
+          "w": 49,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Files"
+        },
+        {
+          "w": 67,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Settings"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/inbox",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "workspace",
+      "url": "#/s/sp-atelier/workspace",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "Work tab — no phone port (owner ruling)",
+      "screenshot": "screens/tablet-768__workspace.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 36,
+      "worstRightEdge": 1056,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "right": 832,
+          "path": "div.cv2-root.shell-scope > div.shell-root > div.shell-body > div.shell-ws.shell-ws--columns",
+          "text": "⠿Tasks＋▾⌕fTo Do 1In Progress 3Done 0Canc"
+        }
+      ],
+      "tapTargetsTotal": 49,
+      "tapTargetsUnderMin": 47,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 983,
+          "path": "div.shell-root > div.shell-body > div.shell-ws.shell-ws--columns > div.shell-ws__gap",
+          "text": ""
+        },
+        {
+          "w": 9,
+          "h": 983,
+          "path": "div.shell-root > div.shell-body > div.shell-ws.shell-ws--columns > div.shell-ws__gap",
+          "text": ""
+        },
+        {
+          "w": 220,
+          "h": 15,
+          "path": "div.shell-body > div.shell-ws.shell-ws--columns > section.shell-ws__side.shell-ws__side--left > button.shell-ws__dock-grip",
+          "text": "⠿"
+        },
+        {
+          "w": 242,
+          "h": 15,
+          "path": "div.shell-body > div.shell-ws.shell-ws--columns > section.shell-ws__side.shell-ws__side--right > button.shell-ws__dock-grip",
+          "text": "⠿"
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 17,
+          "h": 26,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
+        },
+        {
+          "w": 17,
+          "h": 25,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
+        },
+        {
+          "w": 166,
+          "h": 18,
+          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
+          "text": "Name the empty states"
+        },
+        {
+          "w": 18,
+          "h": 25,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__plus",
+          "text": "▮"
+        },
+        {
+          "w": 157,
+          "h": 19,
+          "path": "div.shell-ws__side-content > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 177,
+          "h": 19,
+          "path": "div.shell-ws__side-content > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/workspace",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "feed",
+      "url": "#/s/sp-atelier/feed",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/tablet-768__feed.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1055,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 15,
+      "tapTargetsUnderMin": 13,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        },
+        {
+          "w": 49,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Files"
+        },
+        {
+          "w": 67,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Settings"
+        },
+        {
+          "w": 240,
+          "h": 26,
+          "path": "div.shell-root > header.shell-tabbar > div.shell-switcher > button.shell-switcher__trigger",
+          "text": "◈atelierlocal · this machine▸"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/feed",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "graph",
+      "url": "#/s/sp-atelier/graph",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/tablet-768__graph.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1056,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 27,
+      "tapTargetsSmallest": [
+        {
+          "w": 16,
+          "h": 18,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-toolbar__zoom > button.kit-iconbtn",
+          "text": "−"
+        },
+        {
+          "w": 16,
+          "h": 18,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-toolbar__zoom > button.kit-iconbtn",
+          "text": "+"
+        },
+        {
+          "w": 16,
+          "h": 18,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-toolbar__zoom > button.kit-iconbtn",
+          "text": "⤢"
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 186,
+          "h": 19,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-search > input.gv-search__input",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 39,
+          "h": 23,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-lens > button.gv-lens__opt",
+          "text": "Live"
+        },
+        {
+          "w": 82,
+          "h": 23,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-lens > button.gv-lens__opt.gv-lens__opt--on",
+          "text": "Active work"
+        },
+        {
+          "w": 75,
+          "h": 23,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-lens > button.gv-lens__opt",
+          "text": "Everything"
+        },
+        {
+          "w": 68,
+          "h": 23,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-lens > button.gv-lens__opt",
+          "text": "Last hour"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/graph",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "files",
+      "url": "#/s/sp-atelier/files",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/tablet-768__files.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1056,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 34,
+      "tapTargetsUnderMin": 32,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 369,
+          "h": 18,
+          "path": "section.fx-main > ul.fx-list > li.fx-row > button.fx-name",
+          "text": "gate-screen-side-by-side.png"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 20,
+          "h": 28,
+          "path": "ul.fx-list > li.fx-row > span.fx-acts > a.fx-act",
+          "text": "↓"
+        },
+        {
+          "w": 20,
+          "h": 28,
+          "path": "ul.fx-list > li.fx-row > span.fx-acts > button.fx-act",
+          "text": "✎"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/files",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "git",
+      "url": "#/s/sp-atelier/git",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/tablet-768__git.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1055,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 22,
+      "tapTargetsUnderMin": 20,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 123,
+          "h": 18,
+          "path": "div.pn-project-git__lanes > ul.pn-project-git__lane-list > li > button.pn-project-git__link",
+          "text": "session ws-forge…"
+        },
+        {
+          "w": 123,
+          "h": 18,
+          "path": "div.pn-project-git__lanes > ul.pn-project-git__lane-list > li > button.pn-project-git__link",
+          "text": "session ws-scout…"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        },
+        {
+          "w": 49,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Files"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/git",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "messages",
+      "url": "#/s/sp-atelier/messages",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/tablet-768__messages.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1055,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 26,
+      "tapTargetsUnderMin": 19,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 64,
+          "h": 17,
+          "path": "div.msg-list > div.msg-list__head > div.msg-chips > button.msg-chip",
+          "text": "Tasks"
+        },
+        {
+          "w": 58,
+          "h": 17,
+          "path": "div.msg-list > div.msg-list__head > div.msg-chips > button.msg-chip",
+          "text": "Docs"
+        },
+        {
+          "w": 81,
+          "h": 17,
+          "path": "div.msg-list > div.msg-list__head > div.msg-chips > button.msg-chip",
+          "text": "Channels"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 139,
+          "h": 20,
+          "path": "div.msg-list > div.msg-list__head > div.msg-tabs > button.msg-tab.msg-tab--on",
+          "text": "Conversations"
+        },
+        {
+          "w": 140,
+          "h": 20,
+          "path": "div.msg-list > div.msg-list__head > div.msg-tabs > button.msg-tab",
+          "text": "All messages"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/messages",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "board",
+      "url": "#/s/sp-atelier/board",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/tablet-768__board.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 53,
+      "worstRightEdge": 2201,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 2201,
+          "path": "section.bd > div.bd__body > div.bd__cols > section.bd__col",
+          "text": "Cancelled0nothing in Cancelled"
+        },
+        {
+          "right": 1886,
+          "path": "section.bd > div.bd__body > div.bd__cols > section.bd__col",
+          "text": "Done0nothing in Done"
+        },
+        {
+          "right": 1572,
+          "path": "section.bd > div.bd__body > div.bd__cols > section.bd__col",
+          "text": "Blocked1Wire palette to real command reg"
+        },
+        {
+          "right": 1258,
+          "path": "section.bd > div.bd__body > div.bd__cols > section.bd__col",
+          "text": "In review14f8c2a9e-77b1-4e3d-9c2f-a1b0d3"
+        },
+        {
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 943,
+          "path": "section.bd > div.bd__body > div.bd__cols > section.bd__col",
+          "text": "Working1Session tree guide linesMedium✓ "
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 26,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 253,
+          "h": 19,
+          "path": "section.bd__col.bd__col--focused > div.bd__cards > article.bd__card.bd__card--focused > button.bd__card-title",
+          "text": "Name the empty states"
+        },
+        {
+          "w": 253,
+          "h": 19,
+          "path": "section.bd__col > div.bd__cards > article.bd__card > button.bd__card-title",
+          "text": "Session tree guide lines"
+        },
+        {
+          "w": 253,
+          "h": 19,
+          "path": "section.bd__col > div.bd__cards > article.bd__card > button.bd__card-title",
+          "text": "Wire palette to real command r"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 57,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab.shell-tabbar__tab--active",
+          "text": "Board"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/board",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "craft",
+      "url": "#/s/sp-atelier/craft",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/tablet-768__craft.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 965,
+      "scrollWidth": 965,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1056,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 34,
+      "tapTargetsUnderMin": 31,
+      "tapTargetsSmallest": [
+        {
+          "w": 1,
+          "h": 1,
+          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
+          "text": ""
+        },
+        {
+          "w": 9,
+          "h": 983,
+          "path": "div.shell-body > div.crf-root > div.crf-split > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 342,
+          "h": 14,
+          "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
+          "text": "Thinking"
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 226,
+          "h": 20,
+          "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
+          "w": 226,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 146,
+          "h": 23,
+          "path": "section.crf-canvas > div.crf-pane-head > label.crf-pick.crf-pick--graph > select",
+          "text": "No graphs yet"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/craft",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "settings",
+      "url": "#/s/sp-atelier/settings",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/tablet-768__settings.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 965,
+      "scrollWidth": 965,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1056,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1028,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 32,
+      "tapTargetsUnderMin": 30,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 23,
+          "h": 24,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        },
+        {
+          "w": 49,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Files"
+        },
+        {
+          "w": 68,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab.shell-tabbar__tab--active",
+          "text": "Settings"
+        },
+        {
+          "w": 240,
+          "h": 26,
+          "path": "div.shell-root > header.shell-tabbar > div.shell-switcher > button.shell-switcher__trigger",
+          "text": "◈atelierlocal · this machine▸"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/settings",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "home",
+      "url": "#/s/sp-atelier/home",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Home tab — ChatHomeSurface",
+      "screenshot": "screens/desktop-1440__home.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 60,
+      "tapTargetsUnderMin": 38,
+      "tapTargetsSmallest": [
+        {
+          "w": 1,
+          "h": 1,
+          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
+          "text": ""
+        },
+        {
+          "w": 9,
+          "h": 715,
+          "path": "div.hp-page > section.hp-chat.hp-chat--full > div.hp-listsep > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 807,
+          "h": 14,
+          "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
+          "text": "Thinking"
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 17,
+          "h": 26,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 226,
+          "h": 20,
+          "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
+          "w": 226,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/home",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "tasks",
+      "url": "#/s/sp-atelier/k/tasks",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Tasks tab — EntityView",
+      "screenshot": "screens/desktop-1440__tasks.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 28,
+      "tapTargetsUnderMin": 28,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 859,
+          "path": "div.shell-root > div.shell-body > div.ev-root > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 724,
+          "h": 18,
+          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
+          "text": "Name the empty states"
+        },
+        {
+          "w": 749,
+          "h": 19,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "filter ▾"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "people ▾"
+        },
+        {
+          "w": 101,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "collections ▾"
+        },
+        {
+          "w": 126,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 1"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/k/tasks",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "sessions",
+      "url": "#/s/sp-atelier/k/sessions",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Sessions tab — EntityView",
+      "screenshot": "screens/desktop-1440__sessions.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 27,
+      "tapTargetsUnderMin": 27,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 859,
+          "path": "div.shell-root > div.shell-body > div.ev-root > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 749,
+          "h": 19,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "filter ▾"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "people ▾"
+        },
+        {
+          "w": 101,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "collections ▾"
+        },
+        {
+          "w": 126,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 0"
+        },
+        {
+          "w": 94,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "In Progress 3"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/k/sessions",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "channels",
+      "url": "#/s/sp-atelier/channels",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Channels tab — channel EntityView",
+      "screenshot": "screens/desktop-1440__channels.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 28,
+      "tapTargetsUnderMin": 28,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 859,
+          "path": "div.shell-root > div.shell-body > div.ev-root > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 600,
+          "h": 18,
+          "path": "div.lp__tile > div.lp__tile-main > div.lp__row1 > button.lp__title",
+          "text": "design"
+        },
+        {
+          "w": 749,
+          "h": 19,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "filter ▾"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "people ▾"
+        },
+        {
+          "w": 101,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "collections ▾"
+        },
+        {
+          "w": 126,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 1"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/k/channels",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "inbox",
+      "url": "#/s/sp-atelier/inbox",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Inbox tab — InboxView",
+      "screenshot": "screens/desktop-1440__inbox.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 19,
+      "tapTargetsUnderMin": 19,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 53,
+          "h": 17,
+          "path": "div.ibx-card > div.ibx-head > div.ibx-head__line > button.ibx-chip",
+          "text": "unread"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        },
+        {
+          "w": 49,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Files"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/inbox",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "workspace",
+      "url": "#/s/sp-atelier/workspace",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "Work tab — no phone port (owner ruling)",
+      "screenshot": "screens/desktop-1440__workspace.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 1,
+      "worstRightEdge": 1490,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1490,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        }
+      ],
+      "tapTargetsTotal": 48,
+      "tapTargetsUnderMin": 48,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 859,
+          "path": "div.shell-root > div.shell-body > div.shell-ws.shell-ws--columns > div.shell-ws__gap",
+          "text": ""
+        },
+        {
+          "w": 9,
+          "h": 859,
+          "path": "div.shell-root > div.shell-body > div.shell-ws.shell-ws--columns > div.shell-ws__gap",
+          "text": ""
+        },
+        {
+          "w": 264,
+          "h": 15,
+          "path": "div.shell-body > div.shell-ws.shell-ws--columns > section.shell-ws__side.shell-ws__side--left > button.shell-ws__dock-grip",
+          "text": "⠿"
+        },
+        {
+          "w": 351,
+          "h": 15,
+          "path": "div.shell-body > div.shell-ws.shell-ws--columns > section.shell-ws__side.shell-ws__side--right > button.shell-ws__dock-grip",
+          "text": "⠿"
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 17,
+          "h": 26,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
+        },
+        {
+          "w": 17,
+          "h": 25,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 208,
+          "h": 18,
+          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
+          "text": "Name the empty states"
+        },
+        {
+          "w": 18,
+          "h": 25,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__plus",
+          "text": "▮"
+        },
+        {
+          "w": 199,
+          "h": 19,
+          "path": "div.shell-ws__side-content > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 286,
+          "h": 19,
+          "path": "div.shell-ws__side-content > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/workspace",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "feed",
+      "url": "#/s/sp-atelier/feed",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/desktop-1440__feed.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 15,
+      "tapTargetsUnderMin": 15,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        },
+        {
+          "w": 49,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Files"
+        },
+        {
+          "w": 67,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Settings"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/feed",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "graph",
+      "url": "#/s/sp-atelier/graph",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/desktop-1440__graph.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 29,
+      "tapTargetsSmallest": [
+        {
+          "w": 16,
+          "h": 18,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-toolbar__zoom > button.kit-iconbtn",
+          "text": "−"
+        },
+        {
+          "w": 16,
+          "h": 18,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-toolbar__zoom > button.kit-iconbtn",
+          "text": "+"
+        },
+        {
+          "w": 16,
+          "h": 18,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-toolbar__zoom > button.kit-iconbtn",
+          "text": "⤢"
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 186,
+          "h": 19,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-search > input.gv-search__input",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 39,
+          "h": 23,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-lens > button.gv-lens__opt",
+          "text": "Live"
+        },
+        {
+          "w": 82,
+          "h": 23,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-lens > button.gv-lens__opt.gv-lens__opt--on",
+          "text": "Active work"
+        },
+        {
+          "w": 75,
+          "h": 23,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-lens > button.gv-lens__opt",
+          "text": "Everything"
+        },
+        {
+          "w": 68,
+          "h": 23,
+          "path": "div.gv-root > div.gv-toolbar > div.gv-lens > button.gv-lens__opt",
+          "text": "Last hour"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/graph",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "files",
+      "url": "#/s/sp-atelier/files",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/desktop-1440__files.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 34,
+      "tapTargetsUnderMin": 34,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 1041,
+          "h": 18,
+          "path": "section.fx-main > ul.fx-list > li.fx-row > button.fx-name",
+          "text": "gate-screen-side-by-side.png"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 20,
+          "h": 28,
+          "path": "ul.fx-list > li.fx-row > span.fx-acts > a.fx-act",
+          "text": "↓"
+        },
+        {
+          "w": 20,
+          "h": 28,
+          "path": "ul.fx-list > li.fx-row > span.fx-acts > button.fx-act",
+          "text": "✎"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/files",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "git",
+      "url": "#/s/sp-atelier/git",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/desktop-1440__git.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 22,
+      "tapTargetsUnderMin": 22,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 123,
+          "h": 18,
+          "path": "div.pn-project-git__lanes > ul.pn-project-git__lane-list > li > button.pn-project-git__link",
+          "text": "session ws-forge…"
+        },
+        {
+          "w": 123,
+          "h": 18,
+          "path": "div.pn-project-git__lanes > ul.pn-project-git__lane-list > li > button.pn-project-git__link",
+          "text": "session ws-scout…"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/git",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "messages",
+      "url": "#/s/sp-atelier/messages",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/desktop-1440__messages.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 26,
+      "tapTargetsUnderMin": 21,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 64,
+          "h": 17,
+          "path": "div.msg-list > div.msg-list__head > div.msg-chips > button.msg-chip",
+          "text": "Tasks"
+        },
+        {
+          "w": 58,
+          "h": 17,
+          "path": "div.msg-list > div.msg-list__head > div.msg-chips > button.msg-chip",
+          "text": "Docs"
+        },
+        {
+          "w": 81,
+          "h": 17,
+          "path": "div.msg-list > div.msg-list__head > div.msg-chips > button.msg-chip",
+          "text": "Channels"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 139,
+          "h": 20,
+          "path": "div.msg-list > div.msg-list__head > div.msg-tabs > button.msg-tab.msg-tab--on",
+          "text": "Conversations"
+        },
+        {
+          "w": 140,
+          "h": 20,
+          "path": "div.msg-list > div.msg-list__head > div.msg-tabs > button.msg-tab",
+          "text": "All messages"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/messages",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "board",
+      "url": "#/s/sp-atelier/board",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/desktop-1440__board.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 19,
+      "worstRightEdge": 2201,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 2201,
+          "path": "section.bd > div.bd__body > div.bd__cols > section.bd__col",
+          "text": "Cancelled0nothing in Cancelled"
+        },
+        {
+          "right": 1886,
+          "path": "section.bd > div.bd__body > div.bd__cols > section.bd__col",
+          "text": "Done0nothing in Done"
+        },
+        {
+          "right": 1572,
+          "path": "section.bd > div.bd__body > div.bd__cols > section.bd__col",
+          "text": "Blocked1Wire palette to real command reg"
+        }
+      ],
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 28,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 253,
+          "h": 19,
+          "path": "section.bd__col.bd__col--focused > div.bd__cards > article.bd__card.bd__card--focused > button.bd__card-title",
+          "text": "Name the empty states"
+        },
+        {
+          "w": 253,
+          "h": 19,
+          "path": "section.bd__col > div.bd__cards > article.bd__card > button.bd__card-title",
+          "text": "Session tree guide lines"
+        },
+        {
+          "w": 253,
+          "h": 19,
+          "path": "section.bd__col > div.bd__cards > article.bd__card > button.bd__card-title",
+          "text": "Wire palette to real command r"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 57,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab.shell-tabbar__tab--active",
+          "text": "Board"
+        },
+        {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/board",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "craft",
+      "url": "#/s/sp-atelier/craft",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/desktop-1440__craft.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 34,
+      "tapTargetsUnderMin": 33,
+      "tapTargetsSmallest": [
+        {
+          "w": 1,
+          "h": 1,
+          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
+          "text": ""
+        },
+        {
+          "w": 9,
+          "h": 859,
+          "path": "div.shell-body > div.crf-root > div.crf-split > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 508,
+          "h": 14,
+          "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
+          "text": "Thinking"
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 226,
+          "h": 20,
+          "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
+          "w": 226,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
+          "w": 652,
+          "h": 23,
+          "path": "section.crf-canvas > div.crf-pane-head > label.crf-pick.crf-pick--graph > select",
+          "text": "No graphs yet"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/craft",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "desktop-1440",
+      "route": "settings",
+      "url": "#/s/sp-atelier/settings",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "refusal",
+      "note": "",
+      "screenshot": "screens/desktop-1440__settings.png",
+      "pageErrors": [],
+      "viewportWidth": 1440,
+      "viewportHeight": 900,
+      "innerWidth": 1440,
+      "scrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "overflowCount": 0,
+      "worstRightEdge": 1440,
+      "worstLeftEdge": 0,
+      "overflowRoots": [],
+      "tapTargetsTotal": 32,
+      "tapTargetsUnderMin": 32,
+      "tapTargetsSmallest": [
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 103,
+          "h": 18,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Home"
+        },
+        {
+          "w": 53,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Work"
+        },
+        {
+          "w": 56,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board"
+        },
+        {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
+          "w": 52,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Craft"
+        },
+        {
+          "w": 58,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Graph"
+        },
+        {
+          "w": 49,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Files"
+        },
+        {
+          "w": 68,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab.shell-tabbar__tab--active",
+          "text": "Settings"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": false,
+      "hash": "#/s/sp-atelier/settings",
+      "firstText": "tm | ◈ | atelier"
+    }
+  ]
+}

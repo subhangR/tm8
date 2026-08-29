@@ -1,0 +1,131 @@
+/* ==========================================================================
+   THE CHIP BAND ON A PHONE — THIN AND LEAN, WITHOUT SHRINKING A TAP TARGET
+   ==========================================================================
+
+   USER RULING 2026-08-20, verbatim: the band "is fine but make it thin, lean,
+   shouldn't occupy too much height". It STAYS — status, priority, type,
+   assignee, collection and Archive are the axes of the thing the panel is
+   about, and they are still reachable from the phone.
+
+   ── WHAT IT COSTS TODAY, AND WHERE THE HEIGHT ACTUALLY GOES ───────────────
+
+   The band is `.pn-controls` (`panels.css:3317`) wrapping one
+   `.lp__rowdetail--chips` strip. On a phone every chip in that strip already
+   carries a REAL 44px floor, and it needs to:
+
+     panels.css:3423   .lp__statesel      min-block-size: var(--mobile-touch-min)
+                                          font-size: 16px  ← the iOS focus-zoom
+                                          floor: a form control under 16px makes
+                                          Safari zoom the whole viewport on
+                                          focus, so the TYPE is load-bearing too
+     panels.css:3446   .lp__rowaction     min-block-size: var(--mobile-touch-min)
+
+   Six chips at that type do not fit one 390px line. `.lp__rowdetail--chips` is
+   `flex-wrap: wrap` (panels.css:3236), so they take TWO — and the second line
+   is where the band's height comes from. Two 44px lines plus a 6px row gap plus
+   12px of `padding-block` plus the 1px hairline is ~107px of a 844px screen,
+   before the body has drawn anything.
+
+   ── THE TENSION, RESOLVED EXPLICITLY RATHER THAN SPLIT ────────────────────
+
+   "Thin" and `mobile/CONTRACT.md` §3's 44px floor pull opposite ways, and the
+   obvious move — shave the chips — is the wrong half to spend. Thin is not the
+   same as unreachable: a 30px select is a control the thumb misses and, at the
+   type that would come with it, one that zooms the page out from under the
+   reader every time they touch it. That trades a layout complaint for two
+   defects this program has already filed.
+
+   SO THE SECOND LINE IS WHAT GOES, NOT THE FIRST LINE'S HEIGHT. The band
+   becomes ONE row that scrolls horizontally. Every chip keeps its 44px floor
+   and its 16px type, byte for byte; what is removed is the wrap.
+
+   ── WHY A SCROLLER IS THE HONEST ANSWER HERE AND NOT A HIDDEN OVERFLOW ────
+
+   CONTRACT.md §5's rule is that `overflow: hidden` on `.mobile-frame` CLIPS —
+   content is destroyed past the edge while `scrollWidth − clientWidth` reads
+   zero. That is the failure mode this file must not reproduce, and a scroller
+   is its opposite: nothing is destroyed, every chip is reachable, and the
+   reader's own gesture is what reaches it. It is also the answer this shell
+   already gives to the same squeeze elsewhere — the panel's own tab strip
+   scrolls (`panel-bar-phone.css`), and the chat composer was ruled to scroll
+   rather than compress for exactly this reason.
+
+   FULL-BLEED, WITH THE GUTTER MOVED INSIDE. The band's `padding-inline` moves
+   onto the scroller, so the row scrolls edge to edge (nothing is stranded half
+   under a static gutter) while the chips still start and end on the panel's
+   reading gutter at rest.
+
+   ── SCOPE ────────────────────────────────────────────────────────────────
+
+   Every rule is under `.cv2-root[data-shell='mobile']`, the marker `GateApp`
+   and `MobileFrame` stamp — CONSUMED, never reshaped. Desktop, tablet and a
+   narrow desktop window cannot match any of it.
+
+   ── SPECIFICITY, WHICH IS THE TRAP THIS FILE'S NEIGHBOURS RECORD ──────────
+
+   `panels.css:3234` pins the strip at `.cv2-root .lp__rowdetail--chips` —
+   (0,2,0) — and it is in a file that loads before this one only by import
+   order, which is not a thing to rely on. Both rules below are written at
+   (0,4,0) via the shell attribute plus `.pn-controls`, so they win on
+   specificity rather than on source order. `panels.css:3412` records the same
+   trap costing a round trip: an override that looked correct in the diff,
+   applied nothing, and reported a fix that was never on the page. */
+
+/* --- 1. THE BAND: LESS PADDING, AND ITS GUTTER HANDED TO THE SCROLLER ----
+   `padding: 6px var(--pn-space-4)` becomes 4px of block padding and none
+   inline. The 4px is not cosmetic trimming for its own sake — it is what keeps
+   the one remaining row from reading as a boxed-in card once it is the only
+   row. The hairline stays: it is what separates the axes from the body, and
+   with the tab strip gone above it, it is now the only rule doing that. */
+.cv2-root[data-shell='mobile'] .pn-controls {
+  padding-block: 4px;
+  padding-inline: 0;
+}
+
+/* --- 2. ONE LINE, SCROLLED ----------------------------------------------
+   `flex-wrap: nowrap` is the whole of the height fix. The rest is what makes a
+   scroller usable:
+
+     overflow-x: auto     the chips are reachable rather than clipped
+     scrollbar-width      no permanent 15px gutter on a touch surface; the
+                          shell already hides these on `.pn-tabs`
+     flex: none           a `<select>` is as wide as its widest OPTION, and
+                          inside a scroller a shrinkable one would compress to
+                          its content rather than scroll — which is the clipping
+                          failure arriving through a different property
+     overscroll-behavior  a horizontal fling inside a band must not become a
+                          back-navigation gesture at the edge of the frame */
+.cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  gap: 8px;
+  padding-inline: var(--pn-space-4);
+}
+
+.cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips::-webkit-scrollbar {
+  display: none;
+}
+
+/* Every chip holds its own width. See `flex: none` above for why this is the
+   difference between a scroller and a clipper. */
+.cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips > * {
+  flex: none;
+}
+
+/* ARCHIVE STOPS BEING PUSHED TO THE FAR END, and that is a consequence rather
+   than a preference. `panels.css:3249` gives `> :last-child` a `margin-left:
+   auto` so the destructive verb sits away from the pickers people use
+   constantly. In a scroller there is no free space for an auto margin to
+   absorb, so on a full band it already resolves to zero — but on a SHORT band
+   (a kind with two controls) it would resolve to the full remaining width and
+   strand Archive at the right edge of a row that is not scrolling, which reads
+   as a different arrangement for the same band. The separation it was buying is
+   bought instead by the 8px gap above, which is larger than the 6px the strip
+   had. Stated rather than silently overridden: this is a deliberate loss of a
+   mis-click guard, and the guard's own reason — a mouse pointer travelling
+   across a dense row — is the desktop's, where the rule is untouched. */
+.cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips > :last-child {
+  margin-left: 0;
+}
