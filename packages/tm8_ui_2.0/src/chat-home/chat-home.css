@@ -1206,15 +1206,6 @@ button.tch-entity-chip:hover {
   padding: 7px 6px;
   gap: 5px;
 }
-/* The disclosure caret OVERLAYS the status mark on hover, so it has to land on
-   the mark's box, not on the workspace panel's. This coat re-cuts the row to a
-   7px/6px inset; the caret's own `top: 6px; left: 7px` left it a pixel high and
-   a pixel right of the dot it is meant to replace, which is what made the
-   status marks look off-column as the pointer travelled the list. */
-.cv2-root .tch-panel-host .pn-tt__arrow {
-  top: 7px;
-  left: 6px;
-}
 .cv2-root .tch-panel-host .pn-tt__title {
   font-size: var(--pn-fs-label);
   font-weight: 600;
