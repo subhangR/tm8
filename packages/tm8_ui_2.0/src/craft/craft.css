@@ -113,12 +113,18 @@
   min-width: 0;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--pn-r-sm);
   padding: 1px 6px;
-  font: inherit;
-  color: var(--pn-ink-1);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink);
   text-align: left;
   cursor: pointer;
+}
+
+.crf-pick:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 .crf-pick:hover,
@@ -129,7 +135,7 @@
 
 .crf-pick__caret {
   color: var(--pn-ink-3);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   flex: none;
 }
 
@@ -141,9 +147,12 @@
   min-width: 0;
 }
 
+/* The teammate label riding the picker button: part of an interactive control,
+   so it sits at the interactive floor (fs-sm / ink-2), not annotation gray. */
 .crf-pick__meta {
-  color: var(--pn-ink-3);
-  font-size: 11px;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   flex: none;
   white-space: nowrap;
 }

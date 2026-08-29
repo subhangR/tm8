@@ -35,8 +35,8 @@
   /* Wraps only under real pressure — every control is compact enough that a
      normal window holds the whole bar on one line. */
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 7px 12px;
+  gap: 8px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--pn-line);
 }
 
@@ -56,15 +56,33 @@
   overflow: hidden;
 }
 
+/* Segment buttons wear the kit grammar's compact (28px) metrics: ui 600 at
+   --pn-fs-sm, hover fill, the ONE focus ring — drawn inset because the
+   `.b2__pivots` group clips overflow, so an outset outline would vanish. */
 .b2__pivot {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 28px;
   border: 0;
   background: transparent;
-  color: var(--pn-ink-3);
-  font: inherit;
-  font-size: 12px;
-  padding: 5px 12px;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 12px;
   cursor: pointer;
+}
+
+.b2__pivot:hover {
+  background: var(--pn-hover);
+}
+
+.b2__pivot:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
 }
 
 .b2__pivot + .b2__pivot {
@@ -77,6 +95,8 @@
   font-weight: 600;
 }
 
+/* The `.k-input` chrome at its 28px compact form, so field and buttons share
+   one row rhythm: card surface, line-2 edge, ui at --pn-fs-sm, the one ring. */
 .b2__search {
   /* Takes the slack, so the bar reads left-to-right as controls then search
      then the escape hatch, with no dead gap in the middle. */
@@ -84,42 +104,80 @@
   max-width: 280px;
   margin-left: auto;
   min-width: 110px;
+  box-sizing: border-box;
+  height: 28px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   background: var(--pn-card);
   color: var(--pn-ink);
-  font: inherit;
-  font-size: 12px;
-  padding: 5px 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  padding: 0 10px;
 }
 
+.b2__search::placeholder {
+  color: var(--pn-ink-4);
+}
+
+.b2__search:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+
+/* Ghost-grammar escape hatch: brand word, hover fill, 28px compact box. */
 .b2__clear {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 28px;
   border: 0;
+  border-radius: var(--pn-r-sm);
   background: transparent;
   color: var(--pn-brand);
-  font: inherit;
-  font-size: 12px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
-  padding: 5px 8px;
+  padding: 0 10px;
 }
 
-/* The create control — a quiet brass primary, sat at the tail of the bar. */
+.b2__clear:hover {
+  background: var(--pn-hover);
+}
+
+.b2__clear:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+
+/* The create control — a quiet brass primary at the compact grammar metrics,
+   sat at the tail of the bar. */
 .b2__new {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
   flex: none;
+  height: 28px;
   border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
   border-radius: var(--pn-r-sm);
   background: var(--pn-brand-soft);
   color: var(--pn-brand-2);
-  font: inherit;
-  font-size: 12px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
-  padding: 5px 12px;
+  padding: 0 12px;
   white-space: nowrap;
 }
 .b2__new:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+.b2__new:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
 .b2__new--off { cursor: default; opacity: 0.55; }
 [data-theme='dark'] .b2__new { color: var(--pn-brand); }
 
@@ -130,30 +188,37 @@
   min-width: 0;
 }
 
+/* Interactive chip words are ui at --pn-fs-sm, ink-2 — never the ink-3/4
+   whisper — on the same 28px rhythm as the rest of the bar. */
 .b2__sel {
   appearance: none;
   display: inline-flex;
   align-items: center;
+  box-sizing: border-box;
   gap: 5px;
+  height: 28px;
   max-width: 210px;
   border: 1px solid var(--pn-line-2);
   border-radius: 999px;
   background: transparent;
-  color: var(--pn-ink-3);
-  font: inherit;
-  font-size: 11px;
-  padding: 3px 8px 3px 10px;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  padding: 0 8px 0 10px;
   cursor: pointer;
   white-space: nowrap;
 }
 
 .b2__sel:hover {
   border-color: var(--pn-ink-4);
+  background: var(--pn-hover);
 }
 
 .b2__sel:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 /* A selected axis is legible from across the room — the count of hidden cards
@@ -219,11 +284,16 @@
   border-radius: var(--pn-r-sm);
   background: var(--pn-surface);
   color: var(--pn-ink);
-  font: inherit;
-  font-size: 11px;
-  padding: 4px 7px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  padding: 4px 8px;
   box-sizing: border-box;
   width: 100%;
+}
+
+.b2__menu-search:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 .b2__menu-list {
@@ -237,9 +307,9 @@
 
 .b2__menu-note {
   margin: 6px;
-  font-size: 11px;
+  font-size: var(--pn-fs-label);
   line-height: 1.4;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
 }
 
 .b2__menu-clear {
@@ -247,13 +317,19 @@
   border: 0;
   border-top: 1px solid var(--pn-line);
   margin-top: 2px;
-  padding: 5px 6px 2px;
+  padding: 6px 6px 3px;
   background: transparent;
   color: var(--pn-brand);
-  font: inherit;
-  font-size: 11px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
+}
+
+.b2__menu-clear:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
 }
 
 .b2__opt {
@@ -265,12 +341,13 @@
   /* Explicit: this package has no border-box reset, and a padded 100%-wide row
      would otherwise overflow its own scroll container. */
   box-sizing: border-box;
-  padding: 4px 6px;
+  padding: 5px 8px;
   border: none;
   border-radius: 6px;
   background: none;
-  font: inherit;
-  font-size: 11px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-ink);
   text-align: left;
   cursor: pointer;
@@ -278,6 +355,11 @@
 
 .b2__opt:hover {
   background: var(--pn-hover);
+}
+
+.b2__opt:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
 }
 
 .b2__opt--on {
@@ -314,16 +396,17 @@
 
 .b2__banner {
   padding: 6px 14px;
-  font-size: 11px;
-  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
   background: var(--pn-hover);
   border-bottom: 1px solid var(--pn-line);
 }
 
-/* First-run: one line naming what the board is, above the empty columns. */
+/* First-run: one line naming what the board is, above the empty columns —
+   a primary sentence, so it speaks at body size in ink-2. */
 .b2__firstrun {
-  padding: 10px 14px;
-  font-size: 12.5px;
+  padding: 12px 14px;
+  font-size: var(--pn-fs-body);
   line-height: 1.5;
   color: var(--pn-ink-2);
   max-width: 620px;
@@ -333,20 +416,37 @@
   padding: 32px 14px;
   text-align: center;
   color: var(--pn-ink-2);
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
 }
 
+/* The standalone recovery action wears the full 32px secondary grammar. */
 .b2__retry {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 32px;
   margin-top: 10px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   background: var(--pn-card);
   color: var(--pn-ink);
-  font: inherit;
-  font-size: 12px;
-  padding: 5px 14px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 14px;
   cursor: pointer;
+}
+
+.b2__retry:hover {
+  background: var(--pn-hover);
+}
+
+.b2__retry:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 /* THE STAGE — the scroller plus whatever sits over it. A separate element from
@@ -370,7 +470,7 @@
   min-height: 0;
   display: flex;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 12px;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -396,21 +496,33 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--pn-line);
 }
 
+/* THE LAW: the column header speaks ui 13/700 — the shared status pill keeps
+   its word-plus-tone grammar (color untouched) but sheds the mono whisper
+   here. The three-class compound outranks `.cv2-root .kit-pill` regardless of
+   which stylesheet lands second. */
+.b2 .b2__col-head .kit-pill {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 700;
+}
+
+/* A count is DATA: mono, tabular. */
 .b2__col-count {
-  font-size: 11px;
-  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .b2__refusal {
-  margin: 8px 10px 0;
+  margin: 8px 12px 0;
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: var(--pn-fs-label);
   line-height: 1.4;
   color: var(--pn-block);
   border: 1px solid var(--pn-block);
@@ -425,13 +537,14 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px;
+  padding: 12px;
 }
 
+/* The empty answer is a sentence, not a whisper: ui, label size, ink-3. */
 .b2__empty {
   margin: 4px 2px;
-  font-size: 11px;
-  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
   font-style: italic;
 }
 
@@ -457,7 +570,7 @@
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
   background: var(--pn-card);
-  padding: 10px 12px;
+  padding: 12px;
   cursor: grab;
   box-shadow: var(--pn-sh-sm);
   transition: border-color var(--pn-dur-base) var(--pn-ease-out), box-shadow var(--pn-dur-base) var(--pn-ease-out), opacity var(--pn-dur-base) var(--pn-ease-out);
@@ -482,6 +595,7 @@
   box-shadow: var(--pn-sh-sm), 0 0 0 2px var(--pn-brand-soft);
 }
 
+/* The card's primary label: Figtree ink, body size, 600 — the dominant voice. */
 .b2__card-title {
   appearance: none;
   display: block;
@@ -489,14 +603,19 @@
   border: 0;
   background: transparent;
   color: var(--pn-ink);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 550;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
   line-height: 1.35;
   text-align: left;
   padding: 0;
   cursor: pointer;
   overflow-wrap: anywhere;
+}
+
+.b2__card-title:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 .b2__card-title:hover {
@@ -511,9 +630,10 @@
   margin-top: 6px;
 }
 
+/* Meta is DATA — timestamps and counts — so mono stays exactly here. */
 .b2__card-due,
 .b2__card-accept {
-  font-size: 10.5px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
   font-family: var(--pn-mono);
   white-space: nowrap;
@@ -538,12 +658,38 @@
   min-width: 44px;
 }
 
+/* --- CARD FAMILY ACCENT ----------------------------------------------------
+   The same kind-family accent the list tiles wear (panels.css W3C·5, stamped
+   by W3E as `data-family`): the board shows ONE kind at a time, so the host
+   section carries the attribute and every card inherits the family's `--pnf`.
+   Same map — Astryx semantic vars first, house functional ramp as fallback —
+   and the same 3px left rail, so a task is the same colour here as in its
+   list tile. A board without the attribute draws no accent. */
+.b2[data-family='blue'] { --pnf: var(--color-icon-blue, var(--pn-info)); --pnf-soft: var(--color-background-blue, var(--pn-info-soft)); }
+.b2[data-family='green'] { --pnf: var(--color-icon-green, var(--pn-run)); --pnf-soft: var(--color-background-green, var(--pn-run-soft)); }
+.b2[data-family='orange'] { --pnf: var(--color-icon-orange, var(--pn-wait)); --pnf-soft: var(--color-background-orange, var(--pn-wait-soft)); }
+.b2[data-family='red'] { --pnf: var(--color-icon-red, var(--pn-block)); --pnf-soft: var(--color-background-red, var(--pn-block-soft)); }
+.b2[data-family='purple'] { --pnf: var(--color-icon-purple, var(--pn-pr-merged)); --pnf-soft: var(--color-background-purple, var(--pn-pr-merged-soft)); }
+.b2[data-family='teal'] { --pnf: var(--color-icon-teal, var(--pn-run)); --pnf-soft: var(--color-background-teal, var(--pn-run-soft)); }
+.b2[data-family='cyan'] { --pnf: var(--color-icon-cyan, var(--pn-info)); --pnf-soft: var(--color-background-cyan, var(--pn-info-soft)); }
+.b2[data-family='yellow'] { --pnf: var(--color-icon-yellow, var(--pn-wait)); --pnf-soft: var(--color-background-yellow, var(--pn-wait-soft)); }
+.b2[data-family='pink'] { --pnf: var(--color-icon-pink, var(--pn-brand-2)); --pnf-soft: var(--color-background-pink, var(--pn-brand-soft)); }
+.b2[data-family='gray'] { --pnf: var(--pn-ink-3); --pnf-soft: var(--pn-hover); }
+
+/* Outranks the hover/focus border-color rules (0,3,0 vs 0,2,0), so the rail
+   holds its family colour while the other three edges lift as before. */
+.b2[data-family] .b2__card {
+  border-left: 3px solid var(--pnf, var(--pn-line-2));
+}
+
 /* -- v2 additions ---------------------------------------------------------- */
 
-/* The category band a workflow-state column sits under: a small overline in
-   the column head, so the state name stays the loud fact. */
+/* The category band a workflow-state column sits under: a true eyebrow
+   (var(--pn-caps) 11/700), so the state name stays the loud fact. */
 .b2__col-band {
-  font-size: 10px;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--pn-ink-3);
@@ -571,7 +717,7 @@
    272px rather than becoming a sliver of itself. */
 .b2__panel {
   position: absolute;
-  inset-block: 10px;
+  inset-block: 12px;
   inset-inline-end: 12px;
   width: calc((100% - 24px - (var(--b2-cols, 1) - 1) * 12px) / var(--b2-cols, 1));
   min-width: 272px;

@@ -79,13 +79,15 @@
 .cv2-root .hp-card:hover { background: var(--pn-hover); }
 .cv2-root .hp-card__head { display: flex; align-items: center; gap: 6px; min-height: 16px; }
 .cv2-root .hp-card__glyph { display: inline-flex; color: var(--pn-ink-3); }
+/* A status WORD, not machine output — ui 600 (Kinetic W3); tones unchanged. */
 .cv2-root .hp-card__word {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   margin-left: auto;
-  font-family: var(--pn-mono);
-  font-size: 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
 }
 .cv2-root .hp-card__word--run { color: var(--pn-run); }
 .cv2-root .hp-card__word--wait { color: var(--pn-wait); }
@@ -100,22 +102,25 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
+/* The card's title is its interactive text: ui 13/600 full ink (Kinetic W3). */
 .cv2-root .hp-card__title {
   overflow: hidden;
   color: var(--pn-ink);
-  font-size: 12.5px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+.cv2-root .hp-card:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
+/* An empty-state sentence: ui 13, readable ink — the words are unchanged. */
 .cv2-root .hp-note {
   margin: 4px 0 0;
-  color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: 11px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
 }
 
 /* --- presence ------------------------------------------------------------- */
@@ -258,26 +263,37 @@
   padding-top: 8px;
   border-top: 1px solid var(--pn-line);
 }
+/* Kinetic I1: the eyebrow is a REAL eyebrow now — 11/800 caps at +0.08em in
+   ink-2, not an 8.5px whisper in ink-4. It has to hold its own against the
+   14/600 rows below it. */
 .cv2-root .hr-rail__eyebrow {
   padding: 2px 6px 4px;
-  color: var(--pn-ink-4);
-  font: 8.5px var(--pn-caps);
-  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 800;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* Kinetic I1 label grammar: 14/600 full ink (the rail is primary navigation,
+   not secondary chrome), on a 32px row with an 18px mark. border-box because
+   the 32px floor must include the 1px selection border. */
 .cv2-root .hr-rail__row {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 32px;
+  box-sizing: border-box;
   padding: 5px 8px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
-  color: var(--pn-ink-3);
+  color: var(--pn-ink);
   font-family: var(--pn-ui);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
 }
@@ -301,12 +317,20 @@
   white-space: nowrap;
 }
 .cv2-root .hr-rail__glyph { display: inline-flex; flex: none; }
+/* The mark is drawn at 18 (I1): the CSS wins over the SVG's own 14px
+   width/height attributes, so no component edit is needed. */
+.cv2-root .hr-rail__glyph .kit-vicon { width: 18px; height: 18px; }
 .cv2-root .hr-rail__row:hover { color: var(--pn-ink); background: var(--pn-hover); }
+/* Selection speaks the one accent (Kinetic grammar): brand-soft fill + 700
+   word + brand-coloured mark — never the gray active wash that read as
+   "unchanged". The fill is the whole statement; no border on top of it. */
 .cv2-root .hr-rail__row[aria-current='true'] {
-  border-color: var(--pn-line);
-  background: var(--pn-active);
+  border-color: transparent;
+  background: var(--pn-brand-soft);
   color: var(--pn-ink);
+  font-weight: 700;
 }
+.cv2-root .hr-rail__row[aria-current='true'] .hr-rail__glyph { color: var(--pn-brand); }
 /* The toggle is an OPAQUE full-width band, not a floating pill: rows scrolling
    past it must never show through, and the top hairline is what says "the
    list continues under here". min-height 28 + border-box pairs with the
@@ -322,10 +346,12 @@
   border-radius: 0;
   background: var(--pn-surface);
   color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
-  font-size: 11px;
+  /* A control glyph, not machine output — ui at the interactive floor. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   cursor: pointer;
 }
+.cv2-root .hr-rail__toggle:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: -2px; }
 /* The hover tint is LAYERED over the opaque surface: under the Astryx bridge
    `--pn-hover` maps to a translucent overlay token, and a translucent band
    would let the rows scrolling beneath show through again. */
@@ -344,7 +370,7 @@
   padding: 5px 10px;
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-surface);
-  font-size: 11px;
+  font-size: var(--pn-fs-label);
 }
 .cv2-root .hp-trail__seg { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
 .cv2-root .hp-trail__sep { color: var(--pn-ink-4); padding: 0 2px; }
@@ -361,12 +387,15 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--pn-ink-3);
+  /* Crumbs are interactive text: ui 13/500 in ink-2 (Kinetic W3). */
+  color: var(--pn-ink-2);
   font-family: var(--pn-ui);
-  font-size: 11px;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
 }
 .cv2-root .hp-trail__crumb { cursor: pointer; }
 .cv2-root .hp-trail__crumb:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .hp-trail__crumb:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 .cv2-root .hp-trail__here { color: var(--pn-ink); font-weight: 600; }
 .cv2-root .hp-trail__glyph { display: inline-flex; flex: none; }
 
@@ -391,17 +420,25 @@
   padding: 6px 10px;
   border-bottom: 1px solid var(--pn-line);
 }
+/* A real button on the kit grammar's compact metrics (Kinetic W3): 28px box,
+   bordered, r-sm, ui 600 at the interactive floor, focus ring, hover fill. */
 .cv2-root .hp-aside__workspace {
-  padding: 3px 9px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 0 10px;
   border: 1px solid var(--pn-line);
-  border-radius: 6px;
+  border-radius: var(--pn-r-sm);
   background: var(--pn-card);
-  color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 .cv2-root .hp-aside__workspace:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .hp-aside__workspace:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 /* The inset around Home's surface is HALF what it was (Subhang, 2026-08-19):
    the old 10/14 gutter spent a visible band of the canvas on nothing on every
    side of the screen. All three rules move together — they are the same edge,
@@ -503,6 +540,11 @@
 .cv2-root .hp-listreveal:hover {
   color: var(--pn-ink);
   border-color: var(--pn-brand);
+}
+.cv2-root .hp-listsep__collapse:focus-visible,
+.cv2-root .hp-listreveal:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 /* The 10px strip that is the whole of column A when focus mode is on. */

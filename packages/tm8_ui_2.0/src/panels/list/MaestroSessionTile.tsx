@@ -2,6 +2,7 @@ import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import { useState, type ReactNode } from 'react';
 import { Avatar } from '../../kit/Avatar';
 import { copyToClipboard } from '../../terminal/domUtils';
+import './maestro-session-tile.css';
 
 /**
  * Maestro's session-row anatomy, fed exclusively by tm8 contract data.

@@ -46,6 +46,9 @@
   70%, 100% { transform: scale(2.2); opacity: 0; }
 }
 
+/* I3 — DATA WEARS MONO AT THE LABEL SIZE. `--pn-fs-label` (12px) replaces the
+   10.5px that made every badge read as debug fine print; mono stays, because
+   these chips carry machine facts — models, counts, dates. */
 .cv2-root .pn-tt .pn-badge {
   min-height: 24px;
   display: inline-flex;
@@ -58,7 +61,7 @@
   background: var(--pn-card);
   color: var(--pn-ink-2);
   font-family: var(--pn-mono);
-  font-size: 10.5px;
+  font-size: var(--pn-fs-label);
   font-weight: 600;
   letter-spacing: 0.03em;
   white-space: nowrap;
@@ -68,6 +71,23 @@
 .cv2-root .pn-tt .pn-badge--status-block { color: var(--pn-block); border-color: var(--pn-block); }
 .cv2-root .pn-tt .pn-badge--status-info { color: var(--pn-info); border-color: var(--pn-info); }
 .cv2-root .pn-tt .pn-badge--status-brand { color: var(--pn-brand); border-color: var(--pn-brand); }
+/* I3 — THE STATUS WORD IS A WORD, NOT DATA. Mono is reserved for machine
+   facts; a state name is prose wearing its tone, so the five status badges
+   drop the mono face and speak UI at 600. `.pn-badge.pn-badge--status-*`
+   is (0,4,0) ON PURPOSE: the `.pn-tt__meta` metric coat below is (0,3,0)
+   and later in the file, so an equal-specificity rule here would lose its
+   font-family/size to it — the DEF-024/DEF-059 trap this file documents
+   twice already. Tone colour stays the rules above. */
+.cv2-root .pn-tt .pn-badge.pn-badge--status-run,
+.cv2-root .pn-tt .pn-badge.pn-badge--status-wait,
+.cv2-root .pn-tt .pn-badge.pn-badge--status-block,
+.cv2-root .pn-tt .pn-badge.pn-badge--status-info,
+.cv2-root .pn-tt .pn-badge.pn-badge--status-brand {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
 .cv2-root .pn-tt .pn-badge--priority-block { color: var(--pn-block); border-color: var(--pn-block); }
 .cv2-root .pn-tt .pn-badge--priority-wait { color: var(--pn-wait); border-color: var(--pn-wait); }
 .cv2-root .pn-tt .pn-badge--priority-info { color: var(--pn-info); border-color: var(--pn-info); }
@@ -108,7 +128,9 @@
   gap: 5px;
   border-radius: var(--pn-r-sm);
   font-family: var(--pn-mono);
-  font-size: 10px;
+  /* I3: the shared metric steps up from 10px with the collapsed badges —
+     one DATA size (`--pn-fs-label`) across both bands, still mono. */
+  font-size: var(--pn-fs-label);
   font-weight: 600;
   letter-spacing: 0.03em;
   line-height: 1;
@@ -597,7 +619,8 @@
   margin-left: auto;
   color: var(--pn-ink-4);
   font-family: var(--pn-mono);
-  font-size: 10.5px;
+  /* I3: a date is DATA — same mono label size as the badges beside it. */
+  font-size: var(--pn-fs-label);
   white-space: nowrap;
 }
 
@@ -749,6 +772,25 @@
   min-height: 29px;
   padding-inline: 12px;
 }
+
+/* I3 — ROW RICHNESS.
+   COUNT CHIPS ARE DATA: the `pn-st__count` vocabulary rides this tile's badge
+   band too (sessions chip, TileCountBadges), and panels.css sizes it 10px at
+   (0,2,0). Same mono label size as every other data badge, 600 so the number
+   reads at a glance. (0,3,0) outranks the base wherever the files land. */
+.cv2-root .pn-tt .pn-st__count {
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+
+/* KINDICON FAMILY TINT (I3). Every drawn kind mark on this tile (`kit-vicon`
+   — the sessions chip, the count-badge doors, PR chips) inherits the family
+   colour I2's `[data-family]` map stamps on the `.pn-tt` root as `--pnf`
+   (panels.css). The fallback keeps unfamilied contexts exactly as they were.
+   The action cluster is EXCLUDED: a control's glyph is chrome, not identity,
+   and tinting Collections would read as a fourth status. */
+.cv2-root .pn-tt .kit-vicon { color: var(--pnf, currentColor); }
+.cv2-root .pn-tt .lp__cluster .kit-vicon { color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .pn-stat--streaming::after { animation: none; opacity: 0.4; }

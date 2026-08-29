@@ -999,11 +999,15 @@ function RowNumberControl({
         aria-label={`${verb} for ${row.title}`}
         data-testid="row-number-input"
         data-source={control.source}
-        /* The unset field states its word the way the date input does: the
-           registry's emptyLabel as placeholder and hover, marked structurally
-           rather than by a second face. */
+        /* The unset field is marked structurally (data-empty) and keeps the
+           registry's full emptyLabel on hover. The PLACEHOLDER is the
+           control's own one-word label ("points"), not the emptyLabel
+           sentence: "no estimate" could never fit a box sized for digits and
+           clipped to a false word ("no es") on every unset row — I2, wave 3.
+           Registry-driven, no field literal: the word comes from
+           `control.label`, so a future number control names itself. */
         data-empty={current === null && draft === null ? 'true' : undefined}
-        placeholder={control.emptyLabel}
+        placeholder={control.label.toLowerCase()}
         title={current === null ? control.emptyLabel : undefined}
         value={draft ?? (current === null ? '' : String(current))}
         onClick={(e) => e.stopPropagation()}

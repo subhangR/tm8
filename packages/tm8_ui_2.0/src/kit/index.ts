@@ -1,6 +1,7 @@
 export { Pill, type PillTone } from './Pill';
 export { Eyebrow } from './Eyebrow';
 export { Chip } from './Chip';
+export { Btn, type BtnVariant } from './Btn';
 export { IconBtn } from './IconBtn';
 export { VectorIcon } from './VectorIcon';
 export { BrandMark } from './BrandMark';

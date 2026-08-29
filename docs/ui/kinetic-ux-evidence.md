@@ -8,13 +8,27 @@ interaction audit (32 high / 64 medium / 125 low; 18 outright-broken controls),
 run by ten independent agents against the live app. Laws with no honest
 application in this wave say so — a stretched claim would poison the register.
 
+**Wave 3 update (branch `feat/kinetic-wave3`, 2026-08-29).** Since wave 1 the
+product UI moved to `packages/tm8_ui_2.0` (PR #532) — every file reference
+below resolves there. Two PRs shipped and were verified live on prod
+(zero-restart bundle swaps, deploy receipts in the prod graph): **#539**
+(merged 10:04Z) — the Kinetic Elite palette, self-hosted Figtree, and the
+Astryx-bridge reduction; **#540** (merged 11:43Z, deployed 11:48Z) — the whole
+entity system: the five dead controls from wave 1's register wired or honestly
+refused, 17-kind registry truth, the kit focus/disabled closure, family tints,
+glass cards, `--pn-caps`. A post-#540 sweep sits in-tree on this branch
+(button/input grammar, motion utilities) and is marked as such below — it is
+**not** in the deployed bundle (verified absent from the prod dist CSS). Law
+rows whose evidence strengthened are updated in place; §Wave 3 carries the
+per-item proof.
+
 | Law | How this build serves it | Proof (file / selector / decision) | Audit finding addressed |
 |---|---|---|---|
-| Aesthetic-Usability Effect | Raised surfaces are glass (translucent card + blur), chrome is hairline-dieted, one accent | `shell/palette.css .pal` (color-mix 92% + blur 12px); `graph/graph.css .gv-node`; shell.css chrome diet | Debug prose in Inbox deferred (task 01a04c60-5270) |
+| Aesthetic-Usability Effect | W3: the palette finally renders in color — Kinetic Elite (slate surfaces, one signal-blue accent, vibrant word-paired statuses) replaced the Atelier paper-and-ink ramp; panel content sections are glass cards; tiles carry their kind-family tint; raised menus keep the wave-1 glass grammar | `styles/tokens.css` header "KINETIC ELITE (slate & signal)" (#539); `panels.css` W3C·1 `.sb-body > .pn-fold` et al (88% card + blur 9px); W3E `[data-family]` → `--pnf`; `shell/palette.css .pal` (blur 12px) | Debug prose in Inbox deferred (task 01a04c60-5270) |
 | Choice Overload | The palette's 15 permanently-deferred rows collapse behind one summary row | `shell/CommandPalette.tsx` deferred group “N not available yet ▸” | HIGH: 42-row palette wall |
 | Chunking | Palette keeps fixed groups (Entities→Views→Actions); rail groups Work/Library/People; Home controls read as three tiers | `a1c-shell.test.tsx` fixed-order pin; `domain/home-rail.ts` spine; brief §tiers | — |
 | Cognitive Load | One lens vocabulary everywhere; prompts chip removed from global chrome (Help owns it) | `graph/GraphView.tsx LENS_WORDS`; `shell/SpaceTabBar.tsx` retirement comment | HIGH: banner naming a control that didn’t exist |
-| Doherty Threshold | Palette filters as you type; discussion skeletons resolve when the read settles; row capabilities hydrate on strip mount; undo notice appears immediately | `CommandPalette.tsx buildRows(query)`; P5 anchor-feed reconnect fix; `EntityControls.tsx onNeedDetail` effect | HIGH: search box that didn’t search; HIGH: eternal skeletons |
+| Doherty Threshold | Palette filters as you type; discussion skeletons resolve when the read settles; row capabilities hydrate on strip mount; undo notice appears immediately. W3: Figtree is self-hosted — the fonts.googleapis.com `@import` that blocked first paint (and offline dropped the type system to Georgia) is gone; composer sigils self-load their subjects at mount instead of waiting on a host that never passed them | `CommandPalette.tsx buildRows(query)`; P5 anchor-feed reconnect fix; `EntityControls.tsx onNeedDetail` effect; `styles/fonts.css` + tokens.css header note (#539); `views/conversationSurface.tsx` channelFeedPort load | HIGH: search box that didn’t search; HIGH: eternal skeletons |
 | Fitts’s Law | Door mark grown to ≥28px; 36px bar controls; account menu can no longer clip its dark-toggle off-screen; row titles no longer share pixels with hover actions | P6 `.shell-tabbar__mark` sizing; P2 `.auth-menu__row` border-box fix; `--tt-actions-reserve` padding | HIGH: clipped toggle; HIGH: title-click theft |
 | Flow | `/` opens the palette everywhere (guaranteed binding); Esc is consumed by the topmost surface; “load earlier turns” keeps the reader’s place | `keyboard/contract.ts palette.slash`; P5 scroll-anchor pin | HIGH: load-earlier teleport |
 | Goal-Gradient Effect | Acceptance progress (bar + n/m) on cards; the empty-graph escape now lands ON nodes instead of a second dead end | `gv-node__bar`; P4: escape also widens the window | HIGH: dead-end escape ladder |

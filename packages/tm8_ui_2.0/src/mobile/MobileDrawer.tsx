@@ -231,8 +231,11 @@ export function MobileDrawer(props: MobileDrawerProps) {
           <Section label="Chats">
             <li>
               <button type="button" className="mdrawer__row mdrawer__row--verb" onClick={props.onNewThread}>
+                {/* Marks render at 20 — the Kinetic drawer icon size, the same
+                    size the header's ☰ draws at — on the shared 16x16 art
+                    grid, so the drawer and the chrome are one icon rhythm. */}
                 <span className="mdrawer__mark" aria-hidden>
-                  <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
+                  <VectorIcon paths={PLUS_ART} size={20} strokeWidth={1.6} />
                 </span>
                 <span className="mdrawer__name">New conversation</span>
               </button>
@@ -287,7 +290,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
                       onClick={() => go(target)}
                     >
                       <span className="mdrawer__mark" aria-hidden>
-                        <KindIcon kind={config.kind} size={16} />
+                        <KindIcon kind={config.kind} size={20} />
                       </span>
                       <span className="mdrawer__name">{config.labelPlural}</span>
                       {/*
@@ -364,7 +367,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
                   }}
                 >
                   <span className="mdrawer__mark" aria-hidden>
-                    <VectorIcon paths={PERSON_ART} size={16} strokeWidth={1.4} />
+                    <VectorIcon paths={PERSON_ART} size={20} strokeWidth={1.4} />
                   </span>
                   <span className="mdrawer__name">{props.accountName ?? 'Account'}</span>
                 </button>
@@ -413,7 +416,7 @@ function ViewRow({
         onClick={() => onGo(target)}
       >
         <span className="mdrawer__mark" aria-hidden>
-          <VectorIcon paths={presentation.art} size={16} />
+          <VectorIcon paths={presentation.art} size={20} />
         </span>
         <span className="mdrawer__name">{presentation.label}</span>
       </button>

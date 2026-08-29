@@ -5,10 +5,14 @@
    is not excluded; `src/inbox/inbox-guards.test.ts` echoes the ban locally so
    a violation here fails with this directory's name on it.
 
-   Sizes are the oracle's own micro literals (D5-verbatim: 8.5 / 9 / 9.5 / 10 /
-   11 / 11.5 / 12 / 17px). They stay as-is in source — the one global scale
-   lever is `zoom` on `.cv2-root`, and a per-element bump would destroy
-   canvas-diff comparability.
+   RECLASSIFIED (Kinetic W3 sweep). The oracle's micro-mono literals survive
+   only where they mark DATA (the row meta's timestamp line); every word a
+   person acts on or reads as a sentence — the mark-all-read link, the
+   audience segments, filter chips, menu items, absence notes — now speaks
+   Figtree through the --pn-fs-* scale, 13px floor for interactive text.
+   This supersedes the earlier "sizes stay as-is for canvas-diff" doctrine:
+   the Kinetic reclassification IS the new reference, so a canvas diff
+   against T3-7 is expected to differ in type, never in words or counts.
    ========================================================================== */
 
 .ibx-root {
@@ -61,16 +65,19 @@
   flex: 1;
 }
 
+/* "all read" is a status sentence, not data. */
 .ibx-muted {
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
 }
 
+/* "mark all read" is a button word: ui at the 13 floor, ink-2. */
 .ibx-link {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   background: none;
   border: 0;
   padding: 0;
@@ -96,11 +103,12 @@
   background: var(--pn-card);
 }
 
+/* "you" / "your teammates" are audience WORDS on a control — ui, 13 floor. */
 .ibx-seg__on {
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 3px 10px;
   background: var(--pn-active);
 }
 
@@ -109,22 +117,24 @@
 .ibx-seg__off {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-left: 1px solid var(--pn-line);
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
 }
 
 /* --- filter chips -------------------------------------------------------- */
 
+/* Filter words ("unread", "type") — chip words are ui 13/500, ink-2. */
 .ibx-chip {
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
-  padding: 1px 7px;
+  padding: 2px 10px;
   cursor: pointer;
 }
 
@@ -159,15 +169,17 @@
   flex-direction: column;
 }
 
+/* Menu items are words ("all types", the humanized kinds) — ui 13/500. */
 .ibx-menu__item {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   text-align: left;
   color: var(--pn-ink-2);
   background: none;
   border: 0;
   border-radius: var(--pn-r-xs);
-  padding: 4px 6px;
+  padding: 5px 8px;
   cursor: pointer;
 }
 
@@ -285,7 +297,7 @@
 }
 
 .ibx-row__title {
-  font-size: 12px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
 }
 
@@ -294,14 +306,15 @@
   color: var(--pn-ink-2);
 }
 
+/* Meta stays MONO: it is the target ref + recency ("… · 2h ago") — data. */
 .ibx-row__meta {
   font-family: var(--pn-mono);
-  font-size: 8.5px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-ink-4);
 }
 
 .ibx-row__preview {
-  font-size: 11px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-2);
   white-space: nowrap;
   overflow: hidden;
@@ -317,7 +330,7 @@
 .ibx-empty {
   margin: 0;
   padding: 18px 14px;
-  font-size: 11.5px;
+  font-size: var(--pn-fs-sm);
   line-height: var(--pn-lh-body);
   color: var(--pn-ink-3);
 }
@@ -330,15 +343,28 @@
   border-top: 1px solid var(--pn-line);
 }
 
-/* An absence is STATED, not shouted (design law 9) — hence ink-3 mono micro
-   rather than a banner. */
+/* An absence is STATED, not shouted (design law 9) — quiet ink-3 rather
+   than a banner. RECLASSIFIED (W3 sweep): these are sentences, so they
+   speak ui 12; the words themselves are untouched. */
 .ibx-note {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   line-height: 1.45;
   color: var(--pn-ink-3);
 }
 
 .ibx-note--block {
   color: var(--pn-block);
+}
+
+/* ONE focus grammar (W3 sweep) — the kit ring, same as kit.css .k-btn. */
+.ibx-link:focus-visible,
+.ibx-chip:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.ibx-menu__item:focus-visible,
+.ibx-row__hit:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
 }

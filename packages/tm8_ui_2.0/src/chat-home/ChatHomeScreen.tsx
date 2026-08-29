@@ -1559,9 +1559,11 @@ export function ChatHomeScreen({
                           makes the two conversation lists one shape. */}
                       <span className="tch-thread__meta">
                         <span className="tch-mode-chip">{thread.config.mode}</span>
+                        {/* The teammate's NAME rides the row's ui voice; the
+                            MODEL is data and wears mono (Kinetic W3). */}
                         <span>{thread.config.teammateLabel}</span>
                         <span aria-hidden>·</span>
-                        <span>{thread.config.modelLabel}</span>
+                        <span className="tch-thread__model">{thread.config.modelLabel}</span>
                         <Timestamp at={thread.updatedAt} />
                       </span>
                     </button>

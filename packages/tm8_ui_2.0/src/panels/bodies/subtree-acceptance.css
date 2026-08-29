@@ -25,18 +25,23 @@
   padding: 5px 0;
 }
 
-/* Quiet by design: borderless until it is spoken to, so the resting section
-   reads as a list with an invitation, not a form. */
+/* I2 (wave 3): the birth row joins the panel's 28px chip grammar — same
+   border, radius, fill and type as the control band's inputs — instead of the
+   original invisible borderless line. A naked native here was the one input
+   in the section a reader could not FIND; the chip says "type here" at rest.
+   `--pn-fs-mono` is the 12.5px token the value already used, now named. */
 .cv2-root .sb-addcriterion__input {
   flex: 1;
   min-width: 0;
   appearance: none;
-  border: 0;
-  border-bottom: 1px solid transparent;
-  background: transparent;
-  padding: 4px 0;
-  font-family: inherit;
-  font-size: 12.5px;
+  box-sizing: border-box;
+  height: 28px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  padding: 0 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-mono);
   color: var(--pn-ink);
 }
 .cv2-root .sb-addcriterion__input::placeholder {
@@ -44,7 +49,8 @@
 }
 .cv2-root .sb-addcriterion__input:focus-visible {
   outline: none;
-  border-bottom-color: var(--pn-focus);
+  border-color: var(--pn-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pn-focus) 25%, transparent);
 }
 
 .cv2-root .sb-addcriterion__commit {
@@ -67,21 +73,27 @@
 
 /* ── The edit stance ───────────────────────────────────────────────────── */
 
+/* I2: the reword field wears the same 28px chip as the birth row — one input
+   grammar for the whole section (the criterion row's 29px floor is a MINIMUM,
+   so the taller edit row grows the row instead of clipping). */
 .cv2-root .sb-criterion__reword {
   flex: 1;
   min-width: 0;
   appearance: none;
-  border: 0;
-  border-bottom: 1px solid var(--pn-line-2);
-  background: transparent;
-  padding: 2px 0;
-  font-family: inherit;
-  font-size: 12.5px;
+  box-sizing: border-box;
+  height: 28px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  padding: 0 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-mono);
   color: var(--pn-ink);
 }
 .cv2-root .sb-criterion__reword:focus-visible {
   outline: none;
-  border-bottom-color: var(--pn-focus);
+  border-color: var(--pn-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pn-focus) 25%, transparent);
 }
 
 .cv2-root .sb-criterion__remove {

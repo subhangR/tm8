@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { Avatar, BootLoader, Chip, Eyebrow, IconBtn, Kbd, Pill } from './index';
+import { Avatar, BootLoader, Btn, Chip, Eyebrow, IconBtn, Kbd, Pill } from './index';
 
 describe('kit primitives', () => {
   it('Pill carries tone class and the word (never color alone)', () => {
@@ -205,6 +205,285 @@ describe('kit focus rings — every interactive atom, one grammar', () => {
     expect(icon).toMatch(/cursor:\s*not-allowed/);
     expect(block(kitCss, ".kit-iconbtn[aria-disabled='true']:hover", 'kit.css')).toMatch(
       /background:\s*transparent/,
+    );
+  });
+});
+
+describe('Btn — the Kinetic button grammar component', () => {
+  it('renders a real <button> carrying base + variant class', () => {
+    const { getByRole } = render(<Btn variant="brand">Run</Btn>);
+    const btn = getByRole('button', { name: 'Run' });
+    expect(btn.className).toBe('k-btn k-btn--brand');
+    expect(btn.getAttribute('type')).toBe('button');
+  });
+
+  it('defaults to the secondary variant — the safe neutral', () => {
+    const { getByRole } = render(<Btn>Cancel</Btn>);
+    expect(getByRole('button', { name: 'Cancel' }).className).toBe('k-btn k-btn--secondary');
+  });
+
+  it('sm adds the 28px modifier class', () => {
+    const { getByRole } = render(<Btn variant="ghost" sm>More</Btn>);
+    expect(getByRole('button', { name: 'More' }).className).toBe(
+      'k-btn k-btn--ghost k-btn--sm',
+    );
+  });
+
+  it('with disabledReason: aria-disabled, reason as tooltip, click inert', () => {
+    const onClick = vi.fn();
+    const { getByRole } = render(
+      <Btn variant="primary" onClick={onClick} title="Create the task" disabledReason="A run is already in flight">
+        Create
+      </Btn>,
+    );
+    const btn = getByRole('button', { name: 'Create' });
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    /* The reason REPLACES the caller title — a dead control's tooltip must
+       say why it is dead, not what it would have done. */
+    expect(btn.getAttribute('title')).toBe('A run is already in flight');
+    fireEvent.click(btn);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('without disabledReason stays live: no aria-disabled, caller title, click fires', () => {
+    const onClick = vi.fn();
+    const { getByRole } = render(
+      <Btn variant="primary" onClick={onClick} title="Create the task">
+        Create
+      </Btn>,
+    );
+    const btn = getByRole('button', { name: 'Create' });
+    expect(btn.getAttribute('aria-disabled')).toBeNull();
+    expect(btn.getAttribute('title')).toBe('Create the task');
+    fireEvent.click(btn);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The Kinetic experience grammar — CSS-as-text contract for the `k-` classes
+ * (same jsdom-cannot-see-the-cascade rationale as the focus-ring suite above).
+ */
+describe('kinetic grammar — button/input/label/icon CSS contract', () => {
+  it.each([
+    ['.k-btn:focus-visible'],
+    ['.k-input:focus-visible'],
+    ['.k-select:focus-visible'],
+  ] as const)('%s carries the --pn-focus ring', (selector) => {
+    expect(block(kitCss, selector, 'kit.css')).toMatch(RING);
+  });
+
+  it('.k-btn base: 32px border-box row, r-sm radius, sm face at weight 600', () => {
+    const base = block(kitCss, '.k-btn', 'kit.css');
+    expect(base).toMatch(/box-sizing:\s*border-box/);
+    expect(base).toMatch(/height:\s*32px/);
+    expect(base).toMatch(/padding:\s*0 14px/);
+    expect(base).toMatch(/border-radius:\s*var\(--pn-r-sm\)/);
+    expect(base).toMatch(/font-size:\s*var\(--pn-fs-sm\)/);
+    expect(base).toMatch(/font-weight:\s*600/);
+    expect(base).toMatch(/gap:\s*6px/);
+    expect(base).toMatch(/cursor:\s*pointer/);
+    expect(base).toMatch(/transition/);
+  });
+
+  it('.k-btn disabled is painted dead: ink-4, dimmed, not-allowed', () => {
+    const dead = block(kitCss, ".k-btn[aria-disabled='true']", 'kit.css');
+    expect(dead).toMatch(/color:\s*var\(--pn-ink-4\)/);
+    expect(dead).toMatch(/opacity:\s*0\.45/);
+    expect(dead).toMatch(/cursor:\s*not-allowed/);
+  });
+
+  it('variant surfaces: primary ink, brand blue, secondary card+line-2, ghost transparent', () => {
+    expect(block(kitCss, '.k-btn--primary', 'kit.css')).toMatch(/background:\s*var\(--pn-ink\)/);
+    expect(block(kitCss, '.k-btn--primary:hover', 'kit.css')).toMatch(/color-mix/);
+    expect(block(kitCss, '.k-btn--brand', 'kit.css')).toMatch(/background:\s*var\(--pn-brand\)/);
+    expect(block(kitCss, '.k-btn--brand:hover', 'kit.css')).toMatch(
+      /background:\s*var\(--pn-brand-2\)/,
+    );
+    const secondary = block(kitCss, '.k-btn--secondary', 'kit.css');
+    expect(secondary).toMatch(/background:\s*var\(--pn-card\)/);
+    expect(secondary).toMatch(/border-color:\s*var\(--pn-line-2\)/);
+    const ghost = block(kitCss, '.k-btn--ghost', 'kit.css');
+    expect(ghost).toMatch(/background:\s*transparent/);
+    expect(ghost).toMatch(/color:\s*var\(--pn-ink-2\)/);
+    expect(block(kitCss, '.k-btn--ghost:hover', 'kit.css')).toMatch(
+      /background:\s*var\(--pn-hover\)/,
+    );
+  });
+
+  it('.k-btn--sm is the 28px compact form on the label face', () => {
+    const sm = block(kitCss, '.k-btn--sm', 'kit.css');
+    expect(sm).toMatch(/height:\s*28px/);
+    expect(sm).toMatch(/font-size:\s*var\(--pn-fs-label\)/);
+  });
+
+  it('.k-input: 32px border-box card field with line-2 edge; --sm is 28px', () => {
+    const input = block(kitCss, '.k-input', 'kit.css');
+    expect(input).toMatch(/box-sizing:\s*border-box/);
+    expect(input).toMatch(/height:\s*32px/);
+    expect(input).toMatch(/padding:\s*0 10px/);
+    expect(input).toMatch(/background:\s*var\(--pn-card\)/);
+    expect(input).toMatch(/border:\s*1px solid var\(--pn-line-2\)/);
+    expect(input).toMatch(/border-radius:\s*var\(--pn-r-sm\)/);
+    expect(block(kitCss, '.k-input--sm', 'kit.css')).toMatch(/height:\s*28px/);
+  });
+
+  it('.k-select drops the native arrow; .k-selectwrap::after draws the ▾ inert', () => {
+    const select = block(kitCss, '.k-select', 'kit.css');
+    expect(select).toMatch(/appearance:\s*none/);
+    expect(select).toMatch(/background:\s*var\(--pn-card\)/);
+    expect(select).not.toMatch(/background-image/);
+    const arrow = block(kitCss, '.k-selectwrap::after', 'kit.css');
+    expect(arrow).toMatch(/content:\s*'▾'/);
+    expect(arrow).toMatch(/pointer-events:\s*none/);
+    expect(arrow).toMatch(/position:\s*absolute/);
+  });
+
+  it('.k-label: caps face, 11px/700, +0.06em uppercase, ink-2', () => {
+    const label = block(kitCss, '.k-label', 'kit.css');
+    expect(label).toMatch(/font-family:\s*var\(--pn-caps\)/);
+    expect(label).toMatch(/font-size:\s*var\(--pn-fs-micro\)/);
+    expect(label).toMatch(/font-weight:\s*700/);
+    expect(label).toMatch(/letter-spacing:\s*var\(--pn-track-label\)/);
+    expect(label).toMatch(/text-transform:\s*uppercase/);
+    expect(label).toMatch(/color:\s*var\(--pn-ink-2\)/);
+  });
+
+  it('icon rhythm: .k-icon-16 and .k-icon-18 size and never squash', () => {
+    const i16 = block(kitCss, '.k-icon-16', 'kit.css');
+    expect(i16).toMatch(/width:\s*16px/);
+    expect(i16).toMatch(/height:\s*16px/);
+    expect(i16).toMatch(/flex:\s*none/);
+    const i18 = block(kitCss, '.k-icon-18', 'kit.css');
+    expect(i18).toMatch(/width:\s*18px/);
+    expect(i18).toMatch(/height:\s*18px/);
+    expect(i18).toMatch(/flex:\s*none/);
+  });
+});
+
+/**
+ * The wave-3 MOTION + COLOR RICHNESS layer — CSS-as-text, same rationale as
+ * the suites above. The load-bearing assertions are the NEGATIVE ones: every
+ * motion utility dies under prefers-reduced-motion, and motion stays opt-in
+ * (no blanket transition can reach a status pill).
+ */
+describe('kinetic motion — every utility has a reduced-motion kill', () => {
+  /* The layer's one kill switch is the LAST reduced-motion block in kit.css
+     (the section is appended; earlier blocks belong to other atoms). Sliced
+     with lastIndexOf so a match cannot come from those earlier blocks. */
+  const rmAt = kitCss.lastIndexOf('@media (prefers-reduced-motion: reduce)');
+  const reduced = kitCss.slice(rmAt);
+
+  it('the kill-switch media block exists after the motion utilities', () => {
+    expect(rmAt).toBeGreaterThan(kitCss.indexOf('.k-shimmer'));
+  });
+
+  it.each([
+    ['.k-enter'],
+    ['.k-enter-pop'],
+    ['.k-lift'],
+    ['.k-press'],
+    ['.k-shimmer'],
+    ['.k-underline-slide'],
+  ] as const)('%s appears in the reduced-motion kill block', (cls) => {
+    expect(reduced).toContain(cls);
+  });
+
+  it('the kill block collapses to instant state: no animation, transform, or transition', () => {
+    expect(reduced).toMatch(/animation:\s*none/);
+    expect(reduced).toMatch(/transform:\s*none/);
+    expect(reduced).toMatch(/transition:\s*none/);
+    /* Entrances must LAND, not vanish: reduced users get the end state. */
+    expect(reduced).toMatch(/opacity:\s*1/);
+  });
+
+  it('.k-enter: fade+4px rise on ease-out, base duration, fill both', () => {
+    expect(block(kitCss, '@keyframes kEnter {', 'kit.css')).toMatch(/translateY\(4px\)/);
+    const enter = block(kitCss, '.k-enter {', 'kit.css');
+    expect(enter).toMatch(/animation:\s*kEnter var\(--pn-dur-base\) var\(--pn-ease-out\)/);
+    expect(enter).toMatch(/animation-fill-mode:\s*both/);
+  });
+
+  it('.k-enter-pop: scale .98→1 on the spring ease', () => {
+    expect(block(kitCss, '@keyframes kEnterPop {', 'kit.css')).toMatch(/scale\(0\.98\)/);
+    const pop = block(kitCss, '.k-enter-pop {', 'kit.css');
+    expect(pop).toMatch(/animation:\s*kEnterPop var\(--pn-dur-base\) var\(--pn-ease-spring\)/);
+    expect(pop).toMatch(/animation-fill-mode:\s*both/);
+  });
+
+  it('.k-lift: fast transform+shadow transition, hover rises 1px sm→md', () => {
+    const lift = block(kitCss, '.k-lift {', 'kit.css');
+    expect(lift).toMatch(/box-shadow:\s*var\(--pn-sh-sm\)/);
+    expect(lift).toMatch(/transform var\(--pn-dur-fast\)/);
+    const hover = block(kitCss, '.k-lift:hover', 'kit.css');
+    expect(hover).toMatch(/translateY\(-1px\)/);
+    expect(hover).toMatch(/box-shadow:\s*var\(--pn-sh-md\)/);
+  });
+
+  it('.k-press and .k-btn both press on :active — and a dead .k-btn does not', () => {
+    expect(block(kitCss, '.k-press:active', 'kit.css')).toMatch(/scale\(0\.985\)/);
+    expect(block(kitCss, '.k-btn:active', 'kit.css')).toMatch(/scale\(0\.985\)/);
+    expect(block(kitCss, ".k-btn[aria-disabled='true']:active", 'kit.css')).toMatch(
+      /transform:\s*none/,
+    );
+  });
+
+  it('.k-shimmer: color-mix sweep over --pn-hover, 1.6s linear infinite', () => {
+    const shimmer = block(kitCss, '.k-shimmer', 'kit.css');
+    expect(shimmer).toMatch(/color-mix\(in srgb, var\(--pn-ink\) 6%, var\(--pn-hover\)\)/);
+    expect(shimmer).toMatch(/animation:\s*kShimmer 1\.6s linear infinite/);
+  });
+
+  it('.k-underline-slide: brand ::after scales in from the left on hover/current', () => {
+    const after = block(kitCss, '.k-underline-slide::after', 'kit.css');
+    expect(after).toMatch(/background:\s*var\(--pn-brand\)/);
+    expect(after).toMatch(/transform:\s*scaleX\(0\)/);
+    expect(after).toMatch(/transform-origin:\s*left/);
+    expect(block(kitCss, '.k-underline-slide:hover::after', 'kit.css')).toMatch(
+      /transform:\s*scaleX\(1\)/,
+    );
+  });
+
+  it('motion stays OPT-IN: no blanket transition can reach a status pill', () => {
+    /* The no-motion-status law. Nothing in kit.css may put a transition or
+       animation on the pill atoms — a status word changing tone must snap.
+       (The dot pulse is a LIVENESS signal on the dot span, not a state
+       transition, and it predates this layer; it is asserted killed below.) */
+    expect(kitCss).not.toMatch(/\.kit-pill[^_{]*\{[^}]*transition/);
+    expect(block(kitCss, '.kit-pill {', 'kit.css')).not.toMatch(/animation|transition/);
+  });
+});
+
+describe('kinetic color richness — hero, accent edge, tints', () => {
+  it('.k-hero: 135deg brand→accent-2 color-mix gradient over card, hairline edge', () => {
+    const hero = block(kitCss, '.k-hero', 'kit.css');
+    expect(hero).toMatch(/linear-gradient\(\s*135deg/);
+    expect(hero).toMatch(/color-mix\(in srgb, var\(--pn-brand\) 6%, var\(--pn-card\)\)/);
+    expect(hero).toMatch(
+      /color-mix\(in srgb, var\(--pn-accent-2, var\(--pn-brand\)\) 5%, var\(--pn-card\)\)/,
+    );
+    expect(hero).toMatch(/border:\s*1px solid var\(--pn-line\)/);
+  });
+
+  it('.k-accent-top: a 2px brand→accent-2 gradient ribbon, clipped to the radius', () => {
+    expect(block(kitCss, '.k-accent-top {', 'kit.css')).toMatch(/overflow:\s*hidden/);
+    const edge = block(kitCss, '.k-accent-top::before', 'kit.css');
+    expect(edge).toMatch(/height:\s*2px/);
+    expect(edge).toMatch(
+      /linear-gradient\(90deg, var\(--pn-brand\), var\(--pn-accent-2, var\(--pn-brand\)\)\)/,
+    );
+    expect(edge).toMatch(/pointer-events:\s*none/);
+  });
+
+  it.each([
+    ['.k-tint-brand', '--pn-brand'],
+    ['.k-tint-run', '--pn-run'],
+    ['.k-tint-wait', '--pn-wait'],
+    ['.k-tint-block', '--pn-block'],
+    ['.k-tint-info', '--pn-info'],
+  ] as const)('%s tints 7%% of %s over the card surface', (cls, token) => {
+    expect(block(kitCss, cls, 'kit.css')).toMatch(
+      new RegExp(`color-mix\\(in srgb, var\\(${token}\\) 7%, var\\(--pn-card\\)\\)`),
     );
   });
 });
