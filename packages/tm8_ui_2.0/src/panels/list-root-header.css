@@ -62,7 +62,8 @@
   background: transparent;
   color: var(--pn-ink-3);
   font-family: var(--pn-ui);
-  font-size: var(--pn-fs-micro);
+  /* Kinetic I1: the root strip is the pane's identity — 14/600, active 700. */
+  font-size: var(--pn-fs-body);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -95,7 +96,7 @@
 .tch-rootcell--active { background: var(--pn-brand-soft); }
 .tch-rootcell--active .tch-rootcell__label {
   color: var(--pn-brand-2);
-  font-weight: 650;
+  font-weight: 700;
 }
 [data-theme='dark'] .tch-rootcell--active .tch-rootcell__label { color: var(--pn-brand); }
 .tch-rootcell__glyph { display: inline-flex; flex: none; }
@@ -242,8 +243,9 @@
   min-inline-size: var(--mobile-touch-min);
   min-block-size: var(--mobile-touch-min);
   justify-content: center;
-  /* DEF-039: this label is one of the 11px text nodes counted on chat-home. */
-  font-size: 13px;
+  /* DEF-039 asked for >=13px here when the base was 11px; the base is now
+     --pn-fs-body (14px, Kinetic I1), so a 13px override would SHRINK the
+     label on the phone. The floors stay; the size inherits. */
 }
 
 /* The kind cell's label is `flex: 1` and ellipsises a long plural; a

@@ -57,16 +57,25 @@
   font-size: var(--pn-fs-micro);
 }
 
+/* Kit button grammar, compact form (Kinetic W3): 28px box, bordered, r-sm,
+   ui 600 at the interactive floor (13). The word is Figtree ink, not chrome. */
 .tch-send,
 .tch-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 28px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   background: var(--pn-card);
   color: var(--pn-ink-2);
   font: inherit;
-  font-size: var(--pn-fs-micro);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  padding: 5px 9px;
+  line-height: 1;
+  padding: 0 12px;
   cursor: pointer;
 }
 
@@ -82,7 +91,9 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--pn-space-2);
+  /* The generous grid (Kinetic W3): 12px pane padding, aligned with the find
+     box's own side margins above. */
+  padding: var(--pn-space-3);
 }
 
 .tch-thread {
@@ -111,32 +122,55 @@
   background: var(--pn-active);
 }
 
+/* Kinetic I1: a thread's name is a TITLE (15/600 full ink), not a 12px label —
+   the title/meta size gap is what makes the list read as conversations
+   rather than rows of uniform gray. */
 .tch-thread__title {
   overflow: hidden;
-  font-size: var(--pn-fs-label);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-title);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* RECLASSIFICATION (Kinetic W3): the meta row's VOICE is Figtree — the
+   teammate's NAME is a word about a person, not machine output. The model
+   name and the timestamp are the data in the row and they alone stay mono
+   (`.tch-thread__model`, the <time>). */
 .tch-thread__meta {
   display: flex;
   gap: 4px;
+  align-items: baseline;
   margin-top: 1px;
-  color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-tick);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
 }
 
-.tch-thread__meta time { margin-left: auto; }
-.tch-hollow { padding: var(--pn-space-3); color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
+.tch-thread__model {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+}
+
+.tch-thread__meta time {
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+}
+/* Empty-state sentence: ui 13 (the reclassification's floor for prose). */
+.tch-hollow { padding: var(--pn-space-3); color: var(--pn-ink-3); font-family: var(--pn-ui); font-size: var(--pn-fs-sm); }
 .tch-thread-refusal {
   margin: var(--pn-space-2);
   padding: var(--pn-space-2);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   color: var(--pn-wait);
-  font-size: var(--pn-fs-fine);
+  /* An honesty sentence at reading size, never label size (DEF-039's logic). */
+  font-size: var(--pn-fs-sm);
 }
 .tch-load { display: grid; place-items: center; flex: 1; color: var(--pn-ink-3); }
 
@@ -150,12 +184,14 @@
 
 .tch-conversation__head { padding-inline: var(--pn-space-4); }
 
+/* The mode word is a CHIP WORD, so it speaks Figtree (caps face, 600) — the
+   uppercase+tracking is what keeps it reading as a tag rather than prose. */
 .tch-mode-chip {
   color: var(--pn-info);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
   padding: 1px 5px;
-  font: var(--pn-fs-tick) var(--pn-mono);
+  font: 600 var(--pn-fs-fine) var(--pn-caps);
   text-transform: uppercase;
   letter-spacing: var(--pn-track-label);
   white-space: nowrap;
@@ -290,7 +326,8 @@
   font-size: var(--pn-fs-micro);
 }
 
-.tch-thinking summary { cursor: pointer; font: var(--pn-fs-fine) var(--pn-mono); }
+/* The disclosure's word is a LABEL — ui at the interactive floor, ink-2. */
+.tch-thinking summary { cursor: pointer; color: var(--pn-ink-2); font: 500 var(--pn-fs-sm) var(--pn-ui); }
 .tch-thinking__text { white-space: pre-wrap; }
 .tch-thinking p { margin: 5px 0 0; padding-left: 10px; border-left: 2px solid var(--pn-line-2); }
 .tch-answer { font-size: var(--pn-fs-sm); }
@@ -307,11 +344,12 @@
 
 .tch-explain__body { padding: 14px; }
 .tch-explain__heading { min-width: 0; }
+/* The card's eyebrow: caps 11/700 (Kinetic grammar), not a mono whisper. */
 .tch-explain__heading > span {
   display: block;
   margin-bottom: 3px;
-  color: var(--pn-ink-4);
-  font: var(--pn-fs-tick) var(--pn-mono);
+  color: var(--pn-ink-3);
+  font: 700 var(--pn-fs-micro) var(--pn-caps);
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
 }
@@ -328,14 +366,16 @@
   font-size: var(--pn-fs-micro);
   line-height: 1.5;
 }
-.tch-explain__pending { padding: 18px 14px; color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
+.tch-explain__pending { padding: 18px 14px; color: var(--pn-ink-3); font-size: var(--pn-fs-sm); }
 
 .tch-explain__source {
   margin-top: 10px;
   color: var(--pn-ink-3);
   font: var(--pn-fs-tick) var(--pn-mono);
 }
-.tch-explain__source summary { cursor: pointer; }
+/* The disclosure WORD is a label (ui, interactive floor); the payload under it
+   is source and stays mono (the `pre` rule below). */
+.tch-explain__source summary { cursor: pointer; color: var(--pn-ink-2); font: 500 var(--pn-fs-sm) var(--pn-ui); }
 .tch-explain__source pre {
   overflow-x: auto;
   margin: 7px 0 0;
@@ -351,13 +391,14 @@
    Chat presentation card instead of a document column. */
 .tch-explain .md-mermaid { margin: 12px 0 0; }
 
+/* Legend words are LABELS — ui voice; the coloured dashes stay the data. */
 .tch-xgraph__legend {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 12px;
   margin-top: 10px;
-  color: var(--pn-ink-4);
-  font: var(--pn-fs-tick) var(--pn-mono);
+  color: var(--pn-ink-3);
+  font: 500 var(--pn-fs-label) var(--pn-ui);
 }
 .tch-xgraph__legend span::before { content: '—'; margin-right: 4px; }
 .tch-xgraph__legend span[data-basis='inferred']::before { content: '– –'; color: var(--pn-brand-2); }
@@ -403,22 +444,30 @@
 .tch-code__head .tch-explain__heading { flex: 1; }
 .tch-code__actions { display: flex; align-items: center; gap: 5px; }
 .tch-code__actions > span {
-  color: var(--pn-ink-4);
-  font: var(--pn-fs-tick) var(--pn-mono);
+  color: var(--pn-ink-3);
+  font: 500 var(--pn-fs-label) var(--pn-ui);
   text-transform: lowercase;
 }
+/* Real buttons wear the kit grammar's compact metrics (Kinetic W3): 28px box,
+   bordered, r-sm, ui 600 at the interactive floor, focus ring, hover fill. */
 .tch-code__actions button,
 .tch-asset__head button {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 28px;
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-xs);
+  border-radius: var(--pn-r-sm);
   background: var(--pn-surface);
   color: var(--pn-ink-2);
-  padding: 3px 7px;
-  font: var(--pn-fs-tick) var(--pn-ui);
+  padding: 0 10px;
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
   cursor: pointer;
 }
 .tch-code__actions button:hover,
 .tch-asset__head button:hover { background: var(--pn-hover); }
+.tch-code__actions button:focus-visible,
+.tch-asset__head button:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 .tch-asset__head button:disabled { cursor: default; opacity: 0.55; }
 .tch-code__path {
   display: flex;
@@ -493,13 +542,14 @@
 }
 .tch-asset__file > span { color: var(--pn-brand-2); font-size: 20px; }
 .tch-asset__file > div { display: flex; min-width: 0; flex: 1; flex-direction: column; }
-.tch-asset__file strong { overflow: hidden; color: var(--pn-ink-2); font-size: var(--pn-fs-fine); text-overflow: ellipsis; white-space: nowrap; }
+.tch-asset__file strong { overflow: hidden; color: var(--pn-ink-2); font-size: var(--pn-fs-label); text-overflow: ellipsis; white-space: nowrap; }
 .tch-asset__file small { color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
-.tch-asset__file a { color: var(--pn-brand); font-size: var(--pn-fs-tick); }
-.tch-asset__file em { color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
+.tch-asset__file a { color: var(--pn-brand); font-size: var(--pn-fs-label); }
+.tch-asset__file em { color: var(--pn-ink-4); font-size: var(--pn-fs-label); }
 
 .tch-durable__entities { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
-.tch-durable__state { display: block; margin-top: 8px; color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
+/* A state WORD, not machine output — ui voice, tone colours unchanged. */
+.tch-durable__state { display: block; margin-top: 8px; color: var(--pn-ink-3); font: 500 var(--pn-fs-label) var(--pn-ui); }
 .tch-durable__state[data-state='error'] { color: var(--pn-block); }
 .tch-durable__state[data-state='running'] { color: var(--pn-wait); }
 
@@ -574,6 +624,8 @@ button.tch-ledger__open:hover {
 
 .tch-ledger__arrow { color: var(--pn-ink-3); }
 
+/* A chip's TITLE is an entity's name — a word, so the ui voice (Kinetic W3).
+   The KIND tag stays a caps whisper; unresolved ids keep reading quiet. */
 .tch-entity-chip {
   display: inline-flex;
   gap: var(--pn-space-1);
@@ -584,7 +636,7 @@ button.tch-ledger__open:hover {
   border-radius: var(--pn-r-sm);
   background: var(--pn-surface);
   color: var(--pn-ink-2);
-  font: var(--pn-fs-fine) var(--pn-mono);
+  font: 500 var(--pn-fs-label) var(--pn-ui);
   text-align: left;
 }
 
@@ -595,6 +647,8 @@ button.tch-entity-chip:hover {
   background: var(--pn-brand-soft);
   color: var(--pn-ink-1);
 }
+
+button.tch-entity-chip:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 .tch-entity-chip__icon {
   display: inline-flex;
@@ -611,7 +665,7 @@ button.tch-entity-chip:hover {
 .tch-entity-chip__kind {
   flex: none;
   color: var(--pn-ink-4);
-  font-size: var(--pn-fs-tick);
+  font: 600 var(--pn-fs-tick) var(--pn-caps);
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
 }
@@ -632,7 +686,8 @@ button.tch-entity-chip:hover {
 }
 
 .tch-usage span + span { padding-left: 8px; border-left: 1px solid var(--pn-line-2); }
-.tch-usage__label { color: var(--pn-ink-3); text-transform: uppercase; letter-spacing: var(--pn-track-label); }
+/* The word is an eyebrow (caps 700); the numbers beside it keep .tch-usage's mono. */
+.tch-usage__label { color: var(--pn-ink-3); font: 700 var(--pn-fs-micro) var(--pn-caps); text-transform: uppercase; letter-spacing: var(--pn-track-label); }
 
 .tch-turn-error,
 .tch-load-error,
@@ -640,7 +695,8 @@ button.tch-entity-chip:hover {
   display: flex;
   gap: 7px;
   color: var(--pn-block);
-  font-size: var(--pn-fs-micro);
+  /* Error sentences are honesty copy: ui 13, never label-size (Kinetic W3). */
+  font-size: var(--pn-fs-sm);
 }
 
 .tch-load-error { flex-direction: column; margin: auto; }
@@ -757,9 +813,10 @@ button.tch-entity-chip:hover {
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
   background: var(--pn-surface);
-  color: var(--pn-ink-3);
-  padding: 2px 8px;
-  font: var(--pn-fs-micro, 11px) var(--pn-mono);
+  color: var(--pn-ink-2);
+  padding: 2px 10px;
+  /* A TAB wears the ui voice at the interactive floor (Kinetic W3). */
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -768,8 +825,8 @@ button.tch-entity-chip:hover {
   border-color: var(--pn-line-2);
   color: var(--pn-ink);
 }
-.tch-tray__chat:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
-.tch-tray__chat:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tch-tray__chat:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-tray__chat:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 .tch-tray__pulse {
   width: 6px;
@@ -786,16 +843,17 @@ button.tch-entity-chip:hover {
 /* The chip tabs and the +N overflow left with the tray's chips (S4) —
    the ledger panel below is where the thread's entities live now. */
 
+/* Honesty sentences read at ui 13 — the words stay, only their type moved. */
 .tch-refusal {
   margin: 0 4px 5px;
   color: var(--pn-wait);
-  font-size: var(--pn-fs-fine);
+  font-size: var(--pn-fs-sm);
 }
 
 .tch-continuable {
   margin: 0 0 7px;
   color: var(--pn-wait);
-  font: var(--pn-fs-fine) var(--pn-mono);
+  font: 500 var(--pn-fs-sm) var(--pn-ui);
 }
 
 .tch-composer-wrap[data-phase='stopped-continuable'] .tch-composer {
@@ -838,7 +896,8 @@ button.tch-entity-chip:hover {
   white-space: nowrap;
 }
 
-.tch-phase { margin-left: auto; color: var(--pn-wait); font: var(--pn-fs-tick) var(--pn-mono); }
+/* The phase is a word about the turn, so it speaks ui; wait tone unchanged. */
+.tch-phase { margin-left: auto; color: var(--pn-wait); font: 500 var(--pn-fs-label) var(--pn-ui); }
 
 /* SEND NEVER GIVES, AND THIS IS THE RULE THE OVERLAP BUG WAS MISSING.
    Everything else in the foot refused to shrink — `.tch-pick` is a flex item
@@ -862,7 +921,7 @@ button.tch-entity-chip:hover {
    ring — hover styling alone leaves a keyboard user aiming blind. */
 .tch-send:focus-visible,
 .tch-stop:focus-visible,
-.tch-pick__trigger:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tch-pick__trigger:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 .tch-send {
   border-color: transparent;
@@ -960,7 +1019,8 @@ button.tch-entity-chip:hover {
   gap: var(--pn-space-2);
   padding: var(--pn-space-2) 0;
   color: var(--pn-ink-3);
-  font: var(--pn-fs-micro) var(--pn-mono);
+  /* A sentence about waiting, not machine output — ui 13 (Kinetic W3). */
+  font: 500 var(--pn-fs-sm) var(--pn-ui);
 }
 
 /* The read of a whole conversation is ALONE in the transcript — nothing above
@@ -1253,7 +1313,9 @@ button.tch-entity-chip:hover {
   background: var(--pn-card);
   color: var(--pn-ink);
   font: inherit;
-  font-size: var(--pn-fs-micro);
+  /* Kinetic I1: the find box is a first-class control — 13px (--pn-fs-sm),
+     up from micro, so typed text no longer reads as chrome. */
+  font-size: var(--pn-fs-sm);
   transition:
     border-color var(--pn-dur-fast) var(--pn-ease-standard),
     box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
@@ -1271,19 +1333,22 @@ button.tch-entity-chip:hover {
    when a field under 16px takes focus, and inside a `100dvh` frame with
    `overflow: hidden` there is no scroll to pan with and no affordance to undo
    it — the user taps this box and the app is the wrong size from then on.
-   Measured at 11.5px on the phone's Home screen. Desktop keeps 11.5px. */
+   Measured at 11.5px on the phone's Home screen when this shipped; desktop
+   now sits at --pn-fs-sm (13px, Kinetic I1) — still under the threshold, so
+   the phone override stays. */
 .cv2-root .mobile-frame .tch-find {
   font-size: 16px;
   min-height: 44px;
 }
 
+/* Group heads are EYEBROWS (Kinetic grammar): caps 11/700, never gray mono. */
 .tch-group__label {
   display: block;
   padding: 8px 9px 3px;
-  color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
-  font-weight: 600;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1332,11 +1397,13 @@ button.tch-entity-chip:hover {
   align-items: center;
   gap: 8px;
 }
+/* 'SESSION SLOTS' stays a caps eyebrow (Kinetic W3); the NUMBERS beside it
+   are the data and keep mono (`.tch-slots__nums`). */
 .tch-slots__label {
-  color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
-  font-weight: 600;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1374,19 +1441,22 @@ button.tch-entity-chip:hover {
    content width — without both, `.tch-pick__value`'s ellipsis can never
    engage and the row overflows instead of narrowing. */
 .tch-pick { display: inline-flex; min-width: 0; }
+/* Kit grammar metrics, compact (Kinetic W3): 28px box, bordered, r-sm, ui 600
+   at the 13px interactive floor — a thread-setting is a control, not chrome. */
 .tch-pick__trigger {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
   max-width: 150px;
-  min-height: 24px;
-  padding: 2px 6px 2px 5px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 2px 8px 2px 6px;
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
+  border-radius: var(--pn-r-sm);
   background: var(--pn-card);
   color: var(--pn-ink-2);
-  font: var(--pn-fs-fine) var(--pn-ui);
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
   cursor: pointer;
 }
 .tch-pick__trigger:hover:not(:disabled) {
@@ -1419,7 +1489,8 @@ button.tch-entity-chip:hover {
   background: var(--pn-card);
   box-shadow: var(--pn-sh-md);
 }
-.tch-pickmenu__note { margin: 4px 6px; color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
+.tch-pickmenu__note { margin: 4px 6px; color: var(--pn-ink-3); font-family: var(--pn-ui); font-size: var(--pn-fs-sm); }
+/* Menu items are interactive text: ui 13/500, ink-2 (Kinetic W3). */
 .tch-pickmenu__opt {
   display: flex;
   align-items: center;
@@ -1431,7 +1502,9 @@ button.tch-entity-chip:hover {
   background: transparent;
   color: var(--pn-ink-2);
   font: inherit;
-  font-size: var(--pn-fs-micro);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
 }
@@ -1441,7 +1514,7 @@ button.tch-entity-chip:hover {
 .tch-pickmenu__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tch-pickmenu__hint {
   color: var(--pn-ink-4);
-  font-size: var(--pn-fs-fine);
+  font-size: var(--pn-fs-label);
   font-weight: 400;
   line-height: 1.35;
 }
@@ -2022,18 +2095,19 @@ button.tch-entity-chip:hover {
   gap: var(--pn-space-1);
 }
 
+/* A kind chip's word is interactive text: ui 13/600, ink-2 (Kinetic W3). */
 .tch-ledger-tree__kind {
   padding: 1px var(--pn-space-2);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
   background: var(--pn-surface);
-  color: var(--pn-ink-3);
-  font: var(--pn-fs-tick) var(--pn-mono);
+  color: var(--pn-ink-2);
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
   cursor: pointer;
 }
 
-.tch-ledger-tree__kind:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
-.tch-ledger-tree__kind:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tch-ledger-tree__kind:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-ledger-tree__kind:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 .tch-ledger-tree__kind[aria-pressed='true'] {
   border-color: var(--pn-brand-2);
@@ -2071,7 +2145,8 @@ button.tch-entity-chip:hover {
   border-radius: var(--pn-r-sm);
   background: none;
   color: var(--pn-ink-2);
-  font: var(--pn-fs-fine) var(--pn-mono);
+  /* Titles are NAMES (ui); placeholders below fall back to mono-id. */
+  font: 500 var(--pn-fs-sm) var(--pn-ui);
   text-align: left;
 }
 
@@ -2079,7 +2154,7 @@ button.tch-entity-chip:hover {
    only the button form takes hover affordances. */
 button.tch-ledger-tree__row { cursor: pointer; }
 button.tch-ledger-tree__row:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
-button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 .tch-ledger-tree__icon {
   display: inline-flex;
@@ -2093,9 +2168,9 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   text-overflow: ellipsis;
 }
 
-/* A title still standing in for a name we do not have reads quieter — the
-   same treatment the chips give an unresolved id. */
-.tch-ledger-tree__title[data-placeholder] { color: var(--pn-ink-3); }
+/* A title still standing in for a name we do not have reads quieter — and it
+   IS an id, so it reads as data: mono, not the ui voice real names get. */
+.tch-ledger-tree__title[data-placeholder] { color: var(--pn-ink-3); font: var(--pn-fs-fine) var(--pn-mono); }
 
 /* --- THE LEDGER PANEL (S4, task 01a023fb-1575) ---------------------------- */
 
@@ -2133,12 +2208,13 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   border-radius: var(--pn-r-pill);
   background: var(--pn-surface);
   color: var(--pn-ink-2);
-  font: var(--pn-fs-tick) var(--pn-mono);
+  /* A trigger's word is interactive text: ui 13/600 (Kinetic W3). */
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
   cursor: pointer;
 }
 
 .tch-lpanel__scope:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
-.tch-lpanel__scope:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tch-lpanel__scope:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 /* The scope's summary — `5 live ·` / `3 tasks, 2 docs`. A statement, not a
    control. */
@@ -2159,13 +2235,13 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   border: none;
   border-radius: var(--pn-r-sm);
   background: none;
-  color: var(--pn-ink-3);
-  font: var(--pn-fs-tick) var(--pn-mono);
+  color: var(--pn-ink-2);
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
   cursor: pointer;
 }
 
 .tch-lpanel__toggle:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
-.tch-lpanel__toggle:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tch-lpanel__toggle:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 /* Capped height with internal scroll (§7.5): a tree N deep must not eat the
    transcript it accompanies. */
@@ -2198,13 +2274,14 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   border-radius: var(--pn-r-sm);
   background: none;
   color: var(--pn-ink-2);
-  font: var(--pn-fs-fine) var(--pn-mono);
+  /* An entity's NAME is a word, not data — ui at the interactive floor. */
+  font: 500 var(--pn-fs-sm) var(--pn-ui);
   text-align: left;
   cursor: pointer;
 }
 
 .tch-lpanel__row:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
-.tch-lpanel__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tch-lpanel__row:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 .tch-lpanel__title {
   overflow: hidden;
@@ -2212,10 +2289,12 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   white-space: nowrap;
 }
 
-.tch-lpanel__title[data-placeholder] { color: var(--pn-ink-3); }
+/* A placeholder is a truncated ID standing in for a name: id ⇒ mono data. */
+.tch-lpanel__title[data-placeholder] { color: var(--pn-ink-3); font: var(--pn-fs-fine) var(--pn-mono); }
 
+/* Empty state: ui 13 (Kinetic W3) — the sentence itself is unchanged. */
 .tch-lpanel__empty {
   margin: 0;
   color: var(--pn-ink-3);
-  font: var(--pn-fs-fine) var(--pn-mono);
+  font: var(--pn-fs-sm) var(--pn-ui);
 }

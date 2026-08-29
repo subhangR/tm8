@@ -24,9 +24,21 @@
    Alpha idiom follows `auth.css`: rgba(var(--pn-brand-rgb), a) for brass,
    color-mix(... N%, transparent) for everything else.
 
-   TYPE: canvas-measured literals stay verbatim (D5). Global scale is the one
+   TYPE: canvas-measured literals stay verbatim (D5) — SUPERSEDED for VOICE by
+   the Kinetic W3 reclassification below. Global scale is still the one
    `zoom: 1.1` lever on `.cv2-root` (D60.1) — never a per-element bump here.
-   =========================================================================== */
+
+   RECLASSIFIED (Kinetic W3 sweep). Mono is for DATA only: invite codes,
+   handles, timestamps, revisions/versions. Every word a person reads or acts
+   on — nav rows, button words, field labels, empty states, captions — speaks
+   Figtree (var(--pn-ui)) at the 13px interactive floor, 500–600, ink/ink-2.
+   Eyebrows are caps 11/700; pane micro-headers use the kit eyebrow metric
+   (caps 10/700). Buttons and inputs adopt the kit grammar: 28px compact box
+   (32 for the standalone redeem CTA), bordered r-sm/r-md, ui 600, ONE focus
+   grammar (2px var(--pn-focus, var(--pn-brand-2)) ring), hover fill. The
+   oracle line citations below still describe geometry; where they cite mono
+   micro-type they describe the T2 canvas, not this build. Words and counts
+   unchanged. */
 
 /* --- the frame ----------------------------------------------------------- */
 
@@ -143,10 +155,10 @@
 
 .set-nav__eyebrow {
   font-family: var(--pn-caps);
-  font-size: 9.5px; /* L32 */
+  font-size: var(--pn-fs-micro); /* eyebrow grammar: caps 11/700 */
   font-weight: 700;
-  letter-spacing: 0.12em;
-  color: var(--pn-ink-4);
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-3);
   padding: 0 14px 8px; /* L32 */
   text-transform: uppercase;
   white-space: nowrap;
@@ -161,7 +173,8 @@
   border-left: 3px solid transparent; /* L33 */
   text-align: left;
   font-family: inherit;
-  font-size: 12px; /* L33 */
+  font-size: var(--pn-fs-sm); /* nav-row words at the interactive floor */
+  font-weight: 500;
   color: var(--pn-ink-2);
   padding: 6px 14px; /* L33 */
   cursor: pointer;
@@ -266,16 +279,25 @@
    chip: D58.1 rules the ink treatment for `.lp__new` create chips on T0-1;
    this canvas paints its own affirmatives brass, and a surface answers to its
    own oracle. The one ink button on these frames is the redeem CTA (L133). */
+/* Kit button grammar, compact form (Kinetic W3): 28px box, r-sm, ui 600 at
+   the interactive floor. `--sm` opts back out to a BADGE (it is rendered on
+   non-interactive status spans — "custom", "edited", "hidden"). */
 .set-chip {
   appearance: none;
-  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  font-family: var(--pn-ui);
   color: var(--pn-brand-2);
   font-weight: 600;
   background: var(--pn-brand-soft);
   border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
   border-radius: var(--pn-r-sm);
-  padding: 3px 11px;
-  font-size: 11.5px;
+  padding: 0 12px;
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
   cursor: pointer;
 }
 .set-chip:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
@@ -304,41 +326,52 @@
   cursor: not-allowed;
 }
 .set-chip:disabled:hover { background: color-mix(in srgb, var(--pn-idle-soft) 45%, transparent); }
-.set-chip--block { display: block; width: 100%; padding: 4px 0; text-align: center; }
-.set-chip--sm { padding: 2px 9px; font-size: 11px; }
+.set-chip--block { display: flex; width: 100%; padding: 0; text-align: center; }
+.set-chip--sm { min-height: 0; padding: 2px 9px; font-size: var(--pn-fs-micro); }
 
+/* Tertiary button — the word is ui at the floor, the box stays lean (24px). */
 .set-ghost {
   appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--pn-ink-2);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  padding: 2px 8px;
+  padding: 0 10px;
   background: var(--pn-card);
   cursor: pointer;
 }
 .set-ghost:hover { background: var(--pn-hover); }
 
+/* Eyebrow grammar (Kinetic W3): caps 11/700. */
 .set-eyebrow {
   font-family: var(--pn-caps);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-micro);
   font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--pn-ink-4);
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-3);
   text-transform: uppercase;
 }
 
 .set-prose {
-  font-size: 11px; /* L88 */
-  line-height: 1.6;
+  /* 12 — the body size `--set-measure`'s "~95 characters" arithmetic already
+     assumes (see the frame block above). */
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-3);
   text-wrap: pretty;
 }
 
+/* A note is a sentence, not machine output. */
 .set-note {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-3);
 }
 
@@ -357,7 +390,7 @@
 .set-member__name {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px; /* L53 */
+  font-size: var(--pn-fs-sm); /* table cell words are ui at the floor */
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -371,9 +404,13 @@
 }
 .set-member__when { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
 
+/* A role is a WORD about a person (and sometimes a live <select> of words) —
+   ui at the interactive floor, never mono. Identifiers beside it (handle,
+   timestamps) keep the data voice. */
 .set-role {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   border-radius: var(--pn-r-pill);
   padding: 2px 9px;
   white-space: nowrap;
@@ -415,18 +452,23 @@
   flex-direction: column;
   gap: 7px;
 }
+/* Input grammar (Kinetic W3): 28px compact box, bordered r-sm, ui at the
+   floor. What a person TYPES here is words (labels, notes, an address the
+   browser already renders proportionally) — the field is not a terminal. */
 .set-field {
   display: flex;
   align-items: center;
-  padding: 0 9px;
+  box-sizing: border-box;
+  padding: 0 10px;
   height: 28px; /* L102 */
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
 }
+.set-field::placeholder { color: var(--pn-ink-4); }
 .set-field--grow { flex: 1; }
 
 /* PANEL-LOCAL — do not borrow `.set-invite*` as generic row classes.
@@ -444,12 +486,21 @@
   flex-direction: column;
   gap: 3px;
 }
+/* The code is a TOKEN — data, mono. The meta ("admin · 2/5 used") and the
+   revoked word are words; the stamp is a timestamp and stays data. */
 .set-invite__code { font-family: var(--pn-mono); font-size: 10.5px; font-weight: 600; color: var(--pn-ink); }
-.set-invite__meta { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-3); }
+.set-invite__meta { font-family: var(--pn-ui); font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
 .set-invite__stamp { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
 .set-invite--revoked { opacity: 0.7; } /* L117 */
 .set-invite--revoked .set-invite__code { font-weight: 400; color: var(--pn-ink-3); text-decoration: line-through; }
-.set-invite__revoked-word { font-family: var(--pn-mono); font-size: 9px; font-weight: 600; color: var(--pn-block); }
+.set-invite__revoked-word {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-block);
+}
 .set-invite__group { padding: 10px 16px 4px; } /* L107 */
 
 /* --- T2-1d · redeem landing (oracle L124–L139) --------------------------- */
@@ -469,7 +520,7 @@
 }
 .set-redeem__mark { font-family: var(--pn-mono); font-size: 13px; font-weight: 600; color: var(--pn-brand); }
 .set-redeem__title { font-family: var(--pn-serif); font-size: 22px; font-weight: 500; line-height: 1.2; }
-.set-redeem__sub { font-size: 12px; color: var(--pn-ink-3); }
+.set-redeem__sub { font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
 .set-redeem__field {
   width: 100%;
   display: flex;
@@ -478,41 +529,51 @@
   text-align: left;
   padding-top: 6px;
 }
+/* A field LABEL is a word — ui 600 at the floor, no dressing. */
 .set-redeem__label {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
 }
 .set-redeem__input {
-  height: 32px; /* L131 */
+  height: 32px; /* L131 — the standard (non-compact) input box */
   display: flex;
   align-items: center;
+  box-sizing: border-box;
   padding: 0 10px;
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
-  font-size: 12.5px;
+  font-size: var(--pn-fs-sm);
   color: var(--pn-ink);
   font-family: inherit;
 }
 .set-redeem__input::placeholder { color: var(--pn-ink-4); }
-/* L133 — the ONE ink control on these frames. D58.1's hover token applies. */
+/* L133 — the ONE ink control on these frames. D58.1's hover token applies.
+   Standard kit button box: 32px, ui 600 at the floor. */
 .set-redeem__cta {
   width: 100%;
-  padding: 7px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0;
   border: 0;
   border-radius: var(--pn-r-md);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
+  line-height: 1;
   background: var(--pn-ink);
   color: var(--pn-paper);
   cursor: pointer;
 }
 .set-redeem__cta:hover { background: var(--pn-x-btn-ink-hover); }
-.set-redeem__foot { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+/* Fine print, but still a sentence — ui, whisper ink. The invite code inside
+   it is short enough that a mono island would cost more than it says. */
+.set-redeem__foot { font-family: var(--pn-ui); font-size: var(--pn-fs-fine); font-weight: 500; color: var(--pn-ink-4); }
 
 /* --- T2-3 · menu editor (oracle L282–L330) ------------------------------- */
 
@@ -572,9 +633,10 @@
 }
 .set-row--dragging .set-grip { color: var(--pn-brand-2); cursor: grabbing; }
 .set-row__glyph { color: var(--pn-ink-3); font-size: 11px; }
-.set-row__label { flex: 1; min-width: 0; font-size: 12px; }
-.set-row--child .set-row__label { font-size: 11.5px; color: var(--pn-ink-2); }
-.set-row__type { font-family: var(--pn-mono); font-size: 8.5px; color: var(--pn-ink-4); }
+.set-row__label { flex: 1; min-width: 0; font-size: var(--pn-fs-sm); font-weight: 500; }
+.set-row--child .set-row__label { font-size: var(--pn-fs-label); color: var(--pn-ink-2); }
+/* The type tag is a WORD about the row's kind, not machine output. */
+.set-row__type { font-family: var(--pn-ui); font-size: var(--pn-fs-fine); font-weight: 500; color: var(--pn-ink-4); }
 .set-row__x,
 .set-row__pencil {
   appearance: none;
@@ -593,20 +655,20 @@
 /* L311 — rename in place. The caret is the oracle's own 1.5px brand bar; here
    it is a real focused input, so the browser draws it. */
 .set-rename {
-  height: 22px;
+  height: 24px; /* compact inline input; what is typed here is a NAME — words */
+  box-sizing: border-box;
   padding: 0 8px;
   background: var(--pn-card);
   border: 1px solid var(--pn-brand);
   border-radius: var(--pn-r-xs);
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-ink);
   min-width: 0;
   width: 140px;
 }
-.set-rename__hint { font-family: var(--pn-mono); font-size: 8.5px; color: var(--pn-brand-2); }
+.set-rename__hint { font-family: var(--pn-ui); font-size: var(--pn-fs-fine); font-weight: 500; color: var(--pn-brand-2); }
 
 .set-add-bar {
   display: flex;
@@ -617,15 +679,22 @@
   margin-top: 4px;
   border-top: 1px solid var(--pn-x-hairline-soft);
 }
+/* An add affordance is a BUTTON word — compact kit box, ui 600. */
 .set-add {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 28px;
   background: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
   color: var(--pn-brand-2);
   border: 1px dashed rgba(var(--pn-brand-rgb), 0.5); /* L325 */
   border-radius: var(--pn-r-sm);
-  padding: 3px 9px;
+  padding: 0 12px;
   cursor: pointer;
 }
 .set-add:hover { background: rgba(var(--pn-brand-rgb), 0.08); }
@@ -639,20 +708,24 @@
 
 /* --- live preview (oracle L336–L352) ------------------------------------- */
 
+/* Pane micro-header — kit eyebrow metric (caps 10/700). */
 .set-prev__head {
   padding: 9px 12px 6px;
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
   color: var(--pn-ink-4);
   border-bottom: 1px solid var(--pn-x-hairline-soft);
   text-transform: uppercase;
 }
 .set-prev__body { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; }
+/* Preview group headers mirror the rail's own eyebrow grammar. */
 .set-prev__group {
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
   color: var(--pn-ink-4);
   padding: 10px 12px 4px;
   text-transform: uppercase;
@@ -688,8 +761,10 @@
 .set-prev__foot {
   padding: 7px 12px;
   border-top: 1px solid var(--pn-x-hairline-soft);
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
+  /* "unsaved changes — preview only" is a sentence. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
   color: var(--pn-ink-4);
 }
 
@@ -721,21 +796,28 @@
 .set-state__text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .set-state__title { font-size: 11.5px; font-weight: 600; color: var(--pn-ink); }
 .set-state__body { font-size: 10.5px; line-height: 1.45; color: var(--pn-ink-2); }
+/* A banner action carries a button WORD — ui 600 at the floor, lean box. */
 .set-state__action {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
   background: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
+  line-height: 1;
   color: var(--pn-info);
   border: 1px solid color-mix(in srgb, var(--pn-info) 40%, transparent);
   border-radius: var(--pn-r-sm);
-  padding: 2px 8px;
+  padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
 }
 .set-state__action:hover { background: color-mix(in srgb, var(--pn-info) 12%, transparent); }
-.set-state__foot { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-3); }
+/* The foot is an explanatory sentence. */
+.set-state__foot { font-family: var(--pn-ui); font-size: var(--pn-fs-fine); line-height: var(--pn-lh-body); color: var(--pn-ink-3); }
 
 /* --- refusal skins (D28 mechanics untouched; fill only) ------------------ */
 
@@ -786,8 +868,10 @@
   gap: 4px;
   padding: 12px 16px;
 }
-.set-absent__head { font-size: 11.5px; color: var(--pn-ink-3); }
-.set-absent__why { font-family: var(--pn-mono); font-size: 9px; line-height: 1.5; color: var(--pn-ink-4); }
+/* Empty-state grammar (Kinetic W3): the statement at the floor, the reason a
+   quieter sentence — both Figtree; neither is machine output. */
+.set-absent__head { font-size: var(--pn-fs-sm); font-weight: 500; color: var(--pn-ink-2); }
+.set-absent__why { font-family: var(--pn-ui); font-size: var(--pn-fs-label); line-height: var(--pn-lh-body); color: var(--pn-ink-3); }
 
 /* --- `.set-stack` / `.set-kv*` — REMOVED 2026-08-16 ----------------------
    These were the generic body-stack and key/value pair the pre-frame
@@ -819,6 +903,25 @@
    Deleting rather than keeping: dead CSS in a shared sheet is worse than
    dead code elsewhere, because the next lane greps for a class, finds a
    plausible rule, and builds against something nothing renders. --------- */
+
+/* --- ONE focus grammar (Kinetic W3) --------------------------------------
+   Every interactive this sheet styles shows the same 2px ring, flowing
+   through --pn-focus with the brand-2 fallback (kit.css precedent) — never
+   the UA default. `:focus-within` on .set-field covers the wrapper usage. */
+.set-nav__row:focus-visible,
+.set-chip:focus-visible,
+.set-ghost:focus-visible,
+.set-add:focus-visible,
+.set-role:focus-visible,
+.set-state__action:focus-visible,
+.set-rename:focus-visible,
+.set-field:focus-visible,
+.set-field:focus-within,
+.set-redeem__input:focus-visible,
+.set-redeem__cta:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
 
 /* --- dev review board (never product) ------------------------------------ */
 

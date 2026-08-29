@@ -22,15 +22,17 @@
 [data-theme="dark"] .cv2-root { color-scheme: dark; }
 
 /* --- Compact Server + Space bar ------------------------------------------ */
-/* Kinetic (W3): 36px bar, 8px padding, 8px gaps — one declaration, not a 24px
-   base with a later re-open fighting it. Controls inside ride a 28px rhythm. */
+/* Kinetic (W3): one declaration, not a 24px base with a later re-open
+   fighting it. RECLASSIFIED (W3 sweep): the bar is the app's top structure,
+   so it rises to 44px and its controls ride the kit's 32px rhythm — the
+   height-chain is pure percentages below this (D75), so nothing else moves. */
 .cv2-root .shell-tabbar {
-  height: 36px;
+  height: 44px;
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 8px;
+  padding: 0 10px;
   background: var(--pn-surface);
   border-bottom: 1px solid var(--pn-line);
 }
@@ -45,17 +47,17 @@
    mark, not as a tab — no active state, because there is no destination to
    be current on.
 
-   THE HIT AREA IS 28px SQUARE, the bar's control rhythm (W3) — the visual
-   mark stays its 24x15 self. At `padding: 0` this was the smallest target in
-   the app: 15px tall, beside 28px controls. The floor is minimums plus
-   centring, not a bigger glyph. */
+   THE HIT AREA IS 32px SQUARE, the bar's control rhythm (W3 sweep) — the
+   visual mark stays its 24x15 self. At `padding: 0` this was the smallest
+   target in the app: 15px tall, beside full-height controls. The floor is
+   minimums plus centring, not a bigger glyph. */
 .cv2-root .shell-tabbar__mark--door {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 32px;
+  min-height: 32px;
   box-sizing: border-box;
   padding: 0 2px;
   border: 0;
@@ -65,53 +67,13 @@
 .cv2-root .shell-tabbar__mark--door:hover {
   color: var(--pn-text);
 }
-.cv2-root .shell-tabbar__server {
-  min-width: 0;
-  max-width: 168px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 6px;
-  box-sizing: border-box;
-  color: var(--pn-ink-2);
-  background: var(--pn-active);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-}
-.cv2-root .shell-tabbar__server-dot {
-  width: 5px;
-  height: 5px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--pn-idle);
-}
-.cv2-root .shell-tabbar__server-dot--online { background: var(--pn-run); }
-.cv2-root .shell-tabbar__server-dot--offline { background: var(--pn-block); }
-.cv2-root .shell-tabbar__server-dot--checking { background: var(--pn-wait); }
-.cv2-root .shell-tabbar__server-label {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.cv2-root .shell-tabbar__divider {
-  width: 1px;
-  height: 12px;
-  background: var(--pn-line);
-}
-.cv2-root .shell-tabbar__spaces {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  overflow: hidden;
-}
-/* Kinetic tab: a comfortable 28px hit area (Fitts), vertically centred in
-   the 36px bar. Hover is the hover FILL, never a border; the active tab is
+/* The r10 server chip (`__server*`), its `__divider`, the space tablist
+   (`__spaces`/`__dot`) and the `__add` control are GONE, rules and all —
+   revision 11 retired them for the identity block, the component renders
+   none of them, and `shell.test.tsx` asserts their absence. Dead rules were
+   the last place the bar still spoke label-mono. */
+/* Kinetic tab: a comfortable hit area (Fitts), vertically centred in the
+   44px bar. Hover is the hover FILL, never a border; the active tab is
    weight + brand-soft wash — the calmer of the two accent options, so brass
    stays reserved for selection bars and primary action. */
 .cv2-root .shell-tabbar__tab {
@@ -120,11 +82,15 @@
   gap: 4px;
   min-height: 28px;
   box-sizing: border-box;
-  padding: 2px 8px;
+  padding: 2px 10px;
+  /* Kinetic I1: tabs are 14/600 (--pn-fs-body), active 700 — the bar has to
+     read as the app's top-level structure, not 11px chrome. Resting ink-2,
+     never ink-3: these are the app's primary interactive words (W3 sweep). */
   font-family: var(--pn-ui);
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--pn-ink-2);
   background: transparent;
   border: 0;
   border-radius: var(--pn-r-sm);
@@ -132,37 +98,24 @@
 }
 .cv2-root .shell-tabbar__tab:hover {
   background: var(--pn-hover);
+  color: var(--pn-ink);
 }
 .cv2-root .shell-tabbar__tab--active {
   background: var(--pn-brand-soft);
-  font-weight: 650;
+  font-weight: 700;
   color: var(--pn-ink);
-}
-.cv2-root .shell-tabbar__dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--pn-line-2);
-}
-.cv2-root .shell-tabbar__tab--active .shell-tabbar__dot {
-  background: var(--pn-brand);
-}
-.cv2-root .shell-tabbar__add {
-  color: var(--pn-ink-4);
-  font-size: 12px;
-  background: transparent;
-  border: 0;
-  padding: 0 4px;
 }
 .cv2-root .shell-tabbar__spacer {
   flex: 1;
 }
 /* R1/R2 (2026-08-15): the top ROW hosts the identity block and the tabs.
    The tabs are the menu's groups — a segmented control. Kinetic (W3): the
-   bar's 36px/8px geometry now lives in the base rule above; the selected
-   segment is brand-soft + weight rather than a raised bordered chip — one
-   selection grammar for the whole bar, and no decorative shadow (chrome
-   diet: elevation is data, and a resting tab is not elevated). */
+   bar's geometry lives in the base rule above; the selected segment is
+   brand-soft + weight rather than a raised bordered chip — one selection
+   grammar for the whole bar, and no decorative shadow (chrome diet:
+   elevation is data, and a resting tab is not elevated). W3 sweep: segments
+   are 28px inside the 2px tray = the bar's 32px control rhythm, with a
+   generous 12px reach per word. */
 .cv2-root .shell-tabbar__tabs {
   display: flex;
   align-items: center;
@@ -173,8 +126,8 @@
   border-radius: var(--pn-r-sm);
 }
 .cv2-root .shell-tabbar__tabs .shell-tabbar__tab {
-  min-height: 24px;
-  padding: 2px 10px;
+  min-height: 28px;
+  padding: 2px 12px;
   border: 0;
   border-radius: var(--pn-r-sm);
 }
@@ -188,10 +141,10 @@
 }
 .cv2-root .shell-tabbar .shell-switcher__trigger {
   width: auto;
-  /* 28px — the bar's one control height (W3 rhythm). */
-  height: 28px;
+  /* 32px — the bar's one control height (W3 sweep rhythm). */
+  height: 32px;
   box-sizing: border-box;
-  padding: 0 8px;
+  padding: 0 10px;
   gap: 6px;
   background: var(--pn-active);
   border-radius: var(--pn-r-pill);
@@ -202,8 +155,11 @@
   align-items: baseline;
   gap: 6px;
 }
-.cv2-root .shell-tabbar .shell-switcher__space { font-size: 11.5px; }
-.cv2-root .shell-tabbar .shell-switcher__server-line { font-size: 9.5px; }
+/* The chip's SPACE NAME is a primary label: Figtree 13/600 (the base rule
+   carries family and weight; only the compact size was overriding it down).
+   The server meta beside it stays mono-data — it names a machine. */
+.cv2-root .shell-tabbar .shell-switcher__space { font-size: var(--pn-fs-sm); }
+.cv2-root .shell-tabbar .shell-switcher__server-line { font-size: var(--pn-fs-fine); }
 .cv2-root .shell-tabbar .shell-switcher__monogram {
   width: 16px;
   height: 16px;
@@ -214,37 +170,41 @@
   top: calc(100% + 6px);
   left: 0;
 }
-/* The palette chip rides the same 28px control rhythm as the bell and the
-   avatar. Mono stays — it prints keys. Hover is ELEVATION, not colour: the
-   chip lifts a shade (--pn-sh-sm) and its fill never changes, so the one
-   accent stays with selection. */
+/* The palette chip rides the same 32px control rhythm as the bell and the
+   avatar. RECLASSIFIED (W3 sweep): "palette" is a chip WORD, so the chip
+   speaks Figtree at the interactive floor — the ⌘K it prints rides along in
+   the same face because the words and keys share one text node. Hover keeps
+   the W3 lift and gains the kit grammar's quiet fill; neither touches the
+   brand accent, which stays with selection. */
 .cv2-root .shell-tabbar__palette {
   display: inline-flex;
   align-items: center;
-  height: 28px;
+  height: 32px;
   box-sizing: border-box;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
-  padding: 0 8px;
+  padding: 0 10px;
   background: var(--pn-card);
   cursor: pointer;
   transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-root .shell-tabbar__palette:hover {
+  background: var(--pn-hover);
   box-shadow: var(--pn-sh-sm);
 }
 .cv2-root .shell-tabbar__avatar {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: var(--pn-active);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: var(--pn-fs-label);
   font-weight: 600;
   color: var(--pn-ink-2);
   border: 0;
@@ -253,7 +213,8 @@
 .cv2-root .shell-tabbar .auth-accountmenu__trigger {
   gap: 4px;
   padding: 0 4px 0 1px;
-  font-size: 10.5px;
+  /* The signed-in NAME is interactive ui text — 13 floor (W3 sweep). */
+  font-size: var(--pn-fs-sm);
 }
 .cv2-root .shell-tabbar .auth-avatar--sm {
   width: 22px;
@@ -262,6 +223,36 @@
 }
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */
+
+/* ONE focus grammar for the shell's chrome controls — the kit ring
+   (`--pn-focus`, see kit.css .k-btn), not per-control inventions. Chip-shaped
+   controls ring outside; full-bleed rows ring inside so the ring is not
+   clipped by their scroll containers. */
+.cv2-root .shell-tabbar__mark--door:focus-visible,
+.cv2-root .shell-tabbar__tab:focus-visible,
+.cv2-root .shell-tabbar__palette:focus-visible,
+.cv2-root .shell-tabbar__bell:focus-visible,
+.cv2-root .shell-tabbar__avatar:focus-visible,
+.cv2-root .shell-switcher__trigger:focus-visible,
+.cv2-root .shell-empty__cta-btn:focus-visible,
+.cv2-root .shell-welcome__cta:focus-visible,
+.cv2-root .ls__cancel:focus-visible,
+.cv2-root .ls__launch:focus-visible,
+.cv2-root .ls__dispatch:focus-visible,
+.cv2-root .ls__accessbtn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .shell-rail__row:focus-visible,
+.cv2-root .shell-rail__leaf:focus-visible,
+.cv2-root .shell-rail__footer:focus-visible,
+.cv2-root .shell-switcher__server:focus-visible,
+.cv2-root .shell-switcher__space-row:focus-visible,
+.cv2-root .shell-switcher__add:focus-visible,
+.cv2-root .shell-empty__row:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
+}
 
 /* --- Menu rail (T1-1 grammar, T0-1 footers) ------------------------------ */
 
@@ -314,69 +305,23 @@
   scrollbar-width: thin;
   scrollbar-color: var(--pn-line-2) transparent;
 }
-.cv2-root .shell-rail__servers { padding: 0 0 4px; }
-.cv2-root .shell-rail__server {
-  width: 100%;
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 5px 12px;
-  border: 0;
-  background: transparent;
-  color: var(--pn-ink-2);
-  font-family: var(--pn-ui);
-  cursor: pointer;
-  text-align: left;
-}
-.cv2-root .shell-rail__server:hover { background: var(--pn-hover); }
-.cv2-root .shell-rail__server-icon {
-  width: 26px;
-  height: 26px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: 1.5px solid transparent;
-  border-radius: 8px;
-  color: var(--pn-ink-2);
-  background: var(--pn-active);
-  font-size: 12px;
-  font-weight: 600;
-}
-.cv2-root .shell-rail__server--active .shell-rail__server-icon {
-  color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
-  border-color: var(--pn-brand);
-}
-.cv2-root .shell-rail__server-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--pn-ink);
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* The in-rail server rows (`__servers`, `__server`, `__server-icon`,
+   `__server-name`, `__server-caret`, `__server-divider`) RETIRED with
+   revision 11 — MenuRail renders none of them and `shell.test.tsx` asserts
+   `.shell-rail__servers` is null — so their rules are gone. So is the
+   printed group header (`__header`): revision 11 made group labels
+   accessible names, and no component emits the class.
+
+   The STATUS DOT survives them: it is the reachability mark the
+   SpaceSwitcher (trigger and popover) still wears. It is a flex child of
+   its row, never absolutely positioned — the old collapsed-rail rule that
+   pinned it `top/right` outlived its rows and, with the switcher as the
+   class's only wearer, could only ever re-anchor a popover dot to the
+   popover's corner (the orphaned green dot, Tarkesh's screenshot). */
 .cv2-root .shell-rail__server-status { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--pn-idle); }
 .cv2-root .shell-rail__server-status--online { background: var(--pn-run); }
 .cv2-root .shell-rail__server-status--offline { background: var(--pn-block); }
 .cv2-root .shell-rail__server-status--checking { background: var(--pn-wait); }
-.cv2-root .shell-rail__server-caret { flex: none; color: var(--pn-ink-4); font-size: 9px; }
-.cv2-root .shell-rail__server-divider { height: 1px; margin: 5px 12px 1px; background: var(--pn-line); }
-.cv2-root .shell-rail__header {
-  /* Was 12px top. Six group headers (HOME · WORKSPACE · TRACKING · COLLAB ·
-     VOICE · SETTINGS) label fourteen rows, so header chrome was costing more
-     vertical space per group than the rows it introduced — the direct reason
-     `Settings` fell 75px below the fold at 1024x768. 8px still separates the
-     groups clearly against a 12.5px row label; the eyebrow's .12em tracking
-     is what actually does the grouping work, not the whitespace. */
-  padding: 8px 12px 3px;
-  /* .kit-eyebrow supplies the mono/600/.12em uppercase face. */
-}
-.cv2-root .shell-rail__group:first-child .shell-rail__header {
-  padding-top: 2px;
-}
 .cv2-root .shell-rail__divider {
   width: 26px;
   height: 1px;
@@ -420,7 +365,10 @@
 .cv2-root .shell-rail__label {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
+  /* RECLASSIFIED (W3 sweep): destination words are the rail's voice — ui at
+     the 13px interactive floor, medium weight. Never mono, never ink-3. */
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-ink-2);
   white-space: nowrap;
   overflow: hidden;
@@ -430,11 +378,13 @@
   font-weight: 650;
   color: var(--pn-ink);
 }
+/* RECLASSIFIED (W3 sweep): an empty-group sentence is a sentence, not data —
+   ui 12, same words. */
 .cv2-root .shell-rail__empty {
   padding: 5px 12px 7px 36px;
   color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   line-height: 1.4;
 }
 .cv2-root .shell-rail__badge {
@@ -506,9 +456,10 @@
 .cv2-root .shell-rail__leaf:hover {
   background: var(--pn-hover);
 }
-.cv2-root .shell-rail__leaf .shell-rail__label {
-  font-size: 12px;
-}
+/* Leaves keep the 13px interactive floor too (W3 sweep) — their depth is
+   said by the 34px indent and the guide line, not by a smaller word. The
+   size override that held them at 12px is gone; the collapsed caption's own
+   override below still applies at 72px. */
 .cv2-root .shell-rail__leaf--active .shell-rail__label {
   font-weight: 650;
   color: var(--pn-ink);
@@ -534,29 +485,14 @@
   align-items: center;
   padding-top: 8px;
 }
-.cv2-root .shell-rail--collapsed .shell-rail__servers {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.cv2-root .shell-rail--collapsed .shell-rail__server {
-  width: 40px;
-  height: 38px;
-  min-height: 38px;
-  justify-content: center;
-  padding: 0;
-  position: relative;
-  border-radius: 7px;
-}
-.cv2-root .shell-rail--collapsed .shell-rail__server-icon { width: 30px; height: 30px; }
-.cv2-root .shell-rail--collapsed .shell-rail__server-status {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  border: 2px solid var(--pn-surface);
-}
-.cv2-root .shell-rail--collapsed .shell-rail__server-divider { width: 26px; margin: 6px auto; }
+/* The collapsed `__servers`/`__server`/`__server-icon`/`__server-divider`
+   rules retired with their rows (see above). The collapsed
+   `__server-status { position: absolute; top: 2px; right: 2px }` corner-dot
+   rule is DELIBERATELY not kept in any form: with the in-rail rows gone its
+   only reachable match was the SpaceSwitcher's dots, where "nearest
+   positioned ancestor" is the popover itself — the detached green dot in
+   the popover's top-right. A status dot is a flex child of its row, full
+   stop. */
 .cv2-root .shell-rail--collapsed .shell-rail__row {
   width: 64px;
   flex-direction: column;
@@ -718,9 +654,12 @@
   border: 0;
   border-top: 1px solid var(--pn-line);
   background: transparent;
+  /* "collapse" is a button word (W3 sweep): ui 13/500, ink-2 — the ⌘\ hint
+     beside it stays mono, it prints keys. */
   font-family: var(--pn-ui);
-  font-size: 12px;
-  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   cursor: pointer;
   text-align: left;
 }
@@ -729,8 +668,7 @@
 }
 /* L6 — unavailable is visible and explained, never hidden and never inert
    without a reason. T1-4 form A: .45 opacity + not-allowed. */
-.cv2-root .shell-rail__footer--disabled,
-.cv2-root .shell-tabbar__add:disabled {
+.cv2-root .shell-rail__footer--disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -982,20 +920,22 @@
 }
 .cv2-root .shell-notice__title {
   font-family: var(--pn-ui);
-  font-size: 12px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink);
 }
 .cv2-root .shell-notice__body {
   font-family: var(--pn-ui);
-  font-size: 11px;
+  font-size: var(--pn-fs-label);
   line-height: 1.45;
   color: var(--pn-ink-2);
 }
+/* RECLASSIFIED (W3 sweep): "dismiss" is a button word — ui at the 13 floor. */
 .cv2-root .shell-notice__dismiss {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   background: transparent;
   border: 0;
   padding: 2px 4px;
@@ -1061,14 +1001,27 @@
   display: flex;
   min-height: 0;
 }
+/* RECLASSIFIED (W3 sweep): boot/refusal copy is SENTENCES — "The node
+   refused this Space", the retry promise — so it speaks ui 13 ink-2, never
+   label-mono. Column + measure cap because the refusal card is several
+   sentences, and a flex row laid them out shoulder to shoulder. The words
+   themselves are untouched. */
 .cv2-root .shell-boot {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-micro);
-  color: var(--pn-ink-3);
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+}
+.cv2-root .shell-boot > * {
+  max-width: 60ch;
 }
 
 /* --- First-run welcome (zero spaces) -------------------------------------
@@ -1124,10 +1077,13 @@
 .cv2-root .shell-welcome__cta {
   align-self: flex-start;
   margin-top: 8px;
+  /* Kit primary grammar (W3 sweep): ui 13/600 on the 32px row. */
   font-family: var(--pn-ui);
-  font-size: 12.5px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  padding: 9px 16px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 8px 16px;
   border: 1px solid var(--pn-ink);
   border-radius: var(--pn-r-sm);
   background: var(--pn-ink);
@@ -1138,10 +1094,12 @@
   background: var(--pn-x-btn-ink-hover);
   border-color: var(--pn-x-btn-ink-hover);
 }
+/* RECLASSIFIED (W3 sweep): the note prints the boot error — a sentence. */
 .cv2-root .shell-welcome__note {
   margin: 4px 0 0;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-micro);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: 1.5;
   color: var(--pn-ink-3);
 }
 
@@ -1179,7 +1137,7 @@
 }
 .cv2-root .shell-empty__none,
 .cv2-root .shell-empty__hint {
-  font-size: 12.5px;
+  font-size: var(--pn-fs-sm);
   color: var(--pn-ink-3);
   margin: 0;
 }
@@ -1192,7 +1150,7 @@
   max-width: 480px;
 }
 .cv2-root .shell-empty__lede {
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   line-height: 1.5;
   color: var(--pn-ink-2);
   margin: 0;
@@ -1203,13 +1161,16 @@
   margin-top: 2px;
 }
 .cv2-root .shell-empty__cta-btn {
+  /* Kit compact grammar (W3 sweep): 28px, bordered, r-sm, ui 13/600. */
   font-family: var(--pn-ui);
-  font-size: 12px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
+  min-height: 28px;
+  box-sizing: border-box;
   color: var(--pn-ink-2);
   border: 1px solid var(--pn-line-2);
-  border-radius: 6px;
-  padding: 5px 12px;
+  border-radius: var(--pn-r-sm);
+  padding: 4px 12px;
   background: var(--pn-card);
   cursor: pointer;
   white-space: nowrap;
@@ -1255,20 +1216,26 @@
 .cv2-root .shell-empty__group {
   min-width: 0;
 }
+/* RECLASSIFIED (W3 sweep): the group title is an EYEBROW — caps 11/700 with
+   the house tracking, not label-mono. Its count child stays mono-data. */
 .cv2-root .shell-empty__group-title {
   display: flex;
   align-items: center;
   gap: 7px;
   margin: 0 8px 3px;
   color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.055em;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
 }
 .cv2-root .shell-empty__group-count {
   color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  letter-spacing: normal;
   font-variant-numeric: tabular-nums;
 }
 .cv2-root .shell-empty__roster {
@@ -1307,15 +1274,18 @@
 .cv2-root .shell-empty__dot--block { background: var(--pn-block); }
 .cv2-root .shell-empty__dot--idle { background: transparent; border: 1.5px solid var(--pn-ink-4); }
 .cv2-root .shell-empty__name {
-  font-size: 12.5px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink);
   flex: none;
 }
-/* Status is colour + WORD, always (C8/L10). */
+/* Status is colour + WORD, always (C8/L10). RECLASSIFIED (W3 sweep): the
+   word is a word — ui 11/600; the tone colours are unchanged. The meta and
+   record beside it stay mono: model names and recorded status readouts are
+   data. */
 .cv2-root .shell-empty__word {
-  font-family: var(--pn-mono);
-  font-size: 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
   flex: none;
 }
@@ -1333,17 +1303,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* RECLASSIFIED (W3 sweep): "+N more in Sessions" is a sentence — ui 12. */
 .cv2-root .shell-empty__more {
   margin: 3px 8px 0 26px;
   color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
 }
 .cv2-root .shell-empty__keys {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-4);
   margin: 0;
 }
@@ -1378,9 +1349,11 @@
   padding: 11px 14px 9px;
   border-bottom: 1px solid var(--pn-line);
 }
-.cv2-root .ls__title { font-size: 15px; font-weight: 600; color: var(--pn-ink); }
+.cv2-root .ls__title { font-size: var(--pn-fs-title); font-weight: 600; color: var(--pn-ink); }
+/* RECLASSIFIED (W3 sweep): the head hint and the FROM caption are words and
+   sentences — ui 11, same text. */
 .cv2-root .ls__hint,
-.cv2-root .ls__caption { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+.cv2-root .ls__caption { font-family: var(--pn-ui); font-size: var(--pn-fs-micro); color: var(--pn-ink-4); }
 .cv2-root .ls__spacer { flex: 1; }
 .cv2-root .ls__x {
   background: transparent; border: 0; color: var(--pn-ink-3);
@@ -1391,13 +1364,15 @@
   padding: 8px 14px; border-bottom: 1px solid var(--pn-line);
   background: var(--pn-brand-soft);
 }
+/* Eyebrow grammar (W3 sweep): caps 11/700 — the sheet's section heads join
+   the house eyebrow scale instead of a private 9.5px one. */
 .cv2-root .ls__eyebrow {
-  font-family: var(--pn-caps); font-size: 9.5px; font-weight: 700;
+  font-family: var(--pn-caps); font-size: var(--pn-fs-micro); font-weight: 700;
   letter-spacing: var(--pn-track-label); color: var(--pn-ink-3);
 }
 .cv2-root .ls__chip {
   border: 1px solid var(--pn-line); border-radius: 6px; padding: 2px 8px;
-  font-size: 11.5px; color: var(--pn-ink-2); background: var(--pn-card);
+  font-size: var(--pn-fs-label); color: var(--pn-ink-2); background: var(--pn-card);
 }
 /* The ONLY scrolling region — header, FROM and footer stay pinned so the
    commit control is reachable however long the project list grows. */
@@ -1411,7 +1386,7 @@
 .cv2-root .ls__search {
   width: 100%; padding: 6px 10px;
   background: var(--pn-card); border: 1px solid var(--pn-line);
-  border-radius: 8px; font-family: var(--pn-ui); font-size: 12px;
+  border-radius: 8px; font-family: var(--pn-ui); font-size: var(--pn-fs-sm);
   color: var(--pn-ink);
 }
 .cv2-root .ls__search:focus { outline: none; border-color: var(--pn-brand); }
@@ -1423,10 +1398,12 @@
   padding: 2px;
   scrollbar-width: thin;
 }
+/* RECLASSIFIED (W3 sweep): empty-state sentences speak ui 12 — the words
+   themselves are untouched. */
 .cv2-root .ls__roster-empty {
   margin: 0; padding: 8px 10px;
   border: 1px dashed var(--pn-line-2); border-radius: 8px;
-  font-family: var(--pn-mono); font-size: 9px; line-height: 1.5;
+  font-family: var(--pn-ui); font-size: var(--pn-fs-label); line-height: 1.5;
   color: var(--pn-ink-3); background: var(--pn-hover);
 }
 .cv2-root .ls__row {
@@ -1452,9 +1429,11 @@
 }
 .cv2-root .ls__glyph { color: var(--pn-ink-3); font-size: 12px; flex: none; }
 .cv2-root .ls__rowtext { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.cv2-root .ls__rowname { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); }
-.cv2-root .ls__rowname--quiet { font-weight: 400; color: var(--pn-ink-2); font-size: 12px; }
-.cv2-root .ls__rowsub { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-3); }
+.cv2-root .ls__rowname { font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink); }
+.cv2-root .ls__rowname--quiet { font-weight: 400; color: var(--pn-ink-2); font-size: var(--pn-fs-sm); }
+/* RECLASSIFIED (W3 sweep): row subtexts are descriptions ("approval and
+   sandbox posture", identity copy) — ui 11, not label-mono. */
+.cv2-root .ls__rowsub { font-family: var(--pn-ui); font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
 .cv2-root .ls__rowsub--ok { color: var(--pn-run); }
 .cv2-root .ls__rowsub--bad { color: var(--pn-block); }
 /* The configuration dropdowns. Native selects ignore the theme entirely
@@ -1466,7 +1445,7 @@
   appearance: none;
   width: 100%; margin-top: 6px;
   padding: 6px 30px 6px 10px;
-  font-family: var(--pn-ui); font-size: 12px;
+  font-family: var(--pn-ui); font-size: var(--pn-fs-sm);
   color: var(--pn-ink);
   background: var(--pn-card)
     url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238C8470' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
@@ -1487,14 +1466,17 @@
 }
 .cv2-root .ls__check--radio { border-radius: 50%; }
 .cv2-root .ls__check--off { background: transparent; border: 1.5px solid var(--pn-line-2); }
+/* RECLASSIFIED (W3 sweep): "change" is a button word — ui 13/600. */
 .cv2-root .ls__change {
-  font-family: var(--pn-mono); font-size: 9px; color: var(--pn-brand-2);
+  font-family: var(--pn-ui); font-size: var(--pn-fs-sm); font-weight: 600;
+  color: var(--pn-brand-2);
   background: transparent; border: 0; cursor: pointer; flex: none;
 }
-/* The resolution chain (D51). Brass marks the WINNER — D53. */
+/* The resolution chain (D51). Brass marks the WINNER — D53. The step names
+   are words ("task", "profile") — ui 11 (W3 sweep). */
 .cv2-root .ls__chain { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px; }
 .cv2-root .ls__chainstep { display: inline-flex; align-items: center; gap: 5px; }
-.cv2-root .ls__step { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+.cv2-root .ls__step { font-family: var(--pn-ui); font-size: var(--pn-fs-micro); color: var(--pn-ink-4); }
 .cv2-root .ls__step--won {
   font-weight: 600; color: var(--pn-brand-2);
   background: var(--pn-brand-soft); border-radius: var(--pn-r-pill); padding: 1px 7px;
@@ -1504,11 +1486,13 @@
 .cv2-root .ls__profile-empty {
   margin: 2px 0 0; padding: 8px 10px;
   border: 1px dashed var(--pn-line-2); border-radius: 8px;
-  font-family: var(--pn-mono); font-size: 9px; line-height: 1.5;
+  font-family: var(--pn-ui); font-size: var(--pn-fs-label); line-height: 1.5;
   color: var(--pn-ink-3); background: var(--pn-hover);
 }
+/* Still the quietest grey — the canvas's deliberate tone — but a SENTENCE,
+   so ui 11 (W3 sweep). */
 .cv2-root .ls__pinned {
-  font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4);
+  font-family: var(--pn-ui); font-size: var(--pn-fs-micro); color: var(--pn-ink-4);
   line-height: 1.5; padding: 0 2px;
 }
 /* Refusal renders IN the sheet, never as a toast (T5-5). */
@@ -1519,28 +1503,35 @@
 }
 .cv2-root .ls__refusalhead {
   display: flex; align-items: center; gap: 7px;
-  font-size: 12.5px; font-weight: 600; color: var(--pn-block);
+  font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-block);
 }
 .cv2-root .ls__refusaldot {
   width: 9px; height: 9px; border-radius: 50%; background: var(--pn-block); flex: none;
 }
-.cv2-root .ls__refusalbody { font-size: 11.5px; line-height: 1.55; color: var(--pn-ink-2); }
+.cv2-root .ls__refusalbody { font-size: var(--pn-fs-label); line-height: 1.55; color: var(--pn-ink-2); }
 .cv2-root .ls__foot {
   flex: none; display: flex; align-items: center; gap: 8px;
   padding: 10px 14px; border-top: 1px solid var(--pn-line); background: var(--pn-surface);
 }
-.cv2-root .ls__capacity { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-3); }
+/* Capacity stays mono — it is counts ("3 slots, 1 in use"). */
+.cv2-root .ls__capacity { font-family: var(--pn-mono); font-size: var(--pn-fs-fine); color: var(--pn-ink-3); }
 .cv2-root .ls__slots { color: var(--pn-run); font-weight: 600; }
+/* Commit controls on the kit compact grammar (W3 sweep): 28px, r-sm,
+   ui 13/600, hover fill. */
 .cv2-root .ls__cancel {
-  padding: 5px 12px; border: 1px solid var(--pn-line-2); border-radius: 7px;
-  font-size: 12px; font-weight: 600; color: var(--pn-ink-2);
+  min-height: 28px; box-sizing: border-box;
+  padding: 4px 12px; border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-sm);
+  font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink-2);
   background: var(--pn-card); cursor: pointer;
 }
+.cv2-root .ls__cancel:hover:not(:disabled) { background: var(--pn-hover); }
 .cv2-root .ls__launch {
-  padding: 5px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  min-height: 28px; box-sizing: border-box;
+  padding: 4px 14px; border-radius: var(--pn-r-sm); font-size: var(--pn-fs-sm); font-weight: 600;
   background: var(--pn-brand-soft); border: 1px solid var(--pn-brand);
   color: var(--pn-brand-2); cursor: pointer;
 }
+.cv2-root .ls__launch:hover:not(:disabled) { border-color: var(--pn-brand-2); }
 
 /*
  * DISPATCH — the secondary commit, and it must NOT look like Launch.
@@ -1553,7 +1544,8 @@
  * loses a user's picks.
  */
 .cv2-root .ls__dispatch {
-  padding: 5px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  min-height: 28px; box-sizing: border-box;
+  padding: 4px 14px; border-radius: var(--pn-r-sm); font-size: var(--pn-fs-sm); font-weight: 600;
   background: none; border: 1px solid var(--pn-line-2);
   color: var(--pn-ink-2); cursor: pointer;
 }
@@ -1562,18 +1554,21 @@
    the control is not (L6/D28). Only the affordance dims. */
 .cv2-root .ls__dispatch[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
 
-/* The sheet's copy of the quick access toggle — same words, same colours. */
+/* The sheet's copy of the quick access toggle — same words, same colours.
+   RECLASSIFIED (W3 sweep): the posture NAME is a word on a button — ui
+   13/600. The pill shape stays; it is the mode chip's identity. */
 .cv2-root .ls__accessbtn {
   appearance: none;
   align-self: flex-start;
   margin: 2px 0;
-  padding: 2px 9px;
+  padding: 3px 10px;
   border-radius: 999px;
   border: 1px solid var(--pn-line-2);
   background: var(--pn-card);
   color: var(--pn-ink-2);
-  font-family: var(--pn-mono);
-  font-size: 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 .cv2-root .ls__accessbtn:hover { border-color: var(--pn-ink-3); color: var(--pn-ink); }
@@ -1623,14 +1618,17 @@
 }
 .cv2-root .shell-switcher__monogram--small { width: 20px; height: 20px; font-size: 11px; border-radius: 5px; }
 .cv2-root .shell-switcher__names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+/* The space NAME is the chip's primary label: ui 13/600 (W3 sweep). */
 .cv2-root .shell-switcher__space {
   overflow: hidden;
   color: var(--pn-ink);
-  font-size: 12.5px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The server line stays MONO deliberately: "local · this machine" is
+   machine meta, which is data (W3 sweep classification). */
 .cv2-root .shell-switcher__server-line {
   display: flex;
   align-items: center;
@@ -1638,7 +1636,7 @@
   overflow: hidden;
   color: var(--pn-ink-3);
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   white-space: nowrap;
 }
 .cv2-root .shell-switcher__caret { flex: none; color: var(--pn-ink-4); font-size: 9px; }
@@ -1649,13 +1647,14 @@
   z-index: 40;
   min-width: 220px;
   max-width: 280px;
-  padding: 4px;
+  padding: 6px;
   border: 1px solid var(--pn-line);
   border-radius: 10px;
   background: var(--pn-surface);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--pn-ink) 14%, transparent);
 }
 .cv2-root .shell-switcher__section + .shell-switcher__section { margin-top: 2px; }
+/* Popover rows are menu items: ui 13/500 (W3 sweep). */
 .cv2-root .shell-switcher__server,
 .cv2-root .shell-switcher__space-row,
 .cv2-root .shell-switcher__add {
@@ -1669,7 +1668,8 @@
   background: transparent;
   color: var(--pn-ink);
   font-family: var(--pn-ui);
-  font-size: 12.5px;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
 }
@@ -1683,8 +1683,16 @@
 .cv2-root .shell-switcher__server--active { cursor: default; }
 .cv2-root .shell-switcher__server--active:hover { background: transparent; }
 .cv2-root .shell-switcher__server--active .shell-switcher__server-name { color: var(--pn-ink-2); }
+/* THE ORPHANED GREEN DOT (Tarkesh's screenshot, W3). The status dot renders
+   AFTER the name in the row, and `flex: 1` here pushed it across the whole
+   220-280px popover to the row's far edge — on the first (active, online)
+   server that reads as a stray green dot floating in the popover's top-right,
+   nowhere near the word it qualifies. `flex: 0 1 auto` keeps the ellipsis
+   behaviour (it can still shrink past min-width: 0) and anchors the dot
+   directly beside the server name, where a status mark belongs (C8/L10:
+   colour rides WITH its subject). */
 .cv2-root .shell-switcher__server-name {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   font-weight: 600;
@@ -1694,11 +1702,12 @@
 .cv2-root .shell-switcher__space-row { padding-left: 14px; }
 .cv2-root .shell-switcher__space-row--active { color: var(--pn-brand-2); font-weight: 600; }
 .cv2-root .shell-switcher__check { width: 12px; flex: none; color: var(--pn-brand-2); font-size: 11px; }
+/* RECLASSIFIED (W3 sweep): "switch to see its spaces" is a sentence. */
 .cv2-root .shell-switcher__hint {
   padding: 2px 8px 5px 33px;
   color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
 }
 .cv2-root .shell-switcher__footer {
   display: flex;
@@ -1707,7 +1716,9 @@
   padding-top: 3px;
   border-top: 1px solid var(--pn-line-2);
 }
-.cv2-root .shell-switcher__add { flex: 1; color: var(--pn-ink-3); font-size: 11.5px; }
+/* Live add-rows are interactive words: ink-2 at the 13 floor (W3 sweep) —
+   the aria-disabled treatment below still dims the unhosted form. */
+.cv2-root .shell-switcher__add { flex: 1; color: var(--pn-ink-2); font-size: var(--pn-fs-sm); }
 /* REAL disabled treatment (D28): the row stays focusable and carries its
    reason as a title, but it no longer wears its live sibling's clothes —
    dimmed, no hover wash, not-allowed cursor. Ink-4 alone was not legible as
@@ -1734,9 +1745,10 @@
 .cv2-root .shell-tabbar__bell {
   display: grid;
   place-items: center;
-  /* 28px — the bar's control rhythm (W3), same as the palette chip beside it. */
-  width: 28px;
-  height: 28px;
+  /* 32px — the bar's control rhythm (W3 sweep), same as the palette chip
+     beside it. */
+  width: 32px;
+  height: 32px;
   box-sizing: border-box;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -1746,7 +1758,7 @@
   cursor: pointer;
   transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); box-shadow: var(--pn-sh-sm); }
+.cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); background: var(--pn-hover); box-shadow: var(--pn-sh-sm); }
 .cv2-root .shell-tabbar__bell[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
 
 /* Kinetic (W3) — the bar's hover-lift transitions, stilled for anyone who

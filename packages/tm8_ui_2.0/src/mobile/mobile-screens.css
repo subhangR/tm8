@@ -698,13 +698,28 @@
      surface; a floor is what keeps it one when the content is short. */
   height: 72%;
   max-height: 88%;
-  background: var(--pn-surface);
+  /* KINETIC GLASS (Master Spec §6). The raised surface is translucent card
+     over a live blur, the same 92% + 12px recipe `shell/palette.css .pal`
+     ships — one glass, not two. Colour resolves through the token and the mix,
+     never a literal (§14). `-webkit-backdrop-filter` first, because the phone
+     this shell exists for is most often a WebKit. */
+  background: color-mix(in srgb, var(--pn-card) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border-top: 1px solid var(--pn-line);
-  border-top-left-radius: 14px;
-  border-top-right-radius: 14px;
+  /* 28px is the spec's number for the sheet's top corners. The radius scale
+     tops out at --pn-r-lg (14px) and minting a token for one surface would be
+     a second scale, so the measured literal stays local — same D5 treatment
+     as the palette's 12px. */
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
   box-shadow: var(--pn-sh-pop);
   padding-bottom: var(--mobile-safe-bottom, 0px);
-  animation: msheet-rise var(--pn-dur-base) var(--pn-ease-out);
+  /* The entrance is the spec's 220ms slide-up. The duration ramp stops at
+     --pn-dur-base (180ms) and this surface travels the whole frame height, so
+     it is given the spec's own literal rather than a token that means
+     something faster. Reduced motion kills it below, end state kept. */
+  animation: msheet-rise 220ms var(--pn-ease-out);
 }
 
 /* THE VARIANT THAT GIVES UP THE STRIP, for the surfaces that carry a composer.
@@ -763,6 +778,9 @@
   border-bottom: 1px solid var(--pn-line);
 }
 
+/* The drag affordance: a 36x4 hairline pill (Master Spec §6 numbers), drawn in
+   the hairline ink so it reads as furniture rather than as a control — the ✕
+   beside it is the real exit. */
 .msheet__grip {
   position: absolute;
   top: 7px;
@@ -770,7 +788,7 @@
   transform: translateX(-50%);
   width: 36px;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--pn-r-pill);
   background: var(--pn-line-2);
 }
 
@@ -965,11 +983,17 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  transition: transform var(--pn-dur-fast) var(--pn-ease-standard);
+  transition: transform var(--pn-dur-fast) var(--pn-ease-standard),
+    background var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
+/* The pressed state wears the kit grammar's own brand-press ink
+   (`kit.css .k-btn--brand:active`), so the one primary verb on the phone
+   answers a press exactly as every Run/Launch verb on the desktop does —
+   same mix, same tokens, plus the touch-scale the desktop has no thumb for. */
 .cv2-root[data-shell='mobile'] .ev-fab:active {
   transform: scale(0.94);
+  background: color-mix(in srgb, var(--pn-brand-2) 88%, var(--pn-ink));
 }
 
 .cv2-root[data-shell='mobile'] .ev-fab:focus-visible {
@@ -1337,4 +1361,34 @@
 
 .cv2-root[data-shell='mobile'] .lp__sheetmenu .lp__filterempty {
   padding-inline: var(--pn-space-3);
+}
+
+/* ==========================================================================
+   10. THE BOARD ON A PHONE — COLUMNS SNAP, ONE PER FLICK
+
+   Master Spec §6: horizontal snap-scroll columns. The board's scroller class
+   (`.lp__board-cols`) and its columns live in `panels.css`, WHICH IS A SWEPT
+   FILE THIS WAVE MAY NOT EDIT — so the snap is delivered here, restated under
+   this file's own `[data-shell='mobile']` scope exactly as sections 1-9
+   restate every other desktop rule. Higher specificity, desktop untouched,
+   and reverting the phone behaviour is deleting this block.
+
+   `x mandatory`, NOT `both`: the scroller pans both axes (`overflow: auto` —
+   columns run off the bottom as well as the right), and snapping the Y axis
+   would fight the reader mid-column. Only the horizontal axis has positions
+   worth snapping to — a 236px column on a 390px screen is most of the screen,
+   and a flick should land ON a column, not between two.
+
+   `scroll-padding-inline-start` mirrors the scroller's own 8px gutter
+   (`panels.css .lp__board-cols` padding) so a snapped column sits at the
+   visible edge rather than 8px under it. Restated as the same number the
+   desktop rule ships; if that gutter moves, this is the one line to follow it.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp__board-cols {
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline-start: 8px;
+}
+
+.cv2-root[data-shell='mobile'] .lp__board-col {
+  scroll-snap-align: start;
 }

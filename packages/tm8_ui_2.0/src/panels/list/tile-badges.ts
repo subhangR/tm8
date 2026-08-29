@@ -25,12 +25,23 @@ import type { PillTone } from '../../kit';
  * happened to work.
  */
 
+/**
+ * THE SLOT IS ALSO THE TYPOGRAPHY CHANNEL (I3). Consumers render each slot
+ * into its own element with its own class, and the classes disagree on
+ * purpose: `meta` is the MONO DATA voice (models, counts, dates — the
+ * standard tile's `.lp__meta`, the session tile's `.pn-st__model` metric),
+ * while `status` is a WORD wearing its tone at 600, never mono (`.lp__word
+ * kit-pill--{tone}`). So a source routes a fact to a face by choosing its
+ * slot: 'model' MUST stay `meta` and the status arms MUST stay `status`, or
+ * a machine id starts reading as a state (or a state as debug output). The
+ * channel split is pinned by tile-badges.test.ts.
+ */
 export type TileSlot =
-  /** Line 1: the leading dot + the trailing word pill. */
+  /** Line 1: the leading dot + the trailing word pill. Non-mono, toned, 600. */
   | { slot: 'status'; word: string; tone: PillTone; dot: 'solid' | 'hollow' }
   /** Line 2 right: the small radius-4 tag (priority). */
   | { slot: 'tag'; label: string; tone: PillTone }
-  /** Line 2 left: mono facts, joined with a middot. */
+  /** Line 2 left: mono DATA facts, joined with a middot. */
   | { slot: 'meta'; text: string }
   /** Line 1: provenance avatar. */
   | { slot: 'avatar'; actorId: string; label: string; provenance: 'human' | 'agent'; src?: string | null };

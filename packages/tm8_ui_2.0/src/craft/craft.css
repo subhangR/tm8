@@ -113,12 +113,18 @@
   min-width: 0;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--pn-r-sm);
   padding: 1px 6px;
-  font: inherit;
-  color: var(--pn-ink-1);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
   text-align: left;
   cursor: pointer;
+}
+
+.crf-pick:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 .crf-pick:hover,
@@ -129,7 +135,7 @@
 
 .crf-pick__caret {
   color: var(--pn-ink-3);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   flex: none;
 }
 
@@ -141,9 +147,12 @@
   min-width: 0;
 }
 
+/* The teammate label riding the picker button: part of an interactive control,
+   so it sits at the interactive floor (fs-sm / ink-2), not annotation gray. */
 .crf-pick__meta {
-  color: var(--pn-ink-3);
-  font-size: 11px;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   flex: none;
   white-space: nowrap;
 }
@@ -164,50 +173,81 @@
 }
 
 .crf-pick--graph select:focus-visible {
-  outline: 1px solid var(--pn-brand);
-  outline-offset: 2px;
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
   border-radius: 4px;
 }
 
+/* Both pane-head verbs wear the kit button grammar's COMPACT (28px) form —
+   the 30px row cannot hold the 32px base. Metrics mirror `.k-btn`/`.k-btn--sm`
+   in kit.css: border-box, r-sm, ui 600, the one --pn-focus ring, hover fill. */
 .crf-pane-head__plus {
   flex: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
   background: var(--pn-card);
-  color: var(--pn-ink-2);
-  border: 1px solid var(--pn-line);
-  border-radius: 6px;
-  padding: 2px 8px;
-  font: inherit;
-  line-height: 1.4;
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .crf-pane-head__plus:hover {
-  border-color: var(--pn-ink-3);
-  color: var(--pn-ink-1);
+  background: var(--pn-hover);
+}
+
+.crf-pane-head__plus:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 /* Orchestrate — the studio's one committing verb, on the row that names the
-   blueprint it commits. Sized off `.crf-pane-head__plus` so the two controls
-   read as one cluster inside a 30px row. */
+   blueprint it commits. The BRAND fill (kit's `.k-btn--brand`): text is the
+   paper token so it stays AA on the lifted dark-theme blue, hover steps to
+   brand-2, and disabled holds the rest fill under the dim. */
 .crf-pane-head__orchestrate {
   flex: none;
-  background: var(--pn-card);
-  color: var(--pn-ink-1);
-  border: 1px solid var(--pn-line);
-  border-radius: 6px;
-  padding: 2px 8px;
-  font: inherit;
-  line-height: 1.4;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .crf-pane-head__orchestrate:hover:not(:disabled) {
-  border-color: var(--pn-ink-3);
+  background: var(--pn-brand-2);
+}
+
+.crf-pane-head__orchestrate:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 .crf-pane-head__orchestrate:disabled {
-  opacity: 0.5;
-  cursor: default;
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* -- the conversation popover -------------------------------------------- */
@@ -232,11 +272,17 @@
   margin: 8px;
   padding: 6px 8px;
   font: inherit;
-  font-size: 13px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   color: var(--pn-ink-1);
   background: var(--pn-paper);
   border: 1px solid var(--pn-line);
-  border-radius: 6px;
+  border-radius: var(--pn-r-sm);
+}
+
+.crf-pop__find:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 .crf-pop__list {
@@ -246,9 +292,13 @@
   padding: 0 4px 4px;
 }
 
+/* Empty state: a sentence to a person — ui at the interactive floor, per the
+   reclassification law (fs-sm / 500 / ink-2), never annotation-gray data. */
 .crf-pop__hollow {
-  color: var(--pn-ink-3);
-  font-size: 12px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   padding: 8px 10px 12px;
   margin: 0;
 }
@@ -258,9 +308,12 @@
   flex-direction: column;
 }
 
+/* Group headings are EYEBROWS: the caps face at the eyebrow spec (11/700). */
 .crf-pop__group-label {
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
   color: var(--pn-ink-3);
   padding: 8px 8px 4px;
@@ -294,7 +347,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -309,33 +363,39 @@
   background: var(--pn-brand);
 }
 
+/* Row meta is DATA (teammate, recency) — it may stay quiet, sizes via tokens. */
 .crf-pop__row-meta {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
   overflow: hidden;
   white-space: nowrap;
 }
 
 .crf-pop__mode {
-  font-size: 9px;
-  letter-spacing: 0.06em;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-tick);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   border: 1px solid var(--pn-line);
   border-radius: 4px;
   padding: 0 4px;
 }
 
+/* The footer verb is a button-word: ui / fs-sm / 500 / ink-2 per the law. */
 .crf-pop__scope {
   flex: none;
   background: var(--pn-surface);
   border: none;
   border-top: 1px solid var(--pn-line);
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
   font: inherit;
-  font-size: 11px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   text-align: left;
   padding: 8px 12px;
   cursor: pointer;
@@ -343,6 +403,11 @@
 
 .crf-pop__scope:hover {
   color: var(--pn-ink-1);
+}
+
+.crf-pop__scope:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
 }
 
 /* -- the blueprint viewport ---------------------------------------------- */
@@ -382,22 +447,36 @@
   gap: 4px;
 }
 
+/* Zoom controls share the compact grammar footprint: 28px box, r-sm,
+   ui 600 label size, hover FILL (not just a border shift), one focus ring. */
 .crf-zoom__btn {
+  box-sizing: border-box;
   min-width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--pn-card);
   color: var(--pn-ink-2);
   border: 1px solid var(--pn-line);
-  border-radius: 6px;
-  padding: 3px 6px;
+  border-radius: var(--pn-r-sm);
+  padding: 0 6px;
   font: inherit;
-  font-size: 12px;
-  line-height: 1.4;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
 }
 
 .crf-zoom__btn:hover:not(:disabled) {
-  border-color: var(--pn-ink-3);
+  background: var(--pn-hover);
   color: var(--pn-ink-1);
+}
+
+.crf-zoom__btn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 .crf-zoom__btn:disabled {
@@ -409,15 +488,19 @@
   padding: 8px;
 }
 
+/* Canvas empty state: ui at the interactive floor (fs-sm / 500 / ink-2). */
 .crf-empty {
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   padding: 24px;
   margin: 0;
 }
 
 .crf-note {
   color: var(--pn-ink-3);
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   padding: 0 24px 12px;
   margin: 0;
 }
@@ -458,5 +541,5 @@
    for — Craft was borrowing a class from a screen it has nothing to do with,
    and the borrow only held while that screen kept its stylesheet alive. */
 .crf-line__labels {
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
 }

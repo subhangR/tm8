@@ -515,3 +515,390 @@
 .cv2-root .kit-resizer:focus-visible {
   outline: none;
 }
+
+/* ==========================================================================
+   KINETIC EXPERIENCE GRAMMAR — the `k-` vocabulary every screen adopts in
+   the next sweep: ONE button grammar, ONE input grammar, ONE field label,
+   ONE icon rhythm. Additive beside the `kit-` atoms above. Colors resolve
+   through tokens only (§14 hex ban), focus is the one --pn-focus ring, and
+   disabled is honest — aria-disabled + a stated reason, never bare disabled.
+   ========================================================================== */
+
+/* --- BUTTON GRAMMAR ------------------------------------------------------- */
+/* .k-btn — the base button box every tm8 action verb sits on (32px row). */
+.cv2-root .k-btn {
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+/* Same ONE focus grammar as every kit interactive (see .kit-chip above). */
+.cv2-root .k-btn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* Honest disabled (Btn.disabledReason): dimmed, not-allowed. The per-variant
+   rules further down pin each dead variant's rest surface, so a disabled
+   button never glows on hover — same contract as .kit-chip/.kit-iconbtn. */
+.cv2-root .k-btn[aria-disabled='true'] {
+  color: var(--pn-ink-4);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* .k-btn--primary — the filled-ink default action (references' black fill). */
+.cv2-root .k-btn--primary {
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+.cv2-root .k-btn--primary:hover {
+  background: color-mix(in srgb, var(--pn-ink) 85%, var(--pn-paper));
+}
+.cv2-root .k-btn--primary:active {
+  background: color-mix(in srgb, var(--pn-ink) 92%, var(--pn-paper));
+}
+
+/* .k-btn--brand — the blue primary, reserved for Run/Launch verbs. Text is
+   the paper token: white in light, and the theme-correct near-black on the
+   lifted dark-theme blue — AA in both themes where literal white is not. */
+.cv2-root .k-btn--brand {
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+}
+.cv2-root .k-btn--brand:hover {
+  background: var(--pn-brand-2);
+}
+.cv2-root .k-btn--brand:active {
+  background: color-mix(in srgb, var(--pn-brand-2) 88%, var(--pn-ink));
+}
+
+/* .k-btn--secondary — the bordered neutral action on a card surface. */
+.cv2-root .k-btn--secondary {
+  background: var(--pn-card);
+  border-color: var(--pn-line-2);
+  color: var(--pn-ink);
+}
+.cv2-root .k-btn--secondary:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .k-btn--secondary:active {
+  background: var(--pn-active);
+}
+
+/* .k-btn--ghost — the quiet inline action: no chrome until hovered. */
+.cv2-root .k-btn--ghost {
+  background: transparent;
+  color: var(--pn-ink-2);
+}
+.cv2-root .k-btn--ghost:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .k-btn--ghost:active {
+  background: var(--pn-active);
+}
+
+/* Dead variants hold their rest surface — filled ones keep their fg (the dim
+   comes from the base opacity), bordered/ghost ones lose the hover tint. */
+.cv2-root .k-btn--primary[aria-disabled='true'],
+.cv2-root .k-btn--primary[aria-disabled='true']:hover,
+.cv2-root .k-btn--primary[aria-disabled='true']:active {
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+.cv2-root .k-btn--brand[aria-disabled='true'],
+.cv2-root .k-btn--brand[aria-disabled='true']:hover,
+.cv2-root .k-btn--brand[aria-disabled='true']:active {
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+}
+.cv2-root .k-btn--secondary[aria-disabled='true']:hover,
+.cv2-root .k-btn--secondary[aria-disabled='true']:active {
+  background: var(--pn-card);
+}
+.cv2-root .k-btn--ghost[aria-disabled='true']:hover,
+.cv2-root .k-btn--ghost[aria-disabled='true']:active {
+  background: transparent;
+  color: var(--pn-ink-4);
+}
+
+/* .k-btn--sm — the 28px compact form for dense rows and toolbars. */
+.cv2-root .k-btn--sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--pn-fs-label);
+}
+
+/* --- INPUT GRAMMAR -------------------------------------------------------- */
+/* .k-input — the one text-field chrome: card surface, line-2 edge, sm face. */
+.cv2-root .k-input {
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+.cv2-root .k-input::placeholder {
+  color: var(--pn-ink-4);
+}
+.cv2-root .k-input:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* .k-input--sm — the 28px field, pairs with .k-btn--sm on one row. */
+.cv2-root .k-input--sm {
+  height: 28px;
+  font-size: var(--pn-fs-label);
+}
+
+/* .k-select — a <select> wearing the input chrome. `appearance: none` drops
+   the native arrow; the ▾ is drawn by .k-selectwrap::after below, so no
+   background-image and nothing for the hex ban to police. */
+.cv2-root .k-select {
+  box-sizing: border-box;
+  appearance: none;
+  height: 32px;
+  padding: 0 24px 0 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+.cv2-root .k-select:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* .k-selectwrap — the positioning shell that paints the select's ▾. */
+.cv2-root .k-selectwrap {
+  position: relative;
+  display: inline-flex;
+}
+.cv2-root .k-selectwrap::after {
+  content: '▾';
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+  line-height: 1;
+}
+
+/* --- LABEL GRAMMAR -------------------------------------------------------- */
+/* .k-label — the field caption: Figtree caps micro-label over any control. */
+.cv2-root .k-label {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-2);
+}
+
+/* --- ICON RHYTHM ---------------------------------------------------------- */
+/* .k-icon-16 / .k-icon-18 — the two VectorIcon sizes the grammar allows:
+   16 inside 28–32px controls and meta rows, 18 for standalone toolbar marks. */
+.cv2-root .k-icon-16 {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.cv2-root .k-icon-18 {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* The grammar animates nothing; its only motion is the fast surface/ink
+   transition, and reduced-motion users get instant state changes instead. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .k-btn {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   KINETIC MOTION + COLOR RICHNESS — wave-3 opt-in `k-` utilities.
+   Motion is OPT-IN BY CLASS, never a blanket transition: the shell's
+   no-motion-status law means STATUS SEMANTICS never animate — a pill
+   changing state snaps, so nothing here targets a status element and no
+   selector below applies without an author choosing it. Every animated rule
+   collapses to its instant end state under prefers-reduced-motion: reduce
+   (the one media block at the end of this section — keep new motion in it).
+   Colors resolve through tokens/color-mix only (§14 hex ban).
+   ========================================================================== */
+
+/* Entrance: fade + 4px rise (consumed by .k-enter). */
+@keyframes kEnter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Popover entrance: fade + scale .98→1; the spring ease adds the overshoot. */
+@keyframes kEnterPop {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+/* Skeleton shimmer: the highlight band sweeps left→right forever. */
+@keyframes kShimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* .k-enter — entrance for panels/cards appearing: fade + 4px rise, once. */
+.cv2-root .k-enter {
+  animation: kEnter var(--pn-dur-base) var(--pn-ease-out);
+  animation-fill-mode: both;
+}
+
+/* .k-enter-pop — popover/menu entrance: scale .98→1 + fade on the spring ease. */
+.cv2-root .k-enter-pop {
+  animation: kEnterPop var(--pn-dur-base) var(--pn-ease-spring);
+  animation-fill-mode: both;
+}
+
+/* .k-lift — THE hover treatment for interactive cards: 1px rise, sm→md shadow. */
+.cv2-root .k-lift {
+  box-shadow: var(--pn-sh-sm);
+  transition:
+    transform var(--pn-dur-fast) var(--pn-ease-out),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .k-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--pn-sh-md);
+}
+
+/* .k-press — pressed feedback for buttons: a 1.5% scale-down while held. */
+.cv2-root .k-press:active {
+  transform: scale(0.985);
+}
+/* The button grammar presses by default — same 1.5% dip on every .k-btn. */
+.cv2-root .k-btn:active {
+  transform: scale(0.985);
+}
+/* Honest disabled stays honest: a dead button does not press. */
+.cv2-root .k-btn[aria-disabled='true']:active {
+  transform: none;
+}
+
+/* .k-shimmer — loading shimmer for skeletons: gradient sweep over hover tone. */
+.cv2-root .k-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--pn-hover) 40%,
+    color-mix(in srgb, var(--pn-ink) 6%, var(--pn-hover)) 50%,
+    var(--pn-hover) 60%
+  );
+  background-size: 200% 100%;
+  animation: kShimmer 1.6s linear infinite;
+}
+
+/* .k-underline-slide — brand ::after underline scaling in from the left (tabs). */
+.cv2-root .k-underline-slide {
+  position: relative;
+}
+.cv2-root .k-underline-slide::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: var(--pn-brand);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--pn-dur-base) var(--pn-ease-out);
+}
+.cv2-root .k-underline-slide:hover::after,
+.cv2-root .k-underline-slide[aria-current]::after,
+.cv2-root .k-underline-slide[aria-selected='true']::after {
+  transform: scaleX(1);
+}
+
+/* --- COLOR RICHNESS ------------------------------------------------------- */
+
+/* .k-hero — the hero surface: a whisper of brand→violet gradient over card,
+   hairline-edged; both themes resolve through the tokens. */
+.cv2-root .k-hero {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--pn-brand) 6%, var(--pn-card)),
+    color-mix(in srgb, var(--pn-accent-2, var(--pn-brand)) 5%, var(--pn-card))
+  );
+  border: 1px solid var(--pn-line);
+}
+
+/* .k-accent-top — a 2px brand→accent-2 gradient top border for featured cards.
+   Drawn as a clipped ::before so it follows the host's border-radius. */
+.cv2-root .k-accent-top {
+  position: relative;
+  overflow: hidden;
+}
+.cv2-root .k-accent-top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--pn-brand), var(--pn-accent-2, var(--pn-brand)));
+  pointer-events: none;
+}
+
+/* .k-tint-* — soft section tints for callouts: 7% tone over the card surface.
+   Tint is a SURFACE choice, not a status signal — pair with a worded label. */
+.cv2-root .k-tint-brand { background: color-mix(in srgb, var(--pn-brand) 7%, var(--pn-card)); }
+.cv2-root .k-tint-run   { background: color-mix(in srgb, var(--pn-run) 7%, var(--pn-card)); }
+.cv2-root .k-tint-wait  { background: color-mix(in srgb, var(--pn-wait) 7%, var(--pn-card)); }
+.cv2-root .k-tint-block { background: color-mix(in srgb, var(--pn-block) 7%, var(--pn-card)); }
+.cv2-root .k-tint-info  { background: color-mix(in srgb, var(--pn-info) 7%, var(--pn-card)); }
+
+/* THE KILL SWITCH — every motion utility above collapses to its instant end
+   state: no animation, no transform, no transition. Entrances land visible. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .k-enter,
+  .cv2-root .k-enter-pop,
+  .cv2-root .k-shimmer {
+    animation: none;
+  }
+  .cv2-root .k-enter,
+  .cv2-root .k-enter-pop {
+    opacity: 1;
+    transform: none;
+  }
+  .cv2-root .k-lift,
+  .cv2-root .k-underline-slide::after {
+    transition: none;
+  }
+  .cv2-root .k-lift:hover,
+  .cv2-root .k-press:active,
+  .cv2-root .k-btn:active {
+    transform: none;
+  }
+}

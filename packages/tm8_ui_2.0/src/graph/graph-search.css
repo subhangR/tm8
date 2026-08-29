@@ -1,18 +1,20 @@
 /**
  * GraphSearch — toolbar search field. ATELIER paper-and-ink, tokens only (hex
- * is banned outside tokens.css). Mono face to match the toolbar count/eyebrow
- * vocabulary; the field itself reads as a pill-bordered input that brightens
- * to a brass hairline on focus. No motion beyond a fast ease-out border tint;
- * prefers-reduced-motion collapses it.
+ * is banned outside tokens.css). RECLASSIFICATION (2026-08-29): the typed
+ * query is interactive text, so the input wears the ui face at the 13px
+ * floor; only the match COUNT stays mono — it is data. The field reads as a
+ * pill-bordered input that brightens to a brass hairline on focus. No motion
+ * beyond a fast ease-out border tint; prefers-reduced-motion collapses it.
  */
 
 .gv-search {
   display: inline-flex;
   align-items: center;
   gap: var(--pn-space-1);
-  width: 180px;
+  width: 200px;
+  min-height: 28px;
   flex: none;
-  padding: 2px var(--pn-space-2);
+  padding: 0 var(--pn-space-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
@@ -34,8 +36,9 @@
   appearance: none;
   min-width: 0;
   flex: 1;
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-ink);
   background: transparent;
   border: none;

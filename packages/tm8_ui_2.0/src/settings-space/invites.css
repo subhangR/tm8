@@ -19,6 +19,11 @@
  *    looked better designed than the working one. Both are chips now.
  *  - Live / used-up / revoked were separated by opacity and a run of words in
  *    the same 9px grey. They now carry the functional ramp: run · idle · block.
+ *
+ * RECLASSIFIED (Kinetic W3 sweep). Mono is DATA only: the invite code, the
+ * join URL, the counts. Field labels, cautions, errors, button words, state
+ * words and the locked/empty sentences speak Figtree (caps grammar for the
+ * state pill and eyebrow). Words and counts unchanged.
  */
 
 /* --- the create form ----------------------------------------------------- */
@@ -57,12 +62,11 @@
 .set-invites__field--role { flex: 1 1 220px; max-width: 320px; }
 
 .set-invites__label {
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  /* Field labels are words — ui 600 at the floor, no caps dressing. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
 }
 
 /* The submit line: affordance right, consequence left, one baseline. */
@@ -76,18 +80,19 @@
 .set-invites__caution {
   flex: 1 1 300px;
   min-width: 0;
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  line-height: 1.5;
-  color: var(--pn-ink-4);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
   text-wrap: pretty;
 }
 .set-invites__go { flex: none; }
 
 .set-invites__error {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  line-height: 1.5;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
   color: var(--pn-block);
   background: var(--pn-block-soft);
   border-radius: var(--pn-r-sm);
@@ -132,10 +137,11 @@
    which is the wrong sentence for "this code was deliberately killed". */
 .set-invites__state {
   flex: none;
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
+  /* A state WORD — caps chip grammar, never mono. */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   border-radius: 999px;
   padding: 2px 8px;
@@ -187,8 +193,9 @@
 }
 
 .set-invites__meta {
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  /* "admin · 2/5 used" — words carrying a count; the sentence wins. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
   min-width: 0;
 }
@@ -209,16 +216,23 @@
 .set-invites__act {
   appearance: none;
   flex: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  padding: 2px 8px;
+  padding: 0 10px;
   cursor: pointer;
 }
-.set-invites__act:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.set-invites__act:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.set-invites__act:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 .set-invites__act--copied { color: var(--pn-run); border-color: color-mix(in srgb, var(--pn-run) 40%, transparent); }
 .set-invites__act--danger:hover { color: var(--pn-block); border-color: color-mix(in srgb, var(--pn-block) 40%, transparent); }
 
@@ -241,11 +255,11 @@
 }
 .set-invites__lockedEyebrow {
   font-family: var(--pn-caps);
-  font-size: 9px;
+  font-size: var(--pn-fs-micro); /* eyebrow grammar: 11/700 */
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
 }
 .set-invites__lockedHead {
   font-family: var(--pn-serif);
@@ -253,10 +267,10 @@
   color: var(--pn-ink-2);
 }
 .set-invites__lockedWhy {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  line-height: 1.6;
-  color: var(--pn-ink-4);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
   text-wrap: pretty;
 }
 

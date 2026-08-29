@@ -73,7 +73,12 @@
   border-radius: var(--pn-r-sm);
   background: transparent;
   color: var(--pn-ink-3);
-  font: 600 10px/1 var(--pn-mono);
+  /* RECLASSIFIED (wave 3): a tab word speaks the UI face, not mono. The SIZE
+     deliberately stays at the fine token rather than the 13px interactive
+     floor: the five chips fit the 30px bar at ~110px by measurement (see the
+     mark-form note below), and growing them re-clips the panel tabs beside
+     them — the exact defect that measurement closed. */
+  font: 600 var(--pn-fs-fine)/1 var(--pn-ui);
   letter-spacing: var(--pn-track-wide);
   text-transform: uppercase;
   cursor: pointer;
@@ -402,12 +407,19 @@
 }
 .cv2-root .pn-head__glyph { flex: none; color: var(--pn-ink-3); font-size: 13px; }
 /* The title owns the identity row and is always readable in full. Long names
-   wrap rather than ellipsize; actions live in the tab row below. */
+   wrap rather than ellipsize; actions live in the tab row below.
+
+   WAVE-3 I2 (Kinetic boldness): 14.5/600 → the h3 token at 700. The panel's
+   one identity string was the same weight-and-a-half as the tabs under it, so
+   the whole header read as one grey band. The editable twin (`.au-title`,
+   authoring.css — byte-equivalent by contract) is kept in step by the
+   header-scoped sync rule in the I2 block at the end of this file, since that
+   file is not this change's to edit. */
 .cv2-root .pn-head__title {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 14.5px;
-  font-weight: 600;
+  font-size: var(--pn-fs-h3);
+  font-weight: 700;
   color: var(--pn-ink);
   line-height: 1.35;
   white-space: normal;
@@ -496,24 +508,50 @@
   background: none;
   padding: 0;
   font: inherit;
-  color: inherit;
+  /* Wave 3: a verb is interactive text — the 13px floor at label weight,
+     ink-2 not ink-3. AFTER `font: inherit`, which would reset both. */
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   cursor: pointer;
   white-space: nowrap;
 }
 .cv2-root .pn-actions__verb:hover { color: var(--pn-ink); }
+.cv2-root .pn-actions__verb:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+  border-radius: var(--pn-r-xs);
+}
 
+/* KIT BUTTON GRAMMAR (wave 3): the panel's primary verbs adopt the compact kit
+   metrics — 28px border-box (the bar is a 30px strip, so the 32px form does
+   not fit), r-sm radius, UI face 13/600, hover fill, the house focus ring.
+   Colours stay the bar's own: bordered card base, brand-soft primary. */
 .cv2-root .pn-btn {
   flex: none;
-  font-size: 11.5px;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  color: var(--pn-ink-2);
+  line-height: 1;
+  color: var(--pn-ink);
   border: 1px solid var(--pn-line-2);
-  border-radius: 6px;
-  padding: 2px 9px;
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
   background: var(--pn-card);
   cursor: pointer;
   white-space: nowrap;
   text-decoration: none;
+}
+.cv2-root .pn-btn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 /* DEF-053 — the panel bar's primary verbs, 45x20 and 46x20.
 
@@ -570,14 +608,17 @@
 }
 .cv2-root[data-theme='dark'] .pn-btn--primary,
 [data-theme='dark'] .cv2-root .pn-btn--primary { color: var(--pn-brand); }
+/* RECLASSIFIED (wave 3): the quiet verb is still a button WORD, so it speaks
+   the UI face at the interactive floor; only the dashed border keeps saying
+   "quiet". Metrics ride the kit base above. */
 .cv2-root .pn-btn--quiet {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-brand-2);
   background: transparent;
   border: 1px dashed rgba(var(--pn-brand-rgb), 0.5);
-  border-radius: 6px;
-  padding: 3px 10px;
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
 }
 
 .cv2-root .pn-panelbar {
@@ -628,6 +669,12 @@
   background: none;
   padding: 0;
   font: inherit;
+  /* WAVE-3 I2: the panel's primary navigation at the body token (14px) and a
+     real 600, instead of inheriting the strip's 12px at 400 — the tabs were
+     indistinguishable from the metadata around them. AFTER `font: inherit`,
+     which would otherwise reset both. */
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
   color: var(--pn-ink-3);
   cursor: pointer;
   display: flex;
@@ -792,7 +839,9 @@
 }
 .cv2-root .pn-tab:hover { color: var(--pn-ink); }
 .cv2-root .pn-tab--active {
-  font-weight: 600;
+  /* I2: one full step above the resting 600, plus the existing 2px brand
+     underline — the active section must be findable at a glance. */
+  font-weight: 700;
   color: var(--pn-ink);
   border-bottom-color: var(--pn-brand);
 }
@@ -1024,11 +1073,13 @@
   border: 2px dashed var(--pn-line-2);
   color: var(--pn-ink-4);
 }
-.cv2-root .pn-state__title { font-size: 13px; font-weight: 600; color: var(--pn-ink); }
+.cv2-root .pn-state__title { font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink); }
+/* Empty-state sentences read at the label token in ink-2 (wave 3): the copy
+   is the surface's whole content, so it must not whisper. Words unchanged. */
 .cv2-root .pn-state__body {
-  font-size: 11.5px;
+  font-size: var(--pn-fs-label);
   line-height: 1.5;
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
   max-width: 300px;
   text-wrap: pretty;
 }
@@ -1498,7 +1549,8 @@
   align-items: center;
   gap: 5px;
   font-family: inherit;
-  font-size: 11.5px;
+  /* I2/wave-3: the panel's own name is interactive text — the 13px floor. */
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink);
   cursor: pointer;
@@ -1545,7 +1597,9 @@
   padding: 4px 8px;
   border-radius: 5px;
   font: inherit;
-  font-size: 11.5px;
+  /* Menu items are interactive text: the 13px floor at label weight (wave 3). */
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-ink-2);
   cursor: pointer;
   text-align: left;
@@ -1575,28 +1629,36 @@
   border-bottom: 1px solid var(--pn-line);
   overflow: hidden;
 }
+/* KIT BUTTON GRAMMAR (wave 3): the header verbs are real buttons, so they take
+   the compact kit metrics — 28px border-box, r-sm radius, UI face 13/600, the
+   house focus ring — instead of ad-hoc chip sizes. Colours stay theirs: ink
+   fill for the create verb (R5 parity, [master->fe 43] — ink/paper TOKENS so
+   dark theme inverts free), bordered card for the quick verbs. */
 .cv2-root .lp__new,
 .cv2-root .lp__quick {
   flex: none;
   appearance: none;
-  font-family: inherit;
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  border-radius: 6px;
-  padding: 2px 8px;
+  line-height: 1;
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
 }
-/* R5 parity (user finding, [master->fe 43]): the canvas renders the create
-   chip as INK — #23201B fill / #F4F2EC text / r7 / 4px 10px / 12px 600,
-   hover #3A362E — where this was a brand-soft outline chip. Fill and text
-   are ink/paper TOKENS, so dark theme inverts to a light chip on dark
-   ground with no per-theme rule; the sizes override the shared base above
-   because the base also serves .lp__quick, which the canvas keeps small. */
+.cv2-root .lp__new:focus-visible,
+.cv2-root .lp__quick:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
 .cv2-root .lp__new {
-  font-size: 11.5px;
-  border-radius: 7px;
-  padding: 3px 8px;
   color: var(--pn-paper);
   background: var(--pn-ink);
   border: 1px solid transparent;
@@ -1629,6 +1691,11 @@
   border-bottom: 1px solid var(--pn-line);
   overflow: hidden;
 }
+/* RECLASSIFIED (wave 3): the trigger words — `filter ▾`, `people ▾`, the lens
+   label, `↓ sort` — are LABELS, not data, so they speak the UI face at the
+   interactive floor (13/600) instead of mono fine print. The count a chip may
+   carry (`people · 2`) shares the word's text node — the desktop DOM is frozen
+   — so the whole chip goes UI and `tabular-nums` keeps the digits column-true. */
 .cv2-root .lp__chip {
   flex: none;
   appearance: none;
@@ -1636,8 +1703,10 @@
   align-items: center;
   height: 28px;
   box-sizing: border-box;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--pn-ink-2);
   background: none;
   border: 1px solid transparent;
@@ -1656,7 +1725,8 @@
 }
 .cv2-root .lp__chip:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
 .cv2-root .lp__chip--active {
-  font-weight: 650;
+  /* One full step above the resting 600 — 650 was a half-step nobody saw. */
+  font-weight: 700;
   color: var(--pn-brand-2);
   background: var(--pn-brand-soft);
 }
@@ -1703,11 +1773,14 @@
   background: var(--pn-card);
 }
 .cv2-root .lp__tabs::-webkit-scrollbar { display: none; }
-/* TIER 3 (Kinetic W4): the LENS — whisper chips. 28px pills, mono words with
-   their counts, no border until the pointer asks; the selected chip is the one
+/* TIER 3 (Kinetic W4), RECLASSIFIED (wave 3): the LENS — whisper chips. 28px
+   pills, no border until the pointer asks; the selected chip is the one
    brand-soft fill, so selection reads as fill + word, never colour alone.
-   (The count shares the word's text node — the desktop DOM is frozen — so the
-   whole chip speaks mono and the weight/colour shift marks selection.) */
+   The tab WORDS (`To Do` · `In Progress` · …) are the app's primary category
+   labels, so they wear the UI face at the interactive floor (13/600), not
+   mono fine print. The count shares the word's text node — the desktop DOM
+   is frozen — so the whole chip goes UI and `tabular-nums` keeps the counts
+   comparable down the row. */
 .cv2-root .lp__tab {
   appearance: none;
   display: inline-flex;
@@ -1716,8 +1789,10 @@
   box-sizing: border-box;
   border: 1px solid transparent;
   background: none;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--pn-ink-2);
   padding: 0 var(--pn-space-2);
   border-radius: var(--pn-r-pill);
@@ -1731,7 +1806,8 @@
 }
 .cv2-root .lp__tab:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
 .cv2-root .lp__tab--active {
-  font-weight: 650;
+  /* One full step above the resting 600 — 650 was a half-step nobody saw. */
+  font-weight: 700;
   color: var(--pn-brand-2);
   background: var(--pn-brand-soft);
 }
@@ -1753,11 +1829,15 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  padding: 6px 8px 12px;
+  /* Wave-3 spacing: the pane gutter joins the generous grid (12px), matching
+     the search row's own margins one band up. */
+  padding: 6px var(--pn-space-3) var(--pn-space-3);
   scrollbar-width: thin;
   scrollbar-color: var(--pn-line-2) transparent;
 }
 
+/* Eyebrow grammar (wave 3): caps face at the micro token, 700 — 9.5px ink-4
+   was below the legibility floor for the only word naming a band. */
 .cv2-root .lp__eyebrow {
   appearance: none;
   border: 0;
@@ -1765,12 +1845,15 @@
   text-align: left;
   padding: 9px 4px 5px;
   font-family: var(--pn-caps);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-micro);
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
   cursor: pointer;
 }
+/* The collapsed band's one-line stand-in is the SAME section head, shut — so
+   it speaks the same eyebrow grammar (caps 11/700), not mono. The `· N` count
+   rides the same text node; tabular digits keep it steady while rows move. */
 .cv2-root .lp__collapsed {
   appearance: none;
   border: 0;
@@ -1779,14 +1862,15 @@
   margin-top: auto;
   padding: 8px 4px 3px;
   border-top: 1px solid var(--pn-line);
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.1em;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
   cursor: pointer;
 }
-.cv2-root .lp__collapsed:hover { color: var(--pn-ink-3); }
+.cv2-root .lp__collapsed:hover { color: var(--pn-ink-2); }
 
 /* --- entity cards — Maestro surface + T0-1 hierarchy ----------------------- */
 /* Rounded, elevated card shell from the Maestro reference; disclosure column,
@@ -2560,40 +2644,60 @@
   justify-content: center;
   padding: 8px 10px 12px;
 }
+/* A real button word — kit compact grammar (wave 3): 28px, r-sm, UI 13/600,
+   hover fill, house focus ring. It was a 10px mono pill. */
 .cv2-root .lp__morebtn {
-  padding: 4px 12px;
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  color: var(--pn-ink-3);
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 12px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink-2);
   background: transparent;
   border: 1px solid var(--pn-line-2);
-  border-radius: 999px;
+  border-radius: var(--pn-r-sm);
   cursor: pointer;
+}
+.cv2-root .lp__morebtn:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .lp__morebtn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 .cv2-root .lp__morebtn:disabled {
   cursor: default;
   color: var(--pn-ink-4);
 }
+/* Menu group heads (SORT BY · STATUS · PEOPLE) are eyebrows, so they wear the
+   eyebrow grammar — caps face, micro token, 700 — not mono fine print. */
 .cv2-root .lp__filtergroup {
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  font-weight: 600;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: 0.1em;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
   padding: 6px 8px 3px;
 }
 .cv2-root .lp__filtercheck { margin-left: auto; color: var(--pn-brand-2); }
 
 /* The collection-lens honesty line: what the lens hides, in numbers from the
-   lens query itself and the set's own summary (see LensNote). */
+   lens query itself and the set's own summary (see LensNote). RECLASSIFIED
+   (wave 3): it is a SENTENCE a reader must actually read, so it speaks the UI
+   face at the label token — the words change type, never truth. The row-verb
+   trace (`lp__rownotice`) rides the same rule. */
 .cv2-root .lp__lensnote {
   flex: none;
   margin: 0 8px 5px;
-  padding: 4px 8px;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  padding: 5px 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   line-height: 1.5;
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -2602,9 +2706,9 @@
 .cv2-root .lp__filterempty {
   margin: 0;
   padding: 4px 8px 7px;
-  font-size: 10.5px;
+  font-size: var(--pn-fs-label);
   line-height: 1.5;
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
   max-width: 230px;
 }
 
@@ -2754,7 +2858,7 @@
 }
 .cv2-root .lq__heading {
   flex: none;
-  font-size: 11.5px;
+  font-size: var(--pn-fs-sm);
   font-weight: 700;
   color: var(--pn-ink);
 }
@@ -2795,10 +2899,13 @@
   flex: 1 1 112px;
   min-width: 0;
 }
+/* Field eyebrows (TEAMMATE · PROJECT · MODEL · ACCESS): the eyebrow grammar —
+   caps face, micro token, 700 — not mono (wave 3 reclassification). */
 .cv2-root .lq__label {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--pn-ink-3);
 }
@@ -2808,7 +2915,7 @@
   min-width: 0;
   min-height: 28px;
   font-family: var(--pn-ui);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-sm);
   color: var(--pn-ink);
   /* `appearance: none` removed the native chevron, so an affordance-free box
      read as a text field. The inline-SVG chevron restores it; the stroke is a
@@ -2842,31 +2949,46 @@
 
 .cv2-root .lq__actions { display: flex; align-items: flex-start; gap: 8px; }
 .cv2-root .lq__spacer { flex: 1 1 auto; }
+/* `full options` is a button word — UI face at the interactive floor. */
 .cv2-root .lq__more {
   appearance: none;
   background: none;
   border: none;
   padding: 0;
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   text-decoration: underline;
   cursor: pointer;
 }
 .cv2-root .lq__more:hover { color: var(--pn-ink-1); }
+/* THE LAUNCH VERB — the one class that distinguishes it, so it keeps the
+   filled-brand treatment and takes the compact kit metrics (28px, r-sm,
+   13/600, house focus ring). */
 .cv2-root .lq__launch {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 28px;
   font-family: var(--pn-ui);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
+  line-height: 1;
   color: var(--pn-card);
   background: var(--pn-brand);
   border: 1px solid var(--pn-brand);
   border-radius: var(--pn-r-sm);
-  padding: 4px 11px;
+  padding: 0 12px;
   cursor: pointer;
 }
 .cv2-root .lq__launch:hover { filter: brightness(1.06); }
+.cv2-root .lq__launch:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
 
 /* The actions row must survive the 200px floor. `full options` never wraps
    mid-phrase; when Launch carries an inline reason caption, the pair takes its
@@ -2913,14 +3035,15 @@
 /* The inline refusal. Block-toned and bordered so it reads as a state of the
    launch, not as chrome — and it persists until the next attempt rather than
    auto-dismissing, because the viewer needs it while they fix the config. */
+/* A refusal is a SENTENCE — UI face at the label token; truth unchanged. */
 .cv2-root .lq__refusal {
   margin: 0;
-  padding: 5px 7px;
+  padding: 5px 8px;
   border: 1px solid color-mix(in srgb, var(--pn-block) 40%, transparent);
   border-radius: 5px;
   background: var(--pn-block-soft);
-  font-family: var(--pn-mono);
-  font-size: 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   line-height: 1.45;
   color: var(--pn-ink-1);
 }
@@ -2936,7 +3059,7 @@
    ========================================================================== */
 .cv2-root .pm { display: flex; flex-direction: column; gap: 9px; }
 .cv2-root .pm__head { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.cv2-root .pm__heading { flex: none; font-size: 11.5px; font-weight: 700; color: var(--pn-ink); }
+.cv2-root .pm__heading { flex: none; font-size: var(--pn-fs-sm); font-weight: 700; color: var(--pn-ink); }
 .cv2-root .pm__subject {
   flex: 1 1 auto;
   min-width: 0;
@@ -2964,10 +3087,12 @@
   cursor: pointer;
 }
 .cv2-root .pm__close:hover { color: var(--pn-ink); background: var(--pn-active); }
+/* The commitment sentence is prose the user must read before the one
+   irreversible act on the panel — UI face, label token (wave 3). */
 .cv2-root .pm__confirm-text {
   margin: 0;
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   line-height: 1.5;
   color: var(--pn-ink-1);
 }
@@ -2982,40 +3107,64 @@
   align-items: flex-start;
   gap: 3px;
 }
+/* Both verbs take the compact kit metrics (28px, r-sm, 13px, focus ring);
+   the danger fill stays the danger fill. */
 .cv2-root .pm__verb {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 28px;
   font-family: var(--pn-ui);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
   color: var(--pn-ink-2);
   background: transparent;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  padding: 4px 10px;
+  padding: 0 10px;
   cursor: pointer;
 }
 .cv2-root .pm__verb:hover { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .pm__verb:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
 .cv2-root .pm__go {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 28px;
   font-family: var(--pn-ui);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
+  line-height: 1;
   color: var(--pn-card);
   background: var(--pn-block);
   border: 1px solid var(--pn-block);
   border-radius: var(--pn-r-sm);
-  padding: 4px 11px;
+  padding: 0 12px;
   cursor: pointer;
 }
 .cv2-root .pm__go:hover { filter: brightness(1.06); }
+.cv2-root .pm__go:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
 .cv2-root .pm__go:disabled { opacity: 0.6; cursor: default; }
+/* Same reclassification as `.lq__refusal`: a refusal sentence speaks UI. */
 .cv2-root .pm__refusal {
   margin: 0;
-  padding: 5px 7px;
+  padding: 5px 8px;
   border: 1px solid color-mix(in srgb, var(--pn-block) 40%, transparent);
   border-radius: 5px;
   background: var(--pn-block-soft);
-  font-family: var(--pn-mono);
-  font-size: 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   line-height: 1.45;
   color: var(--pn-ink-1);
 }
@@ -3085,17 +3234,19 @@
    It states the CURRENT posture in words; the colour only reinforces what the
    text already says, so the escalation is legible without relying on hue. */
 .cv2-root .lq__access { display: flex; align-items: center; gap: 8px; }
+/* The posture chip states a WORD (plan · auto · full access) — UI face at the
+   interactive floor; the tone classes below keep carrying the escalation. */
 .cv2-root .lq__accessbtn {
   appearance: none;
-  min-height: 22px;
-  padding: 2px 9px;
+  min-height: 24px;
+  padding: 2px 10px;
   border-radius: 999px;
   border: 1px solid var(--pn-line-2);
   background: var(--pn-card);
   color: var(--pn-ink-2);
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  letter-spacing: 0.03em;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   cursor: pointer;
 }
 .cv2-root .lq__accessbtn:hover { border-color: var(--pn-ink-3); color: var(--pn-ink); }
@@ -3159,12 +3310,36 @@
 }
 .cv2-root .lp__rowdetail-label {
   flex: none;
-  width: 54px;
+  /* I2 COLLISION FIX — `width: 54px` was a fixed box NARROWER than its own
+     longest words: "COLLECTION" at this size runs ~62px, so the overflow
+     painted straight across the value beside it (flex gives the span no
+     wrap opportunity in one unbroken word). `min-width` keeps the column
+     aligned at 76px and lets a longer label take real space instead of
+     overlapping; the line's own 8px gap then always separates label from
+     value. */
+  min-width: 76px;
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--pn-ink-4);
+}
+/* I2 — the refusal caption in the stacked `lines` strip (Archive's "you may
+   not", the state control's cannot-edit). The group is a flex item in a
+   nowrap-ish row: without a shrink floor its min-content width is the whole
+   unwrapped sentence, which pushed the row wide; with these the caption WRAPS
+   BELOW its control inside the row's remaining width. Fine-size, block ink —
+   a refusal is a stop sign, not furniture. Chips-band captions keep their
+   tooltip presentation (`.lp__rowdetail--chips .hon-caption`, below). */
+.cv2-root .lp__rowdetail-line .hon-disabled-group {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.cv2-root .lp__rowdetail-line .hon-caption {
+  max-width: 100%;
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-block);
 }
 
 /* THE CARET IS A SIBLING PSEUDO-ELEMENT, NOT A BACKGROUND IMAGE.
@@ -3523,6 +3698,85 @@
   box-sizing: border-box;
 }
 
+/* ── I2 CONTROL SKINNING — THE PANEL BAND'S CHIPS AT 28px ───────────────────
+   Wave-3 boldness. The `.pn-controls` band under the tabs is where every
+   writable axis of the entity lives, and its controls were 24px pills of
+   10.5px type on a hairline border — read as static metadata, not as the
+   panel's control strip. Every select, date and number input in the band
+   becomes one 28px bordered chip: `--pn-line-2` border, `--pn-r-sm` radius,
+   card fill, the UI face at the 12.5px token. `appearance` needs no new
+   declaration — the shared `.lp__statesel` base already strips it where safe
+   (and the date input's calendar indicator survives that, styled below).
+   The badge and the Archive verb ride the same 28px band so the row stays one
+   height (the "24/22/22/24 reads as a mistake" rule above, at the new number).
+
+   SCOPE AND ORDER ARE LOAD-BEARING: scoped to `.pn-controls` so the LIST
+   band's chips (EntityListPanel's `--chips` strip) keep the 24px pin above,
+   and placed BEFORE the DEF-024 mobile block so every (0,3,0) tie on height,
+   type and block padding still resolves to the phone's 44px/16px floors —
+   the iOS focus-zoom law is not this change's to spend. The selects' ▾ stays:
+   it is `.lp__statewrap::after`, a border-drawn pseudo on the wrapper, no
+   image involved. */
+.cv2-root .pn-controls .lp__statesel,
+.cv2-root .pn-controls .pn-badge,
+.cv2-root .pn-controls .lp__rowaction {
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 28px;
+}
+.cv2-root .pn-controls .lp__statesel {
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
+  font-family: var(--pn-ui);
+  /* Wave 3: the writable words hit the interactive floor (13) at label weight. */
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: normal;
+  background: var(--pn-card);
+}
+/* The band's one word-carrying BUTTON (Archive / Restore) joins the kit
+   grammar with the chips beside it: UI face at the 13px floor, r-sm, the
+   house focus ring. The base `.lp__rowaction` stays mono — in the row
+   clusters it is a 22px GLYPH box, and glyphs are not words. */
+.cv2-root .pn-controls .lp__rowaction {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .pn-controls .lp__rowaction--wide { padding: 0 12px; }
+.cv2-root .pn-controls .lp__rowaction-label {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+}
+.cv2-root .pn-controls .lp__rowaction:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* Caret room on the writable select (the wrap's ▾ sits at right: 8px)… */
+.cv2-root .pn-controls .lp__statesel--live { padding-right: 22px; }
+/* …and given back on the two inputs that draw no caret. The number input had
+   no in-band right-padding rule of its own before; 10px replaces the 26px of
+   dead caret room it inherited on a phone, stated rather than smuggled. The
+   date's own phone give-back (6px, the (0,4,0) rule below) still outranks
+   this on source order. */
+.cv2-root .pn-controls .lp__datesel.lp__statesel--live,
+.cv2-root .pn-controls .lp__numsel.lp__statesel--live { padding-right: 10px; }
+/* The base hover/focus rules are (0,3,0) and would lose the tie to the chip
+   rule above, so both affordances are restated at band scope: hover keeps the
+   ink-4 border step, focus wears the house focus token as ring + border. */
+.cv2-root .pn-controls .lp__statesel--live:hover { border-color: var(--pn-ink-4); }
+.cv2-root .pn-controls .lp__statesel--live:focus-visible {
+  outline: none;
+  border-color: var(--pn-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pn-focus) 25%, transparent);
+}
+/* The same chrome on the date input's own affordance: quieted to .6, full on
+   hover (the base .55/1 pair is (0,2,0)/(0,3,0) and the second would lose to
+   the first restated alone). */
+.cv2-root .pn-controls .lp__datesel::-webkit-calendar-picker-indicator { opacity: 0.6; }
+.cv2-root .pn-controls .lp__datesel::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
 /* DEF-024 — THE STATE / PRIORITY / TYPE SELECTS: 24px tall AT 10.5px TYPE.
 
    Filed as `desktop-only affordance` and not as a tap-target row, per RULE R6,
@@ -3687,11 +3941,19 @@
 }
 .cv2-root .lp__board-banner {
   flex: none;
-  padding: 6px 10px;
-  font-size: 11px;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-soft, var(--pn-ink));
   background: var(--pn-wait-soft);
   border-bottom: 1px solid var(--pn-line);
+}
+/* The group-by picker is a control WORD (`by status`) — the 13px interactive
+   floor the band chips take, and its own breathing room on the grid instead
+   of sitting flush against the board's edge. */
+.cv2-root .lp__board-groupby {
+  align-self: flex-start;
+  margin: var(--pn-space-2) var(--pn-space-3);
+  font-size: var(--pn-fs-sm);
 }
 /* ONE SCROLLER FOR THE WHOLE BOARD, not one per column.
    Each column used to be locked to the viewport height with its own
@@ -3702,11 +3964,12 @@
    bottom the way they already ran off the right. */
 .cv2-root .lp__board-cols {
   display: flex;
-  gap: 8px;
-  /* NO top padding. The sticky header below pins to the CONTENT box, so an
-     8px top inset is an 8px strip above it where scrolling cards show through
+  /* Wave-3 spacing: column gutters join the generous grid (12px). */
+  gap: var(--pn-space-3);
+  /* NO top padding. The sticky header below pins to the CONTENT box, so a
+     top inset is a strip above it where scrolling cards show through
      — the column's own rows appearing above its label. */
-  padding: 0 8px 8px;
+  padding: 0 var(--pn-space-3) var(--pn-space-3);
   overflow: auto;
   flex: 1 1 auto;
   min-height: 0;
@@ -3718,8 +3981,11 @@
   align-items: flex-start;
 }
 .cv2-root .lp__board-col {
-  flex: 0 0 236px;
-  min-width: 236px;
+  /* 260, not 236: the card treatment below spends 12px padding a side, and
+     the column widens by the same 24px so the tile inside keeps the reading
+     width it had — the action-cluster reserve still fits. */
+  flex: 0 0 260px;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   /* NOT `min-height: 0`. That let a column shrink below its cards, which is
@@ -3746,7 +4012,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  padding: 6px 8px;
+  padding: var(--pn-space-2) var(--pn-space-3);
   border-bottom: 1px solid var(--pn-line);
   position: sticky;
   top: 0;
@@ -3764,37 +4030,103 @@
 }
 .cv2-root .lp__board-refusal {
   margin: 0;
-  padding: 6px 8px;
-  font-size: 11px;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font-size: var(--pn-fs-label);
   color: var(--pn-block);
   background: var(--pn-block-soft);
   border-bottom: 1px solid var(--pn-line);
 }
-.cv2-root .lp__board-add { flex: none; padding: 6px 8px 0; }
+.cv2-root .lp__board-add { flex: none; padding: var(--pn-space-2) var(--pn-space-2) 0; }
 /* NO `overflow-y` — this is the well that trapped the cards. It still FILLS a
    short column (`flex: 1 1 auto`) so the drop target covers the whole card
    area rather than just the rows that exist. */
 .cv2-root .lp__board-cards {
   flex: 1 1 auto;
   min-height: 60px;
-  padding: 6px;
+  padding: var(--pn-space-2);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pn-space-2);
 }
-.cv2-root .lp__board-card { border-radius: 4px; }
+/* THE KANBAN CARD (wave 3 — the Tarkesh screenshot's bare white rectangles).
+   The wrapper becomes a real card: r-md radius, hairline, sh-sm at rest, the
+   house hover lift (the graph card's own grammar — 1px rise under sh-md at
+   dur-fast/ease-out, withdrawn under reduced motion below), 12px padding, and
+   the kind-family accent on its left edge via the same `data-family` →
+   `--pnf` map the three tile anatomies use (W3C·5 — the board selectors ride
+   those rules). Card fill is deliberate and is NOT the tile-fill-parity
+   surface: the tile inside stays background-free; the CARD is the object
+   being lifted off the column. */
+.cv2-root .lp__board-card {
+  position: relative;
+  box-sizing: border-box;
+  padding: var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+  transition:
+    box-shadow var(--pn-dur-fast) var(--pn-ease-out),
+    border-color var(--pn-dur-fast) var(--pn-ease-out),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .lp__board-card:hover {
+  box-shadow: var(--pn-sh-md);
+  border-color: var(--pn-line-2);
+  transform: translateY(-1px);
+}
+.cv2-root .lp__board-card[data-family] {
+  border-left: 3px solid var(--pnf, var(--pn-line-2));
+}
+/* ONE accent per card: the wrapper's edge owns it here, so the tile inside —
+   which carries the same `data-family` — surrenders its own copy (its root
+   border is otherwise 0; nothing else is lost). (0,4,0) beats W3C·5's
+   (0,3,0) regardless of order. */
+.cv2-root .lp__board-card > .lp__tile[data-family],
+.cv2-root .lp__board-card > .pn-tt[data-family],
+.cv2-root .lp__board-card > .pn-st[data-family] {
+  border-left: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .lp__board-card { transition: none; }
+  .cv2-root .lp__board-card:hover { transform: none; }
+}
+/* The card's identity strip: the kind glyph in the family ink, and the row's
+   status word in its tone — the two facts a column of look-alike cards needs
+   at a glance. Presentation only (`aria-hidden` in the markup): the tile
+   inside already announces both. */
+.cv2-root .lp__board-card-chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding-bottom: var(--pn-space-2);
+}
+.cv2-root .lp__board-card-glyph {
+  display: inline-flex;
+  color: var(--pnf, var(--pn-ink-3));
+}
+.cv2-root .lp__board-card-status {
+  margin-left: auto;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  line-height: 1.4;
+  border-radius: var(--pn-r-pill);
+  padding: 1px 7px;
+  white-space: nowrap;
+}
 .cv2-root .lp__board-card--dragging { opacity: 0.4; }
 .cv2-root .lp__board-card--pending { opacity: 0.6; pointer-events: none; }
 .cv2-root .lp__board-card--focused { outline: 1px solid var(--pn-brand); outline-offset: 1px; }
 .cv2-root .lp__board-empty {
   margin: 8px 4px;
-  font-size: 11px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-soft, var(--pn-ink));
   font-style: italic;
 }
 .cv2-root .lp__board-skeleton {
   height: 52px;
-  border-radius: 4px;
+  border-radius: var(--pn-r-md);
   background: var(--pn-hover);
   animation: lp-board-shimmer 1.2s ease-in-out infinite alternate;
 }
@@ -3802,16 +4134,30 @@
   from { opacity: 0.45; }
   to { opacity: 0.9; }
 }
-.cv2-root .lp__board-reason { font-size: 12px; color: var(--pn-block); margin: 0 0 8px; }
+.cv2-root .lp__board-reason { font-size: var(--pn-fs-label); color: var(--pn-block); margin: 0 0 8px; }
+/* Retry is a real button — compact kit grammar (wave 3). */
 .cv2-root .lp__board-retry {
-  border: 1px solid var(--pn-line);
-  background: none;
-  font: inherit;
-  font-size: 11px;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 28px;
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
   color: var(--pn-ink);
-  padding: 3px 10px;
-  border-radius: 4px;
+  padding: 0 12px;
+  border-radius: var(--pn-r-sm);
   cursor: pointer;
+}
+.cv2-root .lp__board-retry:hover { background: var(--pn-hover); }
+.cv2-root .lp__board-retry:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 /* Session secondary facts begin directly under the title text: 7px row inset,
@@ -3990,11 +4336,13 @@
 .cv2-root .sb-body .sb-grid__label {
   flex: none;
   font-family: var(--pn-mono);
-  font-size: 10px;
-  font-weight: 600;
+  /* I2 eyebrow grammar: 11px/800 in ink-2 — at 10/600 ink-4 these labels
+     vanished into the hover rows they name. */
+  font-size: var(--pn-fs-micro);
+  font-weight: 800;
   letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-2);
 }
 
 /* --- W3C·3 STATUS PULSE RING -----------------------------------------------
@@ -4062,40 +4410,53 @@
 /* --- W3C·5 TILE FAMILY ACCENT ----------------------------------------------
    The kind-family colour map, defined ONCE here and scoped to the three tile
    anatomies (standard `.lp__tile`, control-card `.pn-tt`, session-tree
-   `.pn-st`). Same pattern as graph.css's `--gvf` mapping: Astryx semantic
-   vars first, house functional ramp as fallback. W3E stamps `data-family`
-   on the tile; a tile without the attribute draws no accent and shifts no
-   layout. Separate rules, never the tile ROOT bodies (tile-fill-parity). */
+   `.pn-st`) — PLUS the board card wrapper (`.lp__board-card`, wave 3), which
+   carries the same `data-family` so a kanban card resolves the same `--pnf`
+   for its own edge accent and glyph ink. Same pattern as graph.css's `--gvf`
+   mapping: Astryx semantic vars first, house functional ramp as fallback.
+   W3E stamps `data-family` on the tile; a tile without the attribute draws
+   no accent and shifts no layout. Separate rules, never the tile ROOT bodies
+   (tile-fill-parity). */
 .cv2-root .lp__tile[data-family='blue'],
 .cv2-root .pn-tt[data-family='blue'],
-.cv2-root .pn-st[data-family='blue'] { --pnf: var(--color-icon-blue, var(--pn-info)); --pnf-soft: var(--color-background-blue, var(--pn-info-soft)); }
+.cv2-root .pn-st[data-family='blue'],
+.cv2-root .lp__board-card[data-family='blue'] { --pnf: var(--color-icon-blue, var(--pn-info)); --pnf-soft: var(--color-background-blue, var(--pn-info-soft)); }
 .cv2-root .lp__tile[data-family='green'],
 .cv2-root .pn-tt[data-family='green'],
-.cv2-root .pn-st[data-family='green'] { --pnf: var(--color-icon-green, var(--pn-run)); --pnf-soft: var(--color-background-green, var(--pn-run-soft)); }
+.cv2-root .pn-st[data-family='green'],
+.cv2-root .lp__board-card[data-family='green'] { --pnf: var(--color-icon-green, var(--pn-run)); --pnf-soft: var(--color-background-green, var(--pn-run-soft)); }
 .cv2-root .lp__tile[data-family='orange'],
 .cv2-root .pn-tt[data-family='orange'],
-.cv2-root .pn-st[data-family='orange'] { --pnf: var(--color-icon-orange, var(--pn-wait)); --pnf-soft: var(--color-background-orange, var(--pn-wait-soft)); }
+.cv2-root .pn-st[data-family='orange'],
+.cv2-root .lp__board-card[data-family='orange'] { --pnf: var(--color-icon-orange, var(--pn-wait)); --pnf-soft: var(--color-background-orange, var(--pn-wait-soft)); }
 .cv2-root .lp__tile[data-family='red'],
 .cv2-root .pn-tt[data-family='red'],
-.cv2-root .pn-st[data-family='red'] { --pnf: var(--color-icon-red, var(--pn-block)); --pnf-soft: var(--color-background-red, var(--pn-block-soft)); }
+.cv2-root .pn-st[data-family='red'],
+.cv2-root .lp__board-card[data-family='red'] { --pnf: var(--color-icon-red, var(--pn-block)); --pnf-soft: var(--color-background-red, var(--pn-block-soft)); }
 .cv2-root .lp__tile[data-family='purple'],
 .cv2-root .pn-tt[data-family='purple'],
-.cv2-root .pn-st[data-family='purple'] { --pnf: var(--color-icon-purple, var(--pn-pr-merged)); --pnf-soft: var(--color-background-purple, var(--pn-pr-merged-soft)); }
+.cv2-root .pn-st[data-family='purple'],
+.cv2-root .lp__board-card[data-family='purple'] { --pnf: var(--color-icon-purple, var(--pn-pr-merged)); --pnf-soft: var(--color-background-purple, var(--pn-pr-merged-soft)); }
 .cv2-root .lp__tile[data-family='teal'],
 .cv2-root .pn-tt[data-family='teal'],
-.cv2-root .pn-st[data-family='teal'] { --pnf: var(--color-icon-teal, var(--pn-run)); --pnf-soft: var(--color-background-teal, var(--pn-run-soft)); }
+.cv2-root .pn-st[data-family='teal'],
+.cv2-root .lp__board-card[data-family='teal'] { --pnf: var(--color-icon-teal, var(--pn-run)); --pnf-soft: var(--color-background-teal, var(--pn-run-soft)); }
 .cv2-root .lp__tile[data-family='cyan'],
 .cv2-root .pn-tt[data-family='cyan'],
-.cv2-root .pn-st[data-family='cyan'] { --pnf: var(--color-icon-cyan, var(--pn-info)); --pnf-soft: var(--color-background-cyan, var(--pn-info-soft)); }
+.cv2-root .pn-st[data-family='cyan'],
+.cv2-root .lp__board-card[data-family='cyan'] { --pnf: var(--color-icon-cyan, var(--pn-info)); --pnf-soft: var(--color-background-cyan, var(--pn-info-soft)); }
 .cv2-root .lp__tile[data-family='yellow'],
 .cv2-root .pn-tt[data-family='yellow'],
-.cv2-root .pn-st[data-family='yellow'] { --pnf: var(--color-icon-yellow, var(--pn-wait)); --pnf-soft: var(--color-background-yellow, var(--pn-wait-soft)); }
+.cv2-root .pn-st[data-family='yellow'],
+.cv2-root .lp__board-card[data-family='yellow'] { --pnf: var(--color-icon-yellow, var(--pn-wait)); --pnf-soft: var(--color-background-yellow, var(--pn-wait-soft)); }
 .cv2-root .lp__tile[data-family='pink'],
 .cv2-root .pn-tt[data-family='pink'],
-.cv2-root .pn-st[data-family='pink'] { --pnf: var(--color-icon-pink, var(--pn-brand-2)); --pnf-soft: var(--color-background-pink, var(--pn-brand-soft)); }
+.cv2-root .pn-st[data-family='pink'],
+.cv2-root .lp__board-card[data-family='pink'] { --pnf: var(--color-icon-pink, var(--pn-brand-2)); --pnf-soft: var(--color-background-pink, var(--pn-brand-soft)); }
 .cv2-root .lp__tile[data-family='gray'],
 .cv2-root .pn-tt[data-family='gray'],
-.cv2-root .pn-st[data-family='gray'] { --pnf: var(--pn-ink-3); --pnf-soft: var(--pn-hover); }
+.cv2-root .pn-st[data-family='gray'],
+.cv2-root .lp__board-card[data-family='gray'] { --pnf: var(--pn-ink-3); --pnf-soft: var(--pn-hover); }
 .cv2-root .lp__tile[data-family],
 .cv2-root .pn-tt[data-family],
 .cv2-root .pn-st[data-family] {
@@ -4152,4 +4513,46 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--pn-ink-4);
+}
+
+/* ==========================================================================
+   I2 — PANEL BOLDNESS (Kinetic wave 3). Two cross-file syncs that must live
+   here because the classes' home stylesheets belong to other seats; both are
+   scoped to panel anatomy so nothing leaks past the panel.
+   ========================================================================== */
+
+/* --- I2·a SECTION EYEBROWS — the fold heads -------------------------------
+   SUBTREE / ACCEPTANCE / GIT / MEMORIES / COLLECTIONS / RELATED. The base
+   `.pn-fold__head` (collapsible-section.css) is 10px/600 ink-4 — the section
+   names were the faintest strings in the body they organise. Eyebrow grammar:
+   micro token (11px), 800, ink-2. Hover steps to full ink because the resting
+   colour now occupies the old hover value. (0,3,0) via `.pn-body`, so the
+   base file's (0,2,0) rules lose on specificity, not on import order. */
+.cv2-root .pn-body .pn-fold__head {
+  font-size: var(--pn-fs-micro);
+  font-weight: 800;
+  color: var(--pn-ink-2);
+}
+.cv2-root .pn-body .pn-fold__head:hover {
+  color: var(--pn-ink);
+}
+
+/* --- I2·b THE EDITABLE TITLE KEEPS THE HEADER'S NEW VOICE ------------------
+   `.au-title` (authoring.css) is `.pn-head__title`'s byte-equivalent twin —
+   chrome.tsx swaps it in whenever the title commits. With the resting title
+   at h3/700, an unsynced twin would put every EDITABLE panel (the common
+   case: tasks) back at 14.5/600 and the boldness would vanish exactly where
+   people look. Scoped to the header row so the authoring dialogs keep their
+   own metrics; (0,3,0) beats the twin's (0,2,0) either way the bundle
+   orders the files. The in-edit input follows at the same size so pressing
+   Enter does not snap the string smaller. */
+.cv2-root .pn-head__row .au-title {
+  font-size: var(--pn-fs-h3);
+  font-weight: 700;
+}
+.cv2-root .pn-head__row .au-title-input {
+  box-sizing: border-box;
+  height: 30px;
+  font-size: var(--pn-fs-h3);
+  font-weight: 700;
 }

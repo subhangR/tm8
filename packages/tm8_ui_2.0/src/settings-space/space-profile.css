@@ -85,20 +85,21 @@
   border-top: 1px solid var(--pn-x-hairline-soft);
 }
 
+/* Record labels are HEADERS — caps grammar (Kinetic W3), not mono. */
 .set-space-profile__k {
   margin: 0;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--pn-ink-4);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-3);
   text-transform: uppercase;
 }
 
 .set-space-profile__v {
   margin: 0;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink);
   overflow-wrap: anywhere;
 }
@@ -114,11 +115,14 @@
 /* THE EMPTY FIELD, SAID RATHER THAN DRAWN. `Repo` and `About` used to render
    `—` when null, which is indistinguishable from a field whose value IS an em
    dash — and every entity title on this server may contain one. A different
-   word, in a different face and a dimmer ink, cannot be mistaken for content.
-   `data-unset` carries the same fact to the tests. */
+   word, differently dressed and in a dimmer ink, cannot be mistaken for
+   content. The word is a WORD, so it speaks ui (Kinetic W3); the italic now
+   carries the "not content" distinction mono used to. `data-unset` carries
+   the same fact to the tests. */
 .set-space-profile__unset {
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-style: italic;
   color: var(--pn-ink-4);
 }
 

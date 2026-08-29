@@ -22,7 +22,7 @@
   display: flex;
   align-items: center;
   gap: var(--pn-space-3);
-  padding: var(--pn-space-2) var(--pn-space-4);
+  padding: var(--pn-space-3) var(--pn-space-4);
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-surface);
   flex-wrap: wrap;
@@ -51,24 +51,30 @@
   gap: var(--pn-space-1);
 }
 
+/* RECLASSIFICATION (2026-08-29): these are real action buttons — escape
+   hatches under empty states, the focus breadcrumb, re-layout — so they wear
+   the kit button grammar's compact metrics: 28px box, r-sm radius, ui 600 at
+   fs-sm, bordered, hover fill, the ONE focus ring. Their words are labels,
+   never data, so mono has no claim here. */
 .gv-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-height: 28px;
   font-family: var(--pn-ui);
-  font-size: var(--pn-fs-label);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
   color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: 2px var(--pn-space-2);
+  border-radius: var(--pn-r-sm);
+  padding: 0 var(--pn-space-3);
   cursor: pointer;
   transition: background var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
-.gv-filter:hover { background: var(--pn-hover); }
-
-.gv-filter--edge {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-micro);
-}
+.gv-filter:hover { background: var(--pn-hover); color: var(--pn-ink); }
 
 .gv-filter--off {
   color: var(--pn-ink-4);
@@ -105,14 +111,19 @@
   border-radius: var(--pn-r-pill);
 }
 
+/* Time-window chips are LABELS, not data (RECLASSIFICATION 2026-08-29): ui
+   face at the interactive floor (fs-sm/600), ink-2 at rest — never ink-3 on
+   something clickable. */
 .gv-lens__opt {
-  font: inherit;
-  font-size: var(--pn-fs-micro);
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink-2);
   background: transparent;
   border: 0;
   border-radius: var(--pn-r-pill);
-  padding: 2px var(--pn-space-2);
+  padding: 4px var(--pn-space-2);
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -129,10 +140,16 @@
 }
 
 /* The folded-count affordance inside the count line: a plain-text button, so it
-   reads as part of the sentence it belongs to rather than as a control. */
+   reads as part of the sentence it belongs to rather than as a control.
+   RECLASSIFICATION: the verb is a label, so it steps out of the gray mono
+   sentence into Figtree ink — the counts around it stay mono-data. 13px is the
+   interactive floor; the size difference against the 11px readout is the
+   point, not a bug. */
 .gv-toolbar__fold {
-  font: inherit;
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
   background: none;
   border: 0;
   padding: 0 0 0 2px;
@@ -159,6 +176,7 @@
    the sentence rather than as chrome. */
 .gv-banner__act {
   font: inherit;
+  font-weight: 600;
   color: var(--pn-brand-2);
   background: none;
   border: 0;
@@ -185,12 +203,15 @@
   margin: 0;
 }
 
+/* An empty-state SENTENCE is prose, not data (RECLASSIFICATION): Figtree at
+   body size. The counts inside it keep their truth — only the type changed. */
 .gv-empty__detail {
   max-width: 42rem;
   margin: 0;
-  color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  font-weight: 500;
   text-align: center;
 }
 
@@ -641,22 +662,31 @@
   flex: none;
 }
 
+/* A real button (RECLASSIFICATION): compact kit grammar — 28px, r-sm,
+   ui 600 at the 13px interactive floor, bordered, hover fill. */
 .gv-screen__collapse {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-micro);
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
   color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: 2px var(--pn-space-2);
+  border-radius: var(--pn-r-sm);
+  padding: 0 var(--pn-space-3);
   cursor: pointer;
 }
 
-.gv-screen__collapse:hover { background: var(--pn-hover); }
+.gv-screen__collapse:hover { background: var(--pn-hover); color: var(--pn-ink); }
 
+/* An eyebrow, so it wears the eyebrow uniform: caps face, 11/700. */
 .gv-screen__crumb {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-ink-3);
@@ -704,20 +734,31 @@
   position: relative;
   flex: none;
 }
+/* Dropdown TRIGGERS are labels wearing the compact button grammar
+   (RECLASSIFICATION 2026-08-29): 28px, r-sm, ui 600 at fs-sm, bordered,
+   hover fill. The visible/total figures inside stay honest either way —
+   only the face's type changed. */
 .gv-select__face {
   appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
   color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: 3px 10px;
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
 }
 .gv-select__face:hover {
   background: var(--pn-hover);
+  color: var(--pn-ink);
 }
 /* Filtered state is a FACT the face carries — a hidden filter that only the
    popover reveals is how "where did my nodes go" happens. */
@@ -743,10 +784,11 @@
   flex-direction: column;
   gap: 1px;
 }
+/* "show all" is a verb, not data: ui at the interactive floor. */
 .gv-select__all {
   appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-brand-2);
   background: none;
@@ -761,10 +803,13 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11.5px;
+  min-height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-ink-2);
-  padding: 4px 8px;
-  border-radius: 5px;
+  padding: 2px 8px;
+  border-radius: var(--pn-r-sm);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -842,9 +887,14 @@
 
 .gv-node__head { display: flex; align-items: center; gap: 6px; }
 .gv-node__glyph { color: var(--gvf); display: inline-flex; }
+/* The card's kind word is an EYEBROW, so it wears the eyebrow uniform (caps
+   face, 700) — the mono claim on the earlier block would otherwise leak
+   through, since that rule only ever set the family. The id tail below stays
+   mono: it IS data. */
 .gv-node__kind {
-  font-size: var(--pn-fs-fine);
-  font-weight: 650;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--gvf);
@@ -920,18 +970,22 @@
   position: absolute; top: 58px; right: 14px; z-index: 6;
   background: var(--pn-card); border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-lg); box-shadow: var(--pn-sh-sm);
-  padding: 10px 12px; display: flex; flex-direction: column; gap: 2px;
-  max-height: 46vh; overflow-y: auto;
+  padding: var(--pn-space-3); display: flex; flex-direction: column; gap: 2px;
+  max-height: calc(100% - 72px); overflow-y: auto;
 }
 .gv-legend__title {
   font-size: var(--pn-fs-sm); font-weight: 650; color: var(--pn-ink);
   border-bottom: 1px solid var(--pn-line); padding-bottom: 6px; margin-bottom: 4px;
 }
+/* Legend rows are toggles, so they take the compact grammar's metrics — 28px
+   box, r-sm, ui 600 at fs-sm, hover fill — in the grammar's ghost (unbordered)
+   form: a stack of eight bordered boxes would out-shout the canvas. */
 .gv-legend__row {
   display: flex; align-items: center; gap: 8px;
+  min-height: 28px;
   border: none; background: none; cursor: pointer; text-align: left;
-  font: 500 var(--pn-fs-label) var(--pn-ui); color: var(--pn-ink);
-  padding: 4px 2px; border-radius: var(--pn-r-xs);
+  font: 600 var(--pn-fs-sm) var(--pn-ui); color: var(--pn-ink);
+  padding: 2px 6px; border-radius: var(--pn-r-sm);
 }
 .gv-legend__row:hover { background: var(--pn-hover); }
 /* The legend teaches the SYMBOL, not just the color: the same registry-drawn
@@ -950,13 +1004,19 @@
   font-size: var(--pn-fs-sm); font-weight: 650; color: var(--pn-ink);
   padding-right: 10px; border-right: 1px solid var(--pn-line); margin-right: 4px;
 }
+/* Dock options take the compact grammar's metrics (28px, ui 600 at fs-sm,
+   hover fill, the one focus ring). Radius stays pill, deliberately: the dock
+   itself is a pill, and an r-sm rectangle would poke through its end caps. */
 .gv-filterdock__opt {
+  display: inline-flex; align-items: center;
+  min-height: 28px;
   border: none; background: none; cursor: pointer;
-  font: 500 var(--pn-fs-label) var(--pn-ui); color: var(--pn-ink-2);
-  padding: 6px 12px; border-radius: var(--pn-r-pill);
+  font: 600 var(--pn-fs-sm) var(--pn-ui); color: var(--pn-ink-2);
+  line-height: 1;
+  padding: 0 12px; border-radius: var(--pn-r-pill);
 }
 .gv-filterdock__opt:hover { background: var(--pn-hover); color: var(--pn-ink); }
-.gv-filterdock__opt--on { background: var(--pn-info-soft); color: var(--pn-info); font-weight: 600; }
+.gv-filterdock__opt--on { background: var(--pn-info-soft); color: var(--pn-info); }
 
 .gv-zoomdock {
   position: absolute; right: 14px; bottom: 14px; z-index: 6;
@@ -1083,6 +1143,14 @@
   color: var(--pn-ink-2);
 }
 
+/* The option's NAME at the interactive floor (ui 13/600); the hint below it
+   keeps its own quieter size. */
+.gv-select__opt .gv-select__label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+}
+
 .gv-select__opt:hover { background: var(--pn-hover); }
 
 .gv-select__opt--on,
@@ -1106,4 +1174,24 @@
 
 @media (prefers-reduced-motion: reduce) {
   .gv-band__head { transition: none; }
+}
+
+/* -- the ONE focus grammar --------------------------------------------------
+   Every reclassified control shares the kit ring (same as .k-btn): 2px
+   --pn-focus, 1px offset. Declared once so no chrome control can quietly ship
+   without a visible keyboard state. */
+.gv-filter:focus-visible,
+.gv-lens__opt:focus-visible,
+.gv-toolbar__fold:focus-visible,
+.gv-banner__act:focus-visible,
+.gv-select__face:focus-visible,
+.gv-select__all:focus-visible,
+.gv-select__opt:focus-visible,
+.gv-legend__row:focus-visible,
+.gv-filterdock__opt:focus-visible,
+.gv-screen__collapse:focus-visible,
+.gv-node__folded:focus-visible,
+.gv-ticker__row:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }

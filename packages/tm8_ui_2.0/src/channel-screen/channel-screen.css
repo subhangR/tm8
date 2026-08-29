@@ -68,9 +68,12 @@
   font-size: var(--pn-fs-label);
   color: var(--pn-wait);
 }
+/* RECLASSIFICATION (Kinetic W3): "needs you" is a sentence to a person, not
+   machine output — it speaks Figtree at the interactive floor. The wait tone
+   is inherited from the strip; the tone system outranks the ink defaults. */
 .chs-needs-you__label {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-micro);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   flex: none;
 }
@@ -235,9 +238,10 @@
   min-width: 0;
 }
 
+/* A member's NAME is a word about a person (Kinetic W3): ui 14/600. */
 .chs-byline__who {
-  font-size: var(--pn-fs-sm);
-  font-weight: 700;
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
   letter-spacing: var(--pn-track-tight);
   color: var(--pn-ink);
 }
@@ -246,9 +250,11 @@
    tinted badge instead of a hairline box: it must be legible at a glance
    without out-shouting the author's name it qualifies. */
 .chs-byline__kind {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-tick);
-  font-weight: 600;
+  /* An eyebrow, not data: "agent" is a word qualifying a person's name, so it
+     wears the caps face at eyebrow metrics (Kinetic W3). */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--pn-info);
@@ -257,10 +263,19 @@
   padding: 0.5px 5px;
 }
 
-.chs-byline__time,
-.chs-byline__edited {
+/* The timestamp is DATA and stays mono; "edited" is a word about the message
+   and speaks the meta voice (ui label/500 — same split as chat-home's meta
+   row, where only the model name and the <time> stayed mono). */
+.chs-byline__time {
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+
+.chs-byline__edited {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
   color: var(--pn-ink-3);
 }
 
@@ -389,13 +404,17 @@
 
 /* Cross-surface provenance — rendered only when it is news (foreign anchor or
    source session), so it reads as context, not as boilerplate. */
+/* The meta row's VOICE ("from session …", "in …") is Figtree at meta size;
+   the session id itself stays mono inside `.chs-session-chip` — the same
+   words/data split as chat-home's thread meta (Kinetic W3). */
 .chs-message-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 10px;
   margin: 0;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-tick);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
   color: var(--pn-ink-4);
 }
 
@@ -561,6 +580,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 7px 10px;
 }
 
+/* The kind badge is an EYEBROW (Kinetic W3): "task"/"doc" are words, so they
+   wear the caps face at eyebrow metrics, not the data face. */
 .chs-artifact__kind {
   grid-row: 1 / span 2;
   align-self: stretch;
@@ -570,11 +591,16 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-xs);
   background: var(--pn-hover);
   color: var(--pn-ink-3);
-  font: var(--pn-fs-tick) var(--pn-mono);
+  font: 700 var(--pn-fs-micro) var(--pn-caps);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-label);
 }
 .chs-artifact__title { color: var(--pn-ink); font-size: var(--pn-fs-label); min-width: 0; overflow-wrap: anywhere; }
 .chs-artifact__excerpt { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); min-width: 0; overflow-wrap: anywhere; }
-.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
+/* "changed by …" is a sentence — meta VOICE is ui label/500 (chat-home's
+   split); the inline session id rides along because it has no element of its
+   own to stay mono in. */
+.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: 500 var(--pn-fs-label) var(--pn-ui); }
 
 /*
  * The safe card (S15). Dashed, because a dashed edge reads as "provisional"
@@ -582,6 +608,10 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
  * It is deliberately NOT alarming: an unknown variant is the feed being newer
  * than the renderer, which is expected, not broken.
  */
+/* These cards speak SENTENCES to a reader ("message … redacted — replies keep
+   their place"), so the voice is ui at reading size (Kinetic W3, same call as
+   the refusal card); only the variant chip below stays mono — a verb string
+   the renderer did not recognise is machine output by definition. */
 .chs-unknown,
 .chs-tomb {
   display: flex;
@@ -591,15 +621,17 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 1px dashed var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   padding: 5px 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.chs-unknown__label { font-weight: 500; color: var(--pn-ink-2); }
+
+.chs-unknown__variant {
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-fine);
   color: var(--pn-ink-4);
-}
-
-.chs-unknown__label { font-family: var(--pn-ui); font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
-
-.chs-unknown__variant {
-  font-size: var(--pn-fs-tick);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-xs);
   padding: 0 5px;
@@ -659,13 +691,16 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 /* --- the client-local new-since divider ----------------------------------- */
 
+/* "NEW SINCE OPENED · CLIENT-LOCAL" is a label, and an already-uppercase one:
+   an eyebrow (caps 11/700 — Kinetic W3), never the data face. */
 .chs-mark {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 7px 0;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-tick);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--pn-brand);
 }
@@ -678,6 +713,9 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-brand-soft);
 }
 
+/* A button with words on it speaks ui 600 at the interactive floor (Kinetic
+   W3 button grammar); it keeps its pill shape and 44px height — a floating
+   jump control, not a row action. */
 .chs-new-items {
   position: sticky;
   z-index: 3;
@@ -689,7 +727,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-surface);
   color: var(--pn-brand);
   padding: 5px 14px;
-  font: var(--pn-fs-fine) var(--pn-mono);
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
   cursor: pointer;
 }
 
@@ -710,18 +748,21 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-empty__note {
   margin: 0;
   max-width: 42ch;
-  font-size: var(--pn-fs-label);
+  /* Empty-state prose at the reclassification's floor: ui 13. */
+  font-size: var(--pn-fs-sm);
   line-height: 1.55;
   color: var(--pn-ink-3);
   text-wrap: pretty;
 }
 
+/* Honesty sentences at reading size, in the ui voice (Kinetic W3 — same call
+   as chat-home's .tch-hollow). */
 .chs-hollow,
 .chs-notice {
   margin: 0;
   padding: 6px 0;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   color: var(--pn-ink-3);
 }
 
@@ -752,7 +793,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-refusal__glyph { font-size: 20px; color: var(--pn-ink-4); }
 .chs-refusal__headline { margin: 0; font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink-2); }
-.chs-refusal__note { margin: 0; font-size: var(--pn-fs-micro); line-height: 1.5; color: var(--pn-ink-3); }
+/* A refusal sentence speaks UI at reading size (wave-3 precedent). */
+.chs-refusal__note { margin: 0; font-size: var(--pn-fs-sm); line-height: 1.5; color: var(--pn-ink-3); }
 
 .chs-earlier {
   display: flex;
@@ -812,16 +854,22 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 0;
 }
 
+/* Composer chips wear the kit grammar's compact metrics (Kinetic W3): 28px
+   box, bordered, r-sm, and the chip's word — a person's name — at the
+   interactive floor. */
 .chs-mention-list > li {
   display: flex;
   align-items: center;
   gap: 7px;
   min-width: 0;
-  padding: 3px 5px 3px 9px;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 0 5px 0 10px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  font-size: var(--pn-fs-fine);
-  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
 }
 
 .chs-mention-list button {
@@ -886,10 +934,12 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-attach-search:focus { border-color: var(--pn-brand); }
 
-/* The kind tag on an attached-entity chip ("task" / "doc"). */
+/* The kind tag on an attached-entity chip ("task" / "doc") — an eyebrow:
+   caps 11/700 (Kinetic W3), because a kind is a word, not machine output. */
 .chs-attach-kind {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-tick);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--pn-ink-4);
@@ -946,12 +996,15 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 }
 
 .chs-mention-picker__identity { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-.chs-mention-picker button span:last-child { color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
+/* The row's qualifier ("agent" / "member" / "skill") is a word about the row,
+   not machine output — meta voice, ui label/500 (Kinetic W3). */
+.chs-mention-picker button span:last-child { color: var(--pn-ink-3); font: 500 var(--pn-fs-label) var(--pn-ui); }
 .chs-mention-picker__empty {
   margin: 0;
   padding: 10px;
   color: var(--pn-ink-4);
-  font-size: var(--pn-fs-micro);
+  /* An empty-state sentence at the reclassification's floor. */
+  font-size: var(--pn-fs-sm);
 }
 
 .chs-visually-hidden {
@@ -969,18 +1022,26 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 /* The field is the shared card's (`.ri-card textarea` in rich-input.css) —
    borderless inside the bordered card, exactly as Chat Home draws it. */
 
-/* Send matches Chat Home's: a compact primary at the foot's end. */
+/* Send matches Chat Home's: a compact primary at the foot's end, on the kit
+   grammar's compact metrics (Kinetic W3) — 28px box, r-sm, ui 600 at the
+   interactive floor, exactly as `.tch-send` wears them. */
 .chs-composer__send {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 28px;
   margin-left: var(--pn-space-2);
   border: 1px solid transparent;
   border-radius: var(--pn-r-sm);
   background: var(--pn-brand-2);
   color: var(--pn-card);
   font-family: var(--pn-ui);
-  font-size: var(--pn-fs-micro);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  padding: 5px 9px;
+  line-height: 1;
+  padding: 0 12px;
   cursor: pointer;
   transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
@@ -1004,7 +1065,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 1px solid var(--pn-wait-soft);
   border-radius: var(--pn-r-sm);
   padding: 5px 10px;
-  font-size: var(--pn-fs-micro);
+  /* Warning sentences read at the reclassification's floor (ui 13). */
+  font-size: var(--pn-fs-sm);
   color: var(--pn-wait);
 }
 
@@ -1014,7 +1076,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   background: var(--pn-block-soft);
   color: var(--pn-block);
-  font-size: var(--pn-fs-micro);
+  font-size: var(--pn-fs-sm);
   line-height: 1.45;
 }
 
@@ -1027,7 +1089,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   background: var(--pn-wait-soft);
   color: var(--pn-wait);
-  font-size: var(--pn-fs-micro);
+  font-size: var(--pn-fs-sm);
   line-height: 1.4;
 }
 .chs-composer__uncertain span { flex: 1; }
@@ -1051,9 +1113,13 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-surface);
 }
 
+/* "REPLYING TO …" is an eyebrow — already uppercase in the source (no CSS
+   transform here: it carries the person's name, whose case is theirs). */
 .chs-replying__label {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-tick);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
   color: var(--pn-brand);
   flex: none;
 }
@@ -1080,28 +1146,40 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 /* --- shared small controls ------------------------------------------------ */
 
+/* Buttons with words on them ("Open the terminal", "load earlier ↑") wear the
+   kit grammar's compact metrics (Kinetic W3): 28px box, bordered, r-sm,
+   ui 600 at the interactive floor, hover fill. */
 .chs-chip-btn {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
-  color: var(--pn-ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink-2);
   background: transparent;
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: 2px 10px;
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
   cursor: pointer;
-  min-height: 24px;
+  min-height: 28px;
 }
 
-.chs-chip-btn:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.chs-chip-btn:hover { color: var(--pn-ink); background: var(--pn-hover); }
 .chs-chip-btn:disabled { color: var(--pn-ink-4); cursor: default; }
 
 /* The load-earlier control keeps a full touch target — it stands alone. */
 .chs-earlier .chs-chip-btn,
 .chs-earlier .hon-disabled { min-height: 44px; min-width: 44px; }
 
+/* "open details →" is a button word (Kinetic W3): ui at the interactive
+   floor; the brand + underline stay — they are the link affordance. */
 .chs-linkbtn {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-tick);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-brand);
   background: transparent;
   border: none;
@@ -1168,8 +1246,10 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-thread__close,
   .chs-thread__back
 ):focus-visible {
-  outline: 3px solid var(--pn-brand);
-  outline-offset: 2px;
+  /* The ONE focus grammar (Kinetic W3): the kit's --pn-focus ring, same
+     fallback chain as panels/auth wave 1. */
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
 }
 
 /* --- the thread split (slice 2) -------------------------------------------
@@ -1219,10 +1299,11 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 /* The breadcrumb is the COLLAPSED escape hatch; at full width the feed is
    beside the pane and ✕ is the dismiss. One wired fact, one visible control. */
 .chs-thread__back { display: none; }
+/* "Thread" is an eyebrow — caps 11/700 (Kinetic W3), never the data face. */
 .chs-thread__title {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
-  font-weight: 600;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-ink-2);
@@ -1258,9 +1339,10 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   align-items: center;
   gap: 10px;
   margin: var(--pn-space-2) 0 var(--pn-space-1);
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
-  font-weight: 600;
+  /* The divider label ("n replies") is an eyebrow, not data (Kinetic W3). */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-ink-3);
@@ -1274,7 +1356,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-thread__empty {
   margin: var(--pn-space-2) 0;
-  font-size: var(--pn-fs-label);
+  /* Empty-state prose at the reclassification's floor. */
+  font-size: var(--pn-fs-sm);
   color: var(--pn-ink-3);
 }
 
@@ -1287,7 +1370,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 1px solid var(--pn-block, var(--pn-line));
   border-radius: var(--pn-r-sm);
   background: var(--pn-block-soft, transparent);
-  font-size: var(--pn-fs-label);
+  font-size: var(--pn-fs-sm);
   color: var(--pn-block, inherit);
 }
 
@@ -1452,7 +1535,10 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: transparent;
   color: var(--pn-ink-2);
   font: inherit;
-  font-size: var(--pn-fs-micro);
+  /* A button word at the interactive floor (Kinetic W3); the count beside it
+     stays mono — it is the data in the row. */
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   padding: var(--pn-space-1) var(--pn-space-4);
   cursor: pointer;
   text-align: left;

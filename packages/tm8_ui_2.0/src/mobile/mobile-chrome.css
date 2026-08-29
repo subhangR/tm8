@@ -222,7 +222,9 @@
   flex: 0 0 auto;
   /* The floor applies to the SMALLER side; the word makes the width. */
   min-block-size: var(--mobile-header-min);
-  gap: var(--pn-space-1);
+  /* 6px — the kit grammar's icon-to-word gap (`kit.css .k-btn`), adopted as a
+     metric so a chrome verb spaces its mark exactly as every `.k-btn` does. */
+  gap: 6px;
   padding-inline: var(--pn-space-3);
   justify-content: center;
 
@@ -233,7 +235,9 @@
   border-radius: var(--pn-r-pill);
 
   font-family: var(--pn-ui);
-  font-weight: 500;
+  /* 600, the grammar's button weight — a chrome verb is set like a `.k-btn`,
+     not like body copy. */
+  font-weight: 600;
   /* DEF-040, second half. Copy link is one of only a handful of controls the
      shell chrome offers, and it was set in the smallest size the scale has. */
   font-size: var(--pn-fs-sm);
@@ -699,4 +703,87 @@
 
 .mobile-empty__out:active {
   background: var(--pn-active);
+}
+
+/* ==========================================================================
+   KINETIC WAVE 2 — THE DRAWER'S ROWS WEAR THE KIT GRAMMAR
+
+   Master Spec §6 + the `k-` grammar (`kit.css`), applied to `MobileDrawer`.
+
+   WHY THESE RULES ARE HERE AND NOT IN `mobile-drawer.css`: that stylesheet is
+   the desktop sweep's to edit this wave, so its declarations are RESTATED
+   under this file's narrower scope instead — the same override discipline
+   `mobile-screens.css` applies to `panels.css`, pointed at a sibling. The
+   drawer only ever portals into the phone frame's sheet host, which lives
+   inside `.cv2-root[data-shell='mobile']`, so the scope is always satisfied
+   where the drawer exists at all; specificity (0,2,1 over the base 0,1,0)
+   is what makes these win regardless of import order. Reverting the Kinetic
+   pass is deleting this block.
+
+   WHAT IS NOT RESTATED: the 44px touch floor (`--mobile-touch-min`), the real
+   padding, and the no-pseudo-element rule — `mobile-drawer.css` already ships
+   all three and `shell-contract.test.ts` pins them. Nothing here may weaken
+   them, and nothing here does: type, ink and fills only.
+   ========================================================================== */
+
+/* THE ROW'S FACE — ui 15px/600 in the full ink. 15px is `--pn-fs-title`, the
+   same face the screen header's own title wears, and 600 is the kit grammar's
+   button weight: a drawer row is a navigation VERB, so it is set like one.
+   The base rule's fs-body/500 read as body copy in a list of destinations. */
+.cv2-root[data-shell='mobile'] .mdrawer__row {
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+/* THE CURRENT ROW SITS ON THE BRAND-SOFT FILL, not the neutral press tint —
+   `--pn-active` is what EVERY row shows under a finger, so a current row
+   marked with it vanished the moment any other row was pressed. Brand-soft is
+   the product's one "you are here" wash (10% brand in light, 18% in dark, per
+   the token), and the brand ink on text and mark completes the statement. */
+.cv2-root[data-shell='mobile'] .mdrawer__row[aria-current] {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+}
+
+/* THE GROUP EYEBROWS TAKE THE CAPS GRAMMAR — `--pn-caps` at 700, mega-tracked,
+   receded ink: the exact treatment the header's Space eyebrow above already
+   wears and the one `t-eyebrow`/`.k-label` define for the product. The base
+   rule set these in the MONO face, which this product reserves for census
+   numbers and identifiers; a section heading is neither. Size stays
+   `--pn-fs-sm`, never micro — DEF-040 measured 11px off this shell for good.
+   The drawer head's own eyebrow gets the same face for the same reason. */
+.cv2-root[data-shell='mobile'] .mdrawer__label,
+.cv2-root[data-shell='mobile'] .mdrawer__space {
+  font-family: var(--pn-caps);
+  font-weight: 700;
+}
+
+/* THE MARK IS A 20px BOX (Master Spec §6 icon size for drawer rows) — the same
+   glyph size the header's ☰ and chevron draw at, so the drawer's marks and the
+   chrome's marks are one rhythm. The component draws the icon at 20 to match;
+   this is the box, square so a short glyph still centres on the row's axis. */
+.cv2-root[data-shell='mobile'] .mdrawer__mark {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+/* THE CHAT PREVIEW AND THE EMPTY LINE STAY QUIET. The row face above is
+   inherited by every span inside the row, and a conversation's one-line
+   preview at 600 would shout over the title it belongs to. Restated at the
+   base rule's own values so the row-face change cannot leak into them. */
+.cv2-root[data-shell='mobile'] .mdrawer__preview {
+  font-weight: 400;
+}
+
+/* THE FOOT'S COPY-LINK WEARS THE SAME ROW FACE — it sits in the foot's list
+   between two rows set at 15/600, and `copy-link.css` gives the control no
+   type of its own, so without this it inherited the panel default and read as
+   the one row in the foot that was not a row. */
+.cv2-root[data-shell='mobile'] .mdrawer__share .copy-link__button {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+  gap: 6px;
 }

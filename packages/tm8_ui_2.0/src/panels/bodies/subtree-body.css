@@ -142,11 +142,14 @@
 }
 .cv2-root .sb-description__label {
   font-family: var(--pn-mono);
-  font-size: 10px;
-  font-weight: 600;
+  /* I2 eyebrow grammar (wave 3): micro token / 800 / ink-2 — the section name
+     was 10/600 ink-4 and disappeared against its own body. Matches the fold
+     heads and the grid labels, so every section eyebrow speaks once. */
+  font-size: var(--pn-fs-micro);
+  font-weight: 800;
   letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-2);
 }
 .cv2-root .sb-description__input {
   display: block;

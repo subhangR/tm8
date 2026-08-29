@@ -131,6 +131,50 @@ describe('tile badge totality — HANDLED_SOURCES does not lie', () => {
 });
 
 // ---------------------------------------------------------------------------
+// I3 — THE SLOT IS THE TYPOGRAPHY CHANNEL. Consumers render `meta` into the
+// mono data span and `status` into the toned word pill — two elements, two
+// classes, so the split lives HERE, in which slot a source chooses. These pins
+// keep a machine fact from ever being routed to the word channel (a model id
+// dressed as a state) and a state from the mono channel (a status reading as
+// debug output). If a source below changes slot, that is a deliberate
+// re-voicing and this block moves with it — say so in the change.
+// ---------------------------------------------------------------------------
+
+describe('slot routing — data speaks mono meta, states speak the status word', () => {
+  // dueDate is deliberately absent: its channel depends on the real clock
+  // (past → tag) and is already pinned under fake timers below.
+  const DATA_SOURCES = ['model', 'agentTool', 'sha', 'messages', 'repository'] as const;
+  for (const source of DATA_SOURCES) {
+    it(`'${source}' is a machine fact and renders the mono meta channel`, () => {
+      expect(renderBadge(source, richRow)).toMatchObject({ slot: 'meta' });
+    });
+  }
+
+  it("'model' carries the id verbatim into the meta channel", () => {
+    expect(renderBadge('model', richRow)).toEqual({ slot: 'meta', text: 'claude-opus-5' });
+  });
+
+  const STATUS_SOURCES = ['status', 'sessionStatus', 'profileStatus'] as const;
+  for (const source of STATUS_SOURCES) {
+    it(`'${source}' is a state and renders the non-mono status word, toned`, () => {
+      const slot = renderBadge(source, richRow);
+      expect(slot).toMatchObject({ slot: 'status' });
+      // The word channel always carries a tone — that is what 600 + tone
+      // colour hangs on; a status without one would render as gray data.
+      expect((slot as { tone?: unknown }).tone).toBeDefined();
+    });
+  }
+
+  it("'prState' routes to the status word channel too (reads state, not status)", () => {
+    const prRow = {
+      ...richRow,
+      state: { ...(richRow.state as object), state: 'open' },
+    } as unknown as EntitySummary;
+    expect(renderBadge('prState', prRow)).toMatchObject({ slot: 'status', word: 'open' });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Status tone — the registry declaration is the ONLY source (§15.2).
 // tile-badges used to keep its own WORK_STATUS_TONE table, and it had drifted:
 // in_review 'info' / done 'run' against the registry's 'wait' / 'idle', so the

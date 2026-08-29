@@ -27,6 +27,12 @@
        the body is full-bleed and the legend was inheriting that.
 
    COLOUR: tokens only. `src/hex-ban.test.ts` walks this file.
+
+   RECLASSIFIED (Kinetic W3 sweep). Mono is DATA only: the handle and the
+   age/timestamp. Column headers wear the caps grammar; names, role words
+   (pill, select and legend), errors and prose speak Figtree at the 13px
+   floor for interactive/label text. Geometry pins (`--set-members-ctl-h`,
+   the grid template, the tip flip) are untouched — the tests hold them.
    =========================================================================== */
 
 .set-members {
@@ -73,11 +79,12 @@
   padding-bottom: 7px;
   border-bottom: 1px solid var(--pn-line);
 }
+/* Table HEADERS — caps grammar (Kinetic W3). */
 .set-members__col {
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
   color: var(--pn-ink-4);
   text-transform: uppercase;
   white-space: nowrap;
@@ -103,7 +110,7 @@
   min-width: 0;
 }
 .set-members__name {
-  font-size: 12.5px; /* oracle L53 */
+  font-size: var(--pn-fs-sm); /* cell words are ui at the floor */
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -168,8 +175,10 @@
 }
 .set-members__cell--role > select.set-role {
   appearance: auto;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  /* Role words in the live select match the pill's ui voice. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   padding: 0 4px 0 8px;
   cursor: pointer;
 }
@@ -201,9 +210,11 @@
 .set-members__error {
   grid-column: 1 / -1;
   margin-top: 6px;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  line-height: 1.5;
+  /* The server's refusal is a sentence — Figtree, block ink. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
   color: var(--pn-block);
   text-wrap: pretty;
 }
@@ -229,8 +240,9 @@
   gap: 10px;
 }
 .set-members__legend-role {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  /* A role is a WORD — ui 600; "member" at 13px still fits the 58px key. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink-2);
   width: 58px;
@@ -238,8 +250,8 @@
   text-transform: lowercase;
 }
 .set-members__legend-what {
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-3);
   min-width: 0;
   text-wrap: pretty;
@@ -247,8 +259,8 @@
 .set-members__legend-role--absent { color: var(--pn-ink-4); }
 
 .set-members__note {
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-3);
   text-wrap: pretty;
   margin: 0;

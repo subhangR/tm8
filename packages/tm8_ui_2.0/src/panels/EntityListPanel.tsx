@@ -2219,6 +2219,28 @@ function assigneeBoardColumns(groups: readonly CollectionGroup[]): BoardColumnSp
   return columns;
 }
 
+/**
+ * The board card's status word + tone, from the SAME registry-declared badge
+ * read the tile makes (`list.tile.badges` → `renderBadge`) — one vocabulary,
+ * no kind named (§15.2). The record's own badge is the honest source HERE
+ * because no board-declaring kind carries a `liveTreatment` (a sessions board
+ * is refused by registry — §1.6 pins `work_session.list.board` undefined), so
+ * there is no seam verdict for the badge to be outranked by. A kind that
+ * declares no status badge draws no word — absence, not invention.
+ */
+function boardCardStatus(
+  row: EntitySummary,
+  config: KindConfig,
+): { word: string; tone: PillTone } | null {
+  const slot = config.list.tile.badges
+    .map((spec) => renderBadge(spec.source, row))
+    .find(
+      (candidate): candidate is Extract<TileSlot, { slot: 'status' }> =>
+        candidate?.slot === 'status',
+    );
+  return slot ? { word: slot.word, tone: slot.tone } : null;
+}
+
 function BoardBody({
   props,
   config,
@@ -2573,6 +2595,13 @@ function BoardColumn({
   const droppable = Boolean(
     (column.option && props.onSetState) || (column.axisValue !== undefined && props.onSetAxis),
   );
+  /**
+   * W3E, extended to the board (wave 3): the CARD WRAPPER carries the same
+   * `data-family` the three tile anatomies publish, so panels.css can hang
+   * the family accent bar and glyph ink on the card itself — the same
+   * registry read `Tile` makes, no kind named (§15.2).
+   */
+  const family = config.graphFamily ?? 'gray';
 
   return (
     <section
@@ -2626,7 +2655,9 @@ function BoardColumn({
           // §1.3: an empty column is a real answer.
           <p className="lp__board-empty">{`nothing in ${column.label}`}</p>
         ) : (
-          rows.map((row, index) => (
+          rows.map((row, index) => {
+            const cardStatus = boardCardStatus(row, config);
+            return (
             <div
               key={row.id}
               role="listitem"
@@ -2639,6 +2670,7 @@ function BoardColumn({
                       ? 'lp__board-card lp__board-card--focused'
                       : 'lp__board-card'
               }
+              data-family={family}
               draggable={droppable || undefined}
               onDragStart={(event) => {
                 event.dataTransfer.setData('text/plain', row.id);
@@ -2647,9 +2679,26 @@ function BoardColumn({
               }}
               onDragEnd={() => onDragStart(null)}
             >
+              {/* The card's identity strip: kind glyph in the family ink, and
+                  the record's status word in its tone. `aria-hidden` because
+                  both facts are already announced — the kind by the board's
+                  own label, the status by the tile's sr text — so this is
+                  presentation for the eye scanning a column, not a second
+                  reading for the ear. */}
+              <div className="lp__board-card-chrome" aria-hidden>
+                <span className="lp__board-card-glyph">
+                  <KindIcon kind={config.kind} size={12} />
+                </span>
+                {cardStatus ? (
+                  <span className={`lp__board-card-status kit-pill--${cardStatus.tone}`}>
+                    {cardStatus.word}
+                  </span>
+                ) : null}
+              </div>
               <Tile row={row} props={props} config={config} />
             </div>
-          ))
+            );
+          })
         )}
       </div>
 

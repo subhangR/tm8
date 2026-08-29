@@ -93,6 +93,7 @@
   padding: var(--pn-space-2) var(--pn-space-3);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-ink-3);
   background: transparent;
   border: 0;
@@ -216,7 +217,8 @@
   padding: var(--pn-space-2) var(--pn-space-3);
   margin-bottom: 2px;
   font-family: var(--pn-ui);
-  font-size: var(--pn-fs-body);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-ink-2);
   text-align: left;
   background: transparent;
@@ -285,15 +287,11 @@
 .cv2-root .pr-list__note,
 .cv2-root .pr-list__empty {
   padding: var(--pn-space-2) var(--pn-space-3);
-  font-size: var(--pn-fs-micro);
-  line-height: var(--pn-lh-body);
-  color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
-}
-
-.cv2-root .pr-list__empty {
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
 }
 
 .cv2-root .pr-item {
@@ -329,7 +327,8 @@
 .cv2-root .pr-item__title {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: var(--pn-fs-body);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink);
 }
@@ -385,11 +384,12 @@
 }
 
 .cv2-root .pr-fact dt {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: var(--pn-fs-micro);
+  font-weight: 700;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
 }
 
 .cv2-root .pr-fact dd {
@@ -438,19 +438,33 @@
 }
 
 .cv2-root .pr-copy {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-micro);
-  color: var(--pn-ink-3);
-  padding: 3px var(--pn-space-2);
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  padding: 0 var(--pn-space-3);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-xs);
+  border-radius: var(--pn-r-sm);
   cursor: pointer;
 }
 
 .cv2-root .pr-copy:hover {
   background: var(--pn-hover);
   color: var(--pn-ink);
+}
+
+/* Kit button grammar: one visible ring for every interactive pr-* control. */
+.cv2-root .pr-mode:focus-visible,
+.cv2-root .pr-cat:focus-visible,
+.cv2-root .pr-item:focus-visible,
+.cv2-root .pr-close:focus-visible,
+.cv2-root .pr-copy:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 2px;
 }
 
 .cv2-root .pr-text {

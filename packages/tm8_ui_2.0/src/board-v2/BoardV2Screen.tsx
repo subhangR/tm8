@@ -428,7 +428,15 @@ export function BoardV2Screen({
     ?? (workflow === undefined ? 'This space’s workflows have not loaded yet.' : null);
 
   return (
-    <section className="b2" data-testid="board-v2-screen">
+    <section
+      className="b2"
+      data-testid="board-v2-screen"
+      /* W3E, board edition: the selected kind's palette family as registry
+         DATA (never a kind name), so board.css can rail every card in the
+         same colour its list tile wears. Gray is the declared fallback,
+         exactly as the tile anatomies default it. */
+      data-family={kind.graphFamily ?? 'gray'}
+    >
       <header className="b2__bar" data-testid="b2-filters">
         {/* THE KIND SELECTOR — what makes this board universal. Radio
             semantics on the shared dropdown: choosing a kind replaces the
