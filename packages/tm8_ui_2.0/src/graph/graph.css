@@ -937,3 +937,146 @@
   background: var(--pn-card); border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md); box-shadow: var(--pn-sh-sm); padding: 4px;
 }
+
+/* -- contextual bands -------------------------------------------------------
+   The frame a band draws around the nodes one signal put together. It sits
+   UNDER the edges and the cards and takes no pointer events, because a backdrop
+   that swallows a click meant for a card is worse than no backdrop; only the
+   header opts back in.
+
+   Deliberately quiet: the band is the room, not the furniture. It reads as a
+   faint sunken plane with a hairline, so a card still looks like the brightest
+   thing on the canvas — the same reason the edge layer is a hairline crowd
+   until something is hovered. */
+
+/* NO `z-index` on the frame, deliberately. Giving it one makes it a stacking
+   context, and its own header can then never rise above the edge layer — an
+   edge would paint straight through the band's label and count, which it did.
+   With `z-index: auto` the frame still paints under the edges (it precedes the
+   SVG in DOM order) while the header, which IS positioned and z-indexed, lifts
+   clear of them. */
+.gv-band {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--pn-line);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--pn-surface) 55%, transparent);
+}
+
+/* The residual band — "Unassigned", "No status". A real band holding real
+   entities, but its label is an admission that the signal had nothing to say,
+   so it recedes further rather than competing with the bands that mean
+   something. Dashed, because the boundary itself is the weaker claim. */
+.gv-band--residual {
+  border-style: dashed;
+  background: none;
+}
+
+/* Collapsed: header only. Kept visually complete rather than shrunk to a
+   sliver, because it carries the only control that brings its contents back. */
+.gv-band--collapsed {
+  background: color-mix(in oklab, var(--pn-surface) 78%, transparent);
+}
+
+/* Lifts above the edge layer (which is positioned at `z-index: auto`), so a
+   band's name and count are never crossed out by an edge passing through. */
+.gv-band__head {
+  pointer-events: auto;
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  appearance: none;
+  border: none;
+  /* The label sits ON the frame's top border, so it needs its own ground to be
+     legible where the hairline — and any edge routed past it — runs behind.
+     Must come AFTER the `appearance` reset, or the reset wins. */
+  background: color-mix(in oklab, var(--pn-surface) 92%, transparent);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  cursor: pointer;
+  color: var(--pn-ink-2);
+  border-radius: 12px 12px 0 0;
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.gv-band__head:hover { color: var(--pn-ink-1); }
+
+.gv-band__caret {
+  font-size: 9px;
+  color: var(--pn-ink-3);
+  line-height: 1;
+}
+
+.gv-band__icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.85;
+}
+
+.gv-band__label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The count is the band's whole promise: whatever the frame is doing to the
+   layout, this many entities are in here. It never disappears on collapse. */
+.gv-band__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 7px;
+}
+
+.gv-band--residual .gv-band__label { font-weight: 500; color: var(--pn-ink-3); }
+
+/* -- the grouping dropdown's rows ------------------------------------------ */
+
+.gv-select__opt {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--pn-ink-2);
+}
+
+.gv-select__opt:hover { background: var(--pn-hover); }
+
+.gv-select__opt--on,
+.gv-select__opt--on:hover {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+}
+
+/* The hint is why this control can be single-select without being a guess: the
+   reader learns what the partition MEANS before spending a click on it. */
+.gv-select__hint {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: normal;
+  max-width: 260px;
+  line-height: 1.35;
+}
+
+.gv-select__opt--on .gv-select__hint { color: var(--pn-ink-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .gv-band__head { transition: none; }
+}

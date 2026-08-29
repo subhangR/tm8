@@ -29,6 +29,12 @@ import {
   type FoldedInto,
   type LensId,
 } from './relevance';
+import { heatOf, type Heat } from './heat';
+import { grouperFor, type GroupAssignment, type GroupById } from './grouping';
+
+// Re-exported so every existing `from './model'` import site still resolves —
+// heat moved to its own module only to break the model↔grouping import cycle.
+export { heatOf, type Heat };
 
 export const NODE_W = 284;
 export const NODE_H = 156;
@@ -43,7 +49,6 @@ export const RENDER_CAP = 150;
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
-export type Heat = 'fresh' | 'warm' | 'rest';
 
 // --------------------------------------------------------------------------
 // The time window — WHICH entities are on the canvas at all.
@@ -139,6 +144,26 @@ export interface GraphModelInput {
    * longer visible is simply ignored. Omit for a full re-layout.
    */
   frozen?: Readonly<Record<string, { x: number; y: number }>>;
+  /**
+   * CONTEXTUAL GROUPING — the partition the reader asked for, orthogonal to the
+   * topological one. 'none' (the default) leaves every existing behavior exactly
+   * as it was: islands packed left-to-right, singletons on the shelf.
+   *
+   * Any other value re-homes the canvas: nodes are partitioned by the signal
+   * (grouping.ts), each band is laid out internally by the SAME layered
+   * component code, and the bands stack down the canvas with a header each.
+   * The topology does not go away — components still lay out within a band, and
+   * every edge is still drawn, including the ones that cross bands. Grouping
+   * changes WHERE a node sits, never whether it or its edges exist.
+   */
+  groupBy?: GroupById;
+  /**
+   * Group keys the reader has collapsed. A collapsed band draws its header and
+   * nothing else; its nodes are reported as `collapsedCount` and are named in
+   * the accounting law, never silently dropped. Ignored when `groupBy` is
+   * 'none'.
+   */
+  collapsedGroups?: ReadonlySet<string>;
 }
 
 export interface PlacedNode {
@@ -171,6 +196,35 @@ export interface PlacedNode {
    * why two visibly linked groups sit apart.
    */
   hub: boolean;
+  /**
+   * The contextual band this node sits in, or null when `groupBy` is 'none'.
+   * Carried on the node so a card can dim, and the minimap can tint, without
+   * re-deriving the signal.
+   */
+  groupKey: string | null;
+}
+
+/**
+ * One contextual band: a labelled rectangle enclosing every node the signal put
+ * together. Geometry is in the same canvas space as `PlacedNode`, so the view
+ * draws the frame with no second layout pass.
+ */
+export interface GraphGroup {
+  key: string;
+  label: string;
+  /** Set when the band IS a kind — the view resolves icon + plural via the registry. */
+  kindRef?: string;
+  /** Set when the band IS an actor — the view draws the avatar. */
+  actorRef?: string;
+  /** The residual band ("Unassigned", "No status") — rendered quieter. */
+  residual: boolean;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** How many nodes belong to this band, whether or not it is collapsed. */
+  count: number;
+  collapsed: boolean;
 }
 
 export interface PlacedEdge {
@@ -238,6 +292,20 @@ export interface GraphModel {
    * 0 whenever `frozen` was omitted (a full re-layout moves everyone by design).
    */
   pendingRelayout: number;
+  /**
+   * The contextual bands, in display order. Empty when `groupBy` is 'none' —
+   * the absence IS the statement that no contextual partition is in force.
+   */
+  groups: GraphGroup[];
+  /** The dimension this model was grouped by. */
+  groupBy: GroupById;
+  /**
+   * Nodes inside a COLLAPSED band. A fourth exclusion reason with a fourth
+   * remedy (open the band), reported apart from `truncated` / `outOfLens` /
+   * `outOfWindow` for exactly the reason those three are reported apart: they
+   * read alike on a count and each has a different fix.
+   */
+  collapsedCount: number;
 }
 
 /** Ported from the proven model: humanized type, hard/soft suffix for deps. */
@@ -250,14 +318,6 @@ export function edgeLabel(e: EdgeView): string {
 
 export function isBlockedEdge(e: EdgeView): boolean {
   return e.type === 'depends_on' && e.hard !== false && e.resolved === false;
-}
-
-export function heatOf(activityAt: string, now: string): Heat {
-  const delta = Date.parse(now) - Date.parse(activityAt);
-  if (!Number.isFinite(delta)) return 'rest';
-  if (delta <= 2 * 60_000) return 'fresh';
-  if (delta <= 45 * 60_000) return 'warm';
-  return 'rest';
 }
 
 // --------------------------------------------------------------------------
@@ -502,10 +562,57 @@ function placeWithFrozen(
       onBlockedPath: blockedIds.has(id),
       ghost: entity.deletedAt !== null,
       componentId: componentOf.get(id) ?? 0,
+      groupKey: null,
       ...decorate(entity),
     };
   });
   return { placed, pendingRelayout: arrivals.length };
+}
+
+// --------------------------------------------------------------------------
+// Contextual band layout.
+//
+// A band is laid out with the SAME layered component code the ungrouped canvas
+// uses — grouping re-homes islands, it does not replace the way an island is
+// drawn. Inside a band the islands pack left-to-right and wrap; the band is
+// then as wide as its widest row and as tall as its content plus a header.
+// --------------------------------------------------------------------------
+
+const GROUP_HEADER = 52;
+const GROUP_PAD = 24;
+const GROUP_GAP = 40;
+const GROUP_MIN_W = 320;
+
+/**
+ * Place one band's islands relative to the band's CONTENT origin (0,0 = just
+ * inside the padding, below the header). Islands are packed in the order given,
+ * wrapping at MAX_ROW_W, exactly as the ungrouped canvas packs them.
+ */
+function layoutBand(
+  islands: EntityId[][],
+  edges: PlacedEdge[],
+): { pos: Map<EntityId, { x: number; y: number }>; w: number; h: number } {
+  const pos = new Map<EntityId, { x: number; y: number }>();
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowH = 0;
+  let widest = 0;
+  for (const island of islands) {
+    const layout = layoutComponent(island, edges);
+    if (cursorX > 0 && cursorX + layout.w > MAX_ROW_W) {
+      cursorX = 0;
+      cursorY += rowH + ISLAND_GAP;
+      rowH = 0;
+    }
+    for (const id of island) {
+      const p = layout.pos.get(id)!;
+      pos.set(id, { x: cursorX + p.x, y: cursorY + p.y });
+    }
+    cursorX += layout.w + ISLAND_GAP;
+    rowH = Math.max(rowH, layout.h);
+    widest = Math.max(widest, cursorX - ISLAND_GAP);
+  }
+  return { pos, w: widest, h: cursorY + rowH };
 }
 
 /**
@@ -734,6 +841,15 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
   const truncated = selection.omitted.length;
   const outOfLens = selection.outOfLens.length;
 
+  // Island index, kept available under grouping too: a band re-homes a node but
+  // does not change which topological island it belongs to, and the card still
+  // reports that.
+  const componentIndex = new Map<EntityId, number>();
+  for (const [ci, component] of components.entries()) {
+    for (const id of component) componentIndex.set(id, ci);
+  }
+  const componentIndexOf = (id: EntityId): number => componentIndex.get(id) ?? 0;
+
   // Position the placed nodes. With `frozen`, pinned ids hold and arrivals
   // slot in around them; otherwise pack whole islands into rows.
   // What every placed card carries beyond its geometry: the leaves that folded
@@ -750,9 +866,132 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     };
   };
 
+  // ------------------------------------------------------------------------
+  // THE CONTEXTUAL PARTITION.
+  //
+  // Runs over every VISIBLE node, not just the connected ones: with a band to
+  // belong to, a singleton is no longer loose, so the shelf empties into the
+  // bands and the reader stops having to look in two places for one entity.
+  //
+  // Grouping forces a FULL layout — a frozen position is a promise about where
+  // a node sits, and changing the partition is precisely the event that
+  // invalidates it. Freezing across a group change would strand cards outside
+  // their own band's frame, which is worse than the movement it avoids.
+  // ------------------------------------------------------------------------
+  const groupBy = input.groupBy ?? 'none';
+  const grouping = groupBy !== 'none';
+  const collapsedGroups = input.collapsedGroups ?? EMPTY_SET;
+
   let placed: PlacedNode[];
   let pendingRelayout = 0;
-  if (input.frozen) {
+  let groups: GraphGroup[] = [];
+  let collapsedCount = 0;
+  let groupedShelf: EntitySummary[] | null = null;
+
+  if (grouping) {
+    const grouper = grouperFor(groupBy, { now, edges: input.edges, nodes: input.nodes });
+    const assign = new Map<EntityId, GroupAssignment>();
+    const members = new Map<string, EntityId[]>();
+    for (const n of visible) {
+      const a = grouper(n);
+      assign.set(n.id, a);
+      if (!members.has(a.key)) members.set(a.key, []);
+      members.get(a.key)!.push(n.id);
+    }
+
+    // Band order: the dimension's own rank first (workflow order, priority
+    // order, signal precedence), then the biggest band, then the label — and
+    // the residual band last whatever its size, because "nothing to say about
+    // these" is a footnote even when it is the largest footnote.
+    const keys = [...members.keys()].sort((a, b) => {
+      const A = assign.get(members.get(a)![0])!;
+      const B = assign.get(members.get(b)![0])!;
+      if (A.residual !== B.residual) return A.residual ? 1 : -1;
+      return (
+        A.rank - B.rank ||
+        members.get(b)!.length - members.get(a)!.length ||
+        A.label.localeCompare(B.label)
+      );
+    });
+
+    placed = [];
+    let bandY = MARGIN;
+    for (const key of keys) {
+      const ids = members.get(key)!;
+      const meta = assign.get(ids[0])!;
+      const collapsed = collapsedGroups.has(key);
+      if (collapsed) {
+        collapsedCount += ids.length;
+        groups.push({
+          key,
+          label: meta.label,
+          ...(meta.kindRef ? { kindRef: meta.kindRef } : {}),
+          ...(meta.actorRef ? { actorRef: meta.actorRef } : {}),
+          residual: meta.residual,
+          x: MARGIN,
+          y: bandY,
+          w: GROUP_MIN_W,
+          h: GROUP_HEADER,
+          count: ids.length,
+          collapsed: true,
+        });
+        bandY += GROUP_HEADER + GROUP_GAP;
+        continue;
+      }
+
+      // Islands WITHIN the band: the same roots the topological pass found,
+      // restricted to this band's members. A node whose island straddles two
+      // bands simply appears in each band as the part that belongs there — the
+      // edge between the parts is still drawn, now crossing the frames, which
+      // is the honest picture of a thread that spans two statuses.
+      const byRoot = new Map<string, EntityId[]>();
+      for (const id of ids) {
+        const root = connected.has(id) ? rootFor(id) : `solo:${id}`;
+        if (!byRoot.has(root)) byRoot.set(root, []);
+        byRoot.get(root)!.push(id);
+      }
+      const islands = [...byRoot.values()].sort(
+        (a, b) => b.length - a.length || (byId.get(a[0])!.title < byId.get(b[0])!.title ? -1 : 1),
+      );
+
+      const laid = layoutBand(islands, edges);
+      const contentX = MARGIN + GROUP_PAD;
+      const contentY = bandY + GROUP_HEADER;
+      for (const id of ids) {
+        const p = laid.pos.get(id)!;
+        const entity = byId.get(id)!;
+        placed.push({
+          entity,
+          x: contentX + p.x,
+          y: contentY + p.y,
+          heat: heatOf(entity.activityAt, now),
+          onBlockedPath: blockedIds.has(id),
+          ghost: entity.deletedAt !== null,
+          componentId: componentIndexOf(id),
+          groupKey: key,
+          ...decorate(entity),
+        });
+      }
+      const bandW = Math.max(laid.w + GROUP_PAD * 2, GROUP_MIN_W);
+      const bandH = GROUP_HEADER + laid.h + GROUP_PAD;
+      groups.push({
+        key,
+        label: meta.label,
+        ...(meta.kindRef ? { kindRef: meta.kindRef } : {}),
+        ...(meta.actorRef ? { actorRef: meta.actorRef } : {}),
+        residual: meta.residual,
+        x: MARGIN,
+        y: bandY,
+        w: bandW,
+        h: bandH,
+        count: ids.length,
+        collapsed: false,
+      });
+      bandY += bandH + GROUP_GAP;
+    }
+    // Every visible node now lives in a band, so nothing is loose.
+    groupedShelf = [];
+  } else if (input.frozen) {
     const r = placeWithFrozen(placedComponents, edges, byId, blockedIds, input.frozen, now, decorate);
     placed = r.placed;
     pendingRelayout = r.pendingRelayout;
@@ -779,6 +1018,7 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
           onBlockedPath: blockedIds.has(id),
           ghost: entity.deletedAt !== null,
           componentId,
+          groupKey: null,
           ...decorate(entity),
         });
       }
@@ -790,13 +1030,18 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
   const placedIds = new Set(placed.map((p) => p.entity.id));
   const drawableEdges = edges.filter((e) => placedIds.has(e.sourceId) && placedIds.has(e.targetId));
 
-  const width = Math.max(...placed.map((p) => p.x + NODE_W), 0) + MARGIN;
-  const height = Math.max(...placed.map((p) => p.y + NODE_H), 0) + MARGIN;
+  // The canvas must enclose the BAND FRAMES too — a collapsed band holds no
+  // node, so sizing on nodes alone would clip the very header that says how to
+  // get its contents back.
+  const width =
+    Math.max(...placed.map((p) => p.x + NODE_W), ...groups.map((g) => g.x + g.w), 0) + MARGIN;
+  const height =
+    Math.max(...placed.map((p) => p.y + NODE_H), ...groups.map((g) => g.y + g.h), 0) + MARGIN;
 
   return {
     placed,
     edges: drawableEdges,
-    shelf,
+    shelf: groupedShelf ?? shelf,
     width,
     height,
     componentCount: placedComponents.length,
@@ -808,12 +1053,16 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     foldedCount: folds.foldedIds.size,
     // The accounting law, asserted in model.test.ts: everything the KIND filter
     // let through is either placed, shelved, folded onto a hub, cut by the
-    // budget (`truncated`), left outside the lens (`outOfLens`) or older than
-    // the window (`outOfWindow`). Nothing is ever dropped silently, and each
-    // bucket names the REASON it is in — three exclusions that read alike on a
-    // count and have three different remedies.
+    // budget (`truncated`), left outside the lens (`outOfLens`), older than
+    // the window (`outOfWindow`), or inside a band the reader collapsed
+    // (`collapsedCount`). Nothing is ever dropped silently, and each bucket
+    // names the REASON it is in — four exclusions that read alike on a count
+    // and have four different remedies.
     visibleTotal: kindVisible.length,
     lens,
     pendingRelayout,
+    groups,
+    groupBy,
+    collapsedCount,
   };
 }

@@ -41,6 +41,12 @@ import {
   type PlacedNode,
 } from './model';
 import { DEFAULT_LENS, LENSES, lensSpec, type LensId } from './relevance';
+import {
+  GROUP_BYS,
+  discriminatingGroupBys,
+  groupSpec,
+  type GroupById,
+} from './grouping';
 import { GraphSearch } from './GraphSearch';
 import { Minimap } from './Minimap';
 
@@ -198,6 +204,15 @@ export function GraphView(props: GraphViewProps) {
   // real cards without turning folding off everywhere.
   const [expandedHubs, setExpandedHubs] = useState<ReadonlySet<string>>(new Set());
 
+  // CONTEXTUAL GROUPING — orthogonal to the lens, the window and the filters,
+  // and the third question this canvas can be asked. The lens picks what KIND
+  // of interest earns a place; the window picks how recent; grouping picks how
+  // what is already here should be ARRANGED. Off by default: the topological
+  // picture is still the one the graph is for, and a partition the reader did
+  // not ask for would silently re-home every card on first paint.
+  const [groupBy, setGroupBy] = useState<GroupById>('none');
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
+
   // Timeline application — arrivals only ever ADD edges / touch activityAt.
   const [extraEdges, setExtraEdges] = useState<readonly EdgeView[]>([]);
   const [touched, setTouched] = useState<Readonly<Record<string, string>>>({});
@@ -307,13 +322,19 @@ export function GraphView(props: GraphViewProps) {
         pinnedIds,
         focusId: focus?.id ?? null,
         fold,
-        frozen: frozenRef.current ?? undefined,
+        // Grouping owns placement outright, so a frozen snapshot from the
+        // previous partition would strand cards outside their own band's frame.
+        // The model ignores `frozen` when grouping; not passing it here keeps
+        // that contract visible at the call site too.
+        frozen: groupBy === 'none' ? (frozenRef.current ?? undefined) : undefined,
+        groupBy,
+        collapsedGroups,
       }),
     // frozenRef is read intentionally without being a dep (the same idiom as
     // prevCanvasIds below): it is refreshed by the snapshot effect after commit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [modelNodes, allEdges, kindsOff, typesOff, kindsPresent, typesPresent, now, relayoutTick,
-     lens, windowId, liveIds, matches, pinnedIds, focus, fold],
+     lens, windowId, liveIds, matches, pinnedIds, focus, fold, groupBy, collapsedGroups],
   );
 
   // Snapshot placed positions AFTER each compute — the next compute freezes on
@@ -325,6 +346,38 @@ export function GraphView(props: GraphViewProps) {
   }, [model]);
 
   const posById = useMemo(() => new Map(model.placed.map((p) => [p.entity.id, p])), [model]);
+
+  // Which dimensions would actually SPLIT what is on screen. Offering
+  // "Priority" on a canvas of nothing but sessions is offering a partition of
+  // one band, and the reader finds that out only by spending a click.
+  const groupOptions = useMemo(
+    () =>
+      discriminatingGroupBys(modelNodes, { now, edges: allEdges as EdgeView[], nodes: modelNodes }),
+    [modelNodes, allEdges, now],
+  );
+
+  // A dimension can stop discriminating while it is selected (a filter narrows
+  // the canvas to one kind). Falling back to 'none' keeps the control honest
+  // rather than leaving it naming a partition that is no longer in force.
+  useEffect(() => {
+    if (groupBy !== 'none' && !groupOptions.includes(groupBy)) setGroupBy('none');
+  }, [groupOptions, groupBy]);
+
+  const chooseGroupBy = useCallback((id: GroupById) => {
+    // A band key from the old dimension means nothing in the new one.
+    setCollapsedGroups(new Set());
+    setGroupBy(id);
+    // Grouping re-homes every card, so the next compute must be a full layout.
+    frozenRef.current = null;
+  }, []);
+
+  const toggleGroupCollapsed = useCallback((key: string) => {
+    setCollapsedGroups((prior) => {
+      const next = new Set(prior);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }, []);
 
   // Latest-value mirrors so the size-change reveal effect can read them while
   // depending ONLY on vpSize (a selection or pan change must not re-trigger it).
@@ -753,6 +806,19 @@ export function GraphView(props: GraphViewProps) {
               · re-fold leaves
             </button>
           )}
+          {/* The fourth exclusion says its own name and its own remedy, exactly
+              as truncation and the lens and the window do. */}
+          {model.collapsedCount > 0 && (
+            <button
+              type="button"
+              className="gv-toolbar__fold"
+              onClick={() => setCollapsedGroups(new Set())}
+              title="Nodes inside bands you collapsed. Click to open every band."
+            >
+              · {model.collapsedCount} in collapsed{' '}
+              {model.groups.filter((g) => g.collapsed).length === 1 ? 'band' : 'bands'}
+            </button>
+          )}
         </span>
         <span className="gv-toolbar__spacer" />
         {/* INTEGRATION(W2): GraphSearch mounted here — before the filter selects
@@ -789,6 +855,13 @@ export function GraphView(props: GraphViewProps) {
             at its next wake): per-kind and per-edge chips became two compact
             MULTI-SELECT dropdowns — with every kind and edge type inlined the
             toolbar wrapped to multiple rows and taxed the canvas. */}
+        {/* GROUPING sits with the filters because it is the same class of
+            control — it changes the ARRANGEMENT of what the lens and window
+            already admitted, and never what is admitted. Only dimensions that
+            would actually split this canvas are offered. */}
+        {groupOptions.length > 1 ? (
+          <GroupSelect value={groupBy} options={groupOptions} onChoose={chooseGroupBy} />
+        ) : null}
         <FilterSelect
           label="Entities"
           options={kindsPresent.map((kind) => {
@@ -932,6 +1005,51 @@ export function GraphView(props: GraphViewProps) {
               transform: `translate(${tf.x}px, ${tf.y}px) scale(${tf.k})`,
             }}
           >
+            {/* THE CONTEXTUAL BANDS, drawn UNDER the edges and cards: a frame
+                is a backdrop the reader looks past, never a thing that
+                intercepts a click meant for a card. The header is the one part
+                that is interactive, and it lifts itself back above. */}
+            {model.groups.map((g) => {
+              const kindRow = g.kindRef ? getKind(g.kindRef) : null;
+              const label = kindRow ? kindRow.labelPlural : g.label;
+              return (
+                <div
+                  key={g.key}
+                  className={[
+                    'gv-band',
+                    g.residual ? 'gv-band--residual' : '',
+                    g.collapsed ? 'gv-band--collapsed' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  style={{ left: g.x, top: g.y, width: g.w, height: g.h }}
+                >
+                  <button
+                    type="button"
+                    className="gv-band__head"
+                    aria-expanded={!g.collapsed}
+                    onClick={() => toggleGroupCollapsed(g.key)}
+                    title={
+                      g.collapsed
+                        ? `Show the ${g.count} in ${label}`
+                        : `Collapse ${label} — its ${g.count} stay counted on the header`
+                    }
+                  >
+                    <span className="gv-band__caret" aria-hidden>
+                      {g.collapsed ? '▸' : '▾'}
+                    </span>
+                    {kindRow ? (
+                      <span className="gv-band__icon" aria-hidden>
+                        <KindIcon kind={g.kindRef!} />
+                      </span>
+                    ) : null}
+                    <span className="gv-band__label">{label}</span>
+                    <span className="gv-band__count">{g.count}</span>
+                  </button>
+                </div>
+              );
+            })}
+
             <svg className="gv-edges" width={model.width} height={model.height} aria-hidden>
               <defs>
                 <marker id="gv-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -1309,6 +1427,64 @@ export function GraphView(props: GraphViewProps) {
  * popover in the app). All state stays the caller's off-set — this renders
  * and forwards, it decides nothing.
  */
+/**
+ * The grouping dimension — SINGLE-select, unlike the filter dropdowns beside
+ * it, because a node has one home and two partitions at once is not a picture.
+ * Each row carries the dimension's hint: the control teaches what the band will
+ * mean before the reader spends a click finding out.
+ */
+function GroupSelect({
+  value,
+  options,
+  onChoose,
+}: {
+  value: GroupById;
+  options: readonly GroupById[];
+  onChoose(id: GroupById): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismissable(open, rootRef, () => setOpen(false));
+  const active = value !== 'none';
+
+  return (
+    <div className="gv-select" ref={rootRef}>
+      <button
+        type="button"
+        className={active ? 'gv-select__face gv-select__face--filtered' : 'gv-select__face'}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={groupSpec(value).hint}
+        onClick={() => setOpen((o) => !o)}
+      >
+        Group · {active ? groupSpec(value).label : 'off'} <span aria-hidden>▾</span>
+      </button>
+      {open ? (
+        <div className="gv-select__pop" role="listbox" aria-label="Group the graph by">
+          {GROUP_BYS.filter((spec) => options.includes(spec.id)).map((spec) => (
+            <button
+              key={spec.id}
+              type="button"
+              role="option"
+              aria-selected={spec.id === value}
+              className={
+                spec.id === value ? 'gv-select__opt gv-select__opt--on' : 'gv-select__opt'
+              }
+              onClick={() => {
+                onChoose(spec.id);
+                setOpen(false);
+              }}
+            >
+              <span className="gv-select__label">{spec.label}</span>
+              <span className="gv-select__hint">{spec.hint}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function FilterSelect({
   label,
   options,
