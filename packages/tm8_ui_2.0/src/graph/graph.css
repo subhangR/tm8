@@ -949,13 +949,18 @@
    thing on the canvas — the same reason the edge layer is a hairline crowd
    until something is hovered. */
 
+/* NO `z-index` on the frame, deliberately. Giving it one makes it a stacking
+   context, and its own header can then never rise above the edge layer — an
+   edge would paint straight through the band's label and count, which it did.
+   With `z-index: auto` the frame still paints under the edges (it precedes the
+   SVG in DOM order) while the header, which IS positioned and z-indexed, lifts
+   clear of them. */
 .gv-band {
   position: absolute;
   pointer-events: none;
   border: 1px solid var(--pn-line);
   border-radius: 12px;
   background: color-mix(in oklab, var(--pn-surface) 55%, transparent);
-  z-index: 0;
 }
 
 /* The residual band — "Unassigned", "No status". A real band holding real
@@ -973,9 +978,12 @@
   background: color-mix(in oklab, var(--pn-surface) 78%, transparent);
 }
 
+/* Lifts above the edge layer (which is positioned at `z-index: auto`), so a
+   band's name and count are never crossed out by an edge passing through. */
 .gv-band__head {
   pointer-events: auto;
   position: absolute;
+  z-index: 2;
   top: 0;
   left: 0;
   display: flex;
@@ -983,8 +991,11 @@
   gap: 7px;
   max-width: 100%;
   appearance: none;
-  background: none;
   border: none;
+  /* The label sits ON the frame's top border, so it needs its own ground to be
+     legible where the hairline — and any edge routed past it — runs behind.
+     Must come AFTER the `appearance` reset, or the reset wins. */
+  background: color-mix(in oklab, var(--pn-surface) 92%, transparent);
   padding: var(--pn-space-2) var(--pn-space-3);
   cursor: pointer;
   color: var(--pn-ink-2);

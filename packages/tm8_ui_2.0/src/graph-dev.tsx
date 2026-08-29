@@ -1,8 +1,15 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+/* The same stylesheet set, in the same order, as main.tsx — the graph inherits
+   kit and app type scales, and graph.css is imported by the ENTRY, not by
+   GraphView itself, so a harness that forgets it renders a correct DOM with no
+   styling at all and looks like a layout bug. */
 import './styles/tokens.css';
+import './styles/canvas-extra.css';
 import './styles/app.css';
 import './kit/kit.css';
+import './panels/panels.css';
+import './graph/graph.css';
 import { GraphView } from './graph';
 import {
   GRAPH_FIXTURE_NOW,
@@ -41,8 +48,18 @@ function GraphDev() {
   const [selectedId, setSelectedId] = useState<EntityId | null>(null);
   const [windowId, setWindowId] = useState('all');
 
+  // EVERY design token is scoped under `.cv2-root` so the module never leaks
+  // into a host app — a harness that omits the class gets unstyled markup, not
+  // a broken graph. `data-astryx-theme` matches what GateApp mounts.
   return (
-    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}>
+    <div
+      className="cv2-root"
+      data-astryx-theme="neutral"
+      data-theme={
+        new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : undefined
+      }
+      style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}
+    >
       <GraphView
         nodes={graphFixtureNodes}
         edges={graphFixtureEdges}
