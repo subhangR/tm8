@@ -781,7 +781,12 @@
 
 /* The card. Left accent names the kind before a single word is read. */
 .gv-node {
-  background: var(--pn-card);
+  /* Frosted, not opaque: the dotted grid reads through the card's edge just
+     enough to seat it ON the canvas instead of over it. color-mix keeps this
+     a pure token derivation — no literal color enters the file. */
+  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--pn-line);
   border-left: 4px solid var(--gvf);
   border-radius: var(--pn-r-lg);
@@ -790,9 +795,22 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-out), border-color var(--pn-dur-fast) var(--pn-ease-out);
+  transition:
+    box-shadow var(--pn-dur-fast) var(--pn-ease-out),
+    border-color var(--pn-dur-fast) var(--pn-ease-out),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
 }
-.gv-node:hover { box-shadow: var(--pn-sh-md); border-color: var(--pn-line-2); border-left-color: var(--gvf); }
+.gv-node:hover {
+  box-shadow: var(--pn-sh-md);
+  border-color: var(--pn-line-2);
+  border-left-color: var(--gvf);
+  /* The kinetic lift — 2px, shadow-backed, and honest about what it is: a
+     hover affordance, so reduced-motion turns exactly this off below. */
+  transform: translateY(-2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gv-node, .gv-node:hover { transform: none; transition: none; }
+}
 .gv-node--selected { box-shadow: var(--pn-sh-md), 0 0 0 2px var(--pn-brand-soft); border-color: var(--pn-brand); border-left-color: var(--gvf); }
 
 .gv-node__head { display: flex; align-items: center; gap: 6px; }
@@ -803,6 +821,16 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--gvf);
+}
+/* The id's own tail in mono — TASK · 82df, the ticket-number read. Dimmed a
+   step below the kind word so it identifies without shouting. */
+.gv-node__ref {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gvf);
+  opacity: 0.65;
 }
 .gv-node__pills { margin-left: auto; display: inline-flex; gap: 4px; }
 
@@ -847,6 +875,19 @@
 .gv-edge__line { stroke: var(--pn-line-2); stroke-width: 1.6; fill: none; }
 .gv-arrowhead { fill: var(--pn-ink-4, var(--pn-ink-3)); }
 
+/* THE ACTIVE PATH. An edge touching the hovered or selected card is the one
+   being read, and it steps forward: brass, wider, with a soft cast so it sits
+   visually ABOVE the hairline crowd — the mockup's glow, done with a shadow
+   instead of an SVG filter (cheaper, and it inherits both themes from the
+   token). Blocked is exempt: its color is a statement, not a style, so the
+   hot rule refuses to touch it. */
+.gv-edge--hot:not(.gv-edge--blocked) .gv-edge__line {
+  stroke: var(--pn-brand);
+  stroke-width: 2.4;
+  filter: drop-shadow(0 1px 2px var(--pn-brand-soft));
+}
+.gv-edge--hot:not(.gv-edge--blocked) .gv-edge__label { fill: var(--pn-brand-2); }
+
 /* --- floating chrome ------------------------------------------------------ */
 .gv-legend {
   position: absolute; top: 58px; right: 14px; z-index: 6;
@@ -866,7 +907,9 @@
   padding: 4px 2px; border-radius: var(--pn-r-xs);
 }
 .gv-legend__row:hover { background: var(--pn-hover); }
-.gv-legend__row i { width: 12px; height: 12px; border-radius: 4px; background: var(--gvf); flex: none; }
+/* The legend teaches the SYMBOL, not just the color: the same registry-drawn
+   kind mark the card eyebrow wears, tinted by the family var the row carries. */
+.gv-legend__mark { display: inline-flex; color: var(--gvf); flex: none; }
 .gv-legend__row--off { opacity: 0.35; }
 
 .gv-filterdock {
