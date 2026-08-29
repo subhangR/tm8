@@ -153,6 +153,22 @@
   flex: none;
 }
 
+/* The banner's instruction IS the control (AUDIT 2): the sentence keeps its
+   shape and its verb performs the switch it names. Plain-text button, same
+   treatment as the toolbar's folded-count affordance, so it reads as part of
+   the sentence rather than as chrome. */
+.gv-banner__act {
+  font: inherit;
+  color: var(--pn-brand-2);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.gv-banner__act:hover { color: var(--pn-ink-1); }
+
 .gv-empty {
   flex: 1;
   display: flex;
@@ -509,7 +525,18 @@
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
+  /* AUDIT 3: the shelf floats OVER the canvas, and at fit zoom a node card can
+     sit fully behind it — unreachable. The panel itself is click-through; only
+     its own interactive children take the pointer (rule below), so no canvas
+     node is ever occluded from the mouse. Wheel-scrolling the chip list still
+     works: a wheel event over a chip scroll-chains to its scrollable parent
+     regardless of the parent's pointer-events. */
+  pointer-events: none;
 }
+
+/* Chips are buttons (kit Chip renders <button>); anything interactive the
+   shelf ever grows must opt back in the same way. */
+.gv-shelf button { pointer-events: auto; }
 
 .gv-shelf__chips {
   display: flex;

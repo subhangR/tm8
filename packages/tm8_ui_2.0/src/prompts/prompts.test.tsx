@@ -18,7 +18,6 @@ import {
 import { instructionFor } from '@tm8/prompt';
 import { CATALOG_DIGEST, DISCOVERY } from '@tm8/cli/discovery';
 import { PromptsScreen } from './PromptsScreen';
-import { PromptsOverlay } from './PromptsOverlay';
 
 describe('PromptsScreen', () => {
   it('lists every category', () => {
@@ -188,53 +187,6 @@ describe('CLI help mode', () => {
   });
 });
 
-describe('PromptsOverlay', () => {
-  it('renders nothing while closed', () => {
-    render(<PromptsOverlay open={false} onClose={() => {}} />);
-    expect(screen.queryByTestId('prompts-overlay')).toBeNull();
-  });
-
-  it('is a modal dialog when open', () => {
-    render(<PromptsOverlay open onClose={() => {}} />);
-    const dialog = screen.getByRole('dialog');
-    expect(dialog.getAttribute('aria-modal')).toBe('true');
-  });
-
-  it('closes on Esc without letting it reach the shell behind', () => {
-    let closed = 0;
-    let leaked = 0;
-    render(
-      <div onKeyDown={() => (leaked += 1)}>
-        <PromptsOverlay open onClose={() => (closed += 1)} />
-      </div>,
-    );
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-    expect(closed).toBe(1);
-    expect(leaked).toBe(0);
-  });
-
-  it('closes on the header control', () => {
-    let closed = 0;
-    render(<PromptsOverlay open onClose={() => (closed += 1)} />);
-    fireEvent.click(screen.getByLabelText('Close prompts'));
-    expect(closed).toBe(1);
-  });
-
-  it('dismisses on a click that both starts and ends on the scrim', () => {
-    let closed = 0;
-    render(<PromptsOverlay open onClose={() => (closed += 1)} />);
-    const scrim = screen.getByTestId('prompts-overlay');
-    fireEvent.pointerDown(scrim);
-    fireEvent.pointerUp(scrim);
-    expect(closed).toBe(1);
-  });
-
-  it('does not dismiss on a drag that merely ends on the scrim', () => {
-    let closed = 0;
-    render(<PromptsOverlay open onClose={() => (closed += 1)} />);
-    const scrim = screen.getByTestId('prompts-overlay');
-    fireEvent.pointerDown(screen.getByTestId('prompts-screen'));
-    fireEvent.pointerUp(scrim);
-    expect(closed).toBe(0);
-  });
-});
+/* The `PromptsOverlay` describe ended here. The overlay is retired
+   (2026-08-29): the catalog's one door is Help's reader pane at
+   `/help/prompts` — see src/help/help.test.tsx for the tests on that mount. */

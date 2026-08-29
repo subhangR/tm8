@@ -6,37 +6,6 @@
  * zero-floored track is how this shell has been broken before.
  */
 
-.cv2-root .pr-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  padding: var(--pn-space-6);
-  /* Same scrim the command palette uses — theme-aware, so it dims warm
-     graphite in dark exactly as it dims warm paper in light. */
-  background: color-mix(in srgb, var(--pn-ink) 28%, transparent);
-  animation: pr-fade var(--pn-dur-fast) var(--pn-ease-out);
-}
-
-@keyframes pr-fade {
-  from {
-    opacity: 0;
-  }
-}
-
-.cv2-root .pr-panel {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  background: var(--pn-paper);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-lg);
-  box-shadow: var(--pn-sh-pop);
-  overflow: hidden;
-  outline: none;
-}
-
 .cv2-root .pr-root {
   flex: 1 1 auto;
   min-width: 0;
@@ -500,29 +469,34 @@
   tab-size: 2;
 }
 
-/* -- top-bar trigger ------------------------------------------------------- */
+/* -- hosted inside Help (W5) ----------------------------------------------- */
 
-.cv2-root .shell-tabbar__prompts {
-  flex: 0 0 auto;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  letter-spacing: var(--pn-track-label);
-  color: var(--pn-ink-3);
-  padding: 2px 7px;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
-  cursor: pointer;
+/*
+ * The catalog's one door is Help's reader pane — the top-bar chip and the
+ * `.pr-scrim`/`.pr-panel` overlay are retired (2026-08-29). The reader is
+ * normally the guide's scroller; the catalog brings its own three scrolling
+ * panes, so the host pins the pane to the reader's height and lets the pr-*
+ * grid do its designed internal scrolling instead of stacking three
+ * full-length columns on one page-long scroll.
+ */
+.cv2-root .hlp-reader--prompts {
+  overflow-y: hidden;
 }
 
-.cv2-root .shell-tabbar__prompts:hover {
-  background: var(--pn-hover);
-  color: var(--pn-ink);
-  border-color: var(--pn-line-2);
+.cv2-root .hlp-prompts-host {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .cv2-root .pr-scrim {
-    animation: none;
-  }
+/* The shelf's annex — the one entry below the chapter list that is not a
+   plate. It borrows the row grammar (`.hlp-row`) so the door reads as part of
+   the shelf; only the section spacing is its own. */
+.cv2-root .hlp-annex {
+  margin-top: var(--pn-space-8);
+}
+
+.cv2-root .hlp-annex .hlp-rule {
+  margin-bottom: var(--pn-space-3);
 }

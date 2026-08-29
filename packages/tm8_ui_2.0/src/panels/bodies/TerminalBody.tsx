@@ -1,7 +1,12 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
+/* The transport singleton DIRECTLY, not through the terminal index: this body
+   only OBSERVES whether any bytes have arrived for its session, the same
+   read-only relationship `clipboardUpload` has with `endpointFor`. Nothing in
+   `terminal/` is edited for it — R9's verbatim-transplant lane stays verbatim. */
+import { ptyTransport } from '../../terminal/pty/ptyTransport';
 import {
   ExitedFallback,
   LiveTerminal,
@@ -61,6 +66,42 @@ function readStoredFontSize(): number {
   } catch {
     return TERMINAL_FONT_SIZE;
   }
+}
+
+/**
+ * COPY FOR THE EMPTY LIVE CANVAS (audit 2026-08-29 #1): a live session whose
+ * PTY has not printed yet rendered as a featureless black void — nothing said
+ * the terminal was real, working, and waiting. One dim line, in the DOM above
+ * the canvas and never injected into xterm's buffer, names the state and the
+ * way in. Exported for the test that pins it.
+ */
+export const LIVE_TERMINAL_EMPTY_PLACEHOLDER = 'Live terminal — no output yet · click to type';
+
+/**
+ * HAS THIS SESSION'S TERMINAL SHOWN ANYTHING YET — observed at the transport,
+ * which is the only place the answer exists. Live frames arrive on `onOutput`;
+ * a reconnect's retained scrollback arrives as the single `onReplay` frame,
+ * and either one means the canvas is no longer empty. The flag is one-way for
+ * the mount: a screen the agent later clears is not an EMPTY terminal, it is
+ * a terminal the agent blanked, and re-showing the placeholder over it would
+ * claim no output ever came.
+ */
+function useTerminalHasOutput(sessionId: string, watch: boolean): boolean {
+  const [hasOutput, setHasOutput] = useState(false);
+  useEffect(() => {
+    setHasOutput(false);
+    if (!watch) return;
+    const mark = (id: string, data: string) => {
+      if (id === sessionId && data.length > 0) setHasOutput(true);
+    };
+    const offOutput = ptyTransport.onOutput(mark);
+    const offReplay = ptyTransport.onReplay(mark);
+    return () => {
+      offOutput();
+      offReplay();
+    };
+  }, [sessionId, watch]);
+  return hasOutput;
 }
 
 export interface TerminalBodyProps {
@@ -160,6 +201,12 @@ export function TerminalBody({
    */
   const { shell } = useShellKind();
   const onPhone = shell === 'mobile';
+  /* The live no-output placeholder — see `useTerminalHasOutput`. Watched only
+     while a real xterm is mounted: the flag-off placeholder host and every
+     fallback canvas already carry their own copy, and a second ghost over
+     either would be two voices in one box. */
+  const liveCanvas = style.isLive && isLiveTerminalEnabled();
+  const hasOutput = useTerminalHasOutput(detail.id, liveCanvas);
   const [geometry, setGeometry] = useState<{ cols: number; rows: number } | null>(null);
   const [cellWidth, setCellWidth] = useState(0);
   const [hostWidth, setHostWidth] = useState(0);
@@ -266,6 +313,22 @@ export function TerminalBody({
             : {})}
         />
 
+        {/* THE EMPTY LIVE CANVAS SAYS WHAT IT IS (audit 2026-08-29 #1). A
+            live PTY that has not printed yet is a featureless black void, and
+            a void does not say "working, waiting, click me". One dim line in
+            the DOM over the canvas — never injected into xterm's buffer —
+            until the first output or replay frame arrives. `pointer-events:
+            none` (the ghost treatment), so the advertised click lands on
+            xterm and focuses its hidden textarea. */}
+        {liveCanvas && !hasOutput ? (
+          <p
+            className="term-host__ghost term-host__ghost--live"
+            data-testid="terminal-live-placeholder"
+            aria-hidden="true"
+          >
+            {LIVE_TERMINAL_EMPTY_PLACEHOLDER}
+          </p>
+        ) : null}
       </div>
 
       {/*

@@ -457,6 +457,27 @@ export interface ActionDef {
   id: ActionRef;
   label: string;
   icon: IconRef;
+  /**
+   * A DRAWN mark for surfaces that render this verb as an icon, on the same
+   * 16-grid the kind marks use (`kind-art.ts`, rendered by `VectorIcon`).
+   *
+   * Optional, and needed exactly where the text `icon` cannot be trusted to
+   * paint: U+23FB (⏻, Terminate) is outside every system font this app ships
+   * on and rendered as a TOFU BOX — the panel's one safety verb drawn as an
+   * unreadable rectangle. Artwork here is registry DATA, so no surface asks
+   * which verb it is holding (§15.2); a verb without art keeps its character.
+   */
+  iconArt?: readonly string[];
+  /**
+   * ONE-STEP CONFIRM, as data. Present ⇒ the first press only ARMS the
+   * control — drawn with `armedLabel` ("sure?") — and the press that actually
+   * dispatches is the second one inside `windowMs`; the arm expires quietly
+   * after that. For destructive verbs that sit one slip away from benign
+   * chrome (Terminate renders beside Close), where an instant dispatch was
+   * flagged by audit. Data rather than a surface branch, so the action bar
+   * and any future consumer cannot disagree about which verbs confirm.
+   */
+  confirm?: { armedLabel: string; windowMs: number };
   availability(ctx: ActionContext): ActionAvailability;
   run(ctx: ActionContext): Promise<void> | void;
   /**
@@ -580,6 +601,26 @@ export interface ListConfig {
    * pointed at a band it has no button for.
    */
   defaultCategory?: StatusCategory;
+  /**
+   * WHAT `done` MEANS ON THIS KIND'S ROWS — presentation, not partition.
+   *
+   * `'work'` (the default, and omitted everywhere it holds): a row in the Done
+   * category is FINISHED WORK, and the tile strikes its title through — the
+   * treatment a completed task earns.
+   *
+   * `'library'`: a row in Done is STORED MATERIAL. Files, memories, artifacts
+   * and the other curated kinds are seeded `done` at birth (`kind_seeds_done`,
+   * migration 152 — existence IS completion for a fact about the past), so on
+   * these kinds the strikethrough claimed every healthy row was crossed out,
+   * which reads as deleted. The tabs themselves stay the shared four (D41 —
+   * one array, one vocabulary); only the completed TREATMENT is suppressed,
+   * and the tile carries the value as `data-lifecycle` so styling can follow
+   * the same registry fact.
+   *
+   * A registry FIELD and not a component branch, §15.2: "which kinds are
+   * libraries" is per-kind divergence, so it lives here as data.
+   */
+  lifecycle?: 'work' | 'library';
   /** task subtree; session coordinator→worker. */
   /**
    * `messagePulse` binds the tree's hairlines to live message provenance: a

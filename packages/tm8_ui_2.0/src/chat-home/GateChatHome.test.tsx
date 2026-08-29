@@ -38,6 +38,11 @@ describe('dashboard route', () => {
     expect(await view.findByTestId('home-page')).toBeTruthy();
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     expect(view.queryByTestId('home-screen')).toBeNull();
+    // Kinetic W4: the column BOOTS on Tasks now, so the thread list is one
+    // root flip away — take it before counting sightings.
+    fireEvent.click(
+      within(view.getByRole('tablist', { name: 'Home roots' })).getByRole('tab', { name: 'Chats' }),
+    );
     // TWO sightings, one conversation: the panel row (the inventory and the
     // only selector) and the conversation's own head. It was three while the
     // working-set tab strip existed; revision 14 removed the strip, and this
@@ -97,6 +102,11 @@ describe('dashboard route', () => {
   it('is EXACTLY TWO PANES — no rail beside the list, no tab strip above the conversation', async () => {
     const view = render(<GateApp />);
     await view.findByTestId('chat-home-screen');
+    // Kinetic W4 boots the column on Tasks; the thread rows this case reads
+    // live on the Chats root, one header-cell flip away.
+    fireEvent.click(
+      within(view.getByRole('tablist', { name: 'Home roots' })).getByRole('tab', { name: 'Chats' }),
+    );
     await waitFor(() => expect(view.container.querySelector('.tch-thread__title')).toBeTruthy());
 
     // NO RAIL. The Chats group is railless, so the shell draws no third

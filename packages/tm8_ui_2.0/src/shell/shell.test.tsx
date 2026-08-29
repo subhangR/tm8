@@ -20,7 +20,11 @@ import {
 } from '@tm8/contract';
 import { MenuRail, type KindPresenter, type RefPresentation } from './MenuRail';
 import { SpaceTabBar } from './SpaceTabBar';
-import { SpaceSwitcher, SWITCHER_ADD_SERVER_REASON } from './SpaceSwitcher';
+import {
+  SpaceSwitcher,
+  SWITCHER_ADD_SERVER_REASON,
+  SWITCHER_ADD_SPACE_REASON,
+} from './SpaceSwitcher';
 import { PanelStack } from './PanelStack';
 import { NoticeHost } from './NoticeHost';
 
@@ -552,17 +556,17 @@ describe('SpaceTabBar (T0-1, D1 — revision 11: the product bar)', () => {
     expect(document.activeElement).toBe(bell);
   });
 
-  it('opens the prompt catalog from the bar when the host wires it', () => {
-    const onOpenPrompts = vi.fn();
-    const { getByTestId } = renderBar({ onOpenPrompts });
-    fireEvent.click(getByTestId('open-prompts'));
-    expect(onOpenPrompts).toHaveBeenCalled();
-  });
-
-  it('omits the prompts control entirely when no host handles it', () => {
-    // Same rule the accountSlot follows: a bar rendered without a host shows no
-    // control at all, rather than one that does nothing when clicked.
-    expect(renderBar().queryByTestId('open-prompts')).toBeNull();
+  it('renders NO prompts control, ever — the catalog lives inside Help now', () => {
+    // RETIRED 2026-08-29: the chip left the bar with its `onOpenPrompts` prop;
+    // Prompts is hosted at `/help/prompts`. This assertion is the point: even
+    // a host that still tries to wire the retired callback gets no control —
+    // restoring the chip would be a second door to a surface Help owns.
+    const { container, queryByTestId } = renderBar({
+      onOpenPrompts: vi.fn(),
+    } as unknown as Partial<React.ComponentProps<typeof SpaceTabBar>>);
+    expect(queryByTestId('open-prompts')).toBeNull();
+    expect(container.querySelector('.shell-tabbar__prompts')).toBeNull();
+    expect(container.textContent).not.toContain('prompts');
   });
 });
 
@@ -639,6 +643,27 @@ describe('SpaceSwitcher — the identity block (revision 11)', () => {
     expect(addServer.disabled).toBe(false);
     addServer.focus();
     expect(document.activeElement).toBe(addServer);
+    // Add-space carries ITS reason too — the true one: the host wires
+    // onAddSpace only when the seam serves project setup, so an unhosted row
+    // names the missing capability, not a phantom delivery date.
+    const addSpace = getByTitle(SWITCHER_ADD_SPACE_REASON) as HTMLButtonElement;
+    expect(addSpace.getAttribute('aria-disabled')).toBe('true');
+    expect(addSpace.disabled).toBe(false);
+  });
+
+  it('the ACTIVE server row is a group header, not a button', () => {
+    // It used to be a button whose onClick returned immediately on the active
+    // server — button semantics promising a switch that did not exist. The
+    // header keeps the name and status dot; only the false affordance is gone.
+    const { getByLabelText, getByRole } = renderSwitcher();
+    fireEvent.click(getByLabelText('Server and space: local · atelier'));
+    const dialog = getByRole('dialog');
+    const activeRow = within(dialog).getByText('local').closest('.shell-switcher__server');
+    expect(activeRow).not.toBeNull();
+    expect(activeRow?.tagName).not.toBe('BUTTON');
+    // The INACTIVE server row is still the switch — a real button.
+    const inactiveRow = within(dialog).getByText('utho · tm8').closest('.shell-switcher__server');
+    expect(inactiveRow?.tagName).toBe('BUTTON');
   });
 
   it('wires add-space and add-server when the host supplies them', () => {

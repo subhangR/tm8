@@ -1390,6 +1390,9 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '▣', tintBy: 'none' },
     card: { fields: ['mimeType', 'sizeBytes', 'createdBy'] },
     list: baseList({
+      /* A file in Done is stored, not finished: 152 seeds the kind `done` at
+         birth, so the work treatment struck through every healthy row. */
+      lifecycle: 'library',
       tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'mimeType' }, { source: 'sizeBytes' }] },
       inlineEdit: { title: true },
@@ -1426,6 +1429,8 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '✧', tintBy: 'equipped', tones: { true: 'run', false: 'idle' } },
     card: { fields: ['equipped', 'excerpt', 'activityAt'] },
     list: baseList({
+      /* Curated capability, not work in flight — done must not strike it. */
+      lifecycle: 'library',
       tile: { badges: [{ source: 'equipped' }] },
       inlineEdit: { title: true },
     }),
@@ -1454,6 +1459,8 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '✦', tintBy: 'equipped', tones: { true: 'run', false: 'idle' } },
     card: { fields: ['equipped', 'excerpt', 'activityAt'] },
     list: baseList({
+      /* Curated capability, not work in flight — done must not strike it. */
+      lifecycle: 'library',
       tile: { badges: [{ source: 'equipped' }] },
       inlineEdit: { title: true },
     }),
@@ -1483,6 +1490,8 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '▦', tintBy: 'none' },
     card: { fields: ['collectionType', 'itemCount', 'activityAt'] },
     list: baseList({
+      /* A curated set is never "finished" — done keeps the title readable. */
+      lifecycle: 'library',
       tile: { badges: [{ source: 'collectionType' }, { source: 'itemCount' }] },
       inlineEdit: { title: true },
     }),
@@ -1609,6 +1618,9 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: false,
+      /* A memory in Done is a HELD claim (152 seeds the kind done), not a
+         finished to-do — the strikethrough read as retracted. */
+      lifecycle: 'library',
       tile: { badges: [{ source: 'messages' }] },
     }),
     /*
@@ -1832,6 +1844,8 @@ const ROWS: readonly KindConfig[] = [
     // quickCreate and no generic palette create, exactly like `project`.
     list: baseList({
       quickCreate: false,
+      /* Published output is kept, not completed: 152 seeds the kind done. */
+      lifecycle: 'library',
       tile: { badges: [] },
     }),
     panel: {

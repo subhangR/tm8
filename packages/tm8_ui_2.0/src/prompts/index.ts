@@ -8,4 +8,3 @@
 import './prompts.css';
 
 export { PromptsScreen, type PromptsScreenProps } from './PromptsScreen';
-export { PromptsOverlay, type PromptsOverlayProps } from './PromptsOverlay';

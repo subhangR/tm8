@@ -471,16 +471,29 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     (ctx) => opGate(ctx, 'execution.terminal.start') ?? AVAILABLE,
   ),
 
-  terminate: define(
-    'terminate',
-    'Terminate',
-    '⏻',
-    /* `endableGate`, NOT `livenessGate` — see that function for the ruling and
-       for why the node was never the obstacle. Terminate is how a row REACHES
-       Done, so refusing it on everything that is not currently answering was
-       refusing the one verb that fixes a stuck row. */
-    (ctx) => opGate(ctx, 'execution.terminate') ?? endableGate(ctx) ?? AVAILABLE,
-  ),
+  terminate: {
+    ...define(
+      'terminate',
+      'Terminate',
+      '⏻',
+      /* `endableGate`, NOT `livenessGate` — see that function for the ruling and
+         for why the node was never the obstacle. Terminate is how a row REACHES
+         Done, so refusing it on everything that is not currently answering was
+         refusing the one verb that fixes a stuck row. */
+      (ctx) => opGate(ctx, 'execution.terminate') ?? endableGate(ctx) ?? AVAILABLE,
+    ),
+    /* THE DRAWN POWER MARK. The character above stays as the string-only
+       fallback, but U+23FB tofus in the system fonts this app actually ships
+       on, and an unreadable rectangle is no rendering for the panel's one
+       safety verb. IEC 5009 standby symbol on the 16-grid: a broken circle
+       with the vertical stroke through the gap — stroked in currentColor,
+       exactly like the kind art. */
+    iconArt: ['M5.05 4.6a4.6 4.6 0 1 0 5.9 0', 'M8 2.2v5.4'],
+    /* AUDIT 2026-08-29: instant termination with zero confirmation, next to
+       Close. One-step confirm — first press arms, second press inside the
+       window performs. */
+    confirm: { armedLabel: 'sure?', windowMs: 3_000 },
+  },
 
   /**
    * THE OTHER HALF OF THE PROCESS CONTROL — `execution.resume`.

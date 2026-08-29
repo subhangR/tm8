@@ -539,6 +539,14 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          holds only the sub-second `spawning` transient (migration 155) — so the
          sessions list opened on a band a running session cannot be in. */
       'defaultCategory',
+      /* Opened 2026-08-29 with the library-kind audit fix. WHAT `done` MEANS on
+         a kind's rows: `'work'` (default) strikes a finished row through,
+         `'library'` (file, artifact, memory, collection, spell, skill — the
+         `kind_seeds_done` family plus the curated sets) suppresses that
+         treatment, because on a kind whose rows are born `done` the strike
+         claimed every healthy row was crossed out. Presentation data only —
+         the four shared category tabs are untouched. */
+      'lifecycle',
     ];
     for (const row of allKinds()) {
       for (const key of Object.keys(row.list)) {

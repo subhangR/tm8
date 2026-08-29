@@ -594,3 +594,29 @@
   flex: 1;
   min-height: 0;
 }
+
+/* THE ✕ STAYS INSIDE AT EVERY WIDTH DOWN TO THE 272px FLOOR.
+
+   `.pn-panel` carries its own 320px floor (panels.css, L4 — right for the
+   stack hosts that set it), but THIS host's derived width bottoms out at
+   272px with `overflow: hidden` — so between 272 and 320 the chrome refused
+   to shrink and the right edge of every header row, close ✕ first, was
+   clipped off-screen. Inside this host the aside's floor is the law, so the
+   inner panel gives up its own and follows the box it was given.
+
+   `min-width: 0` on the flex children is the legal idiom here (minmax(0,…)
+   is banned house-wide); `overflow-wrap` keeps a long unbroken title
+   wrapping inside the narrower box instead of propping the row wide. The
+   `.b2 .b2__panel` compound outranks `.cv2-root .pn-*` regardless of which
+   stylesheet lands second. */
+.b2 .b2__panel .pn-panel { min-width: 0; }
+.b2 .b2__panel .pn-head__row { min-width: 0; }
+.b2 .b2__panel .pn-head__row > * {
+  min-width: 0;
+  flex-shrink: 1;
+  overflow-wrap: anywhere;
+}
+/* The bar that actually holds ✕: the tab strip is the one flexible child and
+   already scrolls; the end cluster must never be pushed past the clip. */
+.b2 .b2__panel .pn-panelbar { min-width: 0; }
+.b2 .b2__panel .pn-panelbar > * { min-width: 0; }

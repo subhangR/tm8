@@ -40,7 +40,13 @@ export interface SpaceSwitcherProps {
   addServerReason?: string;
 }
 
-export const SWITCHER_ADD_SPACE_REASON = 'creating spaces arrives with the settings screens';
+/* The TRUE reason `onAddSpace` is absent: the host wires it only when the
+   seam serves the project-setup ops (GateApp's `projectOnboardingPort`), so an
+   unhosted row means THIS server offers no space creation — not a feature
+   still in the post. The old copy ("arrives with the settings screens")
+   promised a delivery date nobody was holding. */
+export const SWITCHER_ADD_SPACE_REASON =
+  'this server does not offer project setup, so a space cannot be created from here';
 export const SWITCHER_ADD_SERVER_REASON = 'adding servers is unavailable on this host';
 
 const monogramOf = (server: ServerRailItem | undefined): string =>
@@ -106,30 +112,42 @@ export function SpaceSwitcher(props: SpaceSwitcherProps) {
         <div className="shell-switcher__pop" role="dialog" aria-label="Switch server or space">
           {props.servers.map((server) => {
             const isActive = server.id === props.activeServerId;
+            const serverRowContent = (
+              <>
+                <span className="shell-switcher__monogram shell-switcher__monogram--small" aria-hidden="true">
+                  {monogramOf(server)}
+                </span>
+                <span className="shell-switcher__server-name">{server.label}</span>
+                <span
+                  className={`shell-rail__server-status shell-rail__server-status--${server.reachability}`}
+                  aria-hidden="true"
+                />
+              </>
+            );
             return (
               <div key={server.id} className="shell-switcher__section">
-                <button
-                  type="button"
-                  className={`shell-switcher__server ${isActive ? 'shell-switcher__server--active' : ''}`}
-                  aria-current={isActive ? 'true' : undefined}
-                  /* The active server's row is informational — its spaces are
-                     the actionable rows beneath. An INACTIVE server's row is
-                     the switch itself. */
-                  onClick={() => {
-                    if (isActive) return;
-                    setOpen(false);
-                    props.onSelectServer(server.id);
-                  }}
-                >
-                  <span className="shell-switcher__monogram shell-switcher__monogram--small" aria-hidden="true">
-                    {monogramOf(server)}
-                  </span>
-                  <span className="shell-switcher__server-name">{server.label}</span>
-                  <span
-                    className={`shell-rail__server-status shell-rail__server-status--${server.reachability}`}
-                    aria-hidden="true"
-                  />
-                </button>
+                {isActive ? (
+                  /* The ACTIVE server's row is a GROUP HEADER, not a control —
+                     its spaces are the actionable rows beneath. It used to be
+                     a button whose onClick returned immediately: button
+                     semantics promising a verb that did not exist. A div
+                     carries no such promise and no hover affordance. */
+                  <div className="shell-switcher__server shell-switcher__server--active">
+                    {serverRowContent}
+                  </div>
+                ) : (
+                  /* An INACTIVE server's row is the switch itself. */
+                  <button
+                    type="button"
+                    className="shell-switcher__server"
+                    onClick={() => {
+                      setOpen(false);
+                      props.onSelectServer(server.id);
+                    }}
+                  >
+                    {serverRowContent}
+                  </button>
+                )}
                 {isActive ? (
                   props.spaces.map((space) => {
                     const current = space.id === props.activeSpaceId;

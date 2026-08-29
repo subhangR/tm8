@@ -22,12 +22,14 @@
 [data-theme="dark"] .cv2-root { color-scheme: dark; }
 
 /* --- Compact Server + Space bar ------------------------------------------ */
+/* Kinetic (W3): 36px bar, 8px padding, 8px gaps — one declaration, not a 24px
+   base with a later re-open fighting it. Controls inside ride a 28px rhythm. */
 .cv2-root .shell-tabbar {
-  height: 24px;
+  height: 36px;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 0 8px;
   background: var(--pn-surface);
   border-bottom: 1px solid var(--pn-line);
@@ -41,12 +43,21 @@
 }
 /* The mark as the door back to conversations (revision 13). It reads as the
    mark, not as a tab — no active state, because there is no destination to
-   be current on. */
+   be current on.
+
+   THE HIT AREA IS 28px SQUARE, the bar's control rhythm (W3) — the visual
+   mark stays its 24x15 self. At `padding: 0` this was the smallest target in
+   the app: 15px tall, beside 28px controls. The floor is minimums plus
+   centring, not a bigger glyph. */
 .cv2-root .shell-tabbar__mark--door {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding: 0;
+  min-width: 28px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 0 2px;
   border: 0;
   background: none;
   cursor: pointer;
@@ -99,11 +110,17 @@
   gap: 5px;
   overflow: hidden;
 }
+/* Kinetic tab: a comfortable 28px hit area (Fitts), vertically centred in
+   the 36px bar. Hover is the hover FILL, never a border; the active tab is
+   weight + brand-soft wash — the calmer of the two accent options, so brass
+   stays reserved for selection bars and primary action. */
 .cv2-root .shell-tabbar__tab {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 5px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 2px 8px;
   font-family: var(--pn-ui);
   font-size: 11px;
   line-height: 16px;
@@ -117,8 +134,8 @@
   background: var(--pn-hover);
 }
 .cv2-root .shell-tabbar__tab--active {
-  background: var(--pn-active);
-  font-weight: 600;
+  background: var(--pn-brand-soft);
+  font-weight: 650;
   color: var(--pn-ink);
 }
 .cv2-root .shell-tabbar__dot {
@@ -141,11 +158,11 @@
   flex: 1;
 }
 /* R1/R2 (2026-08-15): the top ROW hosts the identity block and the tabs.
-   The tabs are the menu's groups — a segmented control, active tab raised. */
-.cv2-root .shell-tabbar {
-  height: 36px;
-  gap: 8px;
-}
+   The tabs are the menu's groups — a segmented control. Kinetic (W3): the
+   bar's 36px/8px geometry now lives in the base rule above; the selected
+   segment is brand-soft + weight rather than a raised bordered chip — one
+   selection grammar for the whole bar, and no decorative shadow (chrome
+   diet: elevation is data, and a resting tab is not elevated). */
 .cv2-root .shell-tabbar__tabs {
   display: flex;
   align-items: center;
@@ -153,17 +170,16 @@
   margin-left: 4px;
   padding: 2px;
   background: var(--pn-hover);
-  border-radius: var(--pn-r-pill);
+  border-radius: var(--pn-r-sm);
 }
 .cv2-root .shell-tabbar__tabs .shell-tabbar__tab {
+  min-height: 24px;
   padding: 2px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--pn-r-pill);
+  border: 0;
+  border-radius: var(--pn-r-sm);
 }
 .cv2-root .shell-tabbar__tabs .shell-tabbar__tab--active {
-  background: var(--pn-surface);
-  border-color: var(--pn-line);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--pn-ink) 8%, transparent);
+  background: var(--pn-brand-soft);
 }
 /* The identity block, re-hosted (R1): the same SpaceSwitcher, drawn as a
    compact pill — space and server on one line, popover dropping below. */
@@ -172,7 +188,9 @@
 }
 .cv2-root .shell-tabbar .shell-switcher__trigger {
   width: auto;
-  height: 24px;
+  /* 28px — the bar's one control height (W3 rhythm). */
+  height: 28px;
+  box-sizing: border-box;
   padding: 0 8px;
   gap: 6px;
   background: var(--pn-active);
@@ -196,25 +214,37 @@
   top: calc(100% + 6px);
   left: 0;
 }
+/* The palette chip rides the same 28px control rhythm as the bell and the
+   avatar. Mono stays — it prints keys. Hover is ELEVATION, not colour: the
+   chip lifts a shade (--pn-sh-sm) and its fill never changes, so the one
+   accent stays with selection. */
 .cv2-root .shell-tabbar__palette {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  box-sizing: border-box;
   font-family: var(--pn-mono);
   font-size: 9.5px;
   color: var(--pn-ink-3);
   border: 1px solid var(--pn-line);
-  border-radius: 6px;
-  padding: 1px 6px;
+  border-radius: var(--pn-r-sm);
+  padding: 0 8px;
   background: var(--pn-card);
   cursor: pointer;
+  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-root .shell-tabbar__palette:hover {
+  box-shadow: var(--pn-sh-sm);
 }
 .cv2-root .shell-tabbar__avatar {
-  width: 18px;
-  height: 18px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--pn-active);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--pn-ink-2);
   border: 0;
@@ -226,9 +256,9 @@
   font-size: 10.5px;
 }
 .cv2-root .shell-tabbar .auth-avatar--sm {
-  width: 18px;
-  height: 18px;
-  font-size: 9px;
+  width: 22px;
+  height: 22px;
+  font-size: 9.5px;
 }
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */
@@ -371,7 +401,9 @@
   background: var(--pn-hover);
 }
 .cv2-root .shell-rail__row--active {
-  background: var(--pn-active);
+  /* Kinetic (W3): the active row wears the brand-soft wash + weight — the
+     same selection grammar as the bar's tabs and the palette's row. */
+  background: var(--pn-brand-soft);
   border-left-color: var(--pn-brand);
   padding-left: 9px; /* compensates the 3px bar — canvas-measured */
 }
@@ -395,7 +427,7 @@
   text-overflow: ellipsis;
 }
 .cv2-root .shell-rail__row--active .shell-rail__label {
-  font-weight: 600;
+  font-weight: 650;
   color: var(--pn-ink);
 }
 .cv2-root .shell-rail__empty {
@@ -478,7 +510,7 @@
   font-size: 12px;
 }
 .cv2-root .shell-rail__leaf--active .shell-rail__label {
-  font-weight: 600;
+  font-weight: 650;
   color: var(--pn-ink);
 }
 /* The child guide: a 1px rule per leaf row. Adjacent leaves make it read as
@@ -554,7 +586,7 @@
   -webkit-box-orient: vertical;
 }
 .cv2-root .shell-rail--collapsed .shell-rail__row--active {
-  background: var(--pn-active);
+  background: var(--pn-brand-soft);
   padding-left: 0;
 }
 .cv2-root .shell-rail--collapsed .shell-rail__row--active::before {
@@ -600,7 +632,7 @@
   font-size: 9px;
 }
 .cv2-root .shell-rail--collapsed .shell-rail__leaf--active {
-  background: var(--pn-active);
+  background: var(--pn-brand-soft);
 }
 .cv2-root .shell-rail--collapsed .shell-rail__leaf--active .shell-rail__icon {
   color: var(--pn-ink);
@@ -1644,8 +1676,13 @@
 .cv2-root .shell-switcher__server:hover,
 .cv2-root .shell-switcher__space-row:hover,
 .cv2-root .shell-switcher__add:hover { background: var(--pn-hover); }
+/* The ACTIVE server row is a non-interactive GROUP HEADER (a div — the
+   component dropped its button semantics): default cursor, no hover wash,
+   name set in the quiet ink so it reads as a heading over its space rows
+   rather than as one more pressable sibling. */
 .cv2-root .shell-switcher__server--active { cursor: default; }
 .cv2-root .shell-switcher__server--active:hover { background: transparent; }
+.cv2-root .shell-switcher__server--active .shell-switcher__server-name { color: var(--pn-ink-2); }
 .cv2-root .shell-switcher__server-name {
   flex: 1;
   min-width: 0;
@@ -1671,7 +1708,16 @@
   border-top: 1px solid var(--pn-line-2);
 }
 .cv2-root .shell-switcher__add { flex: 1; color: var(--pn-ink-3); font-size: 11.5px; }
-.cv2-root .shell-switcher__add[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
+/* REAL disabled treatment (D28): the row stays focusable and carries its
+   reason as a title, but it no longer wears its live sibling's clothes —
+   dimmed, no hover wash, not-allowed cursor. Ink-4 alone was not legible as
+   "disabled" beside ink-3. */
+.cv2-root .shell-switcher__add[aria-disabled='true'] {
+  color: var(--pn-ink-4);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.cv2-root .shell-switcher__add[aria-disabled='true']:hover { background: transparent; }
 .cv2-root .shell-rail--collapsed .shell-switcher { padding: 6px 4px 4px; }
 .cv2-root .shell-rail--collapsed .shell-switcher__trigger { justify-content: center; padding: 5px 0; }
 .cv2-root .shell-rail--collapsed .shell-switcher__pop { left: 4px; min-width: 200px; }
@@ -1688,14 +1734,27 @@
 .cv2-root .shell-tabbar__bell {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 22px;
+  /* 28px — the bar's control rhythm (W3), same as the palette chip beside it. */
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
   border: 1px solid var(--pn-line);
-  border-radius: 6px;
+  border-radius: var(--pn-r-sm);
   background: var(--pn-card);
   color: var(--pn-ink-3);
   font-size: 12px;
   cursor: pointer;
+  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); box-shadow: var(--pn-sh-sm); }
 .cv2-root .shell-tabbar__bell[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
+
+/* Kinetic (W3) — the bar's hover-lift transitions, stilled for anyone who
+   asked the OS for less motion. The lift itself (the shadow at :hover) still
+   lands; only the tween is removed. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .shell-tabbar__palette,
+  .cv2-root .shell-tabbar__bell {
+    transition: none;
+  }
+}

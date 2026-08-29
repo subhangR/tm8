@@ -13,6 +13,17 @@ import './palette.css';
  * layout choice: ENTITIES (the thing you were looking for) → VIEWS (where to
  * go) → ACTIONS (what to do) → NOT AVAILABLE YET.
  *
+ * THE QUERY FILTERS EVERY GROUP, AND THE SPLIT IS DELIBERATE. Entity rows
+ * arrive already matched — the seam `query()` read owns entity search, and
+ * this component renders what it is given (see the omission rule below for
+ * why re-filtering upstream results would be worse than redundant). Views and
+ * actions have no seam: they are static props, so THIS component matches them,
+ * by case-insensitive substring on the label. Before this split existed the
+ * input filtered entities only, every static row stayed put, and Enter opened
+ * the first UNFILTERED view — type "task", get Home (palette audit #1). The
+ * cursor resets to the top on every keystroke, so Enter always targets the
+ * first row of the FILTERED navigable set.
+ *
  * THE DISCOVERY ROW IS POLICY, NOT DECORATION (R7). Deferred features render
  * muted with their reason inline; arrow keys SKIP them and clicks do nothing.
  * That combination is the whole design: the user learns what exists without
@@ -20,6 +31,16 @@ import './palette.css';
  * those rows is derived from `deferredActions()` — the registry's own
  * permanently-disabled action set — so this file maintains no second list that
  * could drift out of sync with the real availability rules.
+ *
+ * THE DISCOVERY GROUP OPENS COLLAPSED (palette audit #3). Fifteen-odd
+ * permanently-dead rows on every open buried the live ones under choice the
+ * user could not act on, so the group renders as ONE summary row — "N not
+ * available yet ▸" — that expands on click or on arrowing into it from the
+ * last enabled row. The count and the expanded rows read from the SAME
+ * derived list, so the collapse hides nothing the registry did not declare,
+ * and the query filters that list like any other group: a search that matches
+ * a deferred feature keeps it one gesture from sight, and a search that
+ * matches nothing at all is allowed to say so.
  *
  * THE SEARCH SURFACE IS THE PALETTE ITSELF: a full search-results view is
  * deferred (R7), and its disabled home is the footer affordance below.
@@ -82,11 +103,13 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
+  /** Audit #3: the deferred group starts collapsed on EVERY open. */
+  const [deferredOpen, setDeferredOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { rows, deferred } = useMemo(
-    () => buildRows(results, views, actions, ctx),
-    [results, views, actions, ctx],
+    () => buildRows(results, views, actions, ctx, query),
+    [results, views, actions, ctx, query],
   );
 
   /** Only ENABLED rows are navigable — a disabled row must never eat Enter. */
@@ -95,6 +118,7 @@ export function CommandPalette({
   useEffect(() => {
     if (open) {
       setCursor(0);
+      setDeferredOpen(false);
       inputRef.current?.focus();
     }
   }, [open]);
@@ -118,6 +142,15 @@ export function CommandPalette({
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      /* ARROW-INTO EXPANDS (audit #3): Down from the last enabled row opens
+         the collapsed discovery group instead of moving nowhere. The cursor
+         stays where it is — the revealed rows are disabled and the skip law
+         still holds — so the gesture spends itself on revealing, never on a
+         selection change the user did not ask for. */
+      if (cursor >= navigable.length - 1 && !deferredOpen && deferred.length > 0) {
+        setDeferredOpen(true);
+        return;
+      }
       setCursor((c) => Math.min(c + 1, Math.max(navigable.length - 1, 0)));
       return;
     }
@@ -178,6 +211,30 @@ export function CommandPalette({
             const groupRows =
               group.key === 'deferred' ? deferred : rows.filter((r) => r.kind === group.key);
             if (groupRows.length === 0) return null;
+            if (group.key === 'deferred' && !deferredOpen) {
+              /* The whole group behind one live row (audit #3). No group
+                 header: the row carries the group's identity and its derived
+                 count, and it is a CONTROL — clickable, hover-lit — never a
+                 disabled row pretending to be one. */
+              return (
+                <div
+                  key={group.key}
+                  className="pal__row pal__row--deferred-summary"
+                  role="button"
+                  tabIndex={-1}
+                  aria-expanded="false"
+                  aria-label={`Show ${groupRows.length} features that are not available yet`}
+                  data-testid="palette-deferred-summary"
+                  onClick={() => setDeferredOpen(true)}
+                >
+                  <span className="pal__row-label">{groupRows.length} not available yet</span>
+                  <span className="pal__spacer" />
+                  <span className="pal__row-hint" aria-hidden>
+                    ▸
+                  </span>
+                </div>
+              );
+            }
             return (
               <div key={group.key}>
                 <div className="pal__group">{group.label}</div>
@@ -294,9 +351,17 @@ function buildRows(
   views: readonly PaletteView[],
   actions: readonly ActionRef[],
   ctx: ActionContext,
+  query: string,
 ): { rows: Row[]; deferred: Row[] } {
   const rows: Row[] = [];
   const deferred: Row[] = [];
+
+  /* Views, actions and discovery rows match HERE, on the label, because they
+     have no seam to match them upstream. Entities are exempt on purpose: the
+     seam already matched them (and owns how — fuzziness included), so a second
+     literal filter could only disagree with it. */
+  const q = query.trim().toLowerCase();
+  const matches = (label: string) => q === '' || label.toLowerCase().includes(q);
 
   for (const entity of results) {
     rows.push({
@@ -309,6 +374,7 @@ function buildRows(
   }
 
   for (const view of views) {
+    if (!matches(view.label)) continue;
     const row: Row = { kind: 'view', id: view.id, label: view.label, glyph: view.glyph ?? '⊙', meta: 'view' };
     if (view.disabledReason) deferred.push({ ...row, disabled: view.disabledReason });
     else rows.push(row);
@@ -316,6 +382,7 @@ function buildRows(
 
   for (const ref of actions) {
     const def = resolveAction(ref);
+    if (!matches(def.label)) continue;
     const availability = def.availability(ctx);
     const row: Row = { kind: 'action', id: ref, label: def.label, glyph: def.icon };
     if (availability.kind === 'disabled') deferred.push({ ...row, disabled: availability.reason });
@@ -326,11 +393,14 @@ function buildRows(
    * The R7 discovery rows, DERIVED. `deferredActions()` is the registry's own
    * permanently-disabled set, so this list cannot drift from the availability
    * rules the rest of the app enforces — which is exactly what a hand-kept
-   * second list of "coming soon" features always does.
+   * second list of "coming soon" features always does. The query filter
+   * applies to these like any other non-entity row: discovery means findable,
+   * not immune to the search the user just typed.
    */
   const already = new Set(deferred.map((d) => d.id));
   for (const def of deferredActions()) {
     if (already.has(def.id)) continue;
+    if (!matches(def.label)) continue;
     const availability = def.availability(ctx);
     deferred.push({
       kind: 'action',

@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { EntityDetail, EntityState } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
 import { KindIcon, processControlFor, resolveAction, titleNormalizerFor } from '../../domain';
 import { InlineTitleEditor } from '../../authoring';
-import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
+import { Avatar, IconBtn, Pill, VectorIcon, type PillTone } from '../../kit';
 import { useMobileSurface } from '../../mobile';
 import {
   DisabledIconControl,
@@ -588,6 +588,38 @@ function ActionButton({
   const def = resolveAction(ref_);
 
   /*
+   * THE DRAWN MARK OUTRANKS THE CHARACTER wherever the registry provides one
+   * (`ActionDef.iconArt`). Terminate's U+23FB tofus in the system fonts —
+   * the panel's one safety verb rendered as an unreadable rectangle — and the
+   * fix is data plus this one lookup, never a `ref === 'terminate'` branch.
+   * 16px, stroked in `currentColor`, the same treatment as the kind marks.
+   */
+  const drawnIcon = def.iconArt ? <VectorIcon paths={def.iconArt} size={16} /> : null;
+
+  /*
+   * THE ONE-STEP CONFIRM (`ActionDef.confirm`, registry data). First press
+   * ARMS — the verb redraws as `armedLabel` ("sure?") and dispatches nothing;
+   * the press that performs is the second one inside `windowMs`, after which
+   * the arm expires silently back to the resting verb. Audit 2026-08-29:
+   * Terminate dispatched instantly, one slip away from Close. State is local
+   * because arming is a property of THIS control's conversation with the
+   * pointer, not of the entity; a re-render that swaps the ref disarms via
+   * the effect below rather than carrying an arm onto a different verb.
+   */
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const windowMs = def.confirm?.windowMs ?? 0;
+    const timer = window.setTimeout(() => setArmed(false), windowMs);
+    return () => window.clearTimeout(timer);
+  }, [armed, def.confirm]);
+  // A different verb in the same slot (the terminate↔resume swap) must not
+  // inherit the previous verb's arm.
+  useEffect(() => {
+    setArmed(false);
+  }, [ref_]);
+
+  /*
    * THE SHEET OUTRANKS THE INLINE EXPAND (D44, `RowAction`'s rule), and the
    * flow test is on the flow's PRESENCE rather than on `'launch'` — the
    * registry says which verbs stop for a surface before they commit, and this
@@ -618,7 +650,7 @@ function ActionButton({
   const refusal = actionRefusal(ref_, ctx, wiring);
   if (refusal) {
     return (
-      <DisabledIconControl label={def.label} glyph={def.icon} reason={refusal}>
+      <DisabledIconControl label={def.label} glyph={drawnIcon ?? def.icon} reason={refusal}>
         {/* A marked primary is its glyph alone — `DisabledIconControl` already
             carries the label as the accessible name and draws the reason. */}
         {primary && !mark ? def.label : null}
@@ -661,8 +693,20 @@ function ActionButton({
         .join(' ')}
       /* The word becomes the name and the tooltip when the glyph replaces it,
          so the verb is still findable by `getByRole('button', { name })` and
-         still says what it is on hover. */
-      {...(primary && mark ? { 'aria-label': def.label, title: def.label } : {})}
+         still says what it is on hover. While ARMED the accessible name says
+         what the next press does — "sure?" alone names nothing. */
+      {...(primary && mark
+        ? {
+            'aria-label': armed ? `${def.label} — press again to confirm` : def.label,
+            title: armed ? `${def.label} — press again to confirm` : def.label,
+          }
+        : armed
+          ? {
+              'aria-label': `${def.label} — press again to confirm`,
+              title: `${def.label} — press again to confirm`,
+            }
+          : {})}
+      data-armed={armed ? 'true' : undefined}
       aria-expanded={opensFlow ? expanded : undefined}
       onClick={() => {
         if (opensSheet) {
@@ -673,13 +717,26 @@ function ActionButton({
           onFlow?.(expanded ? null : ref_);
           return;
         }
+        if (def.confirm && !armed) {
+          setArmed(true);
+          return;
+        }
+        setArmed(false);
         onAction?.(ref_);
       }}
     >
-      {primary && mark ? (
-        <span aria-hidden>{def.icon}</span>
+      {armed ? (
+        /* The armed rendering is the QUESTION, in text, whatever the resting
+           form was — a glyph cannot ask "sure?". */
+        def.confirm?.armedLabel
+      ) : primary && mark ? (
+        <span aria-hidden>{drawnIcon ?? def.icon}</span>
       ) : primary ? (
         def.label
+      ) : drawnIcon ? (
+        <>
+          <span aria-hidden>{drawnIcon}</span> {def.label}
+        </>
       ) : (
         `${def.icon} ${def.label}`
       )}

@@ -111,9 +111,13 @@
   max-width: 100%;
 }
 
+/* Kinetic W2: the gate card widens to 420 and sits at elevation LOW
+   (--pn-sh-sm) — rest-on-paper, not a popover. Radius stays --pn-r-lg, the
+   nearest token to the spec's 12 (no raw px radii when a token fits). */
 .cv2-root .auth-card--card {
-  width: 380px;
-} /* L37 */
+  width: 420px;
+  box-shadow: var(--pn-sh-sm);
+} /* L37 · Kinetic W2 */
 .cv2-root .auth-card--narrow {
   width: 340px;
   gap: 13px;
@@ -279,33 +283,47 @@
   gap: 4px;
 }
 
-/* oracle L41: mono 10px/600, tracking .12em, --pn-ink-3 */
+/* oracle L41: mono caps/600, tracking .12em, --pn-ink-3.
+   Kinetic W2: 10px -> --pn-fs-micro (11px) — the token exists, so use it. */
 .cv2-root .auth-field__label {
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
   letter-spacing: var(--pn-track-mega);
   color: var(--pn-ink-3);
 }
 
-/* oracle L41: height 32, padding 0 10, --pn-card ground, r7 */
+/* oracle L41: padding 0 10, --pn-card ground.
+   Kinetic W2: height 32 -> 40, radius r7 -> --pn-r-md (10px, the exact
+   token); the focus transition is new, guarded below for reduced motion. */
 .cv2-root .auth-field__box {
-  height: 32px;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-md);
+  transition:
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .auth-field__box {
+    transition: none;
+  }
 }
 
 /* oracle L41: the active field takes a brass edge + a 3px brass-soft ring.
-   --pn-brand-soft IS rgba(178,106,43,.11) — the oracle's exact value. */
+   Kinetic W2: the ring colour now flows through W1's --pn-focus token
+   (brand-2 fallback); the soft halo keeps the oracle's .11 alpha via
+   color-mix so it stays brass AND re-themes with the token. */
 .cv2-root .auth-field__box--focus,
 .cv2-root .auth-field__box:focus-within {
-  border-color: var(--pn-brand);
-  box-shadow: 0 0 0 3px var(--pn-brand-soft);
+  border-color: var(--pn-focus, var(--pn-brand-2));
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--pn-focus, var(--pn-brand-2)) 11%, transparent);
 }
 
 /* oracle L140: the failed field — block edge, block ring at .09 */
@@ -368,8 +386,9 @@
   cursor: pointer;
   transition: background var(--pn-dur-fast) var(--pn-ease-standard);
 }
+/* Kinetic W2: 34 -> 40 to match the 40px inputs */
 .cv2-root .auth-btn--lg {
-  height: 34px;
+  height: 40px;
   padding: 0 22px;
 }
 .cv2-root .auth-btn--sm {
@@ -645,11 +664,11 @@
   font-size: 12px;
 } /* L356 */
 .cv2-root .auth-glyph--md {
-  width: 34px;
-  height: 34px;
+  width: 36px; /* Kinetic W2: 34 -> 36 */
+  height: 36px;
   border-radius: var(--pn-r-md);
   font-size: 14px;
-} /* L105 */
+} /* L105 · Kinetic W2 */
 .cv2-root .auth-glyph--lg {
   width: 38px;
   height: 38px;
@@ -1210,6 +1229,14 @@
   border: 0;
   background: transparent;
   width: 100%;
+  /* `width: 100%` + 12px inline padding WITHOUT border-box made every row
+     24px wider than the menu that contains it (a 310px box grew a 334px
+     Appearance row), which is what shoved the dark toggle past the menu's
+     clipped edge — and past the viewport when the menu opened near it. The
+     row must never exceed the menu's own box. */
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1572,14 +1599,33 @@
 }
 
 /* Anchored under the trigger rather than staged in a frame (oracle L410
-   geometry otherwise: 250px, --pn-card over --pn-line, r10, --pn-sh-pop). */
+   geometry otherwise: 250px, --pn-card over --pn-line, r10).
+   Kinetic W2: elevation-high GLASS — the card surface at 90% over a
+   10px backdrop blur, shadow stepped down from pop to --pn-sh-lg. */
 .cv2-root .auth-menu--anchored {
   position: absolute;
   top: calc(100% + 6px);
+  /* Anchored by its RIGHT edge under the trigger, so growing content extends
+     the menu leftward — never past the viewport's right edge. */
   right: 0;
   width: min(280px, calc(100vw - 24px));
-  max-width: none;
+  /* Was `none` (to undo the base rule's trigger-relative `calc(100% - 24px)`).
+     A viewport clamp instead of no clamp at all: whatever box anchors this
+     menu, it can never exceed the screen. */
+  max-width: calc(100vw - 24px);
   z-index: 80;
+  background: color-mix(in srgb, var(--pn-card) 90%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--pn-sh-lg);
+}
+/* Kinetic W2: 28px option rows. Rows sit at ~29px today (7px pad + ~15px
+   line) — a 1px trim of the vertical padding, not a rhythm change. */
+.cv2-root .auth-menu--anchored .auth-menu__row {
+  box-sizing: border-box;
+  min-height: 28px;
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 .cv2-root .auth-menu--anchored .auth-menu__head .auth-server__text {
   flex: 1 1 auto;

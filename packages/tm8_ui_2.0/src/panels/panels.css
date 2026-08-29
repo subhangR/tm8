@@ -1552,6 +1552,18 @@
 }
 .cv2-root .lp__kindopt:hover { background: var(--pn-hover); }
 .cv2-root .lp__kindopt--current { background: var(--pn-hover); font-weight: 600; color: var(--pn-ink); }
+/* A DISABLED OPTION MUST LOOK DISABLED. The viewer-scoped filters ("me")
+   render with the native `disabled` attribute while the workspace has no
+   resolved viewer, but no rule drew that fact — a blocked option was
+   pixel-identical to a live one and only failed silently on click. Quieted
+   ink + the shared 0.45 refusal opacity (the `.auth-refused-row` number) and
+   no hover invitation. */
+.cv2-root .lp__kindopt:disabled {
+  color: var(--pn-ink-4);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cv2-root .lp__kindopt:disabled:hover { background: none; }
 
 .cv2-root .lp__actions {
   flex: none;
@@ -1604,45 +1616,65 @@
  * selections + one trigger), because relying on clipping to hide surplus
  * content is what turned ten chips into a silently truncated row.
  */
+/* TIER 3, second row (Kinetic W4): the dropdown triggers share the chips'
+   whisper grammar — 28px pills, no border until hover, selection = the one
+   brand-soft fill + the word. The row sizes itself to its chips: 8px below
+   them the hairline seam ends the control cluster and the list begins. */
 .cv2-root .lp__filters {
   flex: none;
-  height: 32px;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 10px;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-3) var(--pn-space-2);
   border-bottom: 1px solid var(--pn-line);
   overflow: hidden;
 }
-.cv2-root .lp--compact .lp__filters { height: 28px; gap: 4px; padding: 0 8px; }
 .cv2-root .lp__chip {
   flex: none;
   appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: 2px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.cv2-root .lp__chip--person {
   display: inline-flex;
   align-items: center;
+  height: 28px;
+  box-sizing: border-box;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-pill);
+  padding: 0 var(--pn-space-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard),
+    border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-root .lp__chip--person {
   gap: 4px;
   padding-left: 3px;
 }
-.cv2-root .lp__chip:hover { background: var(--pn-hover); }
+.cv2-root .lp__chip:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
 .cv2-root .lp__chip--active {
-  font-weight: 600;
+  font-weight: 650;
   color: var(--pn-brand-2);
   background: var(--pn-brand-soft);
-  border-color: rgba(var(--pn-brand-rgb), 0.5);
+}
+.cv2-root .lp__chip--active:hover {
+  background: var(--pn-brand-soft);
+  border-color: transparent;
+  color: var(--pn-brand-2);
 }
 .cv2-root[data-theme='dark'] .lp__chip--active,
-[data-theme='dark'] .cv2-root .lp__chip--active { color: var(--pn-brand); }
+[data-theme='dark'] .cv2-root .lp__chip--active,
+.cv2-root[data-theme='dark'] .lp__chip--active:hover,
+[data-theme='dark'] .cv2-root .lp__chip--active:hover { color: var(--pn-brand); }
+/* The whisper-control hover transitions are colour-only, but reduced motion
+   means reduced motion — they stop, they do not slow. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .lp__chip,
+  .cv2-root .lp__tab { transition: none; }
+}
 
 /* Category tabs are a segmented control, not chips: they are SHELVES a row
    moves between by living, not filters a viewer toggles.
@@ -1671,24 +1703,49 @@
   background: var(--pn-card);
 }
 .cv2-root .lp__tabs::-webkit-scrollbar { display: none; }
+/* TIER 3 (Kinetic W4): the LENS — whisper chips. 28px pills, mono words with
+   their counts, no border until the pointer asks; the selected chip is the one
+   brand-soft fill, so selection reads as fill + word, never colour alone.
+   (The count shares the word's text node — the desktop DOM is frozen — so the
+   whole chip speaks mono and the weight/colour shift marks selection.) */
 .cv2-root .lp__tab {
   appearance: none;
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
   background: none;
   font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
-  /* 7px, not 9px: four tabs at the 280px floor, and the padding is the only
-     part of the row that is not a ruled word. */
-  padding: 3px 5px;
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-2);
+  padding: 0 var(--pn-space-2);
+  border-radius: var(--pn-r-pill);
   cursor: pointer;
-  border-left: 1px solid var(--pn-line);
   white-space: nowrap;
   flex: none;
+  transition:
+    background-color var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard),
+    border-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .lp__tab:first-child { border-left: 0; }
-.cv2-root .lp__tab:hover { background: var(--pn-hover); }
-.cv2-root .lp__tab--active { font-weight: 600; color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .lp__tab:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
+.cv2-root .lp__tab--active {
+  font-weight: 650;
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+}
+/* The selected chip keeps its fill under the pointer — hover must not read
+   as deselection. */
+.cv2-root .lp__tab--active:hover {
+  background: var(--pn-brand-soft);
+  border-color: transparent;
+  color: var(--pn-brand-2);
+}
+.cv2-root[data-theme='dark'] .lp__tab--active,
+[data-theme='dark'] .cv2-root .lp__tab--active,
+.cv2-root[data-theme='dark'] .lp__tab--active:hover,
+[data-theme='dark'] .cv2-root .lp__tab--active:hover { color: var(--pn-brand); }
 
 .cv2-root .lp__body {
   flex: 1 1 auto;
@@ -2465,6 +2522,9 @@
   flex: none;
   position: relative;
 }
+/* Kinetic glass (W4/W6 grammar): raised menus are elevation-high — 90% card
+   over blur under the large shadow. The mix keeps the sheet legible where
+   backdrop-filter is unsupported. */
 .cv2-root .lp__filtermenu {
   position: absolute;
   top: 100%;
@@ -2473,11 +2533,18 @@
   width: 176px;
   max-height: 240px;
   overflow: auto;
-  padding: 4px;
-  background: var(--pn-card);
+  padding: var(--pn-space-1);
+  background: color-mix(in srgb, var(--pn-card) 90%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--pn-line-2);
-  border-radius: 8px;
-  box-shadow: var(--pn-sh-pop);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-lg);
+}
+/* Its option rows follow the raised-surface grammar: 28px each. */
+.cv2-root .lp__filtermenu .lp__kindopt {
+  min-height: 28px;
+  box-sizing: border-box;
 }
 /* The sort menu hangs off the RIGHT end of the bar, under its own chip —
    inheriting `left: 8px` would drop it under the filter trigger at the far
@@ -2545,20 +2612,29 @@
 /* T0-1 draws this as a 28px bordered row of its own between the create row
    and the tabs: `⌕ {placeholder}` … kbd hint. My first attempt put it in the
    filter row; the composed canvas gives it its own. */
+/* TIER 2 (Kinetic W4): the VERB. One 36px hairline field on the 4px grid —
+   quiet at rest, ringed in the accent only while it holds focus. */
 .cv2-root .lp__searchrow {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 28px;
-  margin: 5px 8px;
-  padding: 0 8px;
+  gap: var(--pn-space-2);
+  height: 36px;
+  margin: var(--pn-space-2) var(--pn-space-3) var(--pn-space-3);
+  padding: 0 var(--pn-space-3);
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-md);
   box-sizing: border-box;
+  transition:
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .lp__searchrow-glyph { flex: none; font-size: 12.5px; color: var(--pn-ink-4); }
+.cv2-root .lp__searchrow:focus-within {
+  border-color: var(--pn-focus, var(--pn-brand-2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-focus, var(--pn-brand-2)) 20%, transparent);
+}
+.cv2-root .lp__searchrow-glyph { flex: none; font-size: var(--pn-fs-mono); color: var(--pn-ink-4); }
 .cv2-root .lp__searchinput {
   flex: 1;
   min-width: 0;
@@ -2566,11 +2642,14 @@
   border: 0;
   background: transparent;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink);
   outline: none;
 }
 .cv2-root .lp__searchinput::placeholder { color: var(--pn-ink-4); }
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .lp__searchrow { transition: none; }
+}
 /* 16px IS A BEHAVIOURAL THRESHOLD ON iOS, NOT A TYPE CHOICE.
    Safari zooms the page when a text field under 16px takes focus. Inside a
    `100dvh` frame with `overflow: hidden` that zoom has no way back: there is no
@@ -2595,7 +2674,7 @@
 .cv2-root .lp__searchrow-key {
   flex: none;
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-4);
 }
 
@@ -2631,8 +2710,11 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 10px 6px;
+  gap: var(--pn-space-1);
+  /* 8px below — the filter row is the same tier (12px between tiers is the
+     search row's own bottom margin, so board mode, which drops this row,
+     keeps its rhythm without it). */
+  padding: 0 var(--pn-space-3) var(--pn-space-2);
 }
 /* ---------------------------------------------------------------------------
    The inline launch flow (D44)

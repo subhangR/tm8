@@ -187,6 +187,25 @@ describe('the Transcript surface', () => {
     expect(screen.queryByTestId('transcript-load-older')).toBeNull();
   });
 
+  /**
+   * AUDIT 2026-08-29 #3, the "does nothing" half. A page that claims
+   * `hasOlder` but returns no cursor (`windowStart: null` — the contract says
+   * that pairing cannot happen, and a page that breaks the promise still
+   * reaches this surface) used to draw a live "Load earlier turns" link whose
+   * click died silently in `loadOlder`'s cursor guard. A control that cannot
+   * act is not drawn as one: the boundary states the honest fact instead.
+   */
+  it('replaces the dead load-older link with honesty text when there is no cursor to walk with', async () => {
+    const cursorless = page({ hasOlder: true, windowStart: null });
+    render(<TranscriptSurface seam={seamWith(cursorless)} sessionId={SESSION} liveness="live" />);
+    const note = await screen.findByTestId('transcript-no-earlier');
+    expect(note.textContent).toBe('no earlier turns');
+    // No link that would no-op…
+    expect(screen.queryByTestId('transcript-load-older')).toBeNull();
+    // …and no earned beginning claim either: the page did NOT reach byte 0.
+    expect(screen.queryByTestId('transcript-start-boundary')).toBeNull();
+  });
+
   describe('walking back through the session', () => {
     const windows = () => ({
       tail: page({ entries: [turn('the newest turn')], windowStart: 900, hasOlder: true }),
@@ -208,6 +227,64 @@ describe('the Transcript surface', () => {
       await waitFor(() => {
         expect(transcript).toHaveBeenCalledWith(SESSION, { before: 400 });
       });
+    });
+
+    /**
+     * AUDIT 2026-08-29 #3, the "teleports scroll" half. The prepend must PIN
+     * the reader to the turn they were on — the previously-first visible turn
+     * — not merely hope a height delta lands there. jsdom has no layout, so
+     * the geometry is stubbed at the prototype: the container and the turns
+     * report authored rects, the fixture moves the anchored turn down by 70px
+     * when the older window lands, and the correction must move `scrollTop`
+     * by exactly those 70px. This is the one scroll rule the docblock's
+     * "nothing here is provable in vitest" caveat CAN prove, because the rule
+     * is arithmetic over rects rather than real layout.
+     */
+    it('pins the previously-first visible turn across a load of earlier turns', async () => {
+      const pages = windows();
+      let release: (() => void) | undefined;
+      const transcript = vi.fn((_id: string, opts?: { before?: number }) => {
+        if (opts?.before === undefined) return Promise.resolve(pages.tail);
+        return new Promise<SessionTranscriptPage>((resolve) => {
+          release = () => { resolve(pages[900]); };
+        });
+      });
+      const seam = { transcript, commands: { prompt: vi.fn() } } as never;
+
+      // Authored geometry: the container viewport, and the newest turn first
+      // at 50px from the container top, then at 120px once the middle turn
+      // stands above it.
+      let newestTop = 50;
+      const rect = (top: number, bottom: number) =>
+        ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top }) as DOMRect;
+      const original = Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        const el = this as HTMLElement;
+        if (el.classList?.contains('tr-surface__scroll')) return rect(0, 400);
+        if (el.classList?.contains('tr-turn')) {
+          const text = el.textContent ?? '';
+          if (text.includes('the newest turn')) return rect(newestTop, newestTop + 20);
+          if (text.includes('the middle turn')) return rect(40, 60);
+        }
+        return rect(0, 0);
+      };
+      try {
+        render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="not-running" />);
+        const scroller = (await screen.findByTestId('transcript-surface'))
+          .querySelector('.tr-surface__scroll') as HTMLElement;
+        expect(scroller.scrollTop).toBe(0);
+
+        fireEvent.click(await screen.findByTestId('transcript-load-older'));
+        // The window lands with the anchored turn 70px lower than it was
+        // captured (50 → 120): the reader's scroll must follow it exactly.
+        newestTop = 120;
+        release!();
+        await screen.findByText('the middle turn');
+
+        expect(scroller.scrollTop).toBe(70);
+      } finally {
+        Element.prototype.getBoundingClientRect = original;
+      }
     });
 
     it('prepends older turns above the ones already on screen, in order', async () => {

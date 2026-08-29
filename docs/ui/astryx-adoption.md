@@ -4,6 +4,8 @@
 **Date:** 2026-08-28 · **Author:** Fable 5 1M Teammate (work session `01a04774-e5de-7182-ae58-c4d2272e13b6`)
 **Ask (Tarkesh):** redesign the Task card with Meta's design system ([facebook/astryx](https://github.com/facebook/astryx)), check feasibility of adopting it across tm8, load it at the root, cover light AND dark, respect atoms/molecules structure and visual hierarchy, no overlay hacks.
 
+**Update 2026-08-29 (branch `feat/kinetic-system`):** §9 added — type scale and motion checked against both loaded themes for value-identical bridging (one token, `--pn-fs-fine`, qualifies); G3 revised accordingly.
+
 ---
 
 ## 1 · Verdict
@@ -70,7 +72,7 @@ Visual hierarchy on the card, top-down: title (weight + primary ink) → semanti
 
 - **G1 · Figtree is not shipped.** Astryx's families reference Figtree with a system-stack fallback; no woff2 in any @astryxdesign package. Today the UI renders the system fallback (clean, Meta-ish). To pin the real face, self-host per `fonts.css`'s existing recipe (self-hosting doctrine: no third-party font round-trips).
 - **G2 · `--pn-brand-rgb` unmapped.** It feeds `rgba(var(--pn-brand-rgb), α)` compositors; Astryx values sit inside `light-dark()` and cannot be var()'d into an rgb-triplet slot. A few alpha accents keep the brass tint. Phase-2 fix: `color-mix()` at each consumer, or a generated brand theme (G8).
-- **G3 · Type sizes and spacing not remapped — by design.** `--pn-fs-*`/`--pn-lh-*` are canvas-measured px (guarded by `type-scale-ban`); Astryx `--font-size-base` 14 px equals tm8 body anyway, and both systems share the 4 px spacing grid. Families follow Astryx; metrics stay tm8 until a per-surface QA pass.
+- **G3 · Type sizes, line-heights, tracking and easings mostly stay canvas-measured — by design, now checked, not guessed.** See §9 "Typography + motion bridge" for the value-identical policy and the full per-token table. One token bridged (`--pn-fs-fine`); everything else in `--pn-fs-*`/`--pn-lh-*`/`--pn-track-*`/`--pn-ease-*` stays atelier because no Astryx var computes to an identical value under *both* loaded themes (neutral and gothic diverge from each other, e.g. `--font-size-base` is 14px under neutral but 16px under gothic — the earlier "14px equals tm8 body anyway" note in this doc was checked against neutral only and did not hold once gothic was checked too). Both systems still share the 4px spacing grid (unchanged, still unbridged by choice). Families (`--pn-ui`/`--pn-serif`/`--pn-mono`) follow Astryx as before.
 - **G4 · Astryx reset.css not imported.** tm8 never set global `box-sizing: border-box`; adopting Astryx's reset would flip untold implicit content-box layouts across 96 CSS files. Components render correctly without it (verified). Revisit only with a dedicated layout-audit pass.
 - **G5 · Overlay components are off-limits until the portal question is answered.** `src/` deliberately contains zero portals: `.cv2-root` is simultaneously zoom hook (1.1), theme scope and token scope, and anything portaled to `document.body` escapes all three. Astryx `Dialog`/`Popover`/`Toast`/`Tooltip` are unaudited for portaling. This also honors the "no overlays" instruction — phase 1 uses only in-flow components. Phase-3 options: audit Astryx's `Layer`/`Overlay` for container support, or mount a portal host *inside* the scope.
 - **G6 · Standalone `.cv2-root` islands not yet attributed.** AuthFlow, FilesScreen/NodeRoom/FilesNodeBoard, SettingsBoard, GalleryPage, account preview, and ~13 dev entrypoints mount their own roots; where they render outside GateApp's subtree they keep the atelier look until given the attribute (one-line each). Inside GateApp's subtree, `@scope` + inheritance + the bridge's descendant selector already cover nested re-entries.
@@ -85,5 +87,54 @@ Visual hierarchy on the card, top-down: title (weight + primary ink) → semanti
 1. **Phase 2 — coverage:** attribute the G6 islands; Astryx `StatusDot`/`Badge` into `EntityControls` chips; `MetadataList` in panel headers; brand theme (G8); Figtree (G1); retire Board v1 (G9).
 2. **Phase 3 — organisms:** `TreeList`/`Table` evaluation for `EntityListPanel`; `CommandPalette` vs shell palette; overlay strategy (G5) then `Dialog`/`Toast`.
 3. **Phase 4 — consolidation:** re-express the parity/hex/scale guard invariants against Astryx tokens; retire bridged `--pn-*` aliases surface-by-surface; `docs/ui/` screenshot baselines refreshed in `gate-evidence/`.
+
+## 9 · Typography + motion bridge (value-identical policy)
+
+Extends §3's token bridge to the type scale and motion curves that phase 1 deliberately left canvas-measured (G3). The policy is stricter than the rest of the bridge: **a token is only bridged when the Astryx var it would resolve to computes to the exact same value as the current atelier constant, and does so under every loaded theme** — not just the one someone happens to be looking at. `astryx-bridge.css` loads both `theme-neutral` and `theme-gothic`, and their `--font-size-*`/`--text-*-leading` values diverge from each other (measured from `node_modules/@astryxdesign/{core,theme-neutral,theme-gothic}/dist/*.css`, not assumed), so "matches under neutral" is not sufficient — it must match under gothic too, or the character would visibly shift the moment `data-astryx-theme="gothic"` is set. Every fallback is the current atelier constant, so a missing var can never move a character either.
+
+### 9.1 · Bridged
+
+| `--pn-*` token | Atelier value | Astryx var | Neutral value | Gothic value | Bridge |
+|---|---|---|---|---|---|
+| `--pn-fs-fine` | `10px` | `--font-size-xs` | `0.625rem` = `10px` | `0.625rem` = `10px` | `var(--font-size-xs, 10px)` |
+
+Only one token in the entire set qualifies. `--font-size-xs` is the single Astryx size that is byte-identical across both shipped themes *and* matches an atelier constant.
+
+### 9.2 · Left unbridged (gap register) — with the Astryx values that diverged
+
+Font sizes (Astryx `--font-size-*`, converted from `rem` at the browser default 16px root — no `html { font-size }` override exists anywhere in this repo, verified):
+
+| `--pn-fs-*` | Atelier | Nearest Astryx var | Neutral | Gothic | Why not bridged |
+|---|---|---|---|---|---|
+| `--pn-fs-display` | 40px | `--font-size-5xl` | 42px | 61px | Diverges from atelier both themes; themes also diverge from each other |
+| `--pn-fs-h1` | 28px | `--font-size-3xl` | 29px | 39px | Off by 1px under neutral, 11px under gothic |
+| `--pn-fs-h2` | 22px | `--font-size-xl` | 20px | 25px | No identical match either theme |
+| `--pn-fs-h3` | 18px | `--font-size-lg` | 17px | 20px | Off by 1px under neutral, 2px under gothic |
+| `--pn-fs-title` | 15px | `--font-size-base` | 14px | 16px | Matches neither exactly |
+| `--pn-fs-body` | 14px | `--font-size-base` | **14px (matches)** | 16px | Matches neutral only — gothic diverges, so it fails the both-themes test |
+| `--pn-fs-sm` | 13px | `--font-size-sm` | 12px | **13px (matches)** | Matches gothic only — neutral diverges |
+| `--pn-fs-label` | 12px | `--font-size-sm` | **12px (matches)** | 13px | Matches neutral only — gothic diverges |
+| `--pn-fs-micro` | 11px | `--font-size-xs` | 10px | 10px | No Astryx size sits at 11px in either theme |
+| `--pn-fs-tick` | 9px | `--font-size-2xs` | 8px | 8px | No Astryx size sits at 9px in either theme |
+| `--pn-fs-mono` | 12.5px | — | — | — | No Astryx size is fractional; nothing near 12.5px |
+
+Line-heights (Astryx `--text-*-leading`, unitless, per theme):
+
+| `--pn-lh-*` | Atelier | Closest Astryx leading | Neutral | Gothic | Why not bridged |
+|---|---|---|---|---|---|
+| `--pn-lh-tight` | 1.18 | `--text-heading-1-leading` | 1.3333 | 1.4194 | No Astryx leading is near 1.18 in either theme |
+| `--pn-lh-snug` | 1.35 | `--text-display-3-leading` | 1.3793 | 1.2308 | Close under neutral only, and not identical there either |
+| `--pn-lh-body` | 1.5 | `--text-body-leading` | 1.4286 | **1.5 (matches)** | Matches gothic only — neutral diverges, fails both-themes test |
+
+(The one leading value stable across both themes, `--text-heading-6-leading: 1.6` under neutral and gothic alike, has no atelier counterpart at all — 1.6 is not one of `--pn-lh-*`.)
+
+Letter-spacing / tracking: Astryx ships **no letter-spacing custom properties whatsoever** — confirmed by grepping all three loaded sheets (`core/dist/astryx.css`, `theme-neutral/dist/theme.css`, `theme-gothic/dist/theme.css`) for `letter-spacing`/`tracking`; zero hits. `--pn-track-mega` (0.12em), `--pn-track-label` (0.06em) and `--pn-track-tight` (-0.01em) have nothing to bridge to and stay atelier.
+
+Easing: Astryx ships exactly one easing var, theme-invariant (only in `core`, not overridden by either theme): `--ease-standard: cubic-bezier(0.24, 1, 0.4, 1)`. Compared against both atelier curves:
+
+| `--pn-ease-*` | Atelier value | Astryx `--ease-standard` | Why not bridged |
+|---|---|---|---|
+| `--pn-ease-out` | `cubic-bezier(0.16, 1, 0.3, 1)` | `cubic-bezier(0.24, 1, 0.4, 1)` | Different curve, not identical |
+| `--pn-ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` | `cubic-bezier(0.24, 1, 0.4, 1)` | Different curve, not identical (Astryx's is closer in shape to an ease-out than to Material's ease-standard, but no digit matches) |
 
 **Rollback:** remove `data-astryx-theme` attributes (visual), or revert the branch (total). The React 19 bump is independently keepable — it costs nothing and unblocks the ecosystem either way.

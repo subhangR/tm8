@@ -14,7 +14,9 @@
   /* 18vh from the top, centered — the canvas's placement. High enough that
      the palette does not cover what you were reading. */
   padding-top: 18vh;
-  background: color-mix(in srgb, var(--pn-ink) 28%, transparent);
+  /* Kinetic (W3): a whisper of a scrim — the glass panel below carries the
+     separation now, so the veil only needs to quiet the page, not dim it. */
+  background: color-mix(in srgb, var(--pn-ink) 20%, transparent);
 }
 
 .cv2-root .pal {
@@ -22,12 +24,18 @@
   max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
-  background: var(--pn-surface);
+  /* Kinetic glass (W3): a near-opaque card surface over a backdrop blur —
+     elevation-high reads as material, not as a heavier border. The 92% keeps
+     text contrast effectively at card level; the blur does the "floating
+     over the workspace" work. */
+  background: color-mix(in srgb, var(--pn-card) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--pn-line-2);
   /* 12px sits between --pn-r-md (10) and --pn-r-lg (14); kept as the measured
      literal per D5 rather than snapped to the token scale. */
   border-radius: 12px;
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: var(--pn-sh-lg);
   overflow: hidden;
 }
 
@@ -85,7 +93,10 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 6px 10px;
+  /* Kinetic (W3): every option row shares the shell's 28px control rhythm. */
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 4px 10px;
   margin: 0 2px;
   border-radius: var(--pn-r-sm);
   border-left: 3px solid transparent;

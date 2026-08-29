@@ -92,6 +92,16 @@ export interface SessionTranscriptRead {
   /** Whether a window exists before the oldest one held. */
   hasOlder: boolean;
   /**
+   * Whether the walk can actually be ASKED for. `hasOlder` is the page's
+   * claim that earlier turns exist; this is the mechanical fact that it also
+   * returned a cursor to ask with. The contract says the two cannot disagree
+   * (`windowStart` is null only on an unavailable page) — but a page that
+   * breaks that promise used to leave the surface drawing a "Load earlier
+   * turns" link whose click silently no-oped in `loadOlder`'s cursor guard.
+   * The surface reads THIS to replace that dead link with honesty text.
+   */
+  canLoadOlder: boolean;
+  /**
    * How many older windows are held. A COUNT rather than a flag because the
    * surface needs to know that a prepend just happened in order to hold the
    * reader's scroll position across it — "there are older windows" cannot
@@ -234,6 +244,8 @@ export function useSessionTranscript(
   // The oldest window held is the one whose cursor names what comes before it.
   const oldest = older[0] ?? newest;
   const hasOlder = oldest?.hasOlder === true;
+  const canLoadOlder =
+    hasOlder && oldest?.windowStart !== null && oldest?.windowStart !== undefined;
 
   // Lift a stall the moment the cursor it was taken against is no longer the
   // one the reader would ask with — see `stalledAt`. The same giant record
@@ -328,6 +340,7 @@ export function useSessionTranscript(
     state,
     entries,
     hasOlder,
+    canLoadOlder,
     olderCount: older.length,
     pagedBack: older.length > 0,
     older: olderRead,

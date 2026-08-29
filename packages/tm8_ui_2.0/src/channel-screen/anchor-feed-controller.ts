@@ -376,6 +376,21 @@ export function createAnchorFeedController({
   };
 
   const attach = (): Unsubscribe => {
+    /*
+     * RE-ARM A DISPOSED CONTROLLER. `useAnchorFeed`'s mount effect runs
+     * `attach() → loadNewest()` and cleans up with `detach() → dispose()` —
+     * and under `StrictMode` (which `main.tsx` renders the whole app in,
+     * so every dev session) React runs that effect twice against the SAME
+     * memoized controller. With `disposed` left permanently true after the
+     * first cleanup, the second mount's reads ran, settled, and were thrown
+     * away: `patch` no-oped, the entry sat at `phase: 'idle'` forever, and
+     * the Discussion tab drew three skeleton rows that never resolved even
+     * on an EMPTY feed that had answered instantly. Attach is the start of
+     * an active life, so it un-mutes the writes; the `generation` bump in
+     * `dispose()` still discards any read that was in flight when the
+     * previous life ended.
+     */
+    disposed = false;
     const offEvent = seam.onEvent((event) => {
       if (eventTouchesAnchor(event, anchorId)) scheduleRefresh();
     });
