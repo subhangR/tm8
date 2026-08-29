@@ -141,6 +141,111 @@
 
 .hlp-library { display: flex; flex-direction: column; gap: 34px; }
 
+/* --- Search ---------------------------------------------------------------
+   The shelf is a 55-page reference as well as a reading order. Search sits
+   directly above that reference so a reader can ask in product language
+   without losing the chapter structure in the result. */
+.hlp-search {
+  margin: 28px 2px 30px;
+  padding: 14px;
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-card);
+}
+
+.hlp-search__heading {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 9px;
+}
+
+.hlp-search__heading label {
+  /* T9 LAW RECONCILIATION (rebase of #544): a search label is a UI LABEL —
+     ui face at the title token, not serif at a raw px size. */
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+}
+
+.hlp-search__heading span {
+  /* T9 LAW: 'N plates found' is a status SENTENCE (the count rides inside
+     it) — ui face at the label token; 8.5px mono read as debug output. */
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.hlp-search__control {
+  display: flex;
+  min-height: 42px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 4px;
+  background: var(--pn-paper);
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out), box-shadow var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-search__control:focus-within {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
+
+.hlp-search__control input {
+  min-width: 0;
+  flex: 1;
+  padding: 9px 11px;
+  color: var(--pn-ink-1);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.hlp-search__control input::placeholder { color: var(--pn-ink-4); }
+
+.hlp-search__control button,
+.hlp-search-empty button {
+  min-block-size: 40px;
+  padding: 0 11px;
+  color: var(--pn-brand);
+  border: 0;
+  background: transparent;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hlp-search__control button:focus-visible,
+.hlp-search-empty button:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
+
+.hlp-search-empty {
+  margin: 0 2px 30px;
+  padding: 22px 18px;
+  color: var(--pn-ink-3);
+  border: 1px dashed var(--pn-line-2);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.hlp-search-empty p {
+  margin: 0 0 5px;
+  color: var(--pn-ink-1);
+  font-family: var(--pn-serif);
+  font-size: 16px;
+}
+
+.hlp-search-empty span { display: block; font-size: 11px; line-height: 1.5; }
+.hlp-search-empty button { margin-top: 7px; }
+
 .hlp-chapter { scroll-margin-block: 20px; }
 
 .hlp-chapter__head {
@@ -498,6 +603,81 @@
 .hlp-home__cta-arrow { grid-row: 1 / span 2; color: var(--pn-brand); font-size: 17px; transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
 .hlp-home__cta:hover .hlp-home__cta-arrow { transform: translateX(3px); }
 
+.hlp-home__starts { margin: 38px 0 0; }
+
+.hlp-home__start-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hlp-start {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-block-size: 44px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  color: var(--pn-ink-1);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-start:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); transform: translateY(-1px); }
+.hlp-start:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+.hlp-start__eyebrow {
+  color: var(--pn-brand);
+  font-family: var(--pn-caps);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.hlp-start__title {
+  margin-top: 5px;
+  font-family: var(--pn-serif);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -.015em;
+  line-height: 1.25;
+}
+
+.hlp-start__summary {
+  margin-top: 6px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-serif);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.hlp-start__foot {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 12px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hlp-start__foot span:last-child { color: var(--pn-brand); font-size: 13px; transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
+.hlp-start:hover .hlp-start__foot span:last-child { transform: translateX(2px); }
+
 .hlp-home__map { margin: 38px 0 0; }
 
 .hlp-home__map-lede {
@@ -605,7 +785,8 @@
 .hlp-contents .hlp-home__pillar { background: var(--pn-card); }
 .hlp-contents .hlp-home__cta { background: var(--pn-card); }
 .hlp-contents .hlp-card { background: var(--pn-card); }
-.hlp-home + .hlp-library { margin-top: 36px; }
+.hlp-contents .hlp-start { background: var(--pn-card); }
+.hlp-home + .hlp-search { margin-top: 36px; }
 
 .hlp-empty { max-width: 52ch; margin: 0; padding: 30px 24px; color: var(--pn-ink-3); font-family: var(--pn-serif); font-size: 14px; line-height: 1.6; }
 .hlp-empty code { color: var(--pn-ink-2); font-family: var(--pn-mono); font-size: .86em; }
@@ -634,6 +815,7 @@
   .hlp-contents .hlp-home { padding: 6px 0 0; }
   .hlp-home__title { font-size: 42px; }
   .hlp-home__answer { font-size: 18px; }
+  .hlp-home__start-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -648,11 +830,15 @@
   .hlp-home__cta-arrow,
   .hlp-card,
   .hlp-card__arrow,
+  .hlp-start,
+  .hlp-start__foot span:last-child,
   .hlp-back { transition-duration: 0.01ms; }
   .hlp-row:hover,
   .hlp-row:hover .hlp-row__arrow,
   .hlp-home__cta:hover,
   .hlp-home__cta:hover .hlp-home__cta-arrow,
+  .hlp-start:hover,
+  .hlp-start:hover .hlp-start__foot span:last-child,
   .hlp-card:hover:not(:disabled),
   .hlp-card:hover:not(:disabled) .hlp-card__arrow { transform: none; }
 }

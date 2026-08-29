@@ -11,8 +11,9 @@
  * with provenance, hash-pinned and rendered in a sandboxed frame; this page is
  * the shell's own front matter — it enumerates the registry (`HELP_SET`), so it
  * must move when the registry moves. Vendoring it would pin yesterday's page
- * count into today's build. Everything here is derived from `HelpSet`; the only
- * authored words are the hero and the pillars.
+ * count into today's build. Counts and destinations are resolved from
+ * `HelpSet`; the shell authors the framing, pillars and newcomer starting
+ * points around them.
  *
  * ONE COMPONENT, TWO DOORS. On a wide screen it fills the reader pane and a
  * chapter card OPENS that chapter's first plate — the contents shelf is already
@@ -21,6 +22,33 @@
  * (`onChapter`), not this file's.
  */
 import { type HelpChapter, type HelpSet } from './help-set';
+
+const STARTING_POINTS = [
+  {
+    eyebrow: 'New to tm8',
+    title: 'See one request become real work',
+    summary: 'Follow a conversation as it creates a task, a live session, and a durable graph record.',
+    slug: 'one-conversation-one-graph',
+  },
+  {
+    eyebrow: 'Set up the workspace',
+    title: 'Learn how the graph fits together',
+    summary: 'Build a useful working context from ordinary entities and truthful connections.',
+    slug: 'the-graph-assembling',
+  },
+  {
+    eyebrow: 'Work with AI',
+    title: 'Meet teammates and sessions',
+    summary: 'Understand the durable identity, memory, model, and live process behind an AI teammate.',
+    slug: 'anatomy-of-a-teammate',
+  },
+  {
+    eyebrow: 'Deliver as a team',
+    title: 'Watch many hands share one task',
+    summary: 'See people and agents work through different surfaces without making private copies.',
+    slug: 'one-task-many-hands',
+  },
+] as const;
 
 export interface HelpHomeProps {
   set: HelpSet;
@@ -84,6 +112,38 @@ export function HelpHome({ set, onOpen, onChapter }: HelpHomeProps) {
           </button>
         </div>
       ) : null}
+
+      <section className="hlp-home__starts" aria-labelledby="hlp-home-starts-title">
+        <div className="hlp-rule"><span id="hlp-home-starts-title">Choose your starting point</span></div>
+        <p className="hlp-home__map-lede">
+          You do not have to read all {set.pages.length} plates in order. Pick the
+          outcome closest to what brought you here.
+        </p>
+        <ul className="hlp-home__start-grid">
+          {STARTING_POINTS.map((point) => {
+            const page = set.pages.find((candidate) => candidate.slug === point.slug);
+            if (!page) return null;
+            return (
+              <li key={point.slug}>
+                <button
+                  type="button"
+                  className="hlp-start"
+                  data-testid="help-starting-point"
+                  onClick={() => onOpen(page.slug)}
+                >
+                  <span className="hlp-start__eyebrow">{point.eyebrow}</span>
+                  <span className="hlp-start__title">{point.title}</span>
+                  <span className="hlp-start__summary">{point.summary}</span>
+                  <span className="hlp-start__foot">
+                    <span>Plate {String(page.number).padStart(2, '0')}</span>
+                    <span aria-hidden>→</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
 
       <section className="hlp-home__map" aria-labelledby="hlp-home-map-title">
         <div className="hlp-rule"><span id="hlp-home-map-title">The map</span></div>
