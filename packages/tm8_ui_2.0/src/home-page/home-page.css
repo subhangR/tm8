@@ -200,6 +200,180 @@
   min-width: 0;
   min-height: 0;
 }
+
+/* --- workspace map ------------------------------------------------------- */
+/* A compact second altitude over the persistent rail: the same groups and
+   exact counters, arranged for comparison rather than wayfinding. Its
+   percentage ceiling preserves the conversation on short viewports; every
+   kind remains reachable by scrolling inside the map. */
+.cv2-root .hp-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  flex: 0 1 auto;
+  max-height: 38%;
+  min-width: 0;
+  margin: 7px 7px 0;
+  padding: 13px 14px 14px;
+  border-radius: var(--pn-r-lg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.cv2-root .hp-overview__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex: none;
+}
+.cv2-root .hp-overview__copy { min-width: 0; }
+.cv2-root .hp-overview__copy h2 {
+  margin: 3px 0 0;
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 750;
+  letter-spacing: var(--pn-track-tight);
+  line-height: var(--pn-lh-tight);
+}
+.cv2-root .hp-overview__copy p,
+.cv2-root .hp-overview__family p {
+  margin: 3px 0 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  line-height: var(--pn-lh-body);
+}
+.cv2-root .hp-overview__pulse {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: none;
+}
+.cv2-root .hp-overview__families {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+.cv2-root .hp-overview__family {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
+  box-shadow: var(--pn-sh-sm);
+}
+.cv2-root .hp-overview__family[data-active='true'] {
+  border-color: color-mix(in srgb, var(--pn-brand) 42%, var(--pn-line));
+  background: color-mix(in srgb, var(--pn-brand) 5%, var(--pn-card));
+}
+.cv2-root .hp-overview__family-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cv2-root .hp-overview__family-head > div { min-width: 0; }
+.cv2-root .hp-overview__family h3 {
+  margin: 0;
+  color: var(--pn-ink);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-label);
+  font-weight: 750;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+.cv2-root .hp-overview__family p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .hp-overview__kinds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 9px;
+}
+.cv2-root .hp-overview__kind {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 30px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .hp-overview__kind:hover {
+  border-color: var(--pn-line-2);
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .hp-overview__kind[aria-current='page'] {
+  border-color: color-mix(in srgb, var(--pn-brand) 40%, var(--pn-line));
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+  box-shadow: inset 2px 0 0 var(--pn-brand);
+}
+.cv2-root .hp-overview__kind:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .hp-overview__kind:disabled { cursor: default; opacity: 0.72; }
+.cv2-root .hp-overview__kind-mark {
+  display: inline-flex;
+  color: var(--pn-ink-3);
+}
+.cv2-root .hp-overview__kind[aria-current='page'] .hp-overview__kind-mark { color: var(--pn-brand); }
+.cv2-root .hp-overview__kind-mark .kit-vicon { width: 16px; height: 16px; }
+.cv2-root .hp-overview__kind-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The overview's two-column chips have less trailing room than rail rows.
+   Activity retains its visible word; the exact total remains in the complete
+   accessible name and the family aggregate above. */
+.cv2-root .hp-overview__kind .enav-metric--total { display: none; }
+
+@media (max-width: 900px) {
+  .cv2-root .hp-overview__head { align-items: stretch; }
+  .cv2-root .hp-overview__pulse { flex-direction: column; align-items: flex-end; }
+  .cv2-root .hp-overview__families {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+  }
+  .cv2-root .hp-overview__family {
+    flex: 0 0 min(82%, 300px);
+    scroll-snap-align: start;
+  }
+}
+
+@media (forced-colors: active) {
+  .cv2-root .hp-overview__family[data-active='true'],
+  .cv2-root .hp-overview__kind[aria-current='page'] {
+    border-color: Highlight;
+  }
+  .cv2-root .hp-overview__kind[aria-current='page'] {
+    color: HighlightText;
+    background: Highlight;
+    box-shadow: none;
+  }
+  .cv2-root .hp-overview__kind[aria-current='page'] .hp-overview__kind-mark { color: HighlightText; }
+}
 .cv2-root .hp-aside {
   display: flex;
   flex-direction: column;
@@ -232,8 +406,9 @@
 /* --- the icon rail (task 01a00932 R4) ------------------------------------ */
 /* Entities only, collapsed by default at 72px with the word UNDER the mark
    (the #269 law: collapsed keeps the word). Expanded, rows widen to
-   icon-beside-word with group eyebrows. Leftmost in the row, before A. */
-/* The 72/172 literals moved to `HomeView`'s `RAIL_COLLAPSED`/`RAIL_EXPANDED`
+   icon-beside-word with group eyebrows and honest counters. Leftmost in the
+   row, before A. */
+/* The 72/208 literals live in `HomeView`'s rail constants
    and arrive as `--hp-rail` (task 01a00ac2). The solver has to subtract this
    rail before it can tell whether A + B still fit beside C, and a floor that
    lives in two places is a floor that disagrees with itself. The fallbacks
@@ -245,9 +420,28 @@
   width: var(--hp-rail, 72px);
   min-height: 0;
   border-right: 1px solid var(--pn-line);
-  background: var(--pn-surface);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--pn-brand) 2%, var(--pn-surface)),
+    var(--pn-surface) 28%
+  );
 }
-.cv2-root .hr-rail:not(.hr-rail--collapsed) { width: var(--hp-rail, 172px); }
+.cv2-root .hr-rail:not(.hr-rail--collapsed) { width: var(--hp-rail, 208px); }
+.cv2-root .hr-rail__mast {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: none;
+  margin: 7px 7px 0;
+  padding: 11px 12px 10px;
+  border-radius: var(--pn-r-md);
+}
+.cv2-root .hr-rail__mast-count {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+}
 .cv2-root .hr-rail__scroll {
   flex: 1;
   min-height: 0;
@@ -257,7 +451,7 @@
      without this, the rows rendered and took clicks BENEATH the toggle. */
   padding: 8px 6px 36px;
 }
-.cv2-root .hr-rail__group { display: flex; flex-direction: column; gap: 2px; }
+.cv2-root .hr-rail__group { display: flex; flex-direction: column; gap: 3px; }
 .cv2-root .hr-rail__group + .hr-rail__group {
   margin-top: 8px;
   padding-top: 8px;
@@ -267,7 +461,7 @@
    ink-2, not an 8.5px whisper in ink-4. It has to hold its own against the
    14/600 rows below it. */
 .cv2-root .hr-rail__eyebrow {
-  padding: 2px 6px 4px;
+  min-width: 0;
   color: var(--pn-ink-2);
   font-family: var(--pn-caps);
   font-size: var(--pn-fs-micro);
@@ -275,12 +469,21 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.cv2-root .hr-rail__grouphead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  padding: 1px 6px 3px;
+}
+.cv2-root .hr-rail__grouphead > .enav-metrics { margin-left: auto; }
 /* Kinetic I1 label grammar: 14/600 full ink (the rail is primary navigation,
    not secondary chrome), on a 32px row with an 18px mark. border-box because
    the 32px floor must include the 1px selection border. */
 .cv2-root .hr-rail__row {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -299,16 +502,24 @@
 }
 /* Collapsed: the word stays, UNDER the mark, at caption size. */
 .cv2-root .hr-rail--collapsed .hr-rail__row {
+  display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 2px;
+  padding: 7px 2px 6px;
 }
 .cv2-root .hr-rail--collapsed .hr-rail__label {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 8.5px;
+  font-size: var(--pn-fs-micro);
+}
+.cv2-root .hr-rail--collapsed .enav-metric--total { display: none; }
+.cv2-root .hr-rail--collapsed .hr-rail__metrics { gap: 2px; }
+.cv2-root .hr-rail--collapsed .hr-rail__metrics .enav-metric--new,
+.cv2-root .hr-rail--collapsed .hr-rail__metrics .enav-metric--live {
+  min-height: 16px;
+  padding: 2px 4px;
 }
 .cv2-root .hr-rail__label {
   min-width: 0;
@@ -317,6 +528,7 @@
   white-space: nowrap;
 }
 .cv2-root .hr-rail__glyph { display: inline-flex; flex: none; }
+.cv2-root .hr-rail__metrics { justify-self: end; }
 /* The mark is drawn at 18 (I1): the CSS wins over the SVG's own 14px
    width/height attributes, so no component edit is needed. */
 .cv2-root .hr-rail__glyph .kit-vicon { width: 18px; height: 18px; }
@@ -324,18 +536,27 @@
 /* Selection speaks the one accent (Kinetic grammar): brand-soft fill + 700
    word + brand-coloured mark — never the gray active wash that read as
    "unchanged". The fill is the whole statement; no border on top of it. */
-.cv2-root .hr-rail__row[aria-current='true'] {
+.cv2-root .hr-rail__row[aria-current='page'] {
   border-color: transparent;
   background: var(--pn-brand-soft);
   color: var(--pn-ink);
   font-weight: 700;
+  box-shadow: inset 2px 0 0 var(--pn-brand);
 }
-.cv2-root .hr-rail__row[aria-current='true'] .hr-rail__glyph { color: var(--pn-brand); }
+.cv2-root .hr-rail__row[aria-current='page'] .hr-rail__glyph { color: var(--pn-brand); }
+.cv2-root .hr-rail__row:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
+}
 /* The toggle is an OPAQUE full-width band, not a floating pill: rows scrolling
    past it must never show through, and the top hairline is what says "the
    list continues under here". min-height 28 + border-box pairs with the
    scroll area's 36px bottom reserve above. */
 .cv2-root .hr-rail__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   flex: none;
   box-sizing: border-box;
   min-height: 28px;
@@ -351,6 +572,11 @@
   font-size: var(--pn-fs-sm);
   cursor: pointer;
 }
+.cv2-root .hr-rail__toggle-label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+}
 .cv2-root .hr-rail__toggle:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: -2px; }
 /* The hover tint is LAYERED over the opaque surface: under the Astryx bridge
    `--pn-hover` maps to a translucent overlay token, and a translucent band
@@ -358,6 +584,16 @@
 .cv2-root .hr-rail__toggle:hover {
   color: var(--pn-ink);
   background: linear-gradient(var(--pn-hover), var(--pn-hover)) var(--pn-surface);
+}
+
+@media (forced-colors: active) {
+  .cv2-root .hr-rail__row[aria-current='page'] {
+    border-color: Highlight;
+    color: HighlightText;
+    background: Highlight;
+    box-shadow: none;
+  }
+  .cv2-root .hr-rail__row[aria-current='page'] .hr-rail__glyph { color: HighlightText; }
 }
 
 /* --- trails (task 01a00932 R7): the crumb IS the route's p/r state -------- */

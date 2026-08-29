@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import type {
   ActorSummary,
   CollectionGroup,
@@ -43,6 +43,7 @@ import {
   collectionKinds,
   countLabel,
   getKind,
+  homeRailGroups,
   needsViewer,
   resolveAction,
   workflowRefusalText,
@@ -90,6 +91,7 @@ import { routeMessagePulse, type PulseSegment } from './list/message-pulse';
 import type { MessagePulse } from './list/useMessagePulses';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 import { newLaunchMutationId } from '../domain/launch';
+import { EntityNavigationMetrics } from '../navigation';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -1292,17 +1294,23 @@ function LensNote({
  * intersect the spec's. That is zero rows and therefore zero live, which is
  * what `NO_ROWS` produces without asking the seam.
  */
+interface ListLiveCount {
+  value: number;
+  label: string;
+}
+
 function liveCountFor(
   props: EntityListPanelProps,
   config: KindConfig,
   tab: StatusCategoryTab | null,
-): string | null {
+): ListLiveCount | null {
   const spec = config.list.liveCount;
   if (!spec || !props.liveIds) return null;
   const merged = narrow(spec.filter, tab?.filter);
   const rows = merged === null ? NO_ROWS : props.rowsFor(merged);
   const live = new Set(props.liveIds);
-  return spec.label(rows.filter((r) => live.has(r.id)).length);
+  const value = rows.filter((r) => live.has(r.id)).length;
+  return { value, label: spec.label(value) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1325,53 +1333,168 @@ function KindSelector({
    * truncated keeps the total as honest as its worst input.
    */
   total?: string;
-  liveCount: string | null;
+  liveCount: ListLiveCount | null;
   onKindChange?: (kind: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useDismissable(open, ref, useCallback(() => setOpen(false), []));
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
+  const initialFocus = useRef<'current' | 'first' | 'last'>('current');
+  const menuId = useId();
+  const groups = homeRailGroups();
+  const currentGroup = groups.find((group) =>
+    group.kinds.some((kind) => kind.kind === config.kind),
+  );
+  const dismiss = useCallback(() => setOpen(false), []);
+  useDismissable(open, ref, dismiss, triggerRef);
+
+  const menuItems = useCallback(
+    () =>
+      Array.from(
+        menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const items = menuItems();
+    const target =
+      initialFocus.current === 'first'
+        ? items[0]
+        : initialFocus.current === 'last'
+          ? items.at(-1)
+          : items.find((item) => item.getAttribute('aria-current') === 'page') ?? items[0];
+    target?.focus();
+  }, [config.kind, menuItems, open]);
+
+  const onTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    initialFocus.current = event.key === 'ArrowUp' ? 'last' : 'first';
+    setOpen(true);
+  };
+
+  const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLUListElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    event.preventDefault();
+    const active = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowUp'
+            ? active <= 0
+              ? items.length - 1
+              : active - 1
+            : active < 0 || active === items.length - 1
+              ? 0
+              : active + 1;
+    items[next]?.focus();
+  };
+
   return (
     <div className="lp__selector" ref={ref}>
-      <button type="button" className="lp__kind" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="lp__kind k-press"
+        onClick={() => {
+          initialFocus.current = 'current';
+          setOpen((value) => !value);
+        }}
+        onKeyDown={onTriggerKeyDown}
+        aria-haspopup="menu"
+        aria-controls={menuId}
+        aria-expanded={open}
+        aria-label={config.labelPlural}
+      >
         <span className="lp__kind-glyph" aria-hidden>
           <KindIcon kind={config.kind} />
         </span>
-        {config.labelPlural}
+        <span className="lp__kindcopy">
+          <span className="lp__kindfamily k-label">{currentGroup?.label ?? 'Entities'}</span>
+          <span className="lp__kindname">{config.labelPlural}</span>
+        </span>
         <span className="lp__caret" aria-hidden>
           ▾
         </span>
       </button>
       <span className="lp__spacer" />
-      {total !== undefined ? (
-        <span className="lp__total" data-testid="kind-total">
-          {total}
-        </span>
-      ) : null}
-      {liveCount ? (
-        <span className="lp__livecount" data-testid="list-live-count">
-          {liveCount}
+      {total !== undefined || liveCount !== null ? (
+        <span className="lp__selector-metrics">
+          {total !== undefined ? (
+            <span data-testid="kind-total">
+              <EntityNavigationMetrics total={total} />
+            </span>
+          ) : null}
+          {liveCount !== null ? (
+            <span data-testid="list-live-count">
+              <EntityNavigationMetrics
+                live={liveCount.value}
+                showZeroLive
+                liveAnnouncement={liveCount.label}
+              />
+            </span>
+          ) : null}
         </span>
       ) : null}
       {open ? (
-        <ul className="lp__kindmenu" role="menu">
-          {/* Only `strategy: 'collection'` kinds can BE a list: channel is a
-              special route and message is anchored, so neither has a
-              collection view to switch to. That exclusion is registry data. */}
-          {collectionKinds().map((k) => (
-            <li key={k.kind}>
-              <button
-                type="button"
-                role="menuitem"
-                className={k.kind === config.kind ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                onClick={() => {
-                  setOpen(false);
-                  onKindChange?.(k.kind);
-                }}
+        <ul
+          ref={menuRef}
+          id={menuId}
+          className="lp__kindmenu k-enter-pop"
+          role="menu"
+          aria-label="Entity types"
+          onKeyDown={onMenuKeyDown}
+        >
+          {/* Only `strategy: 'collection'` kinds can be a list. Membership,
+              family order and custom-kind fallback are all registry data. */}
+          {groups.map((group) => (
+            <li key={group.id} role="none" className="lp__kindgroup">
+              <div className="lp__kindgroup-head">
+                <span className="lp__kindgroup-label k-label">{group.label}</span>
+                <span className="lp__kindgroup-count" aria-label={`${group.kinds.length} entity types`}>
+                  {group.kinds.length}
+                </span>
+              </div>
+              <ul
+                className="lp__kindgroup-items"
+                role="group"
+                aria-label={`${group.label}: ${group.description}`}
               >
-                <KindIcon kind={k.kind} />
-                {k.labelPlural}
-              </button>
+                {group.kinds.map((kind) => {
+                  const current = kind.kind === config.kind;
+                  return (
+                    <li key={kind.kind} role="none">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-kind={kind.kind}
+                        aria-current={current ? 'page' : undefined}
+                        className={
+                          current
+                            ? 'lp__kindopt lp__kindopt--current k-press'
+                            : 'lp__kindopt k-press'
+                        }
+                        onClick={() => {
+                          setOpen(false);
+                          triggerRef.current?.focus();
+                          onKindChange?.(kind.kind);
+                        }}
+                      >
+                        <KindIcon kind={kind.kind} />
+                        <span className="lp__kindopt-label">{kind.labelPlural}</span>
+                        {current ? <span className="lp__kindopt-current">Current</span> : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </li>
           ))}
         </ul>

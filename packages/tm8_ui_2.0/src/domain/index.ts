@@ -181,6 +181,16 @@ export {
   type HomeRailGroup,
   type HomeRoot,
 } from './home-rail';
+export {
+  composeEntityNavigation,
+  entityNavigationLabel,
+  summarizeEntityNavigation,
+  type EntityNavigationCounts,
+  type EntityNavigationCountsFor,
+  type EntityNavigationGroup,
+  type EntityNavigationItem,
+  type EntityNavigationSummary,
+} from './entity-navigation';
 
 /**
  * The MenuTarget <-> NavView mapping. Exported from the barrel because the
