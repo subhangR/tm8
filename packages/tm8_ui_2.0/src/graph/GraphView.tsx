@@ -788,21 +788,16 @@ export function GraphView(props: GraphViewProps) {
             </button>
           ))}
         </div>
-        <span className="gv-toolbar__count">
-          {model.placed.length} nodes · {model.edges.length} edges · {model.componentCount}{' '}
-          {model.componentCount === 1 ? 'island' : 'islands'}
-          {/* Hubs are why the islands are islands. Saying so here is what keeps
-              the partition from looking arbitrary to someone who can plainly
-              see an edge crossing between two of them. */}
-          {model.hubCount > 0 && (
-            <span
-              className="gv-toolbar__fold"
-              title="A node with more than a dozen connections is drawn and linked, but is not treated as evidence that the groups it touches are the same piece of work."
-            >
-              {' '}
-              · {model.hubCount} {model.hubCount === 1 ? 'hub' : 'hubs'} not merging
-            </span>
-          )}
+        <span
+          className="gv-toolbar__count"
+          aria-label={`${model.placed.length} nodes, ${model.edges.length} edges, ${model.componentCount} ${model.componentCount === 1 ? 'island' : 'islands'}${model.hubCount > 0 ? `, ${model.hubCount} ${model.hubCount === 1 ? 'hub' : 'hubs'} not merging` : ''}`}
+          title={`${model.placed.length} nodes · ${model.edges.length} edges · ${model.componentCount} ${model.componentCount === 1 ? 'island' : 'islands'}${model.hubCount > 0 ? ` · ${model.hubCount} ${model.hubCount === 1 ? 'hub' : 'hubs'} not merging` : ''}`}
+        >
+          {/* At rest the toolbar names the primary thing and stops. Edge,
+              island and hub counts remain in the accessible label + tooltip;
+              action-bearing exceptions below stay visible because they carry
+              their own remedy. The name wins the width budget. */}
+          {model.placed.length} nodes
           {/* The declutter states its own price, always. A number nobody can
               account for is the thing this whole change exists to remove. */}
           {model.foldedCount > 0 && (
@@ -1271,7 +1266,9 @@ export function GraphView(props: GraphViewProps) {
                           <span className="gv-node__bar" aria-hidden>
                             <i style={{ width: `${pct}%` }} />
                           </span>
-                          <span className="gv-node__bodymeta">{pct}% · {acc.completed}/{acc.total} criteria</span>
+                          <span className="gv-node__bodymeta">
+                            {acc.completed} of {acc.total} criteria
+                          </span>
                         </span>
                       );
                     }
@@ -1302,9 +1299,6 @@ export function GraphView(props: GraphViewProps) {
                       size={15}
                     />
                     <Timestamp className="gv-node__meta" at={p.entity.activityAt} now={now} title="last activity" />
-                    {p.entity.counters.messages > 0 && (
-                      <span className="gv-node__meta">✉ {p.entity.counters.messages}</span>
-                    )}
                     {p.ghost && <span className="gv-node__meta gv-node__meta--ghost">deleted</span>}
                     {/* THE HUB BADGE. Nothing is hidden behind it — it is the
                         answer to "why are these two groups drawn apart when I
@@ -1316,7 +1310,7 @@ export function GraphView(props: GraphViewProps) {
                         className="gv-node__meta gv-node__meta--hub"
                         title={`${p.degree} connections — drawn and linked, but not used to merge the groups it touches`}
                       >
-                        ◈{p.degree}
+                        hub · {p.degree}
                       </span>
                     )}
                     {/* THE FOLD BADGE. What collapsed onto this card, said in
@@ -1334,7 +1328,7 @@ export function GraphView(props: GraphViewProps) {
                           expandHub(p.entity.id);
                         }}
                       >
-                        +{p.folded.nodes.length}
+                        {p.folded.nodes.length} folded
                       </button>
                     )}
                   </span>
@@ -1342,16 +1336,20 @@ export function GraphView(props: GraphViewProps) {
               );
             })}
           </div>
-        </div>
-      )}
 
-      {model.placed.length > 0 && (
-        <>
-          {/* LEGEND — top-right floating card. Each row is a real toggle bound
-              to the same kind filter the toolbar owns; a dimmed row means that
-              kind is filtered out, not absent. */}
-          <div className="gv-legend" role="group" aria-label="Legend — click a kind to filter">
-            <span className="gv-legend__title">Legend</span>
+          {model.placed.length > 0 && (
+            <>
+              {/* Canvas chrome belongs to the viewport, not the graph root.
+                  The honesty banner is a normal-flow sibling above this
+                  viewport, so variable-length truth can never grow underneath
+                  the Legend again. The Legend is closed at rest: its NAME is
+                  always present while its twenty toggles appear on request. */}
+              <details
+                className="gv-legend"
+                role="group"
+                aria-label="Legend — click a kind to filter"
+              >
+                <summary className="gv-legend__title">Legend</summary>
             {kindsPresent.map((k) => {
               const row = getKind(k);
               const off = kindsOff.has(k);
@@ -1380,50 +1378,52 @@ export function GraphView(props: GraphViewProps) {
                 </button>
               );
             })}
-          </div>
+              </details>
 
-          {/* FILTER DOCK — bottom-left. The lens lives here now: All Types /
-              Active Only, plus My Nodes when a viewer is known. */}
-          <div className="gv-filterdock" role="group" aria-label="Filters">
-            <span className="gv-filterdock__label">Filters</span>
-            <button
-              type="button"
-              className={lens === 'all' && !myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
-              aria-pressed={lens === 'all' && !myOnly}
-              onClick={() => { chooseLens('all'); setMyOnly(false); }}
-            >
-              {LENS_WORDS.all}
-            </button>
-            <button
-              type="button"
-              className={lens !== 'all' && !myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
-              aria-pressed={lens !== 'all' && !myOnly}
-              title={lensSpec('working').hint}
-              onClick={() => { chooseLens('working'); setMyOnly(false); }}
-            >
-              {LENS_WORDS.working}
-            </button>
-            {props.viewerId ? (
-              <button
-                type="button"
-                className={myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
-                aria-pressed={myOnly}
-                title="Only what you created or are assigned to"
-                onClick={() => setMyOnly((v) => !v)}
-              >
-                My Nodes
-              </button>
-            ) : null}
-          </div>
+              {/* FILTER DOCK — bottom-left. The lens lives here now: All Types /
+                  Active Only, plus My Nodes when a viewer is known. */}
+              <div className="gv-filterdock" role="group" aria-label="Filters">
+                <span className="gv-filterdock__label">Filters</span>
+                <button
+                  type="button"
+                  className={lens === 'all' && !myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
+                  aria-pressed={lens === 'all' && !myOnly}
+                  onClick={() => { chooseLens('all'); setMyOnly(false); }}
+                >
+                  {LENS_WORDS.all}
+                </button>
+                <button
+                  type="button"
+                  className={lens !== 'all' && !myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
+                  aria-pressed={lens !== 'all' && !myOnly}
+                  title={lensSpec('working').hint}
+                  onClick={() => { chooseLens('working'); setMyOnly(false); }}
+                >
+                  {LENS_WORDS.working}
+                </button>
+                {props.viewerId ? (
+                  <button
+                    type="button"
+                    className={myOnly ? 'gv-filterdock__opt gv-filterdock__opt--on' : 'gv-filterdock__opt'}
+                    aria-pressed={myOnly}
+                    title="Only what you created or are assigned to"
+                    onClick={() => setMyOnly((v) => !v)}
+                  >
+                    My Nodes
+                  </button>
+                ) : null}
+              </div>
 
-          {/* ZOOM DOCK — bottom-right, off the toolbar so the canvas controls
-              sit where the hand already is. */}
-          <div className="gv-zoomdock">
-            <IconBtn label="Zoom in" onClick={() => zoomBy(1.2)}>+</IconBtn>
-            <IconBtn label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</IconBtn>
-            <IconBtn label="Fit graph" onClick={fit}>⤢</IconBtn>
-          </div>
-        </>
+              {/* ZOOM DOCK — bottom-right, off the toolbar so the canvas controls
+                  sit where the hand already is. */}
+              <div className="gv-zoomdock" role="group" aria-label="Canvas zoom">
+                <IconBtn label="Zoom in" onClick={() => zoomBy(1.2)}>+</IconBtn>
+                <IconBtn label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</IconBtn>
+                <IconBtn label="Fit graph" onClick={fit}>⤢</IconBtn>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {model.shelf.length > 0 && (
@@ -1517,7 +1517,11 @@ function GroupSelect({
         title={groupSpec(value).hint}
         onClick={() => setOpen((o) => !o)}
       >
-        Group · {active ? groupSpec(value).label : 'off'} <span aria-hidden>▾</span>
+        <span className="gv-select__name">Group</span>
+        {' '}
+        <span className="gv-select__state">· {active ? groupSpec(value).label : 'off'}</span>
+        {' '}
+        <span className="gv-select__chevron" aria-hidden>▾</span>
       </button>
       {open ? (
         <div className="gv-select__pop" role="listbox" aria-label="Group the graph by">
@@ -1572,9 +1576,18 @@ function FilterSelect({
         className={filtered ? 'gv-select__face gv-select__face--filtered' : 'gv-select__face'}
         aria-haspopup="listbox"
         aria-expanded={open}
+        title={filtered ? `${label}: ${visible} of ${options.length} shown` : label}
         onClick={() => setOpen((o) => !o)}
       >
-        {label} · {visible}/{options.length} <span aria-hidden>▾</span>
+        <span className="gv-select__name">{label}</span>
+        {filtered ? (
+          <>
+            {' '}
+            <span className="gv-select__state">· {visible}/{options.length}</span>
+          </>
+        ) : null}
+        {' '}
+        <span className="gv-select__chevron" aria-hidden>▾</span>
       </button>
       {open ? (
         <div className="gv-select__pop" role="listbox" aria-label={`${label} filter`} aria-multiselectable>
