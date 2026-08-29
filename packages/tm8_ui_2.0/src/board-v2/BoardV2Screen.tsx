@@ -39,6 +39,7 @@ import { placeholderNameFor } from '../domain/title-grammar';
 import { DisabledIconControl, toReason, type DetailReasons } from '../panels';
 import { AvatarStack, Pill } from '../kit';
 import { Badge } from '@astryxdesign/core/Badge';
+import { Card } from '@astryxdesign/core/Card';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Timestamp } from '@astryxdesign/core/Timestamp';
 import type { Notice } from '../shell/notices';
@@ -98,10 +99,16 @@ export function BoardV2Screen({
   const [refusal, setRefusal] = useState<{ column: string; reason: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [dragging, setDragging] = useState<{ row: EntitySummary; from: string } | null>(null);
-  /** §8.1 roving focus: column index + card index within it. */
-  const [focus, setFocus] = useState<{ col: number; row: number }>({ col: 0, row: 0 });
+  /** §8.1 roving focus is an ENTITY identity, never a transient coordinate. */
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   /** The card whose entity the panel is showing, or null for none. */
   const [openId, setOpenId] = useState<EntityId | null>(null);
+  const [moveStatus, setMoveStatus] = useState('');
+  const pendingIdRef = useRef<string | null>(null);
+  const cardButtonsRef = useRef(new Map<string, HTMLButtonElement>());
+  const panelRef = useRef<HTMLElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const panelWasOpenRef = useRef(false);
 
   // Render-time snapshots made async-safe (see the module docblock).
   const lifecycleRef = useRef(lifecycle);
@@ -156,7 +163,31 @@ export function BoardV2Screen({
   /* One door for every route in: a card press, Enter on the focused card, a
      freshly created entity, and a drill sideways from inside the panel all
      REPLACE the panel's subject rather than opening a second surface. */
-  const openEntity = (id: EntityId): void => setOpenId(id);
+  const openEntity = (id: EntityId): void => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.matches('[data-b2-card-trigger]')) {
+      openerRef.current = active;
+    } else if (openId === null) {
+      openerRef.current = null;
+    }
+    setOpenId(id);
+  };
+
+  const closeEntity = (): void => {
+    const opener = openerRef.current;
+    setOpenId(null);
+    queueMicrotask(() => {
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    });
+  };
+
+  useEffect(() => {
+    const isOpen = openId !== null;
+    if (isOpen && !panelWasOpenRef.current) {
+      panelRef.current?.focus({ preventScroll: true });
+    }
+    panelWasOpenRef.current = isOpen;
+  }, [openId]);
 
   /* Esc closes the panel — at the DOCUMENT, because the focus may well be
      inside the panel rather than on the board's own key handler, and only when
@@ -167,7 +198,7 @@ export function BoardV2Screen({
     const onEscape = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
-      setOpenId(null);
+      closeEntity();
     };
     document.addEventListener('keydown', onEscape);
     return () => document.removeEventListener('keydown', onEscape);
@@ -234,6 +265,18 @@ export function BoardV2Screen({
   );
   const shownOf = (column: BoardColumn): readonly EntitySummary[] =>
     matching(column.items ?? [], search);
+  const shownRows = shownColumns.map(shownOf);
+  const locateCard = (id: string | null): { col: number; row: number; item: EntitySummary } | null => {
+    if (id === null) return null;
+    for (let col = 0; col < shownRows.length; col += 1) {
+      const row = shownRows[col]!.findIndex((item) => item.id === id);
+      if (row >= 0) return { col, row, item: shownRows[col]![row]! };
+    }
+    return null;
+  };
+  const activeCard = locateCard(focusedId)
+    ?? shownRows.flatMap((items, col) => items.slice(0, 1).map((item) => ({ col, row: 0, item })))[0]
+    ?? null;
 
   const onKind = (next: string): void => {
     if (next === kindName) return;
@@ -241,7 +284,7 @@ export function BoardV2Screen({
     // The overlay's keys are the OLD kind's rows — meaningless now.
     setMoves(new Map());
     setRefusal(null);
-    setFocus({ col: 0, row: 0 });
+    setFocusedId(null);
   };
 
   const toggle = (axis: 'people' | 'assignedBy', key: string): void => {
@@ -270,6 +313,14 @@ export function BoardV2Screen({
 
   const dispatchDrop = (row: EntitySummary, fromKey: string, target: ColumnPlan): void => {
     if (target.key === fromKey) return;
+    if (pendingIdRef.current !== null) {
+      setMoveStatus(
+        pendingIdRef.current === row.id
+          ? `${row.title} is already moving.`
+          : 'Wait for the current card move to finish.',
+      );
+      return;
+    }
     setRefusal(null);
     /* A refusing column refuses BEFORE the overlay claims anything — the card
        never moves, and the reason renders where the drop happened. */
@@ -277,9 +328,12 @@ export function BoardV2Screen({
       setRefusal({ column: target.key, reason: target.drop.reason });
       return;
     }
+    pendingIdRef.current = row.id;
     setPendingId(row.id);
+    setMoveStatus(`Moving ${row.title} to ${target.label}.`);
     setMoves((prior) => new Map(prior).set(row.id, { to: target.key, from: fromKey }));
     void performMove(row, target).then((outcome) => {
+      if (pendingIdRef.current === row.id) pendingIdRef.current = null;
       setPendingId((prior) => (prior === row.id ? null : prior));
       if (!outcome.ok) {
         // Roll the overlay back and confess at the column that refused (§1.5).
@@ -289,49 +343,76 @@ export function BoardV2Screen({
           return next;
         });
         setRefusal({ column: target.key, reason: outcome.reason });
+        setMoveStatus(`Could not move ${row.title}: ${outcome.reason}`);
+      } else {
+        setMoveStatus(`Moved ${row.title} to ${target.label}.`);
       }
     });
   };
 
-  // §8.1 — drag is never the only path: mod+arrow moves the focused card
-  // through the SAME dispatch a drop uses.
+  const focusCard = (id: string): void => {
+    setFocusedId(id);
+    cardButtonsRef.current.get(id)?.focus({ preventScroll: true });
+    queueMicrotask(() => cardButtonsRef.current.get(id)?.focus({ preventScroll: true }));
+  };
+
+  // §8.1 — drag is never the only path: mod+arrow moves the DOM-focused card
+  // through the SAME dispatch a drop uses. Only a card trigger may enter this
+  // handler, so panel editors and every other interactive descendant keep
+  // their native arrows, hjkl, Enter, and typing.
   const onKeyDown = (event: React.KeyboardEvent): void => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLButtonElement>('[data-b2-card-trigger]')
+      : null;
+    if (!target || target.closest('[data-testid="b2-entity-panel"]')) return;
+    const position = locateCard(target.dataset.entity ?? null);
+    if (!position) return;
+
     const mod = event.metaKey || event.ctrlKey;
     const colCount = shownColumns.length;
-    if (colCount === 0) return;
-    const col = Math.min(focus.col, colCount - 1);
-    const rows = shownOf(shownColumns[col]!);
-    const row = Math.min(focus.row, Math.max(0, rows.length - 1));
-    const focused = rows[row];
+    const { col, row, item: focused } = position;
+    const rows = shownRows[col]!;
 
     const move = (delta: number): void => {
-      if (!focused) return;
       const target = shownColumns[col + delta];
       if (!target) return;
       dispatchDrop(focused, shownColumns[col]!.plan.key, target.plan);
+      focusCard(focused.id);
+    };
+
+    const focusAcross = (delta: number): void => {
+      for (let next = col + delta; next >= 0 && next < colCount; next += delta) {
+        const item = shownRows[next]![0];
+        if (item) {
+          focusCard(item.id);
+          return;
+        }
+      }
     };
 
     switch (event.key) {
       case 'ArrowLeft':
       case 'h':
         if (mod) move(-1);
-        else setFocus({ col: Math.max(0, col - 1), row: 0 });
+        else focusAcross(-1);
         break;
       case 'ArrowRight':
       case 'l':
         if (mod) move(1);
-        else setFocus({ col: Math.min(colCount - 1, col + 1), row: 0 });
+        else focusAcross(1);
         break;
       case 'ArrowDown':
       case 'j':
-        setFocus({ col, row: Math.min(Math.max(0, rows.length - 1), row + 1) });
+        if (rows[Math.min(rows.length - 1, row + 1)]) {
+          focusCard(rows[Math.min(rows.length - 1, row + 1)]!.id);
+        }
         break;
       case 'ArrowUp':
       case 'k':
-        setFocus({ col, row: Math.max(0, row - 1) });
+        if (rows[Math.max(0, row - 1)]) focusCard(rows[Math.max(0, row - 1)]!.id);
         break;
       case 'Enter':
-        if (focused) openEntity(focused.id as EntityId);
+        openEntity(focused.id as EntityId);
         break;
       default:
         return;
@@ -462,11 +543,13 @@ export function BoardV2Screen({
 
       <div
         className="b2__body"
-        role="application"
+        role="region"
         aria-label={`${kind.labelPlural} board`}
-        tabIndex={0}
         onKeyDown={onKeyDown}
       >
+        <p className="sr-only" role="status" aria-live="polite" data-testid="b2-move-status">
+          {moveStatus}
+        </p>
         {/* WHAT THE BOARD IS, said once, only when it is genuinely empty. */}
         {!loading && !anyFilterActive(filters) && search.trim() === ''
           && shownColumns.every((column) => (column.items?.length ?? 0) === 0) ? (
@@ -487,21 +570,33 @@ export function BoardV2Screen({
               <ColumnView
                 key={column.plan.key}
                 column={column}
-                shown={column.items === undefined ? undefined : shownOf(column)}
+                shown={column.items === undefined ? undefined : shownRows[index]}
                 band={plan.mode === 'workflow' ? column.plan.category : null}
-                focused={index === Math.min(focus.col, shownColumns.length - 1)}
-                focusRow={focus.row}
+                focused={index === activeCard?.col}
+                focusedId={activeCard?.item.id ?? null}
                 refusal={refusal?.column === column.plan.key ? refusal.reason : null}
                 pendingId={pendingId}
                 dragging={dragging}
                 onDragStart={setDragging}
                 onDrop={dispatchDrop}
                 onOpen={(id) => openEntity(id as EntityId)}
+                onCardFocus={setFocusedId}
+                buttonRef={(id, node) => {
+                  if (node) cardButtonsRef.current.set(id, node);
+                  else cardButtonsRef.current.delete(id);
+                }}
               />
             ))}
           </div>
           {openId !== null ? (
-            <aside className="b2__panel" aria-label="Entity details" data-testid="b2-entity-panel">
+            <aside
+              ref={panelRef}
+              className="b2__panel"
+              aria-labelledby="b2-entity-panel-title"
+              data-testid="b2-entity-panel"
+              tabIndex={-1}
+            >
+              <h2 id="b2-entity-panel-title" className="sr-only">Entity details</h2>
               <BoardEntityColumn
                 data={data}
                 reasons={reasons}
@@ -511,7 +606,7 @@ export function BoardV2Screen({
                 rowLifecycle={lifecycle}
                 entityId={openId}
                 onOpenEntity={openEntity}
-                onClose={() => setOpenId(null)}
+                onClose={closeEntity}
               />
             </aside>
           ) : null}
@@ -533,13 +628,15 @@ function ColumnView({
   shown,
   band,
   focused,
-  focusRow,
+  focusedId,
   refusal,
   pendingId,
   dragging,
   onDragStart,
   onDrop,
   onOpen,
+  onCardFocus,
+  buttonRef,
 }: {
   column: BoardColumn;
   /** `undefined` ⇒ loading: header renders, body shimmers (§8.2). */
@@ -547,13 +644,15 @@ function ColumnView({
   /** The category band a workflow-state column sits under, or null. */
   band: string | null;
   focused: boolean;
-  focusRow: number;
+  focusedId: string | null;
   refusal: string | null;
   pendingId: string | null;
   dragging: { row: EntitySummary; from: string } | null;
   onDragStart: (d: { row: EntitySummary; from: string } | null) => void;
   onDrop: (row: EntitySummary, fromKey: string, target: ColumnPlan) => void;
   onOpen: (id: string) => void;
+  onCardFocus: (id: string) => void;
+  buttonRef: (id: string, node: HTMLButtonElement | null) => void;
 }) {
   // Page-scoped counts hedge with `+` when another page exists — a bare
   // number would claim a total this screen never read.
@@ -611,9 +710,11 @@ function ColumnView({
               fromKey={column.plan.key}
               pending={row.id === pendingId}
               draggingId={dragging?.row.id ?? null}
-              cardFocused={focused && index === focusRow}
+              cardFocused={row.id === focusedId}
               onDragStart={onDragStart}
               onOpen={onOpen}
+              onFocus={onCardFocus}
+              buttonRef={buttonRef}
             />
           ))
         )}
@@ -641,6 +742,8 @@ function CardView({
   cardFocused,
   onDragStart,
   onOpen,
+  onFocus,
+  buttonRef,
 }: {
   row: EntitySummary;
   fromKey: string;
@@ -649,6 +752,8 @@ function CardView({
   cardFocused: boolean;
   onDragStart: (d: { row: EntitySummary; from: string } | null) => void;
   onOpen: (id: string) => void;
+  onFocus: (id: string) => void;
+  buttonRef: (id: string, node: HTMLButtonElement | null) => void;
 }) {
   /* Meta renders STRUCTURALLY off the summary's state — fields that exist,
      drawn; fields the kind does not carry, absent. No kind is named. */
@@ -668,20 +773,37 @@ function CardView({
     .join(' ');
 
   return (
-    <article
+    <Card
       role="listitem"
       className={cls}
       data-testid="b2-card"
       data-entity={row.id}
-      draggable
+      variant="default"
+      padding={3}
+      elevation="low"
+      aria-busy={pending || undefined}
+      draggable={!pending}
       onDragStart={(event) => {
+        if (pending) {
+          event.preventDefault();
+          return;
+        }
         event.dataTransfer.setData('text/plain', row.id);
         event.dataTransfer.effectAllowed = 'move';
         onDragStart({ row, from: fromKey });
       }}
       onDragEnd={() => onDragStart(null)}
     >
-      <button type="button" className="b2__card-title" onClick={() => onOpen(row.id)}>
+      <button
+        ref={(node) => buttonRef(row.id, node)}
+        type="button"
+        className="b2__card-title"
+        data-b2-card-trigger=""
+        data-entity={row.id}
+        tabIndex={cardFocused ? 0 : -1}
+        onFocus={() => onFocus(row.id)}
+        onClick={() => onOpen(row.id)}
+      >
         {row.title}
       </button>
       <div className="b2__card-meta">
@@ -698,7 +820,7 @@ function CardView({
           </span>
         ) : null}
         {state.acceptance && state.acceptance.total > 0 ? (
-          <span
+          <div
             className="b2__card-accept"
             title={`${state.acceptance.completed} of ${state.acceptance.total} acceptance criteria met`}
           >
@@ -709,10 +831,10 @@ function CardView({
               isLabelHidden
             />
             <span className="b2__card-accept-count">{`${state.acceptance.completed}/${state.acceptance.total}`}</span>
-          </span>
+          </div>
         ) : null}
         {state.assignees && state.assignees.length > 0 ? <AvatarStack actors={state.assignees} /> : null}
       </div>
-    </article>
+    </Card>
   );
 }

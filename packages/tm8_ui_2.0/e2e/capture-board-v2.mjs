@@ -66,11 +66,12 @@ await page.waitForTimeout(900);
 console.log('AFTER DRAG — guide in to_do:', await inTodo());
 await page.screenshot({ path: `${OUT}/board-v2-after-drag.png` });
 
-// 3) THE UNIVERSAL KIND SELECTOR: docs land in the honest 'No status yet'
-//    column, category columns stay empty rather than borrowing them.
+// 3) THE UNIVERSAL KIND SELECTOR: since migration 152 every doc has a status
+//    category and fixture docs seed into To Do. No obsolete uncategorised
+//    column should consume width.
 await page.getByTestId('b2-kind').click();
 await page.getByTestId('b2-kind-doc').click();
-await page.waitForSelector('[data-testid="b2-column"][data-column="uncategorised"]', { timeout: 10000 });
+await page.waitForSelector('[data-testid="b2-column"][data-column="to_do"] [data-testid="b2-card"]', { timeout: 10000 });
 await page.waitForTimeout(400);
 console.log('DOC COLUMNS:', JSON.stringify(await columnKeys()));
 console.log('DOCS:', JSON.stringify(await page.evaluate(() => {
@@ -79,14 +80,14 @@ console.log('DOCS:', JSON.stringify(await page.evaluate(() => {
       .find((c) => c.dataset.column === key);
     return col ? col.querySelectorAll('[data-testid="b2-card"]').length : null;
   };
-  return { uncategorised: count('uncategorised'), in_progress: count('in_progress') };
+  return { to_do: count('to_do'), uncategorised: count('uncategorised'), in_progress: count('in_progress') };
 })));
-await page.screenshot({ path: `${OUT}/board-v2-docs-uncategorised.png` });
+await page.screenshot({ path: `${OUT}/board-v2-docs-to-do.png` });
 
 // 4) A REFUSED MOVE, VISIBLY: a real drag of a doc onto Cancelled must render
 //    the reason at the refusing column and move nothing.
 await page.dragAndDrop(
-  '[data-testid="b2-column"][data-column="uncategorised"] [data-testid="b2-card"]',
+  '[data-testid="b2-column"][data-column="to_do"] [data-testid="b2-card"]',
   '[data-testid="b2-column"][data-column="cancelled"]',
 );
 await page.waitForTimeout(400);

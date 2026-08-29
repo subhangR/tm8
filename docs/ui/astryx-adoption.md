@@ -6,6 +6,8 @@
 
 **Update 2026-08-29 (branch `feat/kinetic-system`):** §9 added — type scale and motion checked against both loaded themes for value-identical bridging (one token, `--pn-fs-fine`, qualifies); G3 revised accordingly.
 
+**Update 2026-08-29 (branch `feat/astryx-task-card-phase2`):** the Board v2 task-card shell now uses the official Astryx `Card` component (`variant="default"`, spacing-scale padding, low elevation) instead of a custom `article` surface. tm8 retains only drag/open/state behaviour and uses public Astryx color, shadow, and motion tokens for hover/focus states; reduced-motion and forced-colors treatments are explicit.
+
 ---
 
 ## 1 · Verdict
@@ -43,7 +45,7 @@ Activation is one attribute: `data-astryx-theme="neutral"` beside `cv2-root` (Ga
 | Astryx packages | `@astryxdesign/core` + `@stylexjs/stylex` + `theme-neutral` + `theme-gothic` in tm8-ui deps | Pin-exact recommended while beta (§7-G7). |
 | Bridge + load | **new** `src/styles/astryx-bridge.css`; `src/styles/tokens.css` gains one `@import` (byte-locked twin `test-references/tokens.reference.css` updated in the same commit, per the tokens-verbatim law) | Bridge selectors are (0,3,0) by doubled attribute — they beat every tokens.css block regardless of the @import cascade position. No hex (hex-ban clean); its 4-exclusion pin untouched. |
 | Opt-in attribute | `src/views/GateApp.tsx` (3 mounts), `e2e/board-v2-harness.tsx`, `e2e/row-state-harness.tsx` | Registry untouched; no kind literals introduced anywhere (board card stays structural). |
-| **Task card, board (organism)** | `src/board-v2/BoardV2Screen.tsx` `CardView` + `board.css` | Recomposed on Astryx atoms: priority → `Badge` (semantic word-map `urgent/high→error, medium→info, low→neutral`), due date → `Timestamp format="relative_short"` with a red `data-overdue` state (word + color, never color alone), acceptance → `ProgressBar` (label hidden, a11y label kept) + count, assignees → existing kit `AvatarStack` (provenance semantics Astryx lacks). Card chrome: card surface, `--radius-element`, low→med elevation on hover, brand-soft focus ring. `data-testid`/drag/focus hooks unchanged — board tests pass unmodified. |
+| **Task card, board (organism)** | `src/board-v2/BoardV2Screen.tsx` `CardView` + `board.css` | Recomposed on the official Astryx `Card` organism plus atoms: priority → `Badge` (semantic word-map `urgent/high→error, medium→info, low→neutral`), due date → `Timestamp format="relative_short"` with a red `data-overdue` state (word + color, never color alone), acceptance → `ProgressBar` (label hidden, a11y label kept) + count, assignees → existing kit `AvatarStack` (provenance semantics Astryx lacks). `Card` owns the default surface, border, container radius, spacing-scale padding, and low elevation; public Astryx tokens provide the hover lift and focus treatment. `data-testid`/list/drag/focus/open hooks stay on the Card root and are covered by the board suite. |
 | **Task tile, list** (29 px row) | *no structural change* | Reskinned via bridge only — deliberate. The row is guarded by text-scanning laws (`tile-fill-parity`, `row-height-parity`, `--pn-listrow-h` floor) and a density doctrine an Astryx `Card` cannot meet at 29 px. Its status dot already matches Astryx `StatusDot` semantics 1:1. |
 | Entity detail panel | *no structural change* | Status pill, sections, buttons all token-driven → bridged. |
 
