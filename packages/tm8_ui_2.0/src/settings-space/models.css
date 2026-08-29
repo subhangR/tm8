@@ -29,6 +29,11 @@
       mono in `--pn-ink-4`, the faintest type on the page, i.e. a footnote.
 
    TOKENS ONLY (§6): `src/hex-ban.test.ts` walks this file.
+
+   RECLASSIFIED (Kinetic W3 sweep). Mono is DATA only: the model id, the node
+   key, the edit-panel id echo, counts. The scope head wears the caps eyebrow
+   grammar; labels, hints, notes, refusals and the scope sentence speak
+   Figtree on the --pn-fs-* scale. Words and counts unchanged.
    =========================================================================== */
 
 /* --- the scope banner ---------------------------------------------------- */
@@ -48,16 +53,16 @@
   gap: 5px;
 }
 .set-models__scope-head {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro); /* eyebrow grammar: 11/700 */
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
   color: var(--pn-brand-2);
   text-transform: uppercase;
 }
 .set-models__scope-body {
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-2);
   text-wrap: pretty;
 }
@@ -66,17 +71,21 @@
    so a host pointed at a named Server edits THAT node's list — and until this
    row existed the screen gave a reader no way to tell which one they were
    looking at. */
+/* The sentence around the key is words; the KEY itself is data and keeps
+   mono via its own rule below. */
 .set-models__node {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 8px;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
   padding-top: 1px;
 }
 .set-models__node-key {
+  font-family: var(--pn-mono);
+  font-size: 10px;
   font-weight: 600;
   color: var(--pn-brand-2);
   background: var(--pn-card);
@@ -99,7 +108,7 @@
   border: 1px solid color-mix(in srgb, var(--pn-block) 40%, transparent);
   border-radius: var(--pn-r-md);
   background: color-mix(in srgb, var(--pn-block) 7%, transparent);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-label);
   line-height: 1.45;
   color: var(--pn-block);
 }
@@ -138,13 +147,12 @@
 .set-models__add-field--id { flex: 3 1 220px; }
 .set-models__add-field--label { flex: 2 1 160px; }
 .set-models__add-field--tool { flex: 1 1 130px; }
+/* Field labels are words — ui 600 at the floor, no caps dressing. */
 .set-models__add-label {
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--pn-ink-4);
-  text-transform: uppercase;
+  color: var(--pn-ink-2);
 }
 /* `.set-field` is `display: flex` — correct for the div it was written for,
    inert-to-harmful on a real `<input>`, which cannot be a flex container and
@@ -152,9 +160,10 @@
 .set-models__add-input { width: 100%; min-width: 0; box-sizing: border-box; }
 .set-models__add-submit { align-self: flex-end; margin-bottom: 1px; }
 .set-models__add-hint {
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  line-height: 1.5;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-4);
 }
 
@@ -174,9 +183,9 @@
   color: var(--pn-ink-4);
 }
 .set-models__group-why {
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  line-height: 1.5;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-4);
   padding-top: 6px;
 }
@@ -206,7 +215,7 @@
   gap: 1px;
 }
 .set-models__label {
-  font-size: 12.5px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink);
   overflow-wrap: anywhere;
@@ -223,7 +232,7 @@
   overflow-wrap: anywhere;
 }
 .set-models__note {
-  font-size: 10.5px;
+  font-size: var(--pn-fs-micro);
   line-height: 1.4;
   color: var(--pn-ink-4);
   overflow-wrap: anywhere;

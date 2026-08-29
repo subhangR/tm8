@@ -41,10 +41,11 @@
      rather than three that can drift apart.
 
      520px is chosen from the RENDERED line, not from `--set-measure`: this
-     body's prose is 11px, where 860px runs 152 characters (measured on the old
-     build) against the ~95 the frame token is named for. At 520px the longest
-     rendered line is 97 characters. `ch` would have been the honest unit but resolves
-     against `.set-danger`'s inherited sans, not the 11px prose inside it. */
+     body's prose is 12px (Kinetic W3 — was 11), where 860px still runs well
+     past the ~95 characters the frame token is named for. At 520px the
+     longest rendered line is ~89 characters. `ch` would have been the honest
+     unit but resolves against `.set-danger`'s inherited sans, not the prose
+     inside it. */
   max-width: 520px;
 }
 
@@ -58,8 +59,8 @@
    when the font size changes. */
 .cv2-root .set-danger__prose {
   margin: 0 0 12px;
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: var(--pn-fs-label); /* Kinetic W3: reading prose, 12 */
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-2);
   text-wrap: pretty;
 }
@@ -96,7 +97,7 @@
    why the section exists, but WHAT EACH ACT DESTROYS is the thing a reader
    came here to weigh. */
 .cv2-root .set-danger__act-what {
-  font-size: 12px;
+  font-size: var(--pn-fs-sm); /* a step up from the intro prose, still */
   line-height: 1.5;
   color: var(--pn-ink);
   text-wrap: pretty;

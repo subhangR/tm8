@@ -17,6 +17,12 @@
    which is why the section read as a wall rather than a list.
 
    Tokens only, both themes (§6 / hex-ban.test.ts).
+
+   RECLASSIFIED (Kinetic W3 sweep). Mono is DATA here and this section is
+   MOSTLY data: the rule's `type` key, the status vocabulary (path line,
+   checkbox words, ordinals — schema tokens, not prose), stamps and counts
+   all keep the data voice. What moves to Figtree/caps: the summary words,
+   the state pills, the group legends, and the server's error sentence.
    ========================================================================== */
 
 .set-workflows__intro {
@@ -71,18 +77,20 @@
 }
 
 .set-workflows__summary {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
 }
 
 .set-workflows__grow { flex: 1; min-width: 0; }
 
 .set-workflows__pill {
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  /* A state WORD — caps chip grammar. */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
   border-radius: var(--pn-r-pill);
   padding: 1px 8px;
   white-space: nowrap;
@@ -139,11 +147,12 @@
   flex: 0 1 auto;
   min-width: 232px;
 }
+/* Group legends are HEADERS — caps grammar. */
 .set-workflows__legend {
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-ink-4);
 }
@@ -173,6 +182,9 @@
   white-space: nowrap;
 }
 .set-workflows__box:hover { background: var(--pn-hover); }
+/* The checkbox lives inside the label; the ring goes on the chip (one focus
+   grammar, Kinetic W3). */
+.set-workflows__box:focus-within { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 .set-workflows__box input { margin: 0; cursor: inherit; }
 
 .set-workflows__box--on {
@@ -258,8 +270,10 @@
   border-radius: var(--pn-r-sm);
   background: color-mix(in srgb, var(--pn-block) 9%, transparent);
   color: var(--pn-block);
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  line-height: 1.6;
+  /* The server's refusal is a sentence. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
   text-wrap: pretty;
 }

@@ -22,6 +22,12 @@
  *     pathological axis cannot bury the nine rows under it. Clamped by COUNT
  *     rather than a scrolling pane, because §3 allows one scroller per
  *     section and the section already spent it.
+ * RECLASSIFIED (Kinetic W3 sweep). Mono is DATA here: the axis NAME (a key),
+ * its vocabulary chips (enum tokens), and counts. Sentences (the invariant
+ * note, row notes, refusals, hints), field labels, and button words speak
+ * Figtree; the provenance tag wears the caps badge grammar. Words and counts
+ * unchanged.
+ *
  *  3. THE REFUSAL LANDED NOWHERE NEAR THE ACT. A delete refused on row 3
  *     rendered as a bare span at the TOP of the scroller — 155px above the
  *     button that was clicked, styled in the same ink-4 grey as every hint,
@@ -52,10 +58,10 @@
    grey boilerplate with data hidden in it. */
 .set-axes__note {
   padding: 0 var(--set-gutter) 10px;
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  line-height: 1.55;
-  color: var(--pn-ink-4);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
   border-bottom: 1px solid var(--pn-x-hairline-soft);
 }
 
@@ -113,17 +119,20 @@
 /* An empty vocabulary MEANS free text (001) — it is a property of the axis,
    not a missing chip, so it is not drawn as one. */
 .set-axes__free {
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
   color: var(--pn-ink-4);
 }
+/* An interactive word — ui at the floor, even beside 9px data chips. */
 .set-axes__more {
   appearance: none;
   background: none;
   border: 0;
   padding: 1px 2px;
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
   color: var(--pn-brand-2);
   text-decoration: underline;
   cursor: pointer;
@@ -143,9 +152,11 @@
   min-width: 168px;
 }
 .set-axes__prov {
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.08em;
+  /* A provenance WORD ("seeded") — caps badge grammar. */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-ink-4);
   border: 1px solid var(--pn-x-hairline-soft);
@@ -158,18 +169,26 @@
    the section never chose. They are ghost buttons now. */
 .set-axes__act {
   appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
   color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
-  padding: 2px 9px;
+  padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
 }
 .set-axes__act:hover:not(:disabled) { background: var(--pn-hover); }
+.set-axes__act:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 .set-axes__act:disabled { opacity: 0.45; cursor: default; }
+/* Danger keeps the SECONDARY form: block ink on the bordered ghost. */
 .set-axes__act--danger { color: var(--pn-block); }
 
 /* The tooltip form of the seeded row's refused delete. It sits inside the ONE
@@ -190,9 +209,16 @@
    takes a DASHED edge, which is the difference between "a control" and "a
    control that cannot act". */
 .cv2-root .set-axes__acts .hon-disabled--tooltip {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  padding: 2px 9px;
+  /* Same box and metrics as .set-axes__act so the action slots line up. */
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  padding: 0 10px;
   border: 1px dashed var(--pn-line);
   border-radius: var(--pn-r-sm);
   opacity: 0.75;
@@ -202,18 +228,20 @@
 
 .set-axes__rownote {
   grid-column: 1 / -1;
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  line-height: 1.5;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-4);
 }
 
-/* The fix for (3): the server's refusal, in the row it was refused in. */
+/* The fix for (3): the server's refusal, in the row it was refused in.
+   A refusal is a sentence — Figtree, block ink (danger stays secondary). */
 .set-axes__refusal {
   grid-column: 1 / -1;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  line-height: 1.55;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
   color: var(--pn-block);
   background: var(--pn-block-soft);
   border-left: 2px solid var(--pn-block);
@@ -261,16 +289,17 @@
   flex: 1 1 200px;
   min-width: 0;
 }
+/* Field LABELS are words — ui 600 at the floor, no caps dressing. */
 .set-axes__label {
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--pn-ink-4);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink-2);
 }
 .set-axes__hint {
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
   color: var(--pn-ink-4);
 }
 .set-axes__buttons {

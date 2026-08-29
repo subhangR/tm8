@@ -73,10 +73,11 @@
 /* Dirty state belongs NEXT TO DISCARD — the control that acts on it — not
    only in the preview's footer at the far bottom of the other column. */
 .set-menu__dirty {
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  /* A state WORD ("unsaved") — caps chip grammar (Kinetic W3), not mono. */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-brand-2);
   background: var(--pn-brand-soft);
