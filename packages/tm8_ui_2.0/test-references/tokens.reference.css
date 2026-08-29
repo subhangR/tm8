@@ -1,7 +1,8 @@
 /* ==========================================================================
-   COLLAB V2 — DESIGN TOKENS  ·  "KINETIC ELITE" (slate & signal), module-scoped.
-   Successor to the Atelier paper-and-ink ramp (owner-ruled 2026-08-29): cool
-   slate surfaces, Figtree type, a blue accent, and VIBRANT status signals.
+   COLLAB V2 — DESIGN TOKENS  ·  "CALM" (neutral & signal), module-scoped.
+   The 2026-08-29 calm pass keeps the legible Figtree type system and replaces
+   the saturated Kinetic palette with neutral structure, one restrained blue
+   accent, and muted status signals. Borders carry grouping; shadows do not.
    All tokens live under `.cv2-root` so the module never leaks styles into the
    host app. Dark = deep slate via [data-theme="dark"] on .cv2-root or any
    ancestor. Status is ALWAYS color + word, never color alone.
@@ -14,45 +15,45 @@
 @import './astryx-bridge.css';
 
 .cv2-root {
-  /* --- 1 · slate & ink ---------------------------------------------------- */
+  /* --- 1 · neutral surfaces & ink ---------------------------------------- */
   --pn-paper:    #F1F5F9;
   --pn-surface:  #F7F9FB;
   --pn-card:     #FFFFFF;
-  --pn-hover:    #ECEEF0;
-  --pn-active:   #E0E3E5;
+  --pn-hover:    #F0F1F2;
+  --pn-active:   #E5E7E9;
 
-  --pn-line:     #E4E8EC;
-  --pn-line-2:   #CBD5E1;
+  --pn-line:     #D9DDE2;
+  --pn-line-2:   #BBC2CA;
 
-  --pn-ink:      #121417;
-  --pn-ink-2:    #475569;
-  --pn-ink-3:    #76777B;
-  --pn-ink-4:    #B9BDC4;
+  --pn-ink:      #17191C;
+  --pn-ink-2:    #4D535A;
+  --pn-ink-3:    #70767D;
+  --pn-ink-4:    #AEB3B9;
 
-  /* --- 2 · signal blue (the one accent) ----------------------------------- */
-  --pn-brand:      #0051D5;
-  --pn-brand-2:    #003EA8;
-  --pn-brand-soft: rgba(0, 81, 213, 0.10);
-  --pn-brand-rgb:  0, 81, 213;
-  /* Focus ring = signal blue (same hex as --pn-brand-2); consumed via var(--pn-focus). */
-  --pn-focus:      #003EA8;
-  /* Accent 2 — the harmonized violet companion to signal blue (triad logic:
-     blue primary, violet companion, statuses as-is). Gradient-capable pair. */
-  --pn-accent-2:      #7C3AED;
-  --pn-accent-2-soft: rgba(124, 58, 237, 0.10);
+  /* --- 2 · quiet blue (the one accent) ------------------------------------ */
+  --pn-brand:      #3F6078;
+  --pn-brand-2:    #2F4B60;
+  --pn-brand-soft: rgba(63, 96, 120, 0.08);
+  --pn-brand-rgb:  63, 96, 120;
+  /* Focus ring = quiet blue (same hex as --pn-brand-2); consumed via var(--pn-focus). */
+  --pn-focus:      #2F4B60;
+  /* Gradient-capable components keep their API, but the calm palette does not
+     introduce a second decorative hue. */
+  --pn-accent-2:      #3F6078;
+  --pn-accent-2-soft: rgba(63, 96, 120, 0.08);
 
-  /* --- 3 · functional / status (vibrant, word-paired) --------------------- */
-  --pn-run:    #10B981;   --pn-run-soft:   rgba(16, 185, 129, 0.12);
-  /* Forge lifecycle: merged-purple, lifted to the vibrant ramp. */
-  --pn-pr-merged: #8B5CF6; --pn-pr-merged-soft: rgba(139, 92, 246, 0.14);
-  --pn-wait:   #F59E0B;   --pn-wait-soft:  rgba(245, 158, 11, 0.14);
-  --pn-block:  #EF4444;   --pn-block-soft: rgba(239, 68, 68, 0.12);
-  --pn-info:   #3B82F6;   --pn-info-soft:  rgba(59, 130, 246, 0.12);
-  --pn-idle:   #76777B;   --pn-idle-soft:  rgba(118, 119, 123, 0.14);
+  /* --- 3 · functional / status (restrained, word-paired) ------------------ */
+  --pn-run:    #367253;   --pn-run-soft:   rgba(54, 114, 83, 0.09);
+  /* Forge lifecycle keeps its meaningful purple, without the neon lift. */
+  --pn-pr-merged: #6E6080; --pn-pr-merged-soft: rgba(110, 96, 128, 0.10);
+  --pn-wait:   #8C651C;   --pn-wait-soft:  rgba(140, 101, 28, 0.10);
+  --pn-block:  #A44141;   --pn-block-soft: rgba(164, 65, 65, 0.09);
+  --pn-info:   #3F6078;   --pn-info-soft:  rgba(63, 96, 120, 0.09);
+  --pn-idle:   #70767D;   --pn-idle-soft:  rgba(112, 118, 125, 0.10);
 
   /* Collab status semantics (pill tones map onto the functional ramp):
      working=green · blocked=red · in_review=blue · stale=amber · done=green ·
-     open/idle=cool grey. */
+     open/idle=neutral grey. */
   --cv2-status-working:      var(--pn-run);
   --cv2-status-working-soft: var(--pn-run-soft);
   --cv2-status-done:         var(--pn-run);
@@ -113,17 +114,17 @@
   --pn-read-measure: 720px;
 
   /* --- 6 · radii ------------------------------------------------------------ */
-  --pn-r-xs: 5px;
-  --pn-r-sm: 7px;
-  --pn-r-md: 10px;
-  --pn-r-lg: 14px;
+  --pn-r-xs: 4px;
+  --pn-r-sm: 6px;
+  --pn-r-md: 8px;
+  --pn-r-lg: 12px;
   --pn-r-pill: 999px;
 
-  /* --- 7 · elevation (cool shadows; no glow) --------------------------------- */
-  --pn-sh-sm:  0 1px 2px rgba(15, 23, 42, 0.05);
-  --pn-sh-md:  0 2px 6px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
-  --pn-sh-lg:  0 4px 12px rgba(15, 23, 42, 0.08), 0 12px 32px rgba(15, 23, 42, 0.10);
-  --pn-sh-pop: 0 12px 34px rgba(15, 23, 42, 0.14);
+  /* --- 7 · elevation (border-first; every consumer already has a border) ----- */
+  --pn-sh-sm:  none;
+  --pn-sh-md:  none;
+  --pn-sh-lg:  none;
+  --pn-sh-pop: none;
 
   /* --- 8 · motion (fast, mechanical, no bounce) ------------------------------ */
   --pn-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -143,44 +144,43 @@
   background: var(--pn-paper);
 }
 
-/* Dark: the same signal system inverted into deep slate (token-only). */
+/* Dark: the same restrained signal system inverted into deep slate. */
 .cv2-root[data-theme="dark"],
 [data-theme="dark"] .cv2-root {
   --pn-paper:   #0F1115;
   --pn-surface: #14171C;
   --pn-card:    #1A1E24;
-  --pn-hover:   #20242B;
-  --pn-active:  #262B33;
+  --pn-hover:   #222529;
+  --pn-active:  #292D32;
 
-  --pn-line:    #262B33;
-  --pn-line-2:  #333A44;
+  --pn-line:    #34383E;
+  --pn-line-2:  #4A5058;
 
-  --pn-ink:     #E8EAED;
-  --pn-ink-2:   #B4BAC4;
-  --pn-ink-3:   #848B96;
-  --pn-ink-4:   #565D68;
+  --pn-ink:     #ECEDEF;
+  --pn-ink-2:   #BEC2C7;
+  --pn-ink-3:   #92979E;
+  --pn-ink-4:   #5E646B;
 
-  --pn-brand:      #5E8EF7;
-  --pn-brand-2:    #85ABFF;
-  --pn-brand-soft: rgba(94, 142, 247, 0.18);
-  --pn-brand-rgb:  94, 142, 247;
-  /* Focus ring = signal blue (same hex as dark --pn-brand-2); consumed via var(--pn-focus). */
-  --pn-focus:      #85ABFF;
-  /* Accent 2 dark — the violet companion lifted to the dark-vibrant ramp. */
-  --pn-accent-2:      #A78BFA;
-  --pn-accent-2-soft: rgba(167, 139, 250, 0.18);
+  --pn-brand:      #8BA5B8;
+  --pn-brand-2:    #A6BBC9;
+  --pn-brand-soft: rgba(139, 165, 184, 0.14);
+  --pn-brand-rgb:  139, 165, 184;
+  /* Focus ring = quiet blue (same hex as dark --pn-brand-2); consumed via var(--pn-focus). */
+  --pn-focus:      #A6BBC9;
+  --pn-accent-2:      #8BA5B8;
+  --pn-accent-2-soft: rgba(139, 165, 184, 0.14);
 
-  --pn-run:   #34D399;  --pn-run-soft:   rgba(52, 211, 153, 0.18);
-  --pn-pr-merged: #A78BFA; --pn-pr-merged-soft: rgba(167, 139, 250, 0.20);
-  --pn-wait:  #FBBF24;  --pn-wait-soft:  rgba(251, 191, 36, 0.18);
-  --pn-block: #F87171;  --pn-block-soft: rgba(248, 113, 113, 0.17);
-  --pn-info:  #60A5FA;  --pn-info-soft:  rgba(96, 165, 250, 0.17);
-  --pn-idle:  #848B96;  --pn-idle-soft:  rgba(132, 139, 150, 0.20);
+  --pn-run:   #78AF8C;  --pn-run-soft:   rgba(120, 175, 140, 0.14);
+  --pn-pr-merged: #A69AB4; --pn-pr-merged-soft: rgba(166, 154, 180, 0.14);
+  --pn-wait:  #C5A05E;  --pn-wait-soft:  rgba(197, 160, 94, 0.14);
+  --pn-block: #D18787;  --pn-block-soft: rgba(209, 135, 135, 0.14);
+  --pn-info:  #8BA5B8;  --pn-info-soft:  rgba(139, 165, 184, 0.14);
+  --pn-idle:  #92979E;  --pn-idle-soft:  rgba(146, 151, 158, 0.16);
 
-  --pn-sh-sm:  0 1px 2px rgba(0, 0, 0, 0.45);
-  --pn-sh-md:  0 2px 8px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
-  --pn-sh-lg:  0 4px 14px rgba(0, 0, 0, 0.55), 0 14px 38px rgba(0, 0, 0, 0.45);
-  --pn-sh-pop: 0 16px 44px rgba(0, 0, 0, 0.6);
+  --pn-sh-sm:  none;
+  --pn-sh-md:  none;
+  --pn-sh-lg:  none;
+  --pn-sh-pop: none;
 }
 
 /* --- semantic type classes (scoped) ------------------------------------------ */
