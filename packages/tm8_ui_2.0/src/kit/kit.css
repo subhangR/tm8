@@ -59,6 +59,44 @@
   }
 }
 
+/* --- Label + count — the noun always wins the width budget --------------- */
+.cv2-root .kit-label-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: min-content;
+  max-width: 100%;
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+}
+.cv2-root .kit-label-count__label {
+  flex: 0 0 auto;
+  color: var(--pn-ink);
+}
+.cv2-root .kit-label-count__quantity {
+  display: inline-flex;
+  gap: 5px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--pn-ink-4);
+}
+.cv2-root .kit-label-count__separator,
+.cv2-root .kit-label-count__count {
+  flex: none;
+}
+.cv2-root .kit-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* --- Eyebrow — uppercase mono micro-label heading a small section --------- */
 /* Canvas section eyebrows are 10px (SERVER URL, SUBTREE · 2, RUNS · 1 LIVE);
    the 11px tokens.css .t-eyebrow stays available for larger editorial use. */

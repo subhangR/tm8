@@ -4,7 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { Avatar, BootLoader, Btn, Chip, Eyebrow, IconBtn, Kbd, Pill } from './index';
+import {
+  Avatar,
+  BootLoader,
+  Btn,
+  Chip,
+  Eyebrow,
+  IconBtn,
+  Kbd,
+  LabelCountBadge,
+  Pill,
+} from './index';
 
 describe('kit primitives', () => {
   it('Pill carries tone class and the word (never color alone)', () => {
@@ -17,6 +27,16 @@ describe('kit primitives', () => {
   it('Pill outline variant renders the filter form', () => {
     const { container } = render(<Pill outline>filter ▾</Pill>);
     expect(container.querySelector('.kit-pill--outline')).not.toBeNull();
+  });
+
+  it('LabelCountBadge keeps the noun separate and tooltips the expendable count', () => {
+    const { container, getByText } = render(
+      <LabelCountBadge label="Sessions" count="2,281 new" />,
+    );
+    const badge = container.querySelector('.kit-label-count');
+    expect(getByText('Sessions').className).toBe('kit-label-count__label');
+    expect(getByText('2,281 new').closest('.kit-label-count__quantity')).not.toBeNull();
+    expect(badge?.getAttribute('title')).toBe('Sessions: 2,281 new');
   });
 
   it('Eyebrow renders mono micro-label with faint variant', () => {
