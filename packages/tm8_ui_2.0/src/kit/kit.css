@@ -67,7 +67,7 @@
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  min-width: min-content;
+  min-width: 0;
   max-width: 100%;
   padding: 2px 8px;
   border: 1px solid var(--pn-line);

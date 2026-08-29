@@ -40,14 +40,25 @@ describe('kit primitives', () => {
   });
 
   it('LabelCountBadge gives width to the noun before the count', () => {
+    const root = block(kitCss, '.kit-label-count {', 'kit.css');
     const label = block(kitCss, '.kit-label-count__label', 'kit.css');
     const quantity = block(kitCss, '.kit-label-count__quantity', 'kit.css');
+    expect(root).toMatch(/min-width:\s*0/);
     expect(label).toMatch(/flex:\s*0 0 auto/);
     expect(label).not.toMatch(/overflow|text-overflow/);
     expect(quantity).toMatch(/min-width:\s*0/);
     expect(quantity).toMatch(/flex:\s*0 1 auto/);
     expect(quantity).toMatch(/overflow:\s*hidden/);
     expect(quantity).toMatch(/text-overflow:\s*ellipsis/);
+  });
+
+  it('LabelCountBadge accepts precise count tooltip copy', () => {
+    const { container } = render(
+      <LabelCountBadge label="Pull requests" count={121} countTooltip="121 pull requests" />,
+    );
+    expect(container.querySelector('.kit-label-count')?.getAttribute('title')).toBe(
+      '121 pull requests',
+    );
   });
 
   it('Eyebrow renders mono micro-label with faint variant', () => {
