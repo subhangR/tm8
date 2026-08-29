@@ -112,4 +112,34 @@ describe('CollapsibleSection', () => {
     );
     expect(panels).toMatch(/\.pn-controls__measure \{[^}]*max-width: var\(--pn-read-measure\)/);
   });
+
+  it('section cards do not shrink, so the scrolling body scrolls instead of truncating', () => {
+    // THE REGRESSION THIS PINS. `.pn-body` is a flex COLUMN with
+    // `overflow: auto`. A flex item's default `flex-shrink: 1` means an
+    // overflowing set of children is crushed to fit rather than overflowing,
+    // so the scrollbar never appears and the content is simply gone. Measured
+    // on prod 2026-08-29: `.sb-description` rendered 41.8px tall against a
+    // 140-240px scrollHeight on 4 of 4 tasks — every task description in the
+    // product clipped to a sliver, which is what "unable to type description
+    // in the task card" turned out to be.
+    //
+    // jsdom applies no stylesheet, so this is pinned at the source like the
+    // reading measure above: the card rule must carry `flex-shrink: 0`, and
+    // the body it lives in must still be the scrolling flex column that makes
+    // that necessary. Either half changing without the other re-opens the bug.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const panels = readFileSync(join(here, '../panels.css'), 'utf8');
+
+    const cardRule = panels.match(
+      /\.cv2-root \.sb-body > \.sb-grid,[\s\S]*?\.cv2-root \.sb-body > \.pn-fold \{([\s\S]*?)\n\}/,
+    );
+    expect(cardRule).not.toBeNull();
+    expect(cardRule![1]).toMatch(/flex-shrink:\s*0/);
+
+    // The premise: `.pn-body` is still a scrolling flex column.
+    const bodyRule = panels.match(/\.cv2-root \.pn-body \{([\s\S]*?)\n\}/);
+    expect(bodyRule).not.toBeNull();
+    expect(bodyRule![1]).toMatch(/flex-direction:\s*column/);
+    expect(bodyRule![1]).toMatch(/overflow:\s*auto/);
+  });
 });

@@ -4404,6 +4404,26 @@
   border-radius: var(--pn-r-lg);
   box-shadow: var(--pn-sh-sm);
   padding: var(--pn-space-3);
+  /* A CARD KEEPS THE HEIGHT ITS CONTENT ASKED FOR. `.pn-body` is a flex
+     COLUMN that scrolls (`overflow: auto`, panels.css ~850), and a flex item's
+     default `flex-shrink: 1` means an overflowing set of children does not
+     overflow at all — it is crushed to fit, proportionally, and the scrollbar
+     the body was given is never needed and never appears.
+
+     That is not theory. Measured on prod 2026-08-29, on 4 of 4 tasks opened:
+     `.sb-description` rendered at 41.8px against a scrollHeight of 140-240px.
+     Its own head is 30.8px, so every task description in the product was
+     clipped to a ~10px sliver — the owner's report was "unable to type
+     description in the task card", and this is why: there was no room to type
+     IN. `.k-accent-top` carries `overflow: hidden` to clip its decorative 2px
+     ::before to the radius, so the crushed-out prose was hidden rather than
+     spilled, which is how it shipped unnoticed.
+
+     `flex-shrink: 0` is the whole fix: cards keep their natural height, the
+     body genuinely overflows, and its existing `overflow: auto` draws a real
+     scrollbar. THE RULE THIS ENCODES: a scrolling flex column must never let
+     its children shrink, or it silently truncates instead of scrolling. */
+  flex-shrink: 0;
 }
 /* The fold's own top hairline separated it from its neighbour in the flat
    layout; inside a card the border does that job and the hairline reads as
