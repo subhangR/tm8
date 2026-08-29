@@ -423,6 +423,22 @@
 .cv2-root .pn-head__title--editable:focus-visible { border-bottom-color: var(--pn-brand); }
 .cv2-root .pn-head__title--struck { color: var(--pn-ink-3); text-decoration: line-through; }
 .cv2-root .pn-head__title--absent { color: var(--pn-ink-4); }
+/* The identity row's right end. `flex: none` and a top alignment that matches
+   the row's own `align-items: flex-start`, so a title that wraps to three lines
+   grows DOWNWARD past this rather than shoving it off the edge. Empty for every
+   kind that does not ask for it — the slot renders no box at all. */
+.cv2-root .pn-head__trailing {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+/* The work-session surface switch's portal target. `display: contents` for the
+   same reason `.pn-panelbar__surface` uses it: an unfilled slot must cost the
+   row no box and no gap, and a filled one lets the switch's own flex row be the
+   trailing cluster's child directly. */
+.cv2-root .pn-head__surface { display: contents; }
 .cv2-root .pn-head__spacer { flex: 1; min-width: 0; }
 .cv2-root .pn-head__supplemental { min-width: 0; padding-left: 23px; }
 
