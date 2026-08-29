@@ -485,8 +485,18 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     const refused = renderBody({ detail: withCriteria([]) });
     const section = expandFold(refused.getByTestId('acceptance-section'));
     expect(section.textContent).toMatch(/no acceptance criteria/i);
-    expect(within(section).getByTestId('acceptance-progress').getAttribute('data-state')).toBe('empty');
-    expect(within(section).getByTestId('acceptance-progress').textContent).toContain('Ready to define');
+    /*
+     * NO METER WHERE THERE IS NOTHING TO MEASURE (owner ruling, 2026-08-29 —
+     * "the name of a thing beats its count"; every element earns its slot).
+     * This used to pin a tinted, accent-barred summary reading "Ready to
+     * define" above a progress bar pinned at 0/0 — while the fold head one
+     * line above already read `ACCEPTANCE 0/0` and the card below said the
+     * same nothing again. One state, four tellings, `0/0` printed three times.
+     * The zero-state summary is gone; the worded line carries the fact alone,
+     * and the add affordance (or its refusal) is still reachable.
+     */
+    expect(within(section).queryByTestId('acceptance-progress')).toBeNull();
+    expect(section.textContent).not.toMatch(/0\s*\/\s*0.*0\s*\/\s*0/s);
     expect(within(section).getByTestId('disabled-with-reason').textContent).toMatch(/add criterion/i);
     refused.unmount();
 

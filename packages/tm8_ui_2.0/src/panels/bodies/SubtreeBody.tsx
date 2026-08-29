@@ -576,8 +576,18 @@ function DescriptionEditor({
     /* `data-attachment-drophost`: this body opts its description block in as
        the attachment strip's drop target — the strip finds the marker, never
        a body class name, so it stays agnostic of its host's anatomy. */
+    /* NO `k-accent-top` HERE, and the reason is layout rather than taste.
+       That utility sets `overflow: hidden`, and a flex item whose overflow is
+       not `visible` loses its content-based automatic minimum size (Flexbox
+       §4.5: `min-height: auto` resolves to zero). This card is a flex item in
+       `.sb-body`, a fixed-height scrolling column, so it was free to shrink —
+       and did: measured 2026-08-29 against prod `6423d07d`, the card rendered
+       32px tall around 282px of description, clipping the ENTIRE brief with no
+       way to scroll it back. The gradient hero went with it under the owner's
+       "fewer colours" ruling. `flex: none` in task-detail.css is the standing
+       guard so no future decoration can collapse a card this way again. */
     <div
-      className="sb-description k-hero k-accent-top"
+      className="sb-description"
       data-testid="task-description-editor"
       data-attachment-drophost=""
     >
@@ -708,18 +718,15 @@ function AcceptanceSection({
   const criteria = (draft ?? persisted) as readonly AcceptanceCriterion[];
   const completed = criteria.filter((c) => c.done).length;
   const remaining = criteria.length - completed;
-  const progressState =
-    criteria.length === 0 ? 'empty' : remaining === 0 ? 'completed' : 'in-progress';
+  /* Only two states remain reachable: the summary is not rendered at all when
+     the list is empty, so there is no longer an 'empty' progress state to
+     name. Keeping a branch for it would describe a card that cannot exist. */
+  const progressState = remaining === 0 ? 'completed' : 'in-progress';
   const progressCopy =
-    progressState === 'empty'
-      ? 'Ready to define'
-      : progressState === 'completed'
-        ? 'All criteria met'
-        : `${remaining} ${remaining === 1 ? 'criterion' : 'criteria'} remaining`;
-  const progressLabel =
-    criteria.length === 0
-      ? 'Acceptance: no criteria defined'
-      : `Acceptance: ${completed} of ${criteria.length} criteria met`;
+    progressState === 'completed'
+      ? 'All criteria met'
+      : `${remaining} ${remaining === 1 ? 'criterion' : 'criteria'} remaining`;
+  const progressLabel = `Acceptance: ${completed} of ${criteria.length} criteria met`;
   /*
    * A REASON WINS OVER A HANDLER. `disabled={!onChange}` alone left a caller
    * that passed BOTH with live, clickable boxes wearing a refusal tooltip —
@@ -742,7 +749,10 @@ function AcceptanceSection({
     <CollapsibleSection
       id="acceptance"
       label="ACCEPTANCE"
-      count={`${completed}/${criteria.length}`}
+      /* `0/0` is not a measurement, it is punctuation. The head carries the
+         fraction once there is a denominator to divide by; until then the
+         label stands alone and the line below says what is missing in words. */
+      count={criteria.length === 0 ? undefined : `${completed}/${criteria.length}`}
       /* Acceptance is task-defining, not secondary disclosure. Its empty
          state is itself actionable, so it remains visible instead of hiding
          the one place a criterion can be added behind the empty-fold toggle. */
@@ -750,35 +760,47 @@ function AcceptanceSection({
       defaultOpen
       testId="acceptance-section"
     >
-      <div
-        className={`sb-acceptance__summary k-accent-top ${progressState === 'completed' ? 'k-tint-run' : 'k-tint-brand'}`}
-        data-testid="acceptance-progress"
-        data-state={progressState}
-        data-completed={completed}
-        data-total={criteria.length}
-      >
-        <div className="sb-acceptance__summary-copy">
-          <span className="k-label">Definition of done</span>
-          <strong>{progressCopy}</strong>
-        </div>
-        <div className="sb-acceptance__meter">
-          <div className="sb-acceptance__bar">
-            <ProgressBar
-              value={completed}
-              max={Math.max(criteria.length, 1)}
-              label={progressLabel}
-              isLabelHidden
-            />
+      {/* A METER ONLY WHERE THERE IS SOMETHING TO MEASURE. With no criteria
+          this drew a tinted, accent-barred card reading "Ready to define" over
+          a progress bar pinned at 0/0 — and the fold head one line above
+          already said `ACCEPTANCE 0/0`, while the empty card below it said the
+          same nothing in two more sentences. One state, four tellings, the
+          count printed three times. The owner's ruling of 2026-08-29 is that
+          the NAME of a thing beats its COUNT and that an element earns its
+          slot or leaves, so the zero-state summary leaves and the worded line
+          below carries the fact alone. */}
+      {criteria.length === 0 ? null : (
+        <div
+          className="sb-acceptance__summary"
+          data-testid="acceptance-progress"
+          data-state={progressState}
+          data-completed={completed}
+          data-total={criteria.length}
+        >
+          <div className="sb-acceptance__summary-copy">
+            <span className="k-label">Definition of done</span>
+            {/* The WORDED state, not the fraction — "2 criteria remaining"
+                answers what is left without making the reader do the
+                subtraction. The fraction itself stays in the fold head, once. */}
+            <strong>{progressCopy}</strong>
           </div>
-          <span className="sb-acceptance__fraction" aria-hidden>
-            {`${completed}/${criteria.length}`}
-          </span>
+          <div className="sb-acceptance__meter">
+            <div className="sb-acceptance__bar">
+              <ProgressBar
+                value={completed}
+                max={Math.max(criteria.length, 1)}
+                label={progressLabel}
+                isLabelHidden
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
       {criteria.length === 0 ? (
         <div className="sb-acceptance__empty" data-testid="acceptance-empty">
-          <p className="pn-section__empty">No acceptance criteria on this yet.</p>
-          <span>Write the first observable outcome below.</span>
+          <p className="pn-section__empty">
+            No acceptance criteria yet — add the first observable outcome below.
+          </p>
         </div>
       ) : (
         <>
@@ -919,7 +941,13 @@ function AcceptanceSection({
             className="sb-addcriterion__input k-input k-input--sm"
             data-testid="acceptance-add-input"
             aria-label="New acceptance criterion"
-            placeholder="＋ add criterion"
+            /* ASCII ONLY. This read `＋ add criterion` with U+FF0B FULLWIDTH
+               PLUS, which no latin/latin-ext subset of the self-hosted webfonts
+               carries; on Linux it fell through to a system font that also
+               lacked it and rendered as a literal `FF/0B` hex tofu box — seen
+               in the panel screenshot of prod `6423d07d`. A UI affordance must
+               not depend on a CJK-width codepoint. The word alone says it. */
+            placeholder="Add criterion"
             value={addText}
             onChange={(event) => setAddText(event.target.value)}
             onKeyDown={(event) => {
@@ -940,7 +968,7 @@ function AcceptanceSection({
           </button>
         </div>
       ) : (
-        <DisabledIconControl label="Add criterion" glyph="＋" reason={refusal}>
+        <DisabledIconControl label="Add criterion" glyph="+" reason={refusal}>
           add criterion…
         </DisabledIconControl>
       )}
@@ -1035,12 +1063,12 @@ function SubtreeSection({
       ) : null}
       {addChildLive ? (
         <button type="button" className="sb-addchild" onClick={onAddChild}>
-          ＋ add child…
+          + add child…
         </button>
       ) : (
         <DisabledIconControl
           label="Add child"
-          glyph="＋"
+          glyph="+"
           reason={addChildReason ? toReason(addChildReason) : NOT_WIRED_REASON}
         >
           add child…

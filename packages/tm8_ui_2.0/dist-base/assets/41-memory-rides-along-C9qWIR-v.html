@@ -1,0 +1,1446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory rides along · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style id="artifact-layer">
+/* Artifact layer: composition only. The tm8-foundation block above is unchanged. */
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.truth-line { margin: 24px 0 0; }
+.memory-lab { position: relative; padding-top: 22px; }
+.memory-stage { position: relative; overflow: hidden; padding: 18px; }
+.stage-topline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; color: var(--pn-ink-3); font: 10px var(--pn-mono); letter-spacing: .08em; text-transform: uppercase; }
+.stage-topline strong { color: var(--pn-ink); font-size: 11px; }
+.source-rack { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-bottom: 22px; border-bottom: 1px solid var(--pn-line-2); }
+.source-card { position: relative; min-height: 136px; padding: 13px; border: 1px solid var(--pn-line-2); border-radius: 8px; background: var(--pn-card); transition: border-color var(--dur-slow) var(--ease-out), background var(--dur-slow) var(--ease-out); }
+.source-card.is-active { border-color: var(--pn-brand); background: color-mix(in srgb, var(--pn-brand) 5%, var(--pn-card)); }
+.entity-title { display: flex; align-items: center; gap: 8px; font-weight: 650; color: var(--pn-ink); }
+.entity-title .ki { color: var(--pn-brand); }
+.entity-kind { margin: 2px 0 9px 24px; color: var(--pn-ink-3); font: 9px var(--pn-mono); letter-spacing: .08em; text-transform: uppercase; }
+.memory-note { position: relative; display: block; margin-top: 9px; padding: 9px 10px 9px 28px; border: 1px solid var(--pn-line); border-radius: 6px; color: var(--pn-ink-2); background: var(--pn-surface); font: 11.5px/1.45 var(--pn-ui); }
+.memory-note::before { content: ""; position: absolute; left: 10px; top: 12px; width: 8px; height: 8px; border: 1.5px solid var(--pn-brand); border-radius: 50%; background: var(--pn-card); box-shadow: 0 4px 0 -3px var(--pn-brand); }
+.memory-note code { border: 0; background: none; padding: 0; font: inherit; color: inherit; }
+.edge-label { position: absolute; right: 9px; top: 8px; color: var(--pn-brand); font: 8.5px var(--pn-mono); letter-spacing: .07em; }
+.dispatcher-step { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; padding: 10px 0; color: var(--pn-ink-3); font: 10px var(--pn-mono); letter-spacing: .04em; }
+.dispatcher-step .pn-avatar { width: 22px; height: 22px; }
+.dispatcher-step strong { color: var(--pn-ink-2); }
+.dispatcher-step .arrow { color: var(--pn-brand); font-size: 17px; transform: translateX(-5px); opacity: .3; transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out); }
+.dispatcher-step.is-active .arrow { transform: translateX(0); opacity: 1; }
+.run-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.run-card { min-width: 0; border: 1px solid var(--pn-line-2); border-radius: 8px; background: var(--pn-card); overflow: hidden; }
+.run-card__head { min-height: 60px; padding: 10px 12px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); }
+.run-card__eyebrow { color: var(--pn-ink-3); font: 8.5px var(--pn-mono); letter-spacing: .1em; text-transform: uppercase; }
+.run-card__title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; color: var(--pn-ink); font-size: 12.5px; font-weight: 650; }
+.context-tray { padding: 11px 12px 3px; }
+.context-tray__label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: var(--pn-ink-3); font: 8.5px var(--pn-mono); letter-spacing: .09em; text-transform: uppercase; }
+.context-tray ol { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; counter-reset: tray; }
+.context-slot { position: relative; min-height: 55px; padding: 8px 9px 8px 34px; border: 1px dashed var(--pn-line-2); border-radius: 6px; color: var(--pn-ink-3); background: var(--pn-paper); font-size: 10.5px; line-height: 1.4; opacity: .66; transform: translateY(-5px); transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out), border-color var(--dur-slow) var(--ease-out), background var(--dur-slow) var(--ease-out); }
+.context-slot::before { counter-increment: tray; content: counter(tray); position: absolute; left: 9px; top: 10px; width: 16px; height: 16px; display: grid; place-items: center; border: 1px solid var(--pn-line-2); border-radius: 50%; color: var(--pn-ink-3); font: 8px var(--pn-mono); }
+.context-slot b { display: block; margin-bottom: 2px; color: var(--pn-ink-2); font: 600 9px var(--pn-mono); letter-spacing: .05em; text-transform: uppercase; }
+.context-slot.is-arrived { opacity: 1; transform: translateY(0); border-style: solid; border-color: color-mix(in srgb, var(--pn-brand) 58%, var(--pn-line)); background: color-mix(in srgb, var(--pn-brand) 6%, var(--pn-card)); }
+.context-slot.is-absent { opacity: 1; transform: none; border-color: var(--pn-line); background: transparent; }
+.context-slot.is-absent b { color: var(--pn-ink-3); }
+.context-slot.memory-land { animation: memory-land var(--dur-slow) var(--ease-out) both; }
+@keyframes memory-land { from { opacity: .1; transform: translateY(-14px); } to { opacity: 1; transform: translateY(0); } }
+.run-log { min-height: 112px; margin: 9px 12px 12px; padding: 9px 10px; border-radius: 6px; background: #0D0B07; color: #D8D2C2; font: 10.5px/1.55 var(--pn-mono); }
+.log-line { display: block; opacity: .24; transform: translateX(-4px); transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.log-line.is-seen { opacity: 1; transform: none; }
+.log-mark { color: var(--code-accent); }
+.log-ok { color: #91C49D; }
+.log-bad { color: #E4978D; }
+.result-row { display: flex; align-items: center; gap: 7px; min-height: 42px; padding: 8px 12px; border-top: 1px solid var(--pn-line); color: var(--pn-ink-3); font: 9px var(--pn-mono); letter-spacing: .04em; }
+.result-row strong { color: var(--pn-ink-2); }
+.result-shape { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; }
+.result-row.is-ok { color: var(--pn-run); }
+.result-row.is-bad { color: var(--pn-block); }
+.replay-caption { min-height: 46px; max-width: none; margin: 13px 0 0; padding: 10px 13px; border-left: 2px solid var(--accent); color: var(--muted); font-style: italic; }
+.memory-lab .tmc { max-width: 660px; }
+.motion-note { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.truth-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.truth-card { min-height: 158px; }
+.truth-card h3 { margin: 0 0 8px; font-size: 18px; }
+.truth-card p { margin: 0; font-size: 14.5px; }
+.truth-card .stamp { margin-bottom: 12px; }
+.keeper-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.keeper { position: relative; overflow: hidden; }
+.keeper::after { content: attr(data-when); position: absolute; right: 13px; top: 13px; color: var(--muted); font: 8.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.keeper h3 { margin-top: 0; }
+.keeper p { font-size: 14.5px; }
+.advanced-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.advanced-strip .card { min-height: 150px; }
+.advanced-strip h3 { margin-top: 0; }
+.advanced-strip p { font-size: 14.5px; }
+.ghost-rule { border-top: 1px dashed var(--muted); opacity: var(--ghost-opacity); margin: 10px 0; }
+.lab-status { margin-left: auto; }
+@media (max-width: 680px) {
+  header.site { padding-left: 16px; padding-right: 16px; }
+  header.site .hub-note { display: none; }
+  main { padding: 20px 14px 56px; }
+  h1 { font-size: 36px; }
+  .memory-stage { padding: 12px; }
+  .source-rack, .run-grid, .truth-grid, .keeper-grid, .advanced-strip { grid-template-columns: 1fr; }
+  .source-rack { padding-bottom: 16px; }
+  .dispatcher-step { justify-content: flex-start; }
+  .run-card__head { min-height: 0; }
+  .run-log { min-height: 0; }
+  .tmc { flex-wrap: wrap; }
+  .tmc input[type="range"] { order: 3; flex-basis: calc(100% - 24px); min-height: 28px; }
+  .memory-lab section { margin-top: 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .context-slot { transform: none; }
+  .dispatcher-step .arrow { transform: none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm8 <i>·</i> Help</span>
+  <span class="crumb">Advanced / Memory</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+<svg id="tm8-icons" aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ki-task" viewBox="0 0 16 16"><path d="M3.4 5.6a2.2 2.2 0 0 1 2.2-2.2h4.8a2.2 2.2 0 0 1 2.2 2.2v4.8a2.2 2.2 0 0 1-2.2 2.2H5.6a2.2 2.2 0 0 1-2.2-2.2z"/><path d="M6 8.1 7.4 9.5 10.1 6.6"/></symbol>
+  <symbol id="ki-work_session" viewBox="0 0 16 16"><path d="M2.4 5.2a2 2 0 0 1 2-2h7.2a2 2 0 0 1 2 2v5.6a2 2 0 0 1-2 2H4.4a2 2 0 0 1-2-2z"/><path d="M5.2 7.4 6.9 9 5.2 10.6"/><path d="M8.4 10.6h2.6"/></symbol>
+  <symbol id="ki-doc" viewBox="0 0 16 16"><path d="M9 2.6H5.2a1.4 1.4 0 0 0-1.4 1.4v8a1.4 1.4 0 0 0 1.4 1.4h5.6a1.4 1.4 0 0 0 1.4-1.4V5.6z"/><path d="M9 2.6v3h3.2"/><path d="M6 9h4"/><path d="M6 11.2h2.6"/></symbol>
+  <symbol id="ki-channel" viewBox="0 0 16 16"><path d="M6.4 3 5.2 13"/><path d="M11 3 9.8 13"/><path d="M3.6 6.4h9.2"/><path d="M3.1 9.6h9.2"/></symbol>
+  <symbol id="ki-voice_channel" viewBox="0 0 16 16"><path d="M8 2.6a1.9 1.9 0 0 1 1.9 1.9v3.2a1.9 1.9 0 0 1-3.8 0V4.5A1.9 1.9 0 0 1 8 2.6z"/><path d="M4.6 7.4a3.4 3.4 0 0 0 6.8 0"/><path d="M8 10.8v2.6"/><path d="M6 13.4h4"/></symbol>
+  <symbol id="ki-message" viewBox="0 0 16 16"><path d="M13.2 9.6a1.9 1.9 0 0 1-1.9 1.9H6.5L3.4 13.8V5.1a1.9 1.9 0 0 1 1.9-1.9h6a1.9 1.9 0 0 1 1.9 1.9z"/></symbol>
+  <symbol id="ki-member" viewBox="0 0 16 16"><path d="M8 8.3a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z"/><path d="M3.3 13.6a4.7 4.7 0 0 1 9.4 0"/></symbol>
+  <symbol id="ki-team_member" viewBox="0 0 16 16"><path d="M8 2.6v1.8"/><path d="M4.4 4.4h7.2a1.6 1.6 0 0 1 1.6 1.6v5a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6V6a1.6 1.6 0 0 1 1.6-1.6z"/><path d="M6.2 7.8v1.2"/><path d="M9.8 7.8v1.2"/></symbol>
+  <symbol id="ki-pull_request" viewBox="0 0 16 16"><path d="M4.9 5.6a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M11.1 5.6a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M4.9 13.8a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M4.9 5.6v4.8"/><path d="M11.1 5.6v1.4a2.6 2.6 0 0 1-2.6 2.6H4.9"/></symbol>
+  <symbol id="ki-commit" viewBox="0 0 16 16"><path d="M8 2.2v3"/><path d="M8 10.8v3"/><path d="M8 10.7a2.7 2.7 0 1 0 0-5.4 2.7 2.7 0 0 0 0 5.4z"/></symbol>
+  <symbol id="ki-file" viewBox="0 0 16 16"><path d="M11.8 7.9 7.4 12.3a2.7 2.7 0 0 1-3.8-3.8l5.3-5.3a1.8 1.8 0 0 1 2.5 2.5l-5.3 5.3a.9.9 0 0 1-1.3-1.3l4.7-4.7"/></symbol>
+  <symbol id="ki-spell" viewBox="0 0 16 16"><path d="M3.2 12.8 9.6 6.4"/><path d="M11.8 2.4l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L8.9 5.3l2.05-.85z"/><path d="M5.6 3.4v1.7"/><path d="M4.75 4.25h1.7"/></symbol>
+  <symbol id="ki-skill" viewBox="0 0 16 16"><path d="M8 4.4c-1.3-1-2.8-1.5-4.8-1.5v8.4c2 0 3.5.5 4.8 1.5"/><path d="M8 4.4c1.3-1 2.8-1.5 4.8-1.5v8.4c-2 0-3.5.5-4.8 1.5"/><path d="M8 4.4v8.4"/></symbol>
+  <symbol id="ki-collection" viewBox="0 0 16 16"><path d="M3 3h4.2v4.2H3z"/><path d="M8.8 3H13v4.2H8.8z"/><path d="M3 8.8h4.2V13H3z"/><path d="M8.8 8.8H13V13H8.8z"/></symbol>
+  <symbol id="ki-project" viewBox="0 0 16 16"><path d="M2.6 5.2a1.4 1.4 0 0 1 1.4-1.4h2.1l1.5 1.8h4.4a1.4 1.4 0 0 1 1.4 1.4v4.6a1.4 1.4 0 0 1-1.4 1.4H4a1.4 1.4 0 0 1-1.4-1.4z"/></symbol>
+  <symbol id="ki-interaction_profile" viewBox="0 0 16 16"><path d="M2.8 5.4h10.4"/><path d="M2.8 10.6h10.4"/><path d="M6.2 7a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/><path d="M10 12.2a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/></symbol>
+  <symbol id="ki-loop" viewBox="0 0 16 16"><path d="M8 3.2a4.8 4.8 0 1 0 4.53 3.2M12.8 3.2v3.2h-3.2"/></symbol>
+  <symbol id="ki-memory" viewBox="0 0 16 16"><path d="M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z"/></symbol>
+  <symbol id="ki-graph" viewBox="0 0 16 16"><path d="M4.3 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M11.7 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M11.7 13.6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M6.1 4.2h3.8"/><path d="M11.7 7.8v2.2"/></symbol>
+  <symbol id="ki-artifact" viewBox="0 0 16 16"><path d="M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z"/><path d="M2.6 5.3 8 8.2l5.4-2.9"/><path d="M8 8.2v5.4"/></symbol>
+  <symbol id="ki-worktree" viewBox="0 0 16 16"><path d="M6.2 5.8h5.6a1.4 1.4 0 0 1 1.4 1.4v5.6a1.4 1.4 0 0 1-1.4 1.4H6.2a1.4 1.4 0 0 1-1.4-1.4V7.2a1.4 1.4 0 0 1 1.4-1.4z"/><path d="M10.4 5.8V4.2a1.4 1.4 0 0 0-1.4-1.4H4.2a1.4 1.4 0 0 0-1.4 1.4V9a1.4 1.4 0 0 0 1.4 1.4h.6"/></symbol>
+  <symbol id="ki-custom" viewBox="0 0 16 16"><path d="M8 2.6 13.4 8 8 13.4 2.6 8z"/></symbol>
+</svg>
+
+<main id="main">
+<p class="kicker" style="margin:26px 0 0">Advanced · Memory · 41 of 55</p>
+<h1>Memory rides along</h1>
+<p class="lede">Pin what a teammate or task must remember. When that entity enters a session, its memory arrives in context before the work begins.</p>
+
+<div class="ink-legend truth-line" role="note" aria-label="Truth legend">
+  <span><span class="swatch swatch--solid"></span><b>Solid ink</b> — shipped and true today</span>
+  <span><span class="swatch swatch--ghost"></span><b>Ghost ink</b> — designed, not built</span>
+  <span class="stamp">memory flow verified 2026-08-20</span>
+</div>
+
+<section class="memory-lab" aria-labelledby="h-replay">
+  <h2 id="h-replay"><span class="no">01</span>Run the same task twice</h2>
+  <p>Advance the replay. Juniper carries the same persona working set into both sessions. Only the right-hand run receives the task’s remembered warning.</p>
+  <div class="pn memory-stage" id="memory-replay" data-frame="0" aria-describedby="replay-summary replay-caption">
+    <p id="replay-summary" class="visually-hidden">A five-step comparison. The teammate memory enters both session context trays first. The task memory enters only the remembered run second. Without it, the session repeats a cached-redirect trap; with it, the session clears the cached target before retesting and avoids the trap.</p>
+    <div class="stage-topline">
+      <strong>Northlake</strong>
+      <span>Fix login redirect loop</span>
+      <span class="pn-pill pn-pill--run lab-status"><span class="pn-pill__dot pn-pill__dot--hollow"></span><span id="stage-state">Ready to spawn</span></span>
+    </div>
+
+    <div class="source-rack" aria-label="Entities and their pinned memories">
+      <article class="source-card" id="source-teammate">
+        <span class="edge-label">remembers</span>
+        <div class="entity-title"><svg class="ki" aria-hidden="true"><use href="#ki-team_member"></use></svg>Juniper</div>
+        <div class="entity-kind">teammate · persona working set</div>
+        <span class="memory-note"><code>Leave the guard traceable for QA.</code></span>
+      </article>
+      <article class="source-card" id="source-task">
+        <span class="edge-label">remembers</span>
+        <div class="entity-title"><svg class="ki" aria-hidden="true"><use href="#ki-task"></use></svg>Fix login redirect loop</div>
+        <div class="entity-kind">task · durable memory</div>
+        <span class="memory-note"><code>After password changes, clear the cached redirect target before retesting.</code></span>
+      </article>
+    </div>
+
+    <div class="dispatcher-step" id="dispatcher-step">
+      <span class="pn-avatar pn-avatar--agent pn-avatar--tone-brand">DI</span>
+      <strong>Dispatcher</strong>
+      <span>selects at spawn and attaches context</span>
+      <span class="arrow" aria-hidden="true">→</span>
+    </div>
+
+    <div class="run-grid" aria-label="Side-by-side task runs">
+      <article class="run-card" aria-labelledby="without-title">
+        <div class="run-card__head">
+          <div class="run-card__eyebrow">Same task · one memory omitted</div>
+          <div class="run-card__title" id="without-title">Without task memory <span class="pn-pill pn-pill--idle">comparison</span></div>
+        </div>
+        <div class="context-tray">
+          <div class="context-tray__label"><span>Session context tray</span><span>in order</span></div>
+          <ol>
+            <li class="context-slot persona-slot"><b>Persona working set</b>Leave the guard traceable for QA.</li>
+            <li class="context-slot task-slot" id="without-task-slot"><b>Task memory</b><span>Waiting for spawn selection…</span></li>
+          </ol>
+        </div>
+        <div class="run-log" aria-label="Run without task memory log">
+          <span class="log-line log-1"><span class="log-mark">01</span> inspect redirect guard</span>
+          <span class="log-line log-2"><span class="log-mark">02</span> preserve trace comment</span>
+          <span class="log-line log-3"><span class="log-mark">03</span> retest after password change</span>
+          <span class="log-line log-4 log-bad"><span class="log-mark">04</span> cached target repeats loop</span>
+        </div>
+        <div class="result-row" id="without-result"><span class="result-shape"></span><strong>Outcome pending</strong></div>
+      </article>
+
+      <article class="run-card" aria-labelledby="with-title">
+        <div class="run-card__head">
+          <div class="run-card__eyebrow">Same task · both memories attached</div>
+          <div class="run-card__title" id="with-title">With task memory <span class="pn-pill pn-pill--info">remembered</span></div>
+        </div>
+        <div class="context-tray">
+          <div class="context-tray__label"><span>Session context tray</span><span>in order</span></div>
+          <ol>
+            <li class="context-slot persona-slot"><b>Persona working set</b>Leave the guard traceable for QA.</li>
+            <li class="context-slot task-slot"><b>Task memory</b>Clear the cached redirect target before retesting.</li>
+          </ol>
+        </div>
+        <div class="run-log" aria-label="Remembered run log">
+          <span class="log-line log-1"><span class="log-mark">01</span> inspect redirect guard</span>
+          <span class="log-line log-2"><span class="log-mark">02</span> preserve trace comment</span>
+          <span class="log-line log-3"><span class="log-mark">03</span> clear cached target, then retest</span>
+          <span class="log-line log-4 log-ok"><span class="log-mark">04</span> redirect resolves once</span>
+        </div>
+        <div class="result-row" id="with-result"><span class="result-shape"></span><strong>Outcome pending</strong></div>
+      </article>
+    </div>
+  </div>
+
+  <p class="replay-caption" id="replay-caption" data-replay-caption aria-live="polite">The teammate and task already remember their blocks. No session has spawned yet.</p>
+  <div class="tmc" role="group" aria-label="Memory replay controls">
+    <button class="btn tmc-play" type="button">Play</button>
+    <button class="btn tmc-step" type="button">Next</button>
+    <label class="visually-hidden" for="memory-scrub">Replay step</label>
+    <input class="tmc-scrub" id="memory-scrub" type="range" min="0" max="4" value="0" step="1">
+    <span class="tmc-count" aria-hidden="true">1 / 5</span>
+  </div>
+  <p class="motion-note">Play moves once and settles. With reduced motion enabled, the same controls advance useful still frames.</p>
+</section>
+
+<section aria-labelledby="h-boundaries">
+  <h2 id="h-boundaries"><span class="no">02</span>What moves; what writes</h2>
+  <div class="truth-grid">
+    <article class="card truth-card">
+      <span class="stamp">durable</span>
+      <h3>Attach once</h3>
+      <p>A memory is a first-class, append-only graph entity. Any entity can point to it with <code>remembers</code>; that durable edge is what makes the memory ride along.</p>
+    </article>
+    <article class="card truth-card">
+      <span class="stamp">borrowed</span>
+      <h3>Loan for one session</h3>
+      <p>Spawn with <code>--memory</code> to inject a one-session loan. The borrowed block enters context and writes nothing to the graph.</p>
+    </article>
+    <article class="card truth-card">
+      <span class="stamp">append-only</span>
+      <h3>Correct; never erase</h3>
+      <p>Pin evidence with <code>disputes</code>, or replace a claim with <code>supersedes</code>. The old memory remains part of the record; deletion is refused.</p>
+    </article>
+  </div>
+</section>
+
+<section aria-labelledby="h-keepers">
+  <h2 id="h-keepers"><span class="no">03</span>The keepers work off the critical path</h2>
+  <p>The working agent receives the right context and leaves evidence behind. Two asynchronous keepers handle the rest.</p>
+  <div class="keeper-grid">
+    <article class="card keeper" data-when="spawn time">
+      <div class="who who--teammate"><span class="who__avatar">DI</span><span>Dispatcher</span><span class="who__kind">teammate</span></div>
+      <h3>Choose and attach</h3>
+      <p>Dispatcher selects the teammate at spawn and attaches the memories needed before the session starts. Persona working set comes first; task memories follow.</p>
+    </article>
+    <article class="card keeper" data-when="off-hours">
+      <div class="who who--teammate"><span class="who__avatar">DR</span><span>Dreamer</span><span class="who__kind">teammate</span></div>
+      <h3>Garden asynchronously</h3>
+      <p>Dreamer checks staleness and contradictions, then consolidates on a loop. It never blocks the task and never deletes the belief record.</p>
+    </article>
+  </div>
+</section>
+
+<section aria-labelledby="h-advanced">
+  <h2 id="h-advanced"><span class="no">04</span>Nearby Advanced truth</h2>
+  <div class="advanced-strip">
+    <article class="card">
+      <span class="pill pill--accent">solid ink · shipped</span>
+      <h3>Loops record runs as edges</h3>
+      <p>A loop is an entity. Each firing creates real work with a <code>triggered_by</code> edge back to it; those inbound edges are the run history.</p>
+    </article>
+    <article class="card">
+      <span class="pill pill--accent">solid ink · shipped</span>
+      <h3>Spell plumbing exists</h3>
+      <p>The <code>spell</code> kind and its <code>equips</code> and <code>pulled</code> graph edges exist today.</p>
+      <div class="ghost-rule" aria-hidden="true"></div>
+      <p class="ghost"><strong>Ghost ink · not built:</strong> spell casting, hooks, and event-triggered injection have no runtime yet.</p>
+    </article>
+  </div>
+</section>
+</main>
+
+<footer class="site">Last updated 2026-08-20 · Memory rides along · tm8 Help v1 · <span class="stamp">truth checked against Help Section 6</span></footer>
+
+<main id="foundation-spec" hidden inert aria-hidden="true">
+<p class="kicker" style="margin:26px 0 0">tm8 Help · Foundation · v2</p>
+<h1>Design foundation</h1>
+<p class="lede">The shared design layer every tm8 Help artifact is built on. This page is the spec and the living demo at once: every token, component, convention and motion rule below is rendered by the same foundation block you will copy into your artifact. Read it once; a fresh session with no other context should produce work indistinguishable in style from the rest of the fleet.</p>
+
+<div class="ink-legend" role="note">
+  <span><span class="swatch swatch--solid"></span><b>Solid ink</b> — shipped, true of tm8 today</span>
+  <span><span class="swatch swatch--ghost"></span><b>Ghost ink</b> — designed, not built (dashed, faded)</span>
+  <span class="stamp">verified against contract doc 01a0155c… on 2026-08-20</span>
+</div>
+
+<section aria-labelledby="h-centre">
+<h2 id="h-centre">The grammar, playing</h2>
+<p>One replay, twice. Both panels step through the same five frames — a space, a task, a session, a doc, a message — using the graph-node language, the edge lines, and the standard control cluster every Help artifact reuses. The left panel moves; the right panel is the <code>prefers-reduced-motion</code> variant: same knowledge, no animation. Motion starts, teaches, settles — play runs once to the end and stops.</p>
+<div class="grid grid--2">
+  <div class="panel" data-replay id="replay-a">
+    <p class="caption" style="margin-top:0"><strong>Full motion</strong> — nodes arrive, edges draw</p>
+    <svg class="gfx" viewBox="0 0 520 300" role="img" aria-labelledby="replay-a-desc">
+      <desc id="replay-a-desc">Five-frame replay: a space node; a task joins it; a session starts working on the task; a doc attaches; a message anchors to the task.</desc>
+      <g class="gedge" data-f="1"><line x1="118" y1="118" x2="180" y2="82"/><text x="128" y="88">child of</text></g>
+      <g class="gedge gedge--accent" data-f="2"><line x1="238" y1="106" x2="238" y2="180"/><text x="246" y="148">working_on</text></g>
+      <g class="gedge" data-f="3"><line x1="296" y1="76" x2="360" y2="76"/><text x="300" y="66">attached_to</text></g>
+      <g class="gedge" data-f="4"><line x1="380" y1="180" x2="286" y2="100"/><text x="330" y="158">anchored_to</text></g>
+      <g class="gnode" data-f="0" transform="translate(28,110)">
+        <rect width="90" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-collection"/></svg>
+        <text x="32" y="22">Northlake</text><text class="gnode__kind" x="32" y="35">space</text>
+      </g>
+      <g class="gnode" data-f="1" transform="translate(180,48)">
+        <rect width="116" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-task"/></svg>
+        <text x="32" y="22">Login loop</text><text class="gnode__kind" x="32" y="35">task</text>
+      </g>
+      <g class="gnode" data-f="2" transform="translate(180,180)">
+        <rect width="132" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-work_session"/></svg>
+        <text x="32" y="22">Juniper</text><text class="gnode__kind" x="32" y="35">work_session</text>
+        <circle class="glive glive--pulse" cx="120" cy="12" r="4"/>
+      </g>
+      <g class="gnode" data-f="3" transform="translate(360,54)">
+        <rect width="112" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-doc"/></svg>
+        <text x="32" y="22">Auth notes</text><text class="gnode__kind" x="32" y="35">doc</text>
+      </g>
+      <g class="gnode" data-f="4" transform="translate(360,180)">
+        <rect width="120" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-message"/></svg>
+        <text x="32" y="22">“Found it.”</text><text class="gnode__kind" x="32" y="35">message</text>
+      </g>
+    </svg>
+    <p class="caption" data-replay-caption aria-live="polite" style="min-height:2.6em">A space. Nothing else yet.</p>
+    <div class="tmc" role="group" aria-label="Replay controls">
+      <button class="btn tmc-play" type="button">Play</button>
+      <button class="btn tmc-step" type="button">Step</button>
+      <label style="display:contents"><span class="caption" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Scrub frames</span>
+        <input class="tmc-scrub" type="range" min="0" max="4" value="0" step="1"></label>
+      <span class="tmc-count" aria-hidden="true">1 / 5</span>
+    </div>
+  </div>
+  <div class="panel force-reduced" data-replay id="replay-b">
+    <p class="caption" style="margin-top:0"><strong>Reduced motion</strong> — a stepper with still frames, same controls</p>
+    <svg class="gfx" viewBox="0 0 520 300" role="img" aria-labelledby="replay-b-desc">
+      <desc id="replay-b-desc">The same five frames, shown as still states with no animation.</desc>
+      <g class="gedge" data-f="1"><line x1="118" y1="118" x2="180" y2="82"/><text x="128" y="88">child of</text></g>
+      <g class="gedge gedge--accent" data-f="2"><line x1="238" y1="106" x2="238" y2="180"/><text x="246" y="148">working_on</text></g>
+      <g class="gedge" data-f="3"><line x1="296" y1="76" x2="360" y2="76"/><text x="300" y="66">attached_to</text></g>
+      <g class="gedge" data-f="4"><line x1="380" y1="180" x2="286" y2="100"/><text x="330" y="158">anchored_to</text></g>
+      <g class="gnode" data-f="0" transform="translate(28,110)">
+        <rect width="90" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-collection"/></svg>
+        <text x="32" y="22">Northlake</text><text class="gnode__kind" x="32" y="35">space</text>
+      </g>
+      <g class="gnode" data-f="1" transform="translate(180,48)">
+        <rect width="116" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-task"/></svg>
+        <text x="32" y="22">Login loop</text><text class="gnode__kind" x="32" y="35">task</text>
+      </g>
+      <g class="gnode" data-f="2" transform="translate(180,180)">
+        <rect width="132" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-work_session"/></svg>
+        <text x="32" y="22">Juniper</text><text class="gnode__kind" x="32" y="35">work_session</text>
+        <circle class="glive" cx="120" cy="12" r="4"/>
+      </g>
+      <g class="gnode" data-f="3" transform="translate(360,54)">
+        <rect width="112" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-doc"/></svg>
+        <text x="32" y="22">Auth notes</text><text class="gnode__kind" x="32" y="35">doc</text>
+      </g>
+      <g class="gnode" data-f="4" transform="translate(360,180)">
+        <rect width="120" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-message"/></svg>
+        <text x="32" y="22">“Found it.”</text><text class="gnode__kind" x="32" y="35">message</text>
+      </g>
+    </svg>
+    <p class="caption" data-replay-caption aria-live="polite" style="min-height:2.6em">A space. Nothing else yet.</p>
+    <div class="tmc" role="group" aria-label="Replay controls (reduced motion)">
+      <button class="btn tmc-play" type="button">Play</button>
+      <button class="btn tmc-step" type="button">Step</button>
+      <label style="display:contents"><span class="caption" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Scrub frames</span>
+        <input class="tmc-scrub" type="range" min="0" max="4" value="0" step="1"></label>
+      <span class="tmc-count" aria-hidden="true">1 / 5</span>
+    </div>
+  </div>
+</div>
+<p class="caption">This node style — icon, title, small-caps kind, hairline stroke on a shallow-radius surface — is the graph-node language of the whole fleet, matching Section 0's replay. A live session carries a green dot; it pulses only while motion is allowed.</p>
+</section>
+
+
+<!-- ================= TOKENS ================= -->
+<section aria-labelledby="h-tokens">
+<h2 id="h-tokens"><span class="no">01</span>The token sheet, live</h2>
+<p>The v2 sheet, rendered by this page right now. Warm paper, warm near-black ink, one bronze accent — the same family as the product’s own brass, so replicas and Help pages finally read as one thing. The page follows your OS theme via <code>prefers-color-scheme</code>; each tile names both values. Every color on every Help artifact comes from this sheet — per-artifact content colors are derived from <code>--accent</code>, <code>--accent-2</code> and the state colors, never invented hexes.</p>
+<div class="grid grid--3" id="swatches"></div>
+<h3>Foundation constants (motion + ghost ink)</h3>
+<p>Kept from v1, deliberately — they were right. Micro feedback <code>--dur-fast: 120ms</code>, state changes <code>--dur-base: 180ms</code>, scene changes <code>--dur-slow: 280ms</code>; default easing <code>--ease-out: cubic-bezier(0.16,1,0.3,1)</code>. Ghost ink is <code>--ghost-opacity: 0.62</code> with dash pattern <code>5 4</code>.</p>
+<h3>Type, spacing, radius</h3>
+<div class="grid grid--2">
+  <div class="card">
+    <p style="font:400 40px/1.15 var(--serif);margin:0">h1 · 42 / regular</p>
+    <p style="font:500 27px/1.2 var(--serif);margin:6px 0 0">h2 · 28 / medium</p>
+    <p style="font:600 19.5px/1.25 var(--serif);margin:6px 0 0">h3 · 19.5 / semibold</p>
+    <p style="margin:10px 0 0">body · 16.5 / 1.62 · Charter → Iowan Old Style → Georgia. System serifs only — no webfonts. The bigger the text, the lighter it sets.</p>
+    <p class="mono" style="font-size:13.5px;margin:6px 0 0">code · 13.5 · ui-monospace stack</p>
+    <p style="margin:6px 0 0"><span class="kicker">labels · 10–11 mono · uppercase · letterspaced</span></p>
+    <p class="caption" style="margin:6px 0 0">caption · italic 13.5 muted — captions state the point</p>
+  </div>
+  <div class="card">
+    <p style="margin-top:0"><strong>Spacing</strong> — 4px grid: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64. Section gaps 48–64px, card padding 18–22px, prose ≤ 68ch, content column 1040px.</p>
+    <p><strong>Radius</strong> — 4px cards, panels and plates, 3px buttons and inputs, 999px pills and chips. <strong>Borders</strong> — 1px <code>var(--line)</code> hairlines; <code>var(--line-strong)</code> where an edge must hold (graph nodes, the masthead rule, control bars).</p>
+    <p style="margin-bottom:0"><strong>Elevation</strong> — none. No card shadows; hairlines and the mat carry depth. The only solid dark field on a page is the terminal canvas.</p>
+  </div>
+</div>
+</section>
+
+<!-- ================= COMPONENTS ================= -->
+<section aria-labelledby="h-comp">
+<h2 id="h-comp"><span class="no">02</span>The shared component vocabulary</h2>
+<p>Each component below is live — inspect it, tab to it, hover it. Class names are stable; reuse them as-is.</p>
+
+<h3>Terminal block <code>.term</code></h3>
+<p>The signature component. Always dark in both themes, matted in a paper frame like a book plate. The bar names the real context (<code>workspace — session</code>) with a <code>PTY</code> tag — no traffic-light dots; this is a stream, not a mac window. Prompts are prefixed <code>$</code> by CSS (<code>.p</code>) in bronze; output is plain (<code>.out</code>). Every command shown must be real syntax; every output shaped like what the CLI actually prints.</p>
+<div class="term">
+  <div class="term__bar" aria-hidden="true"><span class="term__name">tm8 — northlake</span><span class="term__tag">pty</span></div>
+  <pre><span class="p">tm8 entity create task "Fix login redirect loop"</span>
+<span class="out">01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11  task  Fix login redirect loop  v1  open</span>
+<span class="p">tm8 task transition 01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11 working --expect-version 1</span>
+<span class="dim">ok · status working · v2</span></pre>
+</div>
+
+<h3>Cards, panels, pills, buttons</h3>
+<div class="grid grid--2">
+  <div class="card">
+    <p style="margin-top:0"><strong>Card</strong> <code>.card</code> — surface, hairline, 4px radius, no shadow. <strong>Panel</strong> <code>.panel</code> is the same at 22px padding for interactive widgets. <strong>Plate</strong> <code>.plate</code> mats a replica or figure with an italic caption.</p>
+    <p style="margin-bottom:0">
+      <span class="pill">neutral</span>
+      <span class="pill pill--ok"><span class="pill__dot"></span>working</span>
+      <span class="pill pill--warn"><span class="pill__dot pill__dot--hollow"></span>blocked?</span>
+      <span class="pill pill--danger">cancelled</span>
+      <span class="pill pill--accent"><span class="pill__dot pill__dot--pulse"></span>live</span>
+    </p>
+    <p class="caption" style="margin-bottom:0">Pills are stroked, never filled. State is never color-only: color pairs with text; dots add shape (solid = running, hollow = declared, pulsing = live).</p>
+  </div>
+  <div class="card">
+    <p style="margin-top:0"><strong>Buttons and links</strong> — real <code>&lt;button&gt;</code> and <code>&lt;a&gt;</code> only, and always outlined, never filled: the primary wears the bronze stroke. Hover tints and strengthens the stroke, never color alone; focus is a visible 2px bronze outline.</p>
+    <p><button class="btn" type="button">Quiet action</button> <button class="btn btn--primary" type="button">Primary action</button> <a href="#h-comp">A link</a></p>
+    <p class="caption" style="margin-bottom:0">Anything clickable looks clickable: a bronze stroke or underline, pointer cursor, hover state, visible focus.</p>
+  </div>
+</div>
+
+<h3>Identity chips <code>.who</code> — member vs teammate</h3>
+<p>The fleet-wide identity device, matching the product: a <strong>member</strong> (human) wears a <em>circular</em> avatar; a <strong>teammate</strong> (agent) wears a <em>5px rounded-square</em> avatar. Shape carries the distinction, color supports it — never color alone. Members tint slate, teammates tint bronze.</p>
+<p>
+  <span class="who who--member"><span class="who__avatar">MV</span>Mara Voss <span class="who__kind">member</span></span>
+  <span class="who who--teammate"><span class="who__avatar">JU</span>Juniper <span class="who__kind">teammate</span></span>
+  <span class="who who--teammate"><span class="who__avatar">DI</span>Dispatcher <span class="who__kind">teammate</span></span>
+</p>
+
+<h3>Entity-kind icons</h3>
+<p>The real icon set from the product UI: 16×16, stroke-only <code>currentColor</code> at 1.4px, round caps. All 21 registered kinds, plus the diamond fallback for custom <code>c:</code> kinds. Use them wherever an entity appears — lists, nodes, chips.</p>
+<div class="card"><div id="icon-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px"></div></div>
+
+<h3>Edge lines</h3>
+<p>Edges are 1.2px lines in <code>--muted</code>, labeled in 9.5px mono with the real edge type name. Bronze marks the edge currently being taught. Ghost dashes mark designed-not-built relations.</p>
+<div class="panel">
+<svg class="gfx" viewBox="0 0 720 90" role="img" aria-label="Three edge line styles: a solid muted edge labeled attached_to, a bronze accent edge labeled working_on, and a dashed ghost edge labeled visible_to marked inert in v1.">
+  <g class="gedge"><line x1="20" y1="45" x2="220" y2="45"/><text x="70" y="35">attached_to</text></g>
+  <g class="gedge gedge--accent"><line x1="260" y1="45" x2="460" y2="45"/><text x="310" y="35">working_on (taught)</text></g>
+  <g class="gedge gedge--ghost"><line x1="500" y1="45" x2="700" y2="45"/><text x="530" y="35">visible_to (inert in v1)</text></g>
+</svg>
+</div>
+</section>
+
+<section aria-labelledby="h-inks">
+<h2 id="h-inks"><span class="no">03</span>Two inks: the honesty devices</h2>
+<p>Truth is the floor. Three devices keep every artifact honest, and each has one job:</p>
+<ul>
+  <li><strong>The two-inks legend</strong> <code>.ink-legend</code> — place it once, near the top, on ANY page that shows anything unbuilt. Solid ink = shipped and true today. Ghost ink (dashed border or dashed stroke at <code>--ghost-opacity</code>) = designed, not built. The same pair renders Craft's node grammar in Section 7: <em>ref</em> nodes solid (they point at entities that exist), <em>spec</em> nodes ghost (they sketch entities to be born).</li>
+  <li><strong>The honest-gap card</strong> <code>.gap-card</code> — for a real limitation of shipped tm8, stated in the product's own words. Not for roadmap; that is ghost ink's job.</li>
+  <li><strong>The verified stamp</strong> <code>.stamp</code> — on claims harvested from a live node or the CLI catalog, with the date. The footer of every artifact carries one.</li>
+</ul>
+<div class="grid grid--2">
+  <div class="panel">
+    <p class="caption" style="margin-top:0">Solid vs ghost, on nodes (Craft ref/spec grammar)</p>
+    <svg class="gfx" viewBox="0 0 520 110" role="img" aria-label="A solid node labeled ref: Auth notes doc beside a ghost dashed node labeled spec: task to be born.">
+      <g class="gnode" transform="translate(30,30)">
+        <rect width="180" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-doc"/></svg>
+        <text x="32" y="22">Auth notes</text><text class="gnode__kind" x="32" y="35">ref · exists</text>
+      </g>
+      <g class="gnode gnode--ghost" transform="translate(290,30)">
+        <rect width="190" height="44" rx="8"/>
+        <svg class="ki" x="10" y="14"><use href="#ki-task"/></svg>
+        <text x="32" y="22">Harden session TTL</text><text class="gnode__kind" x="32" y="35">spec · to be born</text>
+      </g>
+    </svg>
+  </div>
+  <div>
+    <div class="gap-card"><b>Honest gap.</b> Full-text search is reserved and honestly unavailable — the CLI says so itself. Use <code>entity query</code> and <code>graph query</code> instead.</div>
+    <p><span class="stamp">verified on 2026-08-20 against tm8 help + live node</span></p>
+    <p class="caption">The gap card and stamp above are the components themselves, not pictures of them.</p>
+  </div>
+</div>
+</section>
+
+<!-- ================= MOTION ================= -->
+<section aria-labelledby="h-motion">
+<h2 id="h-motion"><span class="no">04</span>The animation grammar</h2>
+<p>Motion explains; it never merely decorates. The operational rules, fleet-wide:</p>
+<ul>
+  <li><strong>Starts, teaches, settles.</strong> Every animation runs once toward a resting state that still carries the lesson. Nothing loops forever demanding attention. The only sanctioned repeat is the 1.6s liveness pulse on a live session dot — and it stops under reduced motion.</li>
+  <li><strong>Quick and eased.</strong> Use the named durations: <code>--dur-fast</code> 120ms (hover, press), <code>--dur-base</code> 180ms (reveal, toggle), <code>--dur-slow</code> 280ms (a node arriving, an edge drawing). Default easing <code>--ease-out</code>; use <code>--ease-standard</code> for symmetric moves. Longer sequences are built from steps of these, driven by the stepper.</li>
+  <li><strong>Banned:</strong> bouncing, confetti, parallax, autoplaying infinite loops, motion that exists only to impress. If it does not teach, cut it.</li>
+  <li><strong>Reduced motion is a variant, not a fallback.</strong> Under <code>prefers-reduced-motion: reduce</code> the foundation kills every animation and transition globally; your widget must still work as a stepper of still frames (the centrepiece above shows both side by side). Never autoplay when reduced motion is on — the foundation script refuses for you.</li>
+  <li><strong>The control cluster is standard.</strong> Play / Step / scrub-range / frame counter, in that order, wired by <code>TM8.stepper()</code>. One way to drive every sequence in the fleet, so a reader who learns it once can drive everything.</li>
+</ul>
+<div class="panel">
+  <p style="margin-top:0"><strong>Starts–teaches–settles</strong>, in one gesture: press the button; the edge draws once at <code>--dur-slow</code>, the caption lands, and the scene rests.</p>
+  <svg class="gfx" viewBox="0 0 520 110" role="img" aria-label="Two nodes, task and doc. Pressing the demo button draws an attached_to edge between them once.">
+    <g class="gedge" id="sts-edge" style="opacity:0"><line x1="196" y1="52" x2="330" y2="52"/><text x="212" y="42">attached_to</text></g>
+    <g class="gnode" transform="translate(60,30)">
+      <rect width="136" height="44" rx="8"/>
+      <svg class="ki" x="10" y="14"><use href="#ki-task"/></svg>
+      <text x="32" y="22">Login loop</text><text class="gnode__kind" x="32" y="35">task</text>
+    </g>
+    <g class="gnode" transform="translate(330,30)">
+      <rect width="130" height="44" rx="8"/>
+      <svg class="ki" x="10" y="14"><use href="#ki-doc"/></svg>
+      <text x="32" y="22">Auth notes</text><text class="gnode__kind" x="32" y="35">doc</text>
+    </g>
+  </svg>
+  <p class="caption" id="sts-caption" aria-live="polite" style="min-height:1.5em"></p>
+  <button class="btn" type="button" id="sts-btn">Attach the doc</button>
+</div>
+</section>
+
+<!-- ================= INTERACTION GRAMMAR ================= -->
+<section aria-labelledby="h-ixn">
+<h2 id="h-ixn"><span class="no">05</span>Interaction grammar: one way each</h2>
+<p>Builders invent these divergently unless they are named. There is exactly ONE way to do each of the following, demoed live:</p>
+
+<h3>Hover-reveal <code>.reveal</code></h3>
+<p>An inline term carrying a quiet definition. Dashed accent underline, help cursor, tooltip on hover AND on keyboard focus (<code>tabindex="0"</code>). Try it: a <span class="reveal" tabindex="0">teammate<span class="reveal__tip" role="tooltip">An agent persona — durable, does not run. “A teammate is who, a session is now.”</span></span> is not a <span class="reveal" tabindex="0">session<span class="reveal__tip" role="tooltip">One running instance of a teammate — a real process in a real terminal.</span></span>. Use it for vocabulary, never for essential content.</p>
+
+<h3>The “what you type / what comes back” toggle <code>.toggle2</code></h3>
+<p>Two real buttons with <code>aria-pressed</code>, swapping two panes. The pressed button doubles its bronze stroke and tints — never a fill. One toggle per exchange; never tabs for this.</p>
+<div class="panel" data-toggle2>
+  <p style="margin:0 0 8px">
+    <button class="btn" type="button" data-pane="a" aria-pressed="true">What you type</button>
+    <button class="btn" type="button" data-pane="b" aria-pressed="false">What comes back</button>
+  </p>
+  <div class="toggle2__panes">
+    <div data-pane-id="a" class="is-shown">
+      <div class="term"><div class="term__bar" aria-hidden="true"><span class="term__name">tm8 — northlake</span><span class="term__tag">pty</span></div><pre><span class="p">tm8 entity context 01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11 --format json</span></pre></div>
+    </div>
+    <div data-pane-id="b">
+      <div class="term"><div class="term__bar" aria-hidden="true"><span class="term__name">tm8 — northlake</span><span class="term__tag">pty</span></div><pre><span class="out">{</span>
+<span class="out">  "schemaVersion": "tm8.entity-context.v1",</span>
+<span class="out">  "root": { "id": "01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11", "kind": "task",</span>
+<span class="out">            "title": "Fix login redirect loop", "version": 4, … },</span>
+<span class="out">  "content": { "excerpt": "…", "truncated": false },</span>
+<span class="out">  "messages": [ … ], "actions": [ … ]</span>
+<span class="out">}</span></pre></div>
+    </div>
+  </div>
+</div>
+
+<h3>The control cluster <code>.tmc</code> + <code>TM8.stepper()</code></h3>
+<p>Already driving the centrepiece above. Markup: <code>.tmc-play</code>, <code>.tmc-step</code>, an <code>input[type=range].tmc-scrub</code>, and <code>.tmc-count</code>. Wire it with <code>TM8.stepper(root, { frames, render, intervalMs })</code>; the script handles play-to-end-and-stop, keyboard scrubbing, and the reduced-motion refusal to autoplay. Do not build your own player.</p>
+</section>
+
+<!-- ================= PRODUCT REPLICAS ================= -->
+<section aria-labelledby="h-pn">
+<h2 id="h-pn"><span class="no">06</span>Looking like the product: the replica kit</h2>
+<p>When an artifact depicts the tm8 UI — a board, a thread, a terminal — it uses these replicas, distilled from the real components in <code>packages/tm8-ui/src</code>. They live inside a <code>.pn</code> frame that carries the product's own token palette (warm paper, brass brand), so demos read as the real product while the page around them stays on the contract sheet. Add <code>.pn--dark</code> for the product's dark theme. Everything inside the frames below is populated from the shared mock workspace (§7).</p>
+
+<h3>Task board — columns, cards, status pills</h3>
+<p>Column: card surface, hairline, 8px radius, uppercase mono header. Card: 7px radius, 12.5px/550 title, mono acceptance count. Status pills are 9.5px mono on soft tints; categories are law (<code>to_do | in_progress | done | cancelled</code>), statuses are words.</p>
+<figure class="plate">
+<div class="grid grid--2">
+  <div class="pn" data-board></div>
+  <div class="pn pn--dark" data-board></div>
+</div>
+<figcaption>Fig. 1 · The task board replica, light and dark — the product’s own palette, scoped to the frame.</figcaption>
+</figure>
+
+<h3>Panel tabs · entity chips · liveness</h3>
+<figure class="plate">
+<div class="pn">
+  <div class="pn-tabs" role="tablist" aria-label="Panel surfaces (replica)">
+    <button class="pn-tab" role="tab" aria-selected="true">Board</button>
+    <button class="pn-tab" role="tab" aria-selected="false">Tree</button>
+    <button class="pn-tab" role="tab" aria-selected="false">Graph</button>
+  </div>
+  <div style="padding:12px 4px 2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <span class="pn-echip"><svg class="ki"><use href="#ki-task"/></svg><span>Fix login redirect loop</span><span class="pn-echip__kind">task</span></span>
+    <span class="pn-echip"><svg class="ki"><use href="#ki-doc"/></svg><span>Auth notes</span><span class="pn-echip__kind">doc</span></span>
+    <span class="pn-echip"><svg class="ki"><use href="#ki-work_session"/></svg><span>Juniper — login loop</span><span class="pn-echip__kind">work_session</span></span>
+    <span class="pn-pill pn-pill--run"><span class="pn-pill__dot pn-pill__dot--pulse"></span>WORKING</span>
+    <span class="pn-pill pn-pill--info"><span class="pn-pill__dot pn-pill__dot--hollow"></span>IN REVIEW</span>
+    <span class="pn-pill pn-pill--idle">OPEN</span>
+  </div>
+</div>
+<figcaption>Fig. 2 · Panel tabs, entity chips and status pills — product chrome, mock data.</figcaption>
+</figure>
+
+<h3>Task discussion — message bubbles with structural identity</h3>
+<p>Human turns are bordered bubbles on the card surface; your own turns align right; agent turns render as an open reading column. The byline carries the avatar — circle for members, 5px square for teammates — so authorship is visible at a glance and in the markup.</p>
+<figure class="plate">
+<div class="pn" style="padding:0;overflow:hidden">
+  <div class="pn-tabs" aria-hidden="true"><button class="pn-tab" aria-selected="true" tabindex="-1">Discussion</button><button class="pn-tab" tabindex="-1">Activity</button></div>
+  <div class="pn-thread" data-thread></div>
+</div>
+<figcaption>Fig. 3 · A task discussion — structural identity in every byline.</figcaption>
+</figure>
+
+<h3>Terminal strip — a session's chrome</h3>
+<p>The strip is product surface (34px, avatar square, name, provider in mono); the canvas below is always near-black in both themes, because the terminal is a real PTY.</p>
+<figure class="plate">
+<div class="pn">
+  <div class="pn-termstrip">
+    <span class="pn-termstrip__avatar" aria-hidden="true">JU</span>
+    <span class="pn-termstrip__name">Juniper</span>
+    <span class="pn-termstrip__provider">claude-code · fullAccess · worktree</span>
+    <span class="pn-pill pn-pill--run" style="margin-left:auto"><span class="pn-pill__dot pn-pill__dot--pulse"></span>LIVE</span>
+  </div>
+  <pre class="pn-termcanvas">$ tm8 message send --to 01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11 "Redirect fixed; guard added."
+ok · message 01a09f5e-91c2-7d40-b02a-6c1e8d3f7a55 anchored_to task</pre>
+</div>
+<figcaption>Fig. 4 · A live session — product strip above, real PTY canvas below.</figcaption>
+</figure>
+<p class="caption">Fonts: the product ships Newsreader / Hanken Grotesk / JetBrains Mono; artifacts are webfont-free by contract, so replicas render on the system stacks — closest honest rendering, noted here once.</p>
+</section>
+
+<!-- ================= MOCK WORKSPACE ================= -->
+<section aria-labelledby="h-mock">
+<h2 id="h-mock"><span class="no">07</span>The mock workspace: Northlake</h2>
+<p>Every Help artifact depicts the SAME fictional workspace, so the fleet reads as one product in one team. It ships as <code>TM8_MOCK</code> inside the foundation script — the board and thread above are rendered from it. Do not invent your own cast; extend Northlake if a section needs more.</p>
+<div class="grid grid--2">
+  <div class="card">
+    <p style="margin-top:0"><strong>The cast</strong></p>
+    <p>
+      <span class="who who--member"><span class="who__avatar">MV</span>Mara Voss <span class="who__kind">member · owner</span></span>
+      <span class="who who--member"><span class="who__avatar">TI</span>Theo Iwu <span class="who__kind">member</span></span>
+    </p>
+    <p>
+      <span class="who who--teammate"><span class="who__avatar">JU</span>Juniper <span class="who__kind">via claude-code</span></span>
+      <span class="who who--teammate"><span class="who__avatar">CA</span>Callisto <span class="who__kind">via codex</span></span>
+    </p>
+    <p style="margin-bottom:0">
+      <span class="who who--teammate"><span class="who__avatar">DI</span>Dispatcher <span class="who__kind">routes, never works</span></span>
+      <span class="who who--teammate"><span class="who__avatar">DR</span>Dreamer <span class="who__kind">tends memories</span></span>
+    </p>
+  </div>
+  <div class="card">
+    <p style="margin-top:0"><strong>The rules of the mock</strong></p>
+    <ul style="margin:0;padding-left:20px">
+      <li>Ids are v7-shaped and start <code>01a0…</code> — real-shaped, never real.</li>
+      <li>Field shapes mirror the live DTOs (<code>tm8 entity context --format json</code> is the reference): tasks carry <code>state.status/priority/assignees/assignments/acceptance/completionGate</code>, entities carry <code>version</code> and <code>counters</code> with <code>humanMessages</code>/<code>agentMessages</code> distinct.</li>
+      <li>Statuses use the contract spellings: <code>open | pulled | working | in_review | blocked | cancelled | done</code>.</li>
+      <li>Teammate model strings are NOT invented — mock teammates carry only their provider (<code>claude-code</code> / <code>codex</code>); harvest exact model ids from the live catalog if a section needs them.</li>
+    </ul>
+  </div>
+</div>
+<div class="term">
+  <div class="term__bar" aria-hidden="true"><span class="term__name">TM8_MOCK — excerpt (full object in the foundation script)</span></div>
+  <pre id="mock-preview"><span class="out">loading…</span></pre>
+</div>
+</section>
+
+<!-- ================= PAGE ANATOMY ================= -->
+<section aria-labelledby="h-anatomy">
+<h2 id="h-anatomy"><span class="no">08</span>Page anatomy: the fill-in template</h2>
+<p>Every Help artifact has exactly this shape (contract §4). The reader reaches the centrepiece within one screen; everything after it is quiet and supports it.</p>
+<div class="term">
+  <div class="term__bar" aria-hidden="true"><span class="term__name">index.html — skeleton</span></div>
+  <pre><span class="out">&lt;a class="skip" href="#main"&gt;Skip to content&lt;/a&gt;      &lt;!-- first element in body --&gt;
+&lt;header class="site"&gt;
+  &lt;span class="brand"&gt;tm8 Help&lt;/span&gt;
+  &lt;span class="crumb"&gt;/ ‹Artifact title›&lt;/span&gt;
+  &lt;span class="hub-note"&gt;Part of &lt;strong&gt;tm8 Help&lt;/strong&gt; — open the hub
+    from your tm8 artifacts list&lt;/span&gt;          &lt;!-- words, NEVER a hyperlink --&gt;
+&lt;/header&gt;
+&lt;main id="main"&gt;
+  &lt;h1&gt;‹Artifact title›&lt;/h1&gt;                      &lt;!-- the only h1 --&gt;
+  &lt;p class="lede"&gt;‹One or two sentences: what this teaches, who it is for.›&lt;/p&gt;
+  &lt;!-- ink legend here IF anything unbuilt appears below --&gt;
+  &lt;section&gt; ‹THE centrepiece — one strong idea, controls wired by TM8.stepper› &lt;/section&gt;
+  &lt;section&gt; ‹quiet supporting sections: prose ≤70ch, inline demos, gap cards› &lt;/section&gt;
+&lt;/main&gt;
+&lt;footer class="site"&gt;Last updated ‹date› · ‹Artifact name› · tm8 Help v1 ·
+  ‹verified stamp›&lt;/footer&gt;</span></pre>
+</div>
+<p>No cross-artifact hyperlinks, ever — preview URLs expire. Name siblings by title only, marked <code>data-help-role="sibling"</code>. Self-contained single file: all CSS and JS inline, no CDNs, no fonts, no fetch.</p>
+</section>
+
+<!-- ================= VOICE ================= -->
+<section aria-labelledby="h-voice">
+<h2 id="h-voice"><span class="no">09</span>Voice</h2>
+<ul>
+  <li>Second person, present tense, short and concrete. Verbs first: “You spawn a session; the task is its first instruction.”</li>
+  <li>Captions state the point, not the picture: write <em>“no copies — it's a graph”</em>, not <em>“diagram showing three collections”</em>.</li>
+  <li>No marketing language. Banned words: powerful, seamless, simply, magic. No exclamation marks.</li>
+  <li>Command names, flags, ids, statuses in <code>&lt;code&gt;</code>. American spelling, consistently.</li>
+  <li>Every sentence answers something a real user asks; if it doesn't, cut it.</li>
+</ul>
+</section>
+
+<!-- ================= CHECKLIST ================= -->
+<section aria-labelledby="h-check">
+<h2 id="h-check"><span class="no">10</span>The builder checklist</h2>
+<p>Run these ten checks before calling any Help artifact done. They are the contract's five gates plus foundation conformance.</p>
+<ol class="card" style="margin:0;padding:16px 20px 16px 40px;display:grid;gap:8px">
+  <li>ONE interactive centrepiece the reader drives, reached within one screen.</li>
+  <li>The page teaches through motion, state or manipulation — not a documentation wall.</li>
+  <li>Every claim is true of tm8 today; every command is real syntax; every output is real-shaped. Unbuilt things wear ghost ink with the legend present.</li>
+  <li>The foundation block is verbatim: the v2 token sheet first, no invented hexes, no webfonts, no frameworks, single self-contained file.</li>
+  <li>Product depictions use the <code>.pn</code> replica kit and the Northlake mock workspace — same cast, same ids, DTO-true shapes.</li>
+  <li>Motion follows the grammar: named durations and easings, starts-teaches-settles, nothing loops forever, nothing banned.</li>
+  <li><code>prefers-reduced-motion</code> yields a genuine still-frame variant; nothing autoplays under it.</li>
+  <li>Everything mouse-drivable is keyboard-drivable; focus is visible everywhere; semantics are real (<code>button</code>, <code>a</code>, one <code>h1</code>, ordered headings).</li>
+  <li>Contrast ≥ 4.5:1 text / 3:1 UI in both themes; no color-only state.</li>
+  <li>Skeleton, voice and honesty devices match this page; footer carries the date stamp; no cross-artifact links. Would you show it as an example of good work?</li>
+</ol>
+</section>
+
+<!-- ================= COPY-PASTE BLOCK ================= -->
+<section aria-labelledby="h-copy">
+<h2 id="h-copy"><span class="no">11</span>The copy-paste foundation block</h2>
+<p>One button, three parts, lifted verbatim from this very page: the foundation <code>&lt;style&gt;</code> (tokens + every component above), the <code>#tm8-icons</code> SVG defs (all 21 kinds), and the foundation <code>&lt;script&gt;</code> (reduced-motion helper, <code>TM8.stepper</code>, toggle wiring, <code>TM8_MOCK</code>). Paste them into your artifact's <code>index.html</code> and build on top — the copy is generated from the live blocks, so it can never drift from the spec.</p>
+<p><button class="btn btn--primary" type="button" id="copy-btn">Copy the foundation block</button> <span class="caption" id="copy-status" aria-live="polite"></span></p>
+<details>
+  <summary style="cursor:pointer;color:var(--accent);font-weight:600">Show the block inline</summary>
+  <div class="term" style="max-height:420px;overflow:auto">
+    <div class="term__bar" aria-hidden="true"><span class="term__name">foundation block — generated from this page</span></div>
+    <pre id="copy-preview"><span class="out">loading…</span></pre>
+  </div>
+</details>
+</section>
+
+<!-- ================= BUILDER NOTES ================= -->
+<section aria-labelledby="h-notes">
+<h2 id="h-notes"><span class="no">12</span>Builder notes (truth floor, applied)</h2>
+<ul>
+  <li><strong>Mock data is fine and expected.</strong> Northlake is fiction. What must be REAL is the shapes (DTO-true fields), the syntax (every command from <code>tm8 help</code>), and the behaviours depicted (things tm8 actually does). Fiction in the nouns, truth in the verbs.</li>
+  <li>Never let an animation smuggle in a nonexistent feature — if the sequence shows it happening, tm8 must do it, or it wears ghost ink.</li>
+  <li>Harvest at build time what this foundation cannot fix: real CLI output for your section's commands, exact model ids, edge legality from <code>tm8 edge type list</code>.</li>
+  <li>Where the contract is silent, this foundation has chosen (durations, ghost constants, identity shapes, the <code>.pn</code> replica layer); where the contract speaks, it wins.</li>
+</ul>
+<h3>What v2 changed, and why</h3>
+<ul>
+  <li><strong>An editorial voice on system stacks.</strong> Display and body set in the system serifs (Iowan Old Style / Palatino / Charter / Georgia) — the bigger the text, the lighter it sets. Labels, kinds and figures stay mono. No webfonts, as the contract demands.</li>
+  <li><strong>Color re-grounded in the product.</strong> The Help accent is now bronze (<code>#A97B2F</code>), harmonizing with tm8-ui’s own brass (<code>#B26A2B</code>) and warm paper — replicas no longer clash with the pages that frame them. The second series moved teal → slate (<code>#54708D</code>) so gold stays the only warm accent.</li>
+  <li><strong>Stroke, not fill.</strong> Buttons are outlined, pills are stroked, rules and underlines carry the accent. The only solid dark field on any page is the terminal canvas — which is the point.</li>
+  <li><strong>Sharper edges.</strong> Radius 10px → 4px; card shadows removed. Hairlines carry depth.</li>
+  <li><strong>The terminal re-cut.</strong> Matted plate frame, a named bar (<code>workspace — session</code>) with a <code>PTY</code> tag instead of traffic-light dots — instantly “tm8 Help”, not “a mac window”.</li>
+  <li><strong>The control cluster machined into one instrument</strong> — a single bordered transport bar: play / step / scrub / tabular counter.</li>
+  <li><strong>Kept from v1, deliberately:</strong> motion constants 120/180/280ms and easings, ghost ink 0.62 + <code>5 4</code> dash, identity shapes (circle = member, rounded square = teammate), the 21 harvested icons, the Northlake mock, the replica kit, and the self-generating copy block.</li>
+</ul>
+</section>
+
+</main>
+
+<footer class="site" hidden aria-hidden="true">Last updated 2026-08-20 · Design foundation · tm8 Help v2 · <span class="stamp">tokens verified against tm8-ui palette on 2026-08-20</span></footer>
+
+<script id="tm8-foundation-js">
+/* ============================================================
+   tm8 Help — FOUNDATION SCRIPT (v2 — unchanged from v1)
+   Lift this <script> verbatim. Provides:
+   - TM8.reduced()          honest prefers-reduced-motion check
+   - TM8.stepper(root,opts) the ONE sequence driver (play/step/scrub)
+   - toggle2 wiring         the ONE "type / comes back" toggle
+   - TM8_MOCK               the shared Northlake mock workspace
+   ============================================================ */
+(function () {
+  'use strict';
+  var TM8 = {};
+  var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  TM8.reduced = function (el) {
+    return mq.matches || !!(el && el.closest && el.closest('.force-reduced'));
+  };
+
+  /* The standard control cluster. root contains .tmc-play, .tmc-step,
+     .tmc-scrub, .tmc-count. opts = { frames, render(i), intervalMs?, captions?[] }.
+     Play runs ONCE to the last frame and stops (starts, teaches, settles).
+     Under reduced motion, Play advances frame by frame with no animation. */
+  TM8.stepper = function (root, opts) {
+    var frames = opts.frames, i = 0, timer = null;
+    var play = root.querySelector('.tmc-play');
+    var step = root.querySelector('.tmc-step');
+    var scrub = root.querySelector('.tmc-scrub');
+    var count = root.querySelector('.tmc-count');
+    var cap = root.querySelector('[data-replay-caption]');
+    function render() {
+      opts.render(i);
+      if (scrub) scrub.value = String(i);
+      if (count) count.textContent = (i + 1) + ' / ' + frames;
+      if (cap && opts.captions) cap.textContent = opts.captions[i] || '';
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (play) play.textContent = 'Play';
+    }
+    function set(n) { i = Math.max(0, Math.min(frames - 1, n)); render(); }
+    if (play) play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      if (i >= frames - 1) set(0);
+      play.textContent = 'Pause';
+      var ms = opts.intervalMs || 1400;
+      if (TM8.reduced(root)) ms = Math.max(ms, 1800); /* no motion: give reading time */
+      timer = setInterval(function () {
+        if (i >= frames - 1) { stop(); return; }
+        set(i + 1);
+      }, ms);
+    });
+    if (step) step.addEventListener('click', function () { stop(); set(i >= frames - 1 ? 0 : i + 1); });
+    if (scrub) scrub.addEventListener('input', function () { stop(); set(parseInt(scrub.value, 10) || 0); });
+    render();
+    return { set: set, stop: stop };
+  };
+
+  /* toggle2: [data-toggle2] with button[data-pane] + [data-pane-id] panes */
+  TM8.wireToggles = function (scope) {
+    (scope || document).querySelectorAll('[data-toggle2]').forEach(function (box) {
+      var btns = box.querySelectorAll('button[data-pane]');
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          btns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+          box.querySelectorAll('[data-pane-id]').forEach(function (p) {
+            p.classList.toggle('is-shown', p.getAttribute('data-pane-id') === b.getAttribute('data-pane'));
+          });
+        });
+      });
+    });
+  };
+
+  /* ---- TM8_MOCK: the Northlake workspace (fiction; DTO-true shapes) ----
+     Shapes follow tm8.entity-context.v1 output, trimmed to rendered fields.
+     Ids are v7-shaped and fake. Model ids are NOT invented: teammates carry
+     provider only; harvest exact model ids from the live catalog if needed. */
+  var SPACE = '01a09e00-0000-7000-8000-1c2d3e4f5a6b';
+  function member(id, name, initials) {
+    return { id: id, kind: 'member', displayName: name, initials: initials, isAgent: false };
+  }
+  function teammate(id, name, initials, provider, role) {
+    return { id: id, kind: 'team_member', displayName: name, initials: initials,
+             isAgent: true, provider: provider, role: role || null, avatar: null,
+             ownerMemberId: '01a09e01-1111-7111-8111-aaaaaaaaaaa1' };
+  }
+  var MARA = member('01a09e01-1111-7111-8111-aaaaaaaaaaa1', 'Mara Voss', 'MV');
+  var THEO = member('01a09e02-2222-7222-8222-bbbbbbbbbbb2', 'Theo Iwu', 'TI');
+  var JUNIPER = teammate('01a09e10-3333-7333-8333-ccccccccccc3', 'Juniper', 'JU', 'claude-code');
+  var CALLISTO = teammate('01a09e11-4444-7444-8444-ddddddddddd4', 'Callisto', 'CA', 'codex');
+  var DISPATCHER = teammate('01a09e12-5555-7555-8555-eeeeeeeeeee5', 'Dispatcher', 'DI', 'claude-code', 'routes, never works');
+  var DREAMER = teammate('01a09e13-6666-7666-8666-fffffffffff6', 'Dreamer', 'DR', 'claude-code', 'tends memories, never deletes');
+  function task(id, title, status, category, priority, assignees, accDone, accTotal, version, extra) {
+    var t = {
+      id: id, spaceId: SPACE, kind: 'task', title: title, parentId: null,
+      visibility: 'space', version: version, category: category,
+      counters: { likes: 0, dislikes: 0, stars: 0, points: 0,
+        messages: (extra && extra.messages) || 0,
+        humanMessages: (extra && extra.humanMessages) || 0,
+        agentMessages: (extra && extra.agentMessages) || 0,
+        docs: 0, memories: 0, viewerReaction: null },
+      state: { kind: 'task', status: status, priority: priority, axes: {},
+        dueDate: null, assignees: assignees,
+        assignments: assignees.map(function (a) {
+          return { assignee: a, assignedBy: MARA, assignedAt: '2026-08-19T10:04:00.000Z' };
+        }),
+        acceptance: { total: accTotal, completed: accDone },
+        completionGate: (extra && extra.gate) || 'none' }
+    };
+    return t;
+  }
+  window.TM8_MOCK = {
+    space: { id: SPACE, name: 'Northlake' },
+    members: [MARA, THEO],
+    teammates: [JUNIPER, CALLISTO, DISPATCHER, DREAMER],
+    tasks: [
+      task('01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11', 'Fix login redirect loop', 'working', 'in_progress', 'high', [JUNIPER], 1, 3, 4, { messages: 3, humanMessages: 1, agentMessages: 2 }),
+      task('01a09f22-5d10-7b22-9c3f-1e4a6b8d0f22', 'Ship invite flow', 'in_review', 'in_progress', 'medium', [CALLISTO, THEO], 4, 4, 7, { gate: 'pr_merged' }),
+      task('01a09f23-6e20-7c33-8d40-2f5b7c9e1a33', 'Write release notes', 'open', 'to_do', 'low', [], 0, 2, 1),
+      task('01a09f24-7f30-7d44-9e51-3a6c8d0f2b44', 'Retire legacy webhook', 'done', 'done', 'medium', [JUNIPER], 2, 2, 9)
+    ],
+    session: {
+      id: '01a09f40-8a40-7e55-8f62-4b7d9e1a3c55', spaceId: SPACE, kind: 'work_session',
+      title: 'Juniper — login redirect loop', version: 2,
+      state: { kind: 'work_session', teammate: JUNIPER, provider: 'claude-code',
+               accessMode: 'fullAccess', workdir: 'worktree', live: true }
+    },
+    messages: [
+      { id: '01a09f50-9b50-7f66-8a73-5c8e0f2b4d66', kind: 'message',
+        author: MARA, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:12:00.000Z',
+        body: 'The loop only happens after a password change — can you check the session cookie path?' },
+      { id: '01a09f51-0c60-7a77-8b84-6d9f1a3c5e77', kind: 'message',
+        author: JUNIPER, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:14:00.000Z',
+        body: 'Confirmed. The redirect target is cached before the credential rotates. Fixing in the worktree; acceptance 1/3 done.' },
+      { id: '01a09f52-1d70-7b88-8c95-7e0a2b4d6f88', kind: 'message',
+        author: THEO, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:20:00.000Z',
+        body: 'Nice — leave the guard behind a comment, QA wants to trace it.' }
+    ]
+  };
+  window.TM8 = TM8;
+  document.addEventListener('DOMContentLoaded', function () { TM8.wireToggles(document); });
+}());
+</script>
+
+<script>
+/* Page-specific script for the foundation artifact itself.
+   (Not part of the copy-paste block.) */
+(function () {
+  'use strict';
+
+  /* --- token swatches --- */
+  var TOKENS = [
+    ['--bg', '#F2EFE9', '#181511', 'page — warm paper'],
+    ['--surface', '#FAF8F3', '#1F1B15', 'cards, panels'],
+    ['--ink', '#211F1A', '#E9E2D2', 'primary text'],
+    ['--muted', '#6E6759', '#A79E8B', 'secondary text'],
+    ['--line', '#DDD6C8', '#373025', 'hairlines'],
+    ['--line-strong', '#B9AF9B', '#57503F', 'node strokes, masthead rules'],
+    ['--accent', '#A97B2F', '#C99C52', 'bronze — strokes, marks, focus'],
+    ['--accent-ink', '#7C5A1E', '#D8B36C', 'links, accent-colored text'],
+    ['--accent-2', '#54708D', '#8CA8C4', 'second data series'],
+    ['--code-bg', '#1A1713', '#100E0A', 'terminal (dark in BOTH themes)'],
+    ['--code-ink', '#D9D3C7', '#D6D0C3', 'terminal text'],
+    ['--code-accent', '#C99C52', '#C99C52', 'prompt glyphs (fixed, both themes)'],
+    ['--ok', '#41784E', '#7CB98B', 'success, liveness'],
+    ['--warn', '#8F5B0B', '#D9A94E', 'caution, honest gaps'],
+    ['--danger', '#A93B32', '#DD8074', 'refusal, error']
+  ];
+  var sw = document.getElementById('swatches');
+  TOKENS.forEach(function (t) {
+    var d = document.createElement('div');
+    d.className = 'card';
+    d.style.padding = '12px 14px';
+    d.innerHTML =
+      '<div style="height:34px;border-radius:6px;border:1px solid var(--line);background:var(' + t[0] + ')"></div>' +
+      '<div class="mono" style="font-size:13px;margin-top:8px"><strong>' + t[0] + '</strong></div>' +
+      '<div class="caption mono">light ' + t[1] + ' · dark ' + t[2] + '</div>' +
+      '<div class="caption">' + t[3] + '</div>';
+    sw.appendChild(d);
+  });
+
+  /* --- icon grid: all 21 kinds + custom fallback --- */
+  var KINDS = ['artifact','channel','collection','commit','doc','file','graph',
+    'interaction_profile','loop','member','memory','message','project','pull_request',
+    'skill','spell','task','team_member','voice_channel','work_session','worktree','custom'];
+  var ig = document.getElementById('icon-grid');
+  KINDS.forEach(function (k) {
+    var d = document.createElement('div');
+    d.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink)';
+    d.innerHTML = '<svg class="ki" style="color:var(--accent)"><use href="#ki-' + k + '"/></svg>' +
+      '<code style="font-size:12px">' + (k === 'custom' ? 'c:* (fallback)' : k) + '</code>';
+    ig.appendChild(d);
+  });
+
+  /* --- centrepiece replays --- */
+  var CAPTIONS = [
+    'A space. Nothing else yet.',
+    '“create a task for the login bug” — a task node joins the space.',
+    '“spawn someone on it” — a session starts; working_on draws; the liveness dot runs.',
+    '“attach the design doc” — attached_to brings the doc into the task\u2019s context.',
+    'The agent replies — the message anchors to the task. The chat itself is in the graph.'
+  ];
+  document.querySelectorAll('[data-replay]').forEach(function (panel) {
+    var nodes = panel.querySelectorAll('[data-f]');
+    function show(el, on) {
+      el.style.opacity = on ? '' : '0';
+      if (el.classList.contains('gnode')) {
+        var tf = el.getAttribute('transform').match(/translate\(([\d.]+),([\d.]+)\)/);
+        if (tf) el.setAttribute('transform', 'translate(' + tf[1] + ',' + tf[2] + ')' + (on ? '' : ' scale(0.92)'));
+      }
+    }
+    TM8.stepper(panel, {
+      frames: 5,
+      captions: CAPTIONS,
+      intervalMs: 1500,
+      render: function (i) {
+        nodes.forEach(function (el) {
+          show(el, parseInt(el.getAttribute('data-f'), 10) <= i);
+        });
+      }
+    });
+  });
+
+  /* --- starts-teaches-settles demo --- */
+  var stsBtn = document.getElementById('sts-btn');
+  var stsEdge = document.getElementById('sts-edge');
+  var stsCap = document.getElementById('sts-caption');
+  stsEdge.style.transition = 'opacity var(--dur-slow) var(--ease-out)';
+  stsBtn.addEventListener('click', function () {
+    var on = stsEdge.style.opacity !== '1';
+    stsEdge.style.opacity = on ? '1' : '0';
+    stsCap.textContent = on ? 'attached_to drawn once at 280ms — the scene rests. No loop.' : '';
+    stsBtn.textContent = on ? 'Detach it' : 'Attach the doc';
+  });
+
+  /* --- product replicas from TM8_MOCK --- */
+  var M = window.TM8_MOCK;
+  var CAT = { to_do: 'idle', in_progress: 'run', done: 'run', cancelled: 'block' };
+  var STATUS_TONE = { open: 'idle', pulled: 'idle', working: 'run', in_review: 'info', blocked: 'block', done: 'run', cancelled: 'block' };
+  function pill(t) {
+    var tone = STATUS_TONE[t.state.status] || 'idle';
+    var dot = t.state.status === 'working'
+      ? '<span class="pn-pill__dot pn-pill__dot--pulse"></span>'
+      : (t.category === 'to_do' ? '<span class="pn-pill__dot pn-pill__dot--hollow"></span>' : '<span class="pn-pill__dot"></span>');
+    return '<span class="pn-pill pn-pill--' + tone + '">' + dot + t.state.status.replace('_', ' ').toUpperCase() + '</span>';
+  }
+  function avatarHtml(a, size) {
+    var cls = a.isAgent ? 'pn-avatar--agent pn-avatar--tone-brand' : 'pn-avatar--human pn-avatar--tone-info';
+    return '<span class="pn-avatar ' + cls + '" aria-hidden="true">' + a.initials + '</span>';
+  }
+  function card(t) {
+    var acc = t.state.acceptance;
+    var who = t.state.assignees.map(function (a) { return avatarHtml(a); }).join('');
+    return '<div class="pn-tcard"><div class="pn-tcard__title">' + t.title + '</div>' +
+      '<div class="pn-tcard__meta">' + pill(t) +
+      '<span class="pn-tcard__accept">' + acc.completed + '/' + acc.total + ' ✓</span>' +
+      (t.state.completionGate !== 'none' ? '<span class="pn-pill pn-pill--wait">GATE: PR MERGED</span>' : '') +
+      '<span style="margin-left:auto;display:inline-flex;gap:4px">' + who + '</span></div></div>';
+  }
+  var COLS = [['TO DO', 'to_do'], ['IN PROGRESS', 'in_progress'], ['DONE', 'done']];
+  document.querySelectorAll('[data-board]').forEach(function (frame) {
+    frame.innerHTML = '<div style="display:flex;gap:10px;overflow-x:auto">' + COLS.map(function (c) {
+      var cards = M.tasks.filter(function (t) { return t.category === c[1]; }).map(card).join('');
+      var n = M.tasks.filter(function (t) { return t.category === c[1]; }).length;
+      return '<div class="pn-col" style="flex:1 1 0;min-width:200px"><div class="pn-col__head"><span>' + c[0] +
+        '</span><span>' + n + '</span></div><div class="pn-col__body">' + cards + '</div></div>';
+    }).join('') + '</div>';
+  });
+
+  /* --- discussion thread from TM8_MOCK --- */
+  var thread = document.querySelector('[data-thread]');
+  if (thread) {
+    thread.innerHTML = M.messages.map(function (m) {
+      var me = m.author.id === M.members[0].id;
+      var agent = m.author.isAgent;
+      var cls = 'pn-turn' + (me ? ' pn-turn--me' : '') + (agent ? ' pn-turn--agent' : '');
+      var time = m.createdAt.slice(11, 16);
+      return '<div class="' + cls + '"><div class="pn-turn__byline">' + avatarHtml(m.author) +
+        '<strong>' + m.author.displayName + '</strong><span>' + (agent ? 'teammate' : 'member') +
+        '</span><time>' + time + '</time></div><div class="pn-bubble">' + m.body + '</div></div>';
+    }).join('');
+  }
+
+  /* --- mock preview excerpt --- */
+  var mp = document.getElementById('mock-preview');
+  var excerpt = { space: M.space, teammates: [M.teammates[0]], tasks: [M.tasks[0]] };
+  mp.innerHTML = '<span class="out">' + JSON.stringify(excerpt, null, 2)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .split('\n').slice(0, 34).join('\n') + '\n  …</span>';
+
+  /* --- copy-paste foundation block, generated from the live blocks --- */
+  function foundationText() {
+    var css = document.getElementById('tm8-foundation').textContent;
+    var icons = document.getElementById('tm8-icons').outerHTML;
+    var js = document.getElementById('tm8-foundation-js').textContent;
+    return '<style id="tm8-foundation">' + css + '<' + '/style>\n\n' + icons +
+      '\n\n<script id="tm8-foundation-js">' + js + '<' + '/script>\n';
+  }
+  var copyBtn = document.getElementById('copy-btn');
+  var copyStatus = document.getElementById('copy-status');
+  copyBtn.addEventListener('click', function () {
+    var text = foundationText();
+    function done(ok) {
+      copyStatus.textContent = ok
+        ? 'Copied — ' + Math.round(text.length / 1024) + ' KB, three blocks.'
+        : 'Copy failed — open the block below and copy manually.';
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+    } else { done(false); }
+  });
+  document.querySelector('details').addEventListener('toggle', function (e) {
+    if (e.target.open) {
+      var pre = document.getElementById('copy-preview');
+      pre.textContent = foundationText();
+    }
+  });
+}());
+</script>
+<script id="memory-replay-js">
+(function () {
+  'use strict';
+  var root = document.getElementById('memory-replay');
+  var wrapper = root.closest('.memory-lab');
+  var stageState = document.getElementById('stage-state');
+  var sourceTeammate = document.getElementById('source-teammate');
+  var sourceTask = document.getElementById('source-task');
+  var dispatcher = document.getElementById('dispatcher-step');
+  var withoutTask = document.getElementById('without-task-slot');
+  var withoutResult = document.getElementById('without-result');
+  var withResult = document.getElementById('with-result');
+  var stateLabels = [
+    'Ready to spawn',
+    'Persona attached',
+    'Task selection resolved',
+    'Work in progress',
+    'Comparison settled'
+  ];
+  var captions = [
+    'The teammate and task already remember their blocks. No session has spawned yet.',
+    'Dispatcher spawns both sessions. Juniper’s persona working set lands first in both context trays.',
+    'Task memories come next. The comparison omits one task memory; the remembered run receives it in slot two.',
+    'Both sessions work the same task. The remembered run clears the cached redirect target before it retests.',
+    'The remembered run avoids the recorded trap. Reading and injecting these memories created no new memory entity.'
+  ];
+  function setClass(nodes, name, on) {
+    nodes.forEach(function (node) { node.classList.toggle(name, on); });
+  }
+  function land(nodes) {
+    if (window.TM8.reduced(root)) return;
+    nodes.forEach(function (node) {
+      node.classList.remove('memory-land');
+      void node.offsetWidth;
+      node.classList.add('memory-land');
+    });
+  }
+  function render(i) {
+    root.setAttribute('data-frame', String(i));
+    stageState.textContent = stateLabels[i];
+    sourceTeammate.classList.toggle('is-active', i === 1);
+    sourceTask.classList.toggle('is-active', i === 2);
+    dispatcher.classList.toggle('is-active', i === 1 || i === 2);
+
+    var personaSlots = Array.prototype.slice.call(root.querySelectorAll('.persona-slot'));
+    var taskSlots = Array.prototype.slice.call(root.querySelectorAll('.task-slot'));
+    setClass(personaSlots, 'is-arrived', i >= 1);
+    taskSlots.forEach(function (slot) {
+      if (slot !== withoutTask) slot.classList.toggle('is-arrived', i >= 2);
+    });
+    withoutTask.classList.toggle('is-absent', i >= 2);
+    withoutTask.querySelector('span').textContent = i >= 2 ? 'Not selected for this comparison run.' : 'Waiting for spawn selection…';
+    if (i === 1) land(personaSlots);
+    if (i === 2) land(taskSlots.filter(function (slot) { return slot !== withoutTask; }));
+
+    setClass(Array.prototype.slice.call(root.querySelectorAll('.log-1, .log-2, .log-3')), 'is-seen', i >= 3);
+    setClass(Array.prototype.slice.call(root.querySelectorAll('.log-4')), 'is-seen', i >= 4);
+
+    withoutResult.className = 'result-row' + (i >= 4 ? ' is-bad' : '');
+    withResult.className = 'result-row' + (i >= 4 ? ' is-ok' : '');
+    withoutResult.querySelector('strong').textContent = i >= 4 ? 'Trap repeated · cached target survives' : 'Outcome pending';
+    withResult.querySelector('strong').textContent = i >= 4 ? 'Trap avoided · redirect resolves once' : 'Outcome pending';
+
+    var scrub = wrapper.querySelector('.tmc-scrub');
+    if (scrub) scrub.setAttribute('aria-valuetext', stateLabels[i]);
+  }
+  window.TM8.stepper(wrapper, {
+    frames: 5,
+    render: render,
+    captions: captions,
+    intervalMs: 1450
+  });
+}());
+</script>
+</body>
+</html>

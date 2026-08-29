@@ -291,6 +291,19 @@
   border-radius: var(--pn-r-lg);
   border-color: color-mix(in srgb, var(--pn-line-2) 68%, var(--pn-line));
   box-shadow: var(--pn-sh-sm);
+  /* A CARD IS NEVER SHRUNK TO HIDE ITS CONTENT. `.sb-body` is a fixed-height
+     scrolling flex column, so every card here is a flex item with the default
+     `flex-shrink: 1`. That is survivable only while the item keeps its
+     content-based automatic minimum size — and per Flexbox §4.5 an item loses
+     it the moment its own `overflow` stops being `visible`. Any decoration
+     that clips (a gradient accent bar, a rounded tint, a future `overflow:
+     hidden`) therefore silently licenses this column to crush the card to
+     nothing: measured 2026-08-29 on prod `6423d07d`, the description card sat
+     32px tall around 282px of prose and clipped all of it, unscrollable.
+     Pinning `flex: none` makes the column scroll — which is what it is for —
+     instead of the cards collapsing, and it holds no matter what is applied
+     on top later. */
+  flex: none;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-description, .sb-section, .pn-fold) {
@@ -434,10 +447,13 @@
   text-wrap: pretty;
 }
 
+/* The bar is the whole meter now: the `n/m` that used to sit beside it was the
+   THIRD printing of one number on this screen (fold head, summary, meter), and
+   the fold head keeps the copy that is always visible. */
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__meter {
   min-inline-size: 0;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   align-items: center;
   gap: var(--pn-space-2);
 }
@@ -446,29 +462,15 @@
   min-inline-size: 0;
 }
 
-.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__fraction {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-micro);
-  font-weight: 600;
-  color: var(--pn-ink-2);
-}
-
+/* One quiet line, not a dashed box. The empty state says the same thing the
+   pre-redesign panel said, in the pre-redesign weight — a framed callout for
+   "there is nothing here" spent a card's worth of attention on an absence. */
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__empty {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pn-space-1);
-  padding: var(--pn-space-4);
-  border: 1px dashed var(--pn-line-2);
-  border-radius: var(--pn-r-md);
   color: var(--pn-ink-3);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__empty > * {
   margin: 0;
-}
-
-.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__empty span {
-  font-size: var(--pn-fs-label);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__head {
