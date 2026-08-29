@@ -170,30 +170,20 @@
   top: calc(100% + 6px);
   left: 0;
 }
-/* The palette chip rides the same 32px control rhythm as the bell and the
-   avatar. RECLASSIFIED (W3 sweep): "palette" is a chip WORD, so the chip
-   speaks Figtree at the interactive floor — the ⌘K it prints rides along in
-   the same face because the words and keys share one text node. Hover keeps
-   the W3 lift and gains the kit grammar's quiet fill; neither touches the
-   brand accent, which stays with selection. */
+/* The palette chip. RECLASSIFIED (W3 sweep): "palette" is a chip WORD, so the
+   chip speaks Figtree at the interactive floor — the ⌘K it prints rides along
+   in the same face because the words and keys share one text node. Hover keeps
+   the W3 lift; it never touches the brand accent, which stays with selection.
+
+   Its BOX — height, border, radius, background, inset, the resting type — is
+   no longer stated here. It is one of the four controls in the right cluster
+   and it takes that cluster's single grammar (see "ONE CONTROL GRAMMAR" below
+   the account rules). Restating the same eight declarations per control is how
+   the four drifted into three heights in the first place. */
 .cv2-root .shell-tabbar__palette {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  box-sizing: border-box;
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-sm);
-  font-weight: 500;
-  color: var(--pn-ink-2);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  padding: 0 10px;
-  background: var(--pn-card);
-  cursor: pointer;
   transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-root .shell-tabbar__palette:hover {
-  background: var(--pn-hover);
   box-shadow: var(--pn-sh-sm);
 }
 .cv2-root .shell-tabbar__avatar {
@@ -220,6 +210,82 @@
   width: 22px;
   height: 22px;
   font-size: 9.5px;
+}
+
+/* --- ONE CONTROL GRAMMAR FOR THE BAR'S RIGHT CLUSTER ---------------------
+   ("organise the icons", 2026-08-29.)
+
+   MEASURED, at 1512px, on every one of the eight routes: the four controls
+   after the spacer rendered as FOUR different objects.
+
+     palette     32px   1px solid --pn-line   r-sm    --pn-card
+     bell        32px   1px solid --pn-line   r-sm    --pn-card
+     copy link   26.6px 2px OUTSET            0px     ButtonFace   <-- the UA
+     account     21.8px 1px transparent       pill    transparent
+
+   Three heights, three border grammars, three radii, in a 44px bar. The copy
+   link was the loud one: `share/copy-link.css` sets only `display` and `gap`
+   on `.copy-link__button`, so that control had NO border, background, height
+   or radius of its own and fell all the way through to the user agent's
+   `border: 2px outset ButtonBorder` — the grey 3-D system button visible in
+   both of the owner's screenshots, wedged between two designed chips. That is
+   not a colour choice anyone made; it is the absence of one.
+
+   The bar asserts the rhythm on WHATEVER A HOST MOUNTS IN ITS SLOTS, which is
+   the only place that can be done: `shareSlot` and `accountSlot` are opaque
+   `ReactNode`s by design (SpaceTabBar has no business knowing how a link is
+   built), so the bar cannot style them at the source and must not try to. It
+   is also the pattern this file already used for the account trigger directly
+   above. Descendant-scoped `.shell-tabbar` so nothing outside the bar moves:
+   the same CopyLinkControl mounted in a panel keeps its own clothes.
+
+   The tabs tray, the switcher pill and the product mark are NOT in here. They
+   are the bar's left half — identity and navigation — and they already read as
+   one group. This is the utilities cluster only. */
+.cv2-root .shell-tabbar__palette,
+.cv2-root .shell-tabbar__bell,
+.cv2-root .shell-tabbar .copy-link__button,
+.cv2-root .shell-tabbar .auth-accountmenu__trigger {
+  /* The bar's one control height (W3 sweep), now actually held by all four. */
+  height: 32px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+/* ONE hover for the cluster, matching the palette chip's existing lift. */
+.cv2-root .shell-tabbar__palette:hover,
+.cv2-root .shell-tabbar__bell:hover,
+.cv2-root .shell-tabbar .copy-link__button:hover,
+.cv2-root .shell-tabbar .auth-accountmenu__trigger:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+  border-color: var(--pn-line);
+}
+/* The bell is the cluster's one ICON-ONLY control, so it is square rather
+   than word-width. Kept a real 32x32 target (Fitts) — it does not shrink to
+   its 15px mark. */
+.cv2-root .shell-tabbar__bell {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  color: var(--pn-ink-3);
+}
+/* The account trigger leads with a 22px avatar, so its left inset is the
+   avatar's own — the 10px word inset above would double it. Its open state
+   still comes from auth.css and is untouched. */
+.cv2-root .shell-tabbar .auth-accountmenu__trigger {
+  padding: 0 8px 0 3px;
+  max-width: 180px;
 }
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */
@@ -1772,23 +1838,14 @@
 
    The former `.shell-tabbar__help` selector was retired with the `?` control
    on 2026-08-20: Help now owns the final shipped tab. */
+/* Its BOX comes from the right cluster's one grammar, exactly as the palette
+   chip's does — see "ONE CONTROL GRAMMAR" up by the account rules, which also
+   carries the square-and-centred override this control needs as the cluster's
+   only icon-only member. Only the hover lift is stated here. */
 .cv2-root .shell-tabbar__bell {
-  display: grid;
-  place-items: center;
-  /* 32px — the bar's control rhythm (W3 sweep), same as the palette chip
-     beside it. */
-  width: 32px;
-  height: 32px;
-  box-sizing: border-box;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-card);
-  color: var(--pn-ink-3);
-  font-size: 12px;
-  cursor: pointer;
   transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); background: var(--pn-hover); box-shadow: var(--pn-sh-sm); }
+.cv2-root .shell-tabbar__bell:hover { box-shadow: var(--pn-sh-sm); }
 .cv2-root .shell-tabbar__bell[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
 
 /* Kinetic (W3) — the bar's hover-lift transitions, stilled for anyone who

@@ -54,7 +54,8 @@
  * canvas would be restoring a retired control.
  */
 import type { ReactNode } from 'react';
-import { BrandMark } from '../kit';
+import { BrandMark, VectorIcon } from '../kit';
+import { VIEW_ART } from '../domain';
 
 /** One top-level tab — a menu GROUP, mapped by the host. */
 export interface ShellTab {
@@ -180,9 +181,22 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
         title={props.onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'}
         onClick={props.onOpenInbox ?? ((event) => event.preventDefault())}
       >
-        {/* ▣ — a tray, not an arrow. The old ◹ sat beside the ↗ copy-link
-            control: two arrows, unrelated meanings, and ◹ read as "share". */}
-        <span aria-hidden="true">▣</span>
+        {/* A DRAWN tray, not a typed one (2026-08-29 "organise the icons").
+            This was the literal character ▣ (U+25A3, Geometric Shapes). The
+            self-hosted webfonts are latin/latin-ext subsets, so that codepoint
+            missed every one of them and fell through to whatever the OS had:
+            on the owner's window it painted as a solid black square — a
+            redaction mark — and it was the ONLY typed icon in a bar whose
+            every other mark (the product mark, the rail, the kind rows) is
+            VectorIcon geometry. An icon must not depend on a codepoint the
+            product does not ship.
+
+            The art is `VIEW_ART.inbox` — the INBOX VIEW'S OWN MARK, not a new
+            drawing. The bell is Inbox's door, so the door and the room now
+            carry one mark; a second tray drawn only for this button is exactly
+            the icon sprawl the ruling names. It is also, finally, the tray the
+            old comment here claimed ▣ was. */}
+        <VectorIcon paths={VIEW_ART.inbox} size={15} />
       </button>
 
       {props.shareSlot ?? null}
