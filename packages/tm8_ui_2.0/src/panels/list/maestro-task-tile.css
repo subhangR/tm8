@@ -126,16 +126,12 @@
    session row that was not. */
 .cv2-root .pn-tt {
   --tt-indent: 0px;
-  /* THE TITLE NEVER RUNS UNDER THE ACTION CLUSTER. The cluster is absolutely
-     positioned by design (that is what holds the row to the 29px floor — see
-     `.pn-tt__actions`), so on hover it painted OVER the right half of a long
-     title and a click at the title's midpoint hit an action instead. The fix
-     reserves the cluster's footprint as right padding on `.pn-tt__main`
-     rather than putting the buttons back in flow: worst case the cluster is
-     four 22px controls (Collections · Run · Archive · details caret) + three
-     2px gaps + 7px own padding = 101px, anchored 6px off the row edge =
-     107px. Narrow-container and mobile rules below re-tune or drop it. */
-  --tt-actions-reserve: 107px;
+  /* THE TITLE NEVER RUNS UNDER THE ACTION CLUSTER. The cluster stays absolute
+     to preserve the 29px desktop row, while `.pn-tt__main` below derives its
+     end reserve from the number of controls ACTUALLY rendered. This value is
+     only the one-slot floor (22px control + 7px leading pad + 6px edge); the
+     child-count selectors replace it for every larger cluster. */
+  --tt-actions-reserve: 35px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -211,13 +207,23 @@
   padding: 6px var(--tt-actions-reserve) 6px calc(7px + var(--tt-indent));
   cursor: pointer;
 }
+/* THE RESERVE IS THE RENDERED CLUSTER, NOT A KIND INVENTORY. RowActionCluster
+   owns which controls exist and their order; these selectors merely measure
+   its direct slots. At the desktop gap, N slots consume 22N + 2(N-1) + 7px
+   cluster padding + 6px edge anchor. Enumerating the bounded registry surface
+   keeps the arithmetic compatible with every browser we ship without teaching
+   this stylesheet that a task "has" any particular verbs. */
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-reserve: 59px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-reserve: 83px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-reserve: 107px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-reserve: 131px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-reserve: 155px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-reserve: 179px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-reserve: 203px; }
 .cv2-root .pn-tt__arrow {
-  position: absolute;
-  top: 6px;
-  left: calc(7px + var(--tt-indent));
-  z-index: 3;
   width: 16px;
   height: 16px;
+  flex: 0 0 16px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -232,10 +238,11 @@
 /* Always visible on a row that HAS children, for the reason `.pn-st__arrow`
    records and `.lp__disclosure` now shares: since trees ship collapsed
    (2026-08-17) this chevron is the only thing on screen saying there is more
-   under this task, and hover-to-discover is not discovery. It overlays the
-   status dot exactly as it already does whenever the row is expanded — that
-   trade was made when the chevron was given this slot, and this only makes it
-   symmetric between the two states. */
+   under this task, and hover-to-discover is not discovery. It owns a distinct
+   flex slot before the live status control: overlaying those two buttons made
+   the disclosure's higher stacking layer steal the status control's hit target
+   on every parent row. The empty form keeps the same slot, so titles and status
+   marks do not shift between parents and leaves. */
 .cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 0.55; }
 .cv2-root .pn-tt:hover .pn-tt__arrow:not(.pn-tt__arrow--empty),
 .cv2-root .pn-tt:focus-within .pn-tt__arrow:not(.pn-tt__arrow--empty),
@@ -254,12 +261,7 @@
   transition: transform 140ms;
 }
 .cv2-root .pn-tt__arrow--expanded svg { transform: rotate(90deg); }
-/* The empty arrow is DECORATION on a row with no children, yet it is an
-   absolutely-positioned 16px box sitting on the exact coordinates of the
-   status dot (both live at `top: 6px / left: calc(7px + indent)`), so every
-   click aimed at the status mark landed on this inert svg instead.
-   `pointer-events: none` lets those clicks fall through to the live control
-   underneath; the real (button) arrow keeps its events untouched. */
+/* The empty arrow is decoration and preserves the disclosure column. */
 .cv2-root .pn-tt__arrow--empty { color: var(--pn-line); pointer-events: none; }
 .cv2-root .pn-tt__arrowCount {
   display: none;
@@ -669,11 +671,19 @@
 @container task-tile (max-width: 360px) {
   .cv2-root .pn-tt__main {
     gap: 5px;
-    /* Cluster gap drops to 1px at this width (below): 4×22 + 3×1 + 7 own pad
-       + 6 right anchor = 104. */
-    --tt-actions-reserve: 104px;
     padding-inline: calc(6px + var(--tt-indent)) var(--tt-actions-reserve);
   }
+
+  /* Same rendered-slot measurement at the 1px compact gap: 22N + (N-1) +
+     7px cluster padding + 6px edge anchor. */
+  .cv2-root .pn-tt__main { --tt-actions-reserve: 35px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-reserve: 58px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-reserve: 81px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-reserve: 104px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-reserve: 127px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-reserve: 150px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-reserve: 173px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-reserve: 196px; }
 
   .cv2-root .pn-tt__arrowCount {
     display: none;
@@ -713,11 +723,15 @@
   .cv2-root .pn-tt__actions > :first-child:not(.pn-tt__ind) {
     display: none;
   }
-  /* One 22px control fewer, so the reserve steps down with it:
-     3×22 + 2×1 + 7 + 6 = 81. */
-  .cv2-root .pn-tt__main {
-    --tt-actions-reserve: 81px;
-  }
+  /* The first non-disclosure control is hidden above, so count the remaining
+     visible slots. A disclosure-only cluster keeps its one-slot floor. */
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-reserve: 35px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-reserve: 58px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-reserve: 81px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-reserve: 104px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-reserve: 127px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-reserve: 150px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-reserve: 173px; }
 }
 .cv2-root .pn-tt .lq__profile {
   align-self: flex-start;
