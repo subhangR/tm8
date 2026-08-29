@@ -211,8 +211,17 @@ describe('C3 — ONE definition of completed, for every kind', () => {
       <EntityListPanel kind="work_session" rowsFor={rowsForOf(rows)} ctx={ctx} />,
     );
 
+    /* PIN MOVED (wave 3, deliberately). This used to assert the crashed run
+       rendered STRUCK: category `done` was the point being tested, and the
+       strike rode along because lifecycle defaulted to 'work'. The category
+       half still holds — the row files under Done, asserted by finding it on
+       that tab — but the registry now declares `lifecycle: 'record'` for
+       work_session (a done session is the record of a run, not crossed-out
+       work; 471 of 477 rows on the launch node wore the strike), so the
+       completed TREATMENT is suppressed the same way it is for library kinds.
+       Failure stays visible as the `failed` status badge, not as a strike. */
     tab(view, 'Done');
-    expect(isStruck(tileOf(view.container, 'The run that crashed'))).toBe(true);
+    expect(isStruck(tileOf(view.container, 'The run that crashed'))).toBe(false);
 
     tab(view, 'In Progress');
     expect(isStruck(tileOf(view.container, 'The run still going'))).toBe(false);

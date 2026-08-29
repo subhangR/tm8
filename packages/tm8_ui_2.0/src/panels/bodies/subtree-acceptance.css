@@ -1,0 +1,100 @@
+/*
+ * ACCEPTANCE AUTHORING (wave 3) — the add row, the edit-stance reword input
+ * and the per-criterion remove. A SEPARATE FILE rather than an append to
+ * `subtree-body.css` per the house one-new-file-per-change convention (the
+ * `panel-bar-phone.css` coordination argument); the resting rows keep every
+ * class they had, so nothing here restates that file.
+ *
+ * All color through var() — the token law. No animation, so no
+ * prefers-reduced-motion clause is owed.
+ */
+
+/* The stance flip sits on its own quiet line above the rows, right-aligned
+   like the description's Edit — one grammar, two regions. */
+.cv2-root .sb-acceptance__head {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── The birth row ─────────────────────────────────────────────────────── */
+
+.cv2-root .sb-addcriterion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+}
+
+/* Quiet by design: borderless until it is spoken to, so the resting section
+   reads as a list with an invitation, not a form. */
+.cv2-root .sb-addcriterion__input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  padding: 4px 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--pn-ink);
+}
+.cv2-root .sb-addcriterion__input::placeholder {
+  color: var(--pn-ink-4);
+}
+.cv2-root .sb-addcriterion__input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--pn-focus);
+}
+
+.cv2-root .sb-addcriterion__commit {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 4px 2px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+.cv2-root .sb-addcriterion__commit:hover {
+  color: var(--pn-brand-2);
+}
+.cv2-root .sb-addcriterion__commit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── The edit stance ───────────────────────────────────────────────────── */
+
+.cv2-root .sb-criterion__reword {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid var(--pn-line-2);
+  background: transparent;
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--pn-ink);
+}
+.cv2-root .sb-criterion__reword:focus-visible {
+  outline: none;
+  border-bottom-color: var(--pn-focus);
+}
+
+.cv2-root .sb-criterion__remove {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+.cv2-root .sb-criterion__remove:hover {
+  color: var(--pn-brand-2);
+}

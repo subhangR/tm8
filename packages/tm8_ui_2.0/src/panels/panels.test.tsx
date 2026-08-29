@@ -633,12 +633,20 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(getByTestId('list-quick-start').tagName).toBe('BUTTON');
   });
 
-  it('PHASE 7: FOUR category tabs, the same four words, on every kind', () => {
+  it('PHASE 7: the SAME category tabs, the same words, on every kind — sessions honestly narrowed', () => {
     // Pre-ratification this asserted the opposite — that task had NO tabs.
     // The user ratified universal tabs; phase 7 made them the closed four and
     // made them IDENTICAL, which is the stronger claim: they are not four tabs
     // each kind spells its own way, they are one declaration.
-    for (const kind of ['task', 'work_session', 'doc']) {
+    //
+    // PIN MOVED (wave 3, deliberately): work_session now declares THREE of
+    // the shared four — no observed session status maps to `cancelled` and no
+    // session verb writes the category, so that tab's count was zero by
+    // construction and every click on it landed on the elsewhere sentence.
+    // The three it keeps are the shared declaration verbatim (derived from
+    // CATEGORY_TABS in the registry, not re-spelled), and registry.test.ts
+    // pins work_session as the ONLY kind narrowed this way.
+    for (const kind of ['task', 'doc']) {
       const panel = render(<EntityListPanel kind={kind} rowsFor={rowsFor([])} ctx={ctx} />);
       expect(
         panel.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
@@ -646,6 +654,12 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       ).toEqual(['To Do', 'In Progress', 'Done', 'Cancelled']);
       panel.unmount();
     }
+    const sessions = render(<EntityListPanel kind="work_session" rowsFor={rowsFor([])} ctx={ctx} />);
+    expect(
+      sessions.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
+      'work_session tabs',
+    ).toEqual(['To Do', 'In Progress', 'Done']);
+    sessions.unmount();
     // The sections that used to fight the tabs on the same axis are GONE.
     expect(getKind('task').list.sections).toBeUndefined();
   });

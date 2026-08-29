@@ -169,6 +169,11 @@ function subjectOf(detail: EntityDetail): ControlSubject {
     title: detail.title,
     kind: detail.kind,
     state: detail.state,
+    /* The content, because the panel HAS it — the one subject in the app
+       that does. A number value control (points) reads its current value
+       from here; list hosts pass summaries, which carry none, and their
+       copy of that control refuses with the value-unreadable reason. */
+    content: detail.content,
     deletedAt: detail.deletedAt,
     /* Which tab this row is under. `terminate` refuses itself on a row that
        has already ended, and the LIST hosts get this for free because they
@@ -1079,6 +1084,15 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                  desktop. The control itself refuses this on a phone, where ✕
                  is already gone — see `promoteHidden`. */
               promoteHidden={isTerminal}
+              /* THE PIN, FINALLY RENDERED. These three props were declared on
+                 this panel and passed by WorkspaceView from the day the pin
+                 engine shipped, and NOTHING ever drew them — the anatomy
+                 census's one wholly dead prop set. The control lives with the
+                 other window verbs because pinning is a window fact (which
+                 column this panel occupies), not an entity verb. */
+              pinned={props.pinned}
+              pinRefusal={props.pinRefusal}
+              onPin={props.onPin}
             />
           </>
           )

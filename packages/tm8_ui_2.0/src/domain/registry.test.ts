@@ -317,14 +317,22 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(getKind('task').panel.primaries).toEqual(['run', 'edit']);
   });
 
-  it('5. PHASE 7 — a session partitions by CATEGORY, like every other kind', () => {
+  it('5. PHASE 7 / W3 — a session partitions by CATEGORY, on the bands that can occur', () => {
     // The session tabs used to be keyed on `sessionStatus` literals, which is
     // how a session that CRASHED came to be filed under "Done". Its states now
-    // declare their own categories (registry data) and its TABS are the same
-    // four every kind draws — one partition, one vocabulary, no kind-specific
-    // tab row left in this file.
+    // declare their own categories (registry data) and its tabs are the shared
+    // vocabulary — one partition, no kind-specific tab row left in this file.
+    //
+    // THREE bands, not four, since the wave-3 honesty pass: no observed status
+    // maps to `cancelled` (see 5b below) and no session verb writes the
+    // category — complete files `done`, terminate ends in `exited` → `done`,
+    // resume returns to `spawning` → `to_do` — so the Cancelled tab was
+    // structurally empty forever, a click that could only ever land on the
+    // elsewhere sentence. The three that remain are the SHARED declaration
+    // verbatim (derived from CATEGORY_TABS, not re-spelled), each still the
+    // same mechanical category query.
     const tabs = getKind('work_session').list.categories;
-    expect(tabs?.map((t) => t.id)).toEqual(['to_do', 'in_progress', 'done', 'cancelled']);
+    expect(tabs?.map((t) => t.id)).toEqual(['to_do', 'in_progress', 'done']);
     for (const tab of tabs ?? []) {
       expect(tab.filter).toEqual({ category: [tab.id], deleted: 'exclude' });
     }
@@ -381,22 +389,33 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     }
   });
 
-  it('PHASE 7 — every kind carries THE SAME four category tabs, in order', () => {
-    // Universal by ruling, and now universal in the strongest sense: not four
-    // tabs each kind spells its own way, but ONE declaration. The ids are the
-    // contract's closed `StatusCategory` union, so a kind cannot invent a
-    // fifth bucket and a space that names its own statuses is filed correctly
-    // without touching the registry.
+  it('PHASE 7 — every kind carries THE SAME category tabs, in order (one narrows honestly)', () => {
+    // Universal by ruling, and universal in the strongest sense: not tabs each
+    // kind spells its own way, but ONE declaration. The ids are the contract's
+    // closed `StatusCategory` union, so a kind cannot invent a fifth bucket
+    // and a space that names its own statuses is filed correctly without
+    // touching the registry.
+    //
+    // THE ONE PERMITTED NARROWING (wave 3): work_session drops Cancelled —
+    // the band no session can ever occupy (see test 5) — and what it keeps
+    // must be an exact PREFIX of the shared array, same ids, same words, same
+    // order. Pinned as an exact exception list so a second kind cannot
+    // quietly join it without landing here.
     const FOUR = ['to_do', 'in_progress', 'done', 'cancelled'];
+    const FOUR_LABELS = ['To Do', 'In Progress', 'Done', 'Cancelled'];
+    const narrowed = allKinds()
+      .filter((row) => row.list.categories?.length !== 4)
+      .map((row) => row.kind)
+      .sort();
+    expect(narrowed).toEqual(['work_session']);
     for (const row of allKinds()) {
-      expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(FOUR);
-      expect(row.list.categories?.map((t) => t.label)).toEqual([
-        'To Do',
-        'In Progress',
-        'Done',
-        'Cancelled',
-      ]);
+      const n = row.list.categories?.length ?? 0;
+      expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(FOUR.slice(0, n));
+      expect(row.list.categories?.map((t) => t.label), `${row.kind}`).toEqual(
+        FOUR_LABELS.slice(0, n),
+      );
     }
+    expect(getKind('work_session').list.categories).toHaveLength(3);
     expect(getKind(CUSTOM_KIND_FALLBACK).list.categories?.map((t) => t.id)).toEqual(FOUR);
     expect(collectionKinds().length).toBeGreaterThan(0);
   });
@@ -440,10 +459,20 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   it('PHASE 7 — cancelled has its OWN tab; it no longer hides inside Done', () => {
     // RULED (sub-doc 7 §3.4). Done used to carry `['done','cancelled']`, which
     // told a user that abandoned work and finished work are one outcome.
+    //
+    // The wave-3 exception is pinned EXACTLY: only work_session omits the tab,
+    // and it omits it by having no cancelled band at all — never by folding
+    // cancelled rows back into Done, which every Done predicate below refuses.
+    const missingCancelled = allKinds()
+      .filter((row) => !row.list.categories?.some((t) => t.id === 'cancelled'))
+      .map((row) => row.kind)
+      .sort();
+    expect(missingCancelled).toEqual(['work_session']);
     for (const row of allKinds()) {
       const done = row.list.categories?.find((t) => t.id === 'done');
       expect(done?.filter.category).toEqual(['done']);
       const cancelled = row.list.categories?.find((t) => t.id === 'cancelled');
+      if (row.kind === 'work_session') continue;
       expect(cancelled?.label).toBe('Cancelled');
       expect(cancelled?.filter.category).toEqual(['cancelled']);
     }
@@ -553,6 +582,37 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
         expect(CLOSED).toContain(key as keyof ListConfig);
       }
     }
+  });
+
+  it('value controls use the CLOSED input vocabulary, and each mode owns its shape', () => {
+    /*
+     * `ValueControl.input` — opened 2026-08-29 with the points estimate
+     * (wave 3). NOT a new ListConfig key beside `valueControls` the way
+     * `dateControls` was, because the write is IDENTICAL to the enum's
+     * (`content[source]`, version-guarded, same `onSetValue` executor) and
+     * there is no separate clear semantics; only the INPUT differs, so the
+     * difference is a field ON the control, not a control family.
+     *
+     * The shape rule both arms hold: an enum control declares its vocabulary
+     * (an empty select would read as "no legal values"), a number control
+     * declares NONE (a number has no vocabulary, and options it declared
+     * would be silently ignored — a lie in data).
+     */
+    for (const row of allKinds()) {
+      for (const control of row.list.valueControls ?? []) {
+        expect([undefined, 'enum', 'number']).toContain(control.input);
+        if (control.input === 'number') {
+          expect(control.options).toHaveLength(0);
+        } else {
+          expect(control.options.length).toBeGreaterThan(0);
+        }
+      }
+    }
+    // The opener: the task's points estimate, editable at last — Create and
+    // Patch have carried the field since the task commands shipped.
+    const points = getKind('task').list.valueControls?.find((c) => c.source === 'pointsEstimate');
+    expect(points?.input).toBe('number');
+    expect(points?.label).toBe('Points');
   });
 });
 
@@ -1046,6 +1106,72 @@ describe('Z1 / Z2 specs', () => {
     for (const row of allKinds()) {
       if (row.chip.tintBy === 'none') continue;
       expect(Object.keys(row.chip.tones ?? {}).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('keys equipped-tinted tones on the words consumers look up, never the boolean', () => {
+    /* The defect this pins shut (wave 3): spell and skill declared
+       `tones: { true: 'run', false: 'idle' }`, but every consumer of the tint
+       (GraphView, detail chrome, home-model) normalizes the boolean to
+       'equipped' / 'library' BEFORE the lookup — so `tones['equipped']`
+       always missed and an equipped spell wore idle everywhere. Tone keys
+       must be REACHABLE values of the source. */
+    for (const kind of ['spell', 'skill']) {
+      const tones = getKind(kind).chip.tones ?? {};
+      expect(getKind(kind).chip.tintBy, kind).toBe('equipped');
+      expect(Object.keys(tones).sort(), kind).toEqual(['equipped', 'library']);
+      expect(tones['equipped'], `${kind} equipped tone must not read idle`).toBe('run');
+    }
+    // And the spell detail header states the same fact with the same keys —
+    // the one status this kind has, previously stated nowhere in the panel.
+    const pill = getKind('spell').panel.statusPill;
+    expect(pill?.source).toBe('equipped');
+    expect(pill?.tones).toEqual({ equipped: 'run', library: 'idle' });
+    expect(pill?.labels).toEqual({ equipped: 'Equipped', library: 'Not equipped' });
+    // Skill declares NO pill, deliberately: its summaries hardcode
+    // `equipped: false`, so a pill would assert 'Not equipped' about rows
+    // whose equips edges say otherwise. Honest-by-absence until the
+    // projection derives the boolean from the edges.
+    expect(getKind('skill').panel.statusPill).toBeUndefined();
+  });
+
+  it('W3 — the session row files a done run as a RECORD, and offers only chips that can match', () => {
+    const session = getKind('work_session').list;
+    /* 471 of 477 rows on the launch node were struck through — a done session
+       is the record of a run, not crossed-out work, and it is not 'library'
+       material either. The third value exists for exactly this kind. */
+    expect(session.lifecycle).toBe('record');
+    /* `assigneeFilter` is gone: nothing ever writes an `assigned_to` edge for
+       a session, so "Assigned to me" could only narrow to zero rows forever.
+       Needs-me stays (mentions are real) and the universal archive chip is
+       appended by baseList where a kind cannot drop it. */
+    expect(session.filters.map((f) => f.id)).toEqual(['attention', 'archived']);
+  });
+
+  it('W3 — the worktree declares its ONE legal write, forward-only, as a value control', () => {
+    /* `capabilityReasons.canEdit` promised "exactly one edit: the forward-only
+       status transition" while no surface drew a door. The control writes the
+       ordinary version-guarded content patch; `active` is absent because the
+       transition is forward-only and the server refuses backward moves. */
+    const controls = getKind('worktree').list.valueControls ?? [];
+    expect(controls).toHaveLength(1);
+    expect(controls[0]?.source).toBe('status');
+    expect(controls[0]?.options.map((o) => o.id)).toEqual(['merged', 'abandoned', 'deleted']);
+  });
+
+  it('W3 — deferred kind verbs are CARRIED, so they refuse with their reason instead of vanishing', () => {
+    /* R7: a missing control and a refused control are different states, and
+       only one is honest. `equip` (spell/skill's defining verb) and `refresh`
+       (the only door that could un-stale a PR) are deferred actions authored
+       to render disabled-with-reason; the rows now carry them. */
+    for (const kind of ['spell', 'skill']) {
+      expect(getKind(kind).list.rowActions, kind).toContain('equip');
+      expect(getKind(kind).panel.primaries, kind).toContain('equip');
+    }
+    expect(getKind('pull_request').panel.primaries).toContain('refresh');
+    for (const ref of ['equip', 'refresh'] as const) {
+      const verdict = resolveAction(ref).availability({ spaceId: 's', entityId: 'e1' });
+      expect(verdict.kind, `${ref} must refuse with its authored reason today`).toBe('disabled');
     }
   });
 });

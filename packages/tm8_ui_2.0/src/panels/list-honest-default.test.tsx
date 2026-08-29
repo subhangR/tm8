@@ -179,16 +179,29 @@ describe('finding 1 — the empty band’s sentence matches the counts on screen
 });
 
 describe('finding 2 — library kinds do not wear task clothes', () => {
-  it('the six library kinds declare it as REGISTRY DATA; work kinds stay work', () => {
-    for (const kind of ['file', 'artifact', 'memory', 'collection', 'spell', 'skill']) {
+  it('the library kinds declare it as REGISTRY DATA; work kinds stay work', () => {
+    /* `commit` joined in wave 3 — the other `kind_seeds_done` member the
+       2026-08-29 fix missed, so every commit tile (immutable history!)
+       rendered struck through. `member`, `team_member` and `project` joined
+       for the identity/fact-about-the-world reason their registry rows state:
+       a done HUMAN or persona must never render as crossed-out work. */
+    for (const kind of [
+      'file', 'artifact', 'memory', 'collection', 'spell', 'skill',
+      'commit', 'member', 'team_member', 'project',
+    ]) {
       expect(getKind(kind).list.lifecycle, kind).toBe('library');
     }
-    for (const kind of ['task', 'work_session', 'doc', 'pull_request']) {
+    for (const kind of ['task', 'doc', 'pull_request']) {
       expect(getKind(kind).list.lifecycle, kind).toBeUndefined();
     }
+    /* work_session is neither: a done session is the RECORD OF A RUN — not
+       finished work needing a strike, not curated library material. The third
+       value was added (wave 3) for exactly this kind; 471 of 477 rows on the
+       launch node rendered struck through under the 'work' default. */
+    expect(getKind('work_session').list.lifecycle).toBe('record');
     /* The closed vocabulary stays closed: nothing else invents a value. */
     for (const row of allKinds()) {
-      expect([undefined, 'work', 'library']).toContain(row.list.lifecycle);
+      expect([undefined, 'work', 'library', 'record']).toContain(row.list.lifecycle);
     }
   });
 

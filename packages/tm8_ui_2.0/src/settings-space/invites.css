@@ -240,7 +240,7 @@
   border-radius: var(--pn-r-md);
 }
 .set-invites__lockedEyebrow {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.12em;

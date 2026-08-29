@@ -10,6 +10,7 @@ import { copyToClipboard } from '../../terminal/domUtils';
  */
 export function MaestroSessionTile({
   id,
+  family,
   title,
   agentTool,
   sessionKind,
@@ -35,6 +36,13 @@ export function MaestroSessionTile({
   detail,
 }: {
   id: string;
+  /**
+   * The kind's palette-family token (W3E), stamped as `data-family` on the
+   * root for W3C's accent rules. A plain string on purpose — this component
+   * is view-model shaped and learns no registry type; the host resolves it
+   * through `getKind`, gray when the kind declares none.
+   */
+  family: string;
   title: string;
   agentTool: string | null;
   /**
@@ -107,6 +115,7 @@ export function MaestroSessionTile({
     <div
       className={`pn-st${selected ? ' pn-st--selected' : ''}${attention ? ' pn-st--attention' : ''}${archived ? ' pn-st--archived' : ''}`}
       data-testid="list-tile"
+      data-family={family}
       data-session-node={id}
       data-children={childCount > 0 ? childCount : undefined}
       data-streaming={streaming ? 'true' : 'false'}

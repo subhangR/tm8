@@ -63,9 +63,9 @@
 /* Canvas section eyebrows are 10px (SERVER URL, SUBTREE · 2, RUNS · 1 LIVE);
    the 11px tokens.css .t-eyebrow stays available for larger editorial use. */
 .cv2-root .kit-eyebrow {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
   color: var(--pn-ink-3);
@@ -92,6 +92,24 @@
 .cv2-root .kit-chip:hover {
   background: var(--pn-hover);
   border-color: var(--pn-line-2);
+}
+/* ONE focus grammar for every kit interactive: 2px --pn-focus ring, 1px off.
+   The fallback chain matches wave 1 (panels.css, auth.css) so a theme that
+   defines no --pn-focus still shows brass, never the UA default. */
+.cv2-root .kit-chip:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* Honest disabled (Chip.disabledReason): dimmed, not-allowed cursor, and the
+   hover tint suppressed — a dead chip must not glow like a live one. */
+.cv2-root .kit-chip[aria-disabled='true'] {
+  color: var(--pn-ink-4);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cv2-root .kit-chip[aria-disabled='true']:hover {
+  background: var(--pn-card);
+  border-color: var(--pn-line);
 }
 .cv2-root .kit-chip__glyph {
   color: var(--pn-ink-3);
@@ -163,9 +181,24 @@
   background: var(--pn-hover);
   color: var(--pn-block);
 }
+/* Same focus grammar as .kit-chip — the ring flows through --pn-focus (the
+   dedicated token, tokens.css) instead of --pn-brand, ending the two-sources-
+   of-truth drift the atoms audit flagged. */
 .cv2-root .kit-iconbtn:focus-visible {
-  outline: 1px solid var(--pn-brand);
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
   outline-offset: 1px;
+}
+/* Honest disabled (IconBtn.disabledReason) — same treatment as .kit-chip;
+   the hover rule below the rest state loses to this attribute selector, so
+   neither the plain nor the danger hover tint survives. */
+.cv2-root .kit-iconbtn[aria-disabled='true'] {
+  color: var(--pn-ink-4);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cv2-root .kit-iconbtn[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--pn-ink-4);
 }
 
 /* --- Kbd — keyboard hint (T0-1 tab bar "/ palette · ⌘K"; bare "esc") ------ */
@@ -377,6 +410,22 @@
   white-space: nowrap;
 }
 .cv2-root button.kit-actorref__session { cursor: pointer; }
+/* The via/session chips render as real <button>s only when a host wires
+   onOpenSession — and ONLY the button forms get interaction states; the inert
+   span forms stay flat. Hover/active/focus follow the kit grammar. */
+.cv2-root button.kit-actorref__via:hover,
+.cv2-root button.kit-actorref__session:hover {
+  background: var(--pn-hover);
+}
+.cv2-root button.kit-actorref__via:active,
+.cv2-root button.kit-actorref__session:active {
+  background: var(--pn-active);
+}
+.cv2-root button.kit-actorref__via:focus-visible,
+.cv2-root button.kit-actorref__session:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
 .cv2-root .kit-avatarstack {
   display: inline-flex;
   align-items: center;

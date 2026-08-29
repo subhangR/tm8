@@ -27,6 +27,8 @@ import { HollowInline } from '../honesty/HollowValue';
  * reach the desktop shell, a tablet, or a narrow desktop window.
  */
 import './panel-bar-phone.css';
+/* The header's mono id tail — its own file for the same shared-css reason. */
+import './panel-header-ref.css';
 
 /**
  * THE SHARED CHROME — header · action bar · tab strip · footer.
@@ -120,12 +122,35 @@ export function PanelHeader({
   supplemental?: ReactNode;
 }) {
   const editable = (titleEditable ?? false) && onCommitTitle !== undefined && !detail.deletedAt;
+  /*
+   * THE BREADCRUMB, FROM DATA THE DETAIL ALREADY CARRIES. The `breadcrumb`
+   * prop has existed since the header was written and NO host in the product
+   * ever passed one — so `pn-crumb` rendered only on the permission-lost
+   * panel, and "where does this live" was answerable only two tabs over. The
+   * detail's `hierarchy.path` is the ancestor chain root-first (server:
+   * recursive CTE; `parent = path.at(-1)`), so the sentence costs no read and
+   * cannot disagree with the PARENT chip. A host that passes `breadcrumb`
+   * still wins; an entity with no ancestors keeps no crumb line, exactly as
+   * before — absence of a place is not a place.
+   */
+  const derivedCrumb =
+    breadcrumb ?? (detail.hierarchy.path.length > 0
+      ? detail.hierarchy.path.map((ancestor) => ancestor.title).join(' › ')
+      : undefined);
   return (
     <div className="pn-head" data-testid="panel-header">
-      {breadcrumb ? <div className="pn-crumb">{breadcrumb}</div> : null}
+      {derivedCrumb ? <div className="pn-crumb">{derivedCrumb}</div> : null}
       <div className="pn-head__row">
         <span className="pn-head__glyph" aria-hidden>
           <KindIcon kind={config.kind} size={16} />
+        </span>
+        {/* The id's own mono tail — TASK-grammar `82DF`, the ticket-number
+            read, echoing the graph card's `gv-node__ref` so the two surfaces
+            corroborate each other. It is the LAST FOUR of the real id, never
+            invented, and `aria-hidden` because the full id is content (the
+            MetaGrid ID cell), not name. */}
+        <span className="pn-header__ref" aria-hidden>
+          {detail.id.slice(-4).toUpperCase()}
         </span>
         {editable && onCommitTitle ? (
           /* `au-title` is a byte-equivalent of `pn-head__title` — same flex,
@@ -169,9 +194,39 @@ export function PanelWindowControls({
   onPromote,
   onClose,
   promoteHidden = false,
+  pinned = false,
+  pinRefusal,
+  onPin,
 }: {
   onPromote?: () => void;
   onClose?: () => void;
+  /**
+   * THE PIN — the third window verb, and the panel's one wholly dead prop set
+   * until wave 3: `pinned`/`pinRefusal`/`onPin` were declared on
+   * `EntityDetailPanelProps` and passed by WorkspaceView (admission refusal
+   * and all) since the pin engine shipped, and no chrome ever rendered them.
+   * Anyone "fixing the pin button" first had to learn there was no button.
+   *
+   * RENDERED ONLY WHERE A HOST SAYS SOMETHING — `onPin` or `pinRefusal`
+   * present. The four hosts that pass neither (EntityView, ChannelView,
+   * GraphScreen, the aux column) have no pin stack for the verb to act on, so
+   * for them this is the `TransferControl` exception: not a deferred feature
+   * but a concept that does not apply to the surface, and a permanently
+   * refused row would apologise for a promise nobody made. `panels.test`
+   * pins that absence by aria-label.
+   *
+   * REFUSED WITH ITS REASON where the host passed one (`pinRefusal` is the
+   * admission engine's cause—remedy sentence, e.g. the C_min floor), and the
+   * refusal never applies to UN-pinning — a pinned panel's pin is always
+   * live, or a full stack could strand its own columns.
+   *
+   * PRESSED STATE IS STRUCTURAL: `aria-pressed` plus the FILLED form of the
+   * same drawn mark (stroked ⇒ not pinned, solid ⇒ pinned) — the kit's own
+   * "shape is provenance" move, no color needed, so it reads in both themes.
+   */
+  pinned?: boolean;
+  pinRefusal?: string;
+  onPin?: () => void;
   /**
    * DROP "OPEN FULL VIEW" — user ruling 2026-08-19, for the work-session bar.
    *
@@ -212,8 +267,42 @@ export function PanelWindowControls({
    * desktop path by construction — this cannot reach a desktop arrangement.
    */
   const { oneSurface } = useMobileSurface();
+  /*
+   * The pin follows ✕'s DEF-023 ruling on a phone, for the identical reason:
+   * it is a desktop panel-STACK verb, and this shell has no stack of pinned
+   * columns to hold a panel in. Removed, not disabled — a permanent refusal
+   * would be the "apologising for a feature nobody was promised" row the
+   * 2026-08-20 owner ruling deleted from the action menu.
+   */
+  const pinVerb = pinned ? 'Unpin panel' : 'Pin panel';
+  const pin = oneSurface || (!onPin && !pinRefusal) ? null : pinRefusal && !pinned ? (
+    <DisabledIconControl
+      label="Pin panel"
+      glyph={<VectorIcon paths={PIN_ICON} size={16} />}
+      reason={toReason(pinRefusal)}
+    />
+  ) : (
+    <button
+      type="button"
+      /* `kit-iconbtn` for the cluster's shared geometry and focus ring; a raw
+         button rather than `IconBtn` because the kit atom carries no pressed
+         state and this control IS one (aria-pressed) — the same reason the
+         Connections List|Graph switch is raw. */
+      className="kit-iconbtn"
+      aria-label={pinVerb}
+      aria-pressed={pinned}
+      title={pinVerb}
+      data-testid="panel-pin"
+      onClick={onPin}
+    >
+      <span aria-hidden>
+        <VectorIcon paths={PIN_ICON} size={16} filled={pinned} />
+      </span>
+    </button>
+  );
   return (
     <>
+      {pin}
       {promoteHidden && !oneSurface ? null : (
         <IconBtn label="Open full view" onClick={onPromote}>
           ⤢
@@ -227,6 +316,20 @@ export function PanelWindowControls({
     </>
   );
 }
+
+/**
+ * The drawn pin — a pushpin on the 16×16 grid, stroked like every house mark
+ * (`domain/kind-art.ts` discipline) and FILLED when pressed. Drawn rather
+ * than a character for Terminate's reason (`ActionDef.iconArt`): the pushpin
+ * codepoints tofu or emoji-render across the system fonts, and a window verb
+ * cannot be a gamble per platform.
+ */
+const PIN_ICON: readonly string[] = [
+  // Head + shoulder: the flat cap and the tapering body of a pushpin.
+  'M6.2 2.2h3.6l.5 4.2 1.9 2.2v1.2H3.8V8.6l1.9-2.2Z',
+  // The needle.
+  'M8 9.8v4',
+];
 
 /**
  * The header status pill, driven entirely by `panel.statusPill` DATA: which

@@ -164,6 +164,31 @@ const TASK_PRIORITY_CONTROL: ValueControl = {
 };
 
 /**
+ * THE POINTS ESTIMATE ON THE STRIP — wave 3, the last contract-carried task
+ * field with NO writer anywhere in the UI.
+ *
+ * `pointsEstimate` has been on `CreateTaskInput` AND `PatchTaskInput` since
+ * the task commands shipped (contract.ts:1944/1958), the real ops forward it
+ * (ops.ts:792/836), and the completion ledger PAYS it out (`points_estimate`
+ * feeds the award row on complete). The whole read surface was one read-only
+ * `Points` cell MetaGrid drew only when the value was already set — so on an
+ * unestimated task the field was invisible, and on an estimated one it was
+ * uneditable. The same shape as the due-date report below, one field over.
+ *
+ * `input: 'number'` — see `ValueControl.input`. The write is the ordinary
+ * version-guarded content patch, like priority's; `points_estimate` is
+ * `integer check (>= 0)` and `update_task_content` COALESCEs it, so there is
+ * no clear once set — also like priority, and unlike the dates.
+ */
+const TASK_POINTS_CONTROL: ValueControl = {
+  source: 'pointsEstimate',
+  label: 'Points',
+  emptyLabel: 'no estimate',
+  input: 'number',
+  options: [],
+};
+
+/**
  * THE DUE DATE ON THE STRIP — user report 2026-08-28: "the task detail panel
  * should have an option to select due date. is it already there in the model,
  * i dont see it in the entity detail panel."
@@ -213,6 +238,33 @@ const TASK_START_CONTROL: DateControl = {
   source: 'startDate',
   label: 'Start date',
   emptyLabel: 'no start date',
+};
+
+/**
+ * THE WORKTREE'S ONE LEGAL WRITE — the forward-only status transition.
+ *
+ * `capabilityReasons.canEdit` on the worktree row has promised "exactly one
+ * edit: the forward-only status transition" since the row landed, and no
+ * surface ever drew the door: no stateControl, no rowActions, no primaries.
+ * A `ValueControl` is the registry-shaped fit — "a settable enum member of
+ * `EntityState`, written through the kind's ordinary content PATCH,
+ * version-guarded" — which is exactly what `update_worktree` accepts.
+ *
+ * `active` is deliberately NOT an option: the transition is forward-only and
+ * the server refuses backward moves by name, so offering the birth value would
+ * mount a control whose most prominent choice is a guaranteed refusal. The
+ * current value still renders — the control reads `state.status` — this list
+ * is only where a row may GO.
+ */
+const WORKTREE_STATUS_CONTROL: ValueControl = {
+  source: 'status',
+  label: 'Status',
+  emptyLabel: 'no status',
+  options: [
+    { id: 'merged', label: 'merged', tone: 'brand' },
+    { id: 'abandoned', label: 'abandoned', tone: 'idle' },
+    { id: 'deleted', label: 'deleted', tone: 'block' },
+  ],
 };
 
 /**
@@ -509,6 +561,25 @@ const CATEGORY_TABS: readonly StatusCategoryTab[] = [
 ];
 
 /**
+ * WORK_SESSION'S TAB ROW — the shared four MINUS the band no session can ever
+ * occupy. DERIVED, not re-spelled, so the three that remain are the universal
+ * declaration verbatim: same ids, same labels, same mechanical predicates.
+ *
+ * Cancelled is structurally unreachable for this kind. `SESSION_STATE_CONTROL`
+ * maps no observed status to `cancelled`, and no session verb writes the
+ * category: `complete` files under `done`, `terminate` ends in `exited` →
+ * `done`, `resume` returns the row to `spawning` → `to_do` (migrations
+ * 155/156). A tab whose count is zero by construction is not a partition
+ * member — every click on it lands on the elsewhere sentence, forever. D41
+ * still holds: the bands a kind DOES declare are the one shared vocabulary,
+ * and a kind opts into a narrower honest partition through the same
+ * `categories` field it would use for a richer one.
+ */
+const SESSION_CATEGORY_TABS: readonly StatusCategoryTab[] = CATEGORY_TABS.filter(
+  (tab) => tab.id !== 'cancelled',
+);
+
+/**
  * ARCHIVED, AS A FILTER CHIP — the other half of retiring the archive tab.
  *
  * `deleted` is a SCALAR clause, so `narrow()`'s later-wins rule lets this
@@ -718,6 +789,13 @@ const ROWS: readonly KindConfig[] = [
           { source: 'status' },
           { source: 'priority' },
           { source: 'axes' },
+          /* The due date, ON THE ROW — the kind that HAS the dates (see the
+             sort note below) offered BY_DUE, a strip control and a dialog row,
+             and the collapsed tile showed nothing: sorting by due date
+             produced an order the row gave you no way to read. The renderer
+             (`tile-badges.ts` case 'dueDate') existed the whole time as dead
+             code — no row anywhere declared it. Registry data completes it. */
+          { source: 'dueDate' },
           { source: 'assignees' },
           { source: 'acceptance' },
           { source: 'blocked' },
@@ -733,7 +811,10 @@ const ROWS: readonly KindConfig[] = [
       sort: [...DEFAULT_SORT, BY_START, BY_DUE, BY_PRIORITY],
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
-      valueControls: [TASK_PRIORITY_CONTROL],
+      /* Priority before points: the enum the eye scans first, then the number
+         it types. The points row is what makes `valueControls` finally plural
+         — the field was ALWAYS "settable value fields", never "priority". */
+      valueControls: [TASK_PRIORITY_CONTROL, TASK_POINTS_CONTROL],
       /* Start before due — the order they read as a pair, and the order the
          strip draws them in. */
       dateControls: [TASK_START_CONTROL, TASK_DUE_CONTROL],
@@ -865,6 +946,21 @@ const ROWS: readonly KindConfig[] = [
        * only which band this panel opened on. See the PR body.
        */
       defaultCategory: 'in_progress',
+      // The three tabs that can actually occur — see SESSION_CATEGORY_TABS
+      // for why Cancelled is structurally empty on this kind forever.
+      categories: SESSION_CATEGORY_TABS,
+      /**
+       * A DONE SESSION IS A RECORD, NOT CROSSED-OUT WORK. `lifecycle`
+       * defaulted to 'work', so every `exited`/`failed` row rendered with its
+       * title struck through — on the launch node that was 471 of 477 rows
+       * reading as deleted, the exact pathology the library value was added to
+       * fix for file/memory/artifact. Not 'library' though: a session was
+       * never curated material, it is a run that ENDED — hence the third
+       * honest value. Ticked-done sessions (migration 156) file away without a
+       * strike for the same reason: the tick ends the row's claim on your
+       * attention, it does not finish work.
+       */
+      lifecycle: 'record',
       tree: { by: 'hierarchy', guideLines: true, messagePulse: true },
       tile: {
         anatomy: 'session-tree',
@@ -893,7 +989,12 @@ const ROWS: readonly KindConfig[] = [
       // where you would have to already have a session to find out how to
       // start one.
       quickStart: 'start-terminal',
-      filters: [assigneeFilter, attentionFilter],
+      /* NO `assigneeFilter`: its predicate is an `assigned_to` edge
+         exists-check, and no server code path ever writes that edge for a
+         session (spawn writes `relates_to`/`working_on`). "Assigned to me" on
+         this kind could only ever narrow to zero rows — the same never-matches
+         class the `inReviewForActorId` note above forbids offering on docs. */
+      filters: [attentionFilter],
       sort: DEFAULT_SORT,
       needsAttentionGroup: sessionNeedsAttention,
       liveTreatment: sessionLiveTreatment,
@@ -1102,7 +1203,19 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['channelTopic', 'unread', 'workingAgents'] },
     list: baseList({
       tree: { by: 'hierarchy', guideLines: true },
-      tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }] },
+      /* `channelTopic` joins the row: the one human fact that says what a
+         channel is FOR was on the Z2 card and nowhere on the surface you
+         actually scan. Renderer already existed; the meta slot's CSS
+         truncates a long topic. After the attention fact (unread), before the
+         volume facts. */
+      tile: {
+        badges: [
+          { source: 'unread' },
+          { source: 'channelTopic' },
+          { source: 'workingAgents' },
+          { source: 'messages' },
+        ],
+      },
       inlineEdit: { title: true },
       assignControl: CHANNEL_MEMBER_CONTROL,
     }),
@@ -1196,6 +1309,10 @@ const ROWS: readonly KindConfig[] = [
   // -- member ---------------------------------------------------------------
   {
     kind: 'member',
+    /* 'purple' — the shared actor-adjacent family, beside team_member: the
+       space's two actor kinds read as one first-class family on the canvas
+       instead of one first-class and one gray-fallback afterthought. */
+    graphFamily: 'purple',
     label: 'Member',
     labelPlural: 'Members',
     icon: '◍',
@@ -1211,6 +1328,15 @@ const ROWS: readonly KindConfig[] = [
     },
     card: { fields: ['memberRole', 'score', 'taskDoneCount'] },
     list: baseList({
+      /* A human is not work in flight: member sits outside `kind_seeds_done`
+         today (born `to_do`), and if a member row ever reaches `done` the
+         work treatment would strike the person's NAME through like a finished
+         task. Declared now so the coherent server fix (seed membership done —
+         existence IS the fact) cannot strike anyone when it lands;
+         `defaultCategory: 'done'` waits for that same server change, since
+         declaring it against today's to_do population would state an intent
+         the data contradicts. */
+      lifecycle: 'library',
       quickCreate: false,
       tile: { badges: [{ source: 'entityActor' }, { source: 'memberRole' }, { source: 'score' }, { source: 'taskDoneCount' }] },
     }),
@@ -1221,16 +1347,29 @@ const ROWS: readonly KindConfig[] = [
          ProfileBody carries no kind branch, so the human frame and the agent
          frame below differ only in the blocks their row declares. */
       blocks: [
+        /* NO `tagKey: 'role'`: the header status pill already owns the role
+           statement (color+word), so the identity tag was a second copy of
+           the same fact two rows apart. */
         {
           block: 'identity',
-          params: { provenance: 'human', tagKey: 'role', caption: 'human member', presence: true },
+          params: { provenance: 'human', caption: 'human member', presence: true },
         },
         {
           block: 'stat-tiles',
           params: { tiles: 'taskDoneCount=tasks done,score=points,teamMembers=teammates' },
         },
-        { block: 'items', label: 'TEAMMATES OWNED', params: { source: 'teamMembers' } },
-        { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'status' } },
+        /* Kind-true empties via the supported ItemsBlock param, instead of
+           the generic 'Nothing here yet.' fallback. */
+        {
+          block: 'items',
+          label: 'TEAMMATES OWNED',
+          params: { source: 'teamMembers', empty: 'Owns no teammates.' },
+        },
+        {
+          block: 'items',
+          label: 'CURRENT WORK',
+          params: { source: 'work', statusKey: 'status', empty: 'No current work recorded.' },
+        },
       ],
     },
   },
@@ -1256,6 +1395,13 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '◆', tintBy: 'none' },
     card: { fields: ['owner', 'model', 'liveWork'] },
     list: baseList({
+      /* An IDENTITY, not work in flight: if a teammate's category ever
+         reaches done, striking the persona's name through would read as a
+         deleted teammate, not finished work. */
+      lifecycle: 'library',
+      /* 152 seeds team_member `to_do`; the roster landed there only by
+         accident of tabs[0]. Declared so the landing is intent, not luck. */
+      defaultCategory: 'to_do',
       tile: { badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
       inlineEdit: { title: true },
       tree: { by: 'hierarchy', guideLines: true },
@@ -1278,7 +1424,18 @@ const ROWS: readonly KindConfig[] = [
           params: { fields: 'model=Model,agentTool=Tool,owner=Owner' },
         },
         { block: 'live-work', params: { source: 'liveWork' } },
-        { block: 'items', label: 'EQUIPPED', params: { source: 'equipped', count: true } },
+        /* `empty` is a supported ItemsBlock param that was left unset, so the
+           loadout section fell back to the generic 'Nothing here yet.' —
+           kind-true words are one line of registry data. */
+        {
+          block: 'items',
+          label: 'EQUIPPED',
+          params: {
+            source: 'equipped',
+            count: true,
+            empty: 'Nothing equipped — this teammate launches with no spells or skills.',
+          },
+        },
         /* The working set that spawn actually injects (`loadSpawnContext`).
            Edge-backed and kind-free: 085 widened `remembers.src_kinds` to the
            wildcard, so this identical row on a task panel needs no new code. */
@@ -1317,11 +1474,18 @@ const ROWS: readonly KindConfig[] = [
     slug: 'pulls',
     strategy: 'collection',
     defaultMode: 'list',
-    hiddenModes: ['tree', 'gallery'],
+    // `board` hidden until a pr_state→category derivation exists server-side:
+    // today every tracked PR is born `to_do` and stays there, so a board would
+    // render one dishonest column. Restore the mode when the derivation lands.
+    hiddenModes: ['tree', 'gallery', 'board'],
     chip: {
       glyph: '⑂',
       tintBy: 'prState',
-      tones: { open: 'run', draft: 'idle', merged: 'brand', closed: 'idle' },
+      // `draft` is 'wait', not 'idle': it shared closed's tone, and while the
+      // WORD disambiguated, a draft (work forming) and a closed PR (work
+      // refused) at a glance read as one state. Colour+word means both halves
+      // carry the fact.
+      tones: { open: 'run', draft: 'wait', merged: 'brand', closed: 'idle' },
     },
     card: { fields: ['prState', 'repository', 'activityAt'] },
     list: baseList({
@@ -1334,7 +1498,13 @@ const ROWS: readonly KindConfig[] = [
       // missing counterpart to the session rail's deliberate exclusion of
       // landing-on-base. It renders disabled with its named reason until a
       // forge WRITE client exists (the tracker is read-only today).
-      primaries: ['merge-pr'],
+      //
+      // `refresh` beside it, R7-shaped: the PR chain is stale-aware everywhere
+      // (tile badge, pill precedence, link-summary's 'stale — refetch to
+      // update') and offered no door to un-stale a row anywhere. The deferred
+      // verb renders disabled-with-its-reason today and flips live with no
+      // consumer edit when the tracker refetch ships.
+      primaries: ['merge-pr', 'refresh'],
       blocks: [
         { block: 'link-summary', label: 'PULL REQUEST' },
         { block: 'fields', label: 'DETAILS' },
@@ -1342,7 +1512,8 @@ const ROWS: readonly KindConfig[] = [
       ],
       statusPill: {
         source: 'prState',
-        tones: { open: 'run', draft: 'idle', merged: 'brand', closed: 'idle' },
+        // Mirrors chip.tones value for value — see the draft note there.
+        tones: { open: 'run', draft: 'wait', merged: 'brand', closed: 'idle' },
       },
     },
   },
@@ -1357,13 +1528,29 @@ const ROWS: readonly KindConfig[] = [
     iconArt: KIND_ART.commit,
     slug: 'commits',
     strategy: 'collection',
-    defaultMode: 'feed',
+    // 'list', because that is what renders: no feed anatomy exists anywhere in
+    // EntityListPanel (only 'board' diverges), so 'feed' was declared
+    // divergence with nothing behind it. Say the truth until a feed exists.
+    defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '◉', tintBy: 'none' },
     card: { fields: ['repository', 'sha', 'createdBy'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'repository' }, { source: 'sha' }] },
+      /* Immutable history is a RECORD KEPT, not work finished: commit is in
+         `kind_seeds_done` (152), so without this every commit tile — the
+         whole kind screen — rendered struck through, reading as a list of
+         deleted rows. The 2026-08-29 library fix named the other six kinds
+         and missed the one other `kind_seeds_done` member. */
+      lifecycle: 'library',
+      /* Born `done`, so To Do (tabs[0]) is permanently empty — declare the
+         landing instead of leaning on the derived correction, exactly as
+         work_session declares `in_progress`. */
+      defaultCategory: 'done',
+      /* `createdBy` is provenance the row should tell — who/what recorded the
+         commit (the session persona via `record_session_commit`). The card
+         already carried it; the tile renderer already handles it. */
+      tile: { badges: [{ source: 'repository' }, { source: 'sha' }, { source: 'createdBy' }] },
       sort: [BY_CREATED, BY_ACTIVITY],
     }),
     panel: {
@@ -1385,7 +1572,12 @@ const ROWS: readonly KindConfig[] = [
     iconArt: KIND_ART.file,
     slug: 'files',
     strategy: 'collection',
-    defaultMode: 'gallery',
+    // 'list', because 'gallery' named a mode with no renderer — EntityListPanel
+    // branches only on 'board', there is no gallery anatomy or CSS anywhere in
+    // src/panels — so the row claimed a gallery and silently drew the plain
+    // list. The truthful default until a real gallery exists (and real
+    // thumbnails are blocked anyway: the server nulls file content on SUMMARY).
+    defaultMode: 'list',
     hiddenModes: ['board'],
     chip: { glyph: '▣', tintBy: 'none' },
     card: { fields: ['mimeType', 'sizeBytes', 'createdBy'] },
@@ -1393,6 +1585,9 @@ const ROWS: readonly KindConfig[] = [
       /* A file in Done is stored, not finished: 152 seeds the kind `done` at
          birth, so the work treatment struck through every healthy row. */
       lifecycle: 'library',
+      /* Born `done` (kind_seeds_done), so To Do can hold nothing, ever —
+         declare the landing rather than lean on the first-non-empty rescue. */
+      defaultCategory: 'done',
       tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'mimeType' }, { source: 'sizeBytes' }] },
       inlineEdit: { title: true },
@@ -1426,21 +1621,55 @@ const ROWS: readonly KindConfig[] = [
     strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
-    chip: { glyph: '✧', tintBy: 'equipped', tones: { true: 'run', false: 'idle' } },
+    /* Tones keyed on the WORDS the consumers actually look up: GraphView,
+       chrome and home-model all normalize the boolean to 'equipped'/'library'
+       BEFORE the tones lookup, so the old `{ true, false }` keys never hit —
+       an equipped spell wore idle everywhere the tint was consulted. */
+    chip: { glyph: '✧', tintBy: 'equipped', tones: { equipped: 'run', library: 'idle' } },
     card: { fields: ['equipped', 'excerpt', 'activityAt'] },
     list: baseList({
       /* Curated capability, not work in flight — done must not strike it. */
       lifecycle: 'library',
       tile: { badges: [{ source: 'equipped' }] },
       inlineEdit: { title: true },
+      /* The kind's defining verb, honestly refused: `equip` is a DEFERRED
+         action authored precisely so surfaces can render it
+         disabled-with-its-reason (R7). It flips live with no registry edit
+         when the executor lands. */
+      rowActions: ['equip'],
     }),
     panel: {
       archetype: 'generic',
+      primaries: ['equip'],
       blocks: [
         { block: 'fields', label: 'DEFINITION' },
-        { block: 'items', label: 'EQUIPPED BY' },
+        /* PEER-ROWS over the real edges, like memory's REMEMBERED BY. The
+           `items` block read `content.equipped`, which the server never
+           composes for spell — so the section said 'Nothing here yet.'
+           forever while the Connections tab showed the real `equips` edges
+           (the very edges the launch manifest consumes). */
+        {
+          block: 'peer-rows',
+          label: 'EQUIPPED BY',
+          params: {
+            edgeType: 'equips',
+            direction: 'incoming',
+            count: true,
+            empty: 'No teammate or task equips this spell yet — no session launches with it.',
+          },
+        },
         COLLECTIONS_BLOCK,
       ],
+      /* The one status fact this kind has, stated in the header: chrome's
+         statusValue already maps the boolean to 'equipped'/'library', so this
+         is pure registry data. 'Not equipped' rather than the opaque
+         'library' — the tile renderer's word, not this pill's, is the
+         remaining copy gap. */
+      statusPill: {
+        source: 'equipped',
+        tones: { equipped: 'run', library: 'idle' },
+        labels: { equipped: 'Equipped', library: 'Not equipped' },
+      },
     },
     palette: { createLabel: 'New spell' },
   },
@@ -1448,6 +1677,14 @@ const ROWS: readonly KindConfig[] = [
   // -- skill ----------------------------------------------------------------
   {
     kind: 'skill',
+    /* 'pink' beside memory — standing knowledge an agent carries, the same
+       family as the claims it holds. The closed ten-family palette has no
+       unclaimed member, and a declared family beats the gray fallback that
+       made skills indistinguishable from project and every custom kind; the
+       historically-confused spell/skill pair now also differ on the canvas
+       (spell keeps the fallback until its own family is ruled — it is pinned
+       as the family-less exemplar in tile-family.test.tsx). */
+    graphFamily: 'pink',
     label: 'Skill',
     labelPlural: 'Skills',
     icon: '✦',
@@ -1456,19 +1693,40 @@ const ROWS: readonly KindConfig[] = [
     strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
-    chip: { glyph: '✦', tintBy: 'equipped', tones: { true: 'run', false: 'idle' } },
+    /* Re-keyed to the consumers' lookup words — see the spell row's note. */
+    chip: { glyph: '✦', tintBy: 'equipped', tones: { equipped: 'run', library: 'idle' } },
     card: { fields: ['equipped', 'excerpt', 'activityAt'] },
     list: baseList({
       /* Curated capability, not work in flight — done must not strike it. */
       lifecycle: 'library',
       tile: { badges: [{ source: 'equipped' }] },
       inlineEdit: { title: true },
+      /* Honestly-refused defining verb — see the spell row's note. */
+      rowActions: ['equip'],
     }),
     panel: {
       archetype: 'generic',
+      primaries: ['equip'],
       blocks: [
         { block: 'fields', label: 'DEFINITION' },
-        { block: 'items', label: 'EQUIPPED BY' },
+        /* Same fix as spell's: the `items` block read `content.equipped`,
+           which the skills-table projection never emits, so EQUIPPED BY was
+           'Nothing here yet.' unconditionally — while the actual incoming
+           `equips` edges (the ones the launch manifest reads) sat one tab
+           over. NO statusPill here, deliberately: skill summaries hardcode
+           `equipped: false`, so a header pill would state 'Not equipped' as
+           fact about rows whose edges say otherwise — honest-by-absence until
+           the projection derives the boolean from the edges. */
+        {
+          block: 'peer-rows',
+          label: 'EQUIPPED BY',
+          params: {
+            edgeType: 'equips',
+            direction: 'incoming',
+            count: true,
+            empty: 'No teammate or task equips this skill yet — no session launches with it.',
+          },
+        },
         COLLECTIONS_BLOCK,
       ],
     },
@@ -1488,11 +1746,16 @@ const ROWS: readonly KindConfig[] = [
     defaultMode: 'list',
     hiddenModes: ['board'],
     chip: { glyph: '▦', tintBy: 'none' },
-    card: { fields: ['collectionType', 'itemCount', 'activityAt'] },
+    /* `collectionType` is GONE from card and tile: the server COALESCEs the
+       column to 'manual' and no code path anywhere writes another value, so
+       the badge printed the same jargon word on every row — a constant
+       promoted to anatomy is noise, not information. Re-declare it (with a
+       label/tones treatment) if a second type ever ships. */
+    card: { fields: ['itemCount', 'activityAt'] },
     list: baseList({
       /* A curated set is never "finished" — done keeps the title readable. */
       lifecycle: 'library',
-      tile: { badges: [{ source: 'collectionType' }, { source: 'itemCount' }] },
+      tile: { badges: [{ source: 'itemCount' }] },
       inlineEdit: { title: true },
     }),
     panel: {
@@ -1530,7 +1793,18 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['projectVersion', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'projectVersion' }] },
+      /* A project is a FACT ABOUT THE WORLD, not work in flight. Harmless
+         today (152's default arm seeds the kind `to_do`) and load-bearing the
+         day projects are reseeded `done`, which is arguably right for this
+         kind — declared now so that reseed cannot strike every title through. */
+      lifecycle: 'library',
+      /* The bare `projectVersion` badge is gone: 'v12' is an internal
+         materialization counter worn with no noun — unreadable as a fact. The
+         facts a project row should badge (repo, root, trust) live on
+         ProjectResource, not the summary; that is a contract gap, not one a
+         registry declaration can paper over. The Z2 card keeps the version,
+         where it sits among labelled fields. */
+      tile: { badges: [] },
     }),
     panel: {
       /* kind-bodies-2 handover, applied verbatim: the GOVERNED body. */
@@ -1542,8 +1816,11 @@ const ROWS: readonly KindConfig[] = [
         { block: 'unlink-footer', params: { action: 'unlink' } },
         {
           block: 'notice',
+          /* Human words, not projection jargon — 'materialized per-space
+             projection of node-level registry rows' was engineer-to-engineer
+             copy on a user surface. */
           params: {
-            text: 'Projects are a materialized per-space projection of node-level registry rows. Editing, deleting and moving them here is refused by design — manage them in node settings.',
+            text: 'This project is managed at the node, not in this space. Edit or remove it in node settings; here you can unlink it from this space.',
           },
         },
       ],
@@ -1621,6 +1898,9 @@ const ROWS: readonly KindConfig[] = [
       /* A memory in Done is a HELD claim (152 seeds the kind done), not a
          finished to-do — the strikethrough read as retracted. */
       lifecycle: 'library',
+      /* Born `done` (kind_seeds_done) — declare the landing tab instead of
+         leaning on the empty-tab auto-jump heuristic. */
+      defaultCategory: 'done',
       tile: { badges: [{ source: 'messages' }] },
     }),
     /*
@@ -1688,7 +1968,12 @@ const ROWS: readonly KindConfig[] = [
         },
       ],
     },
-    palette: { createLabel: 'New memory' },
+    /* NO palette entry, deliberately: `createLabel: 'New memory'` was dead
+       data that lied by existing — quickCreate is false, `createForm`'s closed
+       set has no value routing to MemoryComposer, and the command palette
+       navigates but never creates, so no surface could honour the label. The
+       real birth door is a holder's working-set '+ remember'; a palette entry
+       returns when a createForm value routes to the composer. */
   },
 
   // -- graph (Craft P1: ONE ROW holds vertices AND edges — the blueprint) --
@@ -1741,6 +2026,10 @@ const ROWS: readonly KindConfig[] = [
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',
+    /* 'green' — the execution family beside work_session: a loop exists to
+       fire runs. Any declared family beats the gray fallback, which collided
+       with project's DECLARED gray on the canvas and in its legend. */
+    graphFamily: 'green',
     label: 'Loop',
     labelPlural: 'Loops',
     icon: '↻',
@@ -1780,6 +2069,12 @@ const ROWS: readonly KindConfig[] = [
       // The scheduled-work form writes the required schedule and first
       // `nextRunAt`; the placeholder-only generic flow cannot create a loop.
       quickCreate: true,
+      /* NO assignee/attention chips: loops carry no `assigned_to` edges and
+         no attention verdict, so both inherited defaults were controls that
+         can never match — the docblock on `taskAttentionFilter` names exactly
+         this defect class. The archive chip still appends. The loop-true axis
+         (enabled/disabled) waits on a QueryFilter member that can express it. */
+      filters: [],
       tile: { badges: [{ source: 'messages' }] },
     }),
     /*
@@ -1816,7 +2111,11 @@ const ROWS: readonly KindConfig[] = [
             edgeType: 'triggered_by',
             direction: 'incoming',
             count: true,
-            empty: 'No firings recorded yet. Each firing derives a task and edges back here, so this list IS the run history — an empty one means it has not fired.',
+            /* One declarative sentence (Kinetic tone) — the previous copy was
+               a three-clause essay on what emptiness means. 'has not fired'
+               stays: this list IS the run history, so its emptiness is a fact
+               about the loop, not a missing read (pinned in loop-controls). */
+            empty: 'No firings recorded yet — each firing derives a task that edges back here, so an empty list means it has not fired.',
           },
         },
         COLLECTIONS_BLOCK,
@@ -1846,7 +2145,20 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       /* Published output is kept, not completed: 152 seeds the kind done. */
       lifecycle: 'library',
-      tile: { badges: [] },
+      /* Born `done`, so a zero-artifact space must not open on To Do — the
+         derived landing correction only helps once rows exist. */
+      defaultCategory: 'done',
+      /* No assignee/attention chips: artifacts have no assignees and no
+         attention verdict, so two of the three inherited chips could only
+         ever produce the contradiction empty state. Archive still appends. */
+      filters: [],
+      /* Publisher provenance on the row — who published (human vs agent) is
+         the §12.1 compensating control, already on every summary and already
+         handled by the shared renderer. `revisionNumber` stays UNdeclared:
+         it has no TileBadgeSource member or renderer case yet, and a declared
+         source nobody renders is the exact defect the coverage test exists
+         to refuse. */
+      tile: { badges: [{ source: 'createdBy' }] },
     }),
     panel: {
       /*
@@ -1884,6 +2196,9 @@ const ROWS: readonly KindConfig[] = [
   // -- worktree (server-provisioned Git checkout; lifecycle rides patch) ----
   {
     kind: 'worktree',
+    // 'red' — the git family, beside commit and pull_request; a worktree was
+    // the one git kind on the gray fallback.
+    graphFamily: 'red',
     label: 'Worktree',
     labelPlural: 'Worktrees',
     icon: '⎇',
@@ -1896,12 +2211,21 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['activityAt', 'createdBy'] },
     // Worktrees are born only from the server's provisioning saga (generic
     // create is refused server-side, same posture as `artifact`/`project`):
-    // no quickCreate, no palette create. Status pill deferred with Phase 5 —
-    // it needs a `worktreeStatus` StatusSource wired through the shared
-    // status-key maps, which is UI-lane work, not registry data.
+    // no quickCreate, no palette create. Status pill and tile badge remain
+    // deferred with Phase 5 — they need a `worktreeStatus` StatusSource wired
+    // through the shared status-key maps, which is UI-lane work, not registry
+    // data. `defaultCategory` is deliberately NOT declared: 152's default arm
+    // seeds worktree `to_do` (it is not in `kind_seeds_done` and no
+    // status→category derivation exists for it), so To Do is where the rows
+    // actually sit, contrary to the observed-kind instinct.
     list: baseList({
       quickCreate: false,
+      /* No assignee/attention chips — a worktree has neither concept, so the
+         inherited chips were controls that can never match. Archive appends. */
+      filters: [],
       tile: { badges: [] },
+      /* The one legal write gets its door — see WORKTREE_STATUS_CONTROL. */
+      valueControls: [WORKTREE_STATUS_CONTROL],
     }),
     panel: {
       archetype: 'generic',
@@ -1910,8 +2234,12 @@ const ROWS: readonly KindConfig[] = [
         COLLECTIONS_BLOCK,
       ],
       capabilityReasons: {
+        /* This sentence renders only when the SERVER refuses the edit — a
+           deleted row — so it must describe the refused row, not advertise
+           the transition a live worktree accepts (that door is the status
+           control on the row itself now). */
         canEdit:
-          'A worktree accepts exactly one edit: the forward-only status transition (merged / abandoned / deleted). Every other field is immutable after creation.',
+          'This worktree is deleted — its record is immutable and nothing about it can change.',
       },
     },
   },

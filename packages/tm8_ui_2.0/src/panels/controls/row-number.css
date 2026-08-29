@@ -1,0 +1,38 @@
+/*
+ * THE NUMBER VALUE CONTROL'S OWN GEOMETRY (`input: 'number'` on a registry
+ * `ValueControl` — the points estimate, today).
+ *
+ * A SEPARATE FILE, not an append to `panels.css`, for the coordination reason
+ * `panel-bar-phone.css` states at length: `panels.css` is shared and has
+ * concurrent lane work in flight in it; one new file per change is how this
+ * program avoids a shared-file merge conflict. Everything else about the
+ * control — the pill face, the live affordance, the hover — is the existing
+ * `.lp__statesel` / `.lp__statesel--live` vocabulary from that file, reused
+ * unchanged; only what is NUMBER-SPECIFIC lives here.
+ *
+ * No colors are declared here at all, so the token law (var()/color-mix only)
+ * is satisfied by having nothing to say.
+ */
+
+/* An estimate is a few digits, not a sentence — without a width the native
+   number input claims ~150px of a chip row for a two-digit answer. `ch` so
+   the box follows the mono digits it holds. */
+.cv2-root .lp__numsel {
+  width: 8ch;
+}
+
+/* The native spin buttons are a second, tiny control drawn INSIDE the pill —
+   two more click targets that nudge by one, in a row where every neighbour is
+   one clean chip. The field stays a number input (keyboard arrows, numeric
+   virtual keyboard via inputMode, min/step validation all keep working);
+   only the drawn spinner goes. */
+.cv2-root .lp__numsel::-webkit-outer-spin-button,
+.cv2-root .lp__numsel::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+.cv2-root .lp__numsel {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

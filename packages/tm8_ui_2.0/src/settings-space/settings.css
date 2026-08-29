@@ -142,9 +142,9 @@
 }
 
 .set-nav__eyebrow {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9.5px; /* L32 */
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.12em;
   color: var(--pn-ink-4);
   padding: 0 14px 8px; /* L32 */
@@ -321,9 +321,9 @@
 .set-ghost:hover { background: var(--pn-hover); }
 
 .set-eyebrow {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9.5px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--pn-ink-4);
   text-transform: uppercase;

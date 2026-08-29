@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/contract';
+import type { AcceptanceCriterion, EdgeView, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
@@ -18,6 +18,8 @@ import { MemorySetBlock, edgesOf, type MemoryAuthoring } from './MemorySetBlock'
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import './subtree-body.css';
+/* Acceptance authoring geometry — its own file per the shared-css convention. */
+import './subtree-acceptance.css';
 
 /**
  * THE SUBTREE ARCHETYPE BODY — T0-4 frame 2, the `task` region.
@@ -309,6 +311,7 @@ export function SubtreeBody({
           />
         </CollapsibleSection>
       ) : null}
+      <DependenciesSection detail={detail} onOpenEntity={onOpenEntity} />
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
       {notices.length > 0 ? (
         /* NEVER folded — a folded notice is a notice that was not delivered. */
@@ -414,7 +417,14 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
   // The estimate lives in CONTENT, not state — the same member-name read the
   // description does one region below, and the reason the grid was silent
   // about a field the create and patch inputs have always carried.
-  if (typeof content.pointsEstimate === 'number') {
+  //
+  // SUPPRESSED where the strip now owns it, through the same `controlled` set
+  // as priority and the dates (D67): the registry's `input:'number'` points
+  // control is a live editor of this exact fact one band up, and a read-only
+  // cell under a live control is the "buttons are broken" duplication that
+  // set produced this suppression rule for. A kind that declares no such
+  // control keeps the cell — for it, this is the only truth available.
+  if (typeof content.pointsEstimate === 'number' && !controlled.has('pointsEstimate')) {
     cells.push({
       key: 'pointsEstimate',
       label: 'Points',
@@ -660,6 +670,25 @@ function AcceptanceSection({
   onChange?: (next: AcceptanceCriterion[]) => void;
   unavailableReason?: string;
 }) {
+  /*
+   * THE AUTHORING STANCE (wave 3) — read by default, restructure on request,
+   * the same two-stance shape as the description one region up.
+   *
+   * Ticking is a RESTING gesture (the checkbox is the row); ADDING is a
+   * resting gesture too (the quiet row at the foot — criteria are born one at
+   * a time, and hiding birth behind a mode would re-create the "creating a
+   * task, nothing works" report this section answers). REWORDING and
+   * REMOVING are edit-stance gestures: destructive-adjacent, rare, and a
+   * permanent ✕ beside every criterion would make the reading list read as a
+   * form. Stance resets when the panel re-points at another entity.
+   */
+  const [editing, setEditing] = useState(false);
+  const [addText, setAddText] = useState('');
+  useEffect(() => {
+    setEditing(false);
+    setAddText('');
+  }, [detail.id]);
+
   const content = detail.content as unknown as Record<string, unknown>;
   const persisted = content.acceptanceCriteria;
   /*
@@ -676,23 +705,52 @@ function AcceptanceSection({
    * A REASON WINS OVER A HANDLER. `disabled={!onChange}` alone left a caller
    * that passed BOTH with live, clickable boxes wearing a refusal tooltip —
    * the control saying one thing and doing another. Both arms of the refusal
-   * are now the same decision.
+   * are now the same decision — and every affordance in this section (boxes,
+   * add, remove, reword) reads the SAME verdict, so no gesture can stay live
+   * while its siblings refuse.
    */
   const editable = onChange != null && unavailableReason == null;
+  const refusal = unavailableReason ? toReason(unavailableReason) : NOT_WIRED_REASON;
+
+  const commitAdd = () => {
+    const text = addText.trim();
+    if (!editable || text === '') return;
+    onChange([...criteria, { id: newCriterionId(), text, done: false }]);
+    setAddText('');
+  };
 
   return (
     <CollapsibleSection
       id="acceptance"
       label="ACCEPTANCE"
       count={`${completed}/${criteria.length}`}
-      empty={criteria.length === 0}
+      /* The SubtreeSection law, applied here now that this fold HOLDS an
+         affordance: no rows AND a LIVE add row ⇒ empty (the affordance
+         survives behind the reveal); a REFUSED add row keeps the fold
+         visible, because hiding it would hide the refusal's reason. */
+      empty={criteria.length === 0 && editable}
       defaultOpen={criteria.length > 0}
       testId="acceptance-section"
     >
       {criteria.length === 0 ? (
         <p className="pn-section__empty">No acceptance criteria on this yet.</p>
       ) : (
-        <div className="sb-rows">
+        <>
+          {editable ? (
+            /* The stance flip, in the description's own control vocabulary —
+               same class, same words, so the two regions read as one grammar. */
+            <div className="sb-acceptance__head">
+              <button
+                type="button"
+                className="sb-description__stance"
+                data-testid="acceptance-stance"
+                onClick={() => setEditing(!editing)}
+              >
+                {editing ? 'Done' : 'Edit'}
+              </button>
+            </div>
+          ) : null}
+          <div className="sb-rows">
           {criteria.map((criterion, index) => {
             const text = (
               <span
@@ -726,33 +784,137 @@ function AcceptanceSection({
                   <DisabledIconControl
                     label={criterion.text}
                     glyph={criterion.done ? '☑' : '☐'}
-                    reason={unavailableReason ? toReason(unavailableReason) : NOT_WIRED_REASON}
+                    reason={refusal}
                   />
                   {text}
                 </div>
               );
             }
 
+            const box = (
+              <input
+                type="checkbox"
+                className="sb-criterion__box"
+                /* In the edit stance the box is not inside a <label>, so the
+                   name must be explicit — the row's own text, as before. */
+                {...(editing ? { 'aria-label': criterion.text } : {})}
+                checked={criterion.done}
+                onChange={(event) =>
+                  onChange(
+                    criteria.map((c, i) => (i === index ? withDone(c, event.target.checked) : c)),
+                  )
+                }
+              />
+            );
+
+            if (editing) {
+              /*
+               * THE EDIT-STANCE ROW: reword in place, remove outright. The
+               * text input STAGES through the same whole-array draft the
+               * boxes use (`useTaskSave` — expectedVersion captured at first
+               * edit, flushed by Save), so a reword and a tick ride one
+               * patch and one conflict story. A DIV, not a <label>: three
+               * controls in one label would give them all one name.
+               */
+              return (
+                <div key={key} {...rowProps}>
+                  {box}
+                  <input
+                    type="text"
+                    className="sb-criterion__reword"
+                    data-testid="acceptance-reword"
+                    aria-label={`Reword criterion: ${criterion.text}`}
+                    value={criterion.text}
+                    onChange={(event) =>
+                      onChange(
+                        criteria.map((c, i) =>
+                          i === index ? { ...c, text: event.target.value } : c,
+                        ),
+                      )
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="sb-criterion__remove"
+                    data-testid="acceptance-remove"
+                    aria-label={`Remove criterion: ${criterion.text}`}
+                    title="Remove this criterion"
+                    onClick={() => onChange(criteria.filter((_, i) => i !== index))}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            }
+
             return (
               <label key={key} {...rowProps}>
-                <input
-                  type="checkbox"
-                  className="sb-criterion__box"
-                  checked={criterion.done}
-                  onChange={(event) =>
-                    onChange(
-                      criteria.map((c, i) => (i === index ? withDone(c, event.target.checked) : c)),
-                    )
-                  }
-                />
+                {box}
                 {text}
               </label>
             );
           })}
+          </div>
+        </>
+      )}
+      {/*
+        THE BIRTH ROW — the worst finding of the wave-3 census made flesh:
+        `acceptanceCriteria` has ridden Create AND Patch since the task
+        commands shipped, and NO surface in the product could append one. The
+        quiet always-on row is the same posture as SUBTREE's `＋ add child…`,
+        and it takes the same L6 arm when the save path is absent: visible,
+        dead, and saying why — never hidden, never a live box that stages
+        nothing.
+      */}
+      {editable ? (
+        <div className="sb-addcriterion" data-testid="acceptance-add-row">
+          <input
+            type="text"
+            className="sb-addcriterion__input"
+            data-testid="acceptance-add-input"
+            aria-label="New acceptance criterion"
+            placeholder="＋ add criterion"
+            value={addText}
+            onChange={(event) => setAddText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') commitAdd();
+            }}
+          />
+          {/* Plain `disabled` while empty is form-validity, not a refusal —
+              the SaveControls/sheet-footer idiom, not the L6 one: there is
+              nothing to explain about an empty box beyond its own emptiness. */}
+          <button
+            type="button"
+            className="sb-addcriterion__commit"
+            data-testid="acceptance-add"
+            disabled={addText.trim() === ''}
+            onClick={commitAdd}
+          >
+            Add
+          </button>
         </div>
+      ) : (
+        <DisabledIconControl label="Add criterion" glyph="＋" reason={refusal}>
+          add criterion…
+        </DisabledIconControl>
       )}
     </CollapsibleSection>
   );
+}
+
+/**
+ * A fresh criterion id, in the server's own family. The node backfills
+ * `ac_${index+1}` onto id-less rows (`entities-commands-tracking.ts`
+ * `acceptanceCriteria`) and the fixtures write `ac-N` — BOTH positional, so a
+ * positional mint here would collide with a surviving row's id the first time
+ * one was removed from the middle. The suffix is therefore entropy, not
+ * position; `randomUUID` is secure-context-gated, hence the fallback (the
+ * `commands.ts` mutation-id idiom).
+ */
+function newCriterionId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return `ac_${c.randomUUID()}`;
+  return `ac_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /**
@@ -1023,6 +1185,122 @@ function RunChip({
 }
 
 // ---------------------------------------------------------------------------
+// DEPENDENCIES — the depends_on edges, with their facts kept on them
+// ---------------------------------------------------------------------------
+
+/**
+ * WHY A NAMED SECTION AND NOT MORE LINKED CHIPS — the fourth recurrence of the
+ * `OWN_SECTION_EDGES` failure class (see that docblock). A blocked task's ROW
+ * says "blocked ×2" (`badges.blocked.unresolvedHardDependencyCount`), but its
+ * own body used to render the edges behind that count as anonymous LINKED
+ * chips — no direction, no hard/soft, no resolved state, i.e. none of the
+ * facts that make the row's claim explainable.
+ *
+ * STRUCTURAL, NOT PER-KIND: like ACCEPTANCE one region up, this reads the
+ * detail's own shape (`connections` groups typed `depends_on`) and never asks
+ * "is this a task?" — any subtree-archetype entity that carries the edges gets
+ * the section, so no registry declaration is needed and §15.2 stays intact.
+ *
+ * The VOCABULARY is borrowed, not invented (D22's spirit): direction words are
+ * the session-graph's (`depends_on:out` → "depends on", `:in` → "blocks",
+ * src/session-graph/model.ts), and hard-by-default is the graph model's ruling
+ * (`e.hard === false ? soft : hard`, src/graph/model.ts:315) — the same edge
+ * must not read soft on one surface and hard on another.
+ */
+function DependenciesSection({
+  detail,
+  onOpenEntity,
+}: {
+  detail: EntityDetail;
+  onOpenEntity?: (id: string) => void;
+}) {
+  // Outgoing: THIS entity depends on the peer (the peer gates it).
+  // Incoming: the peer depends on THIS entity (this entity gates the peer).
+  const dependsOn = edgesOf(detail, { edgeType: 'depends_on', direction: 'outgoing' });
+  const blocks = edgesOf(detail, { edgeType: 'depends_on', direction: 'incoming' });
+  const count = dependsOn.length + blocks.length;
+
+  return (
+    <CollapsibleSection
+      id="dependencies"
+      label="DEPENDENCIES"
+      count={count}
+      empty={count === 0}
+      defaultOpen={count > 0}
+      testId="dependencies-section"
+    >
+      {count === 0 ? (
+        /* The honest empty line: absence of dependencies is a fact about the
+           work, not a blank to skip — this waits on nothing, on purpose. */
+        <p className="pn-section__empty">No dependencies — this waits on nothing, and nothing waits on it.</p>
+      ) : (
+        <div className="sb-rows">
+          {dependsOn.map((edge) => (
+            <DependencyRow key={edge.id} detail={detail} edge={edge} direction="depends-on" onOpenEntity={onOpenEntity} />
+          ))}
+          {blocks.map((edge) => (
+            <DependencyRow key={edge.id} detail={detail} edge={edge} direction="blocks" onOpenEntity={onOpenEntity} />
+          ))}
+        </div>
+      )}
+    </CollapsibleSection>
+  );
+}
+
+function DependencyRow({
+  detail,
+  edge,
+  direction,
+  onOpenEntity,
+}: {
+  detail: EntityDetail;
+  edge: EdgeView;
+  direction: 'depends-on' | 'blocks';
+  onOpenEntity?: (id: string) => void;
+}) {
+  const peer = edge.source.id === detail.id ? edge.target : edge.source;
+  /* Hard by DEFAULT — the graph model's reading of the same optional member
+     (src/graph/model.ts:315): only an explicit `hard: false` is soft. */
+  const hard = edge.hard !== false;
+  /* Resolution is TRI-STATE and rendered as such: `undefined` means the edge
+     carries no verdict, and printing "unresolved" for it would claim a fact
+     nobody recorded — the hollow-value law, applied to an edge member. */
+  const resolvedWord =
+    edge.resolved === true ? 'resolved' : edge.resolved === false ? 'unresolved' : null;
+  /* The BLOCKING predicate is the graph model's, verbatim (model.ts:320):
+     hard and explicitly unresolved. Direction does not change the edge's own
+     state — it changes who is gated, which the direction word already says. */
+  const blocking = hard && edge.resolved === false;
+  const tone = blocking ? 'block' : 'idle';
+  const facts = [hard ? 'hard' : 'soft', resolvedWord].filter(Boolean).join(' · ');
+
+  return (
+    <button
+      type="button"
+      className="sb-row"
+      data-testid="dependency-row"
+      data-direction={direction}
+      data-blocking={blocking ? 'true' : 'false'}
+      onClick={() => onOpenEntity?.(peer.id)}
+    >
+      {/* Filled when the dependency is RESOLVED — the same filled-means-done
+          grammar as the SUBTREE dot above. */}
+      <span
+        className={`sb-dot sb-dot--${tone}${edge.resolved === true ? ' sb-dot--filled' : ''}`}
+        aria-hidden
+      />
+      <span className={`sb-word sb-word--${tone}`}>
+        {direction === 'depends-on' ? 'depends on' : 'blocks'}
+      </span>
+      <span className="sb-row__title">
+        <span aria-hidden><KindIcon kind={peer.kind} /></span> {peer.title}
+      </span>
+      <span className={`sb-word sb-word--${tone}`}>{facts}</span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // LINKED
 // ---------------------------------------------------------------------------
 
@@ -1122,8 +1400,16 @@ function isRunKind(summary: EntitySummary): boolean {
  *   · `contains` (2026-08-12) — curated collection membership, the third
  *     recurrence of the class. It gets the COLLECTIONS section (the
  *     `membership` block) with add/remove, instead of an anonymous chip.
+ *
+ *   · `depends_on` (2026-08-29) — the FOURTH recurrence. The edge carries
+ *     direction, hard/soft and a resolved verdict — the exact facts behind a
+ *     row's "blocked ×N" badge — and a chip drops all three. It gets the
+ *     DEPENDENCIES section, which is drawn structurally from the connections
+ *     rather than from a declared block, so it joins this set unconditionally.
  */
-const OWN_SECTION_EDGES: ReadonlySet<string> = new Set(['remembers', 'triggered_by', 'contains']);
+const OWN_SECTION_EDGES: ReadonlySet<string> = new Set([
+  'remembers', 'triggered_by', 'contains', 'depends_on',
+]);
 
 function peersOf(detail: EntityDetail): EntitySummary[] {
   const out: EntitySummary[] = [];

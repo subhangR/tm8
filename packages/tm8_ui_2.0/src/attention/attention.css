@@ -31,9 +31,9 @@
 .cv2-root .att-inbox__eyebrow {
   margin-bottom: var(--pn-space-3);
   color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9.5px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.055em;
   text-transform: uppercase;
 }

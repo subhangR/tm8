@@ -134,4 +134,31 @@ describe('ConnectionsTab — grouped by entity, edge types per entity', () => {
     expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(0);
     expect(container.textContent).toContain('Nothing linked yet');
   });
+
+  it('the "link an entity" affordance is honestly refused, never enabled-inert (wave 3)', () => {
+    /*
+     * `actionLabel` with no `onAction` used to render a LIVE button whose
+     * click went nowhere — a genuinely dead control from the day it was
+     * written, in the tab whose empty state also taught two gestures
+     * (drag-to-link, the `/` picker) that no surface implements. Checked
+     * before refusing: no ConnectionsTab mount passes any relate/link
+     * mechanism and the panel's commands port carries no edge write — so the
+     * affordance stays, dead, and says why, naming the CLI door that exists.
+     */
+    const { container, getByLabelText } = render(
+      <ConnectionsTab detail={detailWith([], [])} />,
+    );
+    // No NATIVE button claims the verb (the refusal is a role=button span,
+    // aria-disabled and focusable, per the DisabledWithReason contract)…
+    expect(container.querySelector('button.pn-btn--quiet')).toBeNull();
+    // …the refusal carries it instead, reason and remedy attached.
+    const refused = getByLabelText('⊕ link an entity');
+    expect(refused.getAttribute('aria-disabled')).toBe('true');
+    expect(refused.tagName).not.toBe('BUTTON');
+    expect(container.textContent).toMatch(/linking is not wired on this surface/i);
+    expect(container.textContent).toMatch(/tm8 edge create/);
+    // The sentence no longer teaches gestures that do not exist.
+    expect(container.textContent).not.toMatch(/drag an entity here/i);
+    expect(container.textContent).not.toMatch(/press \//);
+  });
 });
