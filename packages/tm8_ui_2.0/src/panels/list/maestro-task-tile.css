@@ -148,12 +148,12 @@
    session row that was not. */
 .cv2-root .pn-tt {
   --tt-indent: 0px;
-  /* THE TITLE NEVER RUNS UNDER THE ACTION CLUSTER. The cluster stays absolute
-     to preserve the 29px desktop row, while `.pn-tt__main` below derives its
-     end reserve from the number of controls ACTUALLY rendered. This value is
-     only the one-slot floor (22px control + 7px leading pad + 6px edge); the
-     child-count selectors replace it for every larger cluster. */
-  --tt-actions-reserve: 35px;
+  /* A HIDDEN CLUSTER TAKES NO TITLE WIDTH. The row keeps its ordinary end inset
+     at rest; hover, keyboard focus, open details and coarse-pointer layouts
+     promote the measured cluster width below into the active reserve. */
+  --tt-actions-reserve: 8px;
+  /* One slot: 22px control + 7px leading pad + 6px edge anchor. */
+  --tt-actions-revealed-reserve: 35px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -222,26 +222,30 @@
   min-width: 0;
   box-sizing: border-box;
   min-height: var(--pn-listrow-h);
-  /* Right pad is the cluster reserve (see `--tt-actions-reserve` on .pn-tt),
-     not the old 8px: the title's ellipsis point now sits clear of the
-     floating actions in all three hover states. box-sizing stays border-box
-     so the 29px floor keeps measuring the same box. */
+  /* At rest this is the ordinary 8px end inset. Reveal states swap in the
+     rendered cluster measurement without charging every other row for controls
+     that are both transparent and inert. */
   padding: 6px var(--tt-actions-reserve) 6px calc(7px + var(--tt-indent));
   cursor: pointer;
 }
-/* THE RESERVE IS THE RENDERED CLUSTER, NOT A KIND INVENTORY. RowActionCluster
-   owns which controls exist and their order; these selectors merely measure
-   its direct slots. At the desktop gap, N slots consume 22N + 2(N-1) + 7px
-   cluster padding + 6px edge anchor. Enumerating the bounded registry surface
-   keeps the arithmetic compatible with every browser we ship without teaching
-   this stylesheet that a task "has" any particular verbs. */
-.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-reserve: 59px; }
-.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-reserve: 83px; }
-.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-reserve: 107px; }
-.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-reserve: 131px; }
-.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-reserve: 155px; }
-.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-reserve: 179px; }
-.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-reserve: 203px; }
+/* THE REVEALED RESERVE IS THE RENDERED CLUSTER, NOT A KIND INVENTORY.
+   RowActionCluster owns which controls exist and their order; these selectors
+   merely measure its direct slots. At the desktop gap, N slots consume 22N +
+   2(N-1) + 7px cluster padding + 6px edge anchor. Enumerating the bounded
+   registry surface keeps the arithmetic compatible with every browser we ship
+   without teaching this stylesheet that a task "has" particular verbs. */
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-revealed-reserve: 59px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-revealed-reserve: 83px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-revealed-reserve: 107px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-revealed-reserve: 131px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-revealed-reserve: 155px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-revealed-reserve: 179px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-revealed-reserve: 203px; }
+.cv2-root .pn-tt:hover .pn-tt__main,
+.cv2-root .pn-tt:focus-within .pn-tt__main,
+.cv2-root .pn-tt[data-details='open'] .pn-tt__main {
+  --tt-actions-reserve: var(--tt-actions-revealed-reserve);
+}
 .cv2-root .pn-tt__arrow {
   width: 16px;
   height: 16px;
@@ -452,6 +456,9 @@
    Neither implies the other, and a capture taken through the override seam
    would have reported the coarse-only rule as unfixed. */
 @media (pointer: coarse) {
+  .cv2-root .pn-tt__main {
+    --tt-actions-reserve: var(--tt-actions-revealed-reserve);
+  }
   .cv2-root .pn-tt__actions {
     opacity: 1;
     pointer-events: auto;
@@ -670,8 +677,7 @@
 @container task-tile (max-width: 480px) {
   .cv2-root .pn-tt__main {
     gap: 7px;
-    /* The cluster reserve replaces the old 8px end pad here too — the panel
-       narrowing is exactly when the title used to run under the actions. */
+    /* The reveal-state reserve is inherited here too; resting rows keep 8px. */
     padding-inline: calc(7px + var(--tt-indent)) var(--tt-actions-reserve);
   }
 
@@ -699,14 +705,14 @@
 
   /* Same rendered-slot measurement at the 1px compact gap: 22N + (N-1) +
      7px cluster padding + 6px edge anchor. */
-  .cv2-root .pn-tt__main { --tt-actions-reserve: 35px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-reserve: 58px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-reserve: 81px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-reserve: 104px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-reserve: 127px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-reserve: 150px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-reserve: 173px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-reserve: 196px; }
+  .cv2-root .pn-tt__main { --tt-actions-revealed-reserve: 35px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-revealed-reserve: 58px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-revealed-reserve: 81px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-revealed-reserve: 104px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-revealed-reserve: 127px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-revealed-reserve: 150px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-revealed-reserve: 173px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-revealed-reserve: 196px; }
 
   .cv2-root .pn-tt__arrowCount {
     display: none;
@@ -748,13 +754,13 @@
   }
   /* The first non-disclosure control is hidden above, so count the remaining
      visible slots. A disclosure-only cluster keeps its one-slot floor. */
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-reserve: 35px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-reserve: 58px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-reserve: 81px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-reserve: 104px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-reserve: 127px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-reserve: 150px; }
-  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-reserve: 173px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-revealed-reserve: 35px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-revealed-reserve: 58px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-revealed-reserve: 81px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-revealed-reserve: 104px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-revealed-reserve: 127px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-revealed-reserve: 150px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-revealed-reserve: 173px; }
 }
 .cv2-root .pn-tt .lq__profile {
   align-self: flex-start;
