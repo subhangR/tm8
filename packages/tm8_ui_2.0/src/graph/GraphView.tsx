@@ -949,11 +949,19 @@ export function GraphView(props: GraphViewProps) {
                 const dimmed =
                   neighborhood !== null &&
                   !(e.sourceId === hoverId || e.targetId === hoverId);
+                // The active-path emphasis: an edge touching the hovered or
+                // selected node is the one the viewer is reading, and it says
+                // so — brass, wider, above the hairline crowd. Blocked keeps
+                // its own color regardless (honesty outranks emphasis).
+                const touchesFocus =
+                  (hoverId !== null && (e.sourceId === hoverId || e.targetId === hoverId)) ||
+                  (selectedId !== null && (e.sourceId === selectedId || e.targetId === selectedId));
                 const cls = [
                   'gv-edge',
                   e.blocked ? 'gv-edge--blocked' : '',
                   live ? 'gv-edge--live' : '',
                   dimmed ? 'gv-edge--dim' : '',
+                  touchesFocus ? 'gv-edge--hot' : '',
                 ]
                   .filter(Boolean)
                   .join(' ');
@@ -961,9 +969,6 @@ export function GraphView(props: GraphViewProps) {
                 // canvas is legible (k ≥ 0.9), when its edge touches the hovered
                 // or selected node, or when it is BLOCKED — the word "blocked"
                 // never disappears (honesty law), whatever the zoom.
-                const touchesFocus =
-                  (hoverId !== null && (e.sourceId === hoverId || e.targetId === hoverId)) ||
-                  (selectedId !== null && (e.sourceId === selectedId || e.targetId === selectedId));
                 const showLabel = tf.k >= 0.9 || touchesFocus || e.blocked;
                 return (
                   <g key={e.id} className={cls}>
@@ -1051,6 +1056,13 @@ export function GraphView(props: GraphViewProps) {
                       <KindIcon kind={p.entity.kind} />
                     </span>
                     <span className="gv-node__kind">{row.label}</span>
+                    {/* The mono ref — the id's own tail, never invented. It is
+                        what turns "a task card" into "THIS task", the way a
+                        ticket number does, and it echoes the detail panel's id
+                        chip so the two surfaces corroborate each other. */}
+                    <span className="gv-node__ref" aria-hidden>
+                      {p.entity.id.slice(-4)}
+                    </span>
                     <span className="gv-node__pills">
                       {pill && <Pill tone={pill.tone}>{pill.word}</Pill>}
                       {liveness === 'live' && (
@@ -1180,7 +1192,12 @@ export function GraphView(props: GraphViewProps) {
                     })
                   }
                 >
-                  <i data-family={row.graphFamily ?? 'gray'} aria-hidden />
+                  {/* The kind's DRAWN mark, family-tinted — the same registry
+                      artwork the card eyebrow wears, so the legend teaches the
+                      exact symbol the canvas uses instead of a bare color dot. */}
+                  <span className="gv-legend__mark" data-family={row.graphFamily ?? 'gray'} aria-hidden>
+                    <KindIcon kind={k} size={13} />
+                  </span>
                   {row.label}
                 </button>
               );
