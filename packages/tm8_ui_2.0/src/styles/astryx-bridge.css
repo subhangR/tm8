@@ -4,8 +4,10 @@
    un-layered tm8 rules always win where both apply) and pins light-dark()
    resolution to tm8's scoped theme. Since the 2026-08-29 owner ruling,
    tokens.css (the Kinetic Elite ramp) is the single source of truth for
-   color, type families, radii, shadows and motion - the token mapping below
-   carries ONLY values proven identical under BOTH loaded Astryx themes.
+   color, type families, radii, shadows and motion. The bridge below has two
+   deliberately one-way jobs: a value-identical Astryx -> tm8 alias for the
+   one matching type size, and tm8 -> Astryx semantic colors so Astryx atoms
+   share the Kinetic palette without replacing it.
    History and the per-token divergence tables live in
    docs/ui/astryx-adoption.md.
    NOTE for editors: never write a glob ending in star-slash inside a comment
@@ -29,17 +31,59 @@
   color-scheme: dark;
 }
 
-/* --- token bridge: value-identical mappings only ---------------------------
+/* --- token bridge ----------------------------------------------------------
    OWNER RULING 2026-08-29 (Kinetic Elite): the former full remap pointed
    every token at Astryx-neutral values, which is why the Kinetic palette
    could never render - Astryx neutral is a near-grayscale ramp whose accent
-   resolves to black. Astryx CSS stays loaded (its components read the
-   Astryx variables directly and keep working); this block keeps ONLY
-   mappings proven value-identical under BOTH loaded themes, so a theme swap
-   can never shift a pixel. Today that is exactly one token: the fine size
-   (Astryx font-size-xs is 10px under neutral AND gothic). The doubled
-   selector is kept for the day more identical values appear. */
+   resolves to black. The --pn-* side therefore keeps ONLY mappings proven
+   value-identical under BOTH loaded themes. Today that is exactly one token:
+   the fine size (Astryx font-size-xs is 10px under neutral AND gothic).
+
+   The reverse direction is different: Astryx atoms placed inside tm8 must
+   consume tm8's semantic palette. Without these aliases Badge and ProgressBar
+   remain stock neutral (including a near-black "info" badge) while the card
+   around them follows Kinetic light/dark. This adapter changes Astryx's
+   component-facing variables, never the --pn-* source values. Solid signal
+   fills use an explicit theme-aware foreground: accent needs light-on-blue in
+   light mode and dark-on-blue in dark mode; the brighter status colors remain
+   dark-on-signal in both modes. The doubled selector outranks both theme
+   packages and the later single-class token declarations without !important. */
 .cv2-root[data-astryx-theme][data-astryx-theme],
 [data-astryx-theme] .cv2-root.cv2-root {
+  /* The only Astryx -> tm8 alias. */
   --pn-fs-fine: var(--font-size-xs, 10px);
+
+  /* tm8 -> Astryx: surfaces and content. */
+  --color-background-surface: var(--pn-surface);
+  --color-background-body: var(--pn-paper);
+  --color-background-card: var(--pn-card);
+  --color-background-popover: var(--pn-card);
+  --color-background-muted: var(--pn-hover);
+  --color-neutral: var(--pn-idle-soft);
+  --color-text-primary: var(--pn-ink);
+  --color-text-secondary: var(--pn-ink-2);
+  --color-text-disabled: var(--pn-ink-4);
+  --color-text-accent: var(--pn-brand-2);
+  --color-icon-primary: var(--pn-ink);
+  --color-icon-secondary: var(--pn-ink-2);
+  --color-icon-disabled: var(--pn-ink-4);
+  --color-border: var(--pn-line);
+  --color-border-emphasized: var(--pn-line-2);
+  --color-skeleton: var(--pn-active);
+  --color-track: var(--pn-line-2);
+
+  /* tm8 -> Astryx: interactive and status semantics. */
+  --color-accent: var(--pn-brand);
+  --color-accent-muted: var(--pn-brand-soft);
+  --color-icon-accent: var(--pn-brand);
+  --color-on-accent: light-dark(var(--pn-card), var(--pn-paper));
+  --color-success: var(--pn-run);
+  --color-success-muted: var(--pn-run-soft);
+  --color-on-success: light-dark(var(--pn-ink), var(--pn-paper));
+  --color-warning: var(--pn-wait);
+  --color-warning-muted: var(--pn-wait-soft);
+  --color-on-warning: light-dark(var(--pn-ink), var(--pn-paper));
+  --color-error: var(--pn-block);
+  --color-error-muted: var(--pn-block-soft);
+  --color-on-error: light-dark(var(--pn-ink), var(--pn-paper));
 }
