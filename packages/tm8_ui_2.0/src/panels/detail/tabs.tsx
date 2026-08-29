@@ -199,10 +199,33 @@ export function ConnectionsTab({
     <div className="pn-body" id="tabpanel-connections" role="tabpanel" aria-labelledby="tab-connections">
       {graph === undefined ? null : <ConnectionsViewSwitch view={view} onChange={setView} />}
       {empty ? (
+        /*
+         * THE HONEST EMPTY STATE, wave 3. Two lies stood here:
+         *
+         *   1. The SENTENCE taught two gestures — "drag an entity here, or
+         *      press / and type its name" — and neither is implemented on any
+         *      surface. An empty region "teaches the grammar in place" (T4
+         *      C-1) only when the grammar exists; teaching a fiction is worse
+         *      than silence.
+         *   2. The BUTTON was enabled-inert: `actionLabel` with no `onAction`
+         *      rendered a live "⊕ link an entity" whose click went nowhere
+         *      (`PanelStates.tsx` drew it with `onClick={undefined}`) — the
+         *      exact class the title span, the Terminate bar and the
+         *      tombstone Restore were each caught in before it.
+         *
+         * CHECKED BEFORE REFUSING (wave-3 order): no ConnectionsTab mount —
+         * EntityDetailPanel's arm or EntityView's aux column — passes any
+         * relate/link mechanism, and the panel's `commands` port
+         * (`AuthoringCommands`) carries no edge write. So the affordance
+         * stays, DEAD AND SAYING WHY, with the one linking door that does
+         * exist today named as the remedy. When a host grows a link flow,
+         * `EmptyBody.onAction` is the wire to pass it through.
+         */
         <EmptyBody
           glyph="⊕"
-          sentence="Nothing linked yet — drag an entity here, or press / and type its name."
+          sentence="Nothing linked yet."
           actionLabel="⊕ link an entity"
+          actionUnavailableReason="linking is not wired on this surface — tm8 edge create <src> <type> <dst> writes the edge today"
         />
       ) : null}
 

@@ -1764,9 +1764,9 @@
   background: none;
   text-align: left;
   padding: 9px 4px 5px;
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9.5px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--pn-ink-4);
   cursor: pointer;
@@ -3916,5 +3916,240 @@
   margin: 0;
   padding: 2px 0 4px;
   font-size: 11px;
+  color: var(--pn-ink-4);
+}
+
+/* ==========================================================================
+   KINETIC ELITE — WAVE 3C. Panel glass cards, properties rows, the live
+   status ring, acceptance rows, tile family accents and the connections
+   guide. CSS ONLY — every selector below is existing vocabulary plus the
+   two hooks wave 3's TSX agents introduce (`.pn-header__ref` from W3B,
+   `data-family` on tiles from W3E).
+
+   GUARDS THAT READ THIS FILE AS TEXT:
+   · row-height-parity.test.ts — every block carrying
+     `min-height: var(--pn-listrow-h)` declares `box-sizing: border-box`
+     in the SAME block. Honoured below, twice.
+   · tile-fill-parity.test.ts — the three tile ROOT rules stay
+     background-free; the family accent rides separate `[data-family]`
+     rules so the root bodies are untouched.
+   · hex-ban.test.ts — colours are var()/color-mix only.
+   ========================================================================== */
+
+/* --- W3C·1 CONTENT SECTIONS AS GLASS CARDS --------------------------------
+   The subtree Content tab's section blocks — MetaGrid (`.sb-grid`),
+   description (`.sb-description`), runs (`.sb-section`) and every fold
+   (acceptance / subtree / git / memories / collections / linked, all
+   `.pn-fold`) — each become one card. The 12px between cards is `.pn-body`'s
+   own flex gap; nothing re-declares it. Scoped to `.sb-body` so the
+   artifact frame (`block-artifact-preview`) and the terminal body keep
+   their full-bleed treatment. */
+.cv2-root .sb-body > .sb-grid,
+.cv2-root .sb-body > .sb-description,
+.cv2-root .sb-body > .sb-section,
+.cv2-root .sb-body > .pn-fold {
+  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-sm);
+  padding: var(--pn-space-3);
+}
+/* The fold's own top hairline separated it from its neighbour in the flat
+   layout; inside a card the border does that job and the hairline reads as
+   a scratch across the glass. */
+.cv2-root .sb-body > .pn-fold > .pn-fold__head {
+  border-top: 0;
+}
+
+/* --- W3C·2 PROPERTIES ROWS -------------------------------------------------
+   The MetaGrid's two-column cell grid becomes a single column of hover rows:
+   eyebrow label left, value right, held to the shared 29px list-row floor.
+   `box-sizing: border-box` in the SAME block — the floor must measure the
+   padded box (row-height-parity reads this file as text). */
+.cv2-root .sb-body > .sb-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cv2-root .sb-body .sb-grid__cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+  min-height: var(--pn-listrow-h);
+  box-sizing: border-box;
+  padding: 0 var(--pn-space-2);
+  border-radius: var(--pn-r-sm);
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-root .sb-body .sb-grid__cell:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .sb-body .sb-grid__label {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+
+/* --- W3C·3 STATUS PULSE RING -----------------------------------------------
+   The LIVE pill only. The pill's live state is the kit's streaming/live
+   marker `kit-pill__dot--pulse` (Pill dot="pulse"; StatusPillFor's live
+   treatment is the only header path that earns it), so the ring enhances
+   THAT rather than inventing a parallel live class. `.pn-pill--live-ring`
+   is the same ring as an explicit opt-in hook. currentColor: the pill's
+   tone ink (run green on a live session) is the ring's colour for free. */
+.cv2-root .kit-pill__dot--pulse,
+.cv2-root .pn-pill--live-ring {
+  position: relative;
+}
+.cv2-root .kit-pill__dot--pulse::before,
+.cv2-root .pn-pill--live-ring::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  animation: pn-live-ring 2s var(--pn-ease-out) infinite;
+}
+@keyframes pn-live-ring {
+  0% { transform: scale(0.55); opacity: 0.7; }
+  70%, 100% { transform: scale(1.9); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .kit-pill__dot--pulse::before,
+  .cv2-root .pn-pill--live-ring::before {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* --- W3C·4 ACCEPTANCE ROWS -------------------------------------------------
+   Criterion rows join the 29px floor (border-box in-block, same guard as
+   above). The NEXT criterion — the first unchecked one — carries a 3px
+   brand accent bar: `:has(:not(:checked))` lights every unchecked row, the
+   sibling rule below puts out all but the first. Checked rows dim to .55;
+   the strike itself stays on `.sb-criterion__text--done` (subtree-body.css).
+   PANEL scope is deliberately kind-blind — the lifecycle split
+   (`data-lifecycle`) is a TILE fact, not an acceptance-row one. */
+.cv2-root .sb-body .sb-criterion {
+  min-height: var(--pn-listrow-h);
+  box-sizing: border-box;
+  padding: 3px var(--pn-space-2);
+  border-left: 3px solid transparent;
+}
+.cv2-root .sb-body .sb-criterion:has(.sb-criterion__box:not(:checked)) {
+  border-left-color: var(--pn-brand);
+}
+.cv2-root .sb-body .sb-criterion:has(.sb-criterion__box:not(:checked)) ~ .sb-criterion:has(.sb-criterion__box:not(:checked)) {
+  border-left-color: transparent;
+}
+.cv2-root .sb-body .sb-criterion:has(.sb-criterion__box:checked) {
+  opacity: 0.55;
+}
+
+/* --- W3C·5 TILE FAMILY ACCENT ----------------------------------------------
+   The kind-family colour map, defined ONCE here and scoped to the three tile
+   anatomies (standard `.lp__tile`, control-card `.pn-tt`, session-tree
+   `.pn-st`). Same pattern as graph.css's `--gvf` mapping: Astryx semantic
+   vars first, house functional ramp as fallback. W3E stamps `data-family`
+   on the tile; a tile without the attribute draws no accent and shifts no
+   layout. Separate rules, never the tile ROOT bodies (tile-fill-parity). */
+.cv2-root .lp__tile[data-family='blue'],
+.cv2-root .pn-tt[data-family='blue'],
+.cv2-root .pn-st[data-family='blue'] { --pnf: var(--color-icon-blue, var(--pn-info)); --pnf-soft: var(--color-background-blue, var(--pn-info-soft)); }
+.cv2-root .lp__tile[data-family='green'],
+.cv2-root .pn-tt[data-family='green'],
+.cv2-root .pn-st[data-family='green'] { --pnf: var(--color-icon-green, var(--pn-run)); --pnf-soft: var(--color-background-green, var(--pn-run-soft)); }
+.cv2-root .lp__tile[data-family='orange'],
+.cv2-root .pn-tt[data-family='orange'],
+.cv2-root .pn-st[data-family='orange'] { --pnf: var(--color-icon-orange, var(--pn-wait)); --pnf-soft: var(--color-background-orange, var(--pn-wait-soft)); }
+.cv2-root .lp__tile[data-family='red'],
+.cv2-root .pn-tt[data-family='red'],
+.cv2-root .pn-st[data-family='red'] { --pnf: var(--color-icon-red, var(--pn-block)); --pnf-soft: var(--color-background-red, var(--pn-block-soft)); }
+.cv2-root .lp__tile[data-family='purple'],
+.cv2-root .pn-tt[data-family='purple'],
+.cv2-root .pn-st[data-family='purple'] { --pnf: var(--color-icon-purple, var(--pn-pr-merged)); --pnf-soft: var(--color-background-purple, var(--pn-pr-merged-soft)); }
+.cv2-root .lp__tile[data-family='teal'],
+.cv2-root .pn-tt[data-family='teal'],
+.cv2-root .pn-st[data-family='teal'] { --pnf: var(--color-icon-teal, var(--pn-run)); --pnf-soft: var(--color-background-teal, var(--pn-run-soft)); }
+.cv2-root .lp__tile[data-family='cyan'],
+.cv2-root .pn-tt[data-family='cyan'],
+.cv2-root .pn-st[data-family='cyan'] { --pnf: var(--color-icon-cyan, var(--pn-info)); --pnf-soft: var(--color-background-cyan, var(--pn-info-soft)); }
+.cv2-root .lp__tile[data-family='yellow'],
+.cv2-root .pn-tt[data-family='yellow'],
+.cv2-root .pn-st[data-family='yellow'] { --pnf: var(--color-icon-yellow, var(--pn-wait)); --pnf-soft: var(--color-background-yellow, var(--pn-wait-soft)); }
+.cv2-root .lp__tile[data-family='pink'],
+.cv2-root .pn-tt[data-family='pink'],
+.cv2-root .pn-st[data-family='pink'] { --pnf: var(--color-icon-pink, var(--pn-brand-2)); --pnf-soft: var(--color-background-pink, var(--pn-brand-soft)); }
+.cv2-root .lp__tile[data-family='gray'],
+.cv2-root .pn-tt[data-family='gray'],
+.cv2-root .pn-st[data-family='gray'] { --pnf: var(--pn-ink-3); --pnf-soft: var(--pn-hover); }
+.cv2-root .lp__tile[data-family],
+.cv2-root .pn-tt[data-family],
+.cv2-root .pn-st[data-family] {
+  border-left: 3px solid var(--pnf, var(--pn-line-2));
+}
+
+/* --- W3C·6 CONNECTIONS TIMELINE GUIDE --------------------------------------
+   The Connections tab's LINKED rows (`ul.pn-peers > li.pn-peers__row`) gain
+   a connector guide: a 1px hairline running the list's height through a
+   24px gutter, with a 7px node mark on each row's centreline (guide at
+   x≈11.5px; mark 8px + 7px wide lands on the same centre). `.pn-conn-guide`
+   is the same treatment as an opt-in class for surfaces whose markup gains
+   the hook later. */
+.cv2-root .pn-peers,
+.cv2-root .pn-conn-guide {
+  position: relative;
+  padding-left: 24px;
+}
+.cv2-root .pn-peers::before,
+.cv2-root .pn-conn-guide::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--pn-line);
+}
+.cv2-root .pn-peers > .pn-peers__row {
+  position: relative;
+}
+.cv2-root .pn-peers > .pn-peers__row::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 50%;
+  background: var(--pn-surface);
+}
+
+/* --- W3C·7 HEADER MONO ID TAIL ---------------------------------------------
+   `.pn-header__ref` (W3B) — the ticket-number read in the panel header,
+   styled as the graph's `gv-node__ref`: mono, micro, uppercase, 0.04em,
+   dimmed a step below the title so it identifies without shouting. */
+.cv2-root .pn-header__ref {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--pn-ink-4);
 }

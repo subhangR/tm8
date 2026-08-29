@@ -7,6 +7,13 @@ import './maestro-task-tile.css';
 export interface MaestroTaskTileProps {
   rootRef: RefObject<HTMLDivElement | null>;
   id: string;
+  /**
+   * The kind's palette-family token (W3E), stamped as `data-family` on the
+   * root for W3C's accent rules. A plain string on purpose — this component
+   * is view-model shaped and learns no registry type; the host resolves it
+   * through `getKind`, gray when the kind declares none.
+   */
+  family: string;
   title: string;
   depth: number;
   selected: boolean;
@@ -67,6 +74,7 @@ export interface MaestroTaskTileProps {
 export function MaestroTaskTile(props: MaestroTaskTileProps) {
   const {
     rootRef,
+    family,
     title,
     depth,
     selected,
@@ -104,6 +112,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         .filter(Boolean)
         .join(' ')}
       data-testid="list-tile"
+      data-family={family}
       data-depth={depth}
       data-tree="true"
       data-children={childCount || undefined}

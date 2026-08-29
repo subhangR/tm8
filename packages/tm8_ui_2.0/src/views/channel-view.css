@@ -102,9 +102,9 @@
 .chv-eyebrow {
   flex: none;
   color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: .1em;
 }
 .chv-shelf__items { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }

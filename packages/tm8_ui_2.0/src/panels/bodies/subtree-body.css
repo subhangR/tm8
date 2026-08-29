@@ -186,9 +186,9 @@
   border: 0;
   background: transparent;
   padding: 0;
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
   color: var(--pn-ink-4);

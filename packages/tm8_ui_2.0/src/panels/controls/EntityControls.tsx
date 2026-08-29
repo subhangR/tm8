@@ -87,6 +87,9 @@ import {
   type UnavailableReason,
 } from '../honesty/DisabledWithReason';
 import { useDismissable } from '../useDismissable';
+/* Number-control geometry only — see the file's own header for why it is a
+   separate stylesheet rather than lines in the shared `panels.css`. */
+import './row-number.css';
 
 /**
  * The slice of an entity these controls READ. Every member is on both
@@ -102,6 +105,21 @@ export interface ControlSubject {
   title: string;
   kind: EntityKind;
   state: unknown;
+  /**
+   * The entity's CONTENT, where the surface holds it — an `EntityDetail`
+   * does, an `EntitySummary` does not, and both are legal subjects.
+   *
+   * Exists for the one field family whose current value lives ONLY in
+   * content (`pointsEstimate` — `contentOf` carries it, `stateOf` never
+   * has; the mirror of `dueDate`'s split). A numeric value control reads
+   * `state[source]` first and falls back to `content[source]` when the
+   * subject carries one; a subject that carries NEITHER cannot know the
+   * current value, and the control refuses with that reason rather than
+   * drawing an empty box that claims "unset" about a field that may be set.
+   * List rows pass summaries and land in that refusal; the detail panel
+   * builds its subject by hand (`subjectOf`) and passes the content.
+   */
+  content?: unknown;
   /** The tombstone bit every kind carries. Flips archive ⇄ restore. */
   deletedAt?: string | null;
   /**
@@ -747,6 +765,24 @@ function RowValueControl({
   props: ControlHost;
   control: ValueControl;
 }) {
+  /* The one input fork the registry declares — see `ValueControl.input`. The
+     refusal anatomy is shared below; only the live arm differs, so the number
+     arm is its own component rather than a maze of ternaries here. */
+  if (control.input === 'number') {
+    return <RowNumberControl row={row} props={props} control={control} />;
+  }
+  return <RowEnumControl row={row} props={props} control={control} />;
+}
+
+function RowEnumControl({
+  row,
+  props,
+  control,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  control: ValueControl;
+}) {
   const selectId = useId();
   const raw = (row.state as unknown as Record<string, unknown>)[control.source];
   const current = typeof raw === 'string' ? raw : '';
@@ -817,6 +853,172 @@ function RowValueControl({
           </option>
         ))}
       </select>
+    </span>
+  );
+}
+
+/**
+ * The current value of a NUMBER control, read structurally in the order the
+ * `ControlSubject.content` docblock rules: state first (so a field the server
+ * one day projects starts working with no edit here), then content where the
+ * subject carries one. A numeric STRING is accepted from either side because
+ * the fixture seam merges patches verbatim; the real read path always hands
+ * back a number.
+ */
+function numberValueOf(row: ControlSubject, source: string): number | null {
+  for (const bag of [row.state, row.content]) {
+    if (typeof bag !== 'object' || bag === null) continue;
+    const raw = (bag as Record<string, unknown>)[source];
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string' && /^\d+$/.test(raw)) return Number(raw);
+  }
+  return null;
+}
+
+/**
+ * The picker for an `input: 'number'` `ValueControl` — the points estimate,
+ * today.
+ *
+ * `RowEnumControl`'s three refusals (not loaded, refused, not wired) plus ONE
+ * of its own: a subject that carries neither `state[source]` nor a `content`
+ * member CANNOT KNOW the current value — an `EntitySummary`, on a list row —
+ * and an empty box there would claim "unset" about a field that may be set.
+ * That is a refusal with a remedy (open the panel), not a loading state:
+ * content never arrives on a summary, so `CheckingPermission`'s "resolves on
+ * its own" promise would be false forever — the exact permanent-checking
+ * defect the `onNeedDetail` history in this file records.
+ *
+ * COMMITS ON BLUR OR ENTER, never per keystroke: each commit is a
+ * version-guarded patch, and a patch per digit would race its own echoes and
+ * spend versions on half-typed numbers. The draft is local until then, keyed
+ * to the row so it cannot ride onto another entity in the same slot.
+ *
+ * WHAT CROSSES THE PORT IS A NUMBER, behind `onSetValue`'s `string` face —
+ * the one documented cast in this file. The port's `next` lands VERBATIM in
+ * `content[source]` (`useRowLifecycle.setValue`), and this field's contract
+ * type is `number | null` (`points_estimate integer` on the wire) — a string
+ * would be junk the fixture stores and the schema refuses. Widening the port
+ * to `string | number | null` is the honest fix and is out of reach from this
+ * file: under strictFunctionTypes it breaks `onSetValue: rowLifecycle.setValue`
+ * at every host. Flagged, not silently left.
+ *
+ * NO CLEAR: `update_task_content` COALESCEs `p_points_estimate`, so nothing
+ * in the contract clears the field once set — the same posture as priority,
+ * and the reason an emptied box reverts instead of writing.
+ */
+function RowNumberControl({
+  row,
+  props,
+  control,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  control: ValueControl;
+}) {
+  const inputId = useId();
+  const current = numberValueOf(row, control.source);
+  const verb = `Set ${control.label.toLowerCase()}`;
+  /* Draft while focused; `null` means "not editing — render the stored
+     value". Reset on subject change so a half-typed number never rides onto
+     the next entity in the same panel slot. */
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => {
+    setDraft(null);
+  }, [row.id]);
+
+  /* `data-source` on the refused pill as well as the live input — the same
+     assertability rule the enum and date controls state. */
+  const currentPill = (
+    <span className="lp__statesel kit-pill--idle" data-source={control.source}>
+      {current === null ? control.emptyLabel : String(current)}
+    </span>
+  );
+
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label={verb} />;
+  }
+
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id)?.canEdit === false) {
+    return (
+      <DisabledAction label={verb} reason={toReason(REASONS.cannotEdit)}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (!props.onSetValue) {
+    return (
+      <DisabledAction label={verb} reason={NOT_WIRED_REASON}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  // The value-unreadable refusal — see the docblock. Structural: a subject
+  // with no `content` member and no state-side value is a summary-shaped row.
+  if (current === null && row.content === undefined) {
+    return (
+      <DisabledAction
+        label={verb}
+        reason={{
+          cause: `The current ${control.label.toLowerCase()} value isn’t loaded on this surface`,
+          remedy: 'open the entity’s panel to read and set it',
+        }}
+      >
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const trimmed = draft.trim();
+    // An emptied box is a REVERT, not a clear — nothing in the contract
+    // clears this field (see the docblock), so the stored value stands.
+    if (trimmed === '') return;
+    const next = Number(trimmed);
+    // Non-negative integers only (`integer check (>= 0)`) — anything else
+    // reverts rather than sending a write the node will bounce.
+    if (!Number.isInteger(next) || next < 0) return;
+    if (next === current) return;
+    /* THE DOCUMENTED CAST — a real number through the port's `string` face,
+       so `content[source]` stays contract-typed end to end. */
+    props.onSetValue?.(row.id, control.source, next as unknown as string, control.label);
+  };
+
+  return (
+    <span className="lp__statewrap lp__statewrap--date">
+      <input
+        id={inputId}
+        type="number"
+        min={0}
+        step={1}
+        inputMode="numeric"
+        className="lp__statesel lp__statesel--live lp__numsel kit-pill--idle"
+        aria-label={`${verb} for ${row.title}`}
+        data-testid="row-number-input"
+        data-source={control.source}
+        /* The unset field states its word the way the date input does: the
+           registry's emptyLabel as placeholder and hover, marked structurally
+           rather than by a second face. */
+        data-empty={current === null && draft === null ? 'true' : undefined}
+        placeholder={control.emptyLabel}
+        title={current === null ? control.emptyLabel : undefined}
+        value={draft ?? (current === null ? '' : String(current))}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          // Enter COMMITS BY BLURRING — one path, so the write cannot fire
+          // twice (a direct commit() here would run again from the blur it
+          // triggers, on a closure that has not seen the draft reset).
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          // Escape DISCARDS: the field re-renders the stored value and the
+          // eventual blur finds no draft to commit.
+          if (e.key === 'Escape') setDraft(null);
+        }}
+      />
     </span>
   );
 }

@@ -219,9 +219,9 @@
   border-top: 1px solid var(--pn-x-hairline-soft);
 }
 .acct-menu__eyebrow {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9.5px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--pn-ink-4);
 }

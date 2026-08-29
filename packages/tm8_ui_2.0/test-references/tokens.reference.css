@@ -65,6 +65,10 @@
   --pn-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
   --pn-ui:    'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pn-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
+  /* Caps face: uppercase micro-labels (eyebrows, group labels, field caps).
+     Figtree bold caps per the Kinetic Elite reference; mono stays reserved
+     for DATA (ids, models, counts, timestamps). */
+  --pn-caps:  'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   --pn-fs-display: 40px;
   --pn-fs-h1: 28px;
@@ -177,7 +181,7 @@
 .cv2-root .t-body { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-body); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
 .cv2-root .t-secondary { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-sm); line-height: var(--pn-lh-body); color: var(--pn-ink-3); }
 .cv2-root .t-label { font-family: var(--pn-ui); font-weight: 500; font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
-.cv2-root .t-eyebrow { font-family: var(--pn-mono); font-weight: 600; font-size: var(--pn-fs-micro); text-transform: uppercase; letter-spacing: var(--pn-track-mega); color: var(--pn-ink-3); }
+.cv2-root .t-eyebrow { font-family: var(--pn-caps); font-weight: 700; font-size: var(--pn-fs-micro); text-transform: uppercase; letter-spacing: var(--pn-track-mega); color: var(--pn-ink-3); }
 .cv2-root .t-quote { font-family: var(--pn-serif); font-style: italic; font-weight: 400; font-size: var(--pn-fs-h3); line-height: 1.45; color: var(--pn-ink-2); }
 .cv2-root .t-mono { font-family: var(--pn-mono); font-weight: 400; font-size: var(--pn-fs-mono); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
 .cv2-root .t-code { font-family: var(--pn-mono); font-weight: 500; font-size: var(--pn-fs-mono); color: var(--pn-brand); }

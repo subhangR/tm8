@@ -179,9 +179,9 @@
 
 /* oracle L38: mono 10px/600, tracking .12em, --pn-ink-3. D5 keeps the 10px. */
 .cv2-root .auth-eyebrow {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: var(--pn-track-mega);
   color: var(--pn-ink-3);
 }
@@ -286,9 +286,9 @@
 /* oracle L41: mono caps/600, tracking .12em, --pn-ink-3.
    Kinetic W2: 10px -> --pn-fs-micro (11px) — the token exists, so use it. */
 .cv2-root .auth-field__label {
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: var(--pn-fs-micro);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: var(--pn-track-mega);
   color: var(--pn-ink-3);
 }

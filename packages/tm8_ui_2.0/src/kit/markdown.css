@@ -84,6 +84,13 @@
   text-underline-offset: 2px;
 }
 .cv2-root .md-link:hover { color: var(--pn-ink); }
+/* Kit focus grammar — links were the last kit interactive left on the UA
+   default outline. 1px offset + a small radius so the ring hugs the word. */
+.cv2-root .md-link:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+  border-radius: 2px;
+}
 
 /* --- lists ----------------------------------------------------------------
    The shape the old parser destroyed most visibly: every bullet joined into

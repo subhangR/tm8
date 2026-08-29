@@ -45,16 +45,29 @@ const NOW = '2026-07-29T12:00:00.000Z';
 
 /** The block list the `member` registry row is expected to carry (§5 handover). */
 const MEMBER_BLOCKS: readonly ProfileBlockRef[] = [
+  /* `tagKey: 'role'` was DROPPED (wave 3, deliberate): the member panel's
+     header status pill already states the role as color+word, so the identity
+     tag was a second copy of the same fact two rows apart. The kind-true
+     `empty` params below replaced the generic 'Nothing here yet.' fallback on
+     both chip rows — supported ItemsBlock data that had been left unset. */
   {
     block: 'identity',
-    params: { provenance: 'human', tagKey: 'role', caption: 'human member', presence: true },
+    params: { provenance: 'human', caption: 'human member', presence: true },
   },
   {
     block: 'stat-tiles',
     params: { tiles: 'taskDoneCount=tasks done,score=points,teamMembers=teammates' },
   },
-  { block: 'items', label: 'TEAMMATES OWNED', params: { source: 'teamMembers' } },
-  { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'status' } },
+  {
+    block: 'items',
+    label: 'TEAMMATES OWNED',
+    params: { source: 'teamMembers', empty: 'Owns no teammates.' },
+  },
+  {
+    block: 'items',
+    label: 'CURRENT WORK',
+    params: { source: 'work', statusKey: 'status', empty: 'No current work recorded.' },
+  },
 ];
 
 /** The block list the `team_member` registry row is expected to carry. */
@@ -77,7 +90,17 @@ const AGENT_BLOCKS: readonly ProfileBlockRef[] = [
     params: { fields: 'model=Model,agentTool=Tool,owner=Owner' },
   },
   { block: 'live-work', params: { source: 'liveWork' } },
-  { block: 'items', label: 'EQUIPPED', params: { source: 'equipped', count: true } },
+  /* `empty` (wave 3): the loadout section's kind-true absence, replacing the
+     generic ItemsBlock fallback — registry data the param always supported. */
+  {
+    block: 'items',
+    label: 'EQUIPPED',
+    params: {
+      source: 'equipped',
+      count: true,
+      empty: 'Nothing equipped — this teammate launches with no spells or skills.',
+    },
+  },
   {
     block: 'memory-set',
     label: 'MEMORIES',
@@ -113,7 +136,12 @@ describe('one archetype body, two screens, chosen by registry DATA', () => {
     // Identity header — T0-4 line 420-425.
     const identity = getByTestId('block-identity');
     expect(identity.textContent).toContain(detailOf(memberAda.id).title);
-    expect(identity.textContent).toContain('owner'); // state.role, registry-named
+    /* PIN MOVED (wave 3, deliberate): the role word is NOT in the identity
+       block any more — the panel's header status pill owns the role statement
+       (color+word), and the `tagKey: 'role'` tag was a second copy of the
+       same fact two rows below it. Asserting the absence is what stops the
+       duplicate being re-added as a "missing field". */
+    expect(identity.textContent).not.toContain('owner');
     expect(identity.textContent).toContain('human member');
 
     // Three stat tiles — T0-4 line 427-431. Values are the fixture's REAL ones.

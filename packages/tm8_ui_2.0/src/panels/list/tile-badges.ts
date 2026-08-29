@@ -1,6 +1,6 @@
 import type { ActorSummary, EntitySummary, StatusCategory } from '@tm8/contract';
 import type { TileBadgeSource } from '../../domain';
-import { actorPresentation } from '../../domain';
+import { actorPresentation, getKind } from '../../domain';
 import type { PillTone } from '../../kit';
 
 /**
@@ -62,15 +62,30 @@ function actorSlot(a: {
   };
 }
 
-const WORK_STATUS_TONE: Record<string, PillTone> = {
-  open: 'idle',
-  pulled: 'info',
-  working: 'run',
-  in_review: 'info',
-  done: 'run',
-  blocked: 'block',
-  cancelled: 'idle',
-};
+/**
+ * STATUS TONE COMES FROM THE ROW'S OWN REGISTRY DECLARATION — never from a
+ * table in this file.
+ *
+ * This module used to keep `WORK_STATUS_TONE` / `SESSION_STATUS_TONE` /
+ * `PR_STATE_TONE` copies of the per-kind tone vocabulary, and the work copy
+ * had already drifted: it said `in_review: 'info', done: 'run'` while the
+ * kind's registry row — BOTH `chip.tones` and `panel.statusPill.tones` — says
+ * `wait` / `idle`. So the collapsed row's dot+word disagreed with the state
+ * picker mounted ON that very dot (`RowStateControl` is handed
+ * `panel.statusPill`) and with the detail header's pill: three surfaces, one
+ * fact, two colours. That is §15.2's exact defect class — per-kind divergence
+ * copied into a component — and a row and its own picker may never disagree.
+ *
+ * `statusPill.tones` is read first because it is the map the picker itself
+ * renders from; the chip's tint map is the fallback for kinds that declare
+ * only Z1 tones; a kind that declares neither gets neutral. `getKind` keeps
+ * this module kind-BLIND: it looks the row's declaration up as data and
+ * compares no kind names.
+ */
+function registryStatusTone(row: EntitySummary, value: string): PillTone {
+  const config = getKind(row.kind);
+  return config.panel.statusPill?.tones[value] ?? config.chip.tones?.[value] ?? 'idle';
+}
 /**
  * Hollow ring = not yet started / not alive; solid = in motion or settled.
  *
@@ -94,21 +109,6 @@ const HOLLOW_CATEGORIES: ReadonlySet<StatusCategory> = new Set<StatusCategory>([
 const categoryDot = (category: StatusCategory | undefined): 'hollow' | 'solid' =>
   category === undefined || HOLLOW_CATEGORIES.has(category) ? 'hollow' : 'solid';
 
-const SESSION_STATUS_TONE: Record<string, PillTone> = {
-  spawning: 'wait',
-  running: 'run',
-  idle: 'info',
-  exited: 'idle',
-  failed: 'block',
-};
-
-const PR_STATE_TONE: Record<string, PillTone> = {
-  open: 'run',
-  draft: 'idle',
-  merged: 'brand',
-  closed: 'idle',
-};
-
 const PRIORITY_TONE: Record<string, PillTone> = {
   urgent: 'block',
   high: 'block',
@@ -128,6 +128,39 @@ const actor = (v: unknown): ActorSummary | null =>
 const humanBytes = (n: number): string =>
   n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/**
+ * A calendar-day ISO string, humanized — `'2026-09-01'` → `'due Sep 1'` (the
+ * year is named only when it is not this year), plus the PAST verdict the
+ * overdue treatment keys on. Raw machine dates read as debug output on a
+ * premium row, and `'due 2026-09-01'` gave no urgency signal at all —
+ * overdue and next-week looked identical.
+ *
+ * Field arithmetic on the string's own digits, never `new Date(iso)`: a
+ * date-only ISO parses as UTC MIDNIGHT, so any viewer west of Greenwich would
+ * read `2026-09-01` back as "Aug 31". A due date is a calendar fact, not an
+ * instant, and it compares against the viewer's local calendar day — due
+ * TODAY is due, not past.
+ *
+ * Exported because the expanded control card prints the same fact
+ * (`factsForControlCard`) and one fact gets one spelling.
+ *
+ * @returns null when the value is not a leading `YYYY-MM-DD` — the caller
+ * decides what honesty looks like for garbage.
+ */
+export function dueLabel(iso: string, today = new Date()): { label: string; past: boolean } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const label = `due ${MONTHS[mo - 1]} ${d}${y === today.getFullYear() ? '' : ` ${y}`}`;
+  const todayKey = today.getFullYear() * 10_000 + (today.getMonth() + 1) * 100 + today.getDate();
+  return { label, past: y * 10_000 + mo * 100 + d < todayKey };
+}
+
 const meta = (text: string | null): TileSlot | null => (text ? { slot: 'meta', text } : null);
 
 /**
@@ -144,7 +177,7 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return {
         slot: 'status',
         word: v.replace(/_/g, ' '),
-        tone: WORK_STATUS_TONE[v] ?? 'idle',
+        tone: registryStatusTone(row, v),
         dot: categoryDot(row.category),
       };
     }
@@ -154,7 +187,7 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return {
         slot: 'status',
         word: v,
-        tone: SESSION_STATUS_TONE[v] ?? 'idle',
+        tone: registryStatusTone(row, v),
         dot: v === 'exited' ? 'hollow' : 'solid',
       };
     }
@@ -167,17 +200,20 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return {
         slot: 'status',
         word: stale ? `${v} · stale` : v,
-        tone: stale ? 'wait' : (PR_STATE_TONE[v] ?? 'idle'),
+        tone: stale ? 'wait' : registryStatusTone(row, v),
         dot: v === 'open' ? 'solid' : 'hollow',
       };
     }
     case 'profileStatus': {
       const v = str(field(row, 'status'));
       if (!v) return null;
+      // Tone from the declaration, like every status arm — the old inline
+      // ternary here said draft:'wait' while the kind's chip AND pill said
+      // 'idle', the same one-fact-two-colours drift the deleted tables had.
       return {
         slot: 'status',
         word: v,
-        tone: v === 'active' ? 'run' : v === 'draft' ? 'wait' : 'idle',
+        tone: registryStatusTone(row, v),
         dot: v === 'active' ? 'solid' : 'hollow',
       };
     }
@@ -227,10 +263,27 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
     }
     case 'acceptance': {
       const a = field(row, 'acceptance') as { total?: number; completed?: number } | null;
-      return a && typeof a.total === 'number' && a.total > 0 ? meta(`${a.completed ?? 0}/${a.total}`) : null;
+      // `'2/4 criteria'` — the expanded control card's exact spelling
+      // (`factsForControlCard`), because a bare fraction in the mono meta
+      // line sat beside facts that all name themselves ('blocked ×2',
+      // 'type:bug') and said two-of-four WHAT.
+      return a && typeof a.total === 'number' && a.total > 0
+        ? meta(`${a.completed ?? 0}/${a.total} criteria`)
+        : null;
     }
-    case 'dueDate':
-      return meta(str(field(row, 'dueDate')) && `due ${str(field(row, 'dueDate'))}`);
+    case 'dueDate': {
+      const v = str(field(row, 'dueDate'));
+      if (!v) return null;
+      const due = dueLabel(v);
+      // A non-calendar value still gets stated — a fact with no rendering is
+      // invisible — but it earns no verdict about time.
+      if (!due) return meta(`due ${v}`);
+      // Overdue is the one date state that carries a TONE, and meta slots are
+      // toneless by design: the tag is this vocabulary's tone-bearing chip.
+      // (The tile renders one tag; when a kind declares both this source and
+      // 'priority', its registry badge order decides which tag wins.)
+      return due.past ? { slot: 'tag', label: due.label, tone: 'block' } : meta(due.label);
+    }
     case 'axes': {
       // The task's per-space axis values (`state.axes`, a {axis: value}
       // record). Rendered as `axis:value` pairs because two axes with bare

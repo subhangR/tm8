@@ -163,8 +163,8 @@
    capture at both widths. `--pn-fs-sm` keeps the eyebrow TREATMENT — mono,
    uppercase, mega-tracked — and stops it being the smallest type on screen. */
 .mobile-header__space {
-  font-family: var(--pn-mono);
-  font-weight: 600;
+  font-family: var(--pn-caps);
+  font-weight: 700;
   font-size: var(--pn-fs-sm);
   line-height: 1.25;
   text-transform: uppercase;

@@ -26,7 +26,7 @@
  * (§15.2): `hub` entities get their channel feed, everything else with a
  * detail gets the session chat.
  */
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { ComposerInteractionPolicy, EntityDetail, EntityId } from '@tm8/contract';
 import { getKind } from '../domain';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
@@ -37,6 +37,8 @@ import { LazyTranscriptSurface } from '../transcript/LazyTranscriptSurface';
 import type { SessionChatSeam } from '../channel-screen/SessionChatSurface';
 import type { TranscriptSeam } from '../transcript/TranscriptSurface';
 import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
+import { loadChannelTagOptions, type ComposerMentionOption } from '../channel-screen/channel-tags';
+import { loadSkillTriggerOptions, type SkillTriggerOption } from '../rich-input';
 import type { ConnectionState, SessionLiveness } from '../data/seam';
 
 /** The surfaces this slot can compose. All four expected entrants have now
@@ -147,12 +149,104 @@ export function sessionChatSurfaceFor(
  * exists on every anchor; `registry.ts:894-901` rules that a session keeps its
  * flat, replies-inline read while a channel takes threads.
  */
-export function discussionSurfaceFor(
-  detail: EntityDetail,
-  entityId: EntityId,
-  host: ConversationSurfaceHost,
-): ReactNode {
+/**
+ * THE DISCUSSION COMPOSER'S `@` VOCABULARY — durable mentions only.
+ *
+ * `loadChannelTagOptions` is the channel composer's read and it answers a
+ * wider question: its teammate and session options carry a ROUTE ("Start a
+ * work session when sent" / "message this session") that only the channel
+ * feed's own post path can honour — `useChannelFeed.post` intercepts a tagged
+ * post and spawns. The Discussion tab posts through `useAnchorFeed`, whose
+ * mutation journal forwards `mentionIds`/`attachmentIds` and DROPS
+ * `tagTargetIds` (`chat-mutations.ts:114`), so a routed option offered here
+ * would promise a spawn and store a plain message.
+ *
+ * So routes are STRIPPED, exactly as `loadChannelAttachOptions` already does
+ * for its people rows ("routes stripped: … it never spawns or messages a
+ * session"): members pass through, teammates become plain durable mentions
+ * (the DB validates `mentionIds` to member|team_member, so both forms are
+ * real), and session rows — which have no durable-mention form at all — are
+ * dropped. Exported for the test that pins this contract.
+ */
+export function discussionMentionOptions(
+  options: readonly ComposerMentionOption[],
+): ComposerMentionOption[] {
+  return options.flatMap<ComposerMentionOption>((option) => {
+    if (option.kind !== 'member' && option.kind !== 'team_member') return [];
+    if (!option.route) return [option];
+    return [{
+      id: option.id,
+      kind: option.kind,
+      display: option.display,
+      ...(option.group ? { group: option.group } : {}),
+      meta: 'Mention in this message',
+    }];
+  });
+}
+
+/**
+ * The self-loading Discussion mount — a component, because the options are a
+ * read and a composer function cannot hold one.
+ *
+ * WHY THE SURFACE LOADS ITS OWN SIGIL SUBJECTS: `discussionSurfaceFor` never
+ * passed `mentionOptions`/`skillOptions`, so `@` and `/` typed as plain text
+ * in every panel Discussion composer while the placeholder advertised both —
+ * the enabled-inert class, in an input. The five hosts' bundles already carry
+ * the port these reads need (`channelFeedPort.seam` has `query` + `entity`),
+ * so loading HERE lights the sigils at every mount at once instead of asking
+ * five hosts to each thread two more props.
+ *
+ * THE SEMANTICS ARE `useChannelFeed`'s, verbatim: skills `undefined` until a
+ * read ANSWERS (capability absent — `/` types plain text; a failed read
+ * measured nothing) and `[]` as the measured zero that keeps the picker able
+ * to say so; mentions `[]` on failure (the control stays and reports no
+ * options rather than disappearing). `liveSessionIds` is deliberately empty —
+ * liveness only decorates ROUTES, and every route is stripped above, so the
+ * per-session detail reads the channel composer pays for would buy nothing.
+ */
+function PanelDiscussionSurface({
+  detail,
+  entityId,
+  host,
+}: {
+  detail: EntityDetail;
+  entityId: EntityId;
+  host: ConversationSurfaceHost;
+}) {
   const kindRow = getKind(detail.kind);
+  const port = host.channelFeedPort;
+  const [mentionOptions, setMentionOptions] = useState<ComposerMentionOption[] | undefined>(
+    undefined,
+  );
+  const [skillOptions, setSkillOptions] = useState<SkillTriggerOption[] | undefined>(undefined);
+
+  useEffect(() => {
+    let current = true;
+    // Back to "not established" while a new anchor/space read is in flight,
+    // so one space's people and skills are never offered under another's sigils.
+    setMentionOptions(undefined);
+    setSkillOptions(undefined);
+    void loadSkillTriggerOptions({ port: port.seam, spaceId: port.spaceId }).then(
+      (skills) => {
+        if (current) setSkillOptions(skills);
+      },
+      () => {
+        if (current) setSkillOptions(undefined);
+      },
+    );
+    void loadChannelTagOptions({ port: port.seam, spaceId: port.spaceId, liveSessionIds: [] }).then(
+      (options) => {
+        if (current) setMentionOptions(discussionMentionOptions(options));
+      },
+      () => {
+        if (current) setMentionOptions([]);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [entityId, port.seam, port.spaceId]);
+
   return (
     <DiscussionSurface
       // The branch read rides the channel feed port's seam, the one slice of a
@@ -167,8 +261,18 @@ export function discussionSurfaceFor(
       threads={kindRow.panel.threads === true}
       canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
       onOpenEntity={host.onOpenEntity}
+      {...(mentionOptions ? { mentionOptions } : {})}
+      {...(skillOptions ? { skillOptions } : {})}
     />
   );
+}
+
+export function discussionSurfaceFor(
+  detail: EntityDetail,
+  entityId: EntityId,
+  host: ConversationSurfaceHost,
+): ReactNode {
+  return <PanelDiscussionSurface detail={detail} entityId={entityId} host={host} />;
 }
 
 /**

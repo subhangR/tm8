@@ -207,12 +207,23 @@ export function EmptyBody({
   sentence,
   actionLabel,
   onAction,
+  actionUnavailableReason,
 }: {
   /** A character or a drawn mark — the empty state of a KIND draws its icon. */
   glyph?: ReactNode;
   sentence: string;
   actionLabel?: string;
   onAction?: () => void;
+  /**
+   * Why the action cannot run, when a label is offered WITHOUT a handler.
+   * The same contract as `TombstoneBody.restoreUnavailableReason`, for the
+   * same history: `actionLabel` alone used to render an ENABLED button with
+   * `onClick={undefined}` — the Connections tab's "⊕ link an entity" was
+   * exactly that, a genuinely dead control, from the day it was written. L6:
+   * an unwired verb stays visible, dead, and says why; it never renders as a
+   * live button that swallows the click.
+   */
+  actionUnavailableReason?: string;
 }) {
   return (
     <div className="pn-state pn-state--empty" data-testid="panel-empty">
@@ -220,10 +231,17 @@ export function EmptyBody({
         {glyph}
       </span>
       <span className="pn-state__body">{sentence}</span>
-      {actionLabel ? (
+      {actionLabel && onAction ? (
         <button type="button" className="pn-btn pn-btn--quiet" onClick={onAction}>
           {actionLabel}
         </button>
+      ) : actionLabel ? (
+        <DisabledAction
+          label={actionLabel}
+          reason={toReason(actionUnavailableReason ?? NOT_WIRED_REASON.cause)}
+        >
+          <span className="pn-btn pn-btn--quiet pn-btn--off">{actionLabel}</span>
+        </DisabledAction>
       ) : null}
     </div>
   );

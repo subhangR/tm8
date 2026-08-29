@@ -90,6 +90,13 @@
 .cv2-root .kit-diff__file-link:hover {
   background: var(--pn-hover);
 }
+/* Kit focus grammar (see kit.css .kit-chip:focus-visible). -1px offset keeps
+   the ring inside the file list's rounded clip (`overflow: hidden` on
+   .kit-diff__files would swallow an outward ring on the edge rows). */
+.cv2-root .kit-diff__file-link:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -1px;
+}
 
 .cv2-root .kit-diff__file-path {
   flex: 1 1 auto;
@@ -216,4 +223,10 @@
 }
 .cv2-root .kit-diff__more:hover {
   background: var(--pn-active);
+}
+/* Same grammar, same inward offset — this bar is the last child of the same
+   rounded, clipped file box. */
+.cv2-root .kit-diff__more:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -1px;
 }

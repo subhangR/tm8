@@ -164,9 +164,9 @@
 .hlp-chapter__eyebrow,
 .hlp-chapter__count {
   color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: .11em;
   text-transform: uppercase;
 }
@@ -552,9 +552,9 @@
 
 .hlp-card__eyebrow {
   color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
+  font-family: var(--pn-caps);
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: .11em;
   text-transform: uppercase;
 }

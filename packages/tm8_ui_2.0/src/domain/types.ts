@@ -617,10 +617,21 @@ export interface ListConfig {
    * and the tile carries the value as `data-lifecycle` so styling can follow
    * the same registry fact.
    *
+   * `'record'`: a row in Done is the RECORD OF A RUN — work_session, whose
+   * Done tab is the archive of everything that ever executed (471 of 477 rows
+   * on the launch node). A finished run was not crossed out and a ticked-done
+   * session is filed away, not finished-away, so neither earns the strike; but
+   * a session is not `'library'` either — nothing curated it and nothing
+   * stores it as material, it simply ENDED. A third value rather than a
+   * borrowed one, because `data-lifecycle` reaches CSS and a stylesheet must
+   * be able to tell "kept material" from "a run that ended" without a kind
+   * literal. (The strike suppression needs no styling; any `data-lifecycle=
+   * "record"` treatment beyond that is the W4 CSS lane's, not this file's.)
+   *
    * A registry FIELD and not a component branch, §15.2: "which kinds are
    * libraries" is per-kind divergence, so it lives here as data.
    */
-  lifecycle?: 'work' | 'library';
+  lifecycle?: 'work' | 'library' | 'record';
   /** task subtree; session coordinator→worker. */
   /**
    * `messagePulse` binds the tree's hairlines to live message provenance: a
@@ -788,15 +799,37 @@ export interface ValueControl {
    * Which `EntityState` member carries the current value — read structurally,
    * and written back under the SAME name in the kind's content patch. One
    * name, so the control cannot read one field and write another.
+   *
+   * A `'number'` control reads `content[source]` as its FALLBACK when the
+   * state does not carry the member — `pointsEstimate` is the one field in
+   * the app that lives ONLY in content (`contentOf` projects it, `stateOf`
+   * never has), the mirror image of `dueDate`'s split. The read stays
+   * structural either way; no surface learns which side a field lives on.
    */
   source: string;
   label: string;
   /** Shown when the field is unset. Not an option: null is not a value. */
   emptyLabel: string;
   /**
+   * WHAT KIND OF INPUT this field takes. Absent ⇒ `'enum'`, the original and
+   * common case: a picker over `options`.
+   *
+   * `'number'` — opened 2026-08-29 with the points estimate. NOT a new
+   * control field beside `valueControls` (the way `dateControls` is) because
+   * the write is IDENTICAL to the enum's — `content[source]`, version-guarded,
+   * through the same `onSetValue` executor — and unlike a date it has no
+   * separate clear semantics either (`points_estimate` coalesces, so nothing
+   * in the contract clears it once set, exactly like priority). What differs
+   * is only the INPUT, which is what this field names. A numeric control
+   * declares `options: []` — a number has no vocabulary, and the input arm
+   * never reads the list.
+   */
+  input?: 'enum' | 'number';
+  /**
    * The settable vocabulary in reading order. Unlike `StateControl` these
    * carry their own label and tone, because no `statusPill` spec exists for
    * them — there is no second source here to disagree with.
+   * Empty — and ignored — on an `input: 'number'` control.
    */
   options: readonly ValueOption[];
 }

@@ -79,7 +79,7 @@ import {
   presenceHollowReason,
   taskUuidTitle,
 } from '../../fixtures';
-import { EntityDetailPanel, type ControlHost, type DetailReasons } from '../index';
+import { EntityControlStrip, EntityDetailPanel, type ControlHost, type DetailReasons } from '../index';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 
@@ -217,6 +217,88 @@ describe('the panel mounts the real control strip', () => {
        read-only copy directly under its own picker. */
     expect(getByTestId('subtree-grid').textContent).not.toMatch(/Start/);
     expect(getByTestId('subtree-grid').textContent).not.toMatch(/Due/);
+  });
+
+  /**
+   * WAVE 3 — the points estimate, the last contract-carried task field with
+   * no writer anywhere in the UI: on Create AND Patch since the task commands
+   * shipped, forwarded by the real ops, and readable only as a MetaGrid cell
+   * that drew when already set. The registry now declares it
+   * (`TASK_POINTS_CONTROL`, `input: 'number'`) and the strip renders it.
+   */
+  it('the panel mounts a REAL points control, reads CONTENT, and writes a NUMBER', () => {
+    const h = host();
+    const { getByTestId } = panel(TASK, h);
+
+    const input = getByTestId('row-number-input') as HTMLInputElement;
+    expect(input.dataset.source).toBe('pointsEstimate');
+    // The current value comes off the detail's CONTENT (the one field whose
+    // only home is content — `stateOf` never projects it). The fixture says 8.
+    expect(input.value).toBe('8');
+
+    // Commits on blur, not per keystroke — one version-guarded patch.
+    fireEvent.change(input, { target: { value: '5' } });
+    expect(h.onSetValue).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    /* A NUMBER crosses the wire: `content.pointsEstimate` is `number | null`
+       in the contract (`integer` on the node), and a string here would be
+       junk the fixture stores and the schema refuses. */
+    expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'pointsEstimate', 5, 'Points');
+  });
+
+  it('the points control refuses junk instead of writing it', () => {
+    const h = host();
+    const { getByTestId } = panel(TASK, h);
+    const input = getByTestId('row-number-input') as HTMLInputElement;
+
+    // Negative and fractional both revert (`points_estimate integer >= 0`);
+    // an emptied box reverts too — nothing in the contract CLEARS the field.
+    for (const junk of ['-3', '2.5', '']) {
+      fireEvent.change(input, { target: { value: junk } });
+      fireEvent.blur(input);
+    }
+    expect(h.onSetValue).not.toHaveBeenCalled();
+    // After every revert the stored value is still what renders.
+    expect(input.value).toBe('8');
+  });
+
+  it('the points cell leaves the grid for the control that replaced it (D67)', () => {
+    const { getByTestId } = panel(TASK, host());
+    // The live editor is on the strip; the read-only copy is suppressed via
+    // the same `controlled` set that took Due and Start out.
+    expect(getByTestId('row-number-input')).toBeTruthy();
+    expect(getByTestId('subtree-grid').textContent).not.toMatch(/Points/);
+  });
+
+  it('a summary-shaped subject cannot READ the estimate and says so', () => {
+    /*
+     * List rows pass `EntitySummary` straight through as the strip's subject,
+     * and a summary carries NO content — so the current value is unknowable
+     * there, and an empty input would claim "unset" about a field that may be
+     * set. Not CheckingPermission (content never arrives on a summary, so
+     * "resolves on its own" would be false forever — the permanent-checking
+     * defect class); a refusal that names the surface and the remedy.
+     */
+    const h = host();
+    const summaryShaped = {
+      id: TASK.id,
+      title: TASK.title,
+      kind: TASK.kind,
+      state: TASK.state,
+      deletedAt: null,
+    };
+    const { queryByTestId, container } = render(
+      <EntityControlStrip row={summaryShaped} props={h} config={getKind('task')} variant="chips" />,
+    );
+    expect(queryByTestId('row-number-input')).toBeNull();
+    // The refused pill keeps the `data-source` hook; its cause—remedy caption
+    // lives on the surrounding honesty group.
+    const pill = container.querySelector('[data-source="pointsEstimate"]');
+    const group = pill?.closest('.hon-disabled-group');
+    expect(group?.textContent).toMatch(/isn’t loaded on this surface/i);
+    expect(group?.textContent).toMatch(/open the entity’s panel/i);
+    // The panel's own subject carries content (subjectOf), so the SAME strip
+    // there renders the live input — asserted by the write test above.
   });
 
   it('the panel mounts a REAL assignee control, and it writes an EDGE', () => {

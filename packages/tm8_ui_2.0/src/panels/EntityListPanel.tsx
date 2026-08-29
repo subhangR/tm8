@@ -76,7 +76,7 @@ import {
   RowStateControl,
   type ControlHost,
 } from './controls/EntityControls';
-import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
+import { HANDLED_SOURCES, dueLabel, renderBadge, type TileSlot } from './list/tile-badges';
 import { CategoryGlyph } from './list/CategoryGlyph';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
@@ -1966,7 +1966,12 @@ function FilterRow({
                be "none exist YET". The sets source is a bounded recency page,
                so this is also where that bound is stated. */
             <p className="lp__filterempty" data-testid="collection-lens-empty">
-              {`No ${membership.label.toLowerCase()} yet — create one from its own list. This menu offers the most recent page once any exist.`}
+              {/* "create one from its own list" only when the SET kind's own
+                  list actually offers a create — the same quickCreate gate as
+                  the kind screen's birth sentence, one level down. */}
+              {`No ${membership.label.toLowerCase()} yet${
+                getKind(membership.setKind).list.quickCreate ? ' — create one from its own list' : ''
+              }. This menu offers the most recent page once any exist.`}
             </p>
           ) : (
             (membershipSets ?? []).map((set) => {
@@ -2656,6 +2661,66 @@ function BoardColumn({
 // Bands, trees, tiles
 // ---------------------------------------------------------------------------
 
+/**
+ * WHICH LIFECYCLES EARN THE DONE STRIKETHROUGH — exhaustive over the registry
+ * union ON PURPOSE (a `Record`, not `lifecycle === 'work'`): the moment
+ * `ListConfig.lifecycle` grows a value, this map stops compiling until
+ * someone decides whether that lifecycle's done rows are FINISHED WORK
+ * (struck) or STORED MATERIAL (not). A bare equality would let a new
+ * vocabulary word silently inherit "no strike", which is a presentation
+ * verdict this file never actually reached — the costume question must fail
+ * loudly, the way `HANDLED_SOURCES` fails for an unrendered badge.
+ */
+const STRUCK_WHEN_DONE: Record<NonNullable<KindConfig['list']['lifecycle']>, boolean> = {
+  work: true,
+  library: false,
+  /* `record` (wave 3, work_session): a done session is the RECORD OF A RUN —
+     it ended, it was not finished-away, so no strike; failure stays visible
+     as the `failed` status badge. The verdict this map exists to force. */
+  record: false,
+};
+
+/**
+ * THE BIRTH SENTENCE — what a genuinely empty kind screen says about getting
+ * a first row, derived from the registry's own birth declarations instead of
+ * one hardcoded story for all kinds.
+ *
+ * The hardcoded sentence — "create one, or press / and type a name" — was a
+ * lie on every kind that refuses quick-create: sessions are LAUNCHED
+ * (`quickCreate:false`, the create door refused server-side), and commits,
+ * pull requests, members, projects, memories, artifacts and worktrees are
+ * never created from their list at all. The screen was teaching a dead
+ * gesture precisely to the user with zero rows, who has no other evidence of
+ * how the kind is born.
+ *
+ * Every branch below is a REGISTRY FIELD, never a kind name (§15.2):
+ *
+ *  - `quickCreate` + `createForm`: birth is a staged form, not a typed name —
+ *    the sentence uses the form's own verb ("Upload file to add one").
+ *  - `quickCreate`: the original sentence, kept verbatim where it is true
+ *    (the header ＋ exists and the palette carries the create label).
+ *  - `quickLaunch`: the kind is launched; the verb comes from
+ *    `palette.createLabel` ('Launch session' → "launch one").
+ *  - none of those: an honest refusal. The registry has no per-kind
+ *    birth-hint field yet, so the sentence states that rows arrive from
+ *    elsewhere without naming a door this screen does not have.
+ */
+function birthSentence(config: KindConfig): string {
+  const plural = config.labelPlural.toLowerCase();
+  const createLabel = config.palette?.createLabel;
+  if (config.list.quickCreate) {
+    if (config.createForm && createLabel) {
+      return `No ${plural} here yet — ${createLabel} to add one.`;
+    }
+    return `No ${plural} here yet — create one, or press / and type a name.`;
+  }
+  if (config.list.quickLaunch && createLabel) {
+    const verb = createLabel.trim().split(/\s+/)[0]?.toLowerCase() ?? 'start';
+    return `No ${plural} here yet — ${verb} one to begin.`;
+  }
+  return `No ${plural} here yet — new ${plural} arrive from work done elsewhere; nothing creates one from this screen.`;
+}
+
 function Band({
   label,
   filter,
@@ -2754,7 +2819,7 @@ function Band({
         ) : (
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
-            sentence={`No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`}
+            sentence={birthSentence(config)}
           />
         )
       ) : (
@@ -3148,6 +3213,14 @@ export function Tile({
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
   const sessionTree = list.tile.anatomy === 'session-tree';
+  /**
+   * W3E — the kind's palette family, stamped as `data-family` on every
+   * anatomy's ROOT (standard, control-card, session-tree) so W3C's accent
+   * rules can tint a tile without this file naming a kind. Registry DATA,
+   * read exactly the way the graph cards read it (`GraphView`); a kind
+   * without a family draws the neutral gray one.
+   */
+  const family = config.graphFamily ?? 'gray';
   const verdict = props.livenessOf?.(row.id);
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;
@@ -3293,7 +3366,7 @@ export function Tile({
    * `data-lifecycle` so styling can key on the same fact.
    */
   const lifecycle = list.lifecycle ?? 'work';
-  const struck = completed && lifecycle === 'work';
+  const struck = completed && STRUCK_WHEN_DONE[lifecycle];
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
   // Session tiles carry the same chip slot: the index resolves a session's
@@ -3423,6 +3496,7 @@ export function Tile({
       <>
       <MaestroSessionTile
         id={row.id}
+        family={family}
         title={row.title || 'Session'}
         agentTool={agentTool}
         sessionKind={sessionKind}
@@ -3473,6 +3547,7 @@ export function Tile({
       <MaestroTaskTile
         rootRef={tileRef}
         id={row.id}
+        family={family}
         title={row.title}
         depth={depth}
         selected={selected}
@@ -3611,6 +3686,8 @@ export function Tile({
          finding 2 hangs styling on, so a stylesheet can key `[data-lifecycle=
          'library']` without this file ever naming a kind. */
       data-lifecycle={lifecycle}
+      /* W3E — same family attribute the other two anatomies carry. */
+      data-family={family}
       data-tree={config.list.tree ? 'true' : undefined}
       data-children={childCount > 0 ? childCount : undefined}
       data-flow={flowRef ? 'open' : undefined}
@@ -3645,12 +3722,22 @@ export function Tile({
             )
           ) : null}
 
-          <span
-            className={`lp__statusmark lp__statusmark--${statusTone}`}
-            aria-hidden
-            title={statusTitle}
-          >
-            {statusWord ? (
+          {/* W3E — the kind's drawn mark on EVERY standard row, not only the
+              statusless ones. The glyph used to be the statusmark's fallback,
+              so a row with a status word had no kind identity at all. It rides
+              its own `lp__statusmark` slot (the shared 16px grid centring, so
+              the `lp__tile-main` row floor is untouched) under `lp__kindglyph`
+              — the hook W3C tints via the root's `data-family`. */}
+          <span className="lp__statusmark lp__kindglyph" aria-hidden>
+            <KindIcon kind={config.kind} size={14} />
+          </span>
+
+          {statusWord ? (
+            <span
+              className={`lp__statusmark lp__statusmark--${statusTone}`}
+              aria-hidden
+              title={statusTitle}
+            >
               <span
                 className={[
                   'lp__dot',
@@ -3661,10 +3748,8 @@ export function Tile({
                   .filter(Boolean)
                   .join(' ')}
               />
-            ) : (
-              <span className="lp__kindmark"><KindIcon kind={config.kind} /></span>
-            )}
-          </span>
+            </span>
+          ) : null}
 
           {/* 15, not 20 — 17px is the tallest thing a session row contains and
               therefore the height of every row in every list. */}
@@ -3860,7 +3945,11 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
   if (typeof acceptance?.total === 'number' && acceptance.total > 0) {
     meta.push(`${typeof acceptance.completed === 'number' ? acceptance.completed : 0}/${acceptance.total} criteria`);
   }
-  if (typeof state.dueDate === 'string' && state.dueDate) meta.push(`due ${state.dueDate}`);
+  if (typeof state.dueDate === 'string' && state.dueDate) {
+    // One fact, one spelling: the same humanizer the collapsed badge uses —
+    // `due 2026-09-01` on the expanded card was the raw-ISO debug voice.
+    meta.push(dueLabel(state.dueDate)?.label ?? `due ${state.dueDate}`);
+  }
   const blockers = row.badges.blocked?.unresolvedHardDependencyCount ?? 0;
   if (blockers > 0) meta.push(`${blockers} ${blockers === 1 ? 'blocker' : 'blockers'}`);
   const pulls = row.badges.pulls?.length ?? 0;

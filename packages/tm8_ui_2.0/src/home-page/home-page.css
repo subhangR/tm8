@@ -261,7 +261,7 @@
 .cv2-root .hr-rail__eyebrow {
   padding: 2px 6px 4px;
   color: var(--pn-ink-4);
-  font: 8.5px var(--pn-mono);
+  font: 8.5px var(--pn-caps);
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
 }

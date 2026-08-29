@@ -186,7 +186,16 @@ describe('the composed metadata grid', () => {
      * assertions below hold.
      */
     expect(grid.textContent).not.toMatch(/Due/);
-    expect(grid.textContent).toContain('Points');
+    /*
+     * `Points` LEFT THIS GRID on 2026-08-29, by exactly the rule that took
+     * `Due` out one wave earlier: the task registry now declares a points
+     * value control (`TASK_POINTS_CONTROL`, `input: 'number'`), so the strip
+     * above this body carries a LIVE editor of the same fact and the
+     * `controlled` set suppresses the read-only copy. The cell survives for
+     * any kind that draws a `pointsEstimate` without declaring the control —
+     * for that kind it is the only truth available.
+     */
+    expect(grid.textContent).not.toMatch(/Points/);
   });
 
   /**
@@ -216,10 +225,19 @@ describe('the composed metadata grid', () => {
     expect(grid.textContent).not.toMatch(/URGENT/);
   });
 
-  it('renders the points estimate, which lives in CONTENT rather than state', () => {
-    // The grid read only `state` and so was silent about a field the create
-    // and patch inputs have always carried. The fixture estimates 8.
-    expect(renderBody().getByTestId('subtree-grid').textContent).toMatch(/Points\s*8/);
+  it('gives the points cell up to the strip control that replaced it', () => {
+    /*
+     * INTENT MOVED, wave 3 (the Due cell's own history, one field later).
+     * This test used to pin the read-only `Points 8` cell — which was the
+     * field's ONLY appearance anywhere, drawn only when already set, so an
+     * unestimated task said nothing about estimates and an estimated one was
+     * uneditable. The task registry now declares `TASK_POINTS_CONTROL`
+     * (`input: 'number'`), the strip renders a live editor of the same fact,
+     * and the `controlled` set suppresses the copy — asserted through the
+     * declaration, so the suppression cannot outlive the control.
+     */
+    expect(getKind('task').list.valueControls?.some((c) => c.source === 'pointsEstimate')).toBe(true);
+    expect(renderBody().getByTestId('subtree-grid').textContent).not.toMatch(/Points/);
   });
 
   it('does NOT repeat the status the header pill already carries', () => {
@@ -410,10 +428,16 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     const section = getByTestId('acceptance-section');
     expect(within(section).queryAllByRole('checkbox')).toHaveLength(0);
     const refusals = within(section).getAllByTestId('disabled-with-reason');
-    expect(refusals).toHaveLength(4);
+    /* FIVE since wave 3: the four boxes plus the add-criterion affordance,
+       which takes the same L6 arm — visible, dead, carrying the same reason —
+       rather than hiding while its sibling rows explain themselves. */
+    expect(refusals).toHaveLength(5);
     expect(refusals[0]?.getAttribute('tabindex')).toBe('0');
     expect(refusals[0]?.textContent).toMatch(/cannot edit this/i);
     expect(refusals[0]?.textContent).toMatch(/refuses edits here/i);
+    // The add affordance is the last of the five and shares the verdict.
+    expect(refusals[4]?.textContent).toMatch(/add criterion/i);
+    expect(refusals[4]?.textContent).toMatch(/cannot edit this/i);
   });
 
   it('a REASON beats a handler — passing both refuses rather than half-refusing', () => {
@@ -441,12 +465,26 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
   });
 
   it('states an empty criteria list rather than drawing an empty region', () => {
-    // Empty ⇒ behind the one reveal toggle, then a closed fold. Reveal,
-    // expand, and the quiet line is still there — hidden, never lost.
-    const view = renderBody({ detail: withCriteria([]) });
-    revealEmpties(view);
-    const section = expandFold(view.getByTestId('acceptance-section'));
+    /*
+     * SINCE WAVE 3 this fold HOLDS an affordance (the add row), so it obeys
+     * the SUBTREE fold's law verbatim: with the add row REFUSED (no save
+     * path wired here) the fold stays visible — hiding it would hide the
+     * refusal's reason — and the quiet line still states the empty list.
+     */
+    const refused = renderBody({ detail: withCriteria([]) });
+    const section = expandFold(refused.getByTestId('acceptance-section'));
     expect(section.textContent).toMatch(/no acceptance criteria/i);
+    expect(within(section).getByTestId('disabled-with-reason').textContent).toMatch(/add criterion/i);
+    refused.unmount();
+
+    // With a LIVE add row and no rows the fold is genuinely empty: behind
+    // the reveal toggle, then a closed fold — hidden, never lost.
+    const live = renderBody({ detail: withCriteria([]), onCriteriaChange: vi.fn() });
+    expect(live.queryByTestId('acceptance-section')).toBeNull();
+    revealEmpties(live);
+    const revealed = expandFold(live.getByTestId('acceptance-section'));
+    expect(revealed.textContent).toMatch(/no acceptance criteria/i);
+    expect(within(revealed).getByTestId('acceptance-add-input')).toBeTruthy();
   });
 
   it('draws NO region for a content shape that carries no criteria member', () => {
@@ -455,6 +493,114 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     const doc = fixtureDetails[docLayoutSpec.id];
     if (!doc) throw new Error('fixtures must supply a doc detail');
     expect(renderBody({ detail: doc }).queryByTestId('acceptance-section')).toBeNull();
+  });
+
+  /*
+   * AUTHORING (wave 3) — the worst finding of the census: `acceptanceCriteria`
+   * has been on Create AND Patch since the task commands shipped, and no
+   * surface in the product could ADD one, REMOVE one, or REWORD one. All three
+   * ride the SAME staged whole-array draft the checkboxes use, so one save,
+   * one expectedVersion, one conflict story.
+   */
+  it('APPENDS a criterion through the same whole-array dispatch the boxes use', () => {
+    const onCriteriaChange = vi.fn();
+    const { getByTestId } = renderBody({ onCriteriaChange });
+    const input = getByTestId('acceptance-add-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '  Docs updated  ' } });
+    fireEvent.click(getByTestId('acceptance-add'));
+
+    const next = onCriteriaChange.mock.calls[0]?.[0] as AcceptanceCriterion[];
+    expect(next).toHaveLength(5);
+    // The four persisted rows ride through untouched, stamps included.
+    expect(next.slice(0, 4)).toEqual(criteriaOf(taskDetail()));
+    const added = next[4]!;
+    expect(added.text).toBe('Docs updated');
+    expect(added.done).toBe(false);
+    /* The id joins the server's own family (`ac_` — the node backfills
+       `ac_${index+1}` onto id-less rows) but is ENTROPY, not position: a
+       positional mint would collide with a surviving row's id the first time
+       one was removed from the middle. */
+    expect(added.id).toMatch(/^ac_/);
+    expect(criteriaOf(taskDetail()).some((c) => c.id === added.id)).toBe(false);
+    // The box clears for the next criterion.
+    expect(input.value).toBe('');
+  });
+
+  it('Enter in the add box commits; an empty box refuses the button plainly', () => {
+    const onCriteriaChange = vi.fn();
+    const { getByTestId } = renderBody({ onCriteriaChange });
+    const add = getByTestId('acceptance-add') as HTMLButtonElement;
+    // Form-validity, not an L6 refusal: an empty box explains itself.
+    expect(add.disabled).toBe(true);
+    const input = getByTestId('acceptance-add-input');
+    fireEvent.change(input, { target: { value: 'Perf budget holds' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    const next = onCriteriaChange.mock.calls[0]?.[0] as AcceptanceCriterion[];
+    expect(next).toHaveLength(5);
+    expect(next[4]?.text).toBe('Perf budget holds');
+  });
+
+  it('REMOVES one criterion in the edit stance, the other rows untouched', () => {
+    const onCriteriaChange = vi.fn();
+    const { getByTestId } = renderBody({ onCriteriaChange });
+    fireEvent.click(getByTestId('acceptance-stance'));
+    const section = getByTestId('acceptance-section');
+    fireEvent.click(within(section).getAllByTestId('acceptance-remove')[1]!);
+
+    const next = onCriteriaChange.mock.calls[0]?.[0] as AcceptanceCriterion[];
+    const persisted = criteriaOf(taskDetail());
+    expect(next).toHaveLength(3);
+    expect(next.map((c) => c.id)).toEqual([persisted[0]!.id, persisted[2]!.id, persisted[3]!.id]);
+    // The survivors are handed back verbatim — stamps included.
+    expect(next[0]).toEqual(persisted[0]);
+  });
+
+  it('REWORDS a criterion in the edit stance — id, done and provenance kept', () => {
+    const onCriteriaChange = vi.fn();
+    const { getByTestId } = renderBody({ onCriteriaChange });
+    fireEvent.click(getByTestId('acceptance-stance'));
+    const section = getByTestId('acceptance-section');
+    const inputs = within(section).getAllByTestId('acceptance-reword') as HTMLInputElement[];
+    expect(inputs.map((i) => i.value)).toEqual(criteriaOf(taskDetail()).map((c) => c.text));
+    fireEvent.change(inputs[0]!, { target: { value: 'Crash reproduced twice' } });
+
+    const next = onCriteriaChange.mock.calls[0]?.[0] as AcceptanceCriterion[];
+    const persisted = criteriaOf(taskDetail());
+    expect(next[0]).toEqual({ ...persisted[0]!, text: 'Crash reproduced twice' });
+    expect(next.slice(1)).toEqual(persisted.slice(1));
+  });
+
+  it('the edit stance is entered and left by the description grammar, and resets per entity', () => {
+    const onCriteriaChange = vi.fn();
+    const view = renderBody({ onCriteriaChange });
+    expect(within(view.getByTestId('acceptance-section')).queryAllByTestId('acceptance-remove')).toHaveLength(0);
+    fireEvent.click(view.getByTestId('acceptance-stance'));
+    expect(within(view.getByTestId('acceptance-section')).getAllByTestId('acceptance-remove')).toHaveLength(4);
+    // Done leaves the stance; the resting rows return.
+    fireEvent.click(view.getByTestId('acceptance-stance'));
+    expect(within(view.getByTestId('acceptance-section')).queryAllByTestId('acceptance-remove')).toHaveLength(0);
+  });
+
+  it('ticking still works from the edit stance, through the same withDone path', () => {
+    const onCriteriaChange = vi.fn();
+    const { getByTestId } = renderBody({ onCriteriaChange });
+    fireEvent.click(getByTestId('acceptance-stance'));
+    const boxes = within(getByTestId('acceptance-section')).getAllByRole('checkbox');
+    fireEvent.click(boxes[0]!);
+    const next = onCriteriaChange.mock.calls[0]?.[0] as AcceptanceCriterion[];
+    // Un-ticking row 0 drops its provenance exactly as in the resting stance.
+    expect(next[0]).toEqual({ id: 'ac-1', text: 'Crash reproduced under fixture data', done: false });
+  });
+
+  it('no stance flip and no remove are OFFERED while the save path refuses', () => {
+    const view = renderBody({
+      onCriteriaChange: vi.fn(),
+      criteriaUnavailableReason: 'You cannot edit this — the server refuses edits here',
+    });
+    // A reason wins over a handler for the STANCE exactly as for the boxes:
+    // an Edit that opened onto refused inputs would be a mode with no verbs.
+    expect(view.queryByTestId('acceptance-stance')).toBeNull();
+    expect(view.queryByTestId('acceptance-add-input')).toBeNull();
   });
 });
 
@@ -615,6 +761,144 @@ describe('LINKED — connection peers as chips', () => {
     const { getByTestId } = renderBody({ onOpenEntity });
     const section = expandFold(getByTestId('linked-section'));
     fireEvent.click(within(section).getByText(taskBlocked.title));
+    expect(onOpenEntity).toHaveBeenCalledWith(taskBlocked.id);
+  });
+});
+
+/**
+ * DEPENDENCIES — the FOURTH recurrence of the `OWN_SECTION_EDGES` failure
+ * class (after `remembers`, `triggered_by`, `contains`). A blocked task's ROW
+ * says "blocked ×2" from `badges.blocked.unresolvedHardDependencyCount`, but
+ * its own body rendered the edges behind that count as anonymous LINKED chips:
+ * no direction, no hard/soft, no resolved verdict. These tests pin the named
+ * section that now carries all three, and the LINKED suppression that stops
+ * the double-render.
+ *
+ * The vocabulary pins are BORROWED rulings, deliberately: hard-by-default is
+ * `graph/model.ts:315` (`e.hard === false ? soft : hard`), the blocking
+ * predicate is `model.ts:320` (hard AND explicitly unresolved), and the
+ * direction words are the session-graph's (`depends_on:out` → "depends on",
+ * `:in` → "blocks"). One edge, one reading, on every surface.
+ */
+function depEdge(
+  id: string,
+  source: EntitySummary,
+  target: EntitySummary,
+  props: { hard?: boolean; resolved?: boolean },
+) {
+  return {
+    id,
+    type: 'depends_on',
+    source,
+    target,
+    props: {},
+    createdBy: ada,
+    createdAt: '2026-07-20T09:00:00.000Z',
+    updatedAt: '2026-07-28T09:15:00.000Z',
+    ...props,
+  };
+}
+
+function taskWithDependencies(): EntityDetail {
+  const base = taskDetail();
+  const self = base as EntitySummary;
+  return {
+    ...base,
+    connections: {
+      ...base.connections,
+      outgoing: [
+        ...base.connections.outgoing,
+        {
+          type: 'depends_on',
+          direction: 'outgoing' as const,
+          label: 'depends on',
+          edges: [
+            // The gate: hard and explicitly unresolved — the row badge's edge.
+            depEdge('edge-dep-hard', self, taskBlocked, { hard: true, resolved: false }),
+            // No `hard`, no `resolved`: the tri-state honesty specimen.
+            depEdge('edge-dep-bare', self, taskGuideLines, {}),
+          ],
+        },
+      ],
+      incoming: [
+        ...base.connections.incoming,
+        {
+          type: 'depends_on',
+          direction: 'incoming' as const,
+          label: 'blocked by',
+          edges: [depEdge('edge-dep-soft', taskTombstone, self, { hard: false, resolved: true })],
+        },
+      ],
+    },
+  };
+}
+
+describe('DEPENDENCIES — depends_on edges keep their facts, in their own section', () => {
+  it('names direction, hardness and resolution for every edge, counted', () => {
+    const { getByTestId } = renderBody({ detail: taskWithDependencies() });
+    const section = getByTestId('dependencies-section');
+    expect(section.textContent).toContain('DEPENDENCIES');
+    expect(section.textContent).toContain('3');
+    const rows = within(section).getAllByTestId('dependency-row');
+    expect(rows).toHaveLength(3);
+
+    // Outgoing, hard, unresolved: this task waits on taskBlocked — blocking.
+    expect(rows[0]?.getAttribute('data-direction')).toBe('depends-on');
+    expect(rows[0]?.getAttribute('data-blocking')).toBe('true');
+    expect(rows[0]?.textContent).toContain('depends on');
+    expect(rows[0]?.textContent).toContain(taskBlocked.title);
+    expect(rows[0]?.textContent).toContain('hard');
+    expect(rows[0]?.textContent).toContain('unresolved');
+
+    // Incoming, soft, resolved: this task gates taskTombstone — not blocking.
+    const blocksRow = rows[2]!;
+    expect(blocksRow.getAttribute('data-direction')).toBe('blocks');
+    expect(blocksRow.getAttribute('data-blocking')).toBe('false');
+    expect(blocksRow.textContent).toContain('blocks');
+    expect(blocksRow.textContent).toContain(taskTombstone.title);
+    expect(blocksRow.textContent).toContain('soft');
+    expect(blocksRow.textContent).toContain('resolved');
+  });
+
+  it('reads an absent hard as HARD and an absent resolved as NO VERDICT', () => {
+    // `graph/model.ts:315` — only an explicit `hard: false` is soft; and a
+    // missing `resolved` must print NEITHER word: "unresolved" for an edge
+    // nobody judged would claim a measurement that never ran (hollow-value
+    // law) — and it must not count as blocking either.
+    const { getByTestId } = renderBody({ detail: taskWithDependencies() });
+    const bare = within(getByTestId('dependencies-section')).getAllByTestId('dependency-row')[1]!;
+    expect(bare.textContent).toContain(taskGuideLines.title);
+    expect(bare.textContent).toContain('hard');
+    expect(bare.textContent).not.toMatch(/\bresolved\b/);
+    expect(bare.getAttribute('data-blocking')).toBe('false');
+  });
+
+  it('keeps depends_on peers OUT of LINKED, and leaves ordinary links alone', () => {
+    // The double-render this wave removes: the same edges must not also
+    // appear as anonymous chips. The filter is one group type wider, not
+    // "anything unfamiliar" — the ordinary link types still land in LINKED.
+    const { getByTestId } = renderBody({ detail: taskWithDependencies() });
+    const linked = expandFold(getByTestId('linked-section')).textContent ?? '';
+    expect(linked).not.toContain(taskGuideLines.title);
+    expect(linked).not.toContain(taskTombstone.title);
+    expect(linked).toContain(docLayoutSpec.title);
+  });
+
+  it('states the absence in words — an empty dependency set is a fact, not a blank', () => {
+    // The fixture task carries no depends_on group, so the section joins the
+    // empty set; reveal + expand still reads the honest line.
+    const view = renderBody();
+    expect(view.queryByTestId('dependencies-section')).toBeNull();
+    revealEmpties(view);
+    expect(expandFold(view.getByTestId('dependencies-section')).textContent).toMatch(
+      /waits on nothing/i,
+    );
+  });
+
+  it('opens the peer on click', () => {
+    const onOpenEntity = vi.fn();
+    const { getByTestId } = renderBody({ detail: taskWithDependencies(), onOpenEntity });
+    fireEvent.click(within(getByTestId('dependencies-section')).getAllByTestId('dependency-row')[0]!);
     expect(onOpenEntity).toHaveBeenCalledWith(taskBlocked.id);
   });
 });
@@ -876,11 +1160,19 @@ describe('folds — hairline sections, persisted globally per section id', () =>
   });
 
   it('hides empty sections behind ⋯ N empty sections, and reveals them IN ORDER', () => {
-    const view = renderBody({ detail: withCriteria([]) });
+    /* The specimen fold needs a LIVE add row since wave 3 — an acceptance
+       fold with a REFUSED affordance stays in the flow (the law the test two
+       below pins for SUBTREE), which is a different case than this one. */
+    const view = renderBody({ detail: withCriteria([]), onCriteriaChange: vi.fn() });
     // Empty ⇒ out of the flow entirely…
     expect(view.queryByTestId('acceptance-section')).toBeNull();
     const toggle = view.getByTestId('empty-sections-toggle');
-    expect(toggle.textContent).toMatch(/1 empty section/);
+    /* MOVED PIN (2026-08-29, wave 3 depth): this read `1 empty section` until
+       the DEPENDENCIES section joined the anatomy — the fixture task carries
+       no depends_on edges, so that section is now the second member of the
+       empty set beside the emptied ACCEPTANCE. Deliberate change of intent,
+       not a loosened assertion. */
+    expect(toggle.textContent).toMatch(/2 empty sections/);
     // …revealed in its normal place: ACCEPTANCE above SUBTREE, not appended.
     fireEvent.click(toggle);
     const acceptance = view.getByTestId('acceptance-section');
