@@ -1699,8 +1699,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cv2-root .shell-switcher__space-row { padding-left: 14px; }
-.cv2-root .shell-switcher__space-row--active { color: var(--pn-brand-2); font-weight: 600; }
+.cv2-root .shell-switcher__space-row {
+  /* POPOVER RECOMPOSITION (Tarkesh, 2026-08-29): spaces read as a GROUP under
+     their server — deeper indent plus a hairline guide, the same
+     tree-membership grammar the subtree body uses. */
+  margin-left: 15px;
+  padding-left: 10px;
+  border-left: 1px solid var(--pn-line);
+  border-radius: 0 6px 6px 0;
+}
+.cv2-root .shell-switcher__space-row--active {
+  /* The current space is a STATE, not just a tinted word: full brand-soft
+     fill + 600, matching every other selected-row treatment in the app. */
+  color: var(--pn-brand-2);
+  font-weight: 600;
+  background: var(--pn-brand-soft);
+  border-left-color: var(--pn-brand);
+}
+.cv2-root .shell-switcher__space-row--active:hover { background: var(--pn-brand-soft); }
 .cv2-root .shell-switcher__check { width: 12px; flex: none; color: var(--pn-brand-2); font-size: 11px; }
 /* RECLASSIFIED (W3 sweep): "switch to see its spaces" is a sentence. */
 .cv2-root .shell-switcher__hint {
@@ -1711,14 +1727,28 @@
 }
 .cv2-root .shell-switcher__footer {
   display: flex;
-  gap: 2px;
-  margin-top: 3px;
-  padding-top: 3px;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px solid var(--pn-line-2);
 }
 /* Live add-rows are interactive words: ink-2 at the 13 floor (W3 sweep) —
    the aria-disabled treatment below still dims the unhosted form. */
-.cv2-root .shell-switcher__add { flex: 1; color: var(--pn-ink-2); font-size: var(--pn-fs-sm); }
+.cv2-root .shell-switcher__add {
+  /* Footer verbs are real compact buttons (kit grammar metrics), not bare
+     words — half the 'many loose clickables' feel was these two. */
+  flex: 1;
+  justify-content: center;
+  min-height: 28px;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-sizing: border-box;
+}
+.cv2-root .shell-switcher__add:hover { background: var(--pn-hover); color: var(--pn-ink); }
 /* REAL disabled treatment (D28): the row stays focusable and carries its
    reason as a title, but it no longer wears its live sibling's clothes —
    dimmed, no hover wash, not-allowed cursor. Ink-4 alone was not legible as
