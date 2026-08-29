@@ -1,8 +1,9 @@
 /* ==========================================================================
-   COLLAB V2 — DESIGN TOKENS  ·  "ATELIER" (paper & ink), module-scoped.
-   Ported from `Modular Collab Workspace UI/_ds` (colors_and_type.css). All
-   tokens live under `.cv2-root` so the module never leaks styles into the
-   host app. Dark = warm graphite via [data-theme="dark"] on .cv2-root or any
+   COLLAB V2 — DESIGN TOKENS  ·  "KINETIC ELITE" (slate & signal), module-scoped.
+   Successor to the Atelier paper-and-ink ramp (owner-ruled 2026-08-29): cool
+   slate surfaces, Figtree type, a blue accent, and VIBRANT status signals.
+   All tokens live under `.cv2-root` so the module never leaks styles into the
+   host app. Dark = deep slate via [data-theme="dark"] on .cv2-root or any
    ancestor. Status is ALWAYS color + word, never color alone.
    ========================================================================== */
 /* Self-hosted — see fonts.css. This used to be a fonts.googleapis.com @import,
@@ -13,41 +14,41 @@
 @import './astryx-bridge.css';
 
 .cv2-root {
-  /* --- 1 · paper & ink ---------------------------------------------------- */
-  --pn-paper:    #F4F2EC;
-  --pn-surface:  #FBFAF6;
+  /* --- 1 · slate & ink ---------------------------------------------------- */
+  --pn-paper:    #F1F5F9;
+  --pn-surface:  #F7F9FB;
   --pn-card:     #FFFFFF;
-  --pn-hover:    #F2EFE8;
-  --pn-active:   #ECE8DF;
+  --pn-hover:    #ECEEF0;
+  --pn-active:   #E0E3E5;
 
-  --pn-line:     #E7E3D9;
-  --pn-line-2:   #D8D3C6;
+  --pn-line:     #E4E8EC;
+  --pn-line-2:   #CBD5E1;
 
-  --pn-ink:      #23201B;
-  --pn-ink-2:    #5B564C;
-  --pn-ink-3:    #8E897B;
-  --pn-ink-4:    #B7B2A4;
+  --pn-ink:      #121417;
+  --pn-ink-2:    #475569;
+  --pn-ink-3:    #76777B;
+  --pn-ink-4:    #B9BDC4;
 
-  /* --- 2 · brass (the one restrained accent) ------------------------------ */
-  --pn-brand:      #B26A2B;
-  --pn-brand-2:    #9A581F;
-  --pn-brand-soft: rgba(178, 106, 43, 0.11);
-  --pn-brand-rgb:  178, 106, 43;
-  /* Focus ring = brass (same hex as --pn-brand-2); consumed via var(--pn-focus). */
-  --pn-focus:      #9A581F;
+  /* --- 2 · signal blue (the one accent) ----------------------------------- */
+  --pn-brand:      #0051D5;
+  --pn-brand-2:    #003EA8;
+  --pn-brand-soft: rgba(0, 81, 213, 0.10);
+  --pn-brand-rgb:  0, 81, 213;
+  /* Focus ring = signal blue (same hex as --pn-brand-2); consumed via var(--pn-focus). */
+  --pn-focus:      #003EA8;
 
-  /* --- 3 · functional / status (desaturated, anti-neon) ------------------- */
-  --pn-run:    #3E8E5A;   --pn-run-soft:   rgba(62, 142, 90, 0.12);
-  /* Forge lifecycle: GitHub's merged-purple, desaturated to the anti-neon ramp. */
-  --pn-pr-merged: #7B5EA7; --pn-pr-merged-soft: rgba(123, 94, 167, 0.14);
-  --pn-wait:   #BD8A2A;   --pn-wait-soft:  rgba(189, 138, 42, 0.14);
-  --pn-block:  #BB4D3D;   --pn-block-soft: rgba(187, 77, 61, 0.12);
-  --pn-info:   #3F6C90;   --pn-info-soft:  rgba(63, 108, 144, 0.12);
-  --pn-idle:   #A29C8E;   --pn-idle-soft:  rgba(162, 156, 142, 0.16);
+  /* --- 3 · functional / status (vibrant, word-paired) --------------------- */
+  --pn-run:    #10B981;   --pn-run-soft:   rgba(16, 185, 129, 0.12);
+  /* Forge lifecycle: merged-purple, lifted to the vibrant ramp. */
+  --pn-pr-merged: #8B5CF6; --pn-pr-merged-soft: rgba(139, 92, 246, 0.14);
+  --pn-wait:   #F59E0B;   --pn-wait-soft:  rgba(245, 158, 11, 0.14);
+  --pn-block:  #EF4444;   --pn-block-soft: rgba(239, 68, 68, 0.12);
+  --pn-info:   #3B82F6;   --pn-info-soft:  rgba(59, 130, 246, 0.12);
+  --pn-idle:   #76777B;   --pn-idle-soft:  rgba(118, 119, 123, 0.14);
 
   /* Collab status semantics (pill tones map onto the functional ramp):
      working=green · blocked=red · in_review=blue · stale=amber · done=green ·
-     open/idle=warm grey. */
+     open/idle=cool grey. */
   --cv2-status-working:      var(--pn-run);
   --cv2-status-working-soft: var(--pn-run-soft);
   --cv2-status-done:         var(--pn-run);
@@ -62,8 +63,8 @@
   --cv2-status-idle-soft:    var(--pn-idle-soft);
 
   /* --- 4 · type ------------------------------------------------------------ */
-  --pn-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
-  --pn-ui:    'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pn-serif: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pn-ui:    'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pn-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
 
   --pn-fs-display: 40px;
@@ -110,11 +111,11 @@
   --pn-r-lg: 14px;
   --pn-r-pill: 999px;
 
-  /* --- 7 · elevation (warm shadows; no glow) --------------------------------- */
-  --pn-sh-sm:  0 1px 2px rgba(40, 34, 24, 0.05);
-  --pn-sh-md:  0 2px 6px rgba(40, 34, 24, 0.06), 0 8px 24px rgba(40, 34, 24, 0.06);
-  --pn-sh-lg:  0 4px 12px rgba(40, 34, 24, 0.08), 0 12px 32px rgba(40, 34, 24, 0.10);
-  --pn-sh-pop: 0 12px 34px rgba(40, 34, 24, 0.14);
+  /* --- 7 · elevation (cool shadows; no glow) --------------------------------- */
+  --pn-sh-sm:  0 1px 2px rgba(15, 23, 42, 0.05);
+  --pn-sh-md:  0 2px 6px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --pn-sh-lg:  0 4px 12px rgba(15, 23, 42, 0.08), 0 12px 32px rgba(15, 23, 42, 0.10);
+  --pn-sh-pop: 0 12px 34px rgba(15, 23, 42, 0.14);
 
   /* --- 8 · motion (fast, mechanical, no bounce) ------------------------------ */
   --pn-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -131,36 +132,36 @@
   background: var(--pn-paper);
 }
 
-/* Dark: same editorial system inverted into warm graphite (token-only). */
+/* Dark: the same signal system inverted into deep slate (token-only). */
 .cv2-root[data-theme="dark"],
 [data-theme="dark"] .cv2-root {
-  --pn-paper:   #1D1912;
-  --pn-surface: #1B1810;
-  --pn-card:    #221E15;
-  --pn-hover:   #262117;
-  --pn-active:  #302A1D;
+  --pn-paper:   #0F1115;
+  --pn-surface: #14171C;
+  --pn-card:    #1A1E24;
+  --pn-hover:   #20242B;
+  --pn-active:  #262B33;
 
-  --pn-line:    #2C2719;
-  --pn-line-2:  #3B3524;
+  --pn-line:    #262B33;
+  --pn-line-2:  #333A44;
 
-  --pn-ink:     #EFE9DB;
-  --pn-ink-2:   #BDB5A2;
-  --pn-ink-3:   #8C8470;
-  --pn-ink-4:   #665E4C;
+  --pn-ink:     #E8EAED;
+  --pn-ink-2:   #B4BAC4;
+  --pn-ink-3:   #848B96;
+  --pn-ink-4:   #565D68;
 
-  --pn-brand:      #E0A45A;
-  --pn-brand-2:    #C98A3E;
-  --pn-brand-soft: rgba(224, 164, 90, 0.15);
-  --pn-brand-rgb:  224, 164, 90;
-  /* Focus ring = brass (same hex as dark --pn-brand-2); consumed via var(--pn-focus). */
-  --pn-focus:      #C98A3E;
+  --pn-brand:      #5E8EF7;
+  --pn-brand-2:    #85ABFF;
+  --pn-brand-soft: rgba(94, 142, 247, 0.18);
+  --pn-brand-rgb:  94, 142, 247;
+  /* Focus ring = signal blue (same hex as dark --pn-brand-2); consumed via var(--pn-focus). */
+  --pn-focus:      #85ABFF;
 
-  --pn-run:   #5CB381;  --pn-run-soft:   rgba(92, 179, 129, 0.17);
-  --pn-pr-merged: #9C82C9; --pn-pr-merged-soft: rgba(156, 130, 201, 0.20);
-  --pn-wait:  #D9AA49;  --pn-wait-soft:  rgba(217, 170, 73, 0.18);
-  --pn-block: #DA7D6A;  --pn-block-soft: rgba(218, 125, 106, 0.17);
-  --pn-info:  #6F9FC7;  --pn-info-soft:  rgba(111, 159, 199, 0.17);
-  --pn-idle:  #7A7360;  --pn-idle-soft:  rgba(122, 115, 96, 0.20);
+  --pn-run:   #34D399;  --pn-run-soft:   rgba(52, 211, 153, 0.18);
+  --pn-pr-merged: #A78BFA; --pn-pr-merged-soft: rgba(167, 139, 250, 0.20);
+  --pn-wait:  #FBBF24;  --pn-wait-soft:  rgba(251, 191, 36, 0.18);
+  --pn-block: #F87171;  --pn-block-soft: rgba(248, 113, 113, 0.17);
+  --pn-info:  #60A5FA;  --pn-info-soft:  rgba(96, 165, 250, 0.17);
+  --pn-idle:  #848B96;  --pn-idle-soft:  rgba(132, 139, 150, 0.20);
 
   --pn-sh-sm:  0 1px 2px rgba(0, 0, 0, 0.45);
   --pn-sh-md:  0 2px 8px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
@@ -169,8 +170,8 @@
 }
 
 /* --- semantic type classes (scoped) ------------------------------------------ */
-.cv2-root .t-display { font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-display); line-height: var(--pn-lh-tight); color: var(--pn-ink); }
-.cv2-root .t-h1 { font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-h1); line-height: var(--pn-lh-tight); color: var(--pn-ink); }
+.cv2-root .t-display { font-family: var(--pn-serif); font-weight: 700; font-size: var(--pn-fs-display); line-height: var(--pn-lh-tight); letter-spacing: -0.02em; color: var(--pn-ink); }
+.cv2-root .t-h1 { font-family: var(--pn-serif); font-weight: 700; font-size: var(--pn-fs-h1); line-height: var(--pn-lh-tight); letter-spacing: -0.015em; color: var(--pn-ink); }
 .cv2-root .t-h2 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h2); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
 .cv2-root .t-h3 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h3); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
 .cv2-root .t-title { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-title); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
