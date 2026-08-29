@@ -389,6 +389,16 @@ describe('a card opens its entity ON the board', () => {
     view.unmount();
   });
 
+  it('omits the default medium priority while keeping exceptional priority visible', async () => {
+    const view = await mountBoard();
+    const defaultCard = cardButton(view, GUIDE).closest('[data-testid="b2-card"]')!;
+    const urgentCard = cardButton(view, taskUuidTitle.title).closest('[data-testid="b2-card"]')!;
+
+    expect(within(defaultCard).queryByText('medium')).toBeNull();
+    expect(within(urgentCard).getByText('urgent').classList.contains('astryx-badge')).toBe(true);
+    view.unmount();
+  });
+
   it('renders Astryx ProgressBar under a div wrapper, never invalid span > div markup', async () => {
     const view = await mountBoard();
     const progress = view.getAllByRole('progressbar')[0]!;
