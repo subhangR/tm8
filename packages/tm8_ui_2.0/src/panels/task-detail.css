@@ -1,0 +1,1023 @@
+/* ===========================================================================
+   TASK DETAIL — premium Kinetic composition.
+
+   This file is deliberately a task-detail territory island. Every selector
+   starts at the registry-owned subtree archetype, so the shared list, global
+   navigation and other entity panels keep their own owners. Kinetic tokens
+   remain the source of truth: no raw colors, no local theme palette.
+
+   The panel is its own named inline-size container. Narrow desktop columns,
+   browser zoom and mobile therefore resolve from the space the panel actually
+   receives, never from viewport units (which diverge under the app's zoom).
+   ========================================================================== */
+
+.cv2-root .pn-panel[data-archetype='subtree'] {
+  container: task-detail / inline-size;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  isolation: isolate;
+  background: var(--pn-paper);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'].pn-panel--peek {
+  inline-size: min(440px, 100%);
+}
+
+/* --- Identity / header --------------------------------------------------- */
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-head {
+  position: relative;
+  overflow: hidden;
+  border-bottom-color: var(--pn-line);
+  background: color-mix(in srgb, var(--pn-brand) 3%, var(--pn-card));
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-crumb {
+  padding: var(--pn-space-3) var(--pn-space-5) 0;
+  font-size: var(--pn-fs-fine);
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-head__row {
+  display: grid;
+  grid-template-columns: 32px auto 1fr auto;
+  align-items: center;
+  gap: var(--pn-space-2) var(--pn-space-3);
+  padding: var(--pn-space-2) var(--pn-space-5) var(--pn-space-4);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-head__glyph {
+  inline-size: 32px;
+  block-size: 32px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--pn-brand) 24%, var(--pn-line));
+  border-radius: var(--pn-r-md);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-header__ref {
+  align-self: center;
+  padding: 2px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  background: color-mix(in srgb, var(--pn-card) 72%, transparent);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] :is(.pn-head__title, .au-title) {
+  font-size: var(--pn-fs-h3);
+  font-weight: 700;
+  line-height: var(--pn-lh-snug);
+  letter-spacing: var(--pn-track-tight);
+  text-wrap: balance;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .au-title-input {
+  min-inline-size: 0;
+  block-size: 36px;
+  font-size: var(--pn-fs-title);
+  border-radius: var(--pn-r-sm);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-head__row > .kit-pill {
+  min-block-size: 24px;
+  box-sizing: border-box;
+  padding-inline: var(--pn-space-2);
+  font-size: var(--pn-fs-fine);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-head__supplemental {
+  padding: 0 var(--pn-space-5) var(--pn-space-3) 76px;
+}
+
+/* --- Tabs and primary actions ------------------------------------------- */
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar {
+  min-block-size: 48px;
+  block-size: auto;
+  align-items: stretch;
+  background: var(--pn-card);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-tabs {
+  block-size: auto;
+  align-items: center;
+  gap: var(--pn-space-1);
+  padding: 6px var(--pn-space-2) 6px var(--pn-space-3);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-tab {
+  min-block-size: 34px;
+  box-sizing: border-box;
+  padding-inline: var(--pn-space-3);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-tab:hover {
+  background: var(--pn-hover);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-tab--active {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-tab__count {
+  min-inline-size: 18px;
+  padding: 1px 5px;
+  border-radius: var(--pn-r-pill);
+  background: color-mix(in srgb, var(--pn-ink) 7%, transparent);
+  color: currentColor;
+  text-align: center;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end {
+  min-inline-size: 0;
+  min-block-size: 48px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--pn-space-1);
+  padding: 6px var(--pn-space-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-actions--inline {
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end .pn-btn {
+  min-block-size: 28px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--pn-space-3);
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end .pn-btn--primary {
+  border-color: transparent;
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end .pn-btn--primary:hover {
+  background: var(--pn-brand-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end .kit-iconbtn {
+  min-inline-size: 28px;
+  min-block-size: 28px;
+  box-sizing: border-box;
+  border-radius: var(--pn-r-sm);
+}
+
+/* --- Editable metadata band --------------------------------------------- */
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls {
+  padding: 10px var(--pn-space-4);
+  background: color-mix(in srgb, var(--pn-surface) 82%, var(--pn-card));
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure,
+.cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--pn-space-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure::before {
+  content: 'Controls';
+  padding-inline: var(--pn-space-1);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips {
+  flex-wrap: nowrap;
+  gap: var(--pn-space-1);
+  padding: 3px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: color-mix(in srgb, var(--pn-card) 76%, transparent);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips > * {
+  flex: none;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips > :last-child {
+  margin-left: var(--pn-space-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips :is(.lp__statesel, .pn-badge, .lp__rowaction) {
+  border-radius: var(--pn-r-sm);
+}
+
+/* The shared number control already says "points" when empty. This panel
+   owns the remaining squeeze: generic select rules can resolve the flex item
+   back toward zero, so the input and its wrapper both keep a readable floor. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__statewrap:has(> .lp__numsel) {
+  min-inline-size: 92px;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__numsel {
+  inline-size: 92px;
+  min-inline-size: 92px;
+  max-inline-size: 92px;
+  text-align: left;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__numsel::placeholder {
+  color: var(--pn-ink-3);
+  opacity: 1;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__datesel {
+  inline-size: 142px;
+  min-inline-size: 142px;
+  max-inline-size: 142px;
+}
+
+/* --- Reading column and cards ------------------------------------------- */
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-body {
+  min-inline-size: 0;
+  padding: var(--pn-space-6) var(--pn-space-5) var(--pn-space-8);
+  gap: var(--pn-space-4);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--pn-brand) 3%, var(--pn-paper)),
+      var(--pn-paper) 180px
+    );
+  scrollbar-gutter: stable;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-body > * {
+  min-inline-size: 0;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-grid, .sb-description, .sb-section, .pn-fold) {
+  box-sizing: border-box;
+  padding: var(--pn-space-5);
+  border-radius: var(--pn-r-lg);
+  border-color: color-mix(in srgb, var(--pn-line-2) 68%, var(--pn-line));
+  box-shadow: var(--pn-sh-sm);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-description, .sb-section, .pn-fold) {
+  transition:
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-description, .sb-section, .pn-fold):focus-within {
+  border-color: color-mix(in srgb, var(--pn-focus) 38%, var(--pn-line));
+  box-shadow: var(--pn-sh-md);
+}
+
+/* Compact facts remain deliberately quieter than the brief and progress. */
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-grid {
+  gap: var(--pn-space-1);
+  background: color-mix(in srgb, var(--pn-card) 74%, transparent);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__cell {
+  min-block-size: 36px;
+  box-sizing: border-box;
+  padding-block: var(--pn-space-1);
+  padding-inline: 0;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__label {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  color: var(--pn-ink-3);
+}
+
+/* --- Description / attachments ------------------------------------------ */
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description {
+  gap: var(--pn-space-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description__head {
+  min-block-size: 28px;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description__label {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description__stance {
+  flex: none;
+  padding-inline: var(--pn-space-2);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description__input {
+  min-block-size: 152px;
+  padding: var(--pn-space-3) var(--pn-space-4);
+  border-color: var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: color-mix(in srgb, var(--pn-card) 94%, transparent);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: 1.65;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .md-root.pn-prose {
+  min-inline-size: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: 1.7;
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .md-root.pn-prose :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description .md-tablewrap {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description .fn-tiles:not(.fn-tiles--idle) {
+  padding-top: var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description .fn-tile__face {
+  background: color-mix(in srgb, var(--pn-card) 82%, transparent);
+  border-radius: var(--pn-r-md);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-description .fn-tile--clip {
+  border: 1px solid var(--pn-line);
+  background: color-mix(in srgb, var(--pn-card) 78%, transparent);
+}
+
+/* --- Acceptance / definition of done ------------------------------------ */
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-fold[data-fold='acceptance'] {
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-fold[data-fold='acceptance'] .pn-fold__head {
+  min-block-size: 36px;
+  padding: 0 var(--pn-space-1);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-fold[data-fold='acceptance'] .pn-fold__label {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 800;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__summary {
+  display: grid;
+  grid-template-columns: 1fr minmax(180px, 44%);
+  align-items: center;
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-4);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__summary-copy {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__summary-copy strong {
+  font-size: var(--pn-fs-title);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  text-wrap: pretty;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__meter {
+  min-inline-size: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__bar {
+  min-inline-size: 0;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__fraction {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-4);
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__empty > * {
+  margin: 0;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__empty span {
+  font-size: var(--pn-fs-label);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__head {
+  min-block-size: 28px;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-criterion {
+  min-block-size: 40px;
+  box-sizing: border-box;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom-color: var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-criterion:hover {
+  background: var(--pn-hover);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-criterion[data-done='true'] {
+  opacity: 0.72;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-criterion__box {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-criterion__remove {
+  inline-size: 28px;
+  padding: 0;
+  color: var(--pn-block);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-addcriterion {
+  gap: var(--pn-space-2);
+  padding-top: var(--pn-space-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-addcriterion__input {
+  min-inline-size: 0;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-addcriterion__commit:disabled {
+  background: var(--pn-card);
+  color: var(--pn-ink-4);
+}
+
+/* --- Runs: measured live / history / unresolved ------------------------- */
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runs {
+  gap: var(--pn-space-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runs > .kit-eyebrow {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 800;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__groups {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__group {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: color-mix(in srgb, var(--pn-surface) 58%, transparent);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__grouphead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__groupcount {
+  min-inline-size: 22px;
+  padding: 1px 6px;
+  border-radius: var(--pn-r-pill);
+  background: color-mix(in srgb, var(--pn-ink) 7%, transparent);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  text-align: center;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__cards {
+  min-inline-size: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__cards > * {
+  min-inline-size: 0;
+  display: flex;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip {
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 88px;
+  box-sizing: border-box;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3);
+  border-color: var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip:hover {
+  border-color: color-mix(in srgb, var(--pn-brand) 34%, var(--pn-line));
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip--live {
+  background: color-mix(in srgb, var(--pn-run) 9%, var(--pn-card));
+  border-color: color-mix(in srgb, var(--pn-run) 30%, var(--pn-line));
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip__top {
+  inline-size: 100%;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip__title {
+  max-inline-size: none;
+  flex: 1;
+  font-size: var(--pn-fs-sm);
+  font-weight: 700;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip__meta {
+  inline-size: 100%;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1) var(--pn-space-2);
+  padding-left: 14px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip__model {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip__word {
+  padding-left: 14px;
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-runchip--more {
+  min-block-size: 32px;
+  inline-size: fit-content;
+  align-self: center;
+  padding: 0 var(--pn-space-4);
+  flex-direction: row;
+  align-items: center;
+  border-style: dashed;
+  color: var(--pn-brand);
+}
+
+/* --- Discussion / composer / activity ----------------------------------- */
+
+.cv2-root .pn-panel[data-archetype='subtree'][data-panel-tab='discussion'] {
+  background: var(--pn-surface);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--pn-paper);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion__masthead {
+  flex: none;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-4) var(--pn-space-5);
+  border-width: 0 0 1px;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion__heading {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion__heading strong {
+  font-size: var(--pn-fs-title);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  text-wrap: balance;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion__context {
+  flex: none;
+  padding: 3px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: color-mix(in srgb, var(--pn-card) 72%, transparent);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion__surface {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+  display: flex;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion__surface > * {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-root {
+  border-top: 0;
+  background: var(--pn-card);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-feed {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--pn-brand) 2%, var(--pn-card)),
+      var(--pn-card) 140px
+    );
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-row--activity {
+  border-left: 2px solid var(--pn-line-2);
+  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-composer {
+  padding: var(--pn-space-4) var(--pn-space-5) var(--pn-space-3);
+  background: color-mix(in srgb, var(--pn-surface) 84%, var(--pn-card));
+  box-shadow: 0 -2px 8px color-mix(in srgb, var(--pn-ink) 5%, transparent);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-composer__card {
+  border-color: var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-md);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-host-error {
+  margin: auto;
+  max-inline-size: min(480px, 100%);
+}
+
+/* Disabled remains explicit, but never washed out or set as terminal data.
+   The reason is reading prose, paired with its unavailable action in one
+   bounded group so it cannot push the rest of the toolbar into fragments. */
+.cv2-root .pn-panel[data-archetype='subtree'] :is(.hon-caption, .hon-tip__cause, .hon-tip__remedy) {
+  font-family: var(--pn-ui);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .hon-caption {
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-normal);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end > .hon-disabled-group {
+  min-inline-size: 0;
+  max-inline-size: min(300px, 100%);
+  flex-direction: row;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 3px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: color-mix(in srgb, var(--pn-surface) 76%, transparent);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end > .hon-disabled-group .hon-disabled--inline {
+  min-block-size: 28px;
+  box-sizing: border-box;
+  flex: none;
+  justify-content: center;
+  padding-inline: var(--pn-space-3);
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-3);
+  opacity: 1;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end > .hon-disabled-group .hon-caption {
+  min-inline-size: 0;
+  max-inline-size: 220px;
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .hon-disabled--inline {
+  opacity: 0.72;
+}
+
+/* --- Loading / error / footer ------------------------------------------- */
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-skeleton {
+  padding: var(--pn-space-6) var(--pn-space-5);
+  gap: var(--pn-space-3);
+  background: var(--pn-paper);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-skel {
+  block-size: 12px;
+  border-radius: var(--pn-r-pill);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-skel--card {
+  block-size: 96px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-state {
+  margin: var(--pn-space-6);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
+}
+
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-foot {
+  block-size: 32px;
+  background: color-mix(in srgb, var(--pn-surface) 88%, var(--pn-card));
+}
+
+/* One task-local focus grammar. It deliberately includes every authoring and
+   navigation control without reaching into sibling panels. */
+.cv2-root .pn-panel[data-archetype='subtree'] :where(button, input, textarea, select, a):focus-visible {
+  outline: 3px solid var(--pn-focus);
+  outline-offset: 2px;
+}
+
+/* --- Container-responsive composition ---------------------------------- */
+
+/* Tabs plus a truthful unavailable-action reason need more room than a row of
+   icon-only chrome. Give each concern its own line before either truncates. */
+@container task-detail (max-width: 840px) {
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar {
+    flex-wrap: wrap;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-tabs,
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end {
+    flex: 1 1 100%;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-tabs {
+    overflow-x: auto;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end {
+    min-block-size: 40px;
+    border-top: 1px solid var(--pn-line);
+  }
+}
+
+@container task-detail (max-width: 640px) {
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-head__row {
+    grid-template-columns: 32px auto 1fr;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-head__row > .kit-pill {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-head__supplemental {
+    padding-left: 76px;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-body {
+    padding: var(--pn-space-4) var(--pn-space-3) var(--pn-space-6);
+    gap: var(--pn-space-3);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-grid, .sb-description, .sb-section, .pn-fold) {
+    padding: var(--pn-space-4);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-acceptance__summary {
+    grid-template-columns: 1fr;
+    gap: var(--pn-space-3);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-runs__cards {
+    grid-template-columns: 1fr;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion__masthead,
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-composer {
+    padding-inline: var(--pn-space-4);
+  }
+}
+
+@container task-detail (max-width: 420px) {
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-crumb {
+    padding-inline: var(--pn-space-3);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-head__row {
+    padding-inline: var(--pn-space-3);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-head__supplemental {
+    padding-inline: var(--pn-space-3);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-tabs {
+    padding-inline: var(--pn-space-2);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-tab {
+    padding-inline: var(--pn-space-2);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls {
+    padding-inline: var(--pn-space-3);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips > :last-child {
+    margin-left: 0;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-body {
+    padding-inline: var(--pn-space-2);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-body > :is(.sb-grid, .sb-description, .sb-section, .pn-fold) {
+    padding: var(--pn-space-3);
+    border-radius: var(--pn-r-md);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__cell {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-description__input {
+    min-block-size: 128px;
+    padding: var(--pn-space-3);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-criterion {
+    padding-inline: var(--pn-space-2);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-addcriterion {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .sb-addcriterion__commit {
+    align-self: flex-end;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion__masthead {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--pn-space-2);
+    padding: var(--pn-space-3);
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-task-discussion .chs-composer {
+    padding-inline: var(--pn-space-2);
+  }
+}
+
+/* Motion is opt-in through the shared k-* utilities. These are the only local
+   transitions this file adds, and they collapse with the system preference. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-panel[data-archetype='subtree'] :is(.pn-tab, .sb-body > .sb-description, .sb-body > .sb-section, .sb-body > .pn-fold) {
+    transition: none;
+  }
+}
+
+/* System colors carry every boundary and focus affordance in high contrast;
+   tint/opacity never becomes the only remaining state signal. */
+@media (forced-colors: active) {
+  .cv2-root .pn-panel[data-archetype='subtree'] {
+    forced-color-adjust: auto;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] :is(
+    .pn-head__glyph,
+    .pn-header__ref,
+    .pn-tab--active,
+    .sb-body > .sb-grid,
+    .sb-body > .sb-description,
+    .sb-body > .sb-section,
+    .sb-body > .pn-fold,
+    .sb-acceptance__summary,
+    .sb-acceptance__empty,
+    .sb-runs__group,
+    .sb-runchip,
+    .pn-state
+  ) {
+    border: 1px solid CanvasText;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] :is(.sb-criterion[data-done='true'], .sb-runchip) {
+    opacity: 1;
+  }
+
+  .cv2-root .pn-panel[data-archetype='subtree'] :where(button, input, textarea, select, a):focus-visible {
+    outline: 3px solid Highlight;
+  }
+}

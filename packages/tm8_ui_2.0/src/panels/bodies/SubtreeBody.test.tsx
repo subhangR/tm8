@@ -365,6 +365,14 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     expect(section.textContent).toContain('Crash reproduced under fixture data');
     expect(section.textContent).toContain('Reviewed by a human');
     expect(within(section).getAllByTestId('acceptance-row')).toHaveLength(4);
+    const progress = getByTestId('acceptance-progress');
+    expect(progress.getAttribute('data-state')).toBe('in-progress');
+    expect(progress.textContent).toContain('2 criteria remaining');
+    expect(
+      within(progress).getByRole('progressbar', {
+        name: 'Acceptance: 2 of 4 criteria met',
+      }).getAttribute('aria-valuenow'),
+    ).toBe('2');
   });
 
   it('marks a done criterion done and an open one open', () => {
@@ -396,6 +404,9 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     const draft = persisted.map((c) => ({ ...c, done: true }));
     const section = renderBody({ criteriaDraft: draft }).getByTestId('acceptance-section');
     expect(section.textContent).toContain('4/4');
+    const progress = within(section).getByTestId('acceptance-progress');
+    expect(progress.getAttribute('data-state')).toBe('completed');
+    expect(progress.textContent).toContain('All criteria met');
   });
 
   it('CLEARS doneBy/doneAt when a criterion is un-ticked', () => {
@@ -464,7 +475,7 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     );
   });
 
-  it('states an empty criteria list rather than drawing an empty region', () => {
+  it('keeps an empty criteria list visible, explained, and actionable', () => {
     /*
      * SINCE WAVE 3 this fold HOLDS an affordance (the add row), so it obeys
      * the SUBTREE fold's law verbatim: with the add row REFUSED (no save
@@ -474,17 +485,21 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     const refused = renderBody({ detail: withCriteria([]) });
     const section = expandFold(refused.getByTestId('acceptance-section'));
     expect(section.textContent).toMatch(/no acceptance criteria/i);
+    expect(within(section).getByTestId('acceptance-progress').getAttribute('data-state')).toBe('empty');
+    expect(within(section).getByTestId('acceptance-progress').textContent).toContain('Ready to define');
     expect(within(section).getByTestId('disabled-with-reason').textContent).toMatch(/add criterion/i);
     refused.unmount();
 
-    // With a LIVE add row and no rows the fold is genuinely empty: behind
-    // the reveal toggle, then a closed fold — hidden, never lost.
+    /* MOVED PIN (2026-08-29, premium task detail): acceptance is the task's
+       definition of done, and an empty definition is the state most in need
+       of its add affordance. It therefore stays in flow even when the add row
+       is live; the general empty-fold behavior remains pinned below with Runs
+       and Dependencies. This strengthens reachability rather than deleting
+       the former empty-state assertion. */
     const live = renderBody({ detail: withCriteria([]), onCriteriaChange: vi.fn() });
-    expect(live.queryByTestId('acceptance-section')).toBeNull();
-    revealEmpties(live);
-    const revealed = expandFold(live.getByTestId('acceptance-section'));
-    expect(revealed.textContent).toMatch(/no acceptance criteria/i);
-    expect(within(revealed).getByTestId('acceptance-add-input')).toBeTruthy();
+    const actionable = expandFold(live.getByTestId('acceptance-section'));
+    expect(actionable.textContent).toMatch(/no acceptance criteria/i);
+    expect(within(actionable).getByTestId('acceptance-add-input')).toBeTruthy();
   });
 
   it('draws NO region for a content shape that carries no criteria member', () => {
@@ -1159,31 +1174,41 @@ describe('folds — hairline sections, persisted globally per section id', () =>
     expect(head2.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('hides empty sections behind ⋯ N empty sections, and reveals them IN ORDER', () => {
-    /* The specimen fold needs a LIVE add row since wave 3 — an acceptance
-       fold with a REFUSED affordance stays in the flow (the law the test two
-       below pins for SUBTREE), which is a different case than this one. */
-    const view = renderBody({ detail: withCriteria([]), onCriteriaChange: vi.fn() });
-    // Empty ⇒ out of the flow entirely…
-    expect(view.queryByTestId('acceptance-section')).toBeNull();
-    const toggle = view.getByTestId('empty-sections-toggle');
-    /* MOVED PIN (2026-08-29, wave 3 depth): this read `1 empty section` until
-       the DEPENDENCIES section joined the anatomy — the fixture task carries
-       no depends_on edges, so that section is now the second member of the
-       empty set beside the emptied ACCEPTANCE. Deliberate change of intent,
-       not a loosened assertion. */
-    expect(toggle.textContent).toMatch(/2 empty sections/);
-    // …revealed in its normal place: ACCEPTANCE above SUBTREE, not appended.
-    fireEvent.click(toggle);
+  it('hides secondary empty sections behind ⋯ N empty sections, and reveals them IN ORDER', () => {
+    const childless = withChildren([]);
+    const detail: EntityDetail = {
+      ...childless,
+      content: withCriteria([]).content,
+    };
+    const view = renderBody({ detail, onCriteriaChange: vi.fn() });
+    /* Acceptance deliberately remains visible (definition-of-done is primary),
+       while empty Runs and Dependencies still exercise the shared disclosure
+       store. SUBTREE stays visible because its add affordance is refused. */
     const acceptance = view.getByTestId('acceptance-section');
+    expect(view.queryByTestId('runs-section')).toBeNull();
+    expect(view.queryByTestId('dependencies-section')).toBeNull();
+    const toggle = view.getByTestId('empty-sections-toggle');
+    /* MOVED PIN (2026-08-29, premium task detail): the count remains exact at
+       two, but the members are now Runs + Dependencies rather than Acceptance
+       + Dependencies. The disclosure contract is unchanged. */
+    expect(toggle.textContent).toMatch(/2 empty sections/);
+    // Revealed in normal anatomy order: ACCEPTANCE → RUNS → SUBTREE.
+    fireEvent.click(toggle);
+    const runs = view.getByTestId('runs-section');
     expect(
-      acceptance.compareDocumentPosition(view.getByTestId('subtree-section')) &
+      acceptance.compareDocumentPosition(runs) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      runs.compareDocumentPosition(view.getByTestId('subtree-section')) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     // The toggle flips its words and hides them again.
     expect(view.getByTestId('empty-sections-toggle').textContent).toMatch(/hide empty/i);
     fireEvent.click(view.getByTestId('empty-sections-toggle'));
-    expect(view.queryByTestId('acceptance-section')).toBeNull();
+    expect(view.queryByTestId('runs-section')).toBeNull();
+    expect(view.queryByTestId('dependencies-section')).toBeNull();
+    expect(view.getByTestId('acceptance-section')).toBeTruthy();
   });
 
   it('a section whose only content is a disabled-with-reason affordance is NOT empty', () => {
@@ -1243,6 +1268,22 @@ describe('run chips — the inline cluster that replaced the run rows', () => {
     const treatment = getKind(sessionStale.kind).list.liveTreatment;
     if (!treatment) throw new Error('the session registry row must carry a liveTreatment');
     expect(label).toContain(treatment('live').shortLabel ?? treatment('live').label);
+  });
+
+  it('separates measured history from unresolved liveness without guessing', () => {
+    const [history, unresolved] = runFleet(2) as [EntitySummary, EntitySummary];
+    const view = renderBody({
+      detail: withChildren([history, unresolved]),
+      livenessOf: (id) => (id === history.id ? 'not-running' : undefined),
+    });
+
+    const historyGroup = view.getByTestId('run-history-section');
+    const unresolvedGroup = view.getByTestId('run-unresolved-section');
+    expect(historyGroup.textContent).toContain(history.title);
+    expect(historyGroup.textContent).not.toContain(unresolved.title);
+    expect(unresolvedGroup.textContent).toContain(unresolved.title);
+    expect(within(unresolvedGroup).getByTestId('hollow-inline')).toBeTruthy();
+    expect(within(unresolvedGroup).getByTestId('run-row').textContent).toMatch(/unverified/i);
   });
 
   it('opens the session from a chip, exactly as the old row did', () => {
