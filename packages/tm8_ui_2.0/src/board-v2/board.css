@@ -685,6 +685,7 @@
    holds its family colour while the other three edges lift as before. */
 .b2[data-family] .b2__card {
   border-left: 3px solid var(--pnf, var(--pn-line-2));
+}
 
 /* The card's state changes carry no information that must animate. Keep the
    Astryx geometry and focus treatment, but remove transitions for people who
