@@ -236,13 +236,32 @@
       `flex: 0 8 auto` weights the shrink: flexbox distributes a deficit by
       (shrink factor × base size), so at 280px base the chip absorbs ~82% of
       whatever the bar is short before the tab row is asked for anything. It
-      absorbs it down to a floor and no further — `min-width: 0` only removes
-      the automatic minimum that was pinning it at its full 280px; what it
-      actually stops at is set inside `__names` below. */
+      absorbs it down to a floor and no further.
+
+      THE FLOOR IS STATED HERE, ON THE CHIP, and it is not `0`. It was `0`
+      first, and measuring that found the law broken from the other side: at
+      900px the chip shrank to a width of ZERO and the space name — WHERE YOU
+      ARE, the single most identifying word in the bar — disappeared entirely,
+      while `Copy link` beside it sat at its full 102.5px. A budget that
+      protects control labels by spending the one name that says which
+      workspace you are looking at has not fixed the inversion, it has moved
+      it.
+
+      120px is the chip at its floor, summed from its own parts rather than
+      chosen: 20px trigger padding + 16px monogram + 12px (two 6px gaps) + 8px
+      caret = 52px of chrome, plus the ~68px that nine characters of space name
+      need — the floor `__names` protects below. The server line is at nothing
+      by this point, which is correct: it is the metadata, and it goes first.
+
+      It was 96px (six characters) for one measured pass, and that was still
+      too mean. At 1024px the meta had already collapsed to a bare dot and the
+      name STILL rendered `Utho Pr…` — the law broken by a hair rather than by
+      a mile, but broken. A floor that truncates the name while `Copy link`
+      beside it sits at its full width is the same inversion in miniature. */
 .cv2-root .shell-tabbar .shell-switcher {
   padding: 0;
   flex: 0 8 auto;
-  min-width: 0;
+  min-width: 120px;
 }
 .cv2-root .shell-tabbar .shell-switcher__trigger {
   width: auto;
@@ -254,6 +273,17 @@
   background: var(--pn-active);
   border-radius: var(--pn-r-pill);
   min-width: 0;
+  /* `max-width` IS LOAD-BEARING, and it is not belt-and-braces for the
+     `width: auto` above. The trigger is a <button>, and a button resolves
+     `width: auto` to its MAX-CONTENT, not to its containing block — so with
+     the chip shrinking, the button simply ignored its parent's new width and
+     kept drawing all 280.6px of itself, straight across the tab row. Measured
+     at 1024px: chip box 105.6px, trigger 280.6px, and "Board" rendering as
+     `oard` behind the pill. The base rule's `width: 100%` was hiding this;
+     changing it to `auto` for the compact pill uncovered it. This clamps the
+     shrink-to-fit to the box, which is what lets `__names` below shrink at
+     all. */
+  max-width: 100%;
 }
 .cv2-root .shell-tabbar .shell-switcher__names {
   flex: 0 1 auto;
@@ -275,12 +305,16 @@
    The name is not exempt, only protected: a space called
    "Engineering — Platform" must still be able to truncate, or it becomes the
    new incompressible thing and we have simply moved the defect. It shrinks
-   last and never past `6ch`, which is the shortest prefix that still
-   distinguishes real space names, and it keeps the ellipsis the base rule
-   already gives it. Ellipsis is a truncated name; it is not a missing one. */
+   last and never past `9ch`, and it keeps the ellipsis the base rule already
+   gives it. Ellipsis is a truncated name; it is not a missing one.
+
+   NINE, not six, and the number was measured rather than picked: six left
+   "Utho Prod" — nine characters, a perfectly ordinary space name — rendering
+   as `Utho Pr…` at 1024px even after the server meta had gone to a bare dot.
+   The floor has to clear a real name, not a token one. */
 .cv2-root .shell-tabbar .shell-switcher__space {
   flex: 0 1 auto;
-  min-width: 6ch;
+  min-width: 9ch;
 }
 /* Laid out as a BLOCK here rather than the base rule's flex row, because
    `text-overflow` acts on a block's inline content and cannot reach the
