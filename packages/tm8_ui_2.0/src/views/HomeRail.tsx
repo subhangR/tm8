@@ -53,7 +53,14 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
       data-collapsed={collapsed ? 'true' : 'false'}
     >
       {!collapsed ? (
-        <div className="hr-rail__mast k-hero k-accent-top">
+        /* A rail header, not a featured card. `k-hero` painted a brand→violet
+           wash and `k-accent-top` a 2px gradient rule across the top of it,
+           which — once the workspace map beside it went flat — left the whole
+           of Home with exactly one gradient, spending it on the least
+           consequential words on the page ("Browse", "19 entity types") rather
+           than on anything the reader had chosen. Fewer colours means the ones
+           that remain have to mean something. */
+        <div className="hr-rail__mast">
           <span className="hr-rail__mast-label k-label">Browse</span>
           <span className="hr-rail__mast-count">{kindCount} entity types</span>
         </div>

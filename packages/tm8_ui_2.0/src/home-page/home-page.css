@@ -274,9 +274,21 @@
    the content and uncover a fixed shading exactly at the edge that is hiding
    something, full width, right where the cut happens. No content, no shading:
    the signal is derived from the overflow rather than asserted alongside it. */
+/* 240, not 260 — and the 20px is the difference between one grid row and two.
+   MEASURED at 1440x800: the map's inner width is 1060px, which seats three
+   260px columns, so the fourth group wrapped to a second grid row and spent
+   118px of a 223px viewport on ONE two-item card. Content 354px against 223px
+   of room, and the WORK card was cut mid-row again. At 240 all four groups
+   seat in one row at the same width and the map's height becomes the tallest
+   card instead of the sum of two.
+   The floor is not arbitrary: the longest noun the registry can hand this card
+   is "Interaction profiles", measured at 104px, and a row spends 16px on its
+   mark, 16px on gaps, ~30px on a count, 14px of row padding and 18px of card
+   padding — 198px. A 240px column clears that with 42px to spare, and the
+   `@container hp-family` budget below covers anything narrower. */
 .cv2-root .hp-overview__families {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 8px;
   flex: 1 1 auto;
   min-width: 0;
@@ -358,8 +370,14 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: 28px;
-  padding: 4px 7px;
+  /* 26, and it is a budget rather than a taste. The map has to seat the
+     largest group's seven rows inside the 38% ceiling: 21px of card padding +
+     31px of head + 8px gap + 18px of group padding + 20px of group head + 6px
+     of row gaps leaves 182px for seven rows. Rows were rendering at 31px —
+     the unset line-height, not the 28px floor — for 217px, and the 35px
+     deficit is precisely what the panel's bottom edge was cutting off. */
+  min-height: 26px;
+  padding: 3px 7px;
   border: 1px solid transparent;
   border-radius: var(--pn-r-sm);
   background: transparent;
@@ -367,6 +385,7 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-label);
   font-weight: 600;
+  line-height: var(--pn-lh-tight);
   text-align: left;
   cursor: pointer;
 }
@@ -419,16 +438,19 @@
   flex: none;
   white-space: nowrap;
 }
-/* THE WIDTH BUDGET, measured against the longest noun the registry can hand
-   this card. "Interaction profiles" is 19 characters at 12px/600 ≈ 133px; the
-   row spends 16px on its mark, 8px on the gap to the name, 8px before the
-   count and 14px of its own padding, and the card spends 20px more. So a card
-   narrower than ~200px cannot seat that noun beside any count at all, and
-   below 232px it cannot seat it beside a wide one (`2281 · 17 live` ≈ 74px).
-   At that point THE COUNT GOES, whole — the law's own remedy. Every exact
-   figure survives in the row's accessible name and hover text, both built by
+/* THE WIDTH BUDGET, in the units the query actually uses: an `inline-size`
+   container resolves against its CONTENT box, so these numbers are inside the
+   card's 20px of padding, not around it.
+   The longest noun the registry can hand this card is "Interaction profiles",
+   measured in the live build at 104px. A row spends 16px on its mark, 8px on
+   the gap to the name, 8px before the count and 14px of its own padding, and
+   the widest count on the surface (`2335 · 8 live`) is ~70px. That totals
+   220px. Below it the count would start taking the noun's pixels — so at 219
+   THE COUNT GOES, whole, which is the law's own remedy and the one thing an
+   `overflow: hidden` could never do honestly. Every exact figure survives in
+   the row's accessible name and hover text, both built by
    `entityNavigationLabel`, so dropping the glyphs drops no information. */
-@container hp-family (max-width: 232px) {
+@container hp-family (max-width: 219px) {
   .cv2-root .hp-overview__kind > .enav-metrics { display: none; }
 }
 /* The count on a map row is TEXT, not a badge. A pill costs a 1px border,
@@ -526,14 +548,20 @@
   background: var(--pn-surface);
 }
 .cv2-root .hr-rail:not(.hr-rail--collapsed) { width: var(--hp-rail, 208px); }
+/* The mast is a HEADER, not a card floating above a list. Its `k-hero` fill
+   and rounded box made it read as another thing to look at, and its 12px
+   padding put "BROWSE" on a left edge of its own — a fourth one, in a rail
+   whose whole job is that everything lines up. The hairline is the same
+   separator the groups below use, and the 6px inset lands the word on the
+   group eyebrows' edge. */
 .cv2-root .hr-rail__mast {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
   flex: none;
-  margin: 7px 7px 0;
-  padding: 11px 12px 10px;
-  border-radius: var(--pn-r-md);
+  margin: 0 6px;
+  padding: 11px 6px 9px;
+  border-bottom: 1px solid var(--pn-line);
 }
 .cv2-root .hr-rail__mast-count {
   color: var(--pn-ink-3);
