@@ -41,7 +41,7 @@ import { navStore, resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { build, createMemoryTarget, parse } from '../routes';
 import { FIXTURE_SPACE_ID } from '../fixtures';
-import { HELP_CHAPTERS, HELP_SET } from './help-set';
+import { HELP_CHAPTERS, HELP_SET, searchHelpSet } from './help-set';
 import { HELP_PLATES } from './help-plates';
 import { PLATE_MAX_HEIGHT, PLATE_MESSAGE_SOURCE, PLATE_MIN_HEIGHT, heightFromMessage, withPlateReporter } from './plate-frame';
 import { HelpScreen } from './HelpScreen';
@@ -111,6 +111,20 @@ describe('the help set', () => {
       expect(page.excerpt.length, page.slug).toBeGreaterThan(20);
     }
   });
+
+  it('finds familiar feature language while preserving matching chapters', () => {
+    const tasks = searchHelpSet(HELP_SET, 'tasks');
+    const workPages = HELP_SET.chapters.find((chapter) => chapter.id === '4')!.pages;
+    expect(tasks.chapters.map((chapter) => chapter.id)).toContain('4');
+    expect(tasks.pages).toEqual(expect.arrayContaining(workPages));
+    expect(tasks.pages.length).toBeLessThan(HELP_SET.pages.length);
+
+    const invite = searchHelpSet(HELP_SET, 'bearer code');
+    expect(invite.pages.map((page) => page.slug)).toEqual(['the-invite']);
+
+    expect(searchHelpSet(HELP_SET, 'AGENTS').chapters.map((chapter) => chapter.id)).toContain('3');
+    expect(searchHelpSet(HELP_SET, 'qqq no-such-feature').pages).toEqual([]);
+  });
 });
 
 describe('the help screen', () => {
@@ -155,6 +169,43 @@ describe('the help screen', () => {
     expect(navStore.getState().history).toBe('push');
     await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(FIRST.slug));
     expect(view.getByText(`Plate 1 of ${HELP_PLATES.length}`)).toBeTruthy();
+    view.unmount();
+  });
+
+  it('offers outcome-led starting points, and opens the selected proof plate', async () => {
+    const view = render(<HelpScreen />);
+    const starts = view.getAllByTestId('help-starting-point');
+    expect(starts).toHaveLength(4);
+    expect(starts.map((start) => start.textContent)).toEqual(expect.arrayContaining([
+      expect.stringContaining('See one request become real work'),
+      expect.stringContaining('Meet teammates and sessions'),
+    ]));
+
+    fireEvent.click(starts[2]!);
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: 'anatomy-of-a-teammate' });
+    await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe('anatomy-of-a-teammate'));
+    view.unmount();
+  });
+
+  it('searches the shelf by product language, clears, and explains no results', () => {
+    const view = render(<HelpScreen />);
+    const input = view.getByTestId('help-search') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: 'agents' } });
+    const agents = searchHelpSet(HELP_SET, 'agents');
+    expect(view.getAllByTestId('help-row')).toHaveLength(agents.pages.length);
+    expect(view.getByTestId('help-search-status').textContent).toBe(`${agents.pages.length} plates found`);
+    expect(view.getAllByTestId('help-chapter').map((chapter) => chapter.getAttribute('data-section')))
+      .toContain('3');
+    expect(view.getAllByTestId('help-row').length).toBeLessThan(HELP_PLATES.length);
+
+    fireEvent.change(input, { target: { value: 'nothing-in-tm8-matches-this' } });
+    expect(view.queryAllByTestId('help-row')).toHaveLength(0);
+    expect(view.getByTestId('help-search-empty').textContent).toContain('No guide pages match');
+
+    fireEvent.click(view.getByRole('button', { name: 'Show the full guide' }));
+    expect(input.value).toBe('');
+    expect(view.getAllByTestId('help-row')).toHaveLength(HELP_PLATES.length);
     view.unmount();
   });
 
@@ -255,6 +306,17 @@ describe('the help screen', () => {
 
     fireEvent.click(next!);
     await waitFor(() => expect(view.getByTestId('help-plate').getAttribute('data-plate')).toBe(SECOND.slug));
+    view.unmount();
+  });
+
+  it('returns from a desktop plate to the guide home', async () => {
+    onHelp(FIRST.slug);
+    const view = render(<HelpScreen />);
+    await waitFor(() => view.getByTestId('help-plate'));
+
+    fireEvent.click(view.getByRole('button', { name: 'Back to Help home' }));
+    expect(navStore.getState().view).toEqual({ view: 'help', plate: null });
+    await waitFor(() => view.getByTestId('help-home'));
     view.unmount();
   });
 

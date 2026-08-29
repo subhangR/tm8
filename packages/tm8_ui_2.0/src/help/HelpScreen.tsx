@@ -23,7 +23,9 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
+  useState,
   type CSSProperties,
   type KeyboardEvent,
 } from 'react';
@@ -34,7 +36,7 @@ import { navStore, useNavStore } from '../stores/navStore';
 import { PromptsScreen } from '../prompts';
 import { HelpHome } from './HelpHome';
 import { HelpPlate } from './HelpPlate';
-import { HELP_SET, type HelpChapter, type HelpPage, type HelpSet } from './help-set';
+import { HELP_SET, searchHelpSet, type HelpChapter, type HelpPage, type HelpSet } from './help-set';
 import './help.css';
 
 const CONTENTS_DEFAULT = 376;
@@ -174,13 +176,14 @@ export function HelpScreen({ stacked = false }: HelpScreenProps) {
         data-testid="help-reader"
       >
         {promptsOpen ? (
-          <PromptsReader />
+          <PromptsReader onBack={() => open(null)} />
         ) : selected && selectedChapter ? (
           <>
             <ReaderHeader
               page={selected}
               chapter={selectedChapter}
               pageCount={set.pages.length}
+              onBack={() => open(null)}
               onPrevious={selectedIndex > 0 ? () => selectRelative(-1) : undefined}
               onNext={selectedIndex < set.pages.length - 1 ? () => selectRelative(1) : undefined}
             />
@@ -201,6 +204,10 @@ function HelpContents({ set, selectedSlug, onSelect, stacked }: {
   stacked: boolean;
 }) {
   const openChapters = set.chapters.filter((chapter) => chapter.pages.length > 0).length;
+  const [query, setQuery] = useState('');
+  const searchId = useId();
+  const filtered = useMemo(() => searchHelpSet(set, query), [set, query]);
+  const searching = query.trim().length > 0;
   return (
     <div className="hlp-contents__body">
       {stacked ? (
@@ -222,17 +229,49 @@ function HelpContents({ set, selectedSlug, onSelect, stacked }: {
           <ChapterMap chapters={set.chapters} />
         </>
       )}
-      <div className="hlp-library" data-testid="help-library">
-        {set.chapters.filter((chapter) => chapter.pages.length > 0).map((chapter) => (
-          <HelpChapterSection
-            key={chapter.id}
-            chapter={chapter}
-            selectedSlug={selectedSlug}
-            onSelect={onSelect}
-            stacked={stacked}
+      <section className="hlp-search" aria-labelledby={`${searchId}-label`}>
+        <div className="hlp-search__heading">
+          <label id={`${searchId}-label`} htmlFor={searchId}>Find a topic</label>
+          <span aria-live="polite" data-testid="help-search-status">
+            {searching
+              ? `${filtered.pages.length} ${filtered.pages.length === 1 ? 'plate' : 'plates'} found`
+              : 'Search all titles, chapters and feature names'}
+          </span>
+        </div>
+        <div className="hlp-search__control">
+          <input
+            id={searchId}
+            type="search"
+            value={query}
+            data-testid="help-search"
+            placeholder="Try tasks, agents, memory, channels…"
+            autoComplete="off"
+            onChange={(event) => setQuery(event.currentTarget.value)}
           />
-        ))}
-      </div>
+          {searching ? (
+            <button type="button" onClick={() => setQuery('')} aria-label="Clear Help search">Clear</button>
+          ) : null}
+        </div>
+      </section>
+      {filtered.pages.length > 0 ? (
+        <div className="hlp-library" data-testid="help-library">
+          {filtered.chapters.map((chapter) => (
+            <HelpChapterSection
+              key={chapter.id}
+              chapter={chapter}
+              selectedSlug={selectedSlug}
+              onSelect={onSelect}
+              stacked={stacked}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="hlp-search-empty" data-testid="help-search-empty">
+          <p>No guide pages match “{query.trim()}”.</p>
+          <span>Try a feature name such as tasks, graph, sessions, memory, Craft, or channels.</span>
+          <button type="button" onClick={() => setQuery('')}>Show the full guide</button>
+        </div>
+      )}
       {stacked ? null : (
         /* NO PROMPTS ENTRY ON THE PHONE SHELF — the catalog's three-pane
            `pr-*` grid has no stacked mode, and a door to a surface that cannot
@@ -290,10 +329,13 @@ function PromptsShelfEntry({ active, onOpen }: { active: boolean; onOpen(): void
  * mounted WITHOUT `onClose` (its ✕ belonged to the retired overlay); the way
  * out is Help's own chrome, exactly like every plate.
  */
-function PromptsReader() {
+function PromptsReader({ onBack }: { onBack(): void }) {
   return (
     <>
       <header className="hlp-reader__head">
+        <button type="button" className="hlp-back hlp-back--home" onClick={onBack} aria-label="Back to Help home">
+          <span aria-hidden>‹</span><span>Guide home</span>
+        </button>
         <div className="hlp-reader__identity">
           <p className="hlp-reader__crumb"><span>Annex</span><span aria-hidden>◆</span><span>Beyond the guide</span></p>
           <h1 id="hlp-reader-title" className="hlp-reader__title">System prompts</h1>
@@ -408,11 +450,15 @@ function ReaderHeader({ page, chapter, pageCount, stacked = false, onBack, onPre
 }) {
   return (
     <header className="hlp-reader__head">
-      {stacked ? (
-        <button type="button" className="hlp-back" data-testid="help-back" onClick={onBack} aria-label="Back to Help contents">
-          <span aria-hidden>‹</span><span>Contents</span>
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className={`hlp-back ${stacked ? '' : 'hlp-back--home'}`}
+        data-testid="help-back"
+        onClick={onBack}
+        aria-label={stacked ? 'Back to Help contents' : 'Back to Help home'}
+      >
+        <span aria-hidden>‹</span><span>{stacked ? 'Contents' : 'Guide home'}</span>
+      </button>
       <div className="hlp-reader__identity">
         <p className="hlp-reader__crumb"><span>Section {chapter.number}</span><span aria-hidden>◆</span><span>{chapter.title}</span></p>
         <h1 id="hlp-reader-title" className="hlp-reader__title">{page.title}</h1>
