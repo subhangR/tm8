@@ -162,17 +162,21 @@
 }
 
 .hlp-search__heading label {
-  color: var(--pn-ink-1);
-  font-family: var(--pn-serif);
-  font-size: 16px;
-  font-weight: 500;
+  /* T9 LAW RECONCILIATION (rebase of #544): a search label is a UI LABEL —
+     ui face at the title token, not serif at a raw px size. */
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
 }
 
 .hlp-search__heading span {
+  /* T9 LAW: 'N plates found' is a status SENTENCE (the count rides inside
+     it) — ui face at the label token; 8.5px mono read as debug output. */
   color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
-  letter-spacing: .06em;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  letter-spacing: normal;
   text-align: left;
   text-transform: uppercase;
 }
