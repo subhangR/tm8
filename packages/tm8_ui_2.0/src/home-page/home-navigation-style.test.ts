@@ -13,9 +13,17 @@ describe('Home entity navigation surface contract', () => {
   it('keeps the workspace map bounded by its parent instead of viewport math', () => {
     const overview = homeCss.match(/\.cv2-root \.hp-overview\s*\{([^}]*)\}/s)?.[1] ?? '';
     expect(overview).toContain('max-height: 38%');
-    expect(overview).toContain('overflow-y: auto');
-    expect(overview).toContain('overscroll-behavior: contain');
     expect(homeCss).not.toMatch(/calc\(\s*100vh/i);
+    /* The CARD is not the scroller — the families region inside it is, so the
+       surface's name and its "Open Workspace" escape hatch cannot scroll away
+       from a reader looking down a full map. */
+    expect(overview).toContain('overflow: hidden');
+    const families = homeCss.match(/\.cv2-root \.hp-overview__families\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(families).toContain('overflow-y: auto');
+    expect(families).toContain('overscroll-behavior: contain');
+    expect(families).toContain('min-height: 0');
+    const head = homeCss.match(/\.cv2-root \.hp-overview__head\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(head).toContain('flex: none');
   });
 
   it('uses the shared Kinetic interaction grammar', () => {
@@ -50,13 +58,18 @@ describe('Home entity navigation surface contract', () => {
  * missing, and jsdom cannot see it.
  */
 describe('a name is never truncated by its own count', () => {
-  it('caps every count box so it cannot reach into the name', () => {
+  it('never clips a count, because a sliced number is a wrong number', () => {
     /* One shared rule covers the map row, both group heads and the rail row. */
     const cap = homeCss.match(
       /\.cv2-root \.hp-overview__kind > \.enav-metrics[\s\S]*?\{([^}]*)\}/s,
     )?.[1] ?? '';
-    expect(cap).toContain('max-width: 33%');
-    expect(cap).toContain('overflow: hidden');
+    expect(cap).toContain('flex: none');
+    expect(cap).toContain('white-space: nowrap');
+    /* `overflow: hidden` on a count is the trap this pins shut. An ellipsis
+       tells the reader a WORD was cut; nothing tells them `577` was cut to
+       `57`, and both render as a perfectly plausible number. */
+    expect(cap).not.toContain('overflow: hidden');
+    expect(cap).not.toMatch(/max-width/);
     for (const selector of [
       '.cv2-root .hp-overview__family-head > .enav-metrics',
       '.cv2-root .hr-rail__grouphead > .enav-metrics',
@@ -64,6 +77,39 @@ describe('a name is never truncated by its own count', () => {
     ]) {
       expect(homeCss).toContain(selector);
     }
+  });
+
+  it('states the width at which the count gives way, and drops it whole', () => {
+    /* THE LESSON FROM `--tt-actions-reserve` (brief, 2026-08-29): a correct
+       rule shipped without a width budget became the worst defect on screen —
+       a 203px reserve inside a 211px row left 36px for the title. So the rule
+       that reserves room for a count has to name the width where it stops
+       being affordable, and the remedy at that width has to be the law's own:
+       the badge goes, the noun stays. */
+    expect(homeCss).toContain('container-name: hp-family');
+    const family = homeCss.match(/\.cv2-root \.hp-overview__family\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(family).toContain('container-type: inline-size');
+    const budget = homeCss.match(
+      /@container hp-family \(max-width: \d+px\)\s*\{([^}]*\}[^}]*)\}/s,
+    )?.[1] ?? '';
+    expect(budget).toContain('.hp-overview__kind > .enav-metrics');
+    expect(budget).toContain('display: none');
+  });
+
+  it('spends no row height on badge chrome the digits did not need', () => {
+    /* A 1px border + 3px padding + an 18px floor turned a 26px word into a
+       47px row, and seven of those do not fit under the map's 38% ceiling —
+       which is how the WORK card came to be cut mid-row by the panel's bottom
+       edge. The pill is the height, so the pill goes. */
+    const flat = homeCss.match(
+      /\.cv2-root \.hp-overview__kind \.enav-metric--new,\s*\.cv2-root \.hp-overview__kind \.enav-metric--live\s*\{([^}]*)\}/s,
+    )?.[1] ?? '';
+    expect(flat).toContain('min-height: 0');
+    expect(flat).toContain('border: 0');
+    expect(flat).toContain('padding: 0');
+    /* The word and the run colour stay: the metrics sheet's own contract is
+       that an activity count never makes colour carry the meaning alone. */
+    expect(metricsCss).toContain('.enav-metric__unit');
   });
 
   it('lets every name take the remaining room and clip inside it', () => {
