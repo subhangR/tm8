@@ -20,8 +20,9 @@
   }
 }
 
-/* --- Pill — status token: soft fill + colored word (T0-4) ----------------- */
+/* --- Pill — status token: neutral card + colored word (T0-4) ------------- */
 .cv2-root .kit-pill {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -29,24 +30,25 @@
   font-size: 9.5px;
   font-weight: 600;
   border-radius: var(--pn-r-pill);
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
   padding: 2px 8px;
   white-space: nowrap;
   flex: none;
 }
-.cv2-root .kit-pill--run    { color: var(--pn-run);    background: var(--pn-run-soft); }
-.cv2-root .kit-pill--wait   { color: var(--pn-wait);   background: var(--pn-wait-soft); }
-.cv2-root .kit-pill--block  { color: var(--pn-block);  background: var(--pn-block-soft); }
-.cv2-root .kit-pill--info   { color: var(--pn-info);   background: var(--pn-info-soft); }
-.cv2-root .kit-pill--idle   { color: var(--pn-idle);   background: var(--pn-idle-soft); }
-.cv2-root .kit-pill--brand  { color: var(--pn-brand-2); background: var(--pn-brand-soft); }
+.cv2-root .kit-pill--run    { color: var(--pn-run); }
+.cv2-root .kit-pill--wait   { color: var(--pn-wait); }
+.cv2-root .kit-pill--block  { color: var(--pn-block); }
+.cv2-root .kit-pill--info   { color: var(--pn-info); }
+.cv2-root .kit-pill--idle   { color: var(--pn-idle); }
+.cv2-root .kit-pill--brand  { color: var(--pn-brand-2); }
 
 /* Outlined variant — the T0-3 list-header filter/sort pills. */
 .cv2-root .kit-pill--outline {
   font-size: 10px;
   font-weight: 400;
   color: var(--pn-ink-3);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
+  border-color: var(--pn-line-2);
   padding: 2px 9px;
 }
 
@@ -61,11 +63,18 @@
 
 /* --- Label + count — the noun always wins the width budget --------------- */
 .cv2-root .kit-label-count {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
   min-width: min-content;
   max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-2);
   white-space: nowrap;
 }
@@ -74,16 +83,12 @@
   color: var(--pn-ink);
 }
 .cv2-root .kit-label-count__quantity {
-  display: inline-flex;
-  gap: 5px;
+  display: block;
   min-width: 0;
   flex: 0 1 auto;
   overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--pn-ink-4);
-}
-.cv2-root .kit-label-count__separator,
-.cv2-root .kit-label-count__count {
-  flex: none;
 }
 .cv2-root .kit-sr-only {
   position: absolute;
@@ -128,7 +133,7 @@
   white-space: nowrap;
 }
 .cv2-root .kit-chip:hover {
-  background: var(--pn-hover);
+  background: var(--pn-card);
   border-color: var(--pn-line-2);
 }
 /* ONE focus grammar for every kit interactive: 2px --pn-focus ring, 1px off.
@@ -182,7 +187,8 @@
 /* --- IconBtn — square glyph button, always aria-labeled (T0-4) ------------ */
 .cv2-root .kit-iconbtn {
   appearance: none;
-  border: 0;
+  box-sizing: border-box;
+  border: 1px solid transparent;
   background: transparent;
   font-family: inherit;
   color: var(--pn-ink-3);
@@ -213,10 +219,12 @@
   min-block-size: var(--mobile-touch-min);
 }
 .cv2-root .kit-iconbtn:hover {
-  background: var(--pn-hover);
+  background: transparent;
+  border-color: var(--pn-line);
 }
 .cv2-root .kit-iconbtn--danger:hover {
-  background: var(--pn-hover);
+  background: transparent;
+  border-color: var(--pn-line);
   color: var(--pn-block);
 }
 /* Same focus grammar as .kit-chip — the ring flows through --pn-focus (the
@@ -236,6 +244,7 @@
 }
 .cv2-root .kit-iconbtn[aria-disabled='true']:hover {
   background: transparent;
+  border-color: transparent;
   color: var(--pn-ink-4);
 }
 
@@ -262,6 +271,7 @@
 /* Agents keep a 5px radius at every size (T0-1 Z4: avR '50%' vs '5px').
    Never shape alone — provenance also appears as text/chip where it matters. */
 .cv2-root .kit-avatar {
+  box-sizing: border-box;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -281,13 +291,12 @@
 .cv2-root .kit-avatar--tone-3 { --kit-avatar-tone: var(--pn-info); }
 .cv2-root .kit-avatar--tone-4 { --kit-avatar-tone: var(--pn-brand); }
 .cv2-root .kit-avatar--tone-5 { --kit-avatar-tone: var(--pn-idle); }
-/* Token-only identity palette. The 28% tint keeps all six tones visibly
-   distinct while `--pn-ink` remains comfortably legible in BOTH themes:
-   light mixes toward white card; dark mixes toward graphite card. The soft
-   token is the fallback for engines without color-mix support. */
+/* Identity stays deterministic, but occupies one hairline instead of a tinted
+   disc. The neutral surface is calmer and keeps initials readable in both
+   themes; the stable actor tone remains available at the edge. */
 .cv2-root .kit-avatar.kit-avatar {
-  background: var(--pn-active);
-  background: color-mix(in srgb, var(--kit-avatar-tone) 28%, var(--pn-card));
+  background: var(--pn-card);
+  border: 1px solid var(--kit-avatar-tone);
   color: var(--pn-ink);
 }
 .cv2-root .kit-avatar--mono {
@@ -453,11 +462,13 @@
    span forms stay flat. Hover/active/focus follow the kit grammar. */
 .cv2-root button.kit-actorref__via:hover,
 .cv2-root button.kit-actorref__session:hover {
-  background: var(--pn-hover);
+  background: none;
+  border-color: var(--pn-line-2);
 }
 .cv2-root button.kit-actorref__via:active,
 .cv2-root button.kit-actorref__session:active {
-  background: var(--pn-active);
+  background: none;
+  border-color: var(--pn-ink-3);
 }
 .cv2-root button.kit-actorref__via:focus-visible,
 .cv2-root button.kit-actorref__session:focus-visible {
@@ -605,13 +616,16 @@
 /* .k-btn--primary — the filled-ink default action (references' black fill). */
 .cv2-root .k-btn--primary {
   background: var(--pn-ink);
+  border-color: var(--pn-ink);
   color: var(--pn-paper);
 }
 .cv2-root .k-btn--primary:hover {
-  background: color-mix(in srgb, var(--pn-ink) 85%, var(--pn-paper));
+  background: var(--pn-ink-2);
+  border-color: var(--pn-ink-2);
 }
 .cv2-root .k-btn--primary:active {
-  background: color-mix(in srgb, var(--pn-ink) 92%, var(--pn-paper));
+  background: var(--pn-ink);
+  border-color: var(--pn-ink);
 }
 
 /* .k-btn--brand — the blue primary, reserved for Run/Launch verbs. Text is
@@ -619,13 +633,16 @@
    lifted dark-theme blue — AA in both themes where literal white is not. */
 .cv2-root .k-btn--brand {
   background: var(--pn-brand);
+  border-color: var(--pn-brand);
   color: var(--pn-paper);
 }
 .cv2-root .k-btn--brand:hover {
   background: var(--pn-brand-2);
+  border-color: var(--pn-brand-2);
 }
 .cv2-root .k-btn--brand:active {
-  background: color-mix(in srgb, var(--pn-brand-2) 88%, var(--pn-ink));
+  background: var(--pn-brand);
+  border-color: var(--pn-brand-2);
 }
 
 /* .k-btn--secondary — the bordered neutral action on a card surface. */
@@ -635,10 +652,12 @@
   color: var(--pn-ink);
 }
 .cv2-root .k-btn--secondary:hover {
-  background: var(--pn-hover);
+  background: var(--pn-card);
+  border-color: var(--pn-ink-3);
 }
 .cv2-root .k-btn--secondary:active {
-  background: var(--pn-active);
+  background: var(--pn-card);
+  border-color: var(--pn-line-2);
 }
 
 /* .k-btn--ghost — the quiet inline action: no chrome until hovered. */
@@ -647,11 +666,13 @@
   color: var(--pn-ink-2);
 }
 .cv2-root .k-btn--ghost:hover {
-  background: var(--pn-hover);
+  background: transparent;
+  border-color: var(--pn-line);
   color: var(--pn-ink);
 }
 .cv2-root .k-btn--ghost:active {
-  background: var(--pn-active);
+  background: transparent;
+  border-color: var(--pn-line-2);
 }
 
 /* Dead variants hold their rest surface — filled ones keep their fg (the dim
@@ -660,21 +681,25 @@
 .cv2-root .k-btn--primary[aria-disabled='true']:hover,
 .cv2-root .k-btn--primary[aria-disabled='true']:active {
   background: var(--pn-ink);
+  border-color: var(--pn-ink);
   color: var(--pn-paper);
 }
 .cv2-root .k-btn--brand[aria-disabled='true'],
 .cv2-root .k-btn--brand[aria-disabled='true']:hover,
 .cv2-root .k-btn--brand[aria-disabled='true']:active {
   background: var(--pn-brand);
+  border-color: var(--pn-brand);
   color: var(--pn-paper);
 }
 .cv2-root .k-btn--secondary[aria-disabled='true']:hover,
 .cv2-root .k-btn--secondary[aria-disabled='true']:active {
   background: var(--pn-card);
+  border-color: var(--pn-line-2);
 }
 .cv2-root .k-btn--ghost[aria-disabled='true']:hover,
 .cv2-root .k-btn--ghost[aria-disabled='true']:active {
   background: transparent;
+  border-color: transparent;
   color: var(--pn-ink-4);
 }
 
@@ -782,14 +807,15 @@
 }
 
 /* ==========================================================================
-   KINETIC MOTION + COLOR RICHNESS — wave-3 opt-in `k-` utilities.
+   KINETIC MOTION + CALM SURFACES — opt-in `k-` utilities.
    Motion is OPT-IN BY CLASS, never a blanket transition: the shell's
    no-motion-status law means STATUS SEMANTICS never animate — a pill
    changing state snaps, so nothing here targets a status element and no
    selector below applies without an author choosing it. Every animated rule
    collapses to its instant end state under prefers-reduced-motion: reduce
    (the one media block at the end of this section — keep new motion in it).
-   Colors resolve through tokens/color-mix only (§14 hex ban).
+   Colors resolve through tokens only (§14 hex ban). Shared surfaces stay
+   neutral and use 1px edges instead of shadows, gradients or tint fields.
    ========================================================================== */
 
 /* Entrance: fade + 4px rise (consumed by .k-enter). */
@@ -820,16 +846,16 @@
   animation-fill-mode: both;
 }
 
-/* .k-lift — THE hover treatment for interactive cards: 1px rise, sm→md shadow. */
+/* .k-lift — a bounded interactive card: one hairline, strengthened on hover. */
 .cv2-root .k-lift {
-  box-shadow: var(--pn-sh-sm);
-  transition:
-    transform var(--pn-dur-fast) var(--pn-ease-out),
-    box-shadow var(--pn-dur-fast) var(--pn-ease-out);
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line);
+  box-shadow: none;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-root .k-lift:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--pn-sh-md);
+  border-color: var(--pn-line-2);
+  box-shadow: none;
 }
 
 /* .k-press — pressed feedback for buttons: a 1.5% scale-down while held. */
@@ -879,43 +905,30 @@
   transform: scaleX(1);
 }
 
-/* --- COLOR RICHNESS ------------------------------------------------------- */
+/* --- CALM SURFACES -------------------------------------------------------- */
 
-/* .k-hero — the hero surface: a whisper of brand→violet gradient over card,
-   hairline-edged; both themes resolve through the tokens. */
+/* A hero is grouped by a hairline, not made louder with a tint field. */
 .cv2-root .k-hero {
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--pn-brand) 6%, var(--pn-card)),
-    color-mix(in srgb, var(--pn-accent-2, var(--pn-brand)) 5%, var(--pn-card))
-  );
+  background: var(--pn-card);
   border: 1px solid var(--pn-line);
 }
 
-/* .k-accent-top — a 2px brand→accent-2 gradient top border for featured cards.
-   Drawn as a clipped ::before so it follows the host's border-radius. */
+/* Featured cards get one stronger top hairline, never a gradient ribbon. */
 .cv2-root .k-accent-top {
-  position: relative;
-  overflow: hidden;
-}
-.cv2-root .k-accent-top::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--pn-brand), var(--pn-accent-2, var(--pn-brand)));
-  pointer-events: none;
+  border-top: 1px solid var(--pn-line-2);
 }
 
-/* .k-tint-* — soft section tints for callouts: 7% tone over the card surface.
-   Tint is a SURFACE choice, not a status signal — pair with a worded label. */
-.cv2-root .k-tint-brand { background: color-mix(in srgb, var(--pn-brand) 7%, var(--pn-card)); }
-.cv2-root .k-tint-run   { background: color-mix(in srgb, var(--pn-run) 7%, var(--pn-card)); }
-.cv2-root .k-tint-wait  { background: color-mix(in srgb, var(--pn-wait) 7%, var(--pn-card)); }
-.cv2-root .k-tint-block { background: color-mix(in srgb, var(--pn-block) 7%, var(--pn-card)); }
-.cv2-root .k-tint-info  { background: color-mix(in srgb, var(--pn-info) 7%, var(--pn-card)); }
+/* Legacy tint hooks remain API-compatible but resolve to the same calm card.
+   Their semantic word/dot still carries state; the whole section need not. */
+.cv2-root .k-tint-brand,
+.cv2-root .k-tint-run,
+.cv2-root .k-tint-wait,
+.cv2-root .k-tint-block,
+.cv2-root .k-tint-info {
+  box-sizing: border-box;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+}
 
 /* THE KILL SWITCH — every motion utility above collapses to its instant end
    state: no animation, no transform, no transition. Entrances land visible. */

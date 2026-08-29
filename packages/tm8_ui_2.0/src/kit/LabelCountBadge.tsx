@@ -27,8 +27,7 @@ export function LabelCountBadge({
     <span className={cls} title={countTooltip ?? `${label}: ${count}`}>
       <span className="kit-label-count__label">{label}</span>
       <span className="kit-label-count__quantity" aria-hidden="true">
-        <span className="kit-label-count__separator">·</span>
-        <span className="kit-label-count__count">{count}</span>
+        {`· ${count}`}
       </span>
       <span className="kit-sr-only">{`, ${count}`}</span>
     </span>
