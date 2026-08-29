@@ -155,9 +155,9 @@
 
 .hlp-search__heading {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
   margin-bottom: 9px;
 }
 
@@ -173,7 +173,7 @@
   font-family: var(--pn-mono);
   font-size: 8.5px;
   letter-spacing: .06em;
-  text-align: right;
+  text-align: left;
   text-transform: uppercase;
 }
 
@@ -812,8 +812,6 @@
   .hlp-home__title { font-size: 42px; }
   .hlp-home__answer { font-size: 18px; }
   .hlp-home__start-grid { grid-template-columns: 1fr; }
-  .hlp-search__heading { align-items: flex-start; flex-direction: column; gap: 3px; }
-  .hlp-search__heading span { text-align: left; }
 }
 
 @media (prefers-reduced-motion: reduce) {
