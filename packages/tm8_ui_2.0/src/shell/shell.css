@@ -134,10 +134,115 @@
 .cv2-root .shell-tabbar__tabs .shell-tabbar__tab--active {
   background: var(--pn-brand-soft);
 }
+
+/* --- THE BAR'S WIDTH BUDGET ----------------------------------------------
+   ("the name of a thing always wins over its count", 2026-08-29.)
+
+   MEASURED, Firefox, the real Utho Prod bar, at three window widths. Every
+   child of the bar carries the flexbox DEFAULT, `flex: 0 1 auto`, and the only
+   item with any grow is `__spacer`. So once the spacer reaches 0 — which it
+   does at 1152px — the bar shrinks EVERYTHING, and what each item actually
+   surrenders is decided by its automatic minimum size, which is its
+   min-content width:
+
+     1512px   spacer 327   nothing shrinks
+     1152px   spacer 0     bar already overflows its own box by 14px
+     1024px   spacer 0     bar overflows by 130px
+
+   At 1024 that resolved to:
+
+     switcher       280.6px   UNCHANGED   `local · this machine` is mono and
+                                          nowrap, so its min-content IS its
+                                          full width and it cannot give a pixel
+     tabs           495.1px   UNCHANGED   seven unbreakable words, same reason
+     palette        112.8 -> 69.7px       broke onto a SECOND LINE inside a
+                                          44px bar
+     bell            35.2 -> 18.5px       a 32px hit target became 18px
+     copy link      102.5 -> 77.2px       rendered as `Cop` / `link`, and its
+                                          right edge sat 20px past the bar's
+     account menu   103.2px               pushed to x=1053 in a 1024px window:
+                                          ENTIRELY OFF SCREEN. No sign-out, no
+                                          theme, no account, at a laptop width.
+
+   THE INVERSION IS THE DEFECT. The bar was surrendering whatever could WRAP,
+   and the only things that can wrap are the multi-word NAMES of controls
+   ("Copy link", "/ palette · ⌘K"). The one thing that never gave way was the
+   machine metadata — not because anyone judged it important, but because mono
+   + nowrap made it structurally incompressible. The layout was deciding by
+   typographic accident instead of by importance, and it decided backwards.
+
+   So the surrender order is stated here, cheapest first:
+
+     1. the spacer                       (already)
+     2. the switcher's SERVER META       — it names a machine, not a place
+     3. the tab ROW scrolls              — every destination word stays whole
+     4. nothing else                     — names and controls do not give way
+
+   This is the width budget the register's Fitts's-Law entry was missing: a
+   rule that is right at 1512 and destroys the surface at 1024 is not yet a
+   rule. Stated as flex weights rather than a breakpoint, so it degrades
+   continuously and there is no width at which the bar suddenly changes shape. */
+
+/* 1. A CONTROL'S NAME IS A NAME. It does not shrink and it does not break.
+      `.copy-link` and `.auth-accountmenu` are the wrappers a host mounts into
+      the bar's slots, so the rule goes on the wrapper — the bar cannot reach
+      inside them and has no business trying (same reasoning as the control
+      grammar below). */
+.cv2-root .shell-tabbar__mark,
+.cv2-root .shell-tabbar__palette,
+.cv2-root .shell-tabbar__bell,
+.cv2-root .shell-tabbar__avatar,
+.cv2-root .shell-tabbar .copy-link,
+.cv2-root .shell-tabbar .auth-accountmenu {
+  flex: none;
+}
+.cv2-root .shell-tabbar__palette,
+.cv2-root .shell-tabbar .copy-link__button,
+.cv2-root .shell-tabbar .auth-accountmenu__trigger {
+  white-space: nowrap;
+}
+
+/* 3. DESTINATION WORDS STAY WHOLE; the row scrolls instead.
+      Truncating a tab to `Settin…` would be the same defect one level down —
+      and unlike a truncated label, a scrolled row still lets you reach the
+      tab. `min-width: 0` is what lets the nav shrink below its seven words at
+      all; without it the nav is incompressible and the deficit lands back on
+      the controls. The scrollbar is hidden because the tray is 32px tall and
+      a gutter inside it would eat the segment height. */
+.cv2-root .shell-tabbar__tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cv2-root .shell-tabbar__tabs::-webkit-scrollbar {
+  display: none;
+}
+.cv2-root .shell-tabbar__tabs .shell-tabbar__tab {
+  flex: none;
+  white-space: nowrap;
+}
+/* A scroll container clips its content, and the tab's focus ring is drawn
+   OUTSIDE its box (`outline-offset: 1px`), so the first and last tab would
+   lose theirs to the clip. Inset it, exactly as this file already does for
+   the rail rows and the switcher's popover rows, which sit in scrollers for
+   the same reason. */
+.cv2-root .shell-tabbar__tabs .shell-tabbar__tab:focus-visible {
+  outline-offset: -2px;
+}
+
 /* The identity block, re-hosted (R1): the same SpaceSwitcher, drawn as a
    compact pill — space and server on one line, popover dropping below. */
+/* 2. THE SWITCHER GIVES WAY FIRST, and gives its METADATA before its NAME.
+      `flex: 0 8 auto` weights the shrink: flexbox distributes a deficit by
+      (shrink factor × base size), so at 280px base the chip absorbs ~82% of
+      whatever the bar is short before the tab row is asked for anything. It
+      absorbs it down to a floor and no further — `min-width: 0` only removes
+      the automatic minimum that was pinning it at its full 280px; what it
+      actually stops at is set inside `__names` below. */
 .cv2-root .shell-tabbar .shell-switcher {
   padding: 0;
+  flex: 0 8 auto;
+  min-width: 0;
 }
 .cv2-root .shell-tabbar .shell-switcher__trigger {
   width: auto;
@@ -148,18 +253,51 @@
   gap: 6px;
   background: var(--pn-active);
   border-radius: var(--pn-r-pill);
+  min-width: 0;
 }
 .cv2-root .shell-tabbar .shell-switcher__names {
-  flex: none;
+  flex: 0 1 auto;
   flex-direction: row;
   align-items: baseline;
   gap: 6px;
+  min-width: 0;
 }
 /* The chip's SPACE NAME is a primary label: Figtree 13/600 (the base rule
    carries family and weight; only the compact size was overriding it down).
    The server meta beside it stays mono-data — it names a machine. */
 .cv2-root .shell-tabbar .shell-switcher__space { font-size: var(--pn-fs-sm); }
 .cv2-root .shell-tabbar .shell-switcher__server-line { font-size: var(--pn-fs-fine); }
+/* WHICH OF THE TWO GIVES WAY, and in what order. The space is WHERE YOU ARE;
+   the server line is which machine is serving it. One is the name of a thing
+   and the other is a fact about it, so the fact goes first — at twelve times
+   the rate, and all the way to nothing if the width demands it.
+
+   The name is not exempt, only protected: a space called
+   "Engineering — Platform" must still be able to truncate, or it becomes the
+   new incompressible thing and we have simply moved the defect. It shrinks
+   last and never past `6ch`, which is the shortest prefix that still
+   distinguishes real space names, and it keeps the ellipsis the base rule
+   already gives it. Ellipsis is a truncated name; it is not a missing one. */
+.cv2-root .shell-tabbar .shell-switcher__space {
+  flex: 0 1 auto;
+  min-width: 6ch;
+}
+/* Laid out as a BLOCK here rather than the base rule's flex row, because
+   `text-overflow` acts on a block's inline content and cannot reach the
+   anonymous text run inside a flex container — as a flex row this line
+   truncated by hard clipping, mid-glyph. The dot keeps its place and its
+   5px as an inline-block, which is the same spacing the flex `gap` drew. */
+.cv2-root .shell-tabbar .shell-switcher__server-line {
+  display: block;
+  flex: 0 12 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+.cv2-root .shell-tabbar .shell-switcher__server-line .shell-rail__server-status {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 5px;
+}
 .cv2-root .shell-tabbar .shell-switcher__monogram {
   width: 16px;
   height: 16px;
