@@ -1,3 +1,5 @@
+> **EXECUTED 2026-08-29 (phase 2)** — 15 after-images captured from the deployed head `6423d07d` via fixture-seam vite (bundle sha-proven == production). See README §Phase 2.
+
 # Phase 2 — After-Capture Plan
 
 Matched after-images per territory, to be captured **ONLY from the verified final production head after the train deploy** (i.e., after #548 and the remaining train-tail PRs — #550, #545, #549 as they land — are deployed and the deploy receipt SHA is confirmed). Do **not** capture from a browser tab that may be service-worker-stale: verify the loaded entry asset hashes against the deploy receipt first (see the stale-cache note in [README.md](README.md)).

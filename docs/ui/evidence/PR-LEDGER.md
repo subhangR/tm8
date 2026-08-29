@@ -30,3 +30,15 @@ Deploy receipts (authoritative session timeline): production ran `8f68149e` from
 Notes:
 - "T3 PR (pending, no number yet)" in the original brief **is** #550 — it received its number during the day and is recorded above.
 - This artifact's own PR (`docs(ui): before/after evidence artifact`) is not part of the product train and intentionally not a ledger row.
+
+## Final train states (phase 2, verified)
+
+| PR | State | Merge SHA | Note |
+|---|---|---|---|
+| #550 | MERGED | 10307c80 | task-detail redesign; CI red was the byte-identical 14-file main baseline (forensic) |
+| #545 | MERGED | ac1c7235 | Home/nav redesign; UI 360/360 green |
+| #549 | MERGED | 322ae63e | cluster prose/legibility (train tail) |
+| #544 | MERGED | 6423d07d | Help discovery, rebased + T9-reconciled |
+| #551 | OPEN (held) | — | this artifact; merges on coordinator authorization |
+
+**Deployment**: final train head `6423d07d88a2f165883f20861217cc0278cd03cf` deployed 2026-08-29T17:44:53Z — 11 ms swap, zero downtime, MainPID 889805 unchanged, served==disk SHAs verified, rollback preserved at `dist.pre-final-6423d07d`.
