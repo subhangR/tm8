@@ -306,7 +306,7 @@ describe('removing an attachment cuts the LINK, not the file', () => {
 // THE ＋ TILE AND THE LIGHTBOX — the 2026-08-16 addendum's own contracts
 // ---------------------------------------------------------------------------
 
-describe('the ＋ tile', () => {
+describe('the + tile', () => {
   it('is an ICON on an empty anchor — one 28px paperclip, not a dashed tile and not nothing', () => {
     // Owner ruling 2026-08-19, narrowing 2026-08-18. The addendum's "the ＋
     // tile IS the empty state" cost ~140px of dashed box on every entity that
@@ -397,7 +397,7 @@ describe('the ＋ tile', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
   });
 
-  it('opens the two-item menu when both paths are wired, and Esc returns focus to ＋', () => {
+  it('opens the two-item menu when both paths are wired, and Esc returns focus to +', () => {
     render(
       <AttachmentStrip
         anchorId={'e1' as never}

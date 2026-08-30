@@ -273,7 +273,7 @@ export function MenuEditor({
               <div className="set-menu__empty">
                 <SectionAbsent
                   head="This menu has no groups."
-                  why="every rail row lives in a group, so there is nothing for the rail to draw — add one with ＋ group below, then put a view or kind ref in it"
+                  why="every rail row lives in a group, so there is nothing for the rail to draw — add a group below, then put a view or kind ref in it"
                   testId="menu-empty"
                 />
               </div>
@@ -365,19 +365,19 @@ export function MenuEditor({
               the list they create into. */}
           <div className="set-add-bar">
               <AddControl
-                label="＋ view ref"
+                label="Add view"
                 enabled={editable && freeViews.length > 0}
                 reason={MENU_NO_FREE_VIEW_REF}
                 onClick={() => setPicker({ kind: 'view' })}
               />
               <AddControl
-                label="＋ kind ref"
+                label="Add kind"
                 enabled={editable && freeKinds.length > 0}
                 reason={MENU_NO_FREE_KIND_REF}
                 onClick={() => setPicker({ kind: 'kind' })}
               />
               <AddControl
-                label="＋ group"
+                label="Add group"
                 enabled={editable && !groupCap.full}
                 reason={MENU_GROUP_CAP_REASON(groupCap.used, groupCap.max)}
                 onClick={() => setPicker({ kind: 'group' })}
@@ -555,10 +555,8 @@ function ItemRows({
         </div>
       ))}
 
-      {/* The live button and the refusal are different lengths ("＋ add child"
-          vs "＋ add child — this row has 8 of 8"), and the refusal also carries
-          a caption. `set-menu__childbar` gives both the same band so reaching a
-          cap does not shove every row below it down the list. */}
+      {/* The control keeps one stable name. Capacity belongs in the refusal
+          reason, where it explains availability without outranking the act. */}
       {item.type === 'view' && children.length > 0 ? (
         <div className="set-row set-row--child set-menu__childbar">
           {canAddChild ? (
@@ -573,14 +571,14 @@ function ItemRows({
                 setDraft((d) => addChild(d, group.id, itemIndex, leaf));
               }}
             >
-              ＋ add child
+              Add child
             </button>
           ) : (
             <DisabledAction
               reason={cap.full ? menuChildCapReason(cap.used, cap.max) : MENU_NO_FREE_KIND_REF}
               label="add child"
             >
-              ＋ add child — this row has {cap.used} of {cap.max}
+              Add child
             </DisabledAction>
           )}
         </div>

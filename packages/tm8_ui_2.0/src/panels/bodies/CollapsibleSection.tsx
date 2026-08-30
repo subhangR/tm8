@@ -11,7 +11,7 @@ import './collapsible-section.css';
  *
  * EMPTINESS (approved design, 2026-08-16): a fold whose `empty` prop is true
  * collapses OUT OF THE FLOW entirely and is re-revealed by the body's single
- * `⋯ N empty sections` toggle. Critically, a section whose only content is a
+ * one quiet empty-sections reveal. Critically, a section whose only content is a
  * disabled-with-reason affordance must NOT be marked empty by its caller —
  * hiding a refusal hides its reason, which is the exact failure the honesty
  * rules exist to prevent. That judgement is the CALLER's, made where the data
@@ -97,7 +97,7 @@ export function useFoldState(id: string, defaultOpen: boolean): [boolean, () => 
   return [open, toggle];
 }
 
-/** Whether the `⋯ N empty sections` reveal is on. Global, like fold state. */
+/** Whether the empty-sections reveal is on. Global, like fold state. */
 export function useEmptySectionsRevealed(): boolean {
   const stored = useSyncExternalStore(
     subscribe,
@@ -163,9 +163,10 @@ export function EmptySectionsToggle() {
       className="pn-emptytoggle"
       data-testid="empty-sections-toggle"
       aria-expanded={revealed}
+      aria-label={`${revealed ? 'Hide' : 'Show'} ${count} empty ${count === 1 ? 'section' : 'sections'}`}
       onClick={() => toggleEmptySections(revealed)}
     >
-      {revealed ? 'hide empty sections' : `⋯ ${count} empty ${count === 1 ? 'section' : 'sections'}`}
+      {revealed ? 'Hide empty sections' : 'Show empty sections'}
     </button>
   );
 }
@@ -186,7 +187,7 @@ export function CollapsibleSection({
   useRegisterEmptySection(empty);
   const uid = useId();
 
-  // Out of the flow entirely — the `⋯ N empty sections` toggle brings it back,
+  // Out of the flow entirely — the empty-sections toggle brings it back,
   // in its normal order. (Hooks above run regardless, so the registry knows.)
   if (empty && !revealed) return null;
 

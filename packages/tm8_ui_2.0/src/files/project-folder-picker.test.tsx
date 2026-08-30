@@ -185,7 +185,7 @@ describe('the strip affordance', () => {
     expect(view.queryByRole('button', { name: /project folder/ })).toBeNull();
   });
 
-  it('opens the picker from the ＋ tile menu when the port is present', async () => {
+  it('opens the picker from the + tile menu when the port is present', async () => {
     const p = port();
     const view = render(
       /* A file, because an idle strip draws no ＋ at all since 2026-08-18 —

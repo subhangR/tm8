@@ -96,8 +96,9 @@
   white-space: nowrap;
 }
 .set-workflows__pill--ruled {
-  color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
 }
 .set-workflows__pill--unruled {
   color: var(--pn-ink-3);
@@ -174,7 +175,7 @@
   padding: 3px 8px 3px 5px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  background: var(--pn-surface);
+  background: var(--pn-card);
   font-family: var(--pn-mono);
   font-size: 10px;
   color: var(--pn-ink-2);
@@ -190,7 +191,7 @@
 .set-workflows__box--on {
   color: var(--pn-brand-2);
   border-color: rgba(var(--pn-brand-rgb), 0.4);
-  background: var(--pn-brand-soft);
+  background: var(--pn-card);
 }
 /* Locked: the three 132's check constraint requires. `cursor: default` and no
    hover, because a pointer on a box that cannot move is a promise the schema

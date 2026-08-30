@@ -1581,7 +1581,7 @@ function HeaderActions({
         createSlot
       ) : showCreate && onCreate ? (
         <button type="button" className="lp__new" onClick={onCreate}>
-          ＋ New
+          + New
         </button>
       ) : null}
       {showLaunch && quickLaunch ? (

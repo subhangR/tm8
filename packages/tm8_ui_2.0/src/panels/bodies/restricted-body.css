@@ -62,7 +62,7 @@
   font-size: 11.5px;
   color: var(--pn-ink-2);
   border: 1px solid var(--pn-line-2);
-  background: color-mix(in srgb, var(--pn-idle) 14%, transparent);
+  background: var(--pn-card);
 }
 .cv2-root .rs-banner__word {
   font-family: var(--pn-mono);
@@ -76,26 +76,25 @@
   text-wrap: pretty;
 }
 
-/* Tone variants. `idle` IS the base above (the oracle's retired banner), so
-   it needs no rule of its own — which is also what keeps the default honest
-   when a registry row names a tone this sheet has never seen. */
+/* Tone variants keep a single semantic word coloured; the bounded banner
+   itself stays neutral in every state. */
 .cv2-root .rs-banner[data-tone='wait'] {
-  border-color: color-mix(in srgb, var(--pn-wait) 40%, transparent);
-  background: color-mix(in srgb, var(--pn-wait) 9%, transparent);
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
 }
 .cv2-root .rs-banner[data-tone='wait'] .rs-banner__word {
   color: var(--pn-wait);
 }
 .cv2-root .rs-banner[data-tone='run'] {
-  border-color: color-mix(in srgb, var(--pn-run) 40%, transparent);
-  background: color-mix(in srgb, var(--pn-run) 9%, transparent);
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
 }
 .cv2-root .rs-banner[data-tone='run'] .rs-banner__word {
   color: var(--pn-run);
 }
 .cv2-root .rs-banner[data-tone='block'] {
-  border-color: color-mix(in srgb, var(--pn-block) 40%, transparent);
-  background: color-mix(in srgb, var(--pn-block) 9%, transparent);
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
 }
 .cv2-root .rs-banner[data-tone='block'] .rs-banner__word {
   color: var(--pn-block);

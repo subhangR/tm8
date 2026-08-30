@@ -311,7 +311,7 @@ function launching(action: ActionDef, mode?: LaunchMode): ActionDef {
 const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   open: define('open', 'Open', '↗', (ctx) => (ctx.entityId ? AVAILABLE : disabled(REASONS.noEntity))),
 
-  create: define('create', 'Create', '＋', (ctx) => opGate(ctx, 'entities.create') ?? AVAILABLE),
+  create: define('create', 'Create', '+', (ctx) => opGate(ctx, 'entities.create') ?? AVAILABLE),
 
   complete: define(
     'complete',
@@ -395,7 +395,7 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'add-child': define(
     'add-child',
     'Add child',
-    '＋',
+    '+',
     (ctx) =>
       opGate(ctx, 'entities.create') ?? capabilityGate(ctx, 'canAddChild', REASONS.cannotAddChild) ?? AVAILABLE,
   ),
@@ -582,7 +582,7 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'saved-views': deferred('saved-views', 'Saved views', '▤', REASONS.savedViewsDeferred),
   'search-results': deferred('search-results', 'Open full results', '⌕', REASONS.searchResultsDeferred),
   'activity-screen': deferred('activity-screen', 'Activity', '◷', REASONS.activityScreenDeferred),
-  'add-server': deferred('add-server', 'Add server', '＋', REASONS.addServerDeferred),
+  'add-server': deferred('add-server', 'Add server', '+', REASONS.addServerDeferred),
   // T0-4 kind primaries (Surface Audit 2026-07-29). Deferred = renders
   // disabled-with-reason wherever a registry row carries it (R7); each flips
   // to available when its executor lands, with no consumer edit.

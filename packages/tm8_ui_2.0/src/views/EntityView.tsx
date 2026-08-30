@@ -1054,7 +1054,7 @@ export function EntityView(props: EntityViewProps) {
           aria-label={`New ${config.label.toLowerCase()}`}
           onClick={() => void createFlow.create()}
         >
-          <span aria-hidden>＋</span>
+          <span aria-hidden>+</span>
         </button>
       ) : null}
 

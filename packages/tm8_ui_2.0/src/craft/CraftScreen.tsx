@@ -516,7 +516,7 @@ export function CraftScreen({
               title="Create a new blueprint"
               onClick={() => void createGraph()}
             >
-              <span aria-hidden>＋</span>
+              <span aria-hidden>+</span>
             </button>
             {/* ORCHESTRATE RIDES THE BLUEPRINT'S OWN ROW. It reads
                 `selectedId` — the very graph this picker names — so putting it

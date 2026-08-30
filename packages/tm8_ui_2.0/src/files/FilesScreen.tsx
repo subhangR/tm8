@@ -325,7 +325,7 @@ function AttachmentsCard({
                 implies has no executor either — stated once, here, rather
                 than left as an absence a reader would have to notice. */}
             <DisabledAction reason={ATTACH_UNAVAILABLE} label="Attach a file to this message">
-              <span className="fn-chip fn-chip--ghost">＋ attach</span>
+              <span className="fn-chip fn-chip--ghost">Attach</span>
             </DisabledAction>
           </div>
         </div>
@@ -338,7 +338,10 @@ function AttachmentsCard({
       <Eyebrow faint>{attachedLabel ? `ON ${attachedLabel}` : 'ON A TASK — CONTENT TAB SECTION'}</Eyebrow>
 
       <div className="fn-filelist" data-testid="file-list">
-        <div className="fn-filelist__head">FILES · {attached.length}</div>
+        <div className="fn-filelist__head">
+          <span>Files</span>
+          <span className="fn-filelist__count">{attached.length}</span>
+        </div>
         {attached.length === 0 ? (
           /* A MEASURED zero, not a hollow one: the entity's connections were
              read and carried no `attached_to` edge. Saying "—" here would
@@ -388,7 +391,7 @@ export function FileChip({
     return (
       <span className="fn-chip fn-chip--missing" data-testid="file-chip" data-missing="true">
         <span aria-hidden>{glyphFor(file.mime)}</span>
-        {file.name}
+        <span className="fn-chip__name">{file.name}</span>
         <span className="fn-chip__missing">{missing.word}</span>
       </span>
     );
@@ -398,7 +401,7 @@ export function FileChip({
     return (
       <span className="fn-chip" data-testid="file-chip">
         <span aria-hidden>{glyphFor(file.mime)}</span>
-        {file.name}
+        <span className="fn-chip__name">{file.name}</span>
         {size ? <span className="fn-chip__size">{size}</span> : null}
       </span>
     );
@@ -412,7 +415,7 @@ export function FileChip({
       onClick={() => onPreview(file)}
     >
       <span aria-hidden>{glyphFor(file.mime)}</span>
-      {file.name}
+      <span className="fn-chip__name">{file.name}</span>
       {size ? <span className="fn-chip__size">{size}</span> : null}
     </button>
   );

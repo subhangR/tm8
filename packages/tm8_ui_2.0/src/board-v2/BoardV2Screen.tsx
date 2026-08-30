@@ -37,7 +37,7 @@ import type { SetStateOutcome } from '../domain';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { DisabledIconControl, toReason, type DetailReasons } from '../panels';
-import { AvatarStack, Pill } from '../kit';
+import { AvatarStack } from '../kit';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Card } from '@astryxdesign/core/Card';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
@@ -538,12 +538,12 @@ export function BoardV2Screen({
             data-testid="b2-new-task"
             onClick={() => void newEntity.create()}
           >
-            ＋ New {kind.label.toLowerCase()}
+            + New {kind.label.toLowerCase()}
           </button>
         ) : (
           <DisabledIconControl label={`New ${kind.label.toLowerCase()}`} reason={newEntity.unavailable}>
             <span className="b2__new b2__new--off" data-testid="b2-new-task">
-              ＋ New {kind.label.toLowerCase()}
+              + New {kind.label.toLowerCase()}
             </span>
           </DisabledIconControl>
         )}
@@ -563,7 +563,7 @@ export function BoardV2Screen({
           && shownColumns.every((column) => (column.items?.length ?? 0) === 0) ? (
           <div className="b2__firstrun" data-testid="b2-firstrun">
             Every {kind.label.toLowerCase()} in this space shows up here, in a column for where
-            it stands. There are none yet — use ＋ New {kind.label.toLowerCase()} above to add
+            it stands. There are none yet — use + New {kind.label.toLowerCase()} above to add
             the first.
           </div>
         ) : null}
@@ -580,7 +580,6 @@ export function BoardV2Screen({
                 column={column}
                 shown={column.items === undefined ? undefined : shownRows[index]}
                 band={plan.mode === 'workflow' ? column.plan.category : null}
-                focused={index === activeCard?.col}
                 focusedId={activeCard?.item.id ?? null}
                 refusal={refusal?.column === column.plan.key ? refusal.reason : null}
                 pendingId={pendingId}
@@ -635,7 +634,6 @@ function ColumnView({
   column,
   shown,
   band,
-  focused,
   focusedId,
   refusal,
   pendingId,
@@ -651,7 +649,6 @@ function ColumnView({
   shown: readonly EntitySummary[] | undefined;
   /** The category band a workflow-state column sits under, or null. */
   band: string | null;
-  focused: boolean;
   focusedId: string | null;
   refusal: string | null;
   pendingId: string | null;
@@ -668,7 +665,7 @@ function ColumnView({
 
   return (
     <section
-      className={focused ? 'b2__col b2__col--focused' : 'b2__col'}
+      className="b2__col"
       data-testid="b2-column"
       data-column={column.plan.key}
       aria-label={column.plan.label}
@@ -690,7 +687,7 @@ function ColumnView({
             {BAND_LABELS[band] ?? band}
           </span>
         ) : null}
-        <Pill tone={column.plan.tone}>{column.plan.label}</Pill>
+        <h2 className="b2__col-title">{column.plan.label}</h2>
         <span className="b2__col-count">{count}</span>
       </header>
 
@@ -731,14 +728,13 @@ function ColumnView({
   );
 }
 
-/* Priority chips follow tm8's own tone semantics (the registry dresses `high`
-   in 'block') expressed through Astryx's semantic Badge palette. A word map,
-   not a kind map — any kind whose state carries `priority` gets the same
-   read, and an unknown word falls back to neutral rather than lying. */
+/* Medium is the task default, so repeating it on nearly every card adds no
+   signal. Exceptional priorities remain visible: high/urgent use the error
+   tone, while low and unknown words stay neutral rather than inventing
+   urgency. */
 const PRIORITY_BADGE: Record<string, 'error' | 'warning' | 'info' | 'neutral'> = {
   urgent: 'error',
   high: 'error',
-  medium: 'info',
   low: 'neutral',
 };
 
@@ -787,8 +783,8 @@ function CardView({
       data-testid="b2-card"
       data-entity={row.id}
       variant="default"
-      padding={3}
-      elevation="low"
+      padding={2}
+      elevation="none"
       aria-busy={pending || undefined}
       draggable={!pending}
       onDragStart={(event) => {
@@ -815,7 +811,7 @@ function CardView({
         {row.title}
       </button>
       <div className="b2__card-meta">
-        {typeof state.priority === 'string' ? (
+        {typeof state.priority === 'string' && state.priority !== 'medium' ? (
           <Badge variant={PRIORITY_BADGE[state.priority] ?? 'neutral'} label={state.priority} />
         ) : null}
         {state.dueDate ? (

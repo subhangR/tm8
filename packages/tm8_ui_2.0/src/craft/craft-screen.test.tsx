@@ -213,7 +213,7 @@ describe('the two-pane studio', () => {
     view.unmount();
   });
 
-  it('puts the conversation picker and ＋ on the chat pane, and the graph picker on the canvas', async () => {
+  it('puts the conversation picker and + on the chat pane, and the graph picker on the canvas', async () => {
     const { view } = await mountStudio();
     await waitFor(() => view.getByTestId('crf-chat-picker'));
     /* Both panes carry a header, each naming the pane beneath it. */
@@ -309,7 +309,7 @@ describe('the two-pane studio', () => {
    * The fix is that the request ADOPTS the resolved selection; this is the
    * case that says so.
    */
-  it('returns to the composer when ＋ is pressed after a send created a thread', async () => {
+  it('returns to the composer when + is pressed after a send created a thread', async () => {
     const { view } = await mountStudio();
     await waitFor(() => view.getByTestId('crf-chat-picker'));
     /* A blueprint has to exist for the conversation to be resolved AGAINST —

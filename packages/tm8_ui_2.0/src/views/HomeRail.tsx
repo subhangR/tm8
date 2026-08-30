@@ -53,7 +53,14 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
       data-collapsed={collapsed ? 'true' : 'false'}
     >
       {!collapsed ? (
-        <div className="hr-rail__mast k-hero k-accent-top">
+        /* A rail header, not a featured card. `k-hero` painted a brand→violet
+           wash and `k-accent-top` a 2px gradient rule across the top of it,
+           which — once the workspace map beside it went flat — left the whole
+           of Home with exactly one gradient, spending it on the least
+           consequential words on the page ("Browse", "19 entity types") rather
+           than on anything the reader had chosen. Fewer colours means the ones
+           that remain have to mean something. */
+        <div className="hr-rail__mast">
           <span className="hr-rail__mast-label k-label">Browse</span>
           <span className="hr-rail__mast-count">{kindCount} entity types</span>
         </div>
@@ -69,11 +76,7 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
             {!collapsed ? (
               <span className="hr-rail__grouphead">
                 <span className="hr-rail__eyebrow">{group.label}</span>
-                <EntityNavigationMetrics
-                  total={group.total}
-                  unseen={group.unseen}
-                  live={group.live}
-                />
+                <EntityNavigationMetrics total={group.total} live={group.live} />
               </span>
             ) : null}
             {group.items.map((item) => (
@@ -90,9 +93,13 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
                   <KindIcon kind={item.config.kind} />
                 </span>
                 <span className="hr-rail__label">{item.config.labelPlural}</span>
+                {/* ONE number per row — see the note in `HomePage`. Expanded,
+                    this row used to carry a total AND an "N new" pill, and the
+                    pair squeezed the word "Sessions" clean off its own row
+                    (owner screenshot, 2026-08-29: `: 577 · 471 new · 17 live`).
+                    A nav row that does not say what it is, is not a nav row. */}
                 <EntityNavigationMetrics
                   total={item.counts?.total}
-                  unseen={item.counts?.unseen}
                   live={item.live}
                   className="hr-rail__metrics"
                 />

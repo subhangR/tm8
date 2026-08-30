@@ -2,7 +2,7 @@
  * Minimap — the corner overview for the ◉ Graph canvas (ATELIER paper-and-ink;
  * tokens only, hex banned outside tokens.css). A scaled SVG of the whole
  * layout: nodes as small rects, the visible viewport as a brass hairline
- * frame. Clicking anywhere jumps the canvas there; the whole map is one
+ * frame on a border-only surface. Clicking anywhere jumps the canvas there; the whole map is one
  * focusable control (Enter/Space centers).
  *
  * Tone is color + WORD-in-title: each node rect carries a `title` naming its

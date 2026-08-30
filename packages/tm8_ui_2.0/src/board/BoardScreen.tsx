@@ -411,12 +411,12 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
             data-testid="bd-new-task"
             onClick={() => void newTask.create()}
           >
-            ＋ New {task.label.toLowerCase()}
+            + New {task.label.toLowerCase()}
           </button>
         ) : (
           <DisabledIconControl label={`New ${task.label.toLowerCase()}`} reason={newTask.unavailable}>
             <span className="bd__new bd__new--off" data-testid="bd-new-task">
-              ＋ New {task.label.toLowerCase()}
+              + New {task.label.toLowerCase()}
             </span>
           </DisabledIconControl>
         )}
@@ -447,7 +447,7 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
             && columns.every((column) => column.items.length === 0) ? (
             <div className="bd__firstrun" data-testid="bd-firstrun">
               Every {task.label.toLowerCase()} in this space shows up here, in a column for its
-              status. There are none yet — use ＋ New {task.label.toLowerCase()} above to add the
+              status. There are none yet — use + New {task.label.toLowerCase()} above to add the
               first.
             </div>
           ) : null}

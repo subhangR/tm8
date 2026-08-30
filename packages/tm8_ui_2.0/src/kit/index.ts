@@ -1,4 +1,5 @@
 export { Pill, type PillTone } from './Pill';
+export { LabelCountBadge } from './LabelCountBadge';
 export { Eyebrow } from './Eyebrow';
 export { Chip } from './Chip';
 export { Btn, type BtnVariant } from './Btn';

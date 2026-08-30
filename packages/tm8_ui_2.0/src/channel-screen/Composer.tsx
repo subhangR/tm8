@@ -559,7 +559,7 @@ export function Composer({
         {onStartAttachmentUpload ? (
           <>
             <button type="button" className="chs-iconbtn" aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
-              <span aria-hidden>＋</span>
+              <span aria-hidden>+</span>
             </button>
             <input
               ref={fileInput}
@@ -574,7 +574,7 @@ export function Composer({
             />
           </>
         ) : (
-          <DisabledIconControl label="Attach a file" glyph="＋" reason={NO_UPLOAD_SEAM} />
+          <DisabledIconControl label="Attach a file" glyph="+" reason={NO_UPLOAD_SEAM} />
         )}
         {attachEntityOptions ? (
           <button

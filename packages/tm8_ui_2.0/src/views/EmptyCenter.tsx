@@ -172,7 +172,7 @@ export function EmptyCenter(props: EmptyCenterProps) {
                   className="shell-empty__cta-btn shell-empty__cta-btn--primary"
                   onClick={() => void props.newTask?.create()}
                 >
-                  ＋ New task
+                  + New task
                 </button>
               ) : (
                 <DisabledIconControl
@@ -180,7 +180,7 @@ export function EmptyCenter(props: EmptyCenterProps) {
                   reason={props.newTask?.unavailable ?? NEW_TASK_NOT_WIRED}
                 >
                   <span className="shell-empty__cta-btn shell-empty__cta-btn--primary shell-empty__cta-btn--off">
-                    ＋ New task
+                    + New task
                   </span>
                 </DisabledIconControl>
               )}

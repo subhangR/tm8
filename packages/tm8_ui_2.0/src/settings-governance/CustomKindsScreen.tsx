@@ -306,7 +306,7 @@ function NewKindCard({
             className="gov-btn gov-btn--dashed set-kinds__add"
             onClick={() => setDraft({ ...draft, fields: [...draft.fields, newField()] })}
           >
-            ＋ field
+            Add field
           </button>
         </KindGroup>
 

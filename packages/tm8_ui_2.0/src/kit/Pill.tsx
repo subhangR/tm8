@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 export type PillTone = 'run' | 'wait' | 'block' | 'info' | 'idle' | 'brand';
 
 /**
- * Pill — status token: soft fill + colored WORD (status is always color +
+ * Pill — status token: neutral card + colored WORD (status is always color +
  * word, never color alone). Optional leading dot; `dot="pulse"` is the
  * streaming/live marker (T0-1 "● live").
  * `outline` renders the T0-3 list-header filter/sort variant instead of a

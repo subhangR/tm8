@@ -149,19 +149,17 @@
   padding: 10px 12px;
   border: 1px solid var(--pn-line);
 }
-/* TRUSTED — the oracle's green card (line 693). See the header note on the
-   two derived alphas. */
+/* Trust is already named and carried by its status mark. The bounded group
+   stays neutral so state colour does not wash an entire card. */
 .cv2-root .gb-trust--on {
-  border-color: color-mix(in srgb, var(--pn-run) 35%, transparent);
-  background: color-mix(in srgb, var(--pn-run) 6%, transparent);
+  border-color: var(--pn-line);
+  background: var(--pn-card);
 }
-/* UNTRUSTED — NOT DRAWN BY THE ORACLE, which only ever shows the trusted
-   card. Built on the idle ramp at the same alphas: an untrusted root is a
-   governed DEFAULT, not an error, so it must not wear the block tone. This
-   is a ruling I made alone; it is one class to change. */
+/* UNTRUSTED is also neutral: it is a governed default, not an error, and the
+   explicit status wording carries the distinction. */
 .cv2-root .gb-trust--off {
-  border-color: color-mix(in srgb, var(--pn-idle) 45%, transparent);
-  background: color-mix(in srgb, var(--pn-idle) 8%, transparent);
+  border-color: var(--pn-line);
+  background: var(--pn-card);
 }
 /* NO RECORD READ — neither answer. No tinted fill at all, because a tint here
    is what would make an unread state look like a decided one. */

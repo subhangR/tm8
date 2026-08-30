@@ -89,6 +89,36 @@ export interface HomePageProps {
   onOpenWorkspace(): void;
 }
 
+/* WHICH CARDS HAVE A WIDE NOUN — registry data, not a selector list.
+ *
+ * A map row holds its noun and its count side by side. Measured in the live
+ * build (`ui-calm-pass/laneb-budget.mjs`, every count forced visible): a row
+ * spends 50px on chrome, the widest ROW count is 56px (`612 · 8 live`), and
+ * the widest noun the registry can hand this card is `Interaction profiles` at
+ * 114px. So only a card carrying a noun near that width can ever be forced to
+ * choose between the two, and only that card should drop its count.
+ *
+ * The stylesheet cannot ask "how long is this card's longest label", so the
+ * card answers in `data-noun` and `home-page.css` queries the answer. Deciding
+ * it here — from `labelPlural`, which is registry data — is what keeps the rule
+ * from rotting the next time a label changes, and it names no kind (§15.2).
+ *
+ * The conversion is measured, not assumed: `Interaction profiles` is 20
+ * characters and 114px, `Pull requests` is 13 and 74px — 5.7px per character
+ * across both. WIDE_NOUN_PX sits between them so that the group carrying the
+ * long noun is wide and the busiest group (WORK) is not.
+ */
+const NOUN_PX_PER_CHAR = 5.7;
+const WIDE_NOUN_PX = 100;
+
+function hasWideNoun(group: EntityNavigationGroup): boolean {
+  const longest = group.items.reduce(
+    (most, item) => Math.max(most, item.config.labelPlural.length),
+    0,
+  );
+  return longest * NOUN_PX_PER_CHAR > WIDE_NOUN_PX;
+}
+
 function WorkspaceOverview({
   groups,
   activeKind,
@@ -104,23 +134,19 @@ function WorkspaceOverview({
 
   return (
     <section
-      className="hp-overview k-hero k-accent-top k-enter"
+      className="hp-overview k-enter"
       aria-labelledby="hp-overview-title"
       data-testid="hp-entity-overview"
     >
       <header className="hp-overview__head">
-        <div className="hp-overview__copy">
-          <span className="k-label">Workspace map</span>
-          <h2 id="hp-overview-title">Everything connected, one move away</h2>
-          <p>{summary.kinds} entity types across the work, context, and people around you.</p>
-        </div>
+        {/* One line of chrome, not four. The map's job is the menu of nouns
+            beneath it; a headline and a sentence restating what the reader can
+            already see were two rows of vertical budget the WORK card needed
+            (owner, 2026-08-29: the card was clipped mid-row by the panel's
+            bottom edge). "19 entity types" also still reads on the rail mast. */}
+        <h2 id="hp-overview-title" className="hp-overview__title">Workspace map</h2>
         <div className="hp-overview__pulse" aria-label="Workspace totals">
-          <EntityNavigationMetrics
-            total={summary.total}
-            unseen={summary.unseen}
-            live={summary.live}
-            density="full"
-          />
+          <EntityNavigationMetrics total={summary.total} live={summary.live} density="full" />
           <button
             type="button"
             className="k-btn k-btn--secondary k-btn--sm"
@@ -139,17 +165,19 @@ function WorkspaceOverview({
               key={group.id}
               className="hp-overview__family"
               data-active={groupIsActive ? 'true' : undefined}
+              /* The card tells the stylesheet how long its longest noun is, so
+                 the count budget in `home-page.css` can bind on the ONE card
+                 where the noun and the count genuinely compete instead of
+                 emptying every card to protect it. See `hasWideNoun`. */
+              data-noun={hasWideNoun(group) ? 'wide' : undefined}
+              /* The description moves to the hover text: it was a permanently
+                 ellipsed line ("Plan, run, and ship the work i…") spending a
+                 row of the card's height to say nothing it finished saying. */
+              title={group.description}
             >
               <div className="hp-overview__family-head">
-                <div>
-                  <h3>{group.label}</h3>
-                  <p>{group.description}</p>
-                </div>
-                <EntityNavigationMetrics
-                  total={group.total}
-                  unseen={group.unseen}
-                  live={group.live}
-                />
+                <h3>{group.label}</h3>
+                <EntityNavigationMetrics total={group.total} live={group.live} />
               </div>
               <div className="hp-overview__kinds" aria-label={`${group.label} entity types`}>
                 {group.items.map((item) => (
@@ -167,11 +195,14 @@ function WorkspaceOverview({
                       <KindIcon kind={item.config.kind} />
                     </span>
                     <span className="hp-overview__kind-name">{item.config.labelPlural}</span>
-                    <EntityNavigationMetrics
-                      total={item.counts?.total}
-                      unseen={item.counts?.unseen}
-                      live={item.live}
-                    />
+                    {/* ONE number per row. The unseen pill is deliberately not
+                        passed: a row carrying both a total and an "N new" chip
+                        is what squeezed these nouns down to `Tas…`, `Do…`,
+                        `Pul…`, and "2078 new out of 2283" was never the fact
+                        the reader wanted (owner ruling, 2026-08-29). The exact
+                        unseen count still reads in the button's accessible name
+                        and hover text via `entityNavigationLabel`. */}
+                    <EntityNavigationMetrics total={item.counts?.total} live={item.live} />
                   </button>
                 ))}
               </div>

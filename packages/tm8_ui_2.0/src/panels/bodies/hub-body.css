@@ -42,6 +42,11 @@
   flex-wrap: wrap;
 }
 .cv2-root .hub-tab {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
   font-family: var(--pn-mono);
   font-size: 10px;
   color: var(--pn-ink-3);
@@ -49,6 +54,18 @@
   border-radius: var(--pn-r-pill);
   padding: 2px 9px;
   background: var(--pn-card);
+}
+.cv2-root .hub-tab__label {
+  min-width: min-content;
+  overflow-wrap: anywhere;
+}
+.cv2-root .hub-tab__count {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 5ch;
+  overflow: hidden;
+  color: var(--pn-ink-4);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

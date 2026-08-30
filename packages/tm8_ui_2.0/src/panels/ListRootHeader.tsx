@@ -49,7 +49,7 @@ function birthVerbFor(option: ListRootOption): BirthVerb {
     };
   }
   return {
-    glyph: '＋',
+    glyph: '+',
     label: `New ${option.single.toLowerCase()}`,
     /* D3 generalized: the entity exists the instant you press, and the SAVE
        flow is what names it. The title says so rather than promising a form. */
@@ -166,7 +166,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
               title="Start a new conversation"
               onClick={chats.onCreate}
             >
-              <span aria-hidden>＋</span>
+              <span aria-hidden>+</span>
             </button>
           </div>
         ) : null}

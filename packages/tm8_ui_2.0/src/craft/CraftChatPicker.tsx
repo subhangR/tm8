@@ -127,7 +127,7 @@ export function CraftChatPicker({
           onNewChat();
         }}
       >
-        <span aria-hidden>＋</span>
+        <span aria-hidden>+</span>
       </button>
 
       {open ? (
@@ -148,8 +148,8 @@ export function CraftChatPicker({
                 {query.trim()
                   ? 'Nothing loaded here matches.'
                   : showAll
-                    ? 'No conversations in this space yet. Start one with ＋.'
-                    : 'No craft conversations on this blueprint yet. Start one with ＋, or show every conversation below.'}
+                    ? 'No conversations in this space yet. Start one with +.'
+                    : 'No craft conversations on this blueprint yet. Start one with +, or show every conversation below.'}
               </p>
             ) : null}
             {groups.map((group) => (

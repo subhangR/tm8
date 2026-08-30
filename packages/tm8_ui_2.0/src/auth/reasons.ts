@@ -78,7 +78,7 @@ export const NAME_SERVER: UnavailableReason = {
  */
 export const CREATE_SPACE: UnavailableReason = {
   cause: 'Creating a space isn’t connected',
-  remedy: 'spaces.create is a v1 contract op the stamped seam does not expose (same gap D13 rules for the tab bar’s ＋)',
+  remedy: 'spaces.create is a v1 contract op the stamped seam does not expose (same gap D13 rules for the tab bar’s +)',
 };
 
 /** 1d — sign in with a handle and password (review board only). */

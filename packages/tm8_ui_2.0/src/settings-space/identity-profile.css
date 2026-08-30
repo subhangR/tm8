@@ -182,7 +182,7 @@
   position: sticky;
   bottom: 0;
   z-index: 1;
-  background: var(--pn-surface);
+  background: var(--pn-card);
   display: flex;
   align-items: center;
   gap: 12px;

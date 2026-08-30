@@ -107,7 +107,7 @@ describe('collapsing a band from its header', () => {
     const nowHead = document.querySelector('.gv-band__head') as HTMLElement;
     expect(nowHead.getAttribute('aria-expanded')).toBe('false');
     // THE HONESTY CHECK: the hidden nodes are named, with their remedy.
-    expect(screen.getByText(new RegExp(`${count} in collapsed band`))).toBeTruthy();
+    expect(screen.getByText(new RegExp(`Collapsed band · ${count}`))).toBeTruthy();
     // And the band it belongs to is still on the canvas to be reopened.
     expect(document.querySelector('.gv-band--collapsed')).toBeTruthy();
     // Exactly that band's cards left the canvas — no more, no fewer. This is
@@ -121,9 +121,9 @@ describe('collapsing a band from its header', () => {
     chooseGroup('Kind');
     const head = () => document.querySelector('.gv-band__head') as HTMLElement;
     fireEvent.click(head());
-    expect(screen.queryByText(/in collapsed band/)).toBeTruthy();
+    expect(screen.queryByText(/Collapsed band/)).toBeTruthy();
     fireEvent.click(head());
-    expect(screen.queryByText(/in collapsed band/)).toBeNull();
+    expect(screen.queryByText(/Collapsed band/)).toBeNull();
     expect(document.querySelector('.gv-band--collapsed')).toBeNull();
   });
 
@@ -131,8 +131,8 @@ describe('collapsing a band from its header', () => {
     mount();
     chooseGroup('Kind');
     fireEvent.click(document.querySelector('.gv-band__head') as HTMLElement);
-    expect(screen.queryByText(/in collapsed band/)).toBeTruthy();
+    expect(screen.queryByText(/Collapsed band/)).toBeTruthy();
     chooseGroup('Signal');
-    expect(screen.queryByText(/in collapsed/)).toBeNull();
+    expect(screen.queryByText(/Collapsed band/)).toBeNull();
   });
 });

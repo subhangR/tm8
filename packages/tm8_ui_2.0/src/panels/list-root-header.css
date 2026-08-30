@@ -173,10 +173,19 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  /* ONE COLUMN FOR EVERY ROW. The glyph is per-kind — `＋` is fullwidth and
-     `▮` is not — so sizing to content made the control jump 6px sideways as
-     the pointer travelled from Sessions to its neighbours. The floor is the
-     wider of the two, and the label (flex: 1) absorbs the difference. */
+  /* ONE COLUMN FOR EVERY ROW. The glyph is per-kind, so sizing to content made
+     the control jump sideways as the pointer travelled from Sessions to its
+     neighbours. A fixed FLOOR is what removes the jump, and the label (flex: 1)
+     absorbs the difference.
+     The floor was originally chosen as the wider of `＋` (U+FF0B FULLWIDTH
+     PLUS) and `▮`. The fullwidth plus is gone as of the 2026-08-30 sweep — it
+     has no glyph in the shipped latin-subset webfonts and drew as an FF/0B tofu
+     box — and the create control now emits ASCII `+`. 29px stays: the number's
+     JOB is to be a floor wide enough for every glyph in the set, not to trace
+     the widest one, so a narrower character makes it more comfortably a floor
+     rather than wrong. Recorded because the previous sentence named a character
+     this file no longer contains, and a rule that misdescribes its own budget
+     is how the next person reasons from a number that stopped being true. */
   min-inline-size: 29px;
   padding: 0 7px;
   border: 0;

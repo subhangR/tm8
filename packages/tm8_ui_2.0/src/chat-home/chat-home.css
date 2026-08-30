@@ -1984,7 +1984,7 @@ button.tch-entity-chip:focus-visible { outline: 2px solid var(--pn-focus, var(--
 /* THE REFUSED-ATTACH CONTROL WAS THE TALLEST THING IN THE ROW, at 50px against
    a 44px floor — `rich-input.css` gives `.ri-card__foot .hon-disabled` a
    `min-height` and the `DisabledIconControl` inside it adds its own box on top.
-   It is a `＋` in the same slot as `.tch-attach`, so the two must measure the
+   It is a `+` in the same slot as `.tch-attach`, so the two must measure the
    same or the row's height depends on whether this surface happens to have an
    attachment port wired. Pinned to the floor exactly, both axes, the way
    `.tch-attach` is. */

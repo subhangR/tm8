@@ -4,7 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { Avatar, BootLoader, Btn, Chip, Eyebrow, IconBtn, Kbd, Pill } from './index';
+import {
+  Avatar,
+  BootLoader,
+  Btn,
+  Chip,
+  Eyebrow,
+  IconBtn,
+  Kbd,
+  LabelCountBadge,
+  Pill,
+} from './index';
 
 describe('kit primitives', () => {
   it('Pill carries tone class and the word (never color alone)', () => {
@@ -17,6 +27,61 @@ describe('kit primitives', () => {
   it('Pill outline variant renders the filter form', () => {
     const { container } = render(<Pill outline>filter ▾</Pill>);
     expect(container.querySelector('.kit-pill--outline')).not.toBeNull();
+  });
+
+  it('LabelCountBadge keeps the noun separate and tooltips the expendable count', () => {
+    const { container, getByText } = render(
+      <LabelCountBadge label="Sessions" count="2,281 new" />,
+    );
+    const badge = container.querySelector('.kit-label-count');
+    expect(getByText('Sessions').className).toBe('kit-label-count__label');
+    expect(container.querySelector('.kit-label-count__quantity')?.textContent).toBe('2,281 new');
+    expect(badge?.getAttribute('title')).toBe('Sessions: 2,281 new');
+  });
+
+  // The three halves of the width budget. The first is the one that matters
+  // most: an earlier revision of this badge exempted the noun with
+  // `flex: 0 0 auto`, and an unshrinkable child does not truncate — it
+  // overflows and paints across its neighbour. `max-width: 100%` caps the box,
+  // not the text. Never re-exempt the label; change the ratio instead.
+  it('LabelCountBadge clips at the root so nothing paints over a neighbour', () => {
+    const root = block(kitCss, '.kit-label-count {', 'kit.css');
+    expect(root).toMatch(/min-width:\s*0/);
+    expect(root).toMatch(/max-width:\s*100%/);
+    expect(root).toMatch(/overflow:\s*hidden/);
+  });
+
+  it('LabelCountBadge lets the noun shrink — last, and only to its floor', () => {
+    const label = block(kitCss, '.kit-label-count__label', 'kit.css');
+    // It MUST be able to shrink; `flex: 0 0 auto` here is the overflow bug.
+    expect(label).not.toMatch(/flex:\s*0 0 auto/);
+    expect(label).toMatch(/flex:\s*0 1 auto/);
+    // `text-overflow` cannot reach an anonymous text run — block is required.
+    expect(label).toMatch(/display:\s*block/);
+    expect(label).toMatch(/overflow:\s*hidden/);
+    expect(label).toMatch(/text-overflow:\s*ellipsis/);
+    // The floor is per-surface and defaults to 0, so a short noun such as
+    // "PRs" is never padded out to a floor it does not need.
+    expect(label).toMatch(/min-width:\s*var\(--kit-label-floor,\s*0\)/);
+  });
+
+  it('LabelCountBadge makes the count yield first, by ratio not by exemption', () => {
+    const label = block(kitCss, '.kit-label-count__label', 'kit.css');
+    const quantity = block(kitCss, '.kit-label-count__quantity', 'kit.css');
+    expect(quantity).toMatch(/min-width:\s*0/);
+    expect(quantity).toMatch(/overflow:\s*hidden/);
+    expect(quantity).toMatch(/text-overflow:\s*ellipsis/);
+    const shrink = (rule: string) => Number(/flex:\s*\d+\s+(\d+)\s+auto/.exec(rule)![1]);
+    expect(shrink(quantity)).toBeGreaterThan(shrink(label));
+  });
+
+  it('LabelCountBadge accepts precise count tooltip copy', () => {
+    const { container } = render(
+      <LabelCountBadge label="Pull requests" count={121} countTooltip="121 pull requests" />,
+    );
+    expect(container.querySelector('.kit-label-count')?.getAttribute('title')).toBe(
+      '121 pull requests',
+    );
   });
 
   it('Eyebrow renders mono micro-label with faint variant', () => {
@@ -188,9 +253,9 @@ describe('kit focus rings — every interactive atom, one grammar', () => {
     );
   });
 
-  it('ActorRef via/session buttons gained hover feedback (they had zero state CSS)', () => {
+  it('ActorRef via/session buttons gain calm border feedback (they had zero state CSS)', () => {
     expect(block(kitCss, 'button.kit-actorref__via:hover', 'kit.css')).toMatch(
-      /background:\s*var\(--pn-hover\)/,
+      /border-color:\s*var\(--pn-line-2\)/,
     );
   });
 
@@ -206,6 +271,31 @@ describe('kit focus rings — every interactive atom, one grammar', () => {
     expect(block(kitCss, ".kit-iconbtn[aria-disabled='true']:hover", 'kit.css')).toMatch(
       /background:\s*transparent/,
     );
+  });
+});
+
+describe('calm primitive surfaces', () => {
+  it('status pills keep semantic ink on a neutral bordered card', () => {
+    const pill = block(kitCss, '.kit-pill {', 'kit.css');
+    expect(pill).toMatch(/background:\s*var\(--pn-card\)/);
+    expect(pill).toMatch(/border:\s*1px solid var\(--pn-line\)/);
+    expect(block(kitCss, '.kit-pill--run', 'kit.css')).not.toMatch(/background/);
+  });
+
+  it('avatars keep stable identity at a hairline instead of a tinted fill', () => {
+    const avatar = block(kitCss, '.kit-avatar.kit-avatar {', 'kit.css');
+    expect(avatar).toMatch(/background:\s*var\(--pn-card\)/);
+    expect(avatar).toMatch(/border:\s*1px solid var\(--kit-avatar-tone\)/);
+    expect(avatar).not.toMatch(/color-mix/);
+  });
+
+  it('chip and icon-button hover states strengthen edges without tint fields', () => {
+    const chip = block(kitCss, '.kit-chip:hover', 'kit.css');
+    expect(chip).toMatch(/background:\s*var\(--pn-card\)/);
+    expect(chip).toMatch(/border-color:\s*var\(--pn-line-2\)/);
+    const icon = block(kitCss, '.kit-iconbtn:hover', 'kit.css');
+    expect(icon).toMatch(/background:\s*transparent/);
+    expect(icon).toMatch(/border-color:\s*var\(--pn-line\)/);
   });
 });
 
@@ -293,9 +383,9 @@ describe('kinetic grammar — button/input/label/icon CSS contract', () => {
     expect(dead).toMatch(/cursor:\s*not-allowed/);
   });
 
-  it('variant surfaces: primary ink, brand blue, secondary card+line-2, ghost transparent', () => {
+  it('variant surfaces: purposeful fills, calm bordered neutrals, no mixed hover tints', () => {
     expect(block(kitCss, '.k-btn--primary', 'kit.css')).toMatch(/background:\s*var\(--pn-ink\)/);
-    expect(block(kitCss, '.k-btn--primary:hover', 'kit.css')).toMatch(/color-mix/);
+    expect(block(kitCss, '.k-btn--primary:hover', 'kit.css')).not.toMatch(/color-mix/);
     expect(block(kitCss, '.k-btn--brand', 'kit.css')).toMatch(/background:\s*var\(--pn-brand\)/);
     expect(block(kitCss, '.k-btn--brand:hover', 'kit.css')).toMatch(
       /background:\s*var\(--pn-brand-2\)/,
@@ -307,7 +397,7 @@ describe('kinetic grammar — button/input/label/icon CSS contract', () => {
     expect(ghost).toMatch(/background:\s*transparent/);
     expect(ghost).toMatch(/color:\s*var\(--pn-ink-2\)/);
     expect(block(kitCss, '.k-btn--ghost:hover', 'kit.css')).toMatch(
-      /background:\s*var\(--pn-hover\)/,
+      /border-color:\s*var\(--pn-line\)/,
     );
   });
 
@@ -411,13 +501,14 @@ describe('kinetic motion — every utility has a reduced-motion kill', () => {
     expect(pop).toMatch(/animation-fill-mode:\s*both/);
   });
 
-  it('.k-lift: fast transform+shadow transition, hover rises 1px sm→md', () => {
+  it('.k-lift: a 1px edge strengthens on hover without elevation shadow', () => {
     const lift = block(kitCss, '.k-lift {', 'kit.css');
-    expect(lift).toMatch(/box-shadow:\s*var\(--pn-sh-sm\)/);
-    expect(lift).toMatch(/transform var\(--pn-dur-fast\)/);
+    expect(lift).toMatch(/border:\s*1px solid var\(--pn-line\)/);
+    expect(lift).toMatch(/box-shadow:\s*none/);
     const hover = block(kitCss, '.k-lift:hover', 'kit.css');
-    expect(hover).toMatch(/translateY\(-1px\)/);
-    expect(hover).toMatch(/box-shadow:\s*var\(--pn-sh-md\)/);
+    expect(hover).toMatch(/border-color:\s*var\(--pn-line-2\)/);
+    expect(hover).toMatch(/box-shadow:\s*none/);
+    expect(hover).not.toMatch(/transform/);
   });
 
   it('.k-press and .k-btn both press on :active — and a dead .k-btn does not', () => {
@@ -454,36 +545,30 @@ describe('kinetic motion — every utility has a reduced-motion kill', () => {
   });
 });
 
-describe('kinetic color richness — hero, accent edge, tints', () => {
-  it('.k-hero: 135deg brand→accent-2 color-mix gradient over card, hairline edge', () => {
+describe('calm surfaces — neutral cards and 1px grouping edges', () => {
+  it('.k-hero: card surface and hairline edge, no tint gradient', () => {
     const hero = block(kitCss, '.k-hero', 'kit.css');
-    expect(hero).toMatch(/linear-gradient\(\s*135deg/);
-    expect(hero).toMatch(/color-mix\(in srgb, var\(--pn-brand\) 6%, var\(--pn-card\)\)/);
-    expect(hero).toMatch(
-      /color-mix\(in srgb, var\(--pn-accent-2, var\(--pn-brand\)\) 5%, var\(--pn-card\)\)/,
-    );
+    expect(hero).toMatch(/background:\s*var\(--pn-card\)/);
     expect(hero).toMatch(/border:\s*1px solid var\(--pn-line\)/);
+    expect(hero).not.toMatch(/gradient|color-mix|box-shadow/);
   });
 
-  it('.k-accent-top: a 2px brand→accent-2 gradient ribbon, clipped to the radius', () => {
-    expect(block(kitCss, '.k-accent-top {', 'kit.css')).toMatch(/overflow:\s*hidden/);
-    const edge = block(kitCss, '.k-accent-top::before', 'kit.css');
-    expect(edge).toMatch(/height:\s*2px/);
-    expect(edge).toMatch(
-      /linear-gradient\(90deg, var\(--pn-brand\), var\(--pn-accent-2, var\(--pn-brand\)\)\)/,
-    );
-    expect(edge).toMatch(/pointer-events:\s*none/);
+  it('.k-accent-top: one stronger top hairline, no ribbon pseudo-element', () => {
+    const edge = block(kitCss, '.k-accent-top {', 'kit.css');
+    expect(edge).toMatch(/border-top:\s*1px solid var\(--pn-line-2\)/);
+    expect(kitCss).not.toContain('.k-accent-top::before');
   });
 
   it.each([
-    ['.k-tint-brand', '--pn-brand'],
-    ['.k-tint-run', '--pn-run'],
-    ['.k-tint-wait', '--pn-wait'],
-    ['.k-tint-block', '--pn-block'],
-    ['.k-tint-info', '--pn-info'],
-  ] as const)('%s tints 7%% of %s over the card surface', (cls, token) => {
-    expect(block(kitCss, cls, 'kit.css')).toMatch(
-      new RegExp(`color-mix\\(in srgb, var\\(${token}\\) 7%, var\\(--pn-card\\)\\)`),
-    );
+    ['.k-tint-brand'],
+    ['.k-tint-run'],
+    ['.k-tint-wait'],
+    ['.k-tint-block'],
+    ['.k-tint-info'],
+  ] as const)('%s resolves to the shared neutral card rule', (cls) => {
+    const calm = block(kitCss, cls, 'kit.css');
+    expect(calm).toMatch(/background:\s*var\(--pn-card\)/);
+    expect(calm).toMatch(/border:\s*1px solid var\(--pn-line\)/);
+    expect(calm).not.toMatch(/color-mix|gradient|box-shadow/);
   });
 });

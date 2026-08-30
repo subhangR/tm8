@@ -146,6 +146,13 @@ const PRE_EXISTING_ORPHANS = new Set([
 ]);
 
 describe('chat-home CSS coverage', () => {
+  /* THE FULLWIDTH-PLUS BAN LIVES AT PACKAGE LEVEL, not here. `src/fullwidth-plus-ban.test.ts`
+     runs a lexical scanner over every .ts/.tsx and fails only on the glyph in code the compiler
+     emits — string literals and JSX text — so the comments EXPLAINING the character survive.
+     The lane-local rule this replaces banned the codepoint from every non-test source including
+     comments, which would have failed a future author for documenting the very glyph the sweep
+     removed. A package law also belongs where it turns the PACKAGE red, not one unlucky lane. */
+
   it('a class a component writes is styled, or declared unstyled on purpose', () => {
     const styled = classesStyled();
     const undeclared = [...classesUsed()]

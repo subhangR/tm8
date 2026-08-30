@@ -347,7 +347,7 @@ function AgentCommandsCard({
         <h3 className="fn-card__title">Agent commands</h3>
         <div className="fn-spacer" />
         <DisabledAction reason={PROVIDER_ADD_UNAVAILABLE} label="Add a provider">
-          <span className="fn-btn fn-btn--brass">＋ Provider</span>
+          <span className="fn-btn fn-btn--brass">Add provider</span>
         </DisabledAction>
       </div>
 

@@ -32,7 +32,7 @@
   background: var(--pn-paper);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-lg);
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: none;
 }
 
 .fn-picker__head {
@@ -74,7 +74,7 @@
   padding: 2px var(--pn-space-2);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
-  background: var(--pn-surface);
+  background: var(--pn-card);
   color: var(--pn-ink-2);
   cursor: pointer;
 }
@@ -101,7 +101,7 @@
   padding: 2px var(--pn-space-2);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
-  background: var(--pn-surface);
+  background: var(--pn-card);
   color: var(--pn-ink-2);
   cursor: pointer;
 }

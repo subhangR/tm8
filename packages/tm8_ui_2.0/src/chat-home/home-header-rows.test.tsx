@@ -2,14 +2,14 @@
 /**
  * HOME'S HEADER STOPPED SAYING THE KIND TWICE.
  *
- * The left column drew five stacked rows: the root tabs `[Chats ＋][◫ Tasks ＋ ▾]`,
+ * The left column drew five stacked rows: the root tabs `[Chats +][◫ Tasks + ▾]`,
  * then the hosted list's own kind selector `◫ Tasks ▾`, then search, lifecycle
  * tiers and filters. The second row restated the first — same glyph, same
  * word, and BOTH carets opening a kind menu over one selection — and spent a
  * whole row doing it. The panel now yields that row to the host
  * (`selectorSlot: 'host'`). It used to hand its view switcher up to the header
  * line in exchange; that switcher was removed from every entity list on
- * 2026-08-19, so the header line is now the tablist and the ＋ alone.
+ * 2026-08-19, so the header line is now the tablist and the + alone.
  *
  * WHAT THIS FILE CAN AND CANNOT PROVE. jsdom has no layout engine, so nothing
  * here can count a ROW: `getBoundingClientRect` returns zeros and two controls

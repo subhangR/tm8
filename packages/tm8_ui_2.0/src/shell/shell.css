@@ -134,10 +134,134 @@
 .cv2-root .shell-tabbar__tabs .shell-tabbar__tab--active {
   background: var(--pn-brand-soft);
 }
+
+/* --- THE BAR'S WIDTH BUDGET ----------------------------------------------
+   ("the name of a thing always wins over its count", 2026-08-29.)
+
+   MEASURED, Firefox, the real Utho Prod bar, at three window widths. Every
+   child of the bar carries the flexbox DEFAULT, `flex: 0 1 auto`, and the only
+   item with any grow is `__spacer`. So once the spacer reaches 0 — which it
+   does at 1152px — the bar shrinks EVERYTHING, and what each item actually
+   surrenders is decided by its automatic minimum size, which is its
+   min-content width:
+
+     1512px   spacer 327   nothing shrinks
+     1152px   spacer 0     bar already overflows its own box by 14px
+     1024px   spacer 0     bar overflows by 130px
+
+   At 1024 that resolved to:
+
+     switcher       280.6px   UNCHANGED   `local · this machine` is mono and
+                                          nowrap, so its min-content IS its
+                                          full width and it cannot give a pixel
+     tabs           495.1px   UNCHANGED   seven unbreakable words, same reason
+     palette        112.8 -> 69.7px       broke onto a SECOND LINE inside a
+                                          44px bar
+     bell            35.2 -> 18.5px       a 32px hit target became 18px
+     copy link      102.5 -> 77.2px       rendered as `Cop` / `link`, and its
+                                          right edge sat 20px past the bar's
+     account menu   103.2px               pushed to x=1053 in a 1024px window:
+                                          ENTIRELY OFF SCREEN. No sign-out, no
+                                          theme, no account, at a laptop width.
+
+   THE INVERSION IS THE DEFECT. The bar was surrendering whatever could WRAP,
+   and the only things that can wrap are the multi-word NAMES of controls
+   ("Copy link", "/ palette · ⌘K"). The one thing that never gave way was the
+   machine metadata — not because anyone judged it important, but because mono
+   + nowrap made it structurally incompressible. The layout was deciding by
+   typographic accident instead of by importance, and it decided backwards.
+
+   So the surrender order is stated here, cheapest first:
+
+     1. the spacer                       (already)
+     2. the switcher's SERVER META       — it names a machine, not a place
+     3. the tab ROW scrolls              — every destination word stays whole
+     4. nothing else                     — names and controls do not give way
+
+   This is the width budget the register's Fitts's-Law entry was missing: a
+   rule that is right at 1512 and destroys the surface at 1024 is not yet a
+   rule. Stated as flex weights rather than a breakpoint, so it degrades
+   continuously and there is no width at which the bar suddenly changes shape. */
+
+/* 1. A CONTROL'S NAME IS A NAME. It does not shrink and it does not break.
+      `.copy-link` and `.auth-accountmenu` are the wrappers a host mounts into
+      the bar's slots, so the rule goes on the wrapper — the bar cannot reach
+      inside them and has no business trying (same reasoning as the control
+      grammar below). */
+.cv2-root .shell-tabbar__mark,
+.cv2-root .shell-tabbar__palette,
+.cv2-root .shell-tabbar__bell,
+.cv2-root .shell-tabbar__avatar,
+.cv2-root .shell-tabbar .copy-link,
+.cv2-root .shell-tabbar .auth-accountmenu {
+  flex: none;
+}
+.cv2-root .shell-tabbar__palette,
+.cv2-root .shell-tabbar .copy-link__button,
+.cv2-root .shell-tabbar .auth-accountmenu__trigger {
+  white-space: nowrap;
+}
+
+/* 3. DESTINATION WORDS STAY WHOLE; the row scrolls instead.
+      Truncating a tab to `Settin…` would be the same defect one level down —
+      and unlike a truncated label, a scrolled row still lets you reach the
+      tab. `min-width: 0` is what lets the nav shrink below its seven words at
+      all; without it the nav is incompressible and the deficit lands back on
+      the controls. The scrollbar is hidden because the tray is 32px tall and
+      a gutter inside it would eat the segment height. */
+.cv2-root .shell-tabbar__tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cv2-root .shell-tabbar__tabs::-webkit-scrollbar {
+  display: none;
+}
+.cv2-root .shell-tabbar__tabs .shell-tabbar__tab {
+  flex: none;
+  white-space: nowrap;
+}
+/* A scroll container clips its content, and the tab's focus ring is drawn
+   OUTSIDE its box (`outline-offset: 1px`), so the first and last tab would
+   lose theirs to the clip. Inset it, exactly as this file already does for
+   the rail rows and the switcher's popover rows, which sit in scrollers for
+   the same reason. */
+.cv2-root .shell-tabbar__tabs .shell-tabbar__tab:focus-visible {
+  outline-offset: -2px;
+}
+
 /* The identity block, re-hosted (R1): the same SpaceSwitcher, drawn as a
    compact pill — space and server on one line, popover dropping below. */
+/* 2. THE SWITCHER GIVES WAY FIRST, and gives its METADATA before its NAME.
+      `flex: 0 8 auto` weights the shrink: flexbox distributes a deficit by
+      (shrink factor × base size), so at 280px base the chip absorbs ~82% of
+      whatever the bar is short before the tab row is asked for anything. It
+      absorbs it down to a floor and no further.
+
+      THE FLOOR IS STATED HERE, ON THE CHIP, and it is not `0`. It was `0`
+      first, and measuring that found the law broken from the other side: at
+      900px the chip shrank to a width of ZERO and the space name — WHERE YOU
+      ARE, the single most identifying word in the bar — disappeared entirely,
+      while `Copy link` beside it sat at its full 102.5px. A budget that
+      protects control labels by spending the one name that says which
+      workspace you are looking at has not fixed the inversion, it has moved
+      it.
+
+      120px is the chip at its floor, summed from its own parts rather than
+      chosen: 20px trigger padding + 16px monogram + 12px (two 6px gaps) + 8px
+      caret = 52px of chrome, plus the ~68px that nine characters of space name
+      need — the floor `__names` protects below. The server line is at nothing
+      by this point, which is correct: it is the metadata, and it goes first.
+
+      It was 96px (six characters) for one measured pass, and that was still
+      too mean. At 1024px the meta had already collapsed to a bare dot and the
+      name STILL rendered `Utho Pr…` — the law broken by a hair rather than by
+      a mile, but broken. A floor that truncates the name while `Copy link`
+      beside it sits at its full width is the same inversion in miniature. */
 .cv2-root .shell-tabbar .shell-switcher {
   padding: 0;
+  flex: 0 8 auto;
+  min-width: 120px;
 }
 .cv2-root .shell-tabbar .shell-switcher__trigger {
   width: auto;
@@ -148,18 +272,66 @@
   gap: 6px;
   background: var(--pn-active);
   border-radius: var(--pn-r-pill);
+  min-width: 0;
+  /* `max-width` IS LOAD-BEARING, and it is not belt-and-braces for the
+     `width: auto` above. The trigger is a <button>, and a button resolves
+     `width: auto` to its MAX-CONTENT, not to its containing block — so with
+     the chip shrinking, the button simply ignored its parent's new width and
+     kept drawing all 280.6px of itself, straight across the tab row. Measured
+     at 1024px: chip box 105.6px, trigger 280.6px, and "Board" rendering as
+     `oard` behind the pill. The base rule's `width: 100%` was hiding this;
+     changing it to `auto` for the compact pill uncovered it. This clamps the
+     shrink-to-fit to the box, which is what lets `__names` below shrink at
+     all. */
+  max-width: 100%;
 }
 .cv2-root .shell-tabbar .shell-switcher__names {
-  flex: none;
+  flex: 0 1 auto;
   flex-direction: row;
   align-items: baseline;
   gap: 6px;
+  min-width: 0;
 }
 /* The chip's SPACE NAME is a primary label: Figtree 13/600 (the base rule
    carries family and weight; only the compact size was overriding it down).
    The server meta beside it stays mono-data — it names a machine. */
 .cv2-root .shell-tabbar .shell-switcher__space { font-size: var(--pn-fs-sm); }
 .cv2-root .shell-tabbar .shell-switcher__server-line { font-size: var(--pn-fs-fine); }
+/* WHICH OF THE TWO GIVES WAY, and in what order. The space is WHERE YOU ARE;
+   the server line is which machine is serving it. One is the name of a thing
+   and the other is a fact about it, so the fact goes first — at twelve times
+   the rate, and all the way to nothing if the width demands it.
+
+   The name is not exempt, only protected: a space called
+   "Engineering — Platform" must still be able to truncate, or it becomes the
+   new incompressible thing and we have simply moved the defect. It shrinks
+   last and never past `9ch`, and it keeps the ellipsis the base rule already
+   gives it. Ellipsis is a truncated name; it is not a missing one.
+
+   NINE, not six, and the number was measured rather than picked: six left
+   "Utho Prod" — nine characters, a perfectly ordinary space name — rendering
+   as `Utho Pr…` at 1024px even after the server meta had gone to a bare dot.
+   The floor has to clear a real name, not a token one. */
+.cv2-root .shell-tabbar .shell-switcher__space {
+  flex: 0 1 auto;
+  min-width: 9ch;
+}
+/* Laid out as a BLOCK here rather than the base rule's flex row, because
+   `text-overflow` acts on a block's inline content and cannot reach the
+   anonymous text run inside a flex container — as a flex row this line
+   truncated by hard clipping, mid-glyph. The dot keeps its place and its
+   5px as an inline-block, which is the same spacing the flex `gap` drew. */
+.cv2-root .shell-tabbar .shell-switcher__server-line {
+  display: block;
+  flex: 0 12 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+.cv2-root .shell-tabbar .shell-switcher__server-line .shell-rail__server-status {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 5px;
+}
 .cv2-root .shell-tabbar .shell-switcher__monogram {
   width: 16px;
   height: 16px;
@@ -170,30 +342,20 @@
   top: calc(100% + 6px);
   left: 0;
 }
-/* The palette chip rides the same 32px control rhythm as the bell and the
-   avatar. RECLASSIFIED (W3 sweep): "palette" is a chip WORD, so the chip
-   speaks Figtree at the interactive floor — the ⌘K it prints rides along in
-   the same face because the words and keys share one text node. Hover keeps
-   the W3 lift and gains the kit grammar's quiet fill; neither touches the
-   brand accent, which stays with selection. */
+/* The palette chip. RECLASSIFIED (W3 sweep): "palette" is a chip WORD, so the
+   chip speaks Figtree at the interactive floor — the ⌘K it prints rides along
+   in the same face because the words and keys share one text node. Hover keeps
+   the W3 lift; it never touches the brand accent, which stays with selection.
+
+   Its BOX — height, border, radius, background, inset, the resting type — is
+   no longer stated here. It is one of the four controls in the right cluster
+   and it takes that cluster's single grammar (see "ONE CONTROL GRAMMAR" below
+   the account rules). Restating the same eight declarations per control is how
+   the four drifted into three heights in the first place. */
 .cv2-root .shell-tabbar__palette {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  box-sizing: border-box;
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-sm);
-  font-weight: 500;
-  color: var(--pn-ink-2);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  padding: 0 10px;
-  background: var(--pn-card);
-  cursor: pointer;
   transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-root .shell-tabbar__palette:hover {
-  background: var(--pn-hover);
   box-shadow: var(--pn-sh-sm);
 }
 .cv2-root .shell-tabbar__avatar {
@@ -220,6 +382,82 @@
   width: 22px;
   height: 22px;
   font-size: 9.5px;
+}
+
+/* --- ONE CONTROL GRAMMAR FOR THE BAR'S RIGHT CLUSTER ---------------------
+   ("organise the icons", 2026-08-29.)
+
+   MEASURED, at 1512px, on every one of the eight routes: the four controls
+   after the spacer rendered as FOUR different objects.
+
+     palette     32px   1px solid --pn-line   r-sm    --pn-card
+     bell        32px   1px solid --pn-line   r-sm    --pn-card
+     copy link   26.6px 2px OUTSET            0px     ButtonFace   <-- the UA
+     account     21.8px 1px transparent       pill    transparent
+
+   Three heights, three border grammars, three radii, in a 44px bar. The copy
+   link was the loud one: `share/copy-link.css` sets only `display` and `gap`
+   on `.copy-link__button`, so that control had NO border, background, height
+   or radius of its own and fell all the way through to the user agent's
+   `border: 2px outset ButtonBorder` — the grey 3-D system button visible in
+   both of the owner's screenshots, wedged between two designed chips. That is
+   not a colour choice anyone made; it is the absence of one.
+
+   The bar asserts the rhythm on WHATEVER A HOST MOUNTS IN ITS SLOTS, which is
+   the only place that can be done: `shareSlot` and `accountSlot` are opaque
+   `ReactNode`s by design (SpaceTabBar has no business knowing how a link is
+   built), so the bar cannot style them at the source and must not try to. It
+   is also the pattern this file already used for the account trigger directly
+   above. Descendant-scoped `.shell-tabbar` so nothing outside the bar moves:
+   the same CopyLinkControl mounted in a panel keeps its own clothes.
+
+   The tabs tray, the switcher pill and the product mark are NOT in here. They
+   are the bar's left half — identity and navigation — and they already read as
+   one group. This is the utilities cluster only. */
+.cv2-root .shell-tabbar__palette,
+.cv2-root .shell-tabbar__bell,
+.cv2-root .shell-tabbar .copy-link__button,
+.cv2-root .shell-tabbar .auth-accountmenu__trigger {
+  /* The bar's one control height (W3 sweep), now actually held by all four. */
+  height: 32px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+/* ONE hover for the cluster, matching the palette chip's existing lift. */
+.cv2-root .shell-tabbar__palette:hover,
+.cv2-root .shell-tabbar__bell:hover,
+.cv2-root .shell-tabbar .copy-link__button:hover,
+.cv2-root .shell-tabbar .auth-accountmenu__trigger:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+  border-color: var(--pn-line);
+}
+/* The bell is the cluster's one ICON-ONLY control, so it is square rather
+   than word-width. Kept a real 32x32 target (Fitts) — it does not shrink to
+   its 15px mark. */
+.cv2-root .shell-tabbar__bell {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  color: var(--pn-ink-3);
+}
+/* The account trigger leads with a 22px avatar, so its left inset is the
+   avatar's own — the 10px word inset above would double it. Its open state
+   still comes from auth.css and is untouched. */
+.cv2-root .shell-tabbar .auth-accountmenu__trigger {
+  padding: 0 8px 0 3px;
+  max-width: 180px;
 }
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */
@@ -1273,11 +1511,45 @@
 .cv2-root .shell-empty__dot--wait { background: var(--pn-wait); }
 .cv2-root .shell-empty__dot--block { background: var(--pn-block); }
 .cv2-root .shell-empty__dot--idle { background: transparent; border: 1.5px solid var(--pn-ink-4); }
+/* THE NAME YIELDS LAST — BUT IT DOES YIELD. (2026-08-29, reported against
+   live prod: two rows painting on the same pixels in the Work view's empty
+   centre, "Calm pass N — Craft, prompts & doc-edit: consistent bordered
+   sections" rendered straight through "Calm pass lane I — Graph running".)
+
+   This was `flex: none` with no `min-width: 0`, no `overflow` and no
+   `text-overflow`. So the name could neither shrink NOR truncate, and
+   `__groups` is `repeat(auto-fit, minmax(360px, 1fr))` while `__group` only
+   sets `min-width: 0` — nothing in the chain clips. A long session name
+   therefore overflowed its own grid track and painted across the column
+   beside it. Two different rows, same pixels, both unreadable.
+
+   NOTE WHAT IT WAS SITTING NEXT TO, because that is the whole lesson:
+   `__meta` and `__record` below already carry `min-width: 0`, `overflow:
+   hidden` and `text-overflow: ellipsis`. THE DATA HAD BEEN TAUGHT TO GIVE WAY
+   AND THE NAME HAD NOT. That reads like the label-over-count law being
+   honoured, and it is the law applied without a width budget — the exact
+   cautionary tale the calm-pass brief names, and the same failure the top
+   bar had: whoever cannot yield wins the space, whether or not they should.
+
+   "The name beats its count" is a rule about ORDER, not about immunity. An
+   ellipsis is the name giving way honestly; an overlap is the name destroying
+   someone else's row. So the order is stated instead: the record and the meta
+   surrender first (eight times faster, below), and the name is the last thing
+   to lose a pixel — down to a 12ch floor, never past it.
+
+   The status WORD stays `flex: none` deliberately and is NOT put in the
+   surrender order. C8/L10 requires status to be colour plus word, so `run…`
+   or a dropped word would trade a layout bug for an accessibility one, and it
+   is eight characters at most. */
 .cv2-root .shell-empty__name {
   font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink);
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Status is colour + WORD, always (C8/L10). RECLASSIFIED (W3 sweep): the
    word is a word — ui 11/600; the tone colours are unchanged. The meta and
@@ -1302,6 +1574,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Eight, so these two reach their ellipsis well before the name reaches
+     its floor. They already knew how to give way; this says they go FIRST.
+     A model id and a recorded status readout are facts about the row — the
+     name is which row it is. */
+  flex: 0 8 auto;
 }
 /* RECLASSIFIED (W3 sweep): "+N more in Sessions" is a sentence — ui 12. */
 .cv2-root .shell-empty__more {
@@ -1772,23 +2049,14 @@
 
    The former `.shell-tabbar__help` selector was retired with the `?` control
    on 2026-08-20: Help now owns the final shipped tab. */
+/* Its BOX comes from the right cluster's one grammar, exactly as the palette
+   chip's does — see "ONE CONTROL GRAMMAR" up by the account rules, which also
+   carries the square-and-centred override this control needs as the cluster's
+   only icon-only member. Only the hover lift is stated here. */
 .cv2-root .shell-tabbar__bell {
-  display: grid;
-  place-items: center;
-  /* 32px — the bar's control rhythm (W3 sweep), same as the palette chip
-     beside it. */
-  width: 32px;
-  height: 32px;
-  box-sizing: border-box;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-card);
-  color: var(--pn-ink-3);
-  font-size: 12px;
-  cursor: pointer;
   transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); background: var(--pn-hover); box-shadow: var(--pn-sh-sm); }
+.cv2-root .shell-tabbar__bell:hover { box-shadow: var(--pn-sh-sm); }
 .cv2-root .shell-tabbar__bell[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
 
 /* Kinetic (W3) — the bar's hover-lift transitions, stilled for anyone who

@@ -311,7 +311,7 @@ function ProjectRegistryCard() {
       title="Project registry"
       subtitle="node admin"
       action={
-        <RefusedControl reason={GOVERNANCE_REASONS.newProject} glyph="＋" emphasis="primary">
+        <RefusedControl reason={GOVERNANCE_REASONS.newProject} emphasis="primary">
           New project
         </RefusedControl>
       }
@@ -543,7 +543,7 @@ export function SessionProjectsCard({ projects }: { projects?: SessionProjects }
               )
             }
           />
-          <RefusedControl reason={GOVERNANCE_REASONS.associateProject} glyph="＋">
+          <RefusedControl reason={GOVERNANCE_REASONS.associateProject}>
             associate
           </RefusedControl>
         </div>

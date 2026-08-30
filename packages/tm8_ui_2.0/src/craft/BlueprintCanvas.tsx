@@ -235,7 +235,7 @@ export function BlueprintCanvas({ view, ariaLabel, onOpenEntity, fresh }: Bluepr
           disabled={transform.z >= MAX_Z}
           onClick={() => zoomAbout(ZOOM_STEP)}
         >
-          <span aria-hidden>＋</span>
+          <span aria-hidden>+</span>
         </button>
         <button
           type="button"

@@ -14,7 +14,7 @@ import {
 /**
  * THE FOLD PRIMITIVE's own contract: one hairline head row, content only when
  * open, ARIA wiring intact, state persisted globally per section id, and the
- * empty/reveal choreography that the body's `⋯ N empty sections` line drives.
+ * empty/reveal choreography that the body's one quiet reveal line drives.
  */
 
 beforeEach(() => {
@@ -100,6 +100,19 @@ describe('CollapsibleSection', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
+  it('lets the section name keep width before its count', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'collapsible-section.css'),
+      'utf8',
+    );
+    const label = css.match(/\.cv2-root \.pn-fold__label \{[^}]*\}/)?.[0] ?? '';
+    const count = css.match(/\.cv2-root \.pn-fold__count \{[^}]*\}/)?.[0] ?? '';
+    expect(label).toContain('min-width: min-content');
+    expect(label).not.toContain('text-overflow: ellipsis');
+    expect(count).toContain('flex: 0 1 auto');
+    expect(count).toContain('max-width: 30%');
+  });
+
   it('the reading measure is a token, consumed by the measured body column', () => {
     // jsdom loads no stylesheet, so the 720px cap is pinned at the source: the
     // token exists, and the measured column consumes it for every child.
@@ -111,5 +124,35 @@ describe('CollapsibleSection', () => {
       /\.cv2-root \.pn-body--measured > \* \{[^}]*max-width: var\(--pn-read-measure\)/,
     );
     expect(panels).toMatch(/\.pn-controls__measure \{[^}]*max-width: var\(--pn-read-measure\)/);
+  });
+
+  it('section cards do not shrink, so the scrolling body scrolls instead of truncating', () => {
+    // THE REGRESSION THIS PINS. `.pn-body` is a flex COLUMN with
+    // `overflow: auto`. A flex item's default `flex-shrink: 1` means an
+    // overflowing set of children is crushed to fit rather than overflowing,
+    // so the scrollbar never appears and the content is simply gone. Measured
+    // on prod 2026-08-29: `.sb-description` rendered 41.8px tall against a
+    // 140-240px scrollHeight on 4 of 4 tasks — every task description in the
+    // product clipped to a sliver, which is what "unable to type description
+    // in the task card" turned out to be.
+    //
+    // jsdom applies no stylesheet, so this is pinned at the source like the
+    // reading measure above: the card rule must carry `flex-shrink: 0`, and
+    // the body it lives in must still be the scrolling flex column that makes
+    // that necessary. Either half changing without the other re-opens the bug.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const panels = readFileSync(join(here, '../panels.css'), 'utf8');
+
+    const cardRule = panels.match(
+      /\.cv2-root \.sb-body > \.sb-grid,[\s\S]*?\.cv2-root \.sb-body > \.pn-fold \{([\s\S]*?)\n\}/,
+    );
+    expect(cardRule).not.toBeNull();
+    expect(cardRule![1]).toMatch(/flex-shrink:\s*0/);
+
+    // The premise: `.pn-body` is still a scrolling flex column.
+    const bodyRule = panels.match(/\.cv2-root \.pn-body \{([\s\S]*?)\n\}/);
+    expect(bodyRule).not.toBeNull();
+    expect(bodyRule![1]).toMatch(/flex-direction:\s*column/);
+    expect(bodyRule![1]).toMatch(/overflow:\s*auto/);
   });
 });

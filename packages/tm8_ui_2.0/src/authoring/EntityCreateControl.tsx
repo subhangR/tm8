@@ -36,7 +36,7 @@ export function EntityCreateControl({
   onCreated?: (id: EntityId, result: CommandResult) => void;
   onNotice?: (text: string) => void;
 }) {
-  const label = config.palette?.createLabel ?? '＋ New';
+  const label = config.palette?.createLabel ?? '+ New';
   if (config.createForm === 'file-upload') {
     // A kind whose substance IS its bytes cannot be created before them.
     return (
