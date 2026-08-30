@@ -35,9 +35,48 @@ afterAll(() => {
 });
 
 const css = readFileSync(join(process.cwd(), 'src/graph/graph.css'), 'utf8');
-const rule = (selector: string): string => {
+
+/**
+ * EVERY block a selector opens, in source order — not just the first.
+ *
+ * A first-match helper reads whichever block is declared earliest, which makes
+ * DECLARATION ORDER load-bearing for a test that is supposed to be about
+ * behaviour. Move a `@media (prefers-reduced-motion)` override above its base
+ * rule — ordinary, correct CSS — and a first-match helper reads
+ * `transition: none` and fails a rule that is still right. That is the shape
+ * that broke a sibling lane's panels test on the 2026-08-30 gate.
+ *
+ * Three selectors here open two blocks each, counted by THIS regex rather than
+ * by eye: `.gv-band__head`, `.gv-band__label` and `.gv-legend__title::after`.
+ * Note what does NOT count and why the distinction matters — `.gv-shelf button`
+ * and the grouped `.gv-select__name, .gv-select__chevron` both contain a
+ * selector we assert on, but neither is followed by `{`, so the pattern below
+ * correctly skips them. Counting occurrences of the NAME instead of blocks it
+ * OPENS overstates this by two.
+ */
+const blocks = (selector: string): string[] => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 's'))?.[1] ?? '';
+  return [...css.matchAll(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'gs'))].map((m) => m[1]!);
+};
+
+/**
+ * All of a selector's declarations, joined. `toMatch` therefore asks "in AT
+ * LEAST ONE block", and `not.toMatch` asks "in NO block" — which is the
+ * stronger reading and the one those assertions want.
+ *
+ * THROWS when nothing matches, deliberately. A helper that silently returns ''
+ * makes every `.not.toMatch` pass VACUOUSLY, so a renamed selector reads as a
+ * satisfied invariant. Making that a hard error is structural; a comment asking
+ * the next editor to check would not be.
+ */
+const rule = (selector: string): string => {
+  const found = blocks(selector);
+  if (found.length === 0) {
+    throw new Error(
+      `no CSS block matches "${selector}" in src/graph/graph.css — the selector was renamed or removed, so any assertion about it would pass vacuously`,
+    );
+  }
+  return found.join('\n');
 };
 
 const mountHonestCanvas = () =>
@@ -112,5 +151,32 @@ describe('calm graph CSS invariants', () => {
     // above it, because that one is followed by a comma rather than a brace.
     expect(rule('.gv-select__name')).toMatch(/max-width/);
     expect(rule('.gv-select__name')).toMatch(/text-overflow:\s*ellipsis/);
+  });
+
+  it('draws the Legend disclosure marker as a shape, never as a codepoint', () => {
+    // U+25B8/U+25BE rendered here only via a SYSTEM FALLBACK — the shipped
+    // subsets do not carry them, which is the U+FF0B tofu failure one step from
+    // firing. This marker is the only affordance saying the Legend opens, so on
+    // a viewer whose fallback differs it would read as an inert label.
+    const marker = rule('.gv-legend__title::after');
+    expect(marker).toMatch(/content:\s*''/);
+    expect(marker).toMatch(/border-left:/);
+    expect(marker).toMatch(/border-top:/);
+
+    // Scope: THE STYLESHEET, and nothing more. `css` is graph.css, so this
+    // catches the marker being reintroduced as CSS `content` — it does NOT
+    // reach GraphView.tsx, which still renders ▸/▾ at four sites (the band
+    // collapse indicator, a node snippet, and two select chevrons). Those are
+    // deliberately untouched: the 2026-08-30 enumerated census renders every
+    // codepoint in this package except U+FF0B, so they are not defects. The
+    // marker was converted for the narrower reason that these glyphs come from
+    // a SYSTEM FALLBACK rather than our shipped subsets, and it was the only
+    // affordance saying the Legend opens.
+    expect(css).not.toMatch(/[▸▾]/);
+
+    // BOTH-HALVES DETECTOR: the assertion above is a `.not`, so it would pass
+    // just as happily against an empty string. This proves the file was read
+    // and is non-trivial, so a broken fixture cannot masquerade as a clean bill.
+    expect(css.length).toBeGreaterThan(1000);
   });
 });
