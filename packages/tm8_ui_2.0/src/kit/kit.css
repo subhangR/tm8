@@ -73,13 +73,39 @@
 .cv2-root .kit-pill--block  { color: var(--pn-block); }
 .cv2-root .kit-pill--info   { color: var(--pn-info); }
 .cv2-root .kit-pill--idle   { color: var(--pn-idle); }
-/* `brand` is the one tone that never named a STATE — run/wait/block/info/idle
-   all say what something IS; "brand" says what colour it is. And the budget
-   shows what it was actually being used for: of its three call sites, TWO are
-   counts (`N unread` in messages/ and inbox/). So the tone whose meaning was a
-   colour is the mechanism by which counts became accent — the exact defect,
-   inside the kit. It resolves to ink. Kept API-compatible so no consumer
-   breaks; a count wants LabelCountBadge, not a Pill. */
+/* KNOWN-INCOMPLETE — this rule ships only with the revision described below.
+   `brand` is the one tone that never named a STATE: run/wait/block/info/idle
+   all say what a thing IS, while "brand" says what colour it is. That much is
+   right, and it is why the tone is OVERLOADED across three different meanings.
+
+   The justification originally written here was wrong and is corrected in
+   place rather than deleted, because the wrong version is the instructive one.
+   It claimed "three call sites, two of them counts". That came from a literal
+   grep for tone="brand" — and Pill tones in this app are REGISTRY-DRIVEN
+   (domain/registry.ts maps status->tone; consumers pass tone={pill.tone}, e.g.
+   graph/GraphView.tsx:125 statusPill). The real emitters:
+
+     merged PULL REQUESTS   registry.ts:264/:1488/:1516, linked-pull-requests.ts:86
+     the OWNER role chip    registry.ts:1327/:1345, settings-space/port.ts:87
+     a home ACTIVITY row    home/home-activity.ts:132
+     and three literal sites, two of which are counts (`N unread`)
+   rendered across panels/, settings/, graph/ and home/ — so "brand is how
+   counts became accent" was never true.
+
+   Test it against the law above and the three meanings split:
+     unread  a COUNT — ink is right
+     owner   a ROLE  — ink is right
+     merged  a STATE, and open/draft/closed already hold run/wait/idle, so
+             merged takes the accent as the fourth. Sending it to ink DELETES a
+             status distinction, which is the one use of this tone the law
+             PROTECTS. That is a defect in this rule as written.
+   The fix is not to deprecate the tone: it is to give `merged` a status hue and
+   move only the role and count callers off it. That edits registry.ts and
+   pull-requests/, which are not kit's to change — it needs an owner assigned.
+   Until then this line is knowingly incomplete and is flagged as such in #554.
+
+   `merged` on a graph node card confirmed live by lane I; consumer list above
+   is theirs and lane F's, not a grep of mine. */
 .cv2-root .kit-pill--brand  { color: var(--pn-ink-2); }
 
 /* Outlined variant — the T0-3 list-header filter/sort pills. */
