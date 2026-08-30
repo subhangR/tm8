@@ -163,8 +163,15 @@ describe('calm graph CSS invariants', () => {
     expect(marker).toMatch(/border-left:/);
     expect(marker).toMatch(/border-top:/);
 
-    // The ban is on the WHOLE stylesheet, not just this rule — a codepoint
-    // reintroduced anywhere in the graph's chrome is the same defect.
+    // Scope: THE STYLESHEET, and nothing more. `css` is graph.css, so this
+    // catches the marker being reintroduced as CSS `content` — it does NOT
+    // reach GraphView.tsx, which still renders ▸/▾ at four sites (the band
+    // collapse indicator, a node snippet, and two select chevrons). Those are
+    // deliberately untouched: the 2026-08-30 enumerated census renders every
+    // codepoint in this package except U+FF0B, so they are not defects. The
+    // marker was converted for the narrower reason that these glyphs come from
+    // a SYSTEM FALLBACK rather than our shipped subsets, and it was the only
+    // affordance saying the Legend opens.
     expect(css).not.toMatch(/[▸▾]/);
 
     // BOTH-HALVES DETECTOR: the assertion above is a `.not`, so it would pass
