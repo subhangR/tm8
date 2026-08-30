@@ -9,3 +9,5 @@ target/
 coverage/
 test-results/
 playwright-report/
+dist-base/
+dist-mine/
