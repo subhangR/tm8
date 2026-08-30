@@ -223,11 +223,11 @@ describe('model — rows from contract shapes', () => {
  */
 const REFUSED_VERBS_FILES = [
   'Drop to attach to T-114',
-  '＋ attach',
+  'Attach',
   'try again',
 ];
 
-const REFUSED_VERBS_NODE = ['＋ Provider', 'test launch ▸', 'Back up now', 'Restore…'];
+const REFUSED_VERBS_NODE = ['Add provider', 'test launch ▸', 'Back up now', 'Restore…'];
 
 /**
  * EVERY occurrence, not the first. A screen with two providers draws two

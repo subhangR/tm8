@@ -392,7 +392,7 @@ function AddModelForm({
             setLabel('');
           }}
         >
-          ＋ Add model
+          Add model
         </button>
       </div>
       <p className="set-models__add-hint">

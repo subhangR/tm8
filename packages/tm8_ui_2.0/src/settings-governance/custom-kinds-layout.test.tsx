@@ -129,7 +129,7 @@ describe('the kinds section is a SECTION, not a screen', () => {
 
   it('gives the enum values a visible label, not a placeholder that vanishes', () => {
     const { container } = mount();
-    fireEvent.click(within(container).getByText('＋ field'));
+    fireEvent.click(within(container).getByText('Add field'));
     const row = container.querySelector('[data-testid="field-row"]') as HTMLElement;
     fireEvent.change(row.querySelector('select') as HTMLElement, { target: { value: 'enum' } });
 

@@ -431,14 +431,14 @@ export function AttachmentStrip({
               className={idle ? 'fn-tile__face fn-tile__face--clip' : 'fn-tile__face fn-tile__face--plus'}
               aria-hidden
             >
-              {idle ? '📎' : '＋'}
+              {idle ? '📎' : '+'}
             </span>
             {idle ? null : <span className="fn-tile__name">attach</span>}
           </button>
           {menuOpen && startUpload && projectFolder ? (
             <div className="fn-menu" role="menu" aria-label="Attach a file">
               <button type="button" className="fn-menu__item" role="menuitem" onClick={openUpload}>
-                <span className="fn-menu__label">＋ Upload from this device</span>
+                <span className="fn-menu__label">Upload from this device</span>
                 <span className="fn-menu__hint">or drop files on the description</span>
               </button>
               {/* A SECOND, DIFFERENT SOURCE — not a second way to do the same

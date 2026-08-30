@@ -77,7 +77,7 @@ export interface MembersSectionProps {
    * that does not still gets the same title rather than a blank head.
    */
   heading?: string;
-  /** The oracle's ＋ Invite jumps to the invites section (L49). */
+  /** The Invite action jumps to the invites section. */
   onInvite?: () => void;
   /**
    * Perform the write. Absent means this surface is READ-ONLY and every role
@@ -270,7 +270,7 @@ export function MembersSection({
       action={
         onInvite ? (
           <button type="button" className="set-chip" onClick={onInvite}>
-            ＋ Invite
+            Invite
           </button>
         ) : undefined
       }

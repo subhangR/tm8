@@ -403,8 +403,8 @@ describe('T2-5 — custom-kind authoring', () => {
     fireEvent.click(getByLabelText('Glyph ◮'));
     expect(getByLabelText('Glyph ◮').getAttribute('aria-checked')).toBe('true');
 
-    fireEvent.click(within(container).getByText('＋ field'));
-    fireEvent.click(within(container).getByText('＋ field'));
+    fireEvent.click(within(container).getByText('Add field'));
+    fireEvent.click(within(container).getByText('Add field'));
     expect(getAllByTestId('field-row')).toHaveLength(2);
   });
 
@@ -467,8 +467,8 @@ describe('T2-5 — custom-kind authoring', () => {
     const { container, getAllByTestId } = mount(
       <CustomKindsScreen spaceLabel="s" kinds={{ phase: 'ready', value: [] }} />,
     );
-    fireEvent.click(within(container).getByText('＋ field'));
-    fireEvent.click(within(container).getByText('＋ field'));
+    fireEvent.click(within(container).getByText('Add field'));
+    fireEvent.click(within(container).getByText('Add field'));
     const rows = () => getAllByTestId('field-row');
     type(rows()[0]!.querySelector('input') as HTMLElement, 'severity');
     type(rows()[1]!.querySelector('input') as HTMLElement, 'service');

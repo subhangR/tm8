@@ -85,7 +85,7 @@ describe('T2-1b — the section frame', () => {
     expect(container.querySelectorAll('.set-section__head')).toHaveLength(1);
   });
 
-  it('puts ＋ Invite in the head, where it cannot scroll away from the rows', () => {
+  it('puts Invite in the head, where it cannot scroll away from the rows', () => {
     const { container } = renderMembers();
     expect(container.querySelector('.set-section__head .set-chip')).not.toBeNull();
     expect(container.querySelector('.set-section__scroll .set-chip')).toBeNull();

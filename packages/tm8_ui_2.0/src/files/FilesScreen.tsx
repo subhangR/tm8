@@ -325,7 +325,7 @@ function AttachmentsCard({
                 implies has no executor either — stated once, here, rather
                 than left as an absence a reader would have to notice. */}
             <DisabledAction reason={ATTACH_UNAVAILABLE} label="Attach a file to this message">
-              <span className="fn-chip fn-chip--ghost">＋ attach</span>
+              <span className="fn-chip fn-chip--ghost">Attach</span>
             </DisabledAction>
           </div>
         </div>
