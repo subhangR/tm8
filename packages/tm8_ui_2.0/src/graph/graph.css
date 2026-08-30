@@ -998,13 +998,38 @@
 .gv-legend:not([open]) { overflow: hidden; }
 .gv-legend[open] { min-width: 172px; }
 .gv-legend__title::-webkit-details-marker { display: none; }
+/* THE DISCLOSURE MARKER IS A SHAPE, NOT A CODEPOINT. It was U+25B8/U+25BE, which
+   render on this box only because a SYSTEM FALLBACK supplies them — the shipped
+   Figtree/JetBrains subsets do not, and the 2026-08-30 census showed both font
+   columns drawing them identically, which is the tell. That is the U+FF0B tofu
+   failure with the trigger not yet pulled, and this is the only affordance
+   saying the Legend opens: if a viewer's fallback differs, it reads as an inert
+   label. Borders always draw.
+
+   `content: ''` plus zero width/height makes the border box itself the triangle.
+   The ::after is a flex item of `.gv-legend__title` (display: flex) and so is
+   blockified — an inline box would ignore the sizing. Widths are in `em` so the
+   mark tracks the font-size set below rather than being pinned in px. */
 .gv-legend__title::after {
-  content: '▸';
-  color: var(--pn-ink-3);
+  content: '';
+  flex: none;
   margin-left: auto;
   font-size: var(--pn-fs-micro);
+  width: 0;
+  height: 0;
+  border-top: 0.32em solid transparent;
+  border-bottom: 0.32em solid transparent;
+  border-left: 0.4em solid var(--pn-ink-3);
+  border-right: 0;
 }
-.gv-legend[open] .gv-legend__title::after { content: '▾'; }
+/* Open: the same box re-pointed downward. Every one of the four borders is
+   restated, so nothing survives from the closed rule above. */
+.gv-legend[open] .gv-legend__title::after {
+  border-top: 0.4em solid var(--pn-ink-3);
+  border-bottom: 0;
+  border-left: 0.32em solid transparent;
+  border-right: 0.32em solid transparent;
+}
 .gv-legend[open] .gv-legend__title {
   border-bottom-color: var(--pn-line);
   margin-bottom: 4px;
