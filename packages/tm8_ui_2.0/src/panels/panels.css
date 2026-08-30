@@ -4413,9 +4413,12 @@
      Its own head is 30.8px, so every task description in the product was
      clipped to a ~10px sliver — the owner's report was "unable to type
      description in the task card", and this is why: there was no room to type
-     IN. `.k-accent-top` carries `overflow: hidden` to clip its decorative 2px
+     IN. `.k-accent-top` CARRIED `overflow: hidden` to clip its decorative 2px
      ::before to the radius, so the crushed-out prose was hidden rather than
-     spilled, which is how it shipped unnoticed.
+     spilled, which is how it shipped unnoticed. Both the ribbon and the clip
+     were retired by the calm kit pass (#554), so that half of the mechanism is
+     archaeology — `flex-shrink: 0` below is now the only thing holding this
+     card open, which is why the test pins it.
 
      `flex-shrink: 0` is the whole fix: cards keep their natural height, the
      body genuinely overflows, and its existing `overflow: auto` draws a real
