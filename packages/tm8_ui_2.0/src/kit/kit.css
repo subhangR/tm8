@@ -102,6 +102,33 @@
   padding: 2px 9px;
 }
 
+/* The status dot is DRAWN, not typed. It used to be a literal U+25CF BLACK
+   CIRCLE in the JSX — a codepoint from a font we do not ship, which is the
+   U+FF0B failure with the trigger not pulled. The glyph census cleared six
+   geometric characters but never tested this one, and its own caveat is the
+   point: the ones it cleared render IDENTICALLY in both font columns, so a
+   SYSTEM FALLBACK supplies them and our shipped subsets do not. "It renders
+   here" is the weakest possible evidence about a machine none of us has seen.
+
+   `currentColor` is doing real work: the dot takes the pill's own tone, so all
+   six tones are covered by one rule and the dot can never drift from the word
+   beside it. That is the colour+word law holding by construction rather than
+   by six rules agreeing.
+
+   SIZE IS IN em, DELIBERATELY. I tried to measure the target's dot and could
+   not isolate it — the amber label shares its colour window, so the scan reads
+   the dot and the words as one run. Bounded at roughly 5-6px at that raster and
+   no tighter. Rather than pin a px I could not cleanly measure, 0.5em tracks
+   the pill's own 9.5px face (~4.75px) and stays correct if that face ever
+   changes. An unmeasurable number reported as measured is the failure this
+   pass keeps finding; a bound and a ratio is the honest form. */
+.cv2-root .kit-pill__dot {
+  flex: none;
+  inline-size: 0.5em;
+  block-size: 0.5em;
+  border-radius: 50%;
+  background: currentColor;
+}
 .cv2-root .kit-pill__dot--pulse {
   animation: pnPulse 1.6s infinite;
 }

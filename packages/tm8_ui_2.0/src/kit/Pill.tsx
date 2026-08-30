@@ -6,7 +6,12 @@ export type PillTone = 'run' | 'wait' | 'block' | 'info' | 'idle' | 'brand';
 /**
  * Pill — status token: neutral card + colored WORD (status is always color +
  * word, never color alone). Optional leading dot; `dot="pulse"` is the
- * streaming/live marker (T0-1 "● live").
+ * streaming/live marker.
+ *
+ * The dot is DRAWN, not typed — an empty span the stylesheet turns into a
+ * circle. It was a literal U+25CF, a codepoint from a font we do not ship,
+ * which is the U+FF0B failure with the trigger unpulled. It takes
+ * `currentColor`, so it cannot drift from the word beside it.
  *
  * Three forms, three jobs — the split the Home target draws:
  *   default    neutral card, tone on the ink
@@ -41,9 +46,10 @@ export function Pill({
   return (
     <span className={cls} title={title}>
       {dot ? (
-        <span aria-hidden className={dot === 'pulse' ? 'kit-pill__dot--pulse' : undefined}>
-          ●
-        </span>
+        <span
+          aria-hidden
+          className={dot === 'pulse' ? 'kit-pill__dot kit-pill__dot--pulse' : 'kit-pill__dot'}
+        />
       ) : null}
       {children}
     </span>

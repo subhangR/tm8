@@ -84,6 +84,28 @@ describe('kit primitives', () => {
     );
   });
 
+  it('Pill status dot is DRAWN, never typed — no codepoint, no font dependency', () => {
+    const { container } = render(
+      <Pill tone="run" dot="solid">
+        running
+      </Pill>,
+    );
+    const el = container.querySelector('.kit-pill__dot');
+    expect(el).not.toBeNull();
+    // An EMPTY element. It used to hold a literal U+25CF, which is a codepoint
+    // from a font we do not ship — the U+FF0B failure with the trigger unpulled.
+    expect(el?.textContent).toBe('');
+    expect(el?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('Pill.tsx contains no U+25CF — the glyph must not come back', () => {
+    // Source-level, because a DOM assertion only proves THIS render is clean.
+    // Scoped to the one codepoint rather than banning non-ASCII, since the
+    // file's prose legitimately uses — and §.
+    const src = readFileSync(join(here, 'Pill.tsx'), 'utf8');
+    expect(src).not.toContain('●');
+  });
+
   it('Pill filled variant keeps its tone and adds the delta-badge class', () => {
     const { container, getByText } = render(
       <Pill tone="brand" filled>
