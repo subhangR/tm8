@@ -11,17 +11,12 @@
  * The glance rails, the presence row and the per-kind counts strip retired to
  * the Work tab — their tests went with them.
  */
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, within } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { render, within } from '@testing-library/react';
 import type { EntitySummary } from '@tm8/contract';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { FIXTURE_SPACE_ID } from '../fixtures/entities';
 import type { HomeScreenData } from '../home';
-import {
-  composeEntityNavigation,
-  entityNavigationLabel,
-  homeRailGroups,
-} from '../domain';
 import { HomePage } from './HomePage';
 
 const seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent'> = {
@@ -82,32 +77,12 @@ describe('the home chat canvas', () => {
     expect(queryByTestId('hp-needs-you')).toBeNull();
   });
 
-  it('keeps every entity family one move away without replacing the chat', () => {
-    const onOpenKind = vi.fn();
-    const groups = composeEntityNavigation(
-      homeRailGroups(),
-      () => ({ total: 3, unseen: 1 }),
-      (config) => (config.list.liveTreatment ? 2 : undefined),
-    );
-    const target = groups[1]!.items[0]!;
-    const { getByTestId } = renderPage({}, {
-      navigationGroups: groups,
-      activeKind: target.config.kind,
-      onOpenKind,
-    });
-    const overview = getByTestId('hp-entity-overview');
-
-    for (const group of groups) {
-      expect(within(overview).getByRole('heading', { name: group.label })).toBeTruthy();
-    }
-    const targetButton = within(overview).getByRole('button', {
-      name: entityNavigationLabel(target),
-    });
-    expect(targetButton.getAttribute('aria-current')).toBe('page');
-    fireEvent.click(targetButton);
-    expect(onOpenKind).toHaveBeenCalledWith(target.config.kind);
-    expect(within(getByTestId('home-page')).getByTestId('chat-slot')).toBeTruthy();
-  });
+  /* `keeps every entity family one move away without replacing the chat`
+     retired with the workspace map (2026-08-30). It rendered the map, asserted
+     a heading per group and clicked a kind row — all claims about a surface
+     Home no longer draws. The kind list lives in the rail, whose own coverage
+     is `views/home-rail.test.tsx`; deleting this here does not leave the
+     behaviour untested, it stops testing it twice. Listed in the PR body. */
 });
 
 /**
