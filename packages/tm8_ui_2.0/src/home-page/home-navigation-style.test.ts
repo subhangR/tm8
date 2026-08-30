@@ -96,6 +96,51 @@ describe('a name is never truncated by its own count', () => {
     expect(budget).toContain('display: none');
   });
 
+  /* THE BUG THIS ENCODES, because prose could not hold it.
+   *
+   * `minmax()` sizes the card's BORDER box. `container-type: inline-size`
+   * queries its CONTENT box. On this card they differ by 42px — measured with a
+   * `@container (min-width: N)` ladder, which reported 175 against a 220px grid
+   * track, not derived from padding (the card is `content-box`, so the naive
+   * sum is wrong by 20px).
+   *
+   * Shipped once in the other order — a 200px floor with a 219px budget — it
+   * meant auto-fit was free to build columns the budget then emptied, and
+   * between ~901px and ~1250px the map showed nineteen nouns and NOT ONE COUNT.
+   * A comment saying "keep these in step" would not have caught it; three
+   * reviewers checking each other's arithmetic did not catch it. The inequality
+   * is the fix, so the inequality is the test.
+   */
+  it('keeps the count budget below the narrowest column the grid can build', () => {
+    const CONTAINER_DELTA_PX = 42;
+    const floor = Number(
+      homeCss.match(/repeat\(auto-fit,\s*minmax\((\d+)px,\s*1fr\)\)/)?.[1] ?? NaN,
+    );
+    const backstop = Number(
+      homeCss.match(/@container hp-family \(max-width: (\d+)px\)/)?.[1] ?? NaN,
+    );
+    expect(Number.isFinite(floor), 'grid floor not found').toBe(true);
+    expect(Number.isFinite(backstop), 'count backstop not found').toBe(true);
+    /* The floor expressed in the units the query reads. If the backstop ever
+       reaches this, the count disappears at a width the grid produces every
+       day, and the map becomes a comparison surface with nothing to compare. */
+    expect(backstop).toBeLessThan(floor - CONTAINER_DELTA_PX);
+  });
+
+  it('binds the wide-noun budget to registry data, not to a selector list', () => {
+    /* The one card whose noun can genuinely collide with a count drops the
+       count; the busy card whose nouns are short keeps it. Which is which is
+       decided from `labelPlural` in `HomePage.tsx` so it cannot rot as labels
+       change, and the stylesheet only reads the answer. */
+    expect(homeCss).toMatch(
+      /@container hp-family \(max-width: \d+px\)\s*\{\s*\.cv2-root \.hp-overview__family\[data-noun='wide'\]/,
+    );
+    expect(pageTsx).toContain("data-noun={hasWideNoun(group) ? 'wide' : undefined}");
+    expect(pageTsx).toContain('item.config.labelPlural.length');
+    /* No kind literal decides this (§15.2) — only the label's own length. */
+    expect(pageTsx).not.toMatch(/data-noun=\{[^}]*===/);
+  });
+
   it('spends no row height on badge chrome the digits did not need', () => {
     /* A 1px border + 3px padding + an 18px floor turned a 26px word into a
        47px row, and seven of those do not fit under the map's 38% ceiling —

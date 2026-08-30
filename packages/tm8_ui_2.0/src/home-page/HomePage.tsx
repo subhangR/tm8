@@ -89,6 +89,36 @@ export interface HomePageProps {
   onOpenWorkspace(): void;
 }
 
+/* WHICH CARDS HAVE A WIDE NOUN — registry data, not a selector list.
+ *
+ * A map row holds its noun and its count side by side. Measured in the live
+ * build (`ui-calm-pass/laneb-budget.mjs`, every count forced visible): a row
+ * spends 50px on chrome, the widest ROW count is 56px (`612 · 8 live`), and
+ * the widest noun the registry can hand this card is `Interaction profiles` at
+ * 114px. So only a card carrying a noun near that width can ever be forced to
+ * choose between the two, and only that card should drop its count.
+ *
+ * The stylesheet cannot ask "how long is this card's longest label", so the
+ * card answers in `data-noun` and `home-page.css` queries the answer. Deciding
+ * it here — from `labelPlural`, which is registry data — is what keeps the rule
+ * from rotting the next time a label changes, and it names no kind (§15.2).
+ *
+ * The conversion is measured, not assumed: `Interaction profiles` is 20
+ * characters and 114px, `Pull requests` is 13 and 74px — 5.7px per character
+ * across both. WIDE_NOUN_PX sits between them so that the group carrying the
+ * long noun is wide and the busiest group (WORK) is not.
+ */
+const NOUN_PX_PER_CHAR = 5.7;
+const WIDE_NOUN_PX = 100;
+
+function hasWideNoun(group: EntityNavigationGroup): boolean {
+  const longest = group.items.reduce(
+    (most, item) => Math.max(most, item.config.labelPlural.length),
+    0,
+  );
+  return longest * NOUN_PX_PER_CHAR > WIDE_NOUN_PX;
+}
+
 function WorkspaceOverview({
   groups,
   activeKind,
@@ -135,6 +165,11 @@ function WorkspaceOverview({
               key={group.id}
               className="hp-overview__family"
               data-active={groupIsActive ? 'true' : undefined}
+              /* The card tells the stylesheet how long its longest noun is, so
+                 the count budget in `home-page.css` can bind on the ONE card
+                 where the noun and the count genuinely compete instead of
+                 emptying every card to protect it. See `hasWideNoun`. */
+              data-noun={hasWideNoun(group) ? 'wide' : undefined}
               /* The description moves to the hover text: it was a permanently
                  ellipsed line ("Plan, run, and ship the work i…") spending a
                  row of the card's height to say nothing it finished saying. */

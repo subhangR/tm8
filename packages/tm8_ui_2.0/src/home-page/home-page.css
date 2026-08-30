@@ -446,21 +446,80 @@
   flex: none;
   white-space: nowrap;
 }
-/* THE WIDTH BUDGET, in the units the query actually uses: an `inline-size`
-   container resolves against its CONTENT box, so these numbers are inside the
-   card's 20px of padding, not around it.
-   The longest noun the registry can hand this card is "Interaction profiles",
-   measured in the live build at 104px. A row spends 16px on its mark, 8px on
-   the gap to the name, 8px before the count and 14px of its own padding, and
-   the widest count on the surface (`2335 · 8 live`) is ~70px. That totals
-   220px. Below it the count would start taking the noun's pixels — so at 219
-   THE COUNT GOES, whole, which is the law's own remedy and the one thing an
-   `overflow: hidden` could never do honestly. Every exact figure survives in
-   the row's accessible name and hover text, both built by
-   `entityNavigationLabel`, so dropping the glyphs drops no information. */
-@container hp-family (max-width: 219px) {
+/* ======================= THE UNITS, ONCE, FOR BOTH RULES =======================
+   `minmax()` on the grid above sizes the card's BORDER box. `container-type:
+   inline-size` here queries its CONTENT box. THEY ARE NOT THE SAME NUMBER, and
+   on this card they differ by 42px.
+
+   That is not arithmetic, it is measured: a ladder of `@container hp-family
+   (min-width: N)` rules from 120 to 265 in steps of 5, read back through a
+   custom property, reports 175 where the grid track measures 220. (The card is
+   `box-sizing: content-box`, which is why the gap is 42 and not the 22 its
+   padding and border suggest — do not recompute it, re-probe it. The probe is
+   `ui-calm-pass/laneb-budget.mjs`.)
+
+   The first version of this file paid for that: a `minmax(200px, …)` floor was
+   paired with a `219px` container budget, so auto-fit was free to build columns
+   the budget then emptied, and between ~901px and ~1250px of window the map
+   showed nineteen nouns and NOT ONE COUNT. A floor of 200px border box is
+   158px of container. It could never satisfy a 219px budget — not "sometimes
+   too narrow", never.
+
+   So: every number below is in CONTAINER units, and the conversion is
+   `container = track - 42`. State the units next to any number added here.
+   ============================================================================ */
+/* WHAT A ROW ACTUALLY COSTS, measured with every count forced visible
+   (`laneb-budget.mjs`, real data, rail expanded):
+     overhead (mark + both gaps + row padding + border)  50px
+     widest ROW count  `612 · 8 live`                    56px
+     widest noun       `Interaction profiles`           114px
+     worst row         `Sessions` 52px noun + 56px count
+   The earlier comment here budgeted ~70px for the count and 104px for the noun.
+   Both were measured on the wrong element — 70px is a GROUP-HEAD count
+   (`2342 · 8 live`), not a row count. Every threshold derived from it was
+   therefore wrong, which is how a rule that drops counts came to fire at widths
+   where the count fits with 20px to spare.
+
+   At 1180 and 1024, with counts shown, ZERO of 19 nouns clip. There is no
+   trade at any width this grid can build: the name and the count both fit. */
+
+/* THE BACKSTOP — the law's remedy for a container narrower than the grid can
+   currently produce. `Sessions` needs 50 + 52 + 56 = 158px of container, and
+   the 200px track floor IS 158px of container, so 157 cannot fire inside
+   today's grid. FLOOR 158 > BACKSTOP 157: the inequality is the fix, and it is
+   written down so the next layout change has to break it on purpose. */
+@container hp-family (max-width: 157px) {
   .cv2-root .hp-overview__kind > .enav-metrics { display: none; }
 }
+/* THE WIDE-NOUN BUDGET — where the law actually binds. A card whose longest
+   noun is `Interaction profiles` (114px) needs 50 + 114 + 56 = 220px of
+   container to hold that noun AND a full count. Below that the COUNT goes,
+   whole, for that card only — never the noun, and never the counts of a card
+   whose nouns are short (`Pull requests` at 74px is comfortable at 178).
+   Which cards are wide is decided by the REGISTRY, in `HomePage.tsx`, not by a
+   selector list here that would silently rot as labels change.
+   TODAY THIS RULE CHANGES NOTHING VISIBLE: the only wide-noun group carries no
+   row counts at all. It is insurance against the day it does, not the fix for
+   the band above — that fix is the backstop's number, not this one. */
+@container hp-family (max-width: 219px) {
+  .cv2-root .hp-overview__family[data-noun='wide'] .hp-overview__kind > .enav-metrics {
+    display: none;
+  }
+}
+/* THE LADDER, kept so the next person can re-measure in a minute instead of
+   rediscovering the thread that produced these numbers. Paste this into the
+   page (or `addStyleTag` it — no build needed) and read
+   `getComputedStyle(row).getPropertyValue('--cq')`: the value is the container
+   width the query actually sees, in the only units that matter here.
+
+   .cv2-root .hp-overview__kind { --cq: 0 }
+   @container hp-family (min-width: 120px) { .cv2-root .hp-overview__kind { --cq: 120 } }
+   @container hp-family (min-width: 125px) { .cv2-root .hp-overview__kind { --cq: 125 } }
+   ... in steps of 5 up to 265 ...
+
+   It returned 175 against a 220px grid track on 2026-08-30. Do not convert;
+   re-run. Four separate corrections in one review were all arithmetic on a
+   number nobody had re-measured. */
 /* The count on a map row is TEXT, not a badge. A pill costs a 1px border,
    3px of padding and an 18px floor — it turned a 26px word into a 47px row,
    and nineteen of them tinted the calmest surface on the page brand-blue for
