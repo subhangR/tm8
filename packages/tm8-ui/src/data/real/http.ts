@@ -26,6 +26,7 @@
 import {
   CollabError,
   ERROR_STATUS,
+  REQUEST_TIMEOUT_MS,
   TM8_CLIENT_HEADER,
   TM8_CLIENT_HEADER_VALUE,
   TM8_UPLOAD_TOKEN_HEADER,
@@ -87,8 +88,47 @@ export interface HttpOptions {
   timeoutMs?: number;
 }
 
-export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
-/** Uploads move real bytes; they get a proportionally longer leash. */
+/**
+ * Ceiling on one request — no longer a number this file picks alone.
+ *
+ * It used to be a bare `15_000` here while `server/src/db/client.ts` set
+ * `statement_timeout: 30_000`, with neither site naming the other. The server
+ * was therefore allowed to spend TWICE as long as this client would ever wait,
+ * which made the second half of every slow query waste by construction: the
+ * abort below tears down the HTTP request, and the Postgres statement it
+ * started used to run on regardless, into a socket nobody reads.
+ *
+ * What fixed that is NOT arithmetic between the two numbers — squeezing the
+ * server's ceiling to fit inside this one was measured and rejected, see
+ * `@tm8/contract`'s `timeouts.ts`. It is that the server now CANCELS a read
+ * whose client has hung up, within milliseconds of the abort below firing. The
+ * numbers still live together in that one file so a future change has to see
+ * all of them at once:
+ *
+ *   - `server/src/db/client.ts`                     — the pool every read uses
+ *   - `server/src/facade/services/w2/execution.ts`  — the delivery pool
+ *
+ * Raising this to 30s to match the server was considered and REJECTED: it makes
+ * a failure that is currently fast into one that is slow, without making any
+ * request more likely to succeed.
+ *
+ * KNOWN GAP, not fixed here. A COMMAND is deliberately never cancelled — a user
+ * who clicks send and closes the tab has sent the message — so a slow-but-
+ * successful mutation can still trip this abort and be reported to the caller
+ * as a failure it was not. Reconciling that needs the caller to re-read the
+ * outcome, which is a larger change than a timeout.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = REQUEST_TIMEOUT_MS;
+/**
+ * Uploads move real bytes; they get a proportionally longer leash.
+ *
+ * DELIBERATELY NOT PART OF THE SHARED BUDGET ABOVE, and it must not be folded
+ * into it in a later tidy-up. The budget above exists to bound an INTERACTIVE
+ * READ against a database statement; an upload's duration is a function of file
+ * size and link speed, so there is no server-side statement whose ceiling this
+ * should sit outside of. `putGrantedBytes` streams to the grant URL and touches
+ * no pool.
+ */
 export const UPLOAD_TIMEOUT_MS = 120_000;
 
 export interface RequestOptions {

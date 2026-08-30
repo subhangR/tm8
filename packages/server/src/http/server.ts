@@ -35,6 +35,7 @@ import type { Duplex } from 'node:stream';
 import { BASE_PATH, CONTRACT_VERSION, envelope } from '@tm8/contract';
 import type { ZodTypeAny } from 'zod';
 import { HandlerRegistry, INPUT_SCHEMAS } from '../facade/index.js';
+import { runInRequestScope } from '../db/request-scope.js';
 import { AuthRateLimiter } from './auth-rate-limit.js';
 import { readJsonBody } from './body.js';
 import type { ServerConfig } from './config.js';
@@ -167,7 +168,12 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     : opts.authRateLimiter;
 
   const http = createServer((req, res) => {
-    void handle(req, res).catch((err: unknown) => {
+    // The scope wraps the WHOLE pipeline, not just the handler: identity
+    // resolution reaches Postgres too (`resolveBearerIdentity`), and a caller
+    // who has already gone should not be spending a pooled client to be
+    // authenticated for a response they will never read.
+    const signal = abandonmentSignal(res);
+    void runInRequestScope({ signal }, () => handle(req, res, signal)).catch((err: unknown) => {
       // Last-resort net: `handle` already funnels its own failures, so
       // reaching here means the error writer itself threw.
       try {
@@ -208,7 +214,31 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     });
   }
 
-  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  /**
+   * "IS ANYONE STILL WAITING FOR THIS?", as one signal per request.
+   *
+   * Listening on the RESPONSE, not the request: `res` emits `close` for every
+   * way a request can end, including the client vanishing mid-handler, whereas
+   * `req`'s own `aborted` only covers a body that stopped arriving. The
+   * `writableFinished` guard is what makes the signal mean "abandoned" rather
+   * than "over" — `close` fires on a perfectly served response too, and
+   * aborting there would fire the signal on literally every request.
+   *
+   * The database layer reads this ambiently and cancels abandoned reads with
+   * it. Before it existed, a client giving up at `DEFAULT_REQUEST_TIMEOUT_MS`
+   * tore down the HTTP request and left the Postgres statement running to
+   * completion, writing into a socket nobody was reading — per attempt, per
+   * retry, each holding one of `max` pooled clients.
+   */
+  function abandonmentSignal(res: ServerResponse): AbortSignal {
+    const controller = new AbortController();
+    res.on('close', () => {
+      if (!res.writableFinished) controller.abort();
+    });
+    return controller.signal;
+  }
+
+  async function handle(req: IncomingMessage, res: ServerResponse, signal: AbortSignal): Promise<void> {
     const requestId = nextRequestId();
     const method = req.method ?? 'GET';
     // The base is a placeholder: only pathname + search are ever read from it.
@@ -410,6 +440,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         headers: req.headers,
         method,
         path: pathname,
+        signal,
       };
 
       // The outcome, not just the attempt, feeds the per-principal failure
