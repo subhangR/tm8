@@ -211,6 +211,258 @@
   min-height: 0;
 }
 
+/* --- the dashboard: hero, then a 4/8 split ------------------------------- */
+/* LEFT THIRD what exists, RIGHT TWO THIRDS what is happening now. The ratio is
+   the brief itself — "current sessions, current chat, anything I created" —
+   expressed as screen area, so it is a `4fr 8fr` grid and not a taste. */
+.cv2-root .hp-hero {
+  flex: none;
+  margin: 14px 7px 2px;
+}
+.cv2-root .hp-hero__line {
+  margin: 0;
+  min-width: 0;
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-xl, 30px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: var(--pn-lh-tight);
+}
+.cv2-root .hp-hero__note {
+  margin: 4px 0 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+}
+.cv2-root .hp-home {
+  display: grid;
+  grid-template-columns: 4fr 8fr;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 7px 7px;
+}
+/* THE COLUMN SCROLLS, AND NOTHING ELSE CLIPS. Four cards go where one capped
+   card used to be. Its predecessor was `max-height: 38%` + `overflow: hidden`,
+   which cut the WORK card mid-row with no scrollbar and no keyboard path to
+   the remainder — the `.sb-description` shape. `min-height: 0` is what makes
+   `overflow-y` reachable inside a grid item; without it the track floors at
+   min-content and the column grows instead of scrolling. */
+.cv2-root .hp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding-right: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
+}
+.cv2-root .hp-live {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-surface);
+  overflow: hidden;
+}
+.cv2-root .hp-live > * { flex: 1; min-width: 0; }
+
+/* --- the attention card --------------------------------------------------- */
+.cv2-root .hp-attention,
+.cv2-root .hp-group {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-card);
+}
+.cv2-root .hp-attention__eyebrow {
+  margin: 0 0 8px;
+  color: var(--pn-ink-2);
+}
+.cv2-root .hp-attention__rows { display: flex; flex-direction: column; gap: 6px; }
+/* The status paints the row's left edge so the card reads as a column of
+   urgencies before a word is read — and the WORD is always there beside it,
+   because status is colour AND word, never colour alone (C8/L10). */
+.cv2-root .hp-attention__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--pn-line);
+  border-left: 3px solid var(--pn-ink-4);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-surface);
+  font-family: var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .hp-attention__row:hover { background: var(--pn-hover); }
+.cv2-root .hp-attention__row:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .hp-attention__row--wait { border-left-color: var(--pn-wait); }
+.cv2-root .hp-attention__row--run { border-left-color: var(--pn-run); }
+.cv2-root .hp-attention__row--block { border-left-color: var(--pn-block); }
+.cv2-root .hp-attention__row--info { border-left-color: var(--pn-info); }
+.cv2-root .hp-attention__status { display: flex; min-width: 0; }
+.cv2-root .hp-attention__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.cv2-root .hp-attention__ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .hp-attention__ref-mark { display: inline-flex; flex: none; }
+.cv2-root .hp-attention__ref-mark .kit-vicon { width: 13px; height: 13px; }
+
+/* --- the entity cards ----------------------------------------------------- */
+/* These rules are the workspace map's, recovered from `3350b9f2^` rather than
+   rewritten: the row's height budget, the mark/name/count law and the group
+   head all held under measurement last cycle and none of that changed by
+   moving them into their own card. Only the selectors and the container are
+   new. What did NOT come back is the map's `@container` count budget and its
+   40-line units header — the card is no longer a cell in an `auto-fit` grid,
+   so the border-box/content-box conversion those numbers existed to bridge has
+   no grid to bridge to. If a count ever has to give way here again, re-probe
+   with the ladder; do not port the old thresholds, they were measured against
+   a layout that is gone. */
+.cv2-root .hp-group__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+/* The group's NAME takes the room and the count gives way. `WORK2281` in the
+   owner's screenshot was this heading with `min-width: 0` and no clip, so the
+   box shrank while the glyphs kept painting through the gap and into the
+   number. Clipping is what makes a min-width of 0 honest. */
+.cv2-root .hp-group__name {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-label);
+  font-weight: 750;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+.cv2-root .hp-group__head > .enav-metrics { flex: none; white-space: nowrap; }
+.cv2-root .hp-group__note {
+  margin: 5px 0 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* TWO DENSITIES, ONE CARD. Rows when a noun is long, wrapping chips when every
+   noun is short — the split is decided in `HomePage.tsx` from `labelPlural`,
+   with the budget and its arithmetic stated there. */
+.cv2-root .hp-group__items {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin-top: 7px;
+}
+.cv2-root .hp-group[data-density='chips'] .hp-group__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* THE LAW, in three declarations: the mark never shrinks, the name takes all
+   remaining room, and the count keeps its intrinsic width — a count is never
+   clipped, because a sliced number is a different and entirely plausible
+   number, which is the one failure mode a count has that a noun does not. */
+.cv2-root .hp-group__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  line-height: var(--pn-lh-tight);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .hp-group[data-density='chips'] .hp-group__item {
+  width: auto;
+  border-color: var(--pn-line);
+  border-radius: 999px;
+}
+.cv2-root .hp-group__item:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .hp-group__item[aria-current='page'] {
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+}
+.cv2-root .hp-group__item:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .hp-group__item:disabled { cursor: default; opacity: 0.72; }
+.cv2-root .hp-group__mark { display: inline-flex; flex: none; color: var(--pn-ink-3); }
+.cv2-root .hp-group__item[aria-current='page'] .hp-group__mark { color: var(--pn-brand); }
+.cv2-root .hp-group__mark .kit-vicon { width: 16px; height: 16px; }
+.cv2-root .hp-group__noun {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .hp-group__item > .enav-metrics { flex: none; white-space: nowrap; }
+
+@media (forced-colors: active) {
+  .cv2-root .hp-group__item[aria-current='page'] {
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .cv2-root .hp-group__item[aria-current='page'] .hp-group__mark { color: HighlightText; }
+}
+
 .cv2-root .hp-aside {
   display: flex;
   flex-direction: column;

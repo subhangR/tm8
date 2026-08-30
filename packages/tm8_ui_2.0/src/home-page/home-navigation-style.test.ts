@@ -83,13 +83,54 @@ describe('a name is never truncated by its own count', () => {
     expect(eyebrow).toContain('text-overflow: ellipsis');
   });
 
-  it('gives each row ONE number by never passing the unseen count to a row', () => {
-    /* A total AND an "N new" pill is the pair that starved the nouns, and
-       "2078 new" out of 2283 was not a fact anyone asked for. The exact unseen
-       count still reads in each button's accessible name
-       (`entityNavigationLabel`). Home itself no longer renders any count at
-       all, so this now guards the rail alone. */
-    expect(railTsx).not.toMatch(/unseen=\{/);
-    expect(pageTsx).not.toMatch(/unseen=\{/);
+  /* `gives each row ONE number by never passing the unseen count to a row`
+     is DELETED, not fixed, and the reversal is deliberate.
+
+     It encoded an owner ruling from 2026-08-29 — "2078 new out of 2283 was
+     never the fact anyone wanted" — by asserting neither source passes
+     `unseen`. The 2026-08-30 target design puts `N new` on every row, and the
+     ruling behind it is sharper than the one it replaces: `N new` is not a
+     quantity, it is UNATTENDED WORK, and it changes what you do next. That is
+     the test colour and prominence have to pass, and a count of unread rows
+     passes it where a raw total does not.
+
+     So the assertion is removed rather than inverted. Inverting it would claim
+     the new behaviour was always required; deleting it with this note records
+     that a ruling was superseded by a later one, which is the only form in
+     which the next reader can tell the difference. The rail is unchanged and
+     still passes no `unseen` — that is now HomeRail's business, not a rule
+     this file pins for both surfaces. */
+
+  it('gives a name every remaining pixel and lets the count keep its own', () => {
+    /* The map's version of this law was measured last cycle and the card
+       inherits it: mark fixed, noun takes the room and ellipses inside it,
+       count intrinsic and never sliced. */
+    const noun = homeCss.match(/\.cv2-root \.hp-group__noun\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(noun).toContain('flex: 1 1 auto');
+    expect(noun).toContain('min-width: 0');
+    expect(noun).toContain('text-overflow: ellipsis');
+    const count = homeCss.match(
+      /\.cv2-root \.hp-group__item > \.enav-metrics\s*\{([^}]*)\}/s,
+    )?.[1] ?? '';
+    expect(count).toContain('flex: none');
+    expect(count).not.toContain('overflow: hidden');
+    expect(count).not.toMatch(/max-width/);
+  });
+
+  it('gives the left column a scroll region rather than a silent clip', () => {
+    /* `.hp-overview` was `max-height: 38%` + `overflow: hidden` and cut the
+       WORK card mid-row with no scrollbar and no keyboard path. Four cards now
+       stack where that one did, so the column must scroll. `min-height: 0` is
+       what makes `overflow-y` reachable inside a grid item. */
+    const side = homeCss.match(/\.cv2-root \.hp-side\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(side).toContain('overflow-y: auto');
+    expect(side).toContain('min-height: 0');
+    expect(homeCss).not.toMatch(/\.hp-side[^{]*\{[^}]*overflow: hidden/);
+  });
+
+  it('splits the canvas four/eight, which is the brief as screen area', () => {
+    const home = homeCss.match(/\.cv2-root \.hp-home\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(home).toContain('grid-template-columns: 4fr 8fr');
+    expect(home).toContain('min-height: 0');
   });
 });
