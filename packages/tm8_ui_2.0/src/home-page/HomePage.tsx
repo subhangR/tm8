@@ -49,6 +49,7 @@ import {
   useHomeData,
   type HomeScreenData,
   type HomeSection,
+  type HomeRow,
 } from '../home';
 import { EntityNavigationMetrics } from '../navigation';
 import './home-page.css';
@@ -269,6 +270,70 @@ function activeRows(
 }
 
 
+/**
+ * How many things get a CARD before the rest becomes a list.
+ *
+ * Ten is the owner's number ("displaying top 10 rest everything as expansion
+ * button like row items"), and it is also about where a card grid stops paying
+ * for itself: past ten cards the reader is scanning a list anyway, so the card
+ * is spending vertical space on a shape they have stopped reading.
+ */
+export const TOP_N = 10;
+
+/** A row is LIVE iff its dot says so. Same predicate `liveCountLabel` counts
+ *  with (home-model `liveCount`) — one definition of "running", not two. */
+function isLive(row: HomeRow): boolean {
+  return row.dot === 'pulse' || row.dot === 'solid';
+}
+
+/** The kinds the round-robin draws from, in the order it draws them. Sessions
+ *  and tasks lead because they are the work; chats are the loudest source and
+ *  would otherwise crowd both. */
+const LENS_KINDS: readonly ActiveLens[] = ['sessions', 'tasks', 'chats'];
+
+/**
+ * TOP TEN, THEN THE REST — the two rules that keep the top of the screen honest.
+ *
+ *  1. **Anything running takes a seat first.** A session the agent is actually
+ *     working in cannot be pushed below the fold by a two-word chat from an
+ *     hour ago, whatever the timestamps say.
+ *  2. **The remaining seats go ROUND-ROBIN across the kinds.** This space has
+ *     sixty chats and five sessions; a straight recency cut gives all ten seats
+ *     to chats and the owner never sees a task again. Taking one of each in
+ *     turn means every kind that has anything active is represented, which is
+ *     the only version of "what is happening" that is true.
+ *
+ * ORDERING IS STILL BY ACTIVITY. Selection is balanced; the READING ORDER of
+ * whatever got selected stays newest-first, because `rows` arrives sorted and
+ * both halves are filtered out of it in place. Balance decides who is on the
+ * screen, time decides where they sit.
+ */
+export function splitActive<T extends HomeRow & { lens: ActiveLens }>(
+  rows: readonly T[],
+  n: number,
+): { top: readonly T[]; rest: readonly T[] } {
+  if (rows.length <= n) return { top: rows, rest: [] };
+  const key = (r: T) => `${r.lens}-${r.id}`;
+  const picked = new Set<string>();
+  for (const row of rows) {
+    if (picked.size >= n) break;
+    if (isLive(row)) picked.add(key(row));
+  }
+  /* One queue per kind, each already newest-first, drained a row at a time. */
+  const queues = LENS_KINDS.map((k) => rows.filter((r) => r.lens === k && !picked.has(key(r))));
+  let turn = 0;
+  while (picked.size < n && queues.some((q) => q.length > 0)) {
+    const q = queues[turn % queues.length];
+    turn += 1;
+    const next = q?.shift();
+    if (next) picked.add(key(next));
+  }
+  return {
+    top: rows.filter((r) => picked.has(key(r))),
+    rest: rows.filter((r) => !picked.has(key(r))),
+  };
+}
+
 const LENSES: readonly { id: ActiveLens; label: string }[] = [
   { id: 'all', label: 'all' },
   { id: 'chats', label: 'chats' },
@@ -304,17 +369,29 @@ function ActiveStrip({
   liveLabel: string;
   onOpen(id: string): void;
 }) {
+  /* Expansion is remembered AGAINST THE LENS it was opened in, so switching
+     filter collapses back to ten without an effect and without a stale `true`
+     surviving into a list it was never opened on. Derived, not synchronised. */
+  const [openFor, setOpenFor] = useState<ActiveLens | null>(null);
+  const expanded = openFor === lens;
+  const { top, rest } = splitActive(rows, TOP_N);
   return (
     <section className="hp-active" aria-label="Active work">
       <div className="hp-active__bar">
         <h2 className="hp-active__label k-label">Active</h2>
-        <div className="hp-active__lenses" role="tablist" aria-label="Filter active work">
+        {/* A GROUP OF TOGGLES, NOT A TAB STRIP. These were `role="tablist"` /
+            `role="tab"`, which is a claim that each chip reveals its own panel
+            — there is no tabpanel here, only one list being filtered in place.
+            The dashboard's own gate caught it: that route is "exactly two
+            panes", and a third tablist appearing on it was this mislabel, not
+            a third pane. Toggle buttons with `aria-pressed` say what these
+            actually do and need no roving tabindex to be correct. */}
+        <div className="hp-active__lenses" role="group" aria-label="Filter active work">
           {LENSES.map((l) => (
             <button
               key={l.id}
               type="button"
-              role="tab"
-              aria-selected={l.id === lens}
+              aria-pressed={l.id === lens}
               className={`hp-lens${l.id === lens ? ' hp-lens--on' : ''}`}
               onClick={() => onLens(l.id)}
             >
@@ -333,7 +410,7 @@ function ActiveStrip({
         </p>
       ) : (
         <div className="hp-active__grid">
-          {rows.map((row) => (
+          {top.map((row) => (
             <button
               key={`${row.lens}-${row.id}`}
               type="button"
@@ -365,6 +442,48 @@ function ActiveStrip({
           ))}
         </div>
       )}
+      {rest.length > 0 ? (
+        <>
+          {/* THE REST IS A LIST, NOT MORE CARDS. Everything past the tenth is a
+              row — dot, title, kind, time — so the tail costs one line each
+              instead of one card each, and the title finally gets the width to
+              be read rather than truncated at four words. */}
+          <button
+            type="button"
+            className="hp-active__more"
+            aria-expanded={expanded}
+            onClick={() => setOpenFor(expanded ? null : lens)}
+          >
+            {expanded ? 'Show less' : `Show ${rest.length} more`}
+          </button>
+          {expanded ? (
+            <ul className="hp-arows">
+              {rest.map((row) => (
+                <li key={`${row.lens}-${row.id}`}>
+                  <button
+                    type="button"
+                    className="hp-arow k-press"
+                    title={row.detail ?? row.title}
+                    onClick={() => onOpen(row.id)}
+                  >
+                    <span
+                      className={`hp-arow__dot hp-arow__dot--${row.lens}`}
+                      aria-hidden="true"
+                    />
+                    <span className="hp-arow__title">{row.title}</span>
+                    <span className="hp-arow__kind">{row.lens.replace(/s$/, '')}</span>
+                    <span className="hp-arow__when">
+                      {row.activityAt ? (
+                        <time dateTime={row.activityAt}>{sinceLabel(row.activityAt)}</time>
+                      ) : null}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }

@@ -186,4 +186,41 @@ describe('a name is never truncated by its own count', () => {
      * which is the same collapse L4 bans by name elsewhere in this package. */
     expect(home).toContain('minmax(0, 1fr)');
   });
+
+  it('gives the tail past ten a row, not another card', () => {
+    /* Owner, 2026-08-30: "displaying top 10 rest everything as expansion button
+       like row items". The SELECTION rule is tested as behaviour in
+       home-active-tail.test.ts; what is pinned here is that the tail has its
+       own shape at all, because a tail rendered as more cards is the crowded
+       screen the whole pass exists to undo. */
+    expect(pageTsx).toContain('hp-arows');
+    expect(pageTsx, 'the expansion control lost its state for assistive tech').toContain(
+      'aria-expanded',
+    );
+
+    const row = homeCss.match(/\.cv2-root \.hp-arow\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(row, 'no .hp-arow rule — the tail is unstyled').not.toBe('');
+    /* FOUR COLUMNS AND ONLY THE TITLE GIVES WAY. The name is the sole track
+       floored at 0; kind and time are `auto` and stay whole. CSS flex/grid
+       yields whatever CAN yield, not whatever should, so the floor is how the
+       choice is made rather than hoped for. */
+    expect(row).toContain('minmax(0, 1fr)');
+    expect(row).toContain('grid-template-columns');
+
+    const title = homeCss.match(/\.cv2-root \.hp-arow__title\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(title).toContain('min-width: 0');
+    expect(title).toContain('text-overflow: ellipsis');
+
+    /* THE TIME IS A NUMBER IN A COLUMN. Same tabular rule the cards keep. */
+    const when = homeCss.match(/\.cv2-root \.hp-arow__when\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(when).toContain('tabular-nums');
+
+    /* One kind→colour language at two volumes: a ground on the cards, a 6px
+       dot on the rows. All three must be spelt, or the tail loses the kind. */
+    for (const kind of ['sessions', 'tasks', 'chats']) {
+      expect(homeCss, `the tail rows lost the colour for ${kind}`).toContain(
+        `.hp-arow__dot--${kind}`,
+      );
+    }
+  });
 });
