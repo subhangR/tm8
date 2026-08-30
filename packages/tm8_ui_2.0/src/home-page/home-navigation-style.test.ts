@@ -100,60 +100,41 @@ describe('a name is never truncated by its own count', () => {
      still passes no `unseen` — that is now HomeRail's business, not a rule
      this file pins for both surfaces. */
 
-  it('gives a name every remaining pixel and lets the count keep its own', () => {
-    /* The map's version of this law was measured last cycle and the card
-       inherits it: mark fixed, noun takes the room and ellipses inside it,
-       count intrinsic and never sliced. */
-    const noun = homeCss.match(/\.cv2-root \.hp-group__noun\s*\{([^}]*)\}/s)?.[1] ?? '';
-    expect(noun).toContain('flex: 1 1 auto');
-    expect(noun).toContain('min-width: 0');
-    expect(noun).toContain('text-overflow: ellipsis');
-    const count = homeCss.match(
-      /\.cv2-root \.hp-group__item > \.enav-metrics\s*\{([^}]*)\}/s,
-    )?.[1] ?? '';
-    expect(count).toContain('flex: none');
-    expect(count).not.toContain('overflow: hidden');
-    expect(count).not.toMatch(/max-width/);
-  });
+  it('states the create verbs and no longer states an inventory', () => {
+    /*
+     * WHAT THIS REPLACED, and why the old assertions are gone rather than
+     * relaxed. Until 2026-08-30 Home rendered WORK / LIBRARY / PEOPLE cards —
+     * nineteen kind rows with their counts — and two `it` blocks here pinned
+     * their noun/count width budget and their container-query drop order.
+     *
+     * The owner removed the cards, on the deployed build, in these words:
+     * "why cant it be simplified ... i dont need make home dashboard clean
+     * have one create new chat, New SESSIONS AND New Task first and their
+     * screens while running".
+     *
+     * THE CARDS AND THEIR TESTS WENT IN ONE COMMIT. Deleting the component and
+     * leaving these assertions would have left them GREEN against a surface
+     * that renders nowhere — which this fleet catalogued seven times on
+     * 2026-08-30 and named as the failure mode to stop repeating. A passing
+     * test about a deleted screen is worse than no test: it reports coverage
+     * that cannot fail.
+     */
+    expect(homeCss).not.toContain('hp-group');
+    expect(homeCss).not.toContain('hp-hero');
+    expect(homeCss).not.toContain('container-name: hp-card');
 
-  it('gives the left column a scroll region rather than a silent clip', () => {
-    /* `.hp-overview` was `max-height: 38%` + `overflow: hidden` and cut the
-       WORK card mid-row with no scrollbar and no keyboard path. Four cards now
-       stack where that one did, so the column must scroll. `min-height: 0` is
-       what makes `overflow-y` reachable inside a grid item. */
-    const side = homeCss.match(/\.cv2-root \.hp-side\s*\{([^}]*)\}/s)?.[1] ?? '';
-    expect(side).toContain('overflow-y: auto');
-    expect(side).toContain('min-height: 0');
-    expect(homeCss).not.toMatch(/\.hp-side[^{]*\{[^}]*overflow: hidden/);
-  });
+    // And the row that replaced them exists, so this is not merely an absence.
+    const start = homeCss.match(/\.cv2-root \.hp-start\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(start, 'no .hp-start rule — the verbs have no row').not.toBe('');
+    // WRAPS rather than scrolls or clips: three verbs do not fit one line at
+    // the 320px floor, and a deleted control is the defect the list header was
+    // fixed for this same cycle.
+    expect(start).toContain('flex-wrap: wrap');
 
-  it('drops a noun whole rather than stubbing it, and cannot fire today', () => {
-    /* The collapsed rail rendered `Sessio…`, `Projec…`, `Com…` — the word slot
-       kept, the word lost. This card degrades to mark + accessible name
-       instead, because it HAS a mark and the rail did not. The floor and the
-       count budget are both stated in container units, and both must sit below
-       the narrowest container this layout can build (~304px at 1024) so that
-       neither fires by accident — the inequality is the safeguard, not the
-       comment describing it. */
-    expect(homeCss).toContain('container-name: hp-card');
-    const thresholds = [...homeCss.matchAll(/@container hp-card \(max-width: (\d+)px\)/g)].map(
-      (m) => Number(m[1]),
-    );
-    expect(thresholds.length).toBe(2);
-    const NARROWEST_CONTAINER_PX = 304;
-    for (const t of thresholds) expect(t).toBeLessThan(NARROWEST_CONTAINER_PX);
-    /* The count gives way BEFORE the noun does — the law's own order. */
-    const [countBudget, nounFloor] = [Math.max(...thresholds), Math.min(...thresholds)];
-    expect(nounFloor).toBeLessThan(countBudget);
-    const dropped = homeCss.match(
-      /@container hp-card \(max-width: \d+px\)\s*\{([^}]*\}[^}]*)\}[\s\S]*?@container hp-card \(max-width: \d+px\)\s*\{([^}]*\}[^}]*)\}/s,
-    );
-    expect(dropped?.[1]).toContain('.enav-metrics');
-    expect(dropped?.[2]).toContain('.hp-group__noun');
-    /* Dropped WHOLE. A stub is what this exists to prevent, so the noun must
-       never be handed an ellipsis at the floor instead of being removed. */
-    expect(dropped?.[2]).toContain('display: none');
-    expect(dropped?.[2]).not.toMatch(/text-overflow/);
+    // A REFUSED VERB IS SHOWN, NOT HIDDEN. If this rule disappears the verb
+    // silently vanishes when the server refuses it, which reads as a missing
+    // feature rather than a known state.
+    expect(homeCss).toContain('.hp-start__verb--off');
   });
 
   it('splits the canvas four/eight, which is the brief as screen area', () => {

@@ -858,6 +858,13 @@ export function HomeView(props: HomeViewProps) {
            — "show me that" — from two places on one screen. */
         onOpenEntity={(id) => openEntity(id as EntityId)}
         onOpenWorkspace={props.onOpenWorkspace}
+        /* THE THREE CREATE VERBS (owner, 2026-08-30): "have one create new
+           chat, New SESSIONS AND New Task first". These are the SAME handlers
+           the chat surface and the list header already use — `regions` owns
+           them — so Home reaches them rather than growing a second set. */
+        onNewChat={regions.onShowChat}
+        onCreateKind={regions.onCreateKind}
+        createKindUnavailable={regions.createKindUnavailable}
       />
       {/* D11/D14: the full launch sheet over this screen while the shell
           holds a subject — Run on a task row opened it. Its own capture-phase

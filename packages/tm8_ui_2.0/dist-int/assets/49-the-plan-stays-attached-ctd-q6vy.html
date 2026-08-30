@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>The plan stays attached · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style id="artifact-content">
+.visually-hidden { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; margin:-1px!important; overflow:hidden!important; clip:rect(0,0,0,0)!important; white-space:nowrap!important; border:0!important; }
+.hero { margin-top: 34px; padding-top: 22px; }
+.hero h2 { margin-bottom: 6px; }
+.hero-copy { color: var(--muted); margin: 0 0 18px; }
+.craft-shell { --pn-ink-3:#6E6759; --pn-ink-4:#6E6759; --pn-line-2:#8C8577; --pn-idle:#6E6759; padding: 0; overflow: hidden; }
+.craft-shell.pn--dark { --pn-ink-3:#A79E8B; --pn-ink-4:#A79E8B; --pn-line-2:#746B58; --pn-idle:#A79E8B; }
+.craft-bar { display:flex; align-items:center; min-height:42px; padding:0 12px; gap:8px; border-bottom:1px solid var(--pn-line); background:var(--pn-surface); }
+.craft-mark { color:var(--pn-brand); font-weight:700; font-family:var(--pn-mono); }
+.craft-label { font:600 10px var(--pn-mono); letter-spacing:.08em; text-transform:uppercase; }
+.craft-bar .pn-echip { margin-left:auto; }
+.stage { padding: 16px; }
+.stage-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
+.stage-head h3 { margin:0; font:600 16px var(--pn-ui); }
+.stage-head .phase-copy { color:var(--pn-ink-3); font:10px var(--pn-mono); }
+.trace-flow { display:grid; grid-template-columns:minmax(175px,1fr) minmax(70px,.46fr) minmax(150px,.8fr) minmax(70px,.46fr) minmax(175px,1fr); align-items:center; gap:8px; min-height:174px; }
+.trace-node { width:100%; min-height:116px; text-align:left; border:1px solid var(--pn-line-2); border-radius:8px; padding:12px; background:var(--pn-card); color:var(--pn-ink); font:inherit; cursor:pointer; transition:transform var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
+.trace-node:hover { border-color:var(--pn-brand); background:var(--pn-brand-soft); transform:translateY(-2px); }
+.trace-node[aria-pressed="true"] { border-color:var(--pn-brand); box-shadow:inset 0 0 0 1px var(--pn-brand); }
+.trace-node.is-ghost { border-style:dashed; opacity:.58; }
+.trace-node.is-highlighted { border-color:var(--pn-brand); box-shadow:inset 0 0 0 1px var(--pn-brand); }
+.node-top { display:flex; align-items:center; gap:8px; }
+.node-kind { font:600 9px var(--pn-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--pn-ink-3); }
+.node-title { display:block; margin-top:9px; font-weight:650; font-size:13px; line-height:1.35; }
+.node-note { display:block; margin-top:7px; color:var(--pn-ink-3); font:10px/1.45 var(--pn-mono); overflow-wrap:anywhere; }
+.agent-node { min-height:98px; border:1px solid var(--pn-line-2); border-radius:8px; padding:10px; background:var(--pn-surface); text-align:center; transition:opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.agent-node.is-inactive { opacity:.34; }
+.agent-avatar { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; border-radius:7px; background:var(--pn-brand-soft); color:var(--pn-brand); font:700 11px var(--pn-mono); }
+.agent-node strong { display:block; font-size:12px; margin-top:5px; }
+.agent-node small { display:block; color:var(--pn-ink-3); font:9px/1.4 var(--pn-mono); }
+.trace-edge { position:relative; height:46px; display:flex; align-items:center; justify-content:center; color:var(--pn-ink-3); }
+.trace-edge::before, .trace-edge::after { content:""; position:absolute; top:22px; height:1px; width:0; background:var(--pn-brand); transition:width var(--dur-slow) var(--ease-out); }
+.trace-edge::before { right:50%; }
+.trace-edge::after { left:50%; }
+.trace-edge.is-drawn::before, .trace-edge.is-drawn::after { width:50%; }
+.trace-edge .edge-label { position:relative; z-index:1; background:var(--pn-paper); padding:2px 5px; text-align:center; font:8.5px/1.35 var(--pn-mono); color:var(--pn-ink-3); opacity:.25; transition:opacity var(--dur-base) var(--ease-out) 110ms; }
+.trace-edge.is-drawn .edge-label { opacity:1; }
+.trace-edge--back::before, .trace-edge--back::after { background:var(--pn-brand); }
+.trace-edge--work::before, .trace-edge--work::after { background:var(--pn-run); }
+.trace-edge--work .edge-label { color:var(--pn-run); }
+.evidence { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(240px,.8fr); gap:12px; margin-top:14px; }
+.thread-wrap { border:1px solid var(--pn-line); border-radius:8px; overflow:hidden; background:var(--pn-paper); }
+.thread-title { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; background:var(--pn-surface); border-bottom:1px solid var(--pn-line); font:600 10px var(--pn-mono); letter-spacing:.06em; text-transform:uppercase; }
+.mini-thread { min-height:188px; padding:12px; display:flex; flex-direction:column; gap:8px; }
+.mini-message { display:grid; grid-template-columns:22px minmax(0,1fr); gap:7px; align-items:start; opacity:0; transform:translateY(5px); transition:opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.mini-message.is-visible { opacity:1; transform:translateY(0); }
+.mini-avatar { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--pn-info-soft); color:var(--pn-info); font:700 8px var(--pn-mono); }
+.mini-message--agent .mini-avatar { border-radius:5px; background:var(--pn-brand-soft); color:var(--pn-brand); }
+.mini-message p { margin:0; color:var(--pn-ink-2); font:11px/1.45 var(--pn-ui); max-width:none; }
+.mini-message b { color:var(--pn-ink); font-size:10px; }
+.mini-message time { color:var(--pn-ink-4); font:8px var(--pn-mono); margin-left:5px; }
+.inspector { border:1px solid var(--pn-line); border-radius:8px; background:var(--pn-card); padding:12px; min-width:0; }
+.inspector h4 { margin:0 0 9px; font:600 10px var(--pn-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--pn-ink-3); }
+.inspect-title { font-size:13px; font-weight:650; color:var(--pn-ink); }
+.inspect-id { display:block; margin-top:4px; color:var(--pn-ink-3); font:9px var(--pn-mono); overflow-wrap:anywhere; }
+.facts { display:grid; gap:7px; margin:12px 0 0; }
+.fact { display:grid; grid-template-columns:76px minmax(0,1fr); gap:7px; padding-top:7px; border-top:1px solid var(--pn-line); }
+.fact dt { color:var(--pn-ink-3); font:8.5px var(--pn-mono); text-transform:uppercase; }
+.fact dd { margin:0; color:var(--pn-ink-2); font:10px/1.35 var(--pn-mono); overflow-wrap:anywhere; }
+.phase-strip { margin:14px 0 0; }
+.phase-strip .btn { white-space:nowrap; }
+.phase-strip .phase-name { padding:0 10px; font:10px var(--pn-mono); color:var(--pn-ink-3); min-width:150px; text-align:center; }
+.phase-strip input { width:100%; }
+.truth-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.truth-chip { display:inline-flex; align-items:center; gap:6px; color:var(--pn-ink-2); font:9px var(--pn-mono); }
+.truth-chip::before { content:"✓"; color:var(--pn-run); font-weight:700; }
+.proof-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
+.proof-grid .term { margin:0; }
+.relationship-list { list-style:none; padding:0; margin:0; display:grid; gap:10px; }
+.relationship-list li { max-width:none; padding:10px 12px; border:1px solid var(--line); border-radius:var(--r); background:var(--surface); }
+.relationship-list code { display:inline-block; margin-bottom:4px; }
+.final-rule { border-left:2px solid var(--accent); padding-left:16px; font-size:18px; font-style:italic; max-width:58ch; }
+@media (max-width:760px) {
+  .trace-flow { grid-template-columns:1fr; gap:4px; }
+  .trace-edge { height:42px; }
+  .trace-edge::before, .trace-edge::after { top:auto; left:50%; right:auto; width:1px; height:0; transition:height var(--dur-slow) var(--ease-out); }
+  .trace-edge::before { bottom:50%; }
+  .trace-edge::after { top:50%; }
+  .trace-edge.is-drawn::before, .trace-edge.is-drawn::after { width:1px; height:50%; }
+  .trace-edge .edge-label { max-width:170px; }
+  .evidence, .proof-grid { grid-template-columns:1fr; }
+  .agent-node { min-height:86px; }
+}
+@media (max-width:520px) {
+  header.site { height:auto; min-height:54px; padding:12px 16px; flex-wrap:wrap; }
+  header.site .hub-note { width:100%; margin-left:0; padding-bottom:2px; }
+  main { padding:20px 16px 54px; }
+  h1 { font-size:36px; }
+  .hero { margin-top:28px; }
+  .stage { padding:10px; }
+  .craft-bar { align-items:flex-start; flex-wrap:wrap; padding:9px 10px; }
+  .craft-bar .pn-echip { width:100%; margin-left:0; }
+  .phase-strip { flex-wrap:wrap; }
+  .phase-strip .phase-name { order:3; width:100%; min-width:0; padding:7px 8px; border-top:1px solid var(--line); }
+  .phase-strip label { order:4; width:100%; }
+  .tmc .tmc-count { padding-right:8px; min-width:38px; }
+  .tmc .btn { padding:8px 10px; }
+  footer.site { padding-left:16px; padding-right:16px; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm8 <i>·</i> Help</span>
+  <span class="crumb">The plan stays attached</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+<main id="main">
+  <p class="kicker">Super Advanced · Graph as Entity · Craft</p>
+  <h1>The plan stays attached</h1>
+  <p class="lede">A task can finish without losing the blueprint that called for it. Replay one materialization wave and inspect the durable trail before, during, and after work.</p>
+  <div class="ink-legend" role="note" aria-label="Diagram ink legend">
+    <span><span class="swatch swatch--solid"></span><b>Solid ink</b> — a real graph relationship</span>
+    <span><span class="swatch swatch--ghost"></span><b>Ghost ink</b> — a blueprint spec, not an entity yet</span>
+    <span class="stamp">truth floor checked 2026-08-20</span>
+  </div>
+
+  <section class="hero" aria-labelledby="trace-heading">
+    <h2 id="trace-heading"><span class="no">01</span>Trace the born task home</h2>
+    <p class="hero-copy">Use Play, Step, or the timeline. Then select the task to read its record. Each control changes one thing; the relationships never disappear.</p>
+    <figure class="plate">
+      <div class="pn craft-shell" id="craft-demo">
+        <div class="craft-bar">
+          <span class="craft-mark" aria-hidden="true">⌁</span>
+          <span class="craft-label">Craft</span>
+          <span class="phase-copy">chat mode + UI tab · one graph-authoring feature</span>
+          <span class="pn-echip"><svg class="ki" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 4.5h10v7H3zM5 2.5v2M11 2.5v2M5 11.5v2M11 11.5v2"/></svg><span>Checkout recovery wave</span><span class="pn-echip__kind">graph</span></span>
+        </div>
+        <div class="stage">
+          <div class="stage-head">
+            <h3 id="phase-title">Before · approval has landed</h3>
+            <span class="pn-pill pn-pill--wait" id="phase-pill"><span class="pn-pill__dot pn-pill__dot--hollow"></span><span id="phase-pill-text">APPROVED</span></span>
+            <span class="phase-copy" id="phase-summary">The blueprint is durable. No task exists yet.</span>
+          </div>
+
+          <div class="trace-flow" aria-describedby="trace-alternative">
+            <button class="trace-node is-highlighted" id="blueprint-node" type="button" aria-pressed="true" data-entity="blueprint">
+              <span class="node-top"><svg class="ki" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 4.5h10v7H3zM5 2.5v2M11 2.5v2M5 11.5v2M11 11.5v2"/></svg><span class="node-kind">graph · node retry_copy</span></span>
+              <span class="node-title">Fix checkout retry copy</span>
+              <span class="node-note">spec { kind: task, hint: “Retry states need clear recovery copy.” }</span>
+            </button>
+
+            <div class="trace-edge trace-edge--back" id="back-edge" aria-hidden="true"><span class="edge-label">← attached_to<br>node retry_copy</span></div>
+
+            <div class="agent-node is-inactive" id="agent-node">
+              <span class="agent-avatar" aria-hidden="true">CA</span>
+              <strong>Callisto</strong>
+              <small>codex · agent materializer</small>
+              <span class="pn-pill pn-pill--idle" id="agent-pill">NOT STARTED</span>
+            </div>
+
+            <div class="trace-edge trace-edge--work" id="work-edge" aria-hidden="true"><span class="edge-label">working_on →</span></div>
+
+            <button class="trace-node is-ghost" id="task-node" type="button" aria-pressed="false" data-entity="task">
+              <span class="node-top"><svg class="ki" aria-hidden="true" viewBox="0 0 16 16"><path d="M4 3.5h8v9H4zM6 6h4M6 8h4M6 10h2"/></svg><span class="node-kind">task · not created</span></span>
+              <span class="node-title">Fix checkout retry copy</span>
+              <span class="node-note">Ghost preview only. The board is unchanged.</span>
+            </button>
+          </div>
+
+          <div class="evidence">
+            <div class="thread-wrap">
+              <div class="thread-title"><span>Discussion · anchored to blueprint graph</span><span class="pn-pill pn-pill--info">DURABLE</span></div>
+              <div class="mini-thread" id="mini-thread">
+                <div class="mini-message is-visible" data-min-phase="0">
+                  <span class="mini-avatar" aria-hidden="true">MV</span>
+                  <p><b>Mara Voss</b><time>09:14</time><br>Approved. Materialize this blueprint.</p>
+                </div>
+                <div class="mini-message mini-message--agent" data-min-phase="1">
+                  <span class="mini-avatar" aria-hidden="true">CA</span>
+                  <p><b>Callisto</b><time>09:15</time><br>Created task <span class="mono">01a09f21…e49</span> and attached it back to node <span class="mono">retry_copy</span>.</p>
+                </div>
+                <div class="mini-message mini-message--agent" data-min-phase="2">
+                  <span class="mini-avatar" aria-hidden="true">CA</span>
+                  <p><b>Callisto</b><time>09:21</time><br>Working on the born task. The blueprint remains the shared map.</p>
+                </div>
+                <div class="mini-message mini-message--agent" data-min-phase="3">
+                  <span class="mini-avatar" aria-hidden="true">CA</span>
+                  <p><b>Callisto</b><time>09:38</time><br>Task complete. Backlink and discussion retained.</p>
+                </div>
+              </div>
+            </div>
+
+            <aside class="inspector" aria-labelledby="inspect-heading">
+              <h4 id="inspect-heading">Selected record</h4>
+              <div id="inspect-body">
+                <div class="inspect-title">Checkout recovery wave</div>
+                <span class="inspect-id">graph · 01a09f21-4c00-7a11-8b2e-0d3f5a7c9e20</span>
+                <dl class="facts">
+                  <div class="fact"><dt>Node</dt><dd>retry_copy · spec</dd></div>
+                  <div class="fact"><dt>Discussion</dt><dd>anchored_to this graph</dd></div>
+                  <div class="fact"><dt>Reality</dt><dd id="inspect-reality">No task yet</dd></div>
+                </dl>
+              </div>
+            </aside>
+          </div>
+
+          <div class="tmc phase-strip" role="group" aria-label="Materialization replay controls">
+            <button class="btn btn--primary" id="play" type="button">Play</button>
+            <button class="btn" id="step" type="button">Step</button>
+            <span class="phase-name" id="phase-name">Before</span>
+            <label style="display:flex;flex:1;align-items:center"><span class="visually-hidden">Materialization phase</span><input id="scrub" type="range" min="0" max="3" step="1" value="0"></label>
+            <span class="tmc-count" id="count" aria-hidden="true">1 / 4</span>
+          </div>
+          <div class="truth-row" aria-label="Truth checks">
+            <span class="truth-chip">agents perform materialization</span>
+            <span class="truth-chip">backlink is a graph relationship</span>
+            <span class="truth-chip">discussion survives the wave</span>
+          </div>
+          <p class="visually-hidden" id="trace-alternative">Four still-useful frames show a graph blueprint before materialization, Callisto creating a task and attaching it back to blueprint node retry_copy, Callisto working on the task, and the completed task retaining the backlink and anchored discussion.</p>
+          <p class="visually-hidden" id="announcement" aria-live="polite"></p>
+        </div>
+      </div>
+      <figcaption>The dashed spec never pretends to be a task. Approval gates the change; an agent materializes it; the solid task keeps a direct backlink to its blueprint node.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="evidence-heading">
+    <h2 id="evidence-heading"><span class="no">02</span>Read the evidence two ways</h2>
+    <p>The relationship view teaches the graph. The record view shows the same facts in the shape you inspect from the CLI.</p>
+    <div class="panel" data-toggle2 id="proof-toggle">
+      <div role="group" aria-label="Evidence view">
+        <button class="btn" type="button" data-pane="a" aria-pressed="true">Relationships</button>
+        <button class="btn" type="button" data-pane="b" aria-pressed="false">Record shape</button>
+      </div>
+      <div class="toggle2__panes" style="margin-top:14px">
+        <div data-pane-id="a" class="is-shown">
+          <ul class="relationship-list">
+            <li><code>task → attached_to → graph</code><br><span class="caption">The durable backlink returns the real task to the graph and node handle that called for it.</span></li>
+            <li><code>message → anchored_to → graph</code><br><span class="caption">Approval and progress live on the graph’s discussion thread; they are not transient animation labels.</span></li>
+            <li><code>work_session → working_on → task</code><br><span class="caption">During execution, the running agent session works the materialized task.</span></li>
+          </ul>
+        </div>
+        <div data-pane-id="b">
+          <div class="term">
+            <div class="term__bar" aria-hidden="true"><span class="term__name">tm8 — northlake</span><span class="term__tag">pty</span></div>
+            <pre><span class="p">tm8 entity context 01a09f21-4c00-7a11-8b2e-0d3f5a7c9e49 --format json</span>
+<span class="out">{
+  "root": { "kind": "task", "title": "Fix checkout retry copy", "version": 4 },
+  "edges": [
+    { "type": "attached_to", "target": { "kind": "graph", "title": "Checkout recovery wave" },
+      "props": { "node": "retry_copy" } }
+  ],
+  "messages": [ … ]
+}</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="boundary-heading">
+    <h2 id="boundary-heading"><span class="no">03</span>Keep the boundary honest</h2>
+    <div class="proof-grid">
+      <div class="card">
+        <h3 style="margin-top:0">Craft writes the blueprint</h3>
+        <p>Craft chat mode and the Craft tab are one graph-authoring feature. While you sketch, spec nodes stay dashed: no task and no board edge exists yet.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Agents make it real</h3>
+        <p>After approval lands in the durable thread, an orchestrating agent reads the graph, creates the real entities, wires their relationships, and links them back.</p>
+      </div>
+    </div>
+    <div class="gap-card"><b>Honest boundary</b>The server does not walk the blueprint and materialize it by itself. The agent performs that work through the delegation surface.</div>
+    <p class="final-rule">The blueprint is not a detached document you archive after planning. It is the living provenance you can still follow when the work is done.</p>
+  </section>
+</main>
+<footer class="site">Last updated 2026-08-20 · The plan stays attached · tm8 Help v1 · <span class="stamp">Northlake mock workspace</span></footer>
+<script>
+(function () {
+  'use strict';
+  var phases = [
+    {
+      title: 'Before · approval has landed', short: 'Before', pill: 'APPROVED', pillClass: 'pn-pill--wait',
+      summary: 'The blueprint is durable. No task exists yet.', taskKind: 'task · not created',
+      taskNote: 'Ghost preview only. The board is unchanged.', agent: 'NOT STARTED', agentClass: 'pn-pill--idle', reality: 'No task yet'
+    },
+    {
+      title: 'During · the agent materializes', short: 'During · materialize', pill: 'CREATED', pillClass: 'pn-pill--info',
+      summary: 'Callisto creates the task and attaches it back.', taskKind: 'task · open',
+      taskNote: '01a09f21…e49 · backlink attached', agent: 'MATERIALIZING', agentClass: 'pn-pill--wait', reality: 'Task born · open'
+    },
+    {
+      title: 'During · work is underway', short: 'During · work', pill: 'WORKING', pillClass: 'pn-pill--run',
+      summary: 'The session works the task without severing its origin.', taskKind: 'task · working',
+      taskNote: '01a09f21…e49 · backlink retained', agent: 'WORKING', agentClass: 'pn-pill--run', reality: 'Task · working'
+    },
+    {
+      title: 'After · work is complete', short: 'After', pill: 'DONE', pillClass: 'pn-pill--run',
+      summary: 'The session ends. Provenance and discussion remain.', taskKind: 'task · done',
+      taskNote: '01a09f21…e49 · backlink retained', agent: 'EXITED', agentClass: 'pn-pill--idle', reality: 'Task · done'
+    }
+  ];
+  var current = 0;
+  var timer = null;
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var dark = window.matchMedia('(prefers-color-scheme: dark)');
+  var byId = function (id) { return document.getElementById(id); };
+  var taskNode = byId('task-node');
+  var blueprintNode = byId('blueprint-node');
+  var phasePill = byId('phase-pill');
+  var agentPill = byId('agent-pill');
+
+  function pillClass(el, name) {
+    el.className = 'pn-pill ' + name;
+  }
+
+  function selectEntity(which, announce) {
+    var taskSelected = which === 'task';
+    taskNode.setAttribute('aria-pressed', taskSelected ? 'true' : 'false');
+    blueprintNode.setAttribute('aria-pressed', taskSelected ? 'false' : 'true');
+    var html;
+    if (taskSelected) {
+      html = '<div class="inspect-title">Fix checkout retry copy</div>' +
+        '<span class="inspect-id">task · 01a09f21-4c00-7a11-8b2e-0d3f5a7c9e49</span>' +
+        '<dl class="facts"><div class="fact"><dt>Status</dt><dd>' + (current === 0 ? 'not created' : phases[current].taskKind.replace('task · ', '')) + '</dd></div>' +
+        '<div class="fact"><dt>Backlink</dt><dd>' + (current === 0 ? 'pending' : 'attached_to graph · retry_copy') + '</dd></div>' +
+        '<div class="fact"><dt>Origin</dt><dd>Checkout recovery wave</dd></div></dl>';
+    } else {
+      html = '<div class="inspect-title">Checkout recovery wave</div>' +
+        '<span class="inspect-id">graph · 01a09f21-4c00-7a11-8b2e-0d3f5a7c9e20</span>' +
+        '<dl class="facts"><div class="fact"><dt>Node</dt><dd>retry_copy · spec</dd></div>' +
+        '<div class="fact"><dt>Discussion</dt><dd>anchored_to this graph</dd></div>' +
+        '<div class="fact"><dt>Reality</dt><dd>' + phases[current].reality + '</dd></div></dl>';
+    }
+    byId('inspect-body').innerHTML = html;
+    if (announce) byId('announcement').textContent = (taskSelected ? 'Task' : 'Blueprint') + ' record selected.';
+  }
+
+  function render(index, announce) {
+    current = Math.max(0, Math.min(3, Number(index)));
+    var p = phases[current];
+    byId('phase-title').textContent = p.title;
+    byId('phase-summary').textContent = p.summary;
+    byId('phase-pill-text').textContent = p.pill;
+    pillClass(phasePill, p.pillClass);
+    byId('phase-name').textContent = p.short;
+    byId('count').textContent = (current + 1) + ' / 4';
+    byId('scrub').value = current;
+
+    taskNode.querySelector('.node-kind').textContent = p.taskKind;
+    taskNode.querySelector('.node-note').textContent = p.taskNote;
+    taskNode.classList.toggle('is-ghost', current === 0);
+    byId('agent-node').classList.toggle('is-inactive', current === 0 || current === 3);
+    agentPill.textContent = p.agent;
+    pillClass(agentPill, p.agentClass);
+    byId('back-edge').classList.toggle('is-drawn', current >= 1);
+    byId('work-edge').classList.toggle('is-drawn', current >= 2 && current < 3);
+    taskNode.classList.toggle('is-highlighted', current >= 1);
+    blueprintNode.classList.add('is-highlighted');
+    document.querySelectorAll('.mini-message').forEach(function (message) {
+      message.classList.toggle('is-visible', current >= Number(message.getAttribute('data-min-phase')));
+    });
+    selectEntity(taskNode.getAttribute('aria-pressed') === 'true' ? 'task' : 'blueprint', false);
+    if (announce) byId('announcement').textContent = p.title + '. ' + p.summary;
+  }
+
+  function stop() {
+    if (timer) window.clearTimeout(timer);
+    timer = null;
+    byId('play').textContent = reduce.matches ? 'Show full trace' : 'Play';
+  }
+
+  function syncTheme() {
+    byId('craft-demo').classList.toggle('pn--dark', dark.matches);
+  }
+
+  function play() {
+    stop();
+    if (reduce.matches) {
+      render(3, true);
+      selectEntity('task', false);
+      byId('announcement').textContent = 'Reduced motion: full trace shown as a still final frame.';
+      return;
+    }
+    render(0, true);
+    byId('play').textContent = 'Pause';
+    function advance() {
+      if (current >= 3) { stop(); selectEntity('task', false); return; }
+      timer = window.setTimeout(function () { render(current + 1, true); advance(); }, 900);
+    }
+    advance();
+  }
+
+  byId('play').addEventListener('click', function () {
+    if (timer) stop(); else play();
+  });
+  byId('step').addEventListener('click', function () { stop(); render((current + 1) % 4, true); });
+  byId('scrub').addEventListener('input', function (event) { stop(); render(event.target.value, true); });
+  taskNode.addEventListener('click', function () { selectEntity('task', true); });
+  blueprintNode.addEventListener('click', function () { selectEntity('blueprint', true); });
+
+  document.querySelectorAll('[data-toggle2]').forEach(function (root) {
+    var buttons = root.querySelectorAll('[data-pane]');
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        var pane = button.getAttribute('data-pane');
+        buttons.forEach(function (candidate) { candidate.setAttribute('aria-pressed', candidate === button ? 'true' : 'false'); });
+        root.querySelectorAll('[data-pane-id]').forEach(function (candidate) { candidate.classList.toggle('is-shown', candidate.getAttribute('data-pane-id') === pane); });
+      });
+    });
+  });
+
+  if (reduce.addEventListener) reduce.addEventListener('change', function () { stop(); });
+  if (dark.addEventListener) dark.addEventListener('change', syncTheme);
+  syncTheme();
+  render(0, false);
+})();
+</script>
+</body>
+</html>

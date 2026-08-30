@@ -1,0 +1,904 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Six rooms · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style id="six-rooms-content">
+.room-lab { --pn-ink-3: #6E695E; --pn-ink-4: #6E695E; }
+.room-lab.pn--dark { --pn-ink-3: #8C8470; --pn-ink-4: #8C8470; }
+.hero-meta { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 18px; }
+.room-intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 18px; }
+.verify-note { font: 11px/1.5 var(--mono); color: var(--muted); text-align: right; max-width: 34ch; }
+.room-lab { margin-top: 18px; padding: 0; overflow: hidden; }
+.room-tabs { display: grid; grid-template-columns: repeat(6, minmax(118px, 1fr)); gap: 0; overflow-x: auto; border-bottom: 1px solid var(--pn-line-2); background: var(--pn-surface); scrollbar-width: thin; }
+.room-tab { min-height: 60px; padding: 10px 12px; border: 0; border-right: 1px solid var(--pn-line); border-bottom: 3px solid transparent; background: transparent; color: var(--pn-ink-2); font: 600 11px/1.25 var(--pn-mono); text-align: left; cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.room-tab small { display: block; margin-bottom: 4px; color: var(--pn-ink-3); font-size: 9px; letter-spacing: .1em; }
+.room-tab:hover { background: var(--pn-hover); }
+.room-tab[aria-selected="true"] { color: var(--pn-ink); background: var(--pn-card); border-bottom-color: var(--pn-brand); }
+.lab-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); }
+.lab-toolbar__label { margin-right: auto; font: 600 10px var(--pn-mono); letter-spacing: .08em; color: var(--pn-ink-3); text-transform: uppercase; }
+.mini-control { border: 1px solid var(--pn-line-2); border-radius: 5px; background: var(--pn-card); color: var(--pn-ink-2); padding: 5px 9px; font: 600 10px var(--pn-mono); cursor: pointer; }
+.mini-control:hover, .mini-control[aria-pressed="true"] { background: var(--pn-brand-soft); border-color: var(--pn-brand); color: var(--pn-ink); }
+.room-head { display: flex; align-items: start; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--pn-line); background: var(--pn-card); }
+.room-hash { flex: none; color: var(--pn-brand); font: 600 23px/1 var(--pn-mono); }
+.room-head h3 { margin: 0; color: var(--pn-ink); font: 650 18px/1.2 var(--pn-ui); }
+.room-topic { margin: 3px 0 0; color: var(--pn-ink-3); font-size: 12px; }
+.room-live { margin-left: auto; }
+.room-stage { display: grid; grid-template-columns: minmax(310px, .92fr) minmax(360px, 1.08fr); min-height: 500px; }
+.graph-side { padding: 18px; border-right: 1px solid var(--pn-line); background: var(--pn-paper); }
+.side-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; font: 600 10px var(--pn-mono); letter-spacing: .09em; text-transform: uppercase; color: var(--pn-ink-3); }
+.side-label output { color: var(--pn-brand); letter-spacing: 0; text-transform: none; }
+.channel-core { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px 12px; border: 1.5px solid var(--pn-brand); border-radius: 7px; background: var(--pn-card); }
+.kind-glyph { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--pn-line-2); border-radius: 6px; color: var(--pn-brand); font: 700 15px var(--pn-mono); }
+.node-title { font-weight: 650; color: var(--pn-ink); }
+.node-kind { color: var(--pn-ink-3); font: 9px var(--pn-mono); letter-spacing: .08em; text-transform: uppercase; }
+.graph-group { margin-top: 13px; padding-left: 12px; border-left: 1px solid var(--pn-line-2); }
+.graph-group__label { margin-bottom: 7px; color: var(--pn-ink-3); font: 9px var(--pn-mono); letter-spacing: .08em; text-transform: uppercase; }
+.node-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.graph-node { display: inline-flex; align-items: center; gap: 6px; min-height: 31px; padding: 4px 8px; border: 1px solid var(--pn-line-2); border-radius: 6px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 11px; transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.graph-node .edge-label { color: var(--pn-ink-3); font: 8px var(--pn-mono); }
+.graph-node .pn-avatar { width: 18px; height: 18px; font-size: 8px; }
+.graph-node.session { border-color: color-mix(in srgb, var(--pn-run) 55%, var(--pn-line)); }
+.graph-node.anchor { border-color: color-mix(in srgb, var(--pn-brand) 48%, var(--pn-line)); }
+.room-stage [data-reveal] { opacity: 0; visibility: hidden; transform: translateY(7px); }
+.room-stage[data-frame="1"] [data-reveal="1"],
+.room-stage[data-frame="2"] [data-reveal="1"],
+.room-stage[data-frame="3"] [data-reveal="1"],
+.room-stage[data-frame="2"] [data-reveal="2"],
+.room-stage[data-frame="3"] [data-reveal="2"],
+.room-stage[data-frame="3"] [data-reveal="3"] { opacity: 1; visibility: visible; transform: translateY(0); }
+.thread-side { min-width: 0; display: flex; flex-direction: column; background: var(--pn-paper); }
+.thread-side .pn-tabs { border-radius: 0; }
+.replica-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: .06em; text-align: center; text-transform: uppercase; }
+.replica-tab--active { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+.thread-wrap { flex: 1; min-height: 410px; max-height: 470px; overflow-y: auto; }
+.thread-wrap .pn-thread { border-radius: 0; }
+.pn-turn { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.pn-turn[data-reveal] { opacity: 0; visibility: hidden; transform: translateX(8px); }
+.room-stage[data-frame="1"] .pn-turn[data-reveal="1"],
+.room-stage[data-frame="2"] .pn-turn[data-reveal="1"],
+.room-stage[data-frame="3"] .pn-turn[data-reveal="1"],
+.room-stage[data-frame="2"] .pn-turn[data-reveal="2"],
+.room-stage[data-frame="3"] .pn-turn[data-reveal="2"],
+.room-stage[data-frame="3"] .pn-turn[data-reveal="3"] { opacity: 1; visibility: visible; transform: translateX(0); }
+.reply-mark { display: inline-flex; margin: 6px 0 0 26px; color: var(--pn-info); font: 9px var(--pn-mono); }
+.room-facts { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--pn-line); background: var(--pn-card); }
+.room-fact { padding: 11px 13px; border-right: 1px solid var(--pn-line); }
+.room-fact:last-child { border-right: 0; }
+.room-fact b { display: block; color: var(--pn-ink-3); font: 600 8.5px var(--pn-mono); letter-spacing: .08em; text-transform: uppercase; }
+.room-fact span { display: block; margin-top: 4px; color: var(--pn-ink-2); font-size: 11px; line-height: 1.4; }
+.lab-controls { padding: 0 14px 14px; border-top: 1px solid var(--pn-line); background: var(--pn-surface); }
+.lab-controls .tmc { margin-top: 12px; border-color: var(--pn-line-2); }
+.lab-controls .tmc .btn { color: var(--pn-ink); border-color: var(--pn-line); font-family: var(--pn-ui); }
+.lab-controls .tmc input { accent-color: var(--pn-brand); }
+.lab-controls .caption { color: var(--pn-ink-3); margin: 8px 0 0; max-width: none; }
+.compare-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.compare { width: 100%; min-width: 780px; border-collapse: collapse; font-size: 13.5px; }
+.compare th, .compare td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.compare th { color: var(--muted); font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.compare tbody tr:last-child td { border-bottom: 0; }
+.compare td:first-child { color: var(--ink); font-weight: 700; white-space: nowrap; }
+.compare code { white-space: nowrap; }
+.truth-grid { display: grid; grid-template-columns: 1.4fr .8fr; gap: 16px; }
+.truth-list { margin: 10px 0 0; padding-left: 20px; }
+.truth-list li { margin: 8px 0; }
+.future-card { border: 1px dashed var(--line-strong); background: var(--surface); border-radius: var(--r); padding: 16px; }
+.future-card .label { color: var(--muted); font: 600 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.future-card h3 { margin: 8px 0; font-size: 20px; }
+.future-card p { color: var(--muted); font-size: 14px; }
+.sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
+@media (max-width: 760px) {
+  header.site .hub-note { display: none; }
+  main { padding: 20px 16px 56px; }
+  h1 { font-size: 37px; }
+  .room-intro { grid-template-columns: 1fr; }
+  .verify-note { text-align: left; }
+  .room-tabs { grid-template-columns: repeat(6, 132px); }
+  .room-stage { grid-template-columns: 1fr; min-height: 0; }
+  .graph-side { border-right: 0; border-bottom: 1px solid var(--pn-line); }
+  .thread-wrap { max-height: none; min-height: 360px; }
+  .room-facts { grid-template-columns: 1fr 1fr; }
+  .room-fact:nth-child(2) { border-right: 0; }
+  .room-fact:nth-child(-n+2) { border-bottom: 1px solid var(--pn-line); }
+  .truth-grid { grid-template-columns: 1fr; }
+  .tmc { flex-wrap: wrap; }
+  .tmc input[type="range"] { flex-basis: 180px; min-height: 36px; }
+}
+@media (max-width: 420px) {
+  header.site { padding-left: 16px; padding-right: 16px; }
+  .room-lab { margin-left: -8px; margin-right: -8px; }
+  .room-head { padding: 13px 12px; }
+  .graph-side { padding: 14px 12px; }
+  .room-live { display: none; }
+  .room-facts { grid-template-columns: 1fr; }
+  .room-fact { border-right: 0; border-bottom: 1px solid var(--pn-line); }
+  .room-fact:last-child { border-bottom: 0; }
+  .tmc .btn { flex: 1 1 auto; justify-content: center; }
+  .tmc input[type="range"] { order: 3; width: calc(100% - 76px); flex-basis: auto; }
+  .tmc .tmc-count { order: 4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .room-stage [data-reveal], .pn-turn[data-reveal] { transform: none; }
+}
+.force-reduced .room-stage [data-reveal], .force-reduced .pn-turn[data-reveal] { transform: none; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm<i>8</i> Help</span>
+  <span class="crumb">/ Six rooms</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+<main id="main">
+  <div class="kicker">Section 8 · Collaboration · worked example 6 of 6</div>
+  <h1>Six rooms</h1>
+  <p class="lede">A channel is not one fixed ritual. Pick a room, then assemble its cast, session routes, shared entities, and durable message shape.</p>
+  <div class="hero-meta">
+    <span class="stamp">surface-checked 2026-08-20</span>
+    <span class="pill pill--accent">Northlake workspace</span>
+    <span class="pill pill--ok"><span class="pill__dot"></span>shipped channel mechanics</span>
+  </div>
+  <div class="ink-legend" aria-label="Truth status legend">
+    <span><span class="swatch swatch--solid" aria-hidden="true"></span><b>Solid ink</b> — shipped and verified</span>
+    <span><span class="swatch swatch--ghost" aria-hidden="true"></span><b>Ghost ink</b> — not presented as a working surface</span>
+  </div>
+
+  <section aria-labelledby="atlas-heading">
+    <div class="room-intro">
+      <div>
+        <h2 id="atlas-heading"><span class="no">01</span>Build the room</h2>
+        <p>All six examples use the same graph laws. What changes is the roster, which teammate sessions should receive a top-level message, and where discussion branches.</p>
+      </div>
+      <p class="verify-note">Use Left/Right on the room tabs. Use Play, Next, or the stage slider for the four assembly steps.</p>
+    </div>
+
+    <div class="room-lab pn" id="room-lab">
+      <div class="room-tabs" role="tablist" aria-label="Choose a channel room">
+        <button class="room-tab" id="tab-incident" type="button" role="tab" aria-selected="true" aria-controls="room-panel" tabindex="0" data-room="incident"><small>01 · urgent</small>Incident room</button>
+        <button class="room-tab" id="tab-release" type="button" role="tab" aria-selected="false" aria-controls="room-panel" tabindex="-1" data-room="release"><small>02 · gated</small>Release channel</button>
+        <button class="room-tab" id="tab-research" type="button" role="tab" aria-selected="false" aria-controls="room-panel" tabindex="-1" data-room="research"><small>03 · parallel</small>Research den</button>
+        <button class="room-tab" id="tab-support" type="button" role="tab" aria-selected="false" aria-controls="room-panel" tabindex="-1" data-room="support"><small>04 · routed</small>Support intake</button>
+        <button class="room-tab" id="tab-standup" type="button" role="tab" aria-selected="false" aria-controls="room-panel" tabindex="-1" data-room="standup"><small>05 · rhythmic</small>Standup channel</button>
+        <button class="room-tab" id="tab-review" type="button" role="tab" aria-selected="false" aria-controls="room-panel" tabindex="-1" data-room="review"><small>06 · adversarial</small>Pair-review room</button>
+      </div>
+      <div class="lab-toolbar">
+        <span class="lab-toolbar__label">Product replica controls</span>
+        <button class="mini-control" id="theme-paper" type="button" aria-pressed="true">Paper theme</button>
+        <button class="mini-control" id="theme-night" type="button" aria-pressed="false">Night theme</button>
+        <button class="mini-control" id="motion-toggle" type="button" aria-pressed="false">Still motion</button>
+      </div>
+      <div id="room-panel" role="tabpanel" aria-labelledby="tab-incident">
+        <div class="room-head">
+          <span class="room-hash" aria-hidden="true">#</span>
+          <div>
+            <h3 id="room-title">incident-login-loop</h3>
+            <p class="room-topic" id="room-topic">Coordinate diagnosis, fix, and the human go/no-go.</p>
+          </div>
+          <span class="pn-pill pn-pill--run room-live"><span class="pn-pill__dot pn-pill__dot--pulse"></span>live room</span>
+        </div>
+
+        <div class="lab-controls">
+          <div class="tmc" aria-label="Assembly controls">
+            <button class="btn tmc-play" type="button">Play</button>
+            <button class="btn tmc-step" type="button">Next</button>
+            <label class="sr-only" for="room-scrub">Assembly stage</label>
+            <input class="tmc-scrub" id="room-scrub" type="range" min="0" max="3" step="1" value="0">
+            <output class="tmc-count">1 / 4</output>
+          </div>
+          <p class="caption" data-replay-caption>Start with one channel entity: a durable message anchor with its own route and feed.</p>
+        </div>
+
+        <div class="room-stage" id="room-stage" data-frame="0">
+          <div class="graph-side">
+            <div class="side-label"><span>Graph recipe</span><output id="stage-name" aria-live="polite">Channel entity</output></div>
+            <div class="channel-core">
+              <span class="kind-glyph" aria-hidden="true">#</span>
+              <div><div class="node-title" id="graph-channel">incident-login-loop</div><div class="node-kind">channel · durable anchor</div></div>
+            </div>
+            <div class="graph-group" data-reveal="1">
+              <div class="graph-group__label">has_member · roster, not access control</div>
+              <ul class="node-list" id="cast-list" aria-label="Room participants"></ul>
+            </div>
+            <div class="graph-group" data-reveal="2">
+              <div class="graph-group__label">top-level @tag routes</div>
+              <ul class="node-list" id="session-list" aria-label="Work session routes"></ul>
+            </div>
+            <div class="graph-group" data-reveal="3">
+              <div class="graph-group__label">shared graph entities</div>
+              <ul class="node-list" id="anchor-list" aria-label="Shared entities"></ul>
+            </div>
+          </div>
+
+          <div class="thread-side">
+            <div class="pn-tabs" aria-label="Example channel tabs">
+              <span class="replica-tab replica-tab--active">Feed</span>
+              <span class="replica-tab">Tasks</span>
+              <span class="replica-tab">Docs</span>
+            </div>
+            <div class="thread-wrap" aria-label="Example durable channel messages">
+              <div class="pn-thread" id="message-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="room-facts" aria-live="polite">
+          <div class="room-fact"><b>Graph core</b><span id="fact-core"></span></div>
+          <div class="room-fact"><b>Participants</b><span id="fact-cast"></span></div>
+          <div class="room-fact"><b>Session policy</b><span id="fact-sessions"></span></div>
+          <div class="room-fact"><b>Message pattern</b><span id="fact-pattern"></span></div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="compare-heading">
+    <h2 id="compare-heading"><span class="no">02</span>Compare before you copy</h2>
+    <p>The right room is the one whose graph keeps the work legible after the live moment passes.</p>
+    <div class="compare-wrap" tabindex="0" role="region" aria-label="Scrollable six room comparison">
+      <table class="compare">
+        <thead><tr><th>Room</th><th>Cast</th><th>Session links</th><th>Message shape</th><th>Shared anchor</th></tr></thead>
+        <tbody>
+          <tr><td>Incident</td><td>2 humans + triage + fix agents</td><td>Both agents live</td><td>Fast updates; one decision thread</td><td><code>task</code></td></tr>
+          <tr><td>Release</td><td>Release captain, developer, CI + deploy agents</td><td>CI live; deploy starts on demand</td><td>Gate events; thread per failure</td><td><code>task</code> + <code>pull_request</code></td></tr>
+          <tr><td>Research</td><td>Curator human + 2 analyst agents</td><td>Parallel analyst sessions</td><td>Findings at top level; synthesis thread</td><td><code>doc</code></td></tr>
+          <tr><td>Support</td><td>Support human + dispatcher + specialist</td><td>Dispatcher routes; specialist wakes per case</td><td>One root per case; resolution in branch</td><td><code>task</code></td></tr>
+          <tr><td>Standup</td><td>All teammates + steering humans</td><td>Message live sessions; store to exited ones</td><td>One update per teammate; questions in threads</td><td>Optional <code>task</code></td></tr>
+          <tr><td>Pair review</td><td>Author agent + reviewer agent + human referee</td><td>Two live sessions</td><td>Claim, critique, human verdict</td><td><code>task</code> + <code>doc</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="truth-heading">
+    <h2 id="truth-heading"><span class="no">03</span>What the product does today</h2>
+    <div class="truth-grid">
+      <div class="card">
+        <span class="pill pill--ok">solid ink · verified</span>
+        <ul class="truth-list">
+          <li>A <code>channel</code> is a graph entity with a feed, composer, threaded branches, pinned entities, and nested subchannels.</li>
+          <li><code>has_member</code> connects a channel to members and teammates. It is a roster, not an ACL or subscription.</li>
+          <li>A top-level <code>@</code> teammate tag reuses a live work session or starts one, then stores one message across the channel and addressed session anchors.</li>
+          <li>Tasks and docs selected in the attach picker are extra message anchors, so the same message also appears in their Discussion.</li>
+          <li>Messages are stored first. A finished session can retain a message without being woken; live delivery is a separate outcome.</li>
+        </ul>
+      </div>
+      <aside class="future-card" aria-label="Boundary not presented as shipped">
+        <span class="label">ghost ink · boundary</span>
+        <h3>Text rooms only</h3>
+        <p>The live CLI exposes grants for <code>voice_channel</code> entities, but this build check did not establish a dedicated voice-room component in the current UI source. These six examples do not imply a working voice-room experience.</p>
+        <p>Also: session and teammate <code>@</code> actions are top-level channel actions. Thread replies do not spawn or address sessions.</p>
+      </aside>
+    </div>
+  </section>
+</main>
+<footer class="site">Last updated 2026-08-20 · Six rooms · tm8 Help v1 · <span class="stamp">channel surface and CLI checked at build time</span></footer>
+
+<script id="tm8-foundation-js">
+/* ============================================================
+   tm8 Help — FOUNDATION SCRIPT (v2 — unchanged from v1)
+   Lift this <script> verbatim. Provides:
+   - TM8.reduced()          honest prefers-reduced-motion check
+   - TM8.stepper(root,opts) the ONE sequence driver (play/step/scrub)
+   - toggle2 wiring         the ONE "type / comes back" toggle
+   - TM8_MOCK               the shared Northlake mock workspace
+   ============================================================ */
+(function () {
+  'use strict';
+  var TM8 = {};
+  var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  TM8.reduced = function (el) {
+    return mq.matches || !!(el && el.closest && el.closest('.force-reduced'));
+  };
+
+  /* The standard control cluster. root contains .tmc-play, .tmc-step,
+     .tmc-scrub, .tmc-count. opts = { frames, render(i), intervalMs?, captions?[] }.
+     Play runs ONCE to the last frame and stops (starts, teaches, settles).
+     Under reduced motion, Play advances frame by frame with no animation. */
+  TM8.stepper = function (root, opts) {
+    var frames = opts.frames, i = 0, timer = null;
+    var play = root.querySelector('.tmc-play');
+    var step = root.querySelector('.tmc-step');
+    var scrub = root.querySelector('.tmc-scrub');
+    var count = root.querySelector('.tmc-count');
+    var cap = root.querySelector('[data-replay-caption]');
+    function render() {
+      opts.render(i);
+      if (scrub) scrub.value = String(i);
+      if (count) count.textContent = (i + 1) + ' / ' + frames;
+      if (cap && opts.captions) cap.textContent = opts.captions[i] || '';
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (play) play.textContent = 'Play';
+    }
+    function set(n) { i = Math.max(0, Math.min(frames - 1, n)); render(); }
+    if (play) play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      if (i >= frames - 1) set(0);
+      play.textContent = 'Pause';
+      var ms = opts.intervalMs || 1400;
+      if (TM8.reduced(root)) ms = Math.max(ms, 1800); /* no motion: give reading time */
+      timer = setInterval(function () {
+        if (i >= frames - 1) { stop(); return; }
+        set(i + 1);
+      }, ms);
+    });
+    if (step) step.addEventListener('click', function () { stop(); set(i >= frames - 1 ? 0 : i + 1); });
+    if (scrub) scrub.addEventListener('input', function () { stop(); set(parseInt(scrub.value, 10) || 0); });
+    render();
+    return { set: set, stop: stop };
+  };
+
+  /* toggle2: [data-toggle2] with button[data-pane] + [data-pane-id] panes */
+  TM8.wireToggles = function (scope) {
+    (scope || document).querySelectorAll('[data-toggle2]').forEach(function (box) {
+      var btns = box.querySelectorAll('button[data-pane]');
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          btns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+          box.querySelectorAll('[data-pane-id]').forEach(function (p) {
+            p.classList.toggle('is-shown', p.getAttribute('data-pane-id') === b.getAttribute('data-pane'));
+          });
+        });
+      });
+    });
+  };
+
+  /* ---- TM8_MOCK: the Northlake workspace (fiction; DTO-true shapes) ----
+     Shapes follow tm8.entity-context.v1 output, trimmed to rendered fields.
+     Ids are v7-shaped and fake. Model ids are NOT invented: teammates carry
+     provider only; harvest exact model ids from the live catalog if needed. */
+  var SPACE = '01a09e00-0000-7000-8000-1c2d3e4f5a6b';
+  function member(id, name, initials) {
+    return { id: id, kind: 'member', displayName: name, initials: initials, isAgent: false };
+  }
+  function teammate(id, name, initials, provider, role) {
+    return { id: id, kind: 'team_member', displayName: name, initials: initials,
+             isAgent: true, provider: provider, role: role || null, avatar: null,
+             ownerMemberId: '01a09e01-1111-7111-8111-aaaaaaaaaaa1' };
+  }
+  var MARA = member('01a09e01-1111-7111-8111-aaaaaaaaaaa1', 'Mara Voss', 'MV');
+  var THEO = member('01a09e02-2222-7222-8222-bbbbbbbbbbb2', 'Theo Iwu', 'TI');
+  var JUNIPER = teammate('01a09e10-3333-7333-8333-ccccccccccc3', 'Juniper', 'JU', 'claude-code');
+  var CALLISTO = teammate('01a09e11-4444-7444-8444-ddddddddddd4', 'Callisto', 'CA', 'codex');
+  var DISPATCHER = teammate('01a09e12-5555-7555-8555-eeeeeeeeeee5', 'Dispatcher', 'DI', 'claude-code', 'routes, never works');
+  var DREAMER = teammate('01a09e13-6666-7666-8666-fffffffffff6', 'Dreamer', 'DR', 'claude-code', 'tends memories, never deletes');
+  function task(id, title, status, category, priority, assignees, accDone, accTotal, version, extra) {
+    var t = {
+      id: id, spaceId: SPACE, kind: 'task', title: title, parentId: null,
+      visibility: 'space', version: version, category: category,
+      counters: { likes: 0, dislikes: 0, stars: 0, points: 0,
+        messages: (extra && extra.messages) || 0,
+        humanMessages: (extra && extra.humanMessages) || 0,
+        agentMessages: (extra && extra.agentMessages) || 0,
+        docs: 0, memories: 0, viewerReaction: null },
+      state: { kind: 'task', status: status, priority: priority, axes: {},
+        dueDate: null, assignees: assignees,
+        assignments: assignees.map(function (a) {
+          return { assignee: a, assignedBy: MARA, assignedAt: '2026-08-19T10:04:00.000Z' };
+        }),
+        acceptance: { total: accTotal, completed: accDone },
+        completionGate: (extra && extra.gate) || 'none' }
+    };
+    return t;
+  }
+  window.TM8_MOCK = {
+    space: { id: SPACE, name: 'Northlake' },
+    members: [MARA, THEO],
+    teammates: [JUNIPER, CALLISTO, DISPATCHER, DREAMER],
+    tasks: [
+      task('01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11', 'Fix login redirect loop', 'working', 'in_progress', 'high', [JUNIPER], 1, 3, 4, { messages: 3, humanMessages: 1, agentMessages: 2 }),
+      task('01a09f22-5d10-7b22-9c3f-1e4a6b8d0f22', 'Ship invite flow', 'in_review', 'in_progress', 'medium', [CALLISTO, THEO], 4, 4, 7, { gate: 'pr_merged' }),
+      task('01a09f23-6e20-7c33-8d40-2f5b7c9e1a33', 'Write release notes', 'open', 'to_do', 'low', [], 0, 2, 1),
+      task('01a09f24-7f30-7d44-9e51-3a6c8d0f2b44', 'Retire legacy webhook', 'done', 'done', 'medium', [JUNIPER], 2, 2, 9)
+    ],
+    session: {
+      id: '01a09f40-8a40-7e55-8f62-4b7d9e1a3c55', spaceId: SPACE, kind: 'work_session',
+      title: 'Juniper — login redirect loop', version: 2,
+      state: { kind: 'work_session', teammate: JUNIPER, provider: 'claude-code',
+               accessMode: 'fullAccess', workdir: 'worktree', live: true }
+    },
+    messages: [
+      { id: '01a09f50-9b50-7f66-8a73-5c8e0f2b4d66', kind: 'message',
+        author: MARA, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:12:00.000Z',
+        body: 'The loop only happens after a password change — can you check the session cookie path?' },
+      { id: '01a09f51-0c60-7a77-8b84-6d9f1a3c5e77', kind: 'message',
+        author: JUNIPER, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:14:00.000Z',
+        body: 'Confirmed. The redirect target is cached before the credential rotates. Fixing in the worktree; acceptance 1/3 done.' },
+      { id: '01a09f52-1d70-7b88-8c95-7e0a2b4d6f88', kind: 'message',
+        author: THEO, anchorId: '01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11',
+        createdAt: '2026-08-19T10:20:00.000Z',
+        body: 'Nice — leave the guard behind a comment, QA wants to trace it.' }
+    ]
+  };
+  window.TM8 = TM8;
+  document.addEventListener('DOMContentLoaded', function () { TM8.wireToggles(document); });
+}());
+</script>
+<script>
+(function () {
+  'use strict';
+  var people = {};
+  window.TM8_MOCK.members.concat(window.TM8_MOCK.teammates).forEach(function (person) {
+    people[person.displayName] = person;
+  });
+
+  var rooms = {
+    incident: {
+      slug: 'incident-login-loop',
+      topic: 'Coordinate diagnosis, fix, and the human go/no-go.',
+      cast: ['Mara Voss', 'Theo Iwu', 'Juniper', 'Callisto'],
+      sessions: ['Juniper · live triage', 'Callisto · live fix'],
+      anchors: ['task · Fix login redirect loop'],
+      facts: ['channel + task', '2 members + 2 teammates', 'reuse 2 live sessions', 'fast updates → decision thread'],
+      messages: [
+        ['Mara Voss', 'Login loop is customer-visible. Keep diagnosis and the go/no-go in this room.', 1, '10:12'],
+        ['Juniper', 'Triage: password change leaves a stale redirect target.', 2, '10:14'],
+        ['Callisto', 'Fix is in review. I attached Fix login redirect loop.', 3, '10:19', 'task · Fix login redirect loop'],
+        ['Theo Iwu', 'Decision: roll forward after the cookie-path check.', 3, '10:22', null, '1 reply · decision thread']
+      ]
+    },
+    release: {
+      slug: 'release-invite-flow',
+      topic: 'Watch the gate, explain failures, and hand off the deploy.',
+      cast: ['Mara Voss', 'Theo Iwu', 'Callisto', 'Juniper'],
+      sessions: ['Callisto · live CI watch', 'Juniper · start on demand'],
+      anchors: ['task · Ship invite flow', 'pull request · invite flow'],
+      facts: ['channel + task + PR', 'captain + dev + 2 teammates', 'CI live; deploy on demand', 'gate events → failure threads'],
+      messages: [
+        ['Mara Voss', 'Release candidate is cut. Watch the invite-flow gate.', 1, '09:00'],
+        ['Callisto', 'CI: checks passed; the merge gate still waits on review.', 2, '09:06'],
+        ['Theo Iwu', 'Reviewer note: explain the redirect migration before merge.', 3, '09:11', null, '2 replies · review thread'],
+        ['Juniper', 'Deploy session can start from a top-level @tag when the gate clears.', 3, '09:14', 'task · Ship invite flow']
+      ]
+    },
+    research: {
+      slug: 'research-session-reliability',
+      topic: 'Run parallel inquiries, then preserve one curated synthesis.',
+      cast: ['Mara Voss', 'Juniper', 'Callisto'],
+      sessions: ['Juniper · analyst A', 'Callisto · analyst B'],
+      anchors: ['doc · Session reliability notes'],
+      facts: ['channel + doc', '1 curator + 2 analyst teammates', '2 parallel live sessions', 'findings → synthesis thread'],
+      messages: [
+        ['Mara Voss', 'Question: which session handoff can lose useful context?', 1, '13:00'],
+        ['Juniper', 'Finding A: the message is stored before live delivery settles.', 2, '13:18'],
+        ['Callisto', 'Finding B: server-recorded provenance remains on the graph.', 2, '13:21'],
+        ['Mara Voss', 'Synthesize both findings in Session reliability notes.', 3, '13:27', 'doc · Session reliability notes', '3 replies · synthesis']
+      ]
+    },
+    support: {
+      slug: 'support-intake',
+      topic: 'Turn each incoming case into a routed, traceable branch.',
+      cast: ['Theo Iwu', 'Dispatcher', 'Juniper'],
+      sessions: ['Dispatcher · live route', 'Juniper · start for case'],
+      anchors: ['task · Invite claim case'],
+      facts: ['channel + case task', 'support lead + router + specialist', 'route, then wake specialist', 'one root per case → resolution branch'],
+      messages: [
+        ['Theo Iwu', 'New case: an invite expires before the teammate joins.', 1, '11:03'],
+        ['Dispatcher', 'Routed to Juniper. The case task is cross-posted here.', 2, '11:04', 'task · Invite claim case'],
+        ['Juniper', 'Reproduced the case. I am checking the claim URL and stored invite.', 3, '11:12'],
+        ['Theo Iwu', 'Keep the customer-safe resolution inside this case thread.', 3, '11:15', null, '4 replies · case thread']
+      ]
+    },
+    standup: {
+      slug: 'standup-northlake',
+      topic: 'Collect one update per teammate; keep human questions threaded.',
+      cast: ['Mara Voss', 'Theo Iwu', 'Juniper', 'Callisto', 'Dispatcher', 'Dreamer'],
+      sessions: ['live sessions receive', 'exited sessions store only'],
+      anchors: ['task · only when an update needs work'],
+      facts: ['channel; tasks optional', 'all people and teammates', 'live receives; exited stores', 'one update each → questions in threads'],
+      messages: [
+        ['Juniper', 'Yesterday: fixed the redirect loop. Today: acceptance 2 of 3.', 1, '09:30'],
+        ['Callisto', 'Reviewing invite flow. Blocked on one CI annotation.', 2, '09:31'],
+        ['Dispatcher', 'Routed two support cases; neither needs escalation.', 2, '09:32'],
+        ['Dreamer', 'Curated the release decision into the workspace memory set.', 2, '09:33'],
+        ['Mara Voss', 'Juniper, put the remaining risk in this thread.', 3, '09:35', null, '1 reply · human steering']
+      ]
+    },
+    review: {
+      slug: 'pair-review-invite-flow',
+      topic: 'Separate authorship, critique, and the human verdict.',
+      cast: ['Theo Iwu', 'Juniper', 'Callisto'],
+      sessions: ['Juniper · author', 'Callisto · reviewer'],
+      anchors: ['task · Ship invite flow', 'doc · Review notes'],
+      facts: ['channel + task + doc', 'author + reviewer + referee', '2 live, independent sessions', 'claim → critique → verdict'],
+      messages: [
+        ['Juniper', 'Patch ready: invite tokens now rotate after acceptance.', 1, '15:40', 'task · Ship invite flow'],
+        ['Callisto', 'Review: add a regression case for a second claim.', 2, '15:47', null, '2 replies · technical review'],
+        ['Theo Iwu', 'Verdict: change requested. Do not merge yet.', 3, '15:52'],
+        ['Juniper', 'Added the case and updated Review notes.', 3, '16:08', 'doc · Review notes']
+      ]
+    }
+  };
+
+  var lab = document.getElementById('room-lab');
+  var panel = document.getElementById('room-panel');
+  var stage = document.getElementById('room-stage');
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.room-tab'));
+  var currentKey = 'incident';
+  var stepper;
+  var captions = [
+    'Start with one channel entity: a durable message anchor with its own route and feed.',
+    'Add members and teammates with has_member. The edge is a roster, not access control.',
+    'Choose session routes at send time: reuse a live session, start a teammate, or store to an exited session.',
+    'Cross-post tasks or docs as extra anchors; use reply threading to keep each branch readable.'
+  ];
+
+  function esc(text) {
+    return String(text).replace(/[&<>"']/g, function (char) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];
+    });
+  }
+  function personChip(name) {
+    var person = people[name];
+    var agent = person && person.isAgent;
+    var tone = agent ? 'brand' : 'info';
+    var shape = agent ? 'agent' : 'human';
+    return '<li class="graph-node"><span class="pn-avatar pn-avatar--' + shape + ' pn-avatar--tone-' + tone + '">' + esc(person ? person.initials : name.slice(0,2)) + '</span><span>' + esc(name) + '</span><span class="edge-label">' + (agent ? 'teammate' : 'member') + '</span></li>';
+  }
+  function simpleNode(text, kind) {
+    return '<li class="graph-node ' + kind + '"><span class="kind-glyph" aria-hidden="true">' + (kind === 'session' ? '›_' : '◇') + '</span><span>' + esc(text) + '</span></li>';
+  }
+  function messageTurn(row) {
+    var person = people[row[0]];
+    var agent = person && person.isAgent;
+    var shape = agent ? 'agent' : 'human';
+    var tone = agent ? 'brand' : 'info';
+    var classes = 'pn-turn' + (agent ? ' pn-turn--agent' : '') + (row[0] === 'Mara Voss' || row[0] === 'Theo Iwu' ? ' pn-turn--me' : '');
+    var entity = row[4] ? '<div class="pn-echip"><span class="pn-echip__kind">' + esc(row[4].split(' · ')[0]) + '</span>' + esc(row[4].split(' · ').slice(1).join(' · ')) + '</div>' : '';
+    var reply = row[5] ? '<span class="reply-mark">↳ ' + esc(row[5]) + '</span>' : '';
+    return '<article class="' + classes + '" data-reveal="' + row[2] + '"><div class="pn-turn__byline"><span class="pn-avatar pn-avatar--' + shape + ' pn-avatar--tone-' + tone + '">' + esc(person ? person.initials : row[0].slice(0,2)) + '</span><strong>' + esc(row[0]) + '</strong><time>' + esc(row[3]) + '</time></div><div class="pn-bubble">' + esc(row[1]) + (entity ? '<br>' + entity : '') + '</div>' + reply + '</article>';
+  }
+  function renderRoom(key) {
+    var room = rooms[key];
+    currentKey = key;
+    document.getElementById('room-title').textContent = room.slug;
+    document.getElementById('room-topic').textContent = room.topic;
+    document.getElementById('graph-channel').textContent = room.slug;
+    document.getElementById('cast-list').innerHTML = room.cast.map(personChip).join('');
+    document.getElementById('session-list').innerHTML = room.sessions.map(function (item) { return simpleNode(item, 'session'); }).join('');
+    document.getElementById('anchor-list').innerHTML = room.anchors.map(function (item) { return simpleNode(item, 'anchor'); }).join('');
+    document.getElementById('message-list').innerHTML = room.messages.map(messageTurn).join('');
+    ['fact-core','fact-cast','fact-sessions','fact-pattern'].forEach(function (id, index) {
+      document.getElementById(id).textContent = room.facts[index];
+    });
+    tabs.forEach(function (tab) {
+      var active = tab.getAttribute('data-room') === key;
+      tab.setAttribute('aria-selected', String(active));
+      tab.setAttribute('tabindex', active ? '0' : '-1');
+      if (active) panel.setAttribute('aria-labelledby', tab.id);
+    });
+    if (stepper) stepper.set(0);
+  }
+  tabs.forEach(function (tab, index) {
+    tab.addEventListener('click', function () { renderRoom(tab.getAttribute('data-room')); });
+    tab.addEventListener('keydown', function (event) {
+      var next = null;
+      if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = tabs.length - 1;
+      if (next !== null) {
+        event.preventDefault();
+        tabs[next].focus();
+        renderRoom(tabs[next].getAttribute('data-room'));
+      }
+    });
+  });
+
+  stepper = window.TM8.stepper(lab, {
+    frames: 4,
+    intervalMs: 1250,
+    captions: captions,
+    render: function (index) {
+      stage.setAttribute('data-frame', String(index));
+      document.getElementById('stage-name').textContent = ['Channel entity','Roster edges','Session routes','Durable flow'][index];
+    }
+  });
+
+  var paper = document.getElementById('theme-paper');
+  var night = document.getElementById('theme-night');
+  function setTheme(dark) {
+    lab.classList.toggle('pn--dark', dark);
+    paper.setAttribute('aria-pressed', String(!dark));
+    night.setAttribute('aria-pressed', String(dark));
+  }
+  paper.addEventListener('click', function () { setTheme(false); });
+  night.addEventListener('click', function () { setTheme(true); });
+  document.getElementById('motion-toggle').addEventListener('click', function () {
+    var active = !lab.classList.contains('force-reduced');
+    lab.classList.toggle('force-reduced', active);
+    this.setAttribute('aria-pressed', String(active));
+    this.textContent = active ? 'Standard motion' : 'Still motion';
+    stepper.stop();
+  });
+  renderRoom(currentKey);
+}());
+</script>
+</body>
+</html>

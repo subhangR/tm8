@@ -215,31 +215,6 @@
 /* LEFT THIRD what exists, RIGHT TWO THIRDS what is happening now. The ratio is
    the brief itself — "current sessions, current chat, anything I created" —
    expressed as screen area, so it is a `4fr 8fr` grid and not a taste. */
-.cv2-root .hp-hero {
-  flex: none;
-  margin: 14px 7px 2px;
-}
-.cv2-root .hp-hero__line {
-  margin: 0;
-  min-width: 0;
-  color: var(--pn-ink);
-  font-family: var(--pn-ui);
-  /* `--pn-fs-xl` is NOT defined anywhere in the package — checked, not assumed.
-     The fallback is therefore load-bearing and deliberate: a bare
-     `var(--pn-fs-xl)` would be invalid at computed-value time and the heading
-     would silently inherit its parent's size. If a display size token is ever
-     added, this picks it up; until then 30px is the value. */
-  font-size: var(--pn-fs-xl, 30px);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: var(--pn-lh-tight);
-}
-.cv2-root .hp-hero__note {
-  margin: 4px 0 0;
-  color: var(--pn-ink-3);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-sm);
-}
 .cv2-root .hp-home {
   display: grid;
   grid-template-columns: 4fr 8fr;
@@ -280,16 +255,6 @@
 
 /* --- the attention card --------------------------------------------------- */
 .cv2-root .hp-attention,
-.cv2-root .hp-group {
-  display: flex;
-  flex-direction: column;
-  flex: none;
-  min-width: 0;
-  padding: 11px 12px 12px;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-lg);
-  background: var(--pn-card);
-}
 .cv2-root .hp-attention__eyebrow {
   margin: 0 0 8px;
   color: var(--pn-ink-2);
@@ -358,106 +323,17 @@
    no grid to bridge to. If a count ever has to give way here again, re-probe
    with the ladder; do not port the old thresholds, they were measured against
    a layout that is gone. */
-.cv2-root .hp-group__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-}
 /* The group's NAME takes the room and the count gives way. `WORK2281` in the
    owner's screenshot was this heading with `min-width: 0` and no clip, so the
    box shrank while the glyphs kept painting through the gap and into the
    number. Clipping is what makes a min-width of 0 honest. */
-.cv2-root .hp-group__name {
-  margin: 0;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--pn-ink);
-  font-family: var(--pn-caps);
-  font-size: var(--pn-fs-label);
-  font-weight: 750;
-  letter-spacing: var(--pn-track-label);
-  text-transform: uppercase;
-}
-.cv2-root .hp-group__head > .enav-metrics { flex: none; white-space: nowrap; }
-.cv2-root .hp-group__note {
-  margin: 5px 0 0;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--pn-ink-3);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* TWO DENSITIES, ONE CARD. Rows when a noun is long, wrapping chips when every
    noun is short — the split is decided in `HomePage.tsx` from `labelPlural`,
    with the budget and its arithmetic stated there. */
-.cv2-root .hp-group__items {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-  margin-top: 7px;
-}
-.cv2-root .hp-group[data-density='chips'] .hp-group__items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 /* THE LAW, in three declarations: the mark never shrinks, the name takes all
    remaining room, and the count keeps its intrinsic width — a count is never
    clipped, because a sliced number is a different and entirely plausible
    number, which is the one failure mode a count has that a noun does not. */
-.cv2-root .hp-group__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 30px;
-  padding: 4px 8px;
-  border: 1px solid transparent;
-  border-radius: var(--pn-r-sm);
-  background: transparent;
-  color: var(--pn-ink-2);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-label);
-  font-weight: 600;
-  line-height: var(--pn-lh-tight);
-  text-align: left;
-  cursor: pointer;
-}
-.cv2-root .hp-group[data-density='chips'] .hp-group__item {
-  width: auto;
-  border-color: var(--pn-line);
-  border-radius: 999px;
-}
-.cv2-root .hp-group__item:hover { background: var(--pn-hover); color: var(--pn-ink); }
-.cv2-root .hp-group__item[aria-current='page'] {
-  background: var(--pn-brand-soft);
-  color: var(--pn-ink);
-}
-.cv2-root .hp-group__item:focus-visible {
-  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
-  outline-offset: 1px;
-}
-.cv2-root .hp-group__item:disabled { cursor: default; opacity: 0.72; }
-.cv2-root .hp-group__mark { display: inline-flex; flex: none; color: var(--pn-ink-3); }
-.cv2-root .hp-group__item[aria-current='page'] .hp-group__mark { color: var(--pn-brand); }
-.cv2-root .hp-group__mark .kit-vicon { width: 16px; height: 16px; }
-.cv2-root .hp-group__noun {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cv2-root .hp-group__item > .enav-metrics { flex: none; white-space: nowrap; }
 
 /* ===================== THE NOUN FLOOR, AND THE ESCAPE HATCH =================
    The collapsed rail (owner, 065613-81ca.png) rendered `Sessio…`, `Projec…`,
@@ -497,24 +373,12 @@
    PROVISIONAL: every number above is arithmetic, not a browser reading. It
    wants one scheduled render pass. If these cards ever look wrong, this block
    is the first thing to re-measure. */
-.cv2-root .hp-group {
-  container-type: inline-size;
-  container-name: hp-card;
-}
 @container hp-card (max-width: 162px) {
-  .cv2-root .hp-group[data-density='rows'] .hp-group__item > .enav-metrics { display: none; }
 }
 @container hp-card (max-width: 100px) {
-  .cv2-root .hp-group[data-density='rows'] .hp-group__noun { display: none; }
 }
 
 @media (forced-colors: active) {
-  .cv2-root .hp-group__item[aria-current='page'] {
-    border-color: Highlight;
-    background: Highlight;
-    color: HighlightText;
-  }
-  .cv2-root .hp-group__item[aria-current='page'] .hp-group__mark { color: HighlightText; }
 }
 
 .cv2-root .hp-aside {
@@ -1006,4 +870,47 @@
      pane stays MOUNTED behind a centre override (D8). Unmounting it would
      re-fetch on every toggle. */
   visibility: hidden;
+}
+
+/* START — the three create verbs, first on Home (owner, 2026-08-30).
+   "have one create new chat, New SESSIONS AND New Task first".
+
+   A ROW OF VERBS, NOT CARDS. What this replaces was three cards carrying
+   nineteen kind rows and their counts; the complaint was that Home stated an
+   inventory where it should state what you can DO. So: one line, three words,
+   no ornament, no counts. If it ever needs a fourth it still fits.
+
+   `flex-wrap` because at the 320px floor three verbs do not sit on one line
+   and wrapping is the honest failure — the alternative is a scroll with no cue
+   or a deleted control, which is the defect the list header was fixed for. */
+.cv2-root .hp-start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+.cv2-root .hp-start__verb {
+  appearance: none;
+  font: 600 var(--pn-fs-sm)/1 var(--pn-ui);
+  color: var(--pn-ink);
+  background: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  cursor: pointer;
+}
+.cv2-root .hp-start__verb:hover {
+  border-color: var(--pn-brand-2);
+  color: var(--pn-brand-2);
+}
+/* A REFUSED VERB IS SHOWN, NOT HIDDEN — it carries its reason in `title`.
+   A missing button reads as a missing feature; a disabled one that says why
+   reads as a product that knows its own state. */
+.cv2-root .hp-start__verb--off {
+  color: var(--pn-ink-3);
+  border-style: dashed;
+  cursor: default;
 }

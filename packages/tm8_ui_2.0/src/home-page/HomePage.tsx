@@ -41,7 +41,6 @@ import {
   entityNavigationLabel,
   getKind,
   KindIcon,
-  summarizeEntityNavigation,
   type EntityNavigationGroup,
 } from '../domain';
 import {
@@ -94,108 +93,84 @@ export interface HomePageProps {
   onOpenKind?(kind: string): void;
   onOpenEntity(id: string): void;
   onOpenWorkspace(): void;
-}
-
-
-/* WHICH GROUPS RENDER AS ROWS, AND WHICH AS WRAPPING CHIPS.
- *
- * The target uses two densities deliberately: WORK is a vertical list because
- * its nouns are long, LIBRARY and PEOPLE are wrapping chips because theirs are
- * short. One shape cannot serve both — a long noun in a chip either wraps the
- * chip onto its own line, wasting the density chips exist for, or truncates,
- * which the law forbids.
- *
- * THE BUDGET, with its arithmetic, because a rule without one is how
- * `--tt-actions-reserve` became the worst defect on the screen. The left column
- * is a third of the canvas — about 360px at the narrowest desktop Home reaches,
- * 336px inside the card. Two chips to a line with an 8px gap gives each 164px.
- * A chip spends ~46px on its own chrome (8px padding, a 16px mark, two 6px
- * gaps, 8px padding, 2px border) and up to ~62px on an `N new` pill, leaving
- * ~56px for the noun.
- *
- * ITS MARGIN IS THIN AND THAT IS STATED RATHER THAN HIDDEN: measured last cycle
- * at 5.7px per character, the longest noun in WORK is `Pull requests` (13ch,
- * ~74px) and in LIBRARY it is `Collections` (11ch, ~63px). The threshold
- * separating them is worth about two characters. It is set at 12 so the
- * registry's real data reproduces the target's grouping — the mockup shows only
- * four of LIBRARY's seven kinds, so its own data would not have exercised this.
- * UNMEASURED: the 56px chip budget is arithmetic, not a browser reading. It
- * needs one scheduled run to confirm, and until then this is the number I would
- * check first if the cards look wrong.
- */
-const CHIP_NOUN_MAX_CHARS = 12;
-
-function rendersAsRows(group: EntityNavigationGroup): boolean {
-  return group.items.some((item) => item.config.labelPlural.length > CHIP_NOUN_MAX_CHARS);
+  /** Back to the new-conversation composer. Chat's own create. */
+  onNewChat?: (() => void) | undefined;
+  /** Create a kind and land on its root. The host already owns this verb. */
+  onCreateKind?: ((kind: string) => void) | undefined;
+  /**
+   * WHY A CREATE IS REFUSED, when it is. A refused verb renders DISABLED WITH
+   * THE REASON rather than vanishing — H2's ruling and it is right: a missing
+   * button reads as a missing feature, a disabled one that says why reads as a
+   * product that knows its own state. That difference is visible in a demo.
+   */
+  createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
 }
 
 /**
- * One entity family as its own card: an eyebrow with the group's totals, the
- * registry's one-line description, then its kinds.
+ * START — the three verbs, first, before anything that merely exists.
  *
- * THE LAW, unchanged from the surface this replaces: the mark never shrinks,
- * the NAME takes every remaining pixel and ellipses inside them, and the count
- * keeps its own width but never takes the name's. The noun is plain text and
- * the count is its own pill beside it — deliberately NOT one bordered container
- * holding both, which is a different component for a different job.
+ * The owner asked for exactly these three by name and asked for them FIRST.
+ * They are not new plumbing: `HomeChatRegions` already carries `onShowChat`
+ * and `onCreateKind`, and `home-dashboard.ts` already declares this shape as
+ * `HomeCreateVerbs` — which had no consumer until now. This is the consumer.
+ *
+ * ONE CONTROL PER VERB. `ListRootHeader` renders a create for the current kind
+ * and the chat surface has its own `+ New chat`; this row is the SAME handlers
+ * reached from the one screen the owner starts on, not a second set. Two
+ * controls for one verb is how "options repeating" comes back.
  */
-function GroupCard({
-  group,
-  activeKind,
-  onOpenKind,
+function HomeStart({
+  onNewChat,
+  onCreateKind,
+  createKindUnavailable,
 }: {
-  group: EntityNavigationGroup;
-  activeKind?: string | null;
-  onOpenKind?(kind: string): void;
+  onNewChat?: (() => void) | undefined;
+  onCreateKind?: ((kind: string) => void) | undefined;
+  createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
 }) {
-  const rows = rendersAsRows(group);
+  /* A verb whose handler is absent is not rendered at all — that is a host
+     that never wired it, which is different from a host that wired it and the
+     server refused. The second gets a disabled control with its reason; the
+     first would be a button we invented. */
+  const kindVerb = (kind: string, label: string) => {
+    if (!onCreateKind) return null;
+    const refusal = createKindUnavailable?.(kind) ?? null;
+    if (refusal) {
+      return (
+        <span className="hp-start__verb hp-start__verb--off" title={`${refusal.cause} — ${refusal.remedy}`}>
+          {label}
+        </span>
+      );
+    }
+    return (
+      <button type="button" className="hp-start__verb" onClick={() => onCreateKind(kind)}>
+        {label}
+      </button>
+    );
+  };
+
+  const chat = onNewChat ? (
+    <button type="button" className="hp-start__verb" onClick={onNewChat}>
+      New chat
+    </button>
+  ) : null;
+  const session = kindVerb('session', 'New session');
+  const task = kindVerb('task', 'New task');
+
+  /* Nothing wired ⇒ no row, rather than an empty box asserting "you can start
+     three things" and offering none. */
+  if (!chat && !session && !task) return null;
+
   return (
-    <article
-      className="hp-group"
-      data-density={rows ? 'rows' : 'chips'}
-      aria-labelledby={`hp-group-${group.id}`}
-    >
-      <div className="hp-group__head">
-        <h2 id={`hp-group-${group.id}`} className="hp-group__name">
-          {group.label}
-        </h2>
-        <EntityNavigationMetrics total={group.total} unseen={group.unseen} live={group.live} />
-      </div>
-      {group.description ? <p className="hp-group__note">{group.description}</p> : null}
-      <div className="hp-group__items">
-        {group.items.map((item) => (
-          <button
-            key={item.config.kind}
-            type="button"
-            className="hp-group__item k-press"
-            aria-current={item.config.kind === activeKind ? 'page' : undefined}
-            aria-label={entityNavigationLabel(item)}
-            title={entityNavigationLabel(item)}
-            disabled={!onOpenKind}
-            onClick={() => onOpenKind?.(item.config.kind)}
-          >
-            <span className="hp-group__mark" aria-hidden>
-              <KindIcon kind={item.config.kind} />
-            </span>
-            <span className="hp-group__noun">{item.config.labelPlural}</span>
-            {/* `N new` is UNATTENDED WORK, not a quantity — it changes what you
-                do next, which is the test colour has to pass. The raw total is
-                a quantity and stays ink. Both facts come from the same
-                component; the tone is the kit's business, not this card's. */}
-            <EntityNavigationMetrics unseen={item.counts?.unseen} live={item.live} />
-          </button>
-        ))}
-      </div>
-    </article>
+    <section className="hp-start" aria-label="Start something">
+      {chat}
+      {session}
+      {task}
+    </section>
   );
 }
 
-/**
- * NEEDS YOUR ATTENTION — a card of rows, each carrying its status word, its
- * title and what it is. The status also paints the row's left edge, so the card
- * can be read as a column of urgencies before any word is read; the WORD is
- * always there too, because status is never colour alone (C8/L10).
- */
+
 function AttentionCard({ section, onOpen }: { section: HomeSection; onOpen(id: string): void }) {
   return (
     <article className="hp-attention" aria-label={section.label} data-testid="hp-needs-you">
@@ -302,49 +277,48 @@ export function HomePage(props: HomePageProps) {
     >
       {props.rail ?? null}
       <div className="hp-page">
-      {/* THE HERO. It names the space in one line and says how much is in it —
-          the sentence the map's header used to carry, back because the 4/8
-          split gives the left column its own scroll region and can afford it.
-          The count comes from the same summary the cards do; it is never a
-          literal. */}
-      {props.navigationGroups && props.navigationGroups.length > 0 ? (
-        <header className="hp-hero">
-          <h1 className="hp-hero__line">Everything connected, one move away</h1>
-          <p className="hp-hero__note">
-            {summarizeEntityNavigation(props.navigationGroups).kinds} entity types across the work,
-            context, and people around you.
-          </p>
-        </header>
-      ) : null}
       <div className="hp-home">
-      {/* THE LEFT THIRD: what exists. Its own scroll region, because four cards
-          go where one capped card used to be — `.hp-overview` was
-          `max-height: 38%` with `overflow: hidden`, which clipped silently with
-          no scrollbar and no keyboard path. This column carries
-          `overflow-y: auto` and `min-height: 0` so it cannot repeat that. */}
+      {/* THE LEFT THIRD. START, then WHAT NEEDS YOU. Nothing else.
+       *
+       * WHAT WAS HERE AND WHY IT IS GONE (owner, 2026-08-30, on the deployed
+       * build): a hero line, a 19-kind census, and WORK / LIBRARY / PEOPLE
+       * cards carrying 2358 · 2154 new · 5 live · 458 new · 508 new · 812 new
+       * … — nineteen rows of counts for things that merely EXIST.
+       *
+       *   "why cant it be simplified why are you complicating it … i dont need
+       *    make home dashboard clean have one create new chat, New SESSIONS
+       *    AND New Task first and their screens while running"
+       *
+       * THE RAIL IS THE BROWSE. It was restored an hour before this, on the
+       * owner's own instruction — "because workspace is already there here" —
+       * and the cards were left in place, so the screen stated the same
+       * taxonomy TWICE and the duplication the owner had complained about
+       * three times got worse rather than better. That was the defect; this
+       * removes the half that should have gone with the rail's return.
+       *
+       * A COUNT OF THINGS THAT EXIST IS NOT PROGRESS. "812 Docs" tells you the
+       * database is not empty. Home answers "what is happening and what can I
+       * start", and the rail answers "what is there" — one question per
+       * surface, which is the whole of the complaint. */}
       <div className="hp-side">
-      {/* NEEDS YOUR ATTENTION leads the column: triage outranks inventory.
-          It renders only when it HAS rows — `rowsFor` returns [] while a kind
-          is still hydrating, so an empty array cannot tell "pending" from
-          "genuinely empty", and a card that drew "nothing needs you" off it
-          would assert calm during the window where the screen knows nothing.
-          Absence is not a claim; "nothing here" is one, and it may only be
-          made after a read that came back empty. */}
+      <HomeStart
+        onNewChat={props.onNewChat}
+        onCreateKind={props.onCreateKind}
+        createKindUnavailable={props.createKindUnavailable}
+      />
+      {/* NEEDS YOUR ATTENTION follows the verbs: you start something, or you
+          deal with what is asking for you. It renders only when it HAS rows —
+          `rowsFor` returns [] while a kind is still hydrating, so an empty
+          array cannot tell "pending" from "genuinely empty", and a card that
+          drew "nothing needs you" off it would assert calm during the window
+          where the screen knows nothing. Absence is not a claim; "nothing
+          here" is one, and it may only be made after a read that came back
+          empty. */}
       {needsYouStrip ? (
         <AttentionCard section={needsYouStrip} onOpen={props.onOpenEntity} />
       ) : work.needsYou && (home.viewerError || home.notificationsError) ? (
         <p className="hp-note" role="status">{work.needsYou.emptyNote}</p>
       ) : null}
-      {/* THE KIND LIST, ONCE. It lived here and in the rail beside it; the rail
-          is gone and these cards are its one home. */}
-      {(props.navigationGroups ?? []).map((group) => (
-        <GroupCard
-          key={group.id}
-          group={group}
-          activeKind={props.activeKind}
-          onOpenKind={props.onOpenKind}
-        />
-      ))}
       </div>
 
       {/* THE RIGHT TWO THIRDS: what is happening now. The session list, the
