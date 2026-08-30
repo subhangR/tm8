@@ -1396,10 +1396,18 @@ const ROWS: readonly KindConfig[] = [
     },
     // The create door for a `file` is an UPLOAD, not a placeholder row. The
     // generic immediate-create flow commits an entity titled "Untitled file"
-    // with no blob behind it: it lists in the browser, offers a Download link
-    // and 404s when that link is followed, because `files.download` joins onto
-    // `public.files` and finds nothing. Three such orphans exist in the
-    // production space, all created by pressing this very button.
+    // with no blob behind it: it lists in the browser, offers a Download link,
+    // and the download answers `not_found: no readable file` when that link is
+    // followed.
+    //
+    // COUNT AND MECHANISM CORRECTED against the live node (2026-08-28). This
+    // note used to say `files.download` "joins onto public.files and finds
+    // nothing", and that three such orphans existed. Both were wrong, and the
+    // first sent readers to a query that answers zero: `create_file_entity`
+    // DOES write a `files` row — `size_bytes 0`, null checksum, and a
+    // `storage_path` no blob is written to. Find them with `size_bytes = 0`.
+    // There are eleven, across three spaces. `FileUploadCreateControl` and
+    // `authoring/staged-birth.ts` carry the full account.
     createForm: 'file-upload',
     palette: { createLabel: 'Upload file' },
   },

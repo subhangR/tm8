@@ -48,6 +48,28 @@ function birthVerbFor(option: ListRootOption): BirthVerb {
       promise: `Start a ${def.label.toLowerCase()} and open it — ${option.label.toLowerCase()} are started, not authored`,
     };
   }
+  /* A KIND WHOSE CONTENT MUST EXIST FIRST — registry data (`createForm`), never
+     a kind literal. The ＋ is wired to that kind's staged flow rather than the
+     immediate create, so the promise must not be the immediate create's.
+
+     THIS WAS CAUGHT BY PIXELS, NOT BY A UNIT TEST, and the shape of the miss is
+     worth keeping. Wiring the Files ＋ to the upload made the button correct and
+     left its title saying "Create an Untitled file and open it — type its name
+     there". Every assertion still passed; the tooltip was simply a lie, and the
+     only way to see it was to read the rendered attribute. A control that does
+     one thing and promises another is the same defect class as a dead button
+     that says nothing — this header refuses both. */
+  const staged = getKind(option.kind).createForm !== undefined;
+  if (staged) {
+    const config = getKind(option.kind);
+    return {
+      glyph: '＋',
+      /* The palette's own label, so the header's ＋ and the panel's create
+         button name the same act instead of drifting. */
+      label: config.palette?.createLabel ?? `New ${option.single.toLowerCase()}`,
+      promise: `Choose what to put in a new ${option.single.toLowerCase()} — it is made once its content exists, not before`,
+    };
+  }
   return {
     glyph: '＋',
     label: `New ${option.single.toLowerCase()}`,
