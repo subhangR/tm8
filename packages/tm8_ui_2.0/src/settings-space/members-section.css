@@ -233,6 +233,63 @@
   gap: 8px;
 }
 
+.set-members__details {
+  border-top: 1px solid var(--pn-line);
+  padding-top: 10px;
+}
+
+.set-members__details-summary {
+  min-height: 28px;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.set-members__details-summary:hover { color: var(--pn-ink); }
+
+.set-members__details-summary:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 2px;
+}
+
+.set-members__details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .set-members {
+    --set-members-role-w: 96px;
+    --set-members-x-w: 24px;
+  }
+
+  /* DROP THE TRACK, do not zero it. The `when` cell is `display: none` below,
+     so it generates no box and is not a grid item — which means the ✕ cell
+     after it AUTO-PLACES INTO THE `when` COLUMN. Setting `--set-members-when-w`
+     to 0px would leave the ✕ in a 0px track and strand `--set-members-x-w` as
+     a dead 24px gutter at the right edge, at the one width where 24px is worth
+     arguing about. Restating the template with four columns puts the four
+     surviving cells on the four columns that remain. The head carries the same
+     five children (spacer, Member, Role, Active, spacer), so it sheds its
+     `when` the same way and the two stay one table. */
+  .set-members__row,
+  .set-members__head {
+    grid-template-columns:
+      22px
+      minmax(0, 1fr)
+      var(--set-members-role-w)
+      var(--set-members-x-w);
+    column-gap: 8px;
+  }
+
+  .set-members__handle,
+  .set-members__cell--when,
+  .set-members__col--when { display: none; }
+}
+
 .set-members__legend-row {
   display: flex;
   align-items: baseline;
