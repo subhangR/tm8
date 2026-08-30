@@ -41,7 +41,21 @@ import { describe, expect, it } from 'vitest';
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const FULLWIDTH_PLUS = '＋';
+
+/**
+ * BUILT FROM ITS CODEPOINT, NOT WRITTEN AS A LITERAL — and this is load-bearing,
+ * not fastidiousness. The guard scans string literals, so writing the character
+ * here would make this file its own first offender: the first run failed with
+ * `fullwidth-plus-ban.test.ts (1)` as the only entry in the list.
+ *
+ * The tempting fix is to exempt this file. That is wrong, and it is the shape
+ * hex-ban.test.ts warns about beside it — an exemption is how a guard starts
+ * dying, and a guard that cannot scan itself has a permanent blind spot exactly
+ * where someone would hide a violation. Constructing the character means the
+ * file contains no glyph to find, so it can be scanned like every other file
+ * and still say what it is about.
+ */
+const FULLWIDTH_PLUS = String.fromCodePoint(0xff0b);
 
 /** Every U+FF0B the compiler would emit — comments and their prose excluded. */
 function renderedOccurrences(source: string): number {

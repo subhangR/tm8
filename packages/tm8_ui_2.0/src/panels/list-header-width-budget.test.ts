@@ -33,40 +33,67 @@ import { describe, expect, it } from 'vitest';
 const here = dirname(fileURLToPath(import.meta.url));
 const panels = readFileSync(join(here, 'panels.css'), 'utf8');
 
-function rule(selector: string): string {
+/**
+ * EVERY block for a selector, not the first one — and the first version of this
+ * helper returning only the first is what made this file fail its own first run.
+ *
+ * `.cv2-root .lp__tab` appears TWICE in panels.css. The earlier occurrence is
+ * inside `@media (prefers-reduced-motion: reduce)` and its whole body is
+ * `transition: none;`. A first-match helper reads that block, finds no
+ * `white-space`, and reports the base rule as broken — a red with nothing wrong
+ * in the stylesheet at all.
+ *
+ * This is the standing cost of source-reading tests, which this pass adopted
+ * everywhere: reading CSS as TEXT makes its SHAPE load-bearing, so declaration
+ * ORDER becomes API alongside grouping and spelling. A media-query override
+ * declared above its base rule is ordinary CSS and must not be able to fail a
+ * test about the base rule. So: collect all blocks, and assert the property
+ * holds in AT LEAST ONE of them.
+ */
+function rules(selector: string): string[] {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const m = panels.match(new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\n\\}`));
-  expect(m, `no rule found for ${selector}`).not.toBeNull();
-  return m![1];
+  const found = [...panels.matchAll(new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\n?\\}`, 'g'))].map(
+    (m) => m[1],
+  );
+  expect(found.length, `no rule found for ${selector}`).toBeGreaterThan(0);
+  return found;
+}
+
+/** The declaration exists somewhere among that selector's blocks. */
+function declares(selector: string, property: RegExp): boolean {
+  return rules(selector).some((body) => property.test(body));
 }
 
 describe('list panel header rows never delete a control to make room', () => {
   it('the category tab strip wraps instead of scrolling behind a hidden scrollbar', () => {
-    const tabs = rule('.cv2-root .lp__tabs');
-    expect(tabs).toMatch(/flex-wrap:\s*wrap/);
+    expect(declares('.cv2-root .lp__tabs', /flex-wrap:\s*wrap/)).toBe(true);
 
     // The strip wraps; a TAB must not. Wrapping inside a tab is the older
     // defect ("In / Progress 2") and re-introducing it would trade one break
     // for the other.
-    expect(rule('.cv2-root .lp__tab')).toMatch(/white-space:\s*nowrap/);
+    expect(declares('.cv2-root .lp__tab', /white-space:\s*nowrap/)).toBe(true);
 
     // A scroll whose scrollbar is suppressed is a scroll with no cue. If the
     // strip is ever made scrollable again, it must not also be made invisible.
-    const scrolls = /overflow-x:\s*(auto|scroll)/.test(tabs);
-    const hidesScrollbar = /scrollbar-width:\s*none/.test(tabs);
+    // Checked per BLOCK, not across the union: the pairing is only a defect
+    // when one rule declares both.
+    const bothInOneBlock = rules('.cv2-root .lp__tabs').some(
+      (body) =>
+        /overflow-x:\s*(auto|scroll)/.test(body) && /scrollbar-width:\s*none/.test(body),
+    );
     expect(
-      scrolls && hidesScrollbar,
+      bothInOneBlock,
       'lp__tabs may scroll, or may hide its scrollbar, but not both',
     ).toBe(false);
   });
 
   it('the filter chip row wraps, because none of its chips can compress', () => {
-    expect(rule('.cv2-root .lp__filters')).toMatch(/flex-wrap:\s*wrap/);
+    expect(declares('.cv2-root .lp__filters', /flex-wrap:\s*wrap/)).toBe(true);
 
     // The premise. Every chip is incompressible by design, so wrapping is the
     // ONLY way the row can absorb a deficit without deleting a control. If a
     // chip is ever allowed to shrink, this test should be revisited rather
     // than silently satisfied.
-    expect(rule('.cv2-root .lp__chip')).toMatch(/flex:\s*none/);
+    expect(declares('.cv2-root .lp__chip', /flex:\s*none/)).toBe(true);
   });
 });

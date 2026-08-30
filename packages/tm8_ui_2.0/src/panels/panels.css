@@ -4474,9 +4474,23 @@
    hairlines organise the cells without turning static metadata into a stack
    of hoverable pseudo-controls. `box-sizing: border-box` remains in the SAME
    block because row-height-parity reads this file as text. */
+/* THE TRACK IS FLOORED, because L4 is law and this file says so 4100 lines up:
+   "No minmax(0,…) and no unfloored overflow:hidden anywhere in this file." An
+   unfloored track is how this app has been broken three separate times — the
+   region collapses to zero and the content simply vanishes, which is the exact
+   failure this whole pass exists to answer. `repeat(2, minmax(0, 1fr))` was
+   caught by no-branching.test.ts at integration.
+   134px, and it is arithmetic rather than taste: the panel floor is 320px (L4),
+   less 2px of panel border, 24px of `.pn-body` padding, 2px of card border and
+   24px of card padding leaves 268px of content — exactly two 134px columns at
+   the narrowest panel this app can produce.
+   `auto-fit` rather than a hard `repeat(2, …)`: at the floor it still seats two
+   columns, and anywhere narrower it drops to ONE whole column instead of
+   overflowing or crushing both. The two-column reading of the facts is the
+   intent; a column too narrow to read them is not a cheaper version of it. */
 .cv2-root .sb-body > .sb-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(134px, 1fr));
   gap: 0;
 }
 .cv2-root .sb-body .sb-grid__cell {

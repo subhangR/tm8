@@ -809,6 +809,24 @@
 .hlp-root:not(.hlp-root--stacked) .hlp-home__map,
 .hlp-root:not(.hlp-root--stacked) .hlp-chapter__summary,
 .hlp-root:not(.hlp-root--stacked) .hlp-chapter__count { display: none; }
+/* AND THE TRACK LIST HAS TO FOLLOW THE CELL THAT LEFT.
+   `.hlp-chapter__head` declares three explicit tracks (34px / minmax(0,1fr) /
+   auto) with a 10px gap, and the rule above removes the third item on this
+   surface. N explicit tracks always draw N-1 GAPS whether or not a track holds
+   anything — so the `auto` track collapsed to 0 and the 10px gap before it went
+   on rendering, leaving every chapter title stopping 10px short of its own
+   right edge. The `1fr` was resolving to W-54 instead of W-44.
+   This is the members-section grid trap in disguise: there the hidden cell
+   pushed a sibling into the wrong track and the symptom was a misplaced
+   control; here every cell is in the right place and the symptom is a phantom
+   gutter, which looks like nothing at all. Same cause, and the second form is
+   the one that survives review.
+   It hides four things and only THIS one is a grid child — `__summary` is a
+   sibling of `__head`, `__map` and `__home__map` are elsewhere — so exactly one
+   track list is restated. */
+.hlp-root:not(.hlp-root--stacked) .hlp-chapter__head {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
 
 @keyframes hlp-arrive { from { opacity: .68; } to { opacity: 1; } }
 /* OPACITY ONLY. This used to lift 4px, which is a `transform` on an element
