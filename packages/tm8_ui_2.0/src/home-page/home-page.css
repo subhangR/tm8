@@ -1174,6 +1174,18 @@
    until the Active strip above could carry chats. It can now. */
 .cv2-root .hp-live .tch-sidebar { display: none; }
 
+/* AND THE TRACK IT LEFT BEHIND HAS TO GO WITH IT.
+   `display: none` stops an element being a grid ITEM; it does not remove the
+   grid TRACK it used to sit in. `.tch-root` stayed two columns — measured on
+   the live build as `280px 1005.82px` — so with the sidebar gone the
+   conversation became the first item and landed in the SIDEBAR's 280px track,
+   overflowing it at 308px while a thousand pixels sat empty to its right.
+   Every message wrapped at about forty characters beside two-thirds of a blank
+   screen. One floored column here; L4 forbids an unfloored `1fr`, and this one
+   holds a transcript that would otherwise set the minimum by its longest
+   unbroken line. */
+.cv2-root .hp-live .tch-root { grid-template-columns: minmax(0, 1fr); }
+
 /* AND SO IS ITS DIVIDER. The list panel's drag handle stayed behind when the
    panel went: measured on the live build, `.hp-listsep` was 9px x 901px at
    x=370 while `#home-view-list` — the element it resizes — was `display: none`

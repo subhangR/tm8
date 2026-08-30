@@ -243,6 +243,18 @@ describe('a name is never truncated by its own count', () => {
        hidden pair are pinned together so neither can come back alone. */
     expect(homeCss).toMatch(/\.hp-live \.tch-sidebar\s*\{\s*display:\s*none/);
     expect(homeCss).toMatch(/\.hp-live \.hp-listsep\s*\{\s*display:\s*none/);
+
+    /* HIDING AN ITEM DOES NOT REMOVE ITS TRACK. `.tch-root` measured
+       `280px 1005.82px` with the sidebar hidden, so the conversation took the
+       sidebar's 280px column and overflowed it at 308px beside a thousand
+       empty pixels. The column collapse has to travel with the hide, and the
+       replacement track must be floored — an unfloored `1fr` lets a long
+       unbroken line in the transcript set the minimum (L4). */
+    const root = homeCss.match(/\.cv2-root \.hp-live \.tch-root\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(root, 'the hidden sidebar still reserves its column').toContain(
+      'grid-template-columns',
+    );
+    expect(root).toContain('minmax(0, 1fr)');
   });
 
   it('states the active work once, not once as cards and again as rows', () => {
