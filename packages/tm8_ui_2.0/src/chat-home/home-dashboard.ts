@@ -130,13 +130,28 @@ export function homeRegionNote(status: HomeRegionStatus, noun: string): string |
 /**
  * RECENT CHATS, FROM THE READER THAT ALREADY EXISTS.
  *
- * `real-port.ts` issues `sort: 'activityAt_desc'` and `ChatHomeScreen`'s cold
- * start depends on that ordering (most-recent-first is what makes "open the
- * newest conversation on launch" correct). Home asks the SAME reader rather
- * than composing a second one: two readers with their own sorts is how two
- * surfaces begin disagreeing about what "most recent" means, and a Home whose
- * top chat differs from the chat list's top chat is the owner's own "options
+ * THE CLIENT NEVER SORTS THIS LIST, and that is exactly why Home must reuse it.
+ * `listThreads` (`real-port.ts:92`) delegates to `bridge.listThreads`, which is
+ * `(await seam.home(sid)).chatThreads` (`GateApp.tsx:1393`) — the server's L2
+ * home payload, mapped in whatever order it arrives. There is no client-side
+ * sort anywhere in the path, so every consumer of this reader inherits ONE
+ * order by construction and no second one can drift from it. A Home whose top
+ * chat differed from the chat list's top chat would be the owner's own "options
  * repeating" complaint reintroduced by the fix for it.
+ *
+ * WHAT IS *NOT* GUARANTEED HERE: that the order is most-recent-first.
+ * `ChatHomeScreen:734-737` records that as a 2026-08-15 ruling and the cold
+ * start relies on it, but it is a property of the SERVER payload, asserted in a
+ * comment and enforced nowhere in the UI. If a surface ever needs it to be true
+ * rather than expected, that is a server question — do not answer it by sorting
+ * here, which would create the second definition this seam exists to prevent.
+ *
+ * (An earlier draft of this file cited `real-port.ts:82`'s `sort:
+ * 'activityAt_desc'` as the guarantee. That line is inside `listTeammates` and
+ * orders TEAMMATES. Recorded because the mistake — attributing a grep hit to the
+ * function you happen to be writing about, without reading its enclosing scope —
+ * is the same one that made a guarded `<MenuRail>` look live and a registry-driven
+ * Pill tone look like it had three call sites.)
  *
  * `limit` TRIMS, IT DOES NOT RANK. The order is the port's; taking a prefix
  * cannot reorder it, so there is no second definition of recency here.
