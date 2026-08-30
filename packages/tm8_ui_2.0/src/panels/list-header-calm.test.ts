@@ -150,10 +150,22 @@ describe('the header says what the design says', () => {
      * the design is the bar. `0` is the honest answer to "how many are in this
      * band", and a reader comparing four bands wants four numbers.
      *
-     * Pinned as ONE label expression, because the failure mode is a future
-     * branch that renders the name alone for some state.
+     * PINNED AS THE WHOLE EXPRESSION, NOT AS A SUBSTRING OF IT. My first
+     * version asserted only that the label template appears somewhere and the
+     * comment claimed that caught "a future branch that renders the name
+     * alone". It did not: adding a third arm leaves the template present, so
+     * the assertion passes and the regression ships. The comment described a
+     * guarantee the assertion did not have — the same defect lane I found in
+     * its own `not.toMatch(/[▸▾]/)` comment, which claimed a whole-chrome ban
+     * that only ever read one stylesheet.
+     *
+     * Matching the complete ternary is what actually holds the shape: two
+     * arms, glyph or label-with-count, and nothing else. A third arm changes
+     * this string and fails here.
      */
-    expect(TSX).toContain('`${tab.label} ${tabLabel(tab)}`');
+    expect(TSX).toContain(
+      '{oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}',
+    );
     expect(CSS).not.toContain('lp__tab--empty');
   });
 
