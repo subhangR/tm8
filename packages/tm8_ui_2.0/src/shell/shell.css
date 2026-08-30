@@ -1511,11 +1511,45 @@
 .cv2-root .shell-empty__dot--wait { background: var(--pn-wait); }
 .cv2-root .shell-empty__dot--block { background: var(--pn-block); }
 .cv2-root .shell-empty__dot--idle { background: transparent; border: 1.5px solid var(--pn-ink-4); }
+/* THE NAME YIELDS LAST — BUT IT DOES YIELD. (2026-08-29, reported against
+   live prod: two rows painting on the same pixels in the Work view's empty
+   centre, "Calm pass N — Craft, prompts & doc-edit: consistent bordered
+   sections" rendered straight through "Calm pass lane I — Graph running".)
+
+   This was `flex: none` with no `min-width: 0`, no `overflow` and no
+   `text-overflow`. So the name could neither shrink NOR truncate, and
+   `__groups` is `repeat(auto-fit, minmax(360px, 1fr))` while `__group` only
+   sets `min-width: 0` — nothing in the chain clips. A long session name
+   therefore overflowed its own grid track and painted across the column
+   beside it. Two different rows, same pixels, both unreadable.
+
+   NOTE WHAT IT WAS SITTING NEXT TO, because that is the whole lesson:
+   `__meta` and `__record` below already carry `min-width: 0`, `overflow:
+   hidden` and `text-overflow: ellipsis`. THE DATA HAD BEEN TAUGHT TO GIVE WAY
+   AND THE NAME HAD NOT. That reads like the label-over-count law being
+   honoured, and it is the law applied without a width budget — the exact
+   cautionary tale the calm-pass brief names, and the same failure the top
+   bar had: whoever cannot yield wins the space, whether or not they should.
+
+   "The name beats its count" is a rule about ORDER, not about immunity. An
+   ellipsis is the name giving way honestly; an overlap is the name destroying
+   someone else's row. So the order is stated instead: the record and the meta
+   surrender first (eight times faster, below), and the name is the last thing
+   to lose a pixel — down to a 12ch floor, never past it.
+
+   The status WORD stays `flex: none` deliberately and is NOT put in the
+   surrender order. C8/L10 requires status to be colour plus word, so `run…`
+   or a dropped word would trade a layout bug for an accessibility one, and it
+   is eight characters at most. */
 .cv2-root .shell-empty__name {
   font-size: var(--pn-fs-sm);
   font-weight: 600;
   color: var(--pn-ink);
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Status is colour + WORD, always (C8/L10). RECLASSIFIED (W3 sweep): the
    word is a word — ui 11/600; the tone colours are unchanged. The meta and
@@ -1540,6 +1574,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Eight, so these two reach their ellipsis well before the name reaches
+     its floor. They already knew how to give way; this says they go FIRST.
+     A model id and a recorded status readout are facts about the row — the
+     name is which row it is. */
+  flex: 0 8 auto;
 }
 /* RECLASSIFIED (W3 sweep): "+N more in Sessions" is a sentence — ui 12. */
 .cv2-root .shell-empty__more {
