@@ -233,7 +233,20 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
         },
       };
     }
-    case 'commit':
+    case 'commit': {
+      // Parity with the pull_request arm above, and not cosmetic parity: the
+      // panel's link-summary row reads `state.url` and `state.stale` for BOTH
+      // kinds (GenericBody's LinkSummaryBlock is deliberately kind-agnostic).
+      // A commit projected neither, so `open ↗` could never render even though
+      // `public.commits.url` held the link, and the "stale — refetch to update"
+      // badge could never appear on a commit at all. The entity that the
+      // "commits are not synced" report was about had no way to say it was
+      // unsynced.
+      //
+      // `entity_content` returns the whole `public.commits` row minus
+      // `entity_id` (011/015/017), exactly as it does for pull requests, so all
+      // of this arrives here with no query change.
+      const fetchedAt = contentString(content, 'fetched_at', 'fetchedAt');
       return {
         ...summary,
         title: contentString(content, 'message') || contentString(content, 'sha') || 'Commit',
@@ -243,8 +256,22 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
           sha: contentString(content, 'sha') ?? '',
           message: contentString(content, 'message') ?? '',
           committedAt: contentString(content, 'committed_at', 'committedAt'),
+          // ADDITIVE ONLY, and it changes nothing on screen: the DETAILS block
+          // renders from `content`, which has always carried every column of
+          // `public.commits`, so the author was already visible there. Mirrored
+          // onto `state` for typed consumers, consistent with `message`, `sha`
+          // and `committedAt` being duplicated from content for the same reason.
+          author: contentString(content, 'author'),
+          url: contentString(content, 'url') ?? undefined,
+          fetchedAt,
+          // The one that matters. `fetched_at` is stamped only by
+          // `apply_commit_facts`, so null means "no provider has ever answered
+          // about this row" — which is precisely the 57-of-86 placeholder state
+          // that was reported and could not be seen.
+          stale: fetchedAt === null,
         },
       };
+    }
     case 'project':
       return {
         ...summary,

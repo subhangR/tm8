@@ -1713,9 +1713,13 @@ export function createFixtureSeam(): FixtureSeam {
           number: (c.number as number) ?? 0, state: 'open', stale: false,
         };
       case 'commit':
+        // `stale: true` matches the pull_request arm's shape and is the honest
+        // value for a locally created mirror: nothing has fetched it from the
+        // forge, which is exactly what a freshly linked commit looks like.
         return {
           kind: 'commit', repository: (c.repository as string) ?? '',
           sha: (c.sha as string) ?? '', message: input.title, committedAt: null,
+          stale: true,
         };
       case 'collection':
         return { kind: 'collection', collectionType: (c.collectionType as string) ?? 'manual', itemCount: 0 };
