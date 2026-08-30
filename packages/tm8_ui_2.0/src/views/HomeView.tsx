@@ -37,7 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { HomePage } from '../home-page';
 import { AuxEntityPanel } from './auxPanel';
-import { PanelResizer, useElementWidth, usePanelFlag, usePanelWidth } from '../kit';
+import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import {
   EntityListPanel,
   type ControlHost,
@@ -62,7 +62,6 @@ import {
 } from '../domain';
 import type { CockpitStage, NavView } from '../routes/types';
 import { rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
-import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
 import { inTreeOf } from './home-tree';
 import type { Notice } from '../shell';
@@ -84,13 +83,13 @@ const ASIDE_DEFAULT = 440;
 const ASIDE_CHROME = 8 + 1;
 
 /* ---------------------------------------------------------------------------
-   COLUMN A AND THE RAIL (task 01a00ac2)
+   COLUMN A (task 01a00ac2; the rail it was paired with is retired)
    ---------------------------------------------------------------------------
    `HOME_MIN = 420` used to stand here as region B's floor "PLUS column A
    beside it". That number was already a fiction and a resizable A is what
-   makes the fiction load-bearing: the rail alone is 72 and A's own CSS floor
-   was 300, which leaves 48px for B — less than an eighth of what the comment
-   claimed B needed. Nothing caught it because A's width was a constant, so
+   makes the fiction load-bearing: the rail then present was 72 on its own and
+   A's own CSS floor was 300, which left 48px for B — less than an eighth of
+   what the comment claimed B needed. Nothing caught it because A's width was a constant, so
    the under-count only ever showed up as the overlay firing later than it
    should have.
 
@@ -100,7 +99,7 @@ const ASIDE_CHROME = 8 + 1;
    the width below which the column stops being itself. */
 
 /** Region B alone — what the conversation (or a terminal) needs to still be
-    itself, with A and the rail no longer smuggled inside the number. */
+    itself, with column A no longer smuggled inside the number. */
 export const HOME_CENTER_MIN = 360;
 /** Column A. 240 keeps a task row's title readable; 560 is where a list stops
     being a list and starts being a second reading column. 340 is a hair under
@@ -113,12 +112,14 @@ export const HOME_LIST_MAX = 560;
     is why this is 8 and `ASIDE_CHROME` is 9. */
 export const HOME_LIST_CHROME = 8;
 
-/* The rail's two widths, which the SOLVER needs and CSS used to own alone
-   (`home-page.css`'s `.hr-rail` 72 / 208). Duplicating a floor in a
-   stylesheet is exactly what geometry.ts's standing rule forbids, so they
-   live here now and are handed to CSS as `--hp-rail`. */
-export const HOME_RAIL_COLLAPSED = 72;
-export const HOME_RAIL_EXPANDED = 208;
+/* THE ICON RAIL IS RETIRED (owner design, 2026-08-30 — `TARGET.png`).
+   `HOME_RAIL_COLLAPSED`/`HOME_RAIL_EXPANDED` and the `--hp-rail` custom
+   property went with it: a width constant for a surface that no longer
+   renders is a floor nothing stands on, and the next reader would spend real
+   time working out which of the two rails it belonged to.
+
+   The kind list did not disappear — it moved. Home now states it ONCE, in the
+   WORK / LIBRARY / PEOPLE cards, which is where the design puts it. */
 
 export interface HomeViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -147,8 +148,10 @@ export interface HomeViewProps {
    */
   chat(onOpenEntity: (id: EntityId) => void, regions: HomeChatRegions): ReactNode;
   /**
-   * FOCUS MODE — the ruled single toggle that collapses the icon rail AND
-   * column A together (task 01a00ac2). It is owned by `GateApp` rather than
+   * FOCUS MODE — the ruled single toggle that collapses column A (task
+   * 01a00ac2; it collapsed the icon rail alongside A until that rail was
+   * retired, and one toggle for one column is what remains of the ruling).
+   * It is owned by `GateApp` rather than
    * here for one reason: Mod+\ is a GLOBAL binding handled on the window, and
    * a second `usePanelFlag('home-focus')` in this file would hold its own
    * `useState` and drift from the one the shortcut writes.
@@ -165,7 +168,8 @@ export interface HomeChatRegions {
   /** What the header's kind cell names (R5) — the current kind root, or the
    *  remembered one while Chats is the root. */
   kindCell: ListRootOption;
-  /** The switcher's kind list — the rail flattened (R4). */
+  /** The switcher's kind list (R4) — the same `homeRailGroups()` projection
+   *  Home's cards render, flattened to one level. */
   rootKindOptions: readonly ListRootOption[];
   /** Region B's entity occupant, for A's honest per-root highlight (D9). */
   selectedEntityId: EntityId | null;
@@ -276,7 +280,8 @@ export function HomeView(props: HomeViewProps) {
     () => ({ kind: cellConfig.kind, label: cellConfig.labelPlural, single: cellConfig.label }),
     [cellConfig],
   );
-  /* R4: the switcher IS the rail flattened — both render `homeRailGroups()`. */
+  /* R4: the switcher and Home's cards render the SAME `homeRailGroups()`
+     projection — the switcher flattened, the cards grouped. */
   const rootKindOptions = useMemo<ListRootOption[]>(
     () =>
       homeRootKinds().map((config) => ({
@@ -492,21 +497,15 @@ export function HomeView(props: HomeViewProps) {
      re-open that, it just moves who chooses the single number. Hence the flat
      `home.list` key with no kind in it. */
   const listPref = usePanelWidth('home.list', HOME_LIST_DEFAULT, HOME_LIST_MIN);
-  const [railCollapsed, setRailCollapsed] = usePanelFlag('home-rail-collapsed', true);
   const focus = props.focus ?? false;
 
-  /* What the rail and A actually occupy. Focus mode is the ruled "collapse the
-     entire left panel AND the icon rail" state: both go to zero together
-     behind one toggle, and B + C take the whole row. */
-  const railWidth = focus ? 0 : railCollapsed ? HOME_RAIL_COLLAPSED : HOME_RAIL_EXPANDED;
-
-  /* A's ceiling is what the row can spare once the rail, B's floor and — when
+  /* A's ceiling is what the row can spare once B's floor and — when
      C is open — C's floor have been paid. `outerWidth === 0` is jsdom, which
      cannot measure; the same law the overlay follows applies here, so an
      unmeasurable row imposes no ceiling rather than a fabricated one. */
   const asideReserve = drillId ? ASIDE_MIN + ASIDE_CHROME : 0;
   const listCeiling = outerWidth > 0
-    ? Math.max(HOME_LIST_MIN, Math.min(HOME_LIST_MAX, outerWidth - railWidth - HOME_CENTER_MIN - HOME_LIST_CHROME - asideReserve))
+    ? Math.max(HOME_LIST_MIN, Math.min(HOME_LIST_MAX, outerWidth - HOME_CENTER_MIN - HOME_LIST_CHROME - asideReserve))
     : HOME_LIST_MAX;
   /* The PREFERENCE is never rewritten by a narrow window — `usePanelWidth`'s
      own docblock is explicit that clamping on write is how a preference dies.
@@ -515,7 +514,7 @@ export function HomeView(props: HomeViewProps) {
   const listWidth = focus ? 0 : Math.min(Math.max(HOME_LIST_MIN, listPref.width), listCeiling);
 
   /* Everything left of C, at its ACTUAL width rather than a bundled guess. */
-  const leftFloor = focus ? HOME_CENTER_MIN : railWidth + listWidth + HOME_LIST_CHROME + HOME_CENTER_MIN;
+  const leftFloor = focus ? HOME_CENTER_MIN : listWidth + HOME_LIST_CHROME + HOME_CENTER_MIN;
   const asideMax = Math.max(0, outerWidth - leftFloor - ASIDE_CHROME);
   /** Beside-mode is affordable only while C's floor fits next to B's floor.
       jsdom measures 0 ⇒ beside, so the overlay never triggers in tests that
@@ -679,22 +678,6 @@ export function HomeView(props: HomeViewProps) {
     renderRootList,
   };
 
-  /* THE ICON RAIL (R4) — the switcher's twin: same groups, same select, no
-     view rows. No row is active while Chats is the root; chats live in the
-     list header's own cell, not the rail. */
-  /* Focus mode takes the rail off the row entirely rather than collapsing it
-     to its 72px icon strip — "collapsing entire left panel AND icon rail" was
-     the ask, and a 72px strip left standing is not a collapse. */
-  const rail = focus ? null : (
-    <HomeRail
-      groups={navigationGroups}
-      activeKind={root === CHATS_ROOT ? null : root}
-      onSelect={setRoot}
-      collapsed={railCollapsed}
-      onToggleCollapsed={() => setRailCollapsed((collapsed) => !collapsed)}
-    />
-  );
-
   /* COLUMN A'S SEPARATOR, and — when A is collapsed — the only way back.
 
      THE STRIP IS NEVER ABSENT, ONLY RE-ROLED. Collapsed, it is a button at
@@ -713,8 +696,8 @@ export function HomeView(props: HomeViewProps) {
     <button
       type="button"
       className="hp-listreveal"
-      title="Show the list panel and the icon rail (⌘\)"
-      aria-label="Show the list panel and the icon rail"
+      title="Show the list panel (⌘\)"
+      aria-label="Show the list panel"
       aria-expanded={false}
       aria-controls="home-view-list"
       data-testid="hp-list-reveal"
@@ -743,8 +726,8 @@ export function HomeView(props: HomeViewProps) {
       <button
         type="button"
         className="hp-listsep__collapse"
-        title="Collapse the list panel and the icon rail (⌘\)"
-        aria-label="Collapse the list panel and the icon rail"
+        title="Collapse the list panel (⌘\)"
+        aria-label="Collapse the list panel"
         aria-expanded
         aria-controls="home-view-list"
         data-testid="hp-list-collapse"
@@ -838,19 +821,24 @@ export function HomeView(props: HomeViewProps) {
         '--hp-aside': `${asideWidth}px`,
         /* Handed to CSS rather than duplicated in it — the same rule that
            keeps the workspace's floors in `geometry.ts` and out of
-           `shell.css`. `--hp-rail` replaces the 72/172 literals that used to
-           live in `.hr-rail`. */
+           `shell.css`. `--hp-rail` left with the rail; the `.hr-rail*` rules
+           that read it are dead and are `home-page/`'s to sweep. */
         '--hp-list': `${listWidth}px`,
-        '--hp-rail': `${railWidth}px`,
       } as React.CSSProperties}
     >
       <HomePage
         data={data}
         chat={props.chat(openEntity, regions)}
+        /* THE KIND LIST NOW HAS EXACTLY ONE HOME, and it is these cards.
+           Both halves of this screen used to render the same
+           `navigationGroups` — the rail on the left and the map card beside
+           it — which is the owner's "options repeating" (2026-08-30). The
+           rail is retired and the cards keep the taxonomy, because the design
+           gives the left third to WORK / LIBRARY / PEOPLE and the remaining
+           two thirds to what is happening right now. */
         navigationGroups={navigationGroups}
         activeKind={root === CHATS_ROOT ? null : root}
         onOpenKind={setRoot}
-        rail={rail}
         listRail={listRail}
         focus={focus}
         {...(aside ? { aside } : {})}
