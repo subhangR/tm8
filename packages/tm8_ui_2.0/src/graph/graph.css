@@ -1151,6 +1151,13 @@
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
+  /* NEVER CLIP A NUMBER BARE. This is the child elected to yield, so it is the
+     one that can actually truncate — and a bare clip turns 128 into 12, which
+     is not a smaller number, it is a WRONG one that looks right. The ellipsis
+     is what makes the truncation legible as truncation. The exact figure is in
+     the header's own title either way. */
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
