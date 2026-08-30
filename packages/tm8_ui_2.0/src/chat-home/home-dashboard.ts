@@ -151,6 +151,37 @@ export function useRecentChats(
   return { status: region.status, items, note: homeRegionNote(region.status, 'conversations') };
 }
 
+/**
+ * THE CREATE VERBS, AS A TYPE, SO HOME WIRES THE ONES THAT ALREADY EXIST.
+ *
+ * "New chat / task / project / doc, startable without navigating first" is not
+ * new plumbing — `ChatHomeScreen` already takes exactly these, and
+ * `ListRootHeader` already renders a control for any kind. This interface is
+ * that same shape, named, so a Home card can accept it from the host rather
+ * than grow a second create control. Two controls for one verb is how "options
+ * repeating" comes back, which is the complaint the dashboard exists to answer.
+ *
+ * D10 IS A RULING, NOT AN IMPLEMENTATION DETAIL (task 01a00932). A create takes
+ * the detail region AND lands the surrounding list on the new entity's root. A
+ * create path that skips the second half produces a new doc the visible column
+ * cannot show — which is precisely "I made something and I can't see it".
+ */
+export interface HomeCreateVerbs {
+  /** Back to the new-conversation composer. Chat's own create. */
+  onShowChat?: (() => void) | undefined;
+  /** Create the CURRENT kind immediately (D3), then land on its root (D10). */
+  onNewEntity?: (() => void) | undefined;
+  /** Create ANY kind from one control — the four the dashboard brief asks for. */
+  onCreateKind?: ((kind: string) => void) | undefined;
+  /**
+   * WHY CREATION IS REFUSED, when it is. Present ⇒ the control renders DISABLED
+   * WITH THE REASON; it is never hidden. A missing button reads as a missing
+   * feature; a disabled one that says why reads as a product that knows its own
+   * state, which is the difference a client sees in a demo.
+   */
+  newEntityUnavailable?: { cause: string; remedy: string } | null;
+}
+
 /* Module scope so the identity is stable — see `useKeyedRead`'s note on why the
    reader must not be an effect dependency. */
 function readThreads(
