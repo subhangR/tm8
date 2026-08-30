@@ -180,7 +180,7 @@ function InsertBar({
             remedy: 'this editor was mounted without an attachment port',
           }}
         >
-          ＋ Insert a file
+          + Insert a file
         </DisabledIconControl>
       </div>
     );
@@ -201,7 +201,7 @@ function InsertBar({
         }}
       />
       <button type="button" className="de-btn de-btn--quiet" onClick={() => input.current?.click()}>
-        ＋ Insert a file
+        + Insert a file
       </button>
       <span className="de-insert__hint">
         {busy.length > 0 ? `uploading ${busy.join(', ')}…` : 'or drop or paste one into the text'}

@@ -538,12 +538,12 @@ export function BoardV2Screen({
             data-testid="b2-new-task"
             onClick={() => void newEntity.create()}
           >
-            ＋ New {kind.label.toLowerCase()}
+            + New {kind.label.toLowerCase()}
           </button>
         ) : (
           <DisabledIconControl label={`New ${kind.label.toLowerCase()}`} reason={newEntity.unavailable}>
             <span className="b2__new b2__new--off" data-testid="b2-new-task">
-              ＋ New {kind.label.toLowerCase()}
+              + New {kind.label.toLowerCase()}
             </span>
           </DisabledIconControl>
         )}
@@ -563,7 +563,7 @@ export function BoardV2Screen({
           && shownColumns.every((column) => (column.items?.length ?? 0) === 0) ? (
           <div className="b2__firstrun" data-testid="b2-firstrun">
             Every {kind.label.toLowerCase()} in this space shows up here, in a column for where
-            it stands. There are none yet — use ＋ New {kind.label.toLowerCase()} above to add
+            it stands. There are none yet — use + New {kind.label.toLowerCase()} above to add
             the first.
           </div>
         ) : null}

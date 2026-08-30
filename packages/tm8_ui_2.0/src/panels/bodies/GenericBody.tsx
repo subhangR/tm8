@@ -412,7 +412,7 @@ function zipFilename(name: string, revisionNumber: number): string {
  *
  * THE BLOCK IS THE FRAME (owner ruling 2026-08-18) AND NOW THE PANEL IS TOO
  * (owner ruling 2026-08-20). The first ruling took the bordered banner, the
- * `PREVIEW` eyebrow and the empty ＋ tile; the sentence the banner carried moved
+ * `PREVIEW` eyebrow and the empty + tile; the sentence the banner carried moved
  * onto the frame's own `title`, the accessible name of the element actually
  * running the code (see `frameTitle`). The second took what was left: the
  * DETAILS and COLLECTIONS blocks came off the registry row, the attachment

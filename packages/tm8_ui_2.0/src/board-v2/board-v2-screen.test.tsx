@@ -469,7 +469,7 @@ describe('a card opens its entity ON the board', () => {
 });
 
 describe('the create control', () => {
-  it('renders a live ＋ New control that follows the selected kind', async () => {
+  it('renders a live + New control that follows the selected kind', async () => {
     const view = await mountBoard();
     const control = view.getByTestId('b2-new-task');
     expect(control.tagName).toBe('BUTTON');

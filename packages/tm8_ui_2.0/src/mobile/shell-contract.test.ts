@@ -309,7 +309,7 @@ describe('the FAB — a create verb on the list, and an ABSENCE where there is n
   const entityView = read('../views/EntityView.tsx');
   const screensCss = screens;
 
-  it('is the SAME verb the header ＋ performs, not a second create path', () => {
+  it('is the SAME verb the header + performs, not a second create path', () => {
     // Owner answer B. `createFlow` is the one `useNewTask` handle, with the one
     // `onCreated` that opens the new entity with its title focused (D3). Two
     // create paths is two chances to make differently-shaped entities.

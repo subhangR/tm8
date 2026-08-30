@@ -75,7 +75,7 @@ describe('EmptyCenter', () => {
     expect(view.queryByText('idle-history')).toBeNull();
   });
 
-  it('first run: names what a session is and offers a live ＋ New task', () => {
+  it('first run: names what a session is and offers a live + New task', () => {
     const create = vi.fn();
     const onStartTerminal = vi.fn();
     const view = render(
@@ -91,7 +91,7 @@ describe('EmptyCenter', () => {
     // The concept sentence — the surface says what the thing IS.
     expect(view.getByText(/A session is a teammate working in a terminal/)).toBeTruthy();
     // The one next action is a REAL, clickable control (not refused).
-    fireEvent.click(view.getByRole('button', { name: '＋ New task' }));
+    fireEvent.click(view.getByRole('button', { name: '+ New task' }));
     expect(create).toHaveBeenCalledTimes(1);
     fireEvent.click(view.getByRole('button', { name: 'Start a terminal ▸' }));
     expect(onStartTerminal).toHaveBeenCalledTimes(1);
@@ -108,7 +108,7 @@ describe('EmptyCenter', () => {
     );
     // Refused controls are focusable and carry their reason — never a live
     // button that silently does nothing.
-    expect(view.queryByRole('button', { name: '＋ New task' })).toBeNull();
+    expect(view.queryByRole('button', { name: '+ New task' })).toBeNull();
     expect(view.getByTestId('empty-center-firstrun')).toBeTruthy();
   });
 
@@ -128,7 +128,7 @@ describe('EmptyCenter', () => {
     );
     expect(view.queryByRole('button', { name: 'Start a terminal ▸' })).toBeNull();
     // The primary is still live — absence of the secondary is not a dead surface.
-    expect(view.getByRole('button', { name: '＋ New task' })).toBeTruthy();
+    expect(view.getByRole('button', { name: '+ New task' })).toBeTruthy();
   });
 });
 
