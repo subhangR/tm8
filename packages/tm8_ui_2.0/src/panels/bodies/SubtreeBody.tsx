@@ -577,8 +577,8 @@ function DescriptionEditor({
        the attachment strip's drop target — the strip finds the marker, never
        a body class name, so it stays agnostic of its host's anatomy. */
     /* NO `k-accent-top` HERE, and the reason is layout rather than taste.
-       That utility sets `overflow: hidden`, and a flex item whose overflow is
-       not `visible` loses its content-based automatic minimum size (Flexbox
+       That utility CARRIED `overflow: hidden` (retired in #554), and a flex
+       item whose overflow is not `visible` loses its automatic minimum (Flexbox
        §4.5: `min-height: auto` resolves to zero). This card is a flex item in
        `.sb-body`, a fixed-height scrolling column, so it was free to shrink —
        and did: measured 2026-08-29 against prod `6423d07d`, the card rendered

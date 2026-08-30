@@ -83,8 +83,9 @@ describe('premium task detail — one coherent surface', () => {
      * THE DESCRIPTION CARD MUST NOT CLIP ITSELF. This pinned `k-hero` and
      * `k-accent-top`; both were removed 2026-08-29 on the owner's ruling, and
      * `k-accent-top` turned out to be a layout defect rather than decoration.
-     * It sets `overflow: hidden`, which costs a flex item its content-based
-     * automatic minimum size (Flexbox §4.5), and this card is a flex item in
+     * It CARRIED `overflow: hidden` (retired in #554, so this half is now
+     * archaeology), which costs a flex item its content-based automatic
+     * minimum size (Flexbox §4.5), and this card is a flex item in
      * `.sb-body` — a fixed-height scrolling column. Measured against prod
      * `6423d07d`: the card rendered 32px tall around 282px of description and
      * clipped every pixel of it with no way to scroll.
