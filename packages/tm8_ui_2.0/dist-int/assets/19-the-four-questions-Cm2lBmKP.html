@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The four questions · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style>
+.sr-only { position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important; }
+.instrument { margin-top: 30px; padding-top: 0; border-top: 0; }
+.instrument__intro { display:flex; align-items:end; justify-content:space-between; gap:24px; margin-bottom:14px; }
+.instrument__intro p { margin:0; }
+.session-strip { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; border:1px solid var(--line-strong); border-bottom:0; background:var(--surface); border-radius:var(--r) var(--r) 0 0; }
+.session-strip .ki { color:var(--accent); width:19px; height:19px; }
+.session-strip__title { font:600 14px var(--body-face); }
+.session-strip__meta { color:var(--muted); font:11px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.session-strip .pill { margin-left:auto; flex:none; }
+.question-grid { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line-strong); background:var(--surface); }
+.question { position:relative; min-height:104px; padding:15px 14px 17px; border:0; border-right:1px solid var(--line); background:transparent; color:var(--ink); text-align:left; cursor:pointer; }
+.question:last-child { border-right:0; }
+.question:hover { background:color-mix(in srgb,var(--accent) 8%,transparent); }
+.question[aria-selected="true"] { background:color-mix(in srgb,var(--accent) 10%,transparent); }
+.question__number { display:block; color:var(--accent-ink); font:600 10px var(--mono); letter-spacing:.12em; }
+.question__ask { display:block; margin-top:5px; font:500 22px/1.1 var(--serif); }
+.question__verb { display:block; margin-top:7px; color:var(--muted); font:10px var(--mono); }
+.question__bar { position:absolute; left:14px; right:14px; bottom:0; height:2px; background:var(--accent); transform:scaleX(0); transform-origin:left; transition:transform var(--dur-slow) var(--ease-out); }
+.question[aria-selected="true"] .question__bar { transform:scaleX(1); }
+.trace { display:block; width:100%; height:26px; color:var(--accent); background:var(--surface); border-left:1px solid var(--line-strong); border-right:1px solid var(--line-strong); }
+.trace path { fill:none; stroke:currentColor; stroke-width:1.2; stroke-dasharray:80; stroke-dashoffset:80; }
+.trace.is-drawing path { animation:trace-draw var(--dur-slow) var(--ease-out) forwards; }
+@keyframes trace-draw { to { stroke-dashoffset:0; } }
+.answer { border:1px solid var(--line-strong); background:var(--surface); padding:16px; transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out); }
+.answer.is-changing { opacity:.35; transform:translateY(6px); }
+.answer__head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+.answer__head h3 { margin:0; font-size:20px; }
+.answer__command { color:var(--muted); font:12px var(--mono); }
+.answer__command { overflow-wrap:anywhere; }
+.answer .term { margin-bottom:10px; }
+.answer pre { max-height:340px; min-height:260px; }
+.answer__note { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:18px; min-height:62px; }
+.answer__note p { margin:0; }
+.answer__truth { color:var(--muted); font-size:14px; }
+.answer__counter { white-space:nowrap; font:11px var(--mono); color:var(--muted); }
+.four-facts { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; margin-top:16px; border:1px solid var(--line); background:var(--line); }
+.fact { background:var(--surface); padding:14px; }
+.fact strong { display:block; font:600 10px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--accent-ink); }
+.fact p { margin:6px 0 0; font-size:13.5px; line-height:1.48; color:var(--muted); }
+.attach-box { display:grid; grid-template-columns:minmax(230px,.75fr) minmax(0,1.25fr); gap:20px; }
+.attach-box > *, .attach-output, .answer, .term { min-width:0; }
+.mode-controls { display:flex; gap:8px; margin:16px 0; }
+.mode-controls .btn { min-height:44px; justify-content:center; flex:1; }
+.mode-diagram { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; min-height:72px; padding:12px; border:1px solid var(--line); background:var(--surface); }
+.mode-arrow { position:relative; height:1px; background:var(--line-strong); }
+.mode-arrow::after { content:""; position:absolute; right:-1px; top:-4px; border-left:7px solid var(--accent); border-top:4px solid transparent; border-bottom:4px solid transparent; }
+.mode-arrow::before { content:""; position:absolute; left:0; top:-1px; height:3px; width:100%; background:var(--accent); transform:scaleX(0); transform-origin:left; transition:transform var(--dur-slow) var(--ease-out); }
+.mode-diagram.is-active .mode-arrow::before { transform:scaleX(1); }
+.terminal-node { display:inline-flex; align-items:center; gap:7px; font:11px var(--mono); white-space:nowrap; }
+.terminal-node .ki { color:var(--accent); }
+.attach-output { transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out); }
+.attach-output.is-changing { opacity:.35; transform:translateY(5px); }
+.attach-output pre { min-height:200px; }
+.attach-explain { min-height:55px; }
+.truth-list { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
+.truth-list .card h3 { margin:0 0 6px; }
+.truth-list .card p { margin:0; color:var(--muted); font-size:14.5px; }
+.siblings { display:flex; flex-wrap:wrap; gap:8px; }
+.sibling { padding:5px 9px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font:11px var(--mono); }
+@media (max-width:760px) {
+  header.site { height:auto; min-height:54px; padding:12px 16px; flex-wrap:wrap; }
+  header.site .hub-note { width:100%; margin-left:0; }
+  main { padding:22px 16px 56px; }
+  h1 { font-size:36px; }
+  .instrument__intro { display:block; }
+  .instrument__intro .stamp { margin-top:10px; }
+  .question-grid { grid-template-columns:repeat(2,1fr); }
+  .question:nth-child(2) { border-right:0; }
+  .question:nth-child(-n+2) { border-bottom:1px solid var(--line); }
+  .question { min-height:96px; }
+  .answer pre { min-height:300px; max-height:420px; font-size:11.5px; }
+  .answer__note { grid-template-columns:1fr; }
+  .four-facts { grid-template-columns:1fr 1fr; }
+  .attach-box { grid-template-columns:minmax(0,1fr); }
+  .truth-list { grid-template-columns:1fr; }
+}
+@media (max-width:460px) {
+  .question__ask { font-size:20px; }
+  .session-strip__meta { display:none; }
+  .four-facts { grid-template-columns:1fr; }
+}
+@media (prefers-contrast:more) {
+  .question[aria-selected="true"], .btn[aria-pressed="true"] { box-shadow:inset 0 0 0 2px var(--accent); }
+  .answer, .question-grid, .session-strip { border-width:2px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .trace path { stroke-dashoffset:0; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm8 <i>·</i> Help</span>
+  <span class="crumb">The four questions</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+<svg id="tm8-icons" aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ki-work_session" viewBox="0 0 16 16"><path d="M2.4 5.2a2 2 0 0 1 2-2h7.2a2 2 0 0 1 2 2v5.6a2 2 0 0 1-2 2H4.4a2 2 0 0 1-2-2z"/><path d="M5.2 7.4 6.9 9 5.2 10.6"/><path d="M8.4 10.6h2.6"/></symbol>
+  <symbol id="ki-team_member" viewBox="0 0 16 16"><path d="M8 2.6v1.8"/><path d="M4.4 4.4h7.2a1.6 1.6 0 0 1 1.6 1.6v5a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6V6a1.6 1.6 0 0 1 1.6-1.6z"/><path d="M6.2 7.8v1.2"/><path d="M9.8 7.8v1.2"/></symbol>
+</svg>
+
+<main id="main">
+  <p class="kicker">Section 3 · Teammates &amp; Sessions · 19</p>
+  <h1>The four questions</h1>
+  <p class="lede">A session is a real process, but no single field tells you its whole story. Ask four separate questions to learn whether it is alive, what it said, what it was told, and what tm8 commands it ran.</p>
+
+  <section class="instrument" aria-labelledby="instrument-title">
+    <div class="instrument__intro">
+      <div>
+        <h2 id="instrument-title">Ask the session</h2>
+        <p>Choose a question. The traced line lands on the verb’s actual CLI output shape.</p>
+      </div>
+      <span class="stamp">shapes harvested from live tm8 CLI on 2026-08-20</span>
+    </div>
+
+    <div class="session-strip">
+      <svg class="ki" aria-hidden="true"><use href="#ki-work_session"/></svg>
+      <span class="session-strip__title">Juniper — login redirect loop</span>
+      <span class="session-strip__meta">01a09f40… · work_session</span>
+      <span class="pill pill--ok" id="session-state"><span class="pill__dot pill__dot--pulse"></span>live now</span>
+    </div>
+
+    <div class="question-grid" role="tablist" aria-label="Questions to ask about a session">
+      <button class="question" role="tab" id="question-alive" aria-selected="true" aria-controls="answer-panel" tabindex="0" data-answer="alive">
+        <span class="question__number">01</span><span class="question__ask">Alive?</span><span class="question__verb">session liveness</span><span class="question__bar" aria-hidden="true"></span>
+      </button>
+      <button class="question" role="tab" id="question-saying" aria-selected="false" aria-controls="answer-panel" tabindex="-1" data-answer="saying">
+        <span class="question__number">02</span><span class="question__ask">Saying?</span><span class="question__verb">session transcript</span><span class="question__bar" aria-hidden="true"></span>
+      </button>
+      <button class="question" role="tab" id="question-told" aria-selected="false" aria-controls="answer-panel" tabindex="-1" data-answer="told">
+        <span class="question__number">03</span><span class="question__ask">Told?</span><span class="question__verb">session launch</span><span class="question__bar" aria-hidden="true"></span>
+      </button>
+      <button class="question" role="tab" id="question-ran" aria-selected="false" aria-controls="answer-panel" tabindex="-1" data-answer="ran">
+        <span class="question__number">04</span><span class="question__ask">Ran?</span><span class="question__verb">session journal</span><span class="question__bar" aria-hidden="true"></span>
+      </button>
+    </div>
+    <svg class="trace is-drawing" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><path d="M12.5 0 V13 H50 V26"/></svg>
+
+    <div class="answer" id="answer-panel" role="tabpanel" aria-labelledby="question-alive" tabindex="0">
+      <div class="answer__head">
+        <h3 id="answer-title">Alive? — point-in-time PTY observation</h3>
+        <span class="answer__command" id="answer-command">tm8 session liveness --space &lt;space-id&gt;</span>
+      </div>
+      <div class="term">
+        <div class="term__bar" aria-hidden="true"><span class="term__name" id="term-name">tm8 — northlake — liveness</span><span class="term__tag">CLI output</span></div>
+        <pre class="out" id="answer-output"></pre>
+      </div>
+      <div class="answer__note">
+        <p class="answer__truth" id="answer-truth" aria-live="polite"></p>
+        <span class="answer__counter" id="answer-counter">question 1 / 4</span>
+      </div>
+    </div>
+
+    <div class="four-facts" aria-label="How the four answers differ">
+      <article class="fact"><strong>Alive</strong><p>Node-local, current, and tied to this server boot.</p></article>
+      <article class="fact"><strong>Saying</strong><p>Native agent turns and windowed tool/token totals.</p></article>
+      <article class="fact"><strong>Told</strong><p>Stored prompts, manifest, and environment names.</p></article>
+      <article class="fact"><strong>Ran</strong><p>Only tm8 CLI crossings, with byte-derived estimates.</p></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="attach-title">
+    <h2 id="attach-title"><span class="no">02</span>Attach: observe or own the terminal</h2>
+    <p><code>session attach</code> opens the live PTY stream. Choose <code>view</code> to observe; choose <code>drive</code> to own terminal input. The mode is part of a short-lived stream grant.</p>
+    <div class="attach-box panel">
+      <div>
+        <div class="mode-controls" role="group" aria-label="Attach mode">
+          <button class="btn" type="button" aria-pressed="true" data-mode="view">View</button>
+          <button class="btn" type="button" aria-pressed="false" data-mode="drive">Drive</button>
+        </div>
+        <div class="mode-diagram is-active" id="mode-diagram" aria-live="polite">
+          <span class="who who--member"><span class="who__avatar">MV</span>Mara</span>
+          <span class="mode-arrow" aria-hidden="true"></span>
+          <span class="terminal-node"><svg class="ki" aria-hidden="true"><use href="#ki-work_session"/></svg><span id="mode-label">observes PTY</span></span>
+        </div>
+        <p class="attach-explain caption" id="attach-explain">View receives terminal output without terminal ownership.</p>
+        <div class="gap-card"><b>Drive is gated.</b>In v1, drive input is granted only to the spawning owner. A spawned session cannot use drive to contact another session.</div>
+      </div>
+      <div class="attach-output" id="attach-output">
+        <div class="term">
+          <div class="term__bar" aria-hidden="true"><span class="term__name">tm8 — northlake — stream grant</span><span class="term__tag">grant only</span></div>
+          <pre><span class="p" id="attach-command"></span>
+<span class="out" id="attach-json"></span></pre>
+        </div>
+        <p class="caption"><code>--format json</code> implies <code>--grant-only</code>: interactive terminal bytes are not DTO output. The example token is fictional and shortened.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="limits-title">
+    <h2 id="limits-title"><span class="no">03</span>Read each answer honestly</h2>
+    <div class="truth-list">
+      <article class="card"><h3>Liveness is not status</h3><p>It says which sessions have a live PTY on this server process right now. <code>nodeBootId</code> changes on restart; compare snapshots only within one boot.</p></article>
+      <article class="card"><h3>Transcript is not the terminal</h3><p>It reads the agent’s native transcript. Tool names may appear; tool arguments and outputs never do. <code>stuck</code> is a heuristic, not a liveness signal.</p></article>
+      <article class="card"><h3>Launch is recorded bytes</h3><p>Prompts are read from storage, not recomposed. Environment variable names are returned; values are structurally absent. Older sessions may answer <code>not_recorded</code>.</p></article>
+      <article class="card"><h3>Journal is not token spend</h3><p>It records only <code>tm8</code> commands, not shell history. Token counts are <code>chars/4</code> estimates of CLI-bound text, not provider usage or session spend.</p></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="map-title">
+    <h2 id="map-title"><span class="no">04</span>Keep reading</h2>
+    <p class="caption">Sibling artifacts in Section 3 — titles only; preview URLs expire.</p>
+    <div class="siblings">
+      <span class="sibling" data-help-role="sibling">The life of a session</span>
+      <span class="sibling" data-help-role="sibling">Allowed, and how hard to think</span>
+      <span class="sibling" data-help-role="sibling">Where the session works</span>
+    </div>
+  </section>
+</main>
+
+<footer class="site">Last updated 2026-08-20 · The four questions · tm8 Help v1 · <span class="stamp">CLI grammar and shapes verified 2026-08-20</span></footer>
+
+<script>
+(function () {
+  'use strict';
+  var SID = '01a09f40-8a40-7e55-8f62-4b7d9e1a3c55';
+  var answers = {
+    alive: {
+      title: 'Alive? — point-in-time PTY observation',
+      command: 'tm8 session liveness --space <space-id>',
+      name: 'tm8 — northlake — liveness',
+      output: '{\n  "liveEntityIds": [\n    "' + SID + '"\n  ],\n  "nodeBootId": "1118bb32-91a6-4acd-8dc3-1b7cf009bede",\n  "checkedAt": "2026-08-20T09:31:40.233Z",\n  "capacity": {\n    "used": 1,\n    "total": 2147483647\n  }\n}',
+      truth: 'Authority: whether a PTY is running now. This is a node observation, not the durable work_session status.',
+      state: '<span class="pill__dot pill__dot--pulse"></span>live now'
+    },
+    saying: {
+      title: 'Saying? — newest native agent turns',
+      command: 'tm8 session transcript ' + SID + ' --last 2',
+      name: 'tm8 — northlake — transcript',
+      output: '{\n  "sessionId": "' + SID + '",\n  "available": true,\n  "unavailableReason": null,\n  "searchedPaths": [],\n  "agentTool": "claude-code",\n  "entries": [\n    {\n      "at": "2026-08-20T09:30:14.000Z",\n      "source": "assistant",\n      "text": "The redirect target is cached before the credential rotates.",\n      "truncated": false\n    }\n  ],\n  "stats": {\n    "partial": true,\n    "userMessages": 0,\n    "assistantMessages": 1,\n    "toolCalls": 2,\n    "inputTokens": 18420,\n    "outputTokens": 612,\n    "cacheReadTokens": 14592,\n    "cacheCreationTokens": null,\n    "tools": [{ "name": "Read", "count": 2 }],\n    "models": []\n  },\n  "stuck": null,\n  "lastActivityAt": "2026-08-20T09:30:14.000Z",\n  "malformed": 0\n}',
+      truth: 'The totals describe the returned window when stats.partial is true. Tool bodies are deliberately absent.',
+      state: '<span class="pill__dot"></span>native turns'
+    },
+    told: {
+      title: 'Told? — captured prompts and launch manifest',
+      command: 'tm8 session launch ' + SID,
+      name: 'tm8 — northlake — launch',
+      output: '{\n  "sessionId": "' + SID + '",\n  "available": true,\n  "unavailableReason": null,\n  "manifest": {\n    "mode": "worker",\n    "agent": { "name": "Juniper", "teamMemberId": "01a09e10…" },\n    "tasks": [{ "id": "01a09f21…", "title": "Fix login redirect loop" }],\n    "launch": {\n      "tool": "claude-code",\n      "model": "claude-sonnet-5",\n      "accessMode": "fullAccess",\n      "reasoningEffort": "high"\n    },\n    "project": { "name": "northlake-web", "trust": "trusted" },\n    "session": { "workdirMode": "worktree" },\n    "spaceId": "01a09e00…",\n    "generatedAt": "2026-08-20T09:20:00.000Z"\n  },\n  "envVarNames": ["PATH", "TM8_SESSION_ID", "TM8_SPACE_ID"],\n  "prompts": {\n    "system": "<captured system prompt bytes>",\n    "task": "<captured first task prompt bytes>",\n    "unavailableReason": null\n  },\n  "recordedAt": "2026-08-20T09:20:00.003Z"\n}',
+      truth: 'Prompt bytes come back from storage exactly as sent. Environment values cannot be recovered here.',
+      state: '<span class="pill__dot pill__dot--hollow"></span>recorded'
+    },
+    ran: {
+      title: 'Ran? — tm8 CLI command journal',
+      command: 'tm8 session journal ' + SID + ' --limit 1',
+      name: 'tm8 — northlake — journal',
+      output: '{\n  "sessionId": "' + SID + '",\n  "available": true,\n  "unavailableReason": null,\n  "totals": {\n    "invocations": 12,\n    "failed": 0,\n    "agentToCliEst": 184,\n    "cliToAgentEst": 962,\n    "estimator": "chars/4",\n    "malformed": 0\n  },\n  "records": [{\n    "v": 1,\n    "seq": 11,\n    "class": "agent",\n    "sessionId": "' + SID + '",\n    "command": {\n      "path": ["entity", "context"],\n      "argv": ["entity", "context", "01a09f21…", "--format", "json"],\n      "cwd": "/worktrees/northlake/login-loop"\n    },\n    "input": { "stdinChars": 0 },\n    "output": {\n      "stdoutChars": 2740,\n      "stderrChars": 0,\n      "truncated": false\n    },\n    "calls": [{\n      "operation": "entities.context",\n      "method": "GET",\n      "status": 200,\n      "requestChars": 0,\n      "responseChars": 2604\n    }],\n    "result": { "exitCode": 0, "error": null },\n    "tokens": {\n      "estimator": "chars/4",\n      "agentToCli": 12,\n      "cliToAgent": 685\n    }\n  }],\n  "hasMore": true\n}',
+      truth: 'Character counts are exact; token figures are byte-derived estimates of CLI traffic, never provider-reported spend.',
+      state: '<span class="pill__dot pill__dot--hollow"></span>CLI journal'
+    }
+  };
+  answers.told.output = answers.told.output.replace('claude-sonnet-5', 'claude-opus-5');
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.question'));
+  var panel = document.getElementById('answer-panel');
+  var trace = document.querySelector('.trace');
+  var output = document.getElementById('answer-output');
+  var state = document.getElementById('session-state');
+  var active = 'alive';
+
+  function setTrace(key) {
+    var keys = Object.keys(answers);
+    var index = keys.indexOf(key);
+    var x = window.matchMedia('(max-width: 760px)').matches
+      ? (index % 2 === 0 ? 25 : 75)
+      : 12.5 + (index * 25);
+    trace.querySelector('path').setAttribute('d', 'M' + x + ' 0 V13 H50 V26');
+  }
+
+  function render(key, focusPanel) {
+    var data = answers[key];
+    active = key;
+    tabs.forEach(function (tab) {
+      var on = tab.getAttribute('data-answer') === key;
+      tab.setAttribute('aria-selected', String(on));
+      tab.setAttribute('tabindex', on ? '0' : '-1');
+    });
+    panel.classList.add('is-changing');
+    trace.classList.remove('is-drawing');
+    setTrace(key);
+    window.setTimeout(function () {
+      document.getElementById('answer-title').textContent = data.title;
+      document.getElementById('answer-command').textContent = data.command;
+      document.getElementById('term-name').textContent = data.name;
+      output.textContent = data.output;
+      document.getElementById('answer-truth').textContent = data.truth;
+      var index = Object.keys(answers).indexOf(key) + 1;
+      document.getElementById('answer-counter').textContent = 'question ' + index + ' / 4';
+      panel.setAttribute('aria-labelledby', 'question-' + key);
+      state.className = 'pill ' + (key === 'alive' ? 'pill--ok' : 'pill--accent');
+      state.innerHTML = data.state;
+      panel.classList.remove('is-changing');
+      void trace.getBoundingClientRect();
+      trace.classList.add('is-drawing');
+      if (focusPanel) panel.focus();
+    }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 90);
+  }
+
+  tabs.forEach(function (tab, index) {
+    tab.addEventListener('click', function () { render(tab.getAttribute('data-answer'), false); });
+    tab.addEventListener('keydown', function (event) {
+      var next = null;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % tabs.length;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + tabs.length) % tabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = tabs.length - 1;
+      if (next !== null) {
+        event.preventDefault();
+        tabs[next].focus();
+        render(tabs[next].getAttribute('data-answer'), false);
+      }
+    });
+  });
+
+  var attach = {
+    view: {
+      label: 'observes PTY',
+      explain: 'View receives terminal output without terminal ownership.',
+      command: 'tm8 session attach ' + SID + ' --mode view --format json',
+      json: '{\n  "workSessionId": "' + SID + '",\n  "url": "/v2/ws?sessionId=' + SID + '&mode=view",\n  "protocol": "ws",\n  "mode": "view",\n  "token": "tm8g_…",\n  "expiresAt": "2026-08-20T09:40:00.000Z"\n}'
+    },
+    drive: {
+      label: 'owns PTY input',
+      explain: 'Drive receives terminal output and owns interactive terminal input. The server authorizes this separately.',
+      command: 'tm8 session attach ' + SID + ' --mode drive --format json',
+      json: '{\n  "workSessionId": "' + SID + '",\n  "url": "/v2/ws?sessionId=' + SID + '&mode=drive",\n  "protocol": "ws",\n  "mode": "drive",\n  "token": "tm8g_…",\n  "expiresAt": "2026-08-20T09:40:00.000Z"\n}'
+    }
+  };
+  var modeButtons = Array.prototype.slice.call(document.querySelectorAll('[data-mode]'));
+  var attachOutput = document.getElementById('attach-output');
+  var modeDiagram = document.getElementById('mode-diagram');
+  function renderAttach(mode) {
+    modeButtons.forEach(function (button) { button.setAttribute('aria-pressed', String(button.getAttribute('data-mode') === mode)); });
+    attachOutput.classList.add('is-changing');
+    modeDiagram.classList.remove('is-active');
+    window.setTimeout(function () {
+      document.getElementById('mode-label').textContent = attach[mode].label;
+      document.getElementById('attach-explain').textContent = attach[mode].explain;
+      document.getElementById('attach-command').textContent = attach[mode].command;
+      document.getElementById('attach-json').textContent = attach[mode].json;
+      attachOutput.classList.remove('is-changing');
+      void modeDiagram.getBoundingClientRect();
+      modeDiagram.classList.add('is-active');
+    }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 90);
+  }
+  modeButtons.forEach(function (button) { button.addEventListener('click', function () { renderAttach(button.getAttribute('data-mode')); }); });
+  window.addEventListener('resize', function () { setTrace(active); });
+  render('alive', false);
+  renderAttach('view');
+}());
+</script>
+</body>
+</html>

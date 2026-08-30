@@ -1784,6 +1784,16 @@ function CategoryTabs({
           onClick={() => onTab(tab.id)}
           {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
         >
+          {/* EVERY TAB SHOWS ITS COUNT, INCLUDING A ZERO — measured off the
+              owner's design, where `To Do 0` and `Done 603` sample the SAME
+              black (0,0,0) and the empty tab carries no demotion at all.
+
+              I briefly dropped the zero and greyed the tab, on the argument
+              that a tab reading `To Do 0` is a control advertising its own
+              emptiness. The reasoning was sound and the owner's design says
+              otherwise, so the design wins: `0` is the honest answer to "how
+              many are in this band" and a reader comparing bands wants all
+              four numbers, not three numbers and a gap. */}
           {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
         </button>
       ))}
@@ -1948,6 +1958,17 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="filter-trigger"
         >
+          {/* LOWERCASE, AND THE TWO CASINGS ARE DELIBERATE. I Title-Cased
+              this row on the reading that `To Do` above and `filter` below
+              was unjustified noise. The owner's design keeps both: Title Case
+              for the lifecycle TABS, lowercase for the filter CONTROLS.
+
+              Read that way it is a distinction rather than an inconsistency —
+              the tabs name bands of work and carry registry copy this file
+              does not own; these name controls that act on them. Casing is
+              doing the same job the two rows already do structurally. The
+              design is the acceptance bar and it disagreed with my reading,
+              so the lowercase stays. */}
           filter ▾
         </button>
       ) : null}
@@ -1988,6 +2009,12 @@ function FilterRow({
             aria-haspopup="menu"
             data-testid="collection-lens-trigger"
           >
+            {/* `.toLowerCase()` RESTORED. It is the only one of the three
+                applied in code rather than typed, so it is what keeps a
+                registry label — declared "Collections", capital C — speaking
+                the filter row's lowercase alongside `filter` and `people`.
+                Dropping it was correct under the Title-Case reading and wrong
+                under the design's, which keeps the controls lowercase. */}
             {`${membership.label.toLowerCase()} ▾`}
           </button>
         )
@@ -2008,6 +2035,15 @@ function FilterRow({
           aria-expanded={picker === 'sort'}
           aria-haspopup="menu"
           title={`Sorted by ${current.label}`}
+          /* A LONE GLYPH IS NOT A NAME. At the floor this collapses to `↓`,
+             and an arrow is not self-describing: it could be sort direction,
+             download, or scroll-to-bottom, and the reader is left inferring a
+             meaning the control asserts about itself. `title` gives a pointer
+             user a tooltip on hover and gives a touch user nothing at all.
+             The accessible name is stated in words, always — the same
+             colour+word rule the status pills follow, applied to a glyph:
+             never let the mark be the only thing carrying the meaning. */
+          aria-label={`Sort: ${current.label}`}
           data-testid="sort-trigger"
         >
           {/* At the floor the sort chip collapses to its glyph — T0-3 frame 4

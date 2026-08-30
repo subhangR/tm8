@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="An interactive tm8 Help replay of Dispatcher and Dreamer, the asynchronous memory keepers.">
+<title>The keepers, revisited · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style>
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+.keeper { padding: 0; overflow: hidden; }
+.keeper__mast { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding:18px 20px 14px; border-bottom:1px solid var(--line); }
+.keeper__mast p { margin:0; }
+.keeper__time { font:600 10px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+.keeper__split { display:grid; grid-template-columns:1fr 1fr; min-height:430px; }
+.keeper__side { padding:20px; position:relative; overflow:hidden; }
+.keeper__side + .keeper__side { border-left:1px solid var(--line-strong); background:color-mix(in srgb,var(--accent-2) 4%,var(--surface)); }
+.side-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+.side-head h3 { margin:0; font-size:20px; }
+.side-head .who { white-space:nowrap; }
+.route { display:grid; gap:12px; position:relative; }
+.node { border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); padding:11px 12px; min-height:64px; position:relative; transition:transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out), border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out); }
+.node::before { content:""; position:absolute; width:1px; height:13px; background:var(--line-strong); bottom:-13px; left:24px; }
+.node:last-child::before { display:none; }
+.node__kind { display:block; font:600 9px var(--mono); color:var(--muted); text-transform:uppercase; letter-spacing:.12em; }
+.node strong { font-size:14px; }
+.node small { display:block; color:var(--muted); font:11px/1.45 var(--mono); margin-top:2px; }
+.node.is-live { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }
+.node[data-arrive] { opacity:.36; transform:translateY(8px); }
+.keeper[data-step="1"] [data-arrive="1"], .keeper[data-step="2"] [data-arrive="1"], .keeper[data-step="3"] [data-arrive="1"], .keeper[data-step="4"] [data-arrive="1"], .keeper[data-step="5"] [data-arrive="1"],
+.keeper[data-step="2"] [data-arrive="2"], .keeper[data-step="3"] [data-arrive="2"], .keeper[data-step="4"] [data-arrive="2"], .keeper[data-step="5"] [data-arrive="2"],
+.keeper[data-step="3"] [data-arrive="3"], .keeper[data-step="4"] [data-arrive="3"], .keeper[data-step="5"] [data-arrive="3"],
+.keeper[data-step="4"] [data-arrive="4"], .keeper[data-step="5"] [data-arrive="4"],
+.keeper[data-step="5"] [data-arrive="5"] { opacity:1; transform:none; }
+.memory-stack { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
+.memory-slip { border:1px solid var(--line-strong); border-radius:3px; background:var(--surface); padding:4px 7px; font:10px/1.35 var(--mono); color:var(--ink); transition:transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out); }
+.memory-slip em { display:block; color:var(--muted); font-style:normal; font-size:8px; text-transform:uppercase; letter-spacing:.1em; }
+.memory-slip.is-task { border-color:var(--accent-2); }
+.context-tray { border:1px solid var(--line-strong); border-radius:5px; padding:9px; background:color-mix(in srgb,var(--accent) 4%,var(--surface)); }
+.context-order { display:grid; gap:6px; margin-top:8px; counter-reset:ctx; }
+.context-order .memory-slip { opacity:.28; transform:translateX(-12px); }
+.keeper[data-step="2"] .context-order .memory-slip:first-child,
+.keeper[data-step="3"] .context-order .memory-slip:first-child,
+.keeper[data-step="4"] .context-order .memory-slip:first-child,
+.keeper[data-step="5"] .context-order .memory-slip:first-child { opacity:1; transform:none; }
+.keeper[data-step="3"] .context-order .memory-slip,
+.keeper[data-step="4"] .context-order .memory-slip,
+.keeper[data-step="5"] .context-order .memory-slip { opacity:1; transform:none; }
+.sweep-list { display:grid; gap:8px; }
+.sweep { display:grid; grid-template-columns:22px 1fr auto; gap:9px; align-items:center; border:1px solid var(--line); border-radius:4px; background:var(--surface); padding:9px; opacity:.36; transform:translateX(9px); transition:transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out), border-color var(--dur-base) var(--ease-out); }
+.sweep__mark { width:18px; height:18px; border:1px solid var(--line-strong); border-radius:50%; display:grid; place-items:center; font:700 10px var(--mono); }
+.sweep strong { font-size:13px; }
+.sweep small { display:block; color:var(--muted); font:10px/1.4 var(--mono); }
+.sweep .pill { font-size:8.5px; padding:2px 7px; }
+.keeper[data-step="4"] .sweep[data-sweep="1"], .keeper[data-step="5"] .sweep[data-sweep="1"],
+.keeper[data-step="5"] .sweep { opacity:1; transform:none; }
+.keeper[data-step="4"] .sweep[data-sweep="1"] { border-color:var(--warn); }
+.keeper[data-step="5"] .sweep[data-sweep="2"] { border-color:var(--danger); }
+.keeper[data-step="5"] .sweep[data-sweep="3"] { border-color:var(--ok); }
+.agent-band { display:grid; grid-template-columns:1fr auto 1fr; gap:16px; align-items:center; padding:14px 20px; border-top:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); background:var(--bg); }
+.agent-band p { margin:0; max-width:none; font-size:14px; }
+.agent-band__arrow { color:var(--accent-ink); font:18px var(--mono); }
+.stage-caption { min-height:2.8em; padding:13px 20px 0; font-size:14px; color:var(--muted); }
+.keeper .tmc { margin:12px 20px 20px; }
+.facts { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line); border:1px solid var(--line); }
+.fact { background:var(--surface); padding:16px; }
+.fact b { display:block; font:600 10px var(--mono); text-transform:uppercase; letter-spacing:.1em; color:var(--accent-ink); margin-bottom:5px; }
+.fact p { margin:0; font-size:14px; }
+.ink-table { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.ink-card { min-height:170px; }
+.ink-card h3 { margin:0 0 10px; }
+.ink-card ul { margin:8px 0 0; padding-left:20px; }
+.ink-card li { margin:5px 0; }
+.ghost-diagram { border:1px dashed var(--line-strong); opacity:var(--ghost-opacity); padding:12px; border-radius:4px; font:12px/1.6 var(--mono); }
+.ghost-diagram span { display:inline-block; border:1px dashed currentColor; border-radius:3px; padding:3px 6px; margin:3px; }
+.help-map { display:flex; gap:8px 18px; flex-wrap:wrap; color:var(--muted); font-size:14px; }
+.help-map span::before { content:"§ "; color:var(--accent-ink); }
+@media (max-width: 760px) {
+  header.site { padding-left:16px; padding-right:16px; }
+  header.site .hub-note { display:none; }
+  main { padding:20px 16px 56px; }
+  h1 { font-size:36px; }
+  .keeper__split { grid-template-columns:1fr; }
+  .keeper__side + .keeper__side { border-left:0; border-top:1px solid var(--line-strong); }
+  .keeper__mast { align-items:flex-start; }
+  .keeper__time { white-space:normal; text-align:right; }
+  .agent-band { grid-template-columns:1fr; gap:5px; }
+  .agent-band__arrow { transform:rotate(90deg); width:max-content; }
+  .facts { grid-template-columns:1fr 1fr; }
+  .ink-table { grid-template-columns:1fr; }
+  .keeper .tmc { flex-wrap:wrap; }
+  .tmc input[type="range"] { order:3; flex-basis:100%; margin:9px 12px; }
+}
+@media (max-width: 420px) {
+  .keeper__mast, .keeper__side { padding:16px; }
+  .side-head { align-items:flex-start; }
+  .side-head .who { white-space:normal; }
+  .facts { grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-band__arrow { transform:none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm<i>8</i> Help</span>
+  <span class="crumb">/ The keepers, revisited</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+<main id="main">
+  <p class="kicker">Section 6 · Advanced · Memory</p>
+  <h1>The keepers, revisited</h1>
+  <p class="lede">Memory work happens around the working agent, not inside its critical path. Drive one passage from spawn time to off-hours and watch Dispatcher and Dreamer divide the work.</p>
+
+  <div class="ink-legend" role="note" aria-label="Truth legend">
+    <span><span class="swatch swatch--solid"></span><b>Solid ink</b> — shipped and true today</span>
+    <span><span class="swatch swatch--ghost"></span><b>Ghost ink</b> — designed, not built</span>
+    <span class="stamp">verified against Section 6 on 2026-08-20</span>
+  </div>
+
+  <section aria-labelledby="passage-title">
+    <h2 id="passage-title"><span class="no">01</span>One passage, two keepers</h2>
+    <p>Use <strong>Play passage</strong>, <strong>Step</strong>, or the frame slider. Each frame moves forward through the same task’s context lifecycle; the replay stops after the night sweep.</p>
+
+    <div class="panel keeper" id="keeper" data-step="0">
+      <div class="keeper__mast">
+        <p><strong>Northlake</strong><br><span class="caption mono">task · Fix login redirect loop</span></p>
+        <p class="keeper__time" id="stage-time">Before spawn · 08:59</p>
+      </div>
+
+      <div class="keeper__split">
+        <article class="keeper__side" aria-labelledby="dispatcher-title">
+          <div class="side-head">
+            <h3 id="dispatcher-title">Spawn time</h3>
+            <span class="who who--teammate"><span class="who__avatar">DI</span>Dispatcher <span class="who__kind">teammate</span></span>
+          </div>
+          <div class="route">
+            <div class="node is-live">
+              <span class="node__kind">memory graph</span>
+              <strong>Read the claims attached to the work</strong>
+              <div class="memory-stack">
+                <span class="memory-slip"><em>persona</em>Prefer evidence-first fixes</span>
+                <span class="memory-slip is-task"><em>task</em>Redirect loop starts after SSO</span>
+              </div>
+            </div>
+            <div class="node" data-arrive="1">
+              <span class="node__kind">selection</span>
+              <strong>Choose Juniper for the session</strong>
+              <small>Dispatcher makes the spawn-time teammate choice.</small>
+            </div>
+            <div class="context-tray node" data-arrive="2">
+              <span class="node__kind">outgoing session · context tray</span>
+              <strong>Clip in the right memory before start</strong>
+              <div class="context-order" aria-label="Memory injection order">
+                <span class="memory-slip"><em>1 · persona working set</em>Prefer evidence-first fixes</span>
+                <span class="memory-slip is-task"><em>2 · task memories</em>Redirect loop starts after SSO</span>
+              </div>
+            </div>
+            <div class="node" data-arrive="3">
+              <span class="node__kind">work_session</span>
+              <strong>Juniper starts with context already present</strong>
+              <small>The working agent receives memory; it does not select or garden it mid-task.</small>
+            </div>
+          </div>
+        </article>
+
+        <article class="keeper__side" aria-labelledby="dreamer-title">
+          <div class="side-head">
+            <h3 id="dreamer-title">Off-hours</h3>
+            <span class="who who--teammate"><span class="who__avatar">DR</span>Dreamer <span class="who__kind">teammate</span></span>
+          </div>
+          <div class="route">
+            <div class="node" data-arrive="3">
+              <span class="node__kind">evidence left by the session</span>
+              <strong>Observed: SSO cookie path was stale</strong>
+              <small>The agent leaves evidence in the graph after doing the work.</small>
+            </div>
+            <div class="node" data-arrive="4">
+              <span class="node__kind">Dreamer loop · night sweep</span>
+              <strong>Garden outside the critical path</strong>
+              <small>Its inbound <code>triggered_by</code> edges are the loop’s run history.</small>
+            </div>
+            <div class="sweep-list" aria-label="Dreamer sweep results">
+              <div class="sweep" data-sweep="1"><span class="sweep__mark">S</span><span><strong>Staleness</strong><small>check claims against pinned evidence</small></span><span class="pill pill--warn">review</span></div>
+              <div class="sweep" data-sweep="2"><span class="sweep__mark">D</span><span><strong>Contradiction</strong><small><code>disputes</code> marks the wrong claim</small></span><span class="pill pill--danger">marked</span></div>
+              <div class="sweep" data-sweep="3"><span class="sweep__mark">C</span><span><strong>Consolidation</strong><small><code>supersedes</code> adds the replacement</small></span><span class="pill pill--ok">appended</span></div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="agent-band" role="note">
+        <p><strong>Working agent</strong><br><span class="caption">receives the right memory</span></p>
+        <span class="agent-band__arrow" aria-hidden="true">→</span>
+        <p><strong>Evidence</strong><br><span class="caption">is left behind for asynchronous gardening</span></p>
+      </div>
+      <p class="stage-caption" id="stage-caption" aria-live="polite">The task exists; no session has started and no memory has been injected.</p>
+      <div class="tmc" role="group" aria-label="Keeper replay controls">
+        <button class="btn btn--primary" id="play" type="button">Play passage</button>
+        <button class="btn" id="step" type="button">Step</button>
+        <button class="btn" id="reset" type="button">Reset</button>
+        <label class="sr-only" for="scrub">Replay frame</label>
+        <input id="scrub" type="range" min="0" max="5" value="0" step="1">
+        <span class="tmc-count" id="count" aria-hidden="true">1 / 6</span>
+      </div>
+    </div>
+    <p class="caption">The full-motion version uses short, settled transitions. With reduced motion, the same controls reveal complete still frames immediately.</p>
+  </section>
+
+  <section aria-labelledby="rules-title">
+    <h2 id="rules-title"><span class="no">02</span>The rules under the replay</h2>
+    <div class="facts">
+      <article class="fact"><b>First-class</b><p>A memory is an append-only graph entity, not hidden model state.</p></article>
+      <article class="fact"><b>Attachable</b><p>Any entity can <code>remembers</code> a memory; the thing carries it into work.</p></article>
+      <article class="fact"><b>Borrowed</b><p><code>--memory</code> injects a one-session loan and writes nothing to the graph.</p></article>
+      <article class="fact"><b>Ordered</b><p>The persona working set precedes task-remembered memories at spawn.</p></article>
+    </div>
+    <div class="gap-card">
+      <b>Why asynchronous?</b>
+      With current model limitations, an agent cannot efficiently garden its own memory while also doing the task. Dispatcher prepares context before the session starts; Dreamer consolidates and challenges claims later. The working session stays focused and leaves inspectable evidence.
+    </div>
+    <p>A wrong memory is not erased. Pinned evidence can mark it with <code>disputes</code>, or a new memory can replace it with <code>supersedes</code>. The old entity remains because the record of what was believed is itself useful.</p>
+  </section>
+
+  <section aria-labelledby="truth-title">
+    <h2 id="truth-title"><span class="no">03</span>Where today ends</h2>
+    <p>The graph vocabulary is broader than the running behavior. Two inks keep that boundary visible.</p>
+    <div class="ink-table">
+      <article class="card ink-card">
+        <h3>Solid ink · shipped</h3>
+        <ul>
+          <li>A loop is an entity.</li>
+          <li><code>triggered_by</code> inbound edges are its run history.</li>
+          <li><code>spell</code> is a registered kind.</li>
+          <li><code>equips</code> and <code>pulled</code> graph plumbing exists.</li>
+        </ul>
+      </article>
+      <article class="card ink-card ghost">
+        <h3>Ghost ink · not built</h3>
+        <p>Spell casting has no runtime today. Hook machinery and event-triggered injection are design, not shipped behavior.</p>
+        <div class="ghost-diagram" aria-label="Designed but unbuilt spell casting flow">
+          <span>event</span> → <span>hook</span> → <span>cast spell</span> → <span>live session</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="map-title">
+    <h2 id="map-title"><span class="no">04</span>Help map</h2>
+    <p>Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list.</p>
+    <div class="help-map" data-help-role="sibling" aria-label="Sibling Help sections">
+      <span>Memory — entities that remember</span>
+      <span>Loops — scheduled work</span>
+      <span>Spells — behavior you can cast</span>
+    </div>
+  </section>
+</main>
+<footer class="site">
+  Last updated 2026-08-20 · The keepers, revisited · tm8 Help v1 · <span class="stamp">foundation revision 2</span>
+</footer>
+<script>
+(function () {
+  var stage = document.getElementById('keeper');
+  var play = document.getElementById('play');
+  var stepButton = document.getElementById('step');
+  var reset = document.getElementById('reset');
+  var scrub = document.getElementById('scrub');
+  var count = document.getElementById('count');
+  var caption = document.getElementById('stage-caption');
+  var time = document.getElementById('stage-time');
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var timer = 0;
+  var frame = 0;
+  var captions = [
+    'The task exists; no session has started and no memory has been injected.',
+    'Dispatcher reads the memory graph and chooses Juniper for this task.',
+    'The persona working set is clipped into the outgoing session first.',
+    'Task memories follow. Juniper starts with both layers already present, then leaves evidence.',
+    'At night, Dreamer begins a loop-driven staleness sweep outside the task’s critical path.',
+    'Dreamer marks contradictions and appends consolidated replacements. Older memories remain.'
+  ];
+  var times = ['Before spawn · 08:59','Spawn · 09:00','Spawn · 09:00','Session running · 09:01','Night sweep · 02:00','Sweep complete · 02:01'];
+  function stop() {
+    if (timer) window.clearTimeout(timer);
+    timer = 0;
+    play.textContent = frame === 5 ? 'Replay passage' : 'Play passage';
+  }
+  function render(next) {
+    frame = Math.max(0, Math.min(5, next));
+    stage.setAttribute('data-step', String(frame));
+    scrub.value = String(frame);
+    count.textContent = (frame + 1) + ' / 6';
+    caption.textContent = captions[frame];
+    time.textContent = times[frame];
+    if (frame === 5) stop();
+  }
+  function run() {
+    stop();
+    if (frame === 5) render(0);
+    play.textContent = 'Pause';
+    function tick() {
+      if (frame >= 5) { stop(); return; }
+      render(frame + 1);
+      timer = window.setTimeout(tick, reduce.matches ? 650 : 1050);
+    }
+    timer = window.setTimeout(tick, 220);
+  }
+  play.addEventListener('click', function () { if (timer) stop(); else run(); });
+  stepButton.addEventListener('click', function () { stop(); render(frame === 5 ? 0 : frame + 1); });
+  reset.addEventListener('click', function () { stop(); render(0); });
+  scrub.addEventListener('input', function () { stop(); render(Number(scrub.value)); });
+  reduce.addEventListener && reduce.addEventListener('change', stop);
+  render(0);
+}());
+</script>
+</body>
+</html>

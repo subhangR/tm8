@@ -2298,3 +2298,162 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-focus, v
   color: var(--pn-ink-3);
   font: var(--pn-fs-sm) var(--pn-ui);
 }
+
+/* ---------------------------------------------------------------------------
+   THE SESSION LIST — Home's "what is happening right now" column.
+
+   WIDTH BUDGET, stated because the prior art's cautionary tale is a Fitts fix
+   applied without one. The TITLE is the name and never yields: it may shrink
+   and ellipsise, while the status word and the model chip are `flex: none` and
+   the chip is CAPPED — uncapped `nowrap` metadata gives up nothing and eats the
+   name instead.
+   --------------------------------------------------------------------------- */
+.tch-sessions {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  gap: var(--pn-space-2);
+}
+
+/* The scroller is HERE, not on a height-capped ancestor: a parent whose
+   children can shrink crushes them instead of overflowing, which is how a
+   description card shipped at 46px against 289px of content. */
+.tch-sessions__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* PENDING and FAILED share this. It is never the empty sentence — the union
+   makes that unreachable — so this only ever states a transient fact. */
+.tch-sessions__note {
+  margin: 0;
+  padding: var(--pn-space-3);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-body);
+}
+
+.tch-srow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+
+/* LIVE is state that changes what you do, so it earns colour — and it is the
+   only colour on the row. Driven by the host's `live` boolean: an `idle`
+   session is live and keeps this edge. */
+.tch-srow--live { border-inline-start: 3px solid var(--pn-run); }
+
+/* WHERE YOU ARE gets a ring, not a fill, so it does not compete with the live
+   edge on the same row. */
+.tch-srow--on { outline: 2px solid var(--pn-brand); outline-offset: -1px; }
+
+.tch-srow__main {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.tch-srow__main:disabled { cursor: default; }
+
+/* THE NAME. May shrink, may ellipsise, never vanishes. */
+.tch-srow__title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-2);
+}
+
+/* THE INCOMPRESSIBLE SIDE, CAPPED — see the block comment above. */
+.tch-srow__detail {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  max-inline-size: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+}
+
+.tch-srow__dot {
+  flex: none;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+}
+
+.tch-srow__status {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+}
+
+.tch-srow__viewonly {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-fine);
+}
+
+/* Sibling of the button — PR chips carry real anchors and an <a> cannot nest
+   inside a <button>. */
+.tch-srow__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+}
+
+/* SESSION SLOTS. The count is a QUANTITY, so it is ink and not a pill. */
+.tch-slots {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding-block-start: var(--pn-space-2);
+  border-block-start: 1px solid var(--pn-line-2);
+}
+.tch-slots__label {
+  flex: 0 0 auto;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tch-slots__count {
+  flex: none;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-fine);
+  font-variant-numeric: tabular-nums;
+}
+.tch-slots__bar {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  block-size: 4px;
+  border-radius: 2px;
+  background: var(--pn-line-2);
+  overflow: hidden;
+}
+.tch-slots__fill {
+  block-size: 100%;
+  background: var(--pn-run);
+}

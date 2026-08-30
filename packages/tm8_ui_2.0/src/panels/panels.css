@@ -1855,7 +1855,13 @@
   gap: 4px;
   padding-left: 3px;
 }
-.cv2-root .lp__chip:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
+/* HOVER IS AN EDGE HERE TOO — the same retired `--pn-hover` fill as the tab
+   row above, and THIS is the rule the owner actually photographed: the
+   `collections` chip under the pointer measured (239, 242, 244) against a
+   (247, 249, 251) page. It was read as a third control shape; it was this
+   fill. The border is already reserved at 1px transparent, so strengthening
+   it is free and the row stops growing a filled plane under the cursor. */
+.cv2-root .lp__chip:hover { border-color: var(--pn-line-2); color: var(--pn-ink); }
 .cv2-root .lp__chip--active {
   /* One full step above the resting 600 — 650 was a half-step nobody saw. */
   font-weight: 700;
@@ -1937,6 +1943,11 @@
   align-items: center;
   height: 28px;
   box-sizing: border-box;
+  /* Positioning context for the active underline's `::after`. Declared on the
+     BASE rule, not on `--active`, so the bar's containing block does not
+     appear and disappear with the state — a `position` that toggles is how a
+     pseudo-element ends up measured against the wrong ancestor. */
+  position: relative;
   border: 1px solid transparent;
   background: none;
   font-family: var(--pn-ui);
@@ -1954,24 +1965,94 @@
     color var(--pn-dur-fast) var(--pn-ease-standard),
     border-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .lp__tab:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
+/* HOVER IS AN EDGE, NOT A FILL. The calm pass retired `--pn-hover` across the
+   kit in favour of strengthening the border, and this row was still filling —
+   measured in the owner's own screenshot, where the hovered `collections`
+   chip renders (239, 242, 244) while the page behind it is (247, 249, 251).
+   The border already exists at 1px transparent, so darkening it costs no
+   layout and adds no plane of paint to the busiest row in the product. */
+.cv2-root .lp__tab:hover { border-color: var(--pn-line-2); color: var(--pn-ink); }
+/* A FILL, AND THE OWNER'S DESIGN IS WHY.
+   I briefly moved this to a ring — accent on the edge rather than the plane —
+   on a Von Restorff argument that a filled tab competes with every other
+   filled thing on screen. The argument was sound and the owner then supplied
+   a design that says fill. Measured off TARGET.png, vertical scan at x=658
+   through the active `In Progress 9` tab:
+       y=376 (255,255,255) page · y=377 (250,251,255) antialias
+       y=378 (244,246,255) FILL  … y=401 antialias · y=402 page
+   White, one antialiased step, fill. NO darker stroke row at either boundary,
+   which a 1px ring would draw. So: soft fill, coloured text, no border.
+
+   THE DESIGN'S OWN RULE, which is better than the one I argued: FILLS MARK
+   WHERE YOU ARE; OUTLINES MARK WHAT CHANGED. The target spends a fill in
+   exactly three places — the active row, this tab, and the create verb — and
+   gives every `N new` / `N live` delta an OUTLINE instead. That is the
+   scarcity Von Restorff actually asks for, reached by quieting the deltas
+   rather than by demoting the one thing that says where you are.
+
+   AND THE RING HAD AN UNAUDITED CONSUMER. mobile-screens.css:1234 already
+   marks this tab with an inset underline and sets only `color` and
+   `box-shadow` — it never resets `border-color`, so the ring bled through and
+   the phone drew an underline AND a ring. Restoring the fill restores the
+   phone exactly as it was. Change what carries a state and you owe every
+   consumer an audit; I changed it and audited one surface. */
+/* THE OUTLINE IS THE MARK. A 1px brand border on the tab's OWN transparent
+   border, plus the accent word. No fill.
+
+   THE SEQUENCE, because the result does not explain itself. The owner was
+   shown the filled pill, asked for that shape to go, was offered underline /
+   ring / ink-only, and chose the UNDERLINE (2026-08-30). That shipped here as
+   an `::after` rule and was never deployed. Looking at prod — still the fill —
+   the owner then asked for "nice bordered one same right side", which is the
+   RING they had earlier declined. Latest instruction wins; it was put to them
+   again with the underline named as the alternative, and they chose bordered.
+
+   So this file has now carried three marks for one state. The rule that
+   survives the churn: THE FILL IS WHAT WAS REJECTED, twice, and nothing here
+   may reintroduce a background.
+
+   `border-color` on the existing `border: 1px solid transparent` — the base
+   rule already reserves that 1px precisely so the mark costs no layout. The
+   radius is `--pn-r-pill`, so the border draws as a ring around the pill,
+   which is the shape asked for.
+
+   ONE COMPONENT, BOTH SURFACES. `.lp__tab` renders in EntityListPanel only, so
+   the Tasks list header and the Sessions panel take this from one declaration
+   — which is what "same right side" asked for, at no extra cost.
+
+   The phone still marks this element with an inset box-shadow
+   (mobile-screens.css:1234) and now differs from desktop in KIND rather than
+   in implementation. That divergence is real and belongs to the active-state
+   sweep, not to this file. */
 .cv2-root .lp__tab--active {
   /* One full step above the resting 600 — 650 was a half-step nobody saw. */
   font-weight: 700;
   color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand-2);
 }
-/* The selected chip keeps its fill under the pointer — hover must not read
-   as deselection. */
+/* THE RING SURVIVES THE POINTER — hover must not read as deselection. Hover
+   has to hold both halves of the mark now: the accent word against the base
+   `:hover` reverting it to `--pn-ink`, and the border against the base hover
+   edge. Nothing here may set a background: a fill under a hovered active tab
+   is the box the owner rejected twice. */
 .cv2-root .lp__tab--active:hover {
-  background: var(--pn-brand-soft);
-  border-color: transparent;
   color: var(--pn-brand-2);
+  border-color: var(--pn-brand-2);
 }
+/* DARK FLIPS BOTH HALVES — the audit that changing the carrier forces, and it
+   forced it again. This block lifts the active word off `--pn-brand-2`
+   (legible on paper, muddy on a dark surface) onto `--pn-brand`; the border
+   now carries the same state, so it flips with the word. Leaving the ring on
+   `--pn-brand-2` would give dark mode a tab whose word and whose edge disagree
+   about which blue means "here" — the same defect the `::after` version had to
+   answer, in the shape that replaced it. */
 .cv2-root[data-theme='dark'] .lp__tab--active,
 [data-theme='dark'] .cv2-root .lp__tab--active,
 .cv2-root[data-theme='dark'] .lp__tab--active:hover,
-[data-theme='dark'] .cv2-root .lp__tab--active:hover { color: var(--pn-brand); }
+[data-theme='dark'] .cv2-root .lp__tab--active:hover {
+  color: var(--pn-brand);
+  border-color: var(--pn-brand);
+}
 
 .cv2-root .lp__body {
   flex: 1 1 auto;
@@ -2957,10 +3038,22 @@
   display: flex;
   align-items: center;
   gap: var(--pn-space-1);
-  /* 8px below — the filter row is the same tier (12px between tiers is the
-     search row's own bottom margin, so board mode, which drops this row,
-     keeps its rhythm without it). */
-  padding: 0 var(--pn-space-3) var(--pn-space-2);
+  /* 4px below, WITHIN the tier. The filter row is the same tier as this one —
+     tabs are the lifecycle band, filters narrow within it — so the gap
+     between them is an intra-tier gap and was reading as an inter-tier one at
+     8px. The filter row keeps its own 8px bottom, which is the tier's real
+     bottom margin before the border, so the rhythm the original comment
+     protects is preserved: 4px inside the tier, 8px below it, 12px between
+     tiers. Board mode drops this row and is unaffected either way.
+
+     HONEST ABOUT THE SIZE: this reclaims 4px, not a row. The brief asks for
+     less chrome before content, and the large win — merging the two rows — is
+     refused deliberately: they answer two different questions and collapsing
+     them conflates a lifecycle band with a filter within it. So the available
+     win is spacing, and 4px is what spacing is worth. Anyone reading this
+     expecting the header to have visibly shrunk should read the row count
+     instead: it is still two, on purpose. */
+  padding: 0 var(--pn-space-3) var(--pn-space-1);
 }
 /* ---------------------------------------------------------------------------
    The inline launch flow (D44)

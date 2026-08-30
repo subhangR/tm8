@@ -1,17 +1,24 @@
 /**
  * HomePage — the merged single home (user ruling, task 01a0027d, 2026-08-14).
  *
- * ONE canvas, four altitudes:
+ * A DASHBOARD, NOT A DIRECTORY (owner ruling, 2026-08-30). Every element here
+ * is one of three things — something LIVE, something MINE and recent, or an
+ * ACTION I can start. Anything that is none of the three belongs on another
+ * screen:
  *
- *   1. The WORKSPACE MAP is compact peripheral vision across every entity
- *      family. It shares the rail's registry-derived model and exact counts.
- *   2. The CHAT is the hero — the existing chat-home surface, mounted solo
- *      (its thread sidebar hidden by this module's stylesheet; full thread
- *      management stays on the Messages screen).
- *   3. NEEDS YOU directly beneath, only when it has rows — triage outranks
- *      everything, and an inbox-zero space shows rails only.
- *   4. The explicit escape hatch to the full Workspace stays visible in the
- *      map header; Home never becomes a capability cul-de-sac.
+ *   1. MY LIVE SESSIONS first: what is running right now, wearing the seam's
+ *      verdict rather than its own record, so a session the node cannot
+ *      account for reads `stale` instead of claiming to run.
+ *   2. NEEDS YOU beneath it — triage outranks everything.
+ *   3. MY TASKS — mine, and recent.
+ *   4. The CHAT is the hero, mounted solo (its thread sidebar hidden by this
+ *      module's stylesheet; full thread management stays on Messages).
+ *
+ * The WORKSPACE MAP used to lead this page and is gone: it rendered the same
+ * `EntityNavigationGroup[]` as the rail beside it, so the screen asked "what
+ * kinds of thing exist here" twice and answered "what am I doing" nowhere.
+ * The taxonomy lives in the rail, once; `Open Workspace` is still the escape
+ * hatch, so Home never becomes a capability cul-de-sac.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
  *   - `useHomeData` / `composeMyWork` (src/home) — the NEEDS YOU composition
@@ -32,14 +39,13 @@
 import { useMemo, type ReactNode } from 'react';
 import {
   entityNavigationLabel,
+  getKind,
   KindIcon,
-  summarizeEntityNavigation,
   type EntityNavigationGroup,
 } from '../domain';
 import {
   composeMyWork,
   useHomeData,
-  type HomeRow,
   type HomeScreenData,
   type HomeSection,
 } from '../home';
@@ -87,184 +93,206 @@ export interface HomePageProps {
   onOpenKind?(kind: string): void;
   onOpenEntity(id: string): void;
   onOpenWorkspace(): void;
+  /** Create a kind and land on its root. The host already owns this verb. */
+  onCreateKind?: ((kind: string) => void) | undefined;
+  /**
+   * WHY A CREATE IS REFUSED, when it is. A refused verb renders DISABLED WITH
+   * THE REASON rather than vanishing — H2's ruling and it is right: a missing
+   * button reads as a missing feature, a disabled one that says why reads as a
+   * product that knows its own state. That difference is visible in a demo.
+   */
+  createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
 }
 
-/* WHICH CARDS HAVE A WIDE NOUN — registry data, not a selector list.
+/**
+ * START — the three verbs, first, before anything that merely exists.
  *
- * A map row holds its noun and its count side by side. Measured in the live
- * build (`ui-calm-pass/laneb-budget.mjs`, every count forced visible): a row
- * spends 50px on chrome, the widest ROW count is 56px (`612 · 8 live`), and
- * the widest noun the registry can hand this card is `Interaction profiles` at
- * 114px. So only a card carrying a noun near that width can ever be forced to
- * choose between the two, and only that card should drop its count.
+ * The owner asked for exactly these three by name and asked for them FIRST.
+ * They are not new plumbing: `HomeChatRegions` already carries `onShowChat`
+ * and `onCreateKind`, and `home-dashboard.ts` already declares this shape as
+ * `HomeCreateVerbs` — which had no consumer until now. This is the consumer.
  *
- * The stylesheet cannot ask "how long is this card's longest label", so the
- * card answers in `data-noun` and `home-page.css` queries the answer. Deciding
- * it here — from `labelPlural`, which is registry data — is what keeps the rule
- * from rotting the next time a label changes, and it names no kind (§15.2).
- *
- * The conversion is measured, not assumed: `Interaction profiles` is 20
- * characters and 114px, `Pull requests` is 13 and 74px — 5.7px per character
- * across both. WIDE_NOUN_PX sits between them so that the group carrying the
- * long noun is wide and the busiest group (WORK) is not.
+ * ONE CONTROL PER VERB. `ListRootHeader` renders a create for the current kind
+ * and the chat surface has its own `+ New chat`; this row is the SAME handlers
+ * reached from the one screen the owner starts on, not a second set. Two
+ * controls for one verb is how "options repeating" comes back.
  */
-const NOUN_PX_PER_CHAR = 5.7;
-const WIDE_NOUN_PX = 100;
-
-function hasWideNoun(group: EntityNavigationGroup): boolean {
-  const longest = group.items.reduce(
-    (most, item) => Math.max(most, item.config.labelPlural.length),
-    0,
-  );
-  return longest * NOUN_PX_PER_CHAR > WIDE_NOUN_PX;
-}
-
-function WorkspaceOverview({
-  groups,
-  activeKind,
-  onOpenKind,
-  onOpenWorkspace,
+function HomeStart({
+  onCreateKind,
+  createKindUnavailable,
 }: {
-  groups: readonly EntityNavigationGroup[];
-  activeKind?: string | null;
-  onOpenKind?(kind: string): void;
-  onOpenWorkspace(): void;
+  onCreateKind?: ((kind: string) => void) | undefined;
+  createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
 }) {
-  const summary = summarizeEntityNavigation(groups);
+  /* A verb whose handler is absent is not rendered at all — that is a host
+     that never wired it, which is different from a host that wired it and the
+     server refused. The second gets a disabled control with its reason; the
+     first would be a button we invented. */
+  const kindVerb = (kind: string, label: string, blurb: string) => {
+    if (!onCreateKind) return null;
+    const refusal = createKindUnavailable?.(kind) ?? null;
+    if (refusal) {
+      return (
+        <span className="hp-start__card hp-start__card--off" title={`${refusal.cause} — ${refusal.remedy}`}>
+          <b>{label}</b>
+          <span>{refusal.cause}</span>
+        </span>
+      );
+    }
+    return (
+      <button type="button" className="hp-start__card" onClick={() => onCreateKind(kind)}>
+        <b>{label}</b>
+        <span>{blurb}</span>
+      </button>
+    );
+  };
+
+  /* NEW CHAT IS DELIBERATELY ABSENT, and this is the one place this row
+   * departs from the owner's literal words ("one create new chat, New SESSIONS
+   * AND New Task first").
+   *
+   * The chat surface ALREADY owns that verb — `ListRootHeader` renders a `+`
+   * labelled "New chat" beside the Chats tab, two inches from here, on this
+   * same screen. Adding a second one made the gate fail with
+   *
+   *   Found multiple elements with the role "button" and name /^New chat$/
+   *
+   * which is exactly what `HomeCreateVerbs`' own docblock predicted: "Two
+   * controls for one verb is how 'options repeating' comes back, which is the
+   * complaint the dashboard exists to answer." I quoted that rule and then
+   * broke it in the same change.
+   *
+   * Removing the OTHER control was the alternative and it is the riskier half:
+   * seven assertions across three files defend it, one of them the subtle
+   * "a new conversation is not stolen" case.
+   *
+   * SO THIS IS THE OWNER'S CALL, NOT A SETTLED DESIGN. If they want all three
+   * verbs together, the `+` moves into this row and those tests move with it.
+   * What is not on the table is shipping two buttons that say "New chat". */
+  const session = kindVerb('session', 'New session', 'Put an agent on it and watch it work');
+  const task = kindVerb('task', 'New task', 'Track a piece of work to done');
+
+  /* Nothing wired ⇒ no row, rather than an empty box asserting "you can start
+     things" and offering none. */
+  if (!session && !task) return null;
 
   return (
-    <section
-      className="hp-overview k-enter"
-      aria-labelledby="hp-overview-title"
-      data-testid="hp-entity-overview"
-    >
-      <header className="hp-overview__head">
-        {/* One line of chrome, not four. The map's job is the menu of nouns
-            beneath it; a headline and a sentence restating what the reader can
-            already see were two rows of vertical budget the WORK card needed
-            (owner, 2026-08-29: the card was clipped mid-row by the panel's
-            bottom edge). "19 entity types" also still reads on the rail mast. */}
-        <h2 id="hp-overview-title" className="hp-overview__title">Workspace map</h2>
-        <div className="hp-overview__pulse" aria-label="Workspace totals">
-          <EntityNavigationMetrics total={summary.total} live={summary.live} density="full" />
-          <button
-            type="button"
-            className="k-btn k-btn--secondary k-btn--sm"
-            onClick={onOpenWorkspace}
-          >
-            Open Workspace <span aria-hidden>→</span>
-          </button>
-        </div>
-      </header>
-
-      <div className="hp-overview__families">
-        {groups.map((group) => {
-          const groupIsActive = group.items.some((item) => item.config.kind === activeKind);
-          return (
-            <article
-              key={group.id}
-              className="hp-overview__family"
-              data-active={groupIsActive ? 'true' : undefined}
-              /* The card tells the stylesheet how long its longest noun is, so
-                 the count budget in `home-page.css` can bind on the ONE card
-                 where the noun and the count genuinely compete instead of
-                 emptying every card to protect it. See `hasWideNoun`. */
-              data-noun={hasWideNoun(group) ? 'wide' : undefined}
-              /* The description moves to the hover text: it was a permanently
-                 ellipsed line ("Plan, run, and ship the work i…") spending a
-                 row of the card's height to say nothing it finished saying. */
-              title={group.description}
-            >
-              <div className="hp-overview__family-head">
-                <h3>{group.label}</h3>
-                <EntityNavigationMetrics total={group.total} live={group.live} />
-              </div>
-              <div className="hp-overview__kinds" aria-label={`${group.label} entity types`}>
-                {group.items.map((item) => (
-                  <button
-                    key={item.config.kind}
-                    type="button"
-                    className="hp-overview__kind k-press"
-                    aria-current={item.config.kind === activeKind ? 'page' : undefined}
-                    aria-label={entityNavigationLabel(item)}
-                    title={entityNavigationLabel(item)}
-                    disabled={!onOpenKind}
-                    onClick={() => onOpenKind?.(item.config.kind)}
-                  >
-                    <span className="hp-overview__kind-mark" aria-hidden>
-                      <KindIcon kind={item.config.kind} />
-                    </span>
-                    <span className="hp-overview__kind-name">{item.config.labelPlural}</span>
-                    {/* ONE number per row. The unseen pill is deliberately not
-                        passed: a row carrying both a total and an "N new" chip
-                        is what squeezed these nouns down to `Tas…`, `Do…`,
-                        `Pul…`, and "2078 new out of 2283" was never the fact
-                        the reader wanted (owner ruling, 2026-08-29). The exact
-                        unseen count still reads in the button's accessible name
-                        and hover text via `entityNavigationLabel`. */}
-                    <EntityNavigationMetrics total={item.counts?.total} live={item.live} />
-                  </button>
-                ))}
-              </div>
-            </article>
-          );
-        })}
-      </div>
+    <section className="hp-start" aria-label="Start something">
+      {session}
+      {task}
     </section>
   );
 }
 
-function RowCard({ row, onOpen }: { row: HomeRow; onOpen(id: string): void }) {
-  return (
-    <button
-      type="button"
-      className="hp-card"
-      title={row.detail ?? row.title}
-      onClick={() => onOpen(row.id)}
-    >
-      <span className="hp-card__head">
-        {row.kind ? (
-          <span className="hp-card__glyph" aria-hidden="true">
-            <KindIcon kind={row.kind} />
-          </span>
-        ) : null}
-        {row.word ? (
-          <span className={`hp-card__word hp-card__word--${row.tone}`}>
-            {row.dot ? <span className={`hp-card__dot hp-card__dot--${row.dot}`} aria-hidden="true" /> : null}
-            {row.word}
-          </span>
-        ) : null}
-      </span>
-      <span className="hp-card__title">{row.title}</span>
-    </button>
-  );
+
+/**
+ * "2m" / "3h" / "5d" — the shortest true form.
+ *
+ * NO "just now" AND NO ROUNDING UP. A session stamped four minutes ago reads
+ * `4m`, not `just now`, because the whole point of this line is telling a
+ * stalled session from a live one at a glance. Anything under a minute is the
+ * only case where a word beats a number, and it says `now` rather than `0m`.
+ *
+ * An unparseable stamp renders NOTHING rather than `NaN` or a guess.
+ */
+function sinceLabel(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 60) return 'now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
+  return `${Math.floor(secs / 86400)}d`;
 }
 
-function NeedsYouStrip({ section, onOpen }: { section: HomeSection; onOpen(id: string): void }) {
+function AttentionCard({
+  section,
+  onOpen,
+  count,
+}: {
+  section: HomeSection;
+  onOpen(id: string): void;
+  /** A live tally, when the section has one. Absent ⇒ no number is claimed. */
+  count?: string | undefined;
+}) {
   return (
-    <section className="hp-needs" aria-label={section.label} data-testid="hp-needs-you">
-      <div className="hp-rail__head">
-        <span className="hp-rail__label kit-eyebrow">
-          {section.label} · {section.rows.length}
-        </span>
+    <article className="hp-attention" aria-label={section.label} data-testid="hp-needs-you">
+      <div className="hp-attention__head">
+        <h2 className="hp-attention__eyebrow k-label">{section.label}</h2>
+        {count ? <span className="hp-attention__count">{count}</span> : null}
       </div>
-      <div className="hp-rail__scroll">
+      <div className="hp-attention__rows">
         {section.rows.map((row) => (
-          <RowCard key={row.id} row={row} onOpen={onOpen} />
+          <button
+            key={row.id}
+            type="button"
+            className={`hp-attention__row k-press hp-attention__row--${row.tone}`}
+            title={row.detail ?? row.title}
+            onClick={() => onOpen(row.id)}
+          >
+            <span className="hp-attention__status">
+              {row.word ? (
+                <span className={`hp-card__word hp-card__word--${row.tone}`}>
+                  {row.dot ? (
+                    <span className={`hp-card__dot hp-card__dot--${row.dot}`} aria-hidden="true" />
+                  ) : null}
+                  {row.word}
+                </span>
+              ) : null}
+            </span>
+            <span className="hp-attention__title">{row.title}</span>
+            {/* PROGRESS AND ACTIVITY (owner, 2026-08-30) — the two facts the
+                node actually stamps. Each renders only when present: a card
+                that draws "0 turns" or "never" states something false about a
+                session whose counters have not arrived yet. */}
+            {row.turns !== undefined || row.activityAt ? (
+              <span className="hp-attention__facts">
+                {row.turns !== undefined ? (
+                  <span className="hp-attention__turns">{row.turns} turns</span>
+                ) : null}
+                {row.activityAt ? (
+                  <time className="hp-attention__when" dateTime={row.activityAt}>
+                    {sinceLabel(row.activityAt)}
+                  </time>
+                ) : null}
+              </span>
+            ) : null}
+            {row.kind ? (
+              <span className="hp-attention__ref">
+                <span className="hp-attention__ref-mark" aria-hidden>
+                  <KindIcon kind={row.kind} />
+                </span>
+                {getKind(row.kind).label}
+              </span>
+            ) : null}
+          </button>
         ))}
       </div>
-    </section>
+    </article>
   );
 }
+
 
 export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
 
-  /* The full T5-1 composition, reused for its NEEDS YOU section alone — the
-     other sections' facts render as rails below, where the whole space (not
-     just "mine") is the design. */
-  const needsYou = useMemo(() => {
+  /* THE COMPOSITION WAS ALWAYS COMPLETE; HOME THREW THREE QUARTERS OF IT AWAY.
+   *
+   * `composeMyWork` returns four sections — NEEDS YOU, MY LIVE SESSIONS, MY
+   * TASKS, MENTIONS & ASSIGNMENTS. This memo used to `.find()` the needs-you
+   * one and discard the rest on every render, under a comment saying the
+   * others "render as rails below". That stopped being true at R4
+   * (2026-08-15), when the rails retired to the Work tab — the comment
+   * outlived the code by a fortnight.
+   *
+   * So "current running things" (owner, 2026-08-30) is not a new capability
+   * here. MY LIVE SESSIONS was already composed from the seam VERDICT rather
+   * than the record — a session whose row claims running while the node holds
+   * no PTY reads `stale`, which is the honest word — and then dropped on the
+   * floor. It is wired below.
+   */
+  const work = useMemo(() => {
     const work = composeMyWork({
       sessionPool: home.sessionPool,
       myTasks: home.myTasks,
@@ -276,8 +304,36 @@ export function HomePage(props: HomePageProps) {
       viewerKnown: home.viewer !== null,
       viewerError: home.viewerError,
     });
-    return work.sections.find((section) => section.emphasis === 'needs-you') ?? null;
+    const byId = (id: string) => work.sections.find((section) => section.id === id) ?? null;
+    return {
+      needsYou: work.sections.find((section) => section.emphasis === 'needs-you') ?? null,
+      /* "i just need chats taks and session srunning in the dashboard" —
+         these two were composed and discarded on every render. */
+      live: byId('live'),
+      tasks: byId('tasks'),
+      liveCount: work.liveCount,
+      liveCountLabel: work.liveCountLabel,
+    };
   }, [home, data.livenessOf, data.activity]);
+
+  /* THREE STATES, AND THIS ONE RENDERS ONLY THE THIRD.
+   *
+   * `rowsFor` returns [] while a kind is still hydrating, so an empty array
+   * here means "pending" and "genuinely empty" indistinguishably. A strip that
+   * drew `MY LIVE SESSIONS · 0` off that array would assert the workspace is
+   * empty during the window where the screen knows nothing — the same defect
+   * as "No agent teammate is available in this space" in a space that has 34,
+   * and on a demo it lands in the first second of the screen.
+   *
+   * So a strip with no rows renders NOTHING. Absence is not a claim; "nothing
+   * here yet" is, and it may only be made after a read that came back empty.
+   * NEEDS YOU keeps its note because its emptiness is derived from resolved
+   * facts (`viewerKnown`, `notificationsError`) rather than from an array. */
+  const withRows = (section: HomeSection | null) =>
+    section && section.rows.length > 0 ? section : null;
+  const needsYouStrip = withRows(work.needsYou);
+  const liveStrip = withRows(work.live);
+  const tasksStrip = withRows(work.tasks);
 
   /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
      merged conversation column — fills the canvas and triage rides above it.
@@ -292,24 +348,74 @@ export function HomePage(props: HomePageProps) {
     >
       {props.rail ?? null}
       <div className="hp-page">
-      {props.navigationGroups && props.navigationGroups.length > 0 ? (
-        <WorkspaceOverview
-          groups={props.navigationGroups}
-          activeKind={props.activeKind}
-          onOpenKind={props.onOpenKind}
-          onOpenWorkspace={props.onOpenWorkspace}
+      <div className="hp-home">
+      {/* THE LEFT THIRD. START, then WHAT NEEDS YOU. Nothing else.
+       *
+       * WHAT WAS HERE AND WHY IT IS GONE (owner, 2026-08-30, on the deployed
+       * build): a hero line, a 19-kind census, and WORK / LIBRARY / PEOPLE
+       * cards carrying 2358 · 2154 new · 5 live · 458 new · 508 new · 812 new
+       * … — nineteen rows of counts for things that merely EXIST.
+       *
+       *   "why cant it be simplified why are you complicating it … i dont need
+       *    make home dashboard clean have one create new chat, New SESSIONS
+       *    AND New Task first and their screens while running"
+       *
+       * THE RAIL IS THE BROWSE. It was restored an hour before this, on the
+       * owner's own instruction — "because workspace is already there here" —
+       * and the cards were left in place, so the screen stated the same
+       * taxonomy TWICE and the duplication the owner had complained about
+       * three times got worse rather than better. That was the defect; this
+       * removes the half that should have gone with the rail's return.
+       *
+       * A COUNT OF THINGS THAT EXIST IS NOT PROGRESS. "812 Docs" tells you the
+       * database is not empty. Home answers "what is happening and what can I
+       * start", and the rail answers "what is there" — one question per
+       * surface, which is the whole of the complaint. */}
+      <div className="hp-side">
+      <HomeStart
+        onCreateKind={props.onCreateKind}
+        createKindUnavailable={props.createKindUnavailable}
+      />
+      {/* NEEDS YOUR ATTENTION follows the verbs: you start something, or you
+          deal with what is asking for you. It renders only when it HAS rows —
+          `rowsFor` returns [] while a kind is still hydrating, so an empty
+          array cannot tell "pending" from "genuinely empty", and a card that
+          drew "nothing needs you" off it would assert calm during the window
+          where the screen knows nothing. Absence is not a claim; "nothing
+          here" is one, and it may only be made after a read that came back
+          empty. */}
+      {needsYouStrip ? (
+        <AttentionCard section={needsYouStrip} onOpen={props.onOpenEntity} />
+      ) : work.needsYou && (home.viewerError || home.notificationsError) ? (
+        <p className="hp-note" role="status">{work.needsYou.emptyNote}</p>
+      ) : null}
+      {/* RUNNING SESSIONS, then TASKS. Both were already composed and thrown
+          away; this renders them. A row opens the entity BESIDE this column —
+          the same gesture as a NEEDS YOU row — which is "their screens while
+          running": the session's own screen, in the detail region, without
+          leaving Home. */}
+      {liveStrip ? (
+        <AttentionCard
+          section={liveStrip}
+          onOpen={props.onOpenEntity}
+          count={work.liveCountLabel}
         />
       ) : null}
-      {needsYou && needsYou.rows.length > 0 ? (
-        <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
-      ) : needsYou && (home.viewerError || home.notificationsError) ? (
-        <p className="hp-note" role="status">{needsYou.emptyNote}</p>
+      {tasksStrip ? (
+        <AttentionCard section={tasksStrip} onOpen={props.onOpenEntity} />
       ) : null}
+      </div>
 
-      <section className="hp-chat hp-chat--full" aria-label="Chat">
+      {/* THE RIGHT TWO THIRDS: what is happening now. The session list, the
+          create verbs and the embedded terminal are the host's (lane H2); this
+          column only makes room for them, exactly as the page makes room for
+          the aside. The 4/8 ratio IS the brief — "current sessions, current
+          chat, anything I created" expressed as screen area. */}
+      <section className="hp-live" aria-label="Chat">
         {props.chat}
         {props.listRail ?? null}
       </section>
+      </div>
       </div>
 
       {props.aside ?? null}

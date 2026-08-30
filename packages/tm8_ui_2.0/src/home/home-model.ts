@@ -123,6 +123,26 @@ export interface HomeRow {
    * `title=` so the short word never loses its explanation (D34).
    */
   detail?: string;
+  /**
+   * WHEN IT LAST DID SOMETHING. The summary's own `activityAt`, passed through
+   * unrounded — the screen decides how to say it, this decides nothing.
+   *
+   * Owner, 2026-08-30: "a card with its progress and activity". This is the
+   * activity half and it is the honest one: the node stamps it, we do not
+   * derive it.
+   */
+  activityAt?: string;
+  /**
+   * HOW MUCH HAS HAPPENED — the summary's `messages` counter, which for a
+   * session is its turns.
+   *
+   * THIS IS NOT A PERCENTAGE AND THERE IS NO BAR. A session has no total to
+   * divide by; a progress bar would need a denominator nothing on the wire
+   * carries, so drawing one means inventing it. A number that only goes up is
+   * the true shape of the fact, and "12 turns" is progress a reader can act on
+   * in a way "60%" of an unknown whole is not.
+   */
+  turns?: number;
 }
 
 export interface HomeRowOpts {
@@ -138,6 +158,25 @@ export interface HomeRowOpts {
  * Project one summary into a Home row. The status half is entirely registry
  * data + the seam verdict; this function chooses nothing.
  */
+/**
+ * THE TWO FACTS A RUNNING CARD SHOWS, taken from the summary and not derived.
+ *
+ * `activityAt` is the node's own stamp. `turns` is the `messages` counter,
+ * which for a session is how many turns it has taken.
+ *
+ * BOTH ARE OMITTED WHEN ABSENT rather than defaulted to 0 or "never". A card
+ * that draws "0 turns" on a session whose counter has not arrived states
+ * something false about the session; a card that draws nothing states nothing.
+ * The same rule the strips follow — absence is not a claim.
+ */
+function factsOf(summary: EntitySummary): Pick<HomeRow, 'activityAt' | 'turns'> {
+  const turns = summary.counters?.messages;
+  return {
+    ...(summary.activityAt ? { activityAt: summary.activityAt } : {}),
+    ...(typeof turns === 'number' && turns > 0 ? { turns } : {}),
+  };
+}
+
 export function homeRowOf(summary: EntitySummary, opts: HomeRowOpts = {}): HomeRow {
   const config = getKind(summary.kind);
   const kind = summary.kind;
@@ -165,6 +204,7 @@ export function homeRowOf(summary: EntitySummary, opts: HomeRowOpts = {}): HomeR
       tone: treatment.tone,
       dot: streaming ? 'pulse' : treatment.dot === 'solid' ? 'solid' : 'ring',
       detail: treatment.reason,
+      ...factsOf(summary),
     };
   }
 
@@ -172,7 +212,15 @@ export function homeRowOf(summary: EntitySummary, opts: HomeRowOpts = {}): HomeR
   const source: StatusSource = spec?.source ?? 'none';
   const value = statusValueOf(source, summary.state);
   if (!spec || value === null) {
-    return { id: summary.id, kind, title: summary.title, word: null, tone: 'idle', dot: null };
+    return {
+      id: summary.id,
+      kind,
+      title: summary.title,
+      word: null,
+      tone: 'idle',
+      dot: null,
+      ...factsOf(summary),
+    };
   }
   return {
     id: summary.id,
@@ -183,6 +231,7 @@ export function homeRowOf(summary: EntitySummary, opts: HomeRowOpts = {}): HomeR
     // The oracle draws task dots as filled for blocked and ringed otherwise;
     // "filled" is the loud state, so the tone that means blocked fills.
     dot: spec.tones[value] === 'block' ? 'solid' : 'ring',
+    ...factsOf(summary),
   };
 }
 
