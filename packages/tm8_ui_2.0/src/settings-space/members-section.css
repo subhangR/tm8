@@ -112,9 +112,8 @@
 .set-members__name {
   font-size: var(--pn-fs-sm); /* cell words are ui at the floor */
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 .set-members__handle {

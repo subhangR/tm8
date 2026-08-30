@@ -419,8 +419,9 @@ describe('T3-4 — reads that are real', () => {
   });
 
   it('an entity with no attached files says a MEASURED zero, not a dash', () => {
-    render(<FilesScreen destinationLabel="T-114" attached={[]} />);
-    expect(screen.getByText('FILES · 0')).toBeTruthy();
+    const { container } = render(<FilesScreen destinationLabel="T-114" attached={[]} />);
+    expect(screen.getByText('Files')).toBeTruthy();
+    expect(container.querySelector('.fn-filelist__count')?.textContent).toBe('0');
     // The distinction that matters: connections WERE read and carried no
     // attached_to edge. A dash here would claim nobody looked.
     expect(screen.getByTestId('file-list-empty').textContent).toBe('No files attached to this entity.');
