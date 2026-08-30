@@ -1268,6 +1268,35 @@ export interface KindConfig {
    * affordance at all.
    */
   createForm?: 'scheduled-work' | 'file-upload';
+  /**
+   * Whether this kind draws the navigation's "N new" badge, or only its total.
+   *
+   * REGISTRY DATA for the same reason `liveCount` is: which kinds are worth
+   * interrupting a person over is a per-kind product decision, and
+   * `EntityNavigationMetrics` is one component serving every kind. It renders
+   * whatever the projection hands it and must not learn kind names.
+   *
+   * ABSENT MEANS NO BADGE, deliberately, so a kind added later is quiet until
+   * someone decides it has earned a notification — the opposite default from
+   * the one that produced the defect below.
+   *
+   * WHY MOST KINDS SAY NOTHING. Measured on prod 2026-08-30, every kind's
+   * unseen count was within a rounding error of its total (commit 223/223,
+   * pull_request 133/133, memory 25/25, task 458/470). Two causes: the server
+   * counted ACTIVITY rather than creation, and its watermark never advanced.
+   * Migration 175 fixes both, but it can only fix the second one for kinds the
+   * viewer actually opens — the watermark it derives comes from the viewer's
+   * own read marks. Nobody opens a commit row, so `commit` would stay pinned
+   * at 100% however good the SQL got.
+   *
+   * That is the real ruling here and it is a product one, not a schema one
+   * (user, 2026-08-30): a badge belongs on "when a session or chat or task is
+   * created, not everything". Derived and imported records — commits, pull
+   * requests, files, docs, worktrees — are inventory. They keep their total,
+   * which is the number that was ever informative about them, and they stop
+   * claiming to be news.
+   */
+  announcesNew?: boolean;
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

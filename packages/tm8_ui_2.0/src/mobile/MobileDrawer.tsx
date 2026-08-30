@@ -58,7 +58,13 @@
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { KindIcon, collectionKinds, homeRailGroups, type KindArt } from '../domain';
+import {
+  KindIcon,
+  announcedCounts,
+  collectionKinds,
+  homeRailGroups,
+  type KindArt,
+} from '../domain';
 import { VectorIcon } from '../kit';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import type { ChatThreadSummary } from '../chat-home/types';
@@ -84,7 +90,11 @@ export function anyUnseen(countsFor: CountsFor): boolean | null {
     const counts = countsFor(config.kind);
     if (!counts) continue;
     counted = true;
-    if (counts.unseen > 0) return true;
+    // Registry-gated, exactly as the desktop projection gates it: a kind that
+    // does not announce creations must not be able to light the ☰ indicator.
+    // Read raw, this loop hit `true` on its first iteration forever, because
+    // every kind's unseen count was saturated (see `announcesNew`).
+    if (announcedCounts(config, counts).unseen > 0) return true;
   }
   return counted ? false : null;
 }
@@ -280,7 +290,8 @@ export function MobileDrawer(props: MobileDrawerProps) {
             <Section key={group.id} label={group.label}>
               {group.kinds.map((config) => {
                 const target: MenuTarget = { type: 'kind', ref: config.kind };
-                const counts = props.countsFor(config.kind);
+                const raw = props.countsFor(config.kind);
+                const counts = raw && announcedCounts(config, raw);
                 return (
                   <li key={config.kind}>
                     <button

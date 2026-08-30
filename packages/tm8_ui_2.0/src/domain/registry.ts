@@ -694,6 +694,8 @@ const ROWS: readonly KindConfig[] = [
     graphFamily: 'blue',
     label: 'Task',
     labelPlural: 'Tasks',
+    // One of the three kinds a person is interrupted for. See `announcesNew`.
+    announcesNew: true,
     icon: '◻',
     iconArt: KIND_ART.task,
     /**
@@ -907,6 +909,8 @@ const ROWS: readonly KindConfig[] = [
     graphFamily: 'green',
     label: 'Session',
     labelPlural: 'Sessions',
+    // One of the three kinds a person is interrupted for. See `announcesNew`.
+    announcesNew: true,
     icon: '▸',
     iconArt: KIND_ART.work_session,
     slug: 'sessions',
@@ -1144,6 +1148,11 @@ const ROWS: readonly KindConfig[] = [
     graphFamily: 'yellow',
     label: 'Channel',
     labelPlural: 'Channels',
+    // The "chat" arm of the ruling. A channel ALSO carries a per-anchor unread
+    // badge from `public.unread_counts`, which is a different and finer number
+    // — messages in a thread you follow, not channels created since you looked.
+    // Both are wanted; neither is derived from the other.
+    announcesNew: true,
     icon: '#',
     iconArt: KIND_ART.channel,
     titleGrammar: 'slug',
