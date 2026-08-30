@@ -1793,9 +1793,30 @@
    whisper grammar — 28px pills, no border until hover, selection = the one
    brand-soft fill + the word. The row sizes itself to its chips: 8px below
    them the hairline seam ends the control cluster and the list begins. */
+/* THE SAME DEFECT, ONE ROW DOWN — and the note above is why it survived.
+   "The row is bounded by construction now" was true of the chip COUNT and not
+   of the chip WIDTHS, so `overflow: hidden` went on being load-bearing while
+   its own comment says it is only a floor guard. Every chip is `flex: none`,
+   so nothing in this row can compress; the whole deficit therefore lands on
+   whichever chip is last, and `overflow: hidden` deletes it. MEASURED on live
+   prod at the owner's 1999px window:
+     "↓ Recent activity"  61% visible in one panel, 0% in the other
+   A clipped control is not a smaller control. It is an absent one that still
+   occupies the reader's expectation, and unlike a truncated word it gives no
+   sign that anything was lost.
+
+   This is lane C's law stated as a diagnosis: an item that CAN yield surrenders
+   the whole deficit while incompressible neighbours give up nothing. Here
+   NOTHING can yield, so the deficit is paid by deletion instead of by width.
+   The row wraps rather than clipping — the controls are a set, not a sentence,
+   and a set that does not fit on one line belongs on two. `overflow: hidden`
+   stays as the floor guard it is documented to be: with wrapping in place it
+   can no longer be reached by ordinary content, which is what makes it a guard
+   rather than a mechanism. */
 .cv2-root .lp__filters {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--pn-space-1);
   padding: 0 var(--pn-space-3) var(--pn-space-2);
@@ -1872,15 +1893,33 @@
    clipping when four of them cannot fit. Scrolling is the honest failure: the
    words are ruled (To Do · In Progress · Done · Cancelled) and abbreviating
    them here would be this file overruling the design. */
+/* AND THE SCROLL WAS NOT HONEST EITHER — MEASURED, on live prod at the
+   owner's own 1999px window, in the 264px Tasks panel:
+     "Done 113"     37% visible  — cut through the middle of the word
+     "Cancelled 7"   0% visible  — gone entirely
+   `overflow-x: auto` with `scrollbar-width: none` is a scroll with no cue that
+   it scrolled. The row above chose it as "the honest failure" over abbreviating
+   ruled words, and abbreviating would indeed have been this file overruling the
+   design — but the choice assumed a scrollbar the very next declaration removes.
+   What the reader actually gets is a category sliced mid-glyph at the panel
+   edge, which reads as broken rendering rather than as "there is more".
+
+   So the row WRAPS. Each tab keeps `nowrap`, so the label-wrapping defect the
+   note above fixed ("In / Progress 2") stays fixed — a tab is still indivisible.
+   It is the STRIP that flows to a second line, and all four categories stay
+   whole and readable. The cost is one 28px row of header height, and only at
+   widths where the four could not fit on one line; nothing moves at a width
+   where they already fit. Height is the cheapest thing in this trade: the
+   alternative was spending a whole category. */
 .cv2-root .lp__tabs {
   flex: none;
   display: inline-flex;
+  flex-wrap: wrap;
+  row-gap: 2px;
   max-width: 100%;
   border: 1px solid var(--pn-line-2);
   border-radius: 6px;
-  overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: none;
   background: var(--pn-card);
 }
 .cv2-root .lp__tabs::-webkit-scrollbar { display: none; }
