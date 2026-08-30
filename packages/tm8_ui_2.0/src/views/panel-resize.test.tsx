@@ -28,14 +28,11 @@ import {
   EV_PANEL_BORDER,
   EV_RESIZER,
 } from './EntityView';
-import {
-  HOME_CENTER_MIN,
-  HOME_LIST_CHROME,
-  HOME_LIST_DEFAULT,
-  HOME_LIST_MAX,
-  HOME_LIST_MIN,
-  HOME_RAIL_COLLAPSED,
-} from './HomeView';
+/* HOME_LIST_* is deliberately NOT imported any more: Home draws no list
+   column, so a floor, a ceiling and a default for one are numbers with no
+   subject. See the block near the bottom of this file for what replaced the
+   rulings they used to pin. */
+import { HOME_RAIL_COLLAPSED, HOME_RAIL_EXPANDED } from './HomeView';
 
 beforeEach(() => {
   const map = new Map<string, string>();
@@ -210,9 +207,17 @@ describe('the home icon rail', () => {
     expect(captions).toContain('Docs');
     expect(within(rail).getByRole('button', { name: /^Tasks/ })).toBeTruthy();
 
-    /* A collapsed row still navigates: it switches Home's root list. */
+    /* A collapsed row still navigates: it switches Home's root list.
+
+       THE LIST MOVED, THE CLAIM DID NOT (2026-08-30 restructure). It used to
+       land in `tch-hosted-list` — the chat surface's middle column — which is
+       retired; a selected kind now takes the whole working area, so the handle
+       is the working area itself. Asserting the panel INSIDE it too, because
+       `.hp-listmain` with nothing in it would be the same silent no-op this
+       line exists to catch. */
     fireEvent.click(within(rail).getByRole('button', { name: /^Tasks/ }));
-    await waitFor(() => view.getByTestId('tch-hosted-list'));
+    const main = await waitFor(() => view.getByTestId('hp-list-main'));
+    expect(within(main).getByTestId('entity-list-panel')).toBeTruthy();
 
     // And the toggle still works in the other direction.
     fireEvent.click(view.getByRole('button', { name: 'Expand the rail' }));
@@ -245,29 +250,42 @@ describe('the home icon rail', () => {
 });
 
 /**
- * COLUMN A RESIZES, AND COLLAPSES WITH THE RAIL (task 01a00ac2).
+ * HOME'S LEFT SIDE: THE RAIL IS THE ONLY THING THERE, AND IT COLLAPSES ALONE.
  *
- * Subhang's report was that both Home panels should be adjustable; half of it
- * already shipped (C has been draggable since the aside landed), so everything
- * below is about A — the column that was a fixed `minmax(300px, 380px)` track
- * nobody could move.
+ * WHAT THIS BLOCK USED TO PIN, AND WHAT SUPERSEDED IT (2026-08-30 Home
+ * restructure — "two modes, never both", owner-approved). Task 01a00ac2 made
+ * Home's column A — the entity list, a third column between the rail and the
+ * chat — draggable, and these cases pinned four rulings from 2026-08-16:
  *
- * THE FOUR RULINGS THESE CASES EXIST TO PIN (2026-08-16):
  *   1. a drag CLAMPS at the floor and never closes the panel;
  *   2. one toggle collapses the rail AND A together;
  *   3. a persistent edge affordance is the way back, not a hover-reveal;
  *   4. the range is 240–560 with a 340 default.
- * Each is a choice with a live alternative, so each gets a case: a regression
- * here is a silent reversal of a decision, not just a broken widget.
+ *
+ * THERE IS NO COLUMN A ON THIS SCREEN ANY MORE. Selecting a kind in the rail
+ * makes that kind's list the WHOLE working area (`.hp-listmain`), which is what
+ * selecting a kind always meant; the third column that restated the rail's own
+ * taxonomy is gone, and with it every ruling that was about its width. Rulings
+ * 1 and 4 have no subject left — a floor and a ceiling for a panel that is not
+ * drawn are not claims, they are furniture — so they are REPLACED here, not
+ * deleted, by the claims that took their place: the two modes are exclusive,
+ * and the solver now reserves the rail and nothing else.
+ *
+ * RULINGS 2 AND 3 SURVIVE WITH ONE WORD CHANGED. The single toggle now
+ * collapses THE RAIL (there is nothing else on the left to take with it), and
+ * the way back is still a permanent on-screen chevron rather than a hover
+ * target or a shortcut only. Those are still choices with live alternatives,
+ * so they still get a case each.
  */
-describe('Home column A — the entity list panel', () => {
-  /* The width is published on the host as a custom property, which is what the
-     grid track reads. Asserting the property rather than a computed track is
-     deliberate: jsdom loads no stylesheets, so the track itself is unmeasurable
-     here (the standing tm8-ui law) while the number driving it is not. */
-  const listWidthOf = (view: ReturnType<typeof render>) =>
+describe('Home’s left side — the icon rail, and no column beside it', () => {
+  /* The rail's width is published on the host as a custom property, which is
+     what the layout reads. Asserting the property rather than a computed track
+     is deliberate: jsdom loads no stylesheets, so the track itself is
+     unmeasurable here (the standing tm8-ui law) while the number driving it is
+     not. `--hp-list` is NOT read: nothing on this screen has a list column. */
+  const railWidthOf = (view: ReturnType<typeof render>) =>
     (view.container.querySelector('.hp-host') as HTMLElement | null)?.style.getPropertyValue(
-      '--hp-list',
+      '--hp-rail',
     );
 
   async function openHome() {
@@ -276,93 +294,114 @@ describe('Home column A — the entity list panel', () => {
     return view;
   }
 
-  it('opens at the ruled default and drags to a width that persists', async () => {
+  it('draws NO list column and no handle for one — replaces rulings 1 and 4', async () => {
+    /* SUPERSEDES: "opens at the ruled default and drags to a width that
+       persists". A remembered width for a column nobody can see is the kind of
+       passing test this repair exists to prevent — it would go green forever
+       against a `usePanelWidth` hook wired to nothing. What is true instead is
+       structural, so that is what is asserted. */
     const view = await openHome();
-    expect(listWidthOf(view)).toBe(`${HOME_LIST_DEFAULT}px`);
 
-    const separator = view.getByTestId('panel-resizer-left');
-    /* A drag RIGHT widens a left-hand column — `PanelResizer` folds the sign in
-       so both mounts pass the same numbers. One arrow is the smallest honest
-       step; the pointer path is the same code. */
-    fireEvent.keyDown(separator, { key: 'ArrowRight' });
-    await waitFor(() => expect(listWidthOf(view)).toBe(`${HOME_LIST_DEFAULT + 16}px`));
-    expect(window.localStorage.getItem('tm8ui.panel-width.home.list')).toBe(
-      String(HOME_LIST_DEFAULT + 16),
-    );
+    /* No drag handle on Home. (The ENTITY screen still has one — the cases at
+       the top of this file — so this is Home's arrangement, not a retreat from
+       resizable panels.) */
+    expect(view.queryByTestId('panel-resizer-left')).toBeNull();
+    expect(view.queryByTestId('hp-list-separator')).toBeNull();
+
+    /* And no dashboard-plus-list arrangement: bare Home is the dashboard. */
+    expect(view.queryByTestId('hp-list-main')).toBeNull();
+    expect(view.getByTestId('chat-home-screen')).toBeTruthy();
 
     view.unmount();
-
-    // The preference outlives the mount — that is what makes it a preference.
-    const second = await openHome();
-    expect(listWidthOf(second)).toBe(`${HOME_LIST_DEFAULT + 16}px`);
-    second.unmount();
   });
 
-  it('CLAMPS at the floor instead of closing — the ruled gesture (1)', async () => {
+  it('gives a selected kind the whole working area, and Home takes it back', async () => {
+    /* SUPERSEDES: "CLAMPS at the floor instead of closing — the ruled gesture
+       (1)". The floor existed so a drag could not shut the panel; the panel is
+       not draggable and not a panel. The claim that replaced it is the one the
+       restructure actually makes — TWO MODES, NEVER BOTH — and it has the same
+       property that made ruling 1 worth a case: a live alternative (a list
+       beside the dashboard) that has already been shipped and removed twice. */
     const view = await openHome();
-    const separator = view.getByTestId('panel-resizer-left');
-    expect(separator.getAttribute('aria-valuemin')).toBe(String(HOME_LIST_MIN));
+    const rail = view.getByTestId('home-rail');
 
-    fireEvent.keyDown(separator, { key: 'Home' });
-    await waitFor(() => expect(listWidthOf(view)).toBe(`${HOME_LIST_MIN}px`));
+    fireEvent.click(within(rail).getByRole('button', { name: /^Tasks/ }));
+    const main = await waitFor(() => view.getByTestId('hp-list-main'));
+    expect(within(main).getByTestId('entity-list-panel')).toBeTruthy();
+    /* The dashboard and the chat are NOT rendered underneath or beside it. */
+    expect(view.queryByTestId('chat-home-screen')).toBeNull();
 
-    /* The rejected alternative was snap-shut-past-the-floor. Pushing further
-       must therefore do NOTHING — not narrow, and above all not collapse. */
-    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
-    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
-    expect(listWidthOf(view)).toBe(`${HOME_LIST_MIN}px`);
+    /* THE WAY BACK IS A ROW IN THE RAIL, not the browser's Back. Home is a
+       destination and `activeKind: null` alone reads as "nothing selected". */
+    fireEvent.click(view.getByTestId('home-rail-home'));
+    await waitFor(() => expect(view.queryByTestId('hp-list-main')).toBeNull());
+    expect(view.getByTestId('chat-home-screen')).toBeTruthy();
+
+    view.unmount();
+  });
+
+  it('reserves the rail and nothing else — the solver’s surviving half', async () => {
+    /* SUPERSEDES: "leaves the centre its floor at maximum drag — the ceiling is
+       SOLVED (4)". The ceiling was A's, solved from the row width minus the
+       rail, the centre's floor and the chrome. A is gone; the SOLVER is not,
+       because it still has to know how much of the row the rail takes before
+       it can tell whether region C fits beside the working area. So the claim
+       that survives is about the one width that is still real. */
+    const view = await openHome();
+    /* A fresh profile opens collapsed — 72px, the icon strip that still prints
+       every word under its mark (#269). */
+    expect(railWidthOf(view)).toBe(`${HOME_RAIL_COLLAPSED}px`);
+
+    fireEvent.click(view.getByRole('button', { name: 'Expand the rail' }));
+    await waitFor(() => expect(railWidthOf(view)).toBe(`${HOME_RAIL_EXPANDED}px`));
+
+    /* And OFF is zero, not a 72px strip left standing — "collapsing entire left
+       panel AND icon rail" was the ask and a strip is not a collapse. */
+    fireEvent.click(view.getByTestId('hp-rail-collapse'));
+    await waitFor(() => expect(railWidthOf(view)).toBe('0px'));
+
+    view.unmount();
+  });
+
+  it('collapses the RAIL on one toggle, and comes back (2, 3)', async () => {
+    /* RULING 2, RESTATED. It read "one toggle collapses the rail AND A
+       together" — the rejected alternative being two independent toggles. A is
+       gone, so the toggle has one subject; what is still worth pinning is that
+       the gesture takes the WHOLE rail off the row rather than shrinking it to
+       its icon strip, and that the strip's own Collapse button (72↔208) is a
+       different control that this one does not stand in for. */
+    const view = await openHome();
     expect(view.getByTestId('home-rail')).toBeTruthy();
-    expect(view.queryByTestId('hp-list-reveal')).toBeNull();
 
-    view.unmount();
-  });
+    const collapse = view.getByTestId('hp-rail-collapse');
+    /* THE WORDS HAVE TO MATCH THE SUBJECT. These said "Collapse the list panel
+       and the icon rail" while pointing `aria-controls` at `home-view-list` —
+       a region this screen does not draw. A control that names a missing
+       region is announced to a screen reader as a relationship that leads
+       nowhere, which is worse than naming none. */
+    expect(collapse.getAttribute('aria-label')).toBe('Collapse the icon rail');
+    expect(collapse.getAttribute('title')).toBe('Collapse the icon rail (⌘\\)');
+    expect(collapse.getAttribute('aria-controls')).toBe('home-rail');
+    expect(view.getByTestId('home-rail').id).toBe('home-rail');
 
-  it('leaves the centre its floor at maximum drag — the ceiling is SOLVED (4)', async () => {
-    const view = await openHome();
-    const separator = view.getByTestId('panel-resizer-left');
+    fireEvent.click(collapse);
 
-    fireEvent.keyDown(separator, { key: 'End' });
-
-    /* jsdom has no layout, so the row is the window — the same fallback the
-       solver takes. That makes the arithmetic assertable even though every box
-       measures 0×0. The rail is collapsed by default, hence its 72. */
-    const ceiling = Math.min(
-      HOME_LIST_MAX,
-      window.innerWidth - HOME_RAIL_COLLAPSED - HOME_CENTER_MIN - HOME_LIST_CHROME,
-    );
-    await waitFor(() => expect(listWidthOf(view)).toBe(`${ceiling}px`));
-    /* And the ceiling is the RULED maximum, not merely whatever was left over
-       — a 1024px jsdom row could otherwise afford 584. */
-    expect(ceiling).toBe(HOME_LIST_MAX);
-
-    view.unmount();
-  });
-
-  it('collapses the rail AND the list on one toggle, and comes back (2, 3)', async () => {
-    const view = await openHome();
-    expect(view.getByTestId('home-rail')).toBeTruthy();
-
-    fireEvent.click(view.getByTestId('hp-list-collapse'));
-
-    /* BOTH go, together. The rejected alternative was two independent
-       toggles, which this would pass only by accident. */
     await waitFor(() => expect(view.queryByTestId('home-rail')).toBeNull());
-    expect(listWidthOf(view)).toBe('0px');
-    expect(
-      (view.container.querySelector('.hp-host') as HTMLElement).style.getPropertyValue('--hp-rail'),
-    ).toBe('0px');
+    expect(railWidthOf(view)).toBe('0px');
 
     /* Ruling 3: the way back is ALWAYS on screen. A hover-reveal overlay would
        leave nothing in the tree to find here — which is exactly the failure
        mode the ruling names, and exactly what this line detects. */
-    const reveal = view.getByTestId('hp-list-reveal');
+    const reveal = view.getByTestId('hp-rail-reveal');
     expect(reveal.getAttribute('aria-expanded')).toBe('false');
-    /* And no drag handle survives: there is nothing left to resize. */
+    expect(reveal.getAttribute('aria-label')).toBe('Show the icon rail');
+    expect(reveal.getAttribute('aria-controls')).toBe('home-rail');
+    /* And no drag handle appears in its place: there is nothing to resize. */
     expect(view.queryByTestId('panel-resizer-left')).toBeNull();
 
     fireEvent.click(reveal);
     await waitFor(() => expect(view.getByTestId('home-rail')).toBeTruthy());
-    expect(listWidthOf(view)).toBe(`${HOME_LIST_DEFAULT}px`);
+    expect(railWidthOf(view)).toBe(`${HOME_RAIL_COLLAPSED}px`);
 
     view.unmount();
   });
@@ -370,15 +409,15 @@ describe('Home column A — the entity list panel', () => {
   it('remembers being collapsed, and ⌘\\ is the same switch', async () => {
     const first = await openHome();
     /* Mod+\ used to toggle the MENU rail, which Home does not draw at all —
-       the key did nothing where it was pressed. On Home it now means Home's
-       left side. */
+       the key did nothing where it was pressed. On Home it means Home's icon
+       rail (it meant "the rail and column A" until column A was retired). */
     fireEvent.keyDown(window, { key: '\\', metaKey: true });
     await waitFor(() => expect(first.queryByTestId('home-rail')).toBeNull());
     expect(window.localStorage.getItem('tm8ui.panel-flag.home-focus')).toBe('1');
     first.unmount();
 
     const second = await openHome();
-    await waitFor(() => expect(second.getByTestId('hp-list-reveal')).toBeTruthy());
+    await waitFor(() => expect(second.getByTestId('hp-rail-reveal')).toBeTruthy());
     expect(second.queryByTestId('home-rail')).toBeNull();
 
     /* The chevron and the shortcut write the SAME state — two `usePanelFlag`

@@ -76,16 +76,11 @@ export interface HomePageProps {
    * exactly as it makes room for the aside.
    */
   rail?: ReactNode;
-  /**
-   * Column A's separator — the drag handle when A is open, the reveal button
-   * when it is collapsed (task 01a00ac2). It seats INSIDE the chat section
-   * rather than beside the rail because A is not a child of this page at all:
-   * it is `.tch-sidebar`, a grid track inside the chat surface the host hands
-   * down. The section is the nearest box that starts and ends exactly where A
-   * does, which is what lets the handle line up with the edge it moves
-   * without this page having to know anything about that grid.
-   */
-  listRail?: ReactNode;
+  /* `listRail` RETIRED (2026-08-30). It was the drag handle and reveal button
+     for column A — `.tch-sidebar` — which no longer exists on this page: a
+     kind's list is the working area now, not a third column. A separator for a
+     panel that cannot appear is the same defect as the one measured at
+     9px x 901px over the cards, one level up. */
   /** Rail + column A collapsed as one. Read by CSS off `data-focus`. */
   focus?: boolean;
   /** The exact enriched model also rendered by the persistent entity rail. */
@@ -120,6 +115,17 @@ export interface HomePageProps {
    * different claims and only one of them is ours to make.
    */
   linkedPullRequestsOf?: ((id: string) => readonly LinkedPullRequestFacts[]) | undefined;
+  /**
+   * THE SELECTED KIND'S LIST — the working area when `activeKind` is set.
+   *
+   * Selecting a kind in the rail means "show me all of those", and it has
+   * meant that since the rail existed. What broke was WHERE: the list rendered
+   * into `.tch-sidebar`, a third column that restated the rail's own taxonomy,
+   * and removing that column (twice, on the owner's instruction) silently made
+   * the rail a no-op. Rendering it HERE, at full width, in place of the
+   * dashboard, is the only arrangement where both instructions hold at once.
+   */
+  list?: ReactNode;
 }
 
 /**
@@ -200,7 +206,17 @@ function HomeStart({
       <span>Ask, plan, or think out loud</span>
     </button>
   ) : null;
-  const session = kindVerb('session', 'New session', 'Put an agent on it and watch it work');
+  /* THE KIND MUST BE THE REGISTRY'S OWN `kind`, not the word in the label.
+     This row read `'session'` and shipped a dead button: `getKind` never
+     throws — a miss falls back to the `c:*` row (registry.ts) — so
+     `rootBirthAction('session')` was undefined, the host's `birthFor` took
+     the GENERIC-CREATE arm instead of `start-terminal`, and the fallback
+     row's own `kind` (`c:*`) went out as the kind to create. Nothing caught
+     it on the way: `c:*` satisfies `CustomEntityKindSchema` (`startsWith('c:')`),
+     so `creatableKind` accepted it and the refusal never fired — the card
+     rendered ENABLED and the node answered 409 `unregistered entity kind: c:*`.
+     A wrong kind here is silent all the way to the database. */
+  const session = kindVerb('work_session', 'New session', 'Put an agent on it and watch it work');
   const task = kindVerb('task', 'New task', 'Track a piece of work to done');
 
   /* Nothing wired ⇒ no row, rather than an empty box asserting "you can start
@@ -266,7 +282,7 @@ function activeRows(
   const c = (chats ?? []).map((thread) => ({
     id: thread.id,
     kind: null,
-    title: thread.title?.trim() || 'Untitled conversation',
+    title: thread.title?.trim() || 'Untitled chat',
     word: null,
     tone: 'idle' as const,
     dot: null,
@@ -615,6 +631,14 @@ export function HomePage(props: HomePageProps) {
     >
       {props.rail ?? null}
       <div className="hp-page">
+      {/* TWO MODES, NEVER BOTH. No kind selected → the dashboard: the three
+          verbs, what is active, and the chat. A kind selected → that kind's
+          list, full width. The dashboard does not shrink into a corner and the
+          list does not become a third column; each is the whole working area
+          while it is the answer to what the reader asked for. */}
+      {props.activeKind && props.list ? (
+        <div className="hp-listmain" data-testid="hp-list-main">{props.list}</div>
+      ) : (
       <div className="hp-home">
       {/* THE LEFT THIRD. START, then WHAT NEEDS YOU. Nothing else.
        *
@@ -690,9 +714,9 @@ export function HomePage(props: HomePageProps) {
           chat, anything I created" expressed as screen area. */}
       <section className="hp-live" aria-label="Chat">
         {props.chat}
-        {props.listRail ?? null}
       </section>
       </div>
+      )}
       </div>
 
       {props.aside ?? null}

@@ -8,6 +8,10 @@ const metricsCss = strip(
 );
 const pageTsx = strip(readFileSync(new URL('./HomePage.tsx', import.meta.url), 'utf8'));
 const railTsx = strip(readFileSync(new URL('../views/HomeRail.tsx', import.meta.url), 'utf8'));
+/* The host is read too: after the 2026-08-30 restructure the claim "no divider
+   for a panel that is not there" is about what is NOT BUILT, and the builder is
+   `HomeView`. A CSS-only assertion could only pin that it is painted out. */
+const viewTsx = strip(readFileSync(new URL('../views/HomeView.tsx', import.meta.url), 'utf8'));
 
 describe('Home entity navigation surface contract', () => {
   /* The workspace map's own contract retired with the map (2026-08-30). It
@@ -242,33 +246,79 @@ describe('a name is never truncated by its own count', () => {
   });
 
   it('draws no divider for a panel that is not there', () => {
-    /* `.hp-listsep` is the LIST panel's drag handle. On this surface the list
-       panel is `display: none` — measured at 0px wide while its handle was
-       9px x 901px at x=370, a hairline down a third of the screen dividing
-       nothing from nothing and painted over the cards. Both halves of the
-       hidden pair are pinned together so neither can come back alone. */
-    expect(homeCss).toMatch(/:not\(\[data-kind\]\) \.hp-live \.tch-sidebar\s*\{\s*display:\s*none/);
-    expect(homeCss).toMatch(/:not\(\[data-kind\]\) \.hp-live \.hp-listsep\s*\{\s*display:\s*none/);
+    /* SUPERSEDED, AND REPLACED RATHER THAN DELETED — the 2026-08-30 Home
+       restructure (two modes, never both). This case used to pin the pair of
+       `:not([data-kind])` hides: the middle column `.tch-sidebar` and its drag
+       handle `.hp-listsep` were switched off on the dashboard and switched
+       back ON when the rail picked a kind, because that column was where the
+       kind's list rendered.
 
-    /* AND ALL THREE COME BACK TOGETHER WHEN THE RAIL PICKS A KIND. Selecting
-       a kind renders its list into `.tch-sidebar`; with the hide
-       unconditional the rail lit up and nothing appeared. The panel, its
-       divider and its track are switched off as a set, so they must be
-       conditioned as a set — a panel returning into a track that is no longer
-       there is the same defect one level down. */
+       It is not where it renders any more. A selected kind takes the WHOLE
+       working area (`.hp-listmain`), so the middle column never comes back and
+       the condition has no subject. The claim that survives is stronger, not
+       weaker: the column is retired UNCONDITIONALLY, which is the thing the
+       `:not()` could only approximate. The hairline that this case is named
+       for — measured 9px x 901px at x=370 against a 0px panel — is now
+       impossible for a better reason than a hide: nothing renders it. */
+    expect(homeCss).toMatch(/\.hp-live \.tch-sidebar\s*\{\s*display:\s*none/);
+    expect(
+      homeCss,
+      'the column is conditioned again — a third column that can come back is the one that was removed twice',
+    ).not.toMatch(/:not\(\[data-kind\]\)/);
+
+    /* THE DIVIDER IS GONE FROM THE TREE, NOT PAINTED OUT. `HomeView` used to
+       build a `PanelResizer` + chevron strip for column A and hand it to the
+       page as `listRail`; both the prop and the strip are retired. A control
+       that cannot move anything should not exist — hiding it in CSS leaves it
+       in the a11y tree, focusable, announcing that it resizes a region that is
+       not on the screen. This is the assertion that keeps it out. */
+    expect(viewTsx, 'column A’s drag handle is back').not.toContain('hp-listsep');
+    expect(pageTsx, 'the page takes a separator for a panel it does not draw').not.toContain(
+      'listRail',
+    );
+
+    /* WHAT THE RAIL'S SELECTION REACHES INSTEAD. `data-kind` still rides the
+       page — the root carries the kind — but what it switches is which of the
+       two modes renders, not whether a hidden column is allowed back. */
     expect(pageTsx, 'the rail selection never reaches the page').toContain('data-kind=');
+    expect(pageTsx, 'the kind’s list is not the working area').toContain('hp-listmain');
 
     /* HIDING AN ITEM DOES NOT REMOVE ITS TRACK. `.tch-root` measured
        `280px 1005.82px` with the sidebar hidden, so the conversation took the
        sidebar's 280px column and overflowed it at 308px beside a thousand
        empty pixels. The column collapse has to travel with the hide, and the
        replacement track must be floored — an unfloored `1fr` lets a long
-       unbroken line in the transcript set the minimum (L4). */
-    const root = homeCss.match(/:not\(\[data-kind\]\) \.hp-live \.tch-root\s*\{([^}]*)\}/s)?.[1] ?? '';
+       unbroken line in the transcript set the minimum (L4). Unconditional now,
+       for the same reason the hide above is. */
+    const root = homeCss.match(/\.hp-live \.tch-root\s*\{([^}]*)\}/s)?.[1] ?? '';
     expect(root, 'the hidden sidebar still reserves its column').toContain(
       'grid-template-columns',
     );
     expect(root).toContain('minmax(0, 1fr)');
+  });
+
+  it('gives the kind’s list the whole working area, and floors both tracks when B opens', () => {
+    /* THE REPLACEMENT FOR EVERYTHING THE `:not([data-kind])` PAIR USED TO SAY.
+       Selecting a kind means "show me all of those" — it always did; what
+       changed is that the answer is the working area rather than a third
+       column restating the rail's taxonomy. Pinned here because jsdom cannot
+       see a track, and because the alternative arrangement (a column beside
+       the dashboard) is the one the owner removed twice. */
+    const main = homeCss.match(/\.cv2-root \.hp-listmain\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(main, 'no .hp-listmain rule — the kind list has no working area').not.toBe('');
+    expect(main).toMatch(/flex:\s*1 1 auto/);
+    /* L4 + Flexbox 4.5: an unfloored child of a flex column with `overflow`
+       set collapses to nothing, which this package has shipped once already. */
+    expect(main).toContain('min-height: 0');
+    expect(main).toContain('min-width: 0');
+
+    /* AND R6a SURVIVES INSIDE IT: a row click roots an entity in region B, and
+       region B is no longer the chat surface's centre on this mode, so the
+       list and the entity share the area. Both tracks floored (L4). */
+    const split = homeCss.match(/\.cv2-root \.hp-listmain__split\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(split, 'no .hp-listmain__split rule — a list click has nowhere to land').not.toBe('');
+    expect(split).toContain('minmax(240px, 340px)');
+    expect(split).toContain('minmax(0, 1fr)');
   });
 
   it('states the active work once, not once as cards and again as rows', () => {

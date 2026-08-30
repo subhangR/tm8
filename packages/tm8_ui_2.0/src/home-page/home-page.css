@@ -769,43 +769,26 @@
 }
 .cv2-root .hp-chat--full .tch-sidebar { display: flex; }
 
-/* --- column A's separator and the collapsed reveal (task 01a00ac2) -------- */
-/* The section is the positioning context: it starts and ends exactly where
-   column A does, so `left: var(--hp-list)` lands the handle on A's edge
-   without this file knowing anything about the grid inside it. */
-.cv2-root .hp-chat--full { position: relative; }
-
-/* Kit resizers are flex children everywhere else; here the thing being
-   resized is a grid track two levels down, so the handle is positioned over
-   the seam instead of occupying a track of its own. Centred ON the edge —
-   half its 8px sits either side — so the pointer target matches the line the
-   eye sees. */
-.cv2-root .hp-listsep { display: none;
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--hp-list, 340px);
-  width: 8px;
-  margin-left: -4px;
-  z-index: 5;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-}
-.cv2-root .hp-listsep .kit-resizer {
-  position: absolute;
-  inset: 0;
-  width: 8px;
+/* --- the rail's edge chevron and the collapsed reveal --------------------- */
+/* WAS COLUMN A'S SEPARATOR (task 01a00ac2), RE-ROLED 2026-08-30. The handle
+   half is gone with the column: a `PanelResizer` whose subject is not drawn
+   is the 9px x 901px hairline this file already had to hide once. What is
+   left is the pair of chevrons, and they now move the RAIL — the one
+   collapsible thing on this screen. The strip is a real flex item beside the
+   rail rather than an absolute overlay on a grid two levels down, because the
+   rail IS a child of this page and its edge is a place the page can measure. */
+.cv2-root .hp-railedge {
+  position: relative;
+  flex: 0 0 auto;
+  width: 10px;
+  min-height: 0;
 }
 
 /* The chevron rides the top of the seam rather than its middle: a control
-   pinned at 50% height sits over whatever row of the list happens to be
-   there, and on a short viewport that is the row you are reading. */
-.cv2-root .hp-listsep__collapse,
-.cv2-root .hp-listreveal {
-  position: absolute;
-  top: 8px;
-  z-index: 6;
+   pinned at 50% height sits over whatever row happens to be there, and on a
+   short viewport that is the row you are reading. */
+.cv2-root .hp-railedge__collapse,
+.cv2-root .hp-railreveal {
   display: grid;
   place-items: center;
   width: 16px;
@@ -818,35 +801,42 @@
   font-size: var(--pn-fs-sm);
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
   transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .hp-listsep__collapse { left: -4px; }
+.cv2-root .hp-railedge__collapse {
+  position: absolute;
+  top: 8px;
+  left: -3px;
+  z-index: 6;
+  opacity: 0;
+}
 /* THE COLLAPSE CHEVRON HIDES UNTIL WANTED; THE REVEAL ONE NEVER DOES.
-   They are not the same control in two states: while A is open the panel
-   itself is the affordance and a permanent chevron is chrome over a list;
-   while A is collapsed this button is the ONLY way back, and a way back you
-   have to hover to find is the hover-reveal arrangement Subhang ruled out. */
-.cv2-root .hp-chat--full:hover .hp-listsep__collapse,
-.cv2-root .hp-listsep__collapse:focus-visible,
-.cv2-root .hp-listsep:hover .hp-listsep__collapse {
+   They are not the same control in two states: while the rail is open the
+   rail itself is the affordance and a permanent chevron is chrome over a nav;
+   while it is collapsed this button is the ONLY way back, and a way back you
+   have to hover to find is the hover-reveal arrangement Subhang ruled out
+   (ruling 3, 2026-08-16 — the subject changed, the ruling did not). */
+.cv2-root .hp-root--chat:hover .hp-railedge__collapse,
+.cv2-root .hp-railedge__collapse:focus-visible,
+.cv2-root .hp-railedge:hover .hp-railedge__collapse {
   opacity: 1;
 }
-.cv2-root .hp-listsep__collapse:hover,
-.cv2-root .hp-listreveal:hover {
+.cv2-root .hp-railedge__collapse:hover,
+.cv2-root .hp-railreveal:hover {
   color: var(--pn-ink);
   border-color: var(--pn-brand);
 }
-.cv2-root .hp-listsep__collapse:focus-visible,
-.cv2-root .hp-listreveal:focus-visible {
+.cv2-root .hp-railedge__collapse:focus-visible,
+.cv2-root .hp-railreveal:focus-visible {
   outline: 2px solid var(--pn-focus, var(--pn-brand-2));
   outline-offset: 1px;
 }
 
-/* The 10px strip that is the whole of column A when focus mode is on. */
-.cv2-root .hp-listreveal {
-  left: 0;
-  top: 8px;
+/* The 16px strip that is the whole of the left edge when focus mode is on. */
+.cv2-root .hp-railreveal {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 8px;
   opacity: 1;
   border-left: none;
   border-radius: 0 var(--pn-r-xs) var(--pn-r-xs) 0;
@@ -1142,7 +1132,7 @@
 /* THE MIDDLE COLUMN IS GONE. It stated the same taxonomy the rail states, and
    it was the only way to pick a conversation — which is why it could not go
    until the Active strip above could carry chats. It can now. */
-.cv2-root .hp-root--chat:not([data-kind]) .hp-live .tch-sidebar { display: none; }
+.cv2-root .hp-live .tch-sidebar { display: none; }
 
 /* AND THE TRACK IT LEFT BEHIND HAS TO GO WITH IT.
    `display: none` stops an element being a grid ITEM; it does not remove the
@@ -1154,28 +1144,49 @@
    screen. One floored column here; L4 forbids an unfloored `1fr`, and this one
    holds a transcript that would otherwise set the minimum by its longest
    unbroken line. */
-.cv2-root .hp-root--chat:not([data-kind]) .hp-live .tch-root {
-  grid-template-columns: minmax(0, 1fr);
+.cv2-root .hp-live .tch-root { grid-template-columns: minmax(0, 1fr); }
+
+/* AND WHAT SELECTING A KIND IN THE RAIL MEANS IS ANSWERED SOMEWHERE ELSE NOW.
+   These two rules were briefly conditioned on `:not([data-kind])` so that the
+   hidden column could come back when the rail picked a kind. It does not come
+   back: a kind's list is `.hp-listmain` below — the whole working area — so
+   the column is retired unconditionally and there is no third column left to
+   restore, or to remove a third time.
+
+   ITS DIVIDER NEEDED NO RULE IN THE END. `.hp-listsep` was hidden here because
+   the drag handle outlived its panel and measured 9px x 901px at x=370, a
+   hairline down a third of the screen dividing nothing from nothing. It is not
+   RENDERED any more (`HomeView`, 2026-08-30), which is the honest repair — a
+   control that cannot move anything should not exist rather than be painted
+   transparent. What the chevrons became is the rail's own edge, above. */
+/* ═══ THE KIND'S LIST AS THE WORKING AREA (owner, 2026-08-30) ═══
+   "if i select task, why it shows sessions and chats also ... previously
+   selecting an icon(entity) in that rail meant, you are seeing a list of all
+   that entities". It means that again. The list takes the whole area the
+   dashboard had — not a column beside it, because a column beside it is the
+   thing that got removed twice. Floored: an unfloored child of a flex column
+   with `overflow` set collapses to nothing (Flexbox 4.5), which this package
+   has already shipped once. */
+.cv2-root .hp-listmain {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 7px 7px;
 }
+.cv2-root .hp-listmain > * { flex: 1 1 auto; min-height: 0; min-width: 0; }
 
-/* AND WHAT SELECTING A KIND IN THE RAIL MEANS, RESTORED.
-   It means what it always meant: "show me the list of all of those". The rail
-   renders that list into `.tch-sidebar` — the very column hidden above — so
-   with the hide unconditional the rail lit up and nothing happened. All three
-   rules that retire the column are now conditioned on there being no kind, so
-   the dashboard stays clean and a selection brings the list, its divider and
-   its track back together. They were switched off as a set and they come back
-   as a set; splitting them is how a panel returns into a track that is no
-   longer there. */
-
-/* AND SO IS ITS DIVIDER. The list panel's drag handle stayed behind when the
-   panel went: measured on the live build, `.hp-listsep` was 9px x 901px at
-   x=370 while `#home-view-list` — the element it resizes — was `display: none`
-   and 0px wide. It read as a stray hairline down a third of the screen,
-   dividing nothing from nothing, drawn OVER the cards because a 901px child of
-   a flex row overflows it. A control that cannot move anything is not a
-   control. Scoped to this surface only: everywhere else the panel is real and
-   so is its handle. */
-.cv2-root .hp-root--chat:not([data-kind]) .hp-live .hp-listsep { display: none; }
-
-
+/* AND THE ENTITY A ROW OPENS SITS BESIDE THE LIST, not over it (R6a). Region B
+   used to be the chat surface's centre; in kind mode the chat is not mounted,
+   so the working area holds the pair. Both tracks floored — L4 — and the list
+   keeps a real range rather than half the row, because a list of tasks reads
+   at 300px and a task does not. */
+.cv2-root .hp-listmain__split {
+  display: grid;
+  grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
+  gap: var(--pn-space-2);
+  min-width: 0;
+  min-height: 0;
+}
+.cv2-root .hp-listmain__split > * { min-width: 0; min-height: 0; }

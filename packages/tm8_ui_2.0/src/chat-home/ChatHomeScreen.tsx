@@ -1561,7 +1561,7 @@ export function ChatHomeScreen({
             <p className="tch-hollow">
               {findQuery.trim()
                 ? 'Nothing loaded here matches.'
-                : 'No conversations yet. Start with the composer.'}
+                : 'No chats yet. Start with the composer.'}
             </p>
           ) : null}
           {port.threadListUnavailableReason ? (
@@ -1695,7 +1695,7 @@ export function ChatHomeScreen({
         {soloConversation || centre != null ? null : (
           <header className="tch-conversation__head">
             <div className="tch-title">
-              <strong>{detail?.summary.title ?? 'New conversation'}</strong>
+              <strong>{detail?.summary.title ?? 'New chat'}</strong>
               <span>{activeConfig ? `with ${activeConfig.teammateLabel}` : 'Work with your graph from one place'}</span>
             </div>
           </header>
@@ -1813,7 +1813,7 @@ export function ChatHomeScreen({
                   turn is reserved for wait states — see `RibbonMark`'s docblock. */}
               <RibbonMark className="tch-welcome__mark" animated={false} />
               <h1>{greetingLine(viewerName)}</h1>
-              <p>New conversation — pick a mode and a teammate, or just type. The agent uses graph tools and keeps every turn in the thread.</p>
+              <p>New chat — pick a mode and a teammate, or just type. The agent uses graph tools and keeps every turn in the chat.</p>
             </div>
           )}
         </div>
@@ -1889,7 +1889,7 @@ export function ChatHomeScreen({
                   aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
                   disabled={busy}
                   placeholder={
-                    newThread ? 'Ask anything about this space…' : 'Reply in this thread…'
+                    newThread ? 'Ask anything about this space…' : 'Reply in this chat…'
                   }
                   rows={2}
                   {...rich.areaProps}

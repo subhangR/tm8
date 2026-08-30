@@ -245,7 +245,15 @@ export function HomeView(props: HomeViewProps) {
       ? CHATS_ROOT
       : routeRootKind && isHomeRootKind(routeRootKind)
         ? routeRootKind
-        : loadHomeRoot(data.spaceId);
+        : /* HOME MEANS HOME. This used to be `loadHomeRoot(spaceId)` — the last
+             kind you browsed, remembered across visits — so opening Home landed
+             you on the Tasks LIST and the dashboard was somewhere you could
+             only reach by accident. The owner, on the deployed build: "nothing
+             is making sense in home tab overall". A remembered root is a good
+             idea for a browser and a bad one for a home page: the one address
+             everybody types has to mean the same thing every time. The rail
+             still remembers within a visit; the address no longer does. */
+          CHATS_ROOT;
   const routeThreadId = routeRoot?.type === 'chats' ? routeRoot.threadId : null;
   /* THE STAGE the address names. A stage and an entity both want region B, and
      the ENTITY WINS when both are addressed: the entity was opened by a click
@@ -685,74 +693,73 @@ export function HomeView(props: HomeViewProps) {
   /* Focus mode takes the rail off the row entirely rather than collapsing it
      to its 72px icon strip — "collapsing entire left panel AND icon rail" was
      the ask, and a 72px strip left standing is not a collapse. */
-  const rail = focus ? null : (
-    <HomeRail
-      groups={navigationGroups}
-      activeKind={root === CHATS_ROOT ? null : root}
-      onSelect={setRoot}
-      collapsed={railCollapsed}
-      onToggleCollapsed={() => setRailCollapsed((collapsed) => !collapsed)}
-    />
-  );
+  /* THE EDGE CONTROL, RE-ROLED (2026-08-30) — IT NOW MOVES THE RAIL ALONE.
+     It used to be column A's separator: a `PanelResizer` when A was open, a
+     reveal chevron when it was collapsed, and its words said so — "Collapse
+     the list panel and the icon rail". Column A is gone from this screen (a
+     kind's list IS the working area now, `.hp-listmain`), so:
 
-  /* COLUMN A'S SEPARATOR, and — when A is collapsed — the only way back.
+       - THE DRAG HANDLE IS RETIRED, not relabelled. A separator that moves
+         nothing is the same defect that was measured on the live build at
+         9px x 901px, dividing nothing from nothing; the honest repair for a
+         control with no subject is removal, not a new caption.
+       - THE CHEVRONS SURVIVE, because the thing they collapse survives. The
+         gesture (chevron, ⌘\) means COLLAPSE THE RAIL now, and the words say
+         only that.
 
-     THE STRIP IS NEVER ABSENT, ONLY RE-ROLED. Collapsed, it is a button at
-     the row's left edge carrying a chevron; open, it is the drag handle.
-     Subhang ruled against the hover-reveal overlay and against keyboard-only
-     restore for the same reason: a viewer who collapses the panel and does
-     not know the shortcut has no way to discover one, and a control you can
-     only find by sweeping the mouse at a screen edge is not discoverable
-     either. Ten pixels is the rent that costs.
-
-     DRAG CLAMPS, IT NEVER CLOSES (the ruling). `PanelResizer` already floors
-     every drag at `minWidth`, so there is nothing to add for that — the point
-     is what is NOT wired: no snap-shut past the floor. Collapse is only ever
-     the chevron, the double-click, or Mod+\. */
-  const listRail = focus ? (
+     SUBHANG'S RULING 3 STILL BINDS: a viewer who collapses without knowing
+     the shortcut must be able to find the way back on screen, so the reveal
+     button is drawn permanently while the rail is off — never a hover-reveal,
+     never keyboard-only. It is the whole of the left edge in focus mode. */
+  const railReveal = (
     <button
       type="button"
-      className="hp-listreveal"
-      title="Show the list panel and the icon rail (⌘\)"
-      aria-label="Show the list panel and the icon rail"
+      className="hp-railreveal"
+      title="Show the icon rail (⌘\)"
+      aria-label="Show the icon rail"
       aria-expanded={false}
-      aria-controls="home-view-list"
-      data-testid="hp-list-reveal"
+      aria-controls="home-rail"
+      data-testid="hp-rail-reveal"
       onClick={() => props.onToggleFocus?.()}
     >
       <span aria-hidden>›</span>
     </button>
-  ) : (
-    <div className="hp-listsep" data-testid="hp-list-separator">
-      <PanelResizer
-        side="left"
-        label="List"
-        controls="home-view-list"
-        width={listWidth}
-        minWidth={HOME_LIST_MIN}
-        maxWidth={listCeiling}
-        onResize={listPref.setWidth}
-        /* THE DIVIDER'S DOUBLE-CLICK COLLAPSES HERE, where everywhere else in
-           the kit it resets to the default width. That is Subhang's ruling
-           (2026-08-16) and it is a deliberate divergence, not an oversight:
-           on this divider collapse is the gesture people reach for. Reset did
-           not go anywhere — `PanelResizer` binds it to Backspace/Delete on the
-           focused separator as well, and that binding is untouched. */
-        onReset={() => props.onToggleFocus?.()}
+  );
+
+  /* THE ICON RAIL (R4) — the switcher's twin: same groups, same select, no
+     view rows. No row is active while Chats is the root; chats live in the
+     list header's own cell, not the rail. */
+  /* Focus mode takes the rail off the row entirely rather than collapsing it
+     to its 72px icon strip — "collapsing entire left panel AND icon rail" was
+     the ask, and a 72px strip left standing is not a collapse. What stands in
+     its place is the reveal chevron and nothing else. */
+  const rail = focus ? railReveal : (
+    <>
+      <HomeRail
+        groups={navigationGroups}
+        activeKind={root === CHATS_ROOT ? null : root}
+        onSelect={setRoot}
+        onHome={() => setRoot(CHATS_ROOT)}
+        collapsed={railCollapsed}
+        onToggleCollapsed={() => setRailCollapsed((collapsed) => !collapsed)}
       />
-      <button
-        type="button"
-        className="hp-listsep__collapse"
-        title="Collapse the list panel and the icon rail (⌘\)"
-        aria-label="Collapse the list panel and the icon rail"
-        aria-expanded
-        aria-controls="home-view-list"
-        data-testid="hp-list-collapse"
-        onClick={() => props.onToggleFocus?.()}
-      >
-        <span aria-hidden>‹</span>
-      </button>
-    </div>
+      {/* The chevron rides the rail's OUTER edge — the boundary of the thing
+          it moves — exactly where the old one rode column A's. */}
+      <div className="hp-railedge" data-testid="hp-rail-separator">
+        <button
+          type="button"
+          className="hp-railedge__collapse"
+          title="Collapse the icon rail (⌘\)"
+          aria-label="Collapse the icon rail"
+          aria-expanded
+          aria-controls="home-rail"
+          data-testid="hp-rail-collapse"
+          onClick={() => props.onToggleFocus?.()}
+        >
+          <span aria-hidden>‹</span>
+        </button>
+      </div>
+    </>
   );
 
   /* R6's PROMOTE — "open here": C's subject becomes B's ROOT, the left list
@@ -851,7 +858,6 @@ export function HomeView(props: HomeViewProps) {
         activeKind={root === CHATS_ROOT ? null : root}
         onOpenKind={setRoot}
         rail={rail}
-        listRail={listRail}
         focus={focus}
         {...(aside ? { aside } : {})}
         /* A NEEDS YOU card opens where a chip does. They are the same gesture
@@ -869,6 +875,33 @@ export function HomeView(props: HomeViewProps) {
            by `useGateData` from graph nodes and edges; nothing is fetched for
            Home's sake. */
         linkedPullRequestsOf={data.linkedPullRequestsOf}
+        /* THE KIND'S OWN LIST, AS THE WORKING AREA. It used to render into
+           `.tch-sidebar` — a third column between the rail and the chat, which
+           stated the rail's taxonomy again and which the owner had removed
+           twice. Handing it to the page instead means selecting a kind
+           REPLACES the dashboard with that kind's list at full width, which is
+           what selecting a kind has always meant, and there is never a third
+           column to remove again. */
+        /* AND REGION B TRAVELS WITH IT. `centerOverride` is the entity a list
+           click roots (R6a) and it reaches the screen through `regions` — but
+           in kind mode the chat screen is not mounted at all, so handing it
+           only to `regions` left the click with nowhere to land: the address
+           gained `p=`, the row lit up, and the reader saw no change. A
+           selection that renders nothing is the defect the rail itself had an
+           hour earlier, one level down. So the working area holds BOTH: the
+           list keeps its place and the entity opens beside it, which is the
+           arrangement this screen has always had — only the container
+           changed. */
+        list={
+          centerOverride ? (
+            <div className="hp-listmain__split">
+              {renderRootList(root)}
+              {centerOverride}
+            </div>
+          ) : (
+            renderRootList(root)
+          )
+        }
       />
       {/* D11/D14: the full launch sheet over this screen while the shell
           holds a subject — Run on a task row opened it. Its own capture-phase

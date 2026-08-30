@@ -223,7 +223,9 @@ describe('the waits are drawn when there is something to wait for', () => {
   /**
    * HINGES ON: the `loading || startingThread` arm in the transcript.
    *
-   * The greeting says "New conversation" — a claim about the space. During the
+   * The greeting says "New chat" (it said "New conversation" until the
+   * 2026-08-30 Home restructure renamed the object on every surface that
+   * draws it — same claim, one word) — a claim about the space. During the
    * opening `listThreads` read nobody has established it, and cold start then
    * auto-opens a conversation that existed the whole time. On a solo host the
    * sidebar's own "Reading conversations…" line is not even mounted, so this
@@ -240,11 +242,11 @@ describe('the waits are drawn when there is something to wait for', () => {
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} soloConversation />,
     );
     expect(view.getByTestId('chat-home-loading').textContent).toContain('Reading your conversations');
-    expect(view.queryByText(/New conversation — pick a mode/)).toBeNull();
+    expect(view.queryByText(/New chat — pick a mode/)).toBeNull();
 
     await act(async () => { release([]); });
     // An empty space really IS a new conversation — the greeting is honest now.
-    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/New chat — pick a mode/)).toBeTruthy());
   });
 
   /**
@@ -271,7 +273,7 @@ describe('the waits are drawn when there is something to wait for', () => {
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} soloConversation />,
     );
-    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/New chat — pick a mode/)).toBeTruthy());
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Start something.' },
@@ -281,7 +283,7 @@ describe('the waits are drawn when there is something to wait for', () => {
     await waitFor(() =>
       expect(view.getByTestId('chat-home-loading').textContent).toContain('Starting this conversation'),
     );
-    expect(view.queryByText(/New conversation — pick a mode/)).toBeNull();
+    expect(view.queryByText(/New chat — pick a mode/)).toBeNull();
     await act(async () => { release(); });
   });
 });

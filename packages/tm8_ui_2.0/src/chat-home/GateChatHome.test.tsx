@@ -51,7 +51,7 @@ describe('dashboard route', () => {
       expect(view.getAllByText('Plan the launch sequence')).toHaveLength(2),
     );
     fireEvent.click(view.getByRole('button', { name: /^New chat$/ }));
-    expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
+    expect(await view.findByText(/New chat — pick a mode/)).toBeTruthy();
   });
 
   it('leads with a Home tab that reads CURRENT while you stand on the surface', async () => {

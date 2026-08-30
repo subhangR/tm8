@@ -103,7 +103,13 @@ function PhoneHost({ port }: { port: ChatHomePort }) {
   );
 }
 
-const GREETING = /New conversation — pick a mode/;
+/* THE WORD IS "CHAT" NOW, EVERYWHERE ON THIS SURFACE (2026-08-30 Home
+   restructure). The greeting used to read "New conversation — pick a mode…";
+   the screen calls the thing a chat in its verbs, its rail row and its empty
+   state, and one surface calling one object two names is the defect this
+   rename closes. The CLAIM is unchanged — the composer greets you where no
+   thread is open — only the string it is spelled with. */
+const GREETING = /New chat — pick a mode/;
 
 describe('a new conversation the viewer opened survives the space being busy', () => {
   /**

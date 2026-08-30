@@ -37,15 +37,29 @@ export interface HomeRailProps {
    *  active then — chats live in the list header, not the rail). */
   activeKind: string | null;
   onSelect(kind: string): void;
+  /**
+   * BACK TO THE DASHBOARD. The rail had rows for the nineteen kinds and no row
+   * for Home itself, so once you selected a kind there was no way back to the
+   * dashboard except the browser's Back — and `activeKind: null` rendered a
+   * rail with nothing current, which reads as "nothing selected" rather than
+   * "you are on Home". Home is a destination; it gets a row.
+   */
+  onHome?(): void;
   /** Owned by `HomeView` — see the docblock. */
   collapsed: boolean;
   onToggleCollapsed(): void;
 }
 
-export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleCollapsed }: HomeRailProps) {
+export function HomeRail({ groups, activeKind, onSelect, onHome, collapsed, onToggleCollapsed }: HomeRailProps) {
 
   return (
     <nav
+      /* The id is what the edge chevron's `aria-controls` points at. It used
+         to point at `home-view-list` — column A — which this screen no longer
+         draws; a control that names a missing region is worse than one that
+         names none, because a screen reader announces the relationship and
+         then finds nothing on the other end. */
+      id="home-rail"
       className={`hr-rail${collapsed ? ' hr-rail--collapsed' : ''}`}
       aria-label="Entity lists"
       data-testid="home-rail"
@@ -56,6 +70,27 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
           The owner, pointing at it (2026-08-30): "I DONT NEED THIS MAN".
           The rail's own rows already say what the rail is. */}
       <div className="hr-rail__scroll">
+        {/* HOME FIRST, and it is the only row that is not a kind. Selecting a
+            kind replaces the working area with that kind's list; selecting
+            Home brings the dashboard back. One rail, one meaning: "show me
+            these". */}
+        {onHome ? (
+          <button
+            type="button"
+            className="hr-rail__row hr-rail__row--home k-press"
+            aria-current={activeKind === null ? 'page' : undefined}
+            title="Home — what is running, and the chat"
+            data-testid="home-rail-home"
+            onClick={onHome}
+          >
+            <span className="hr-rail__glyph" aria-hidden>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <path d="M4 11l8-7 8 7" /><path d="M6 10v9h12v-9" />
+              </svg>
+            </span>
+            {!collapsed ? <span className="hr-rail__label">Home</span> : null}
+          </button>
+        ) : null}
         {groups.map((group) => (
           <div
             key={group.id}
