@@ -222,5 +222,37 @@ describe('a name is never truncated by its own count', () => {
         `.hp-arow__dot--${kind}`,
       );
     }
+
+    /* THE TAIL SCROLLS IN ITS OWN BOX. `.hp-home`'s first row is `auto`, so
+       fifty-three expanded rows take the whole grid and the conversation row
+       resolves to nothing. Measured, not feared: `.hp-live` was 2px on the
+       live build when this row grew unchecked. */
+    const tailRules = [...homeCss.matchAll(/\.cv2-root \.hp-arows\s*\{([^}]*)\}/g)]
+      .map((m) => m[1])
+      .join('\n');
+    expect(tailRules, 'no .hp-arows rule at all').not.toBe('');
+    expect(tailRules, 'the expanded tail can grow without limit').toMatch(/max-height/);
+    expect(tailRules, 'a capped box that does not scroll just clips').toMatch(/overflow-y:\s*auto/);
+  });
+
+  it('draws no divider for a panel that is not there', () => {
+    /* `.hp-listsep` is the LIST panel's drag handle. On this surface the list
+       panel is `display: none` — measured at 0px wide while its handle was
+       9px x 901px at x=370, a hairline down a third of the screen dividing
+       nothing from nothing and painted over the cards. Both halves of the
+       hidden pair are pinned together so neither can come back alone. */
+    expect(homeCss).toMatch(/\.hp-live \.tch-sidebar\s*\{\s*display:\s*none/);
+    expect(homeCss).toMatch(/\.hp-live \.hp-listsep\s*\{\s*display:\s*none/);
+  });
+
+  it('states the active work once, not once as cards and again as rows', () => {
+    /* THE DUPLICATION THE OWNER NAMED THREE TIMES. The strip carries sessions,
+       chats and tasks in one capped list; `MY LIVE SESSIONS` and `MY TASKS`
+       below it were the same five sessions and three tasks a second time on
+       the same screen. NEEDS YOU stays — it answers "what is waiting on YOU",
+       which the strip does not. */
+    expect(pageTsx, 'the live sessions are drawn twice again').not.toContain('liveStrip');
+    expect(pageTsx, 'the tasks are drawn twice again').not.toContain('tasksStrip');
+    expect(pageTsx).toContain('needsYouStrip');
   });
 });

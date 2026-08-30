@@ -1173,3 +1173,24 @@
    it was the only way to pick a conversation — which is why it could not go
    until the Active strip above could carry chats. It can now. */
 .cv2-root .hp-live .tch-sidebar { display: none; }
+
+/* AND SO IS ITS DIVIDER. The list panel's drag handle stayed behind when the
+   panel went: measured on the live build, `.hp-listsep` was 9px x 901px at
+   x=370 while `#home-view-list` — the element it resizes — was `display: none`
+   and 0px wide. It read as a stray hairline down a third of the screen,
+   dividing nothing from nothing, drawn OVER the cards because a 901px child of
+   a flex row overflows it. A control that cannot move anything is not a
+   control. Scoped to this surface only: everywhere else the panel is real and
+   so is its handle. */
+.cv2-root .hp-live .hp-listsep { display: none; }
+
+/* THE TAIL SCROLLS IN ITS OWN BOX, so expanding it cannot crush the
+   conversation. `.hp-home` row one is `auto`: with fifty-three rows in it, row
+   one takes the whole grid and row two — the chat — resolves to nothing. That
+   is not hypothetical either; before the duplicated sections below the strip
+   were removed, `.hp-live` measured 2px on the live build. Capping the tail
+   bounds row one to something the layout can pay for. */
+.cv2-root .hp-arows {
+  max-height: 300px;
+  overflow-y: auto;
+}

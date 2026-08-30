@@ -644,8 +644,6 @@ export function HomePage(props: HomePageProps) {
     section && section.rows.length > 0 ? section : null;
   const [lens, setLens] = useState<ActiveLens>('all');
   const needsYouStrip = withRows(work.needsYou);
-  const liveStrip = withRows(work.live);
-  const tasksStrip = withRows(work.tasks);
 
   /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
      merged conversation column — fills the canvas and triage rides above it.
@@ -714,21 +712,17 @@ export function HomePage(props: HomePageProps) {
       ) : work.needsYou && (home.viewerError || home.notificationsError) ? (
         <p className="hp-note" role="status">{work.needsYou.emptyNote}</p>
       ) : null}
-      {/* RUNNING SESSIONS, then TASKS. Both were already composed and thrown
-          away; this renders them. A row opens the entity BESIDE this column —
-          the same gesture as a NEEDS YOU row — which is "their screens while
-          running": the session's own screen, in the detail region, without
-          leaving Home. */}
-      {liveStrip ? (
-        <AttentionCard
-          section={liveStrip}
-          onOpen={props.onOpenEntity}
-          count={work.liveCountLabel}
-        />
-      ) : null}
-      {tasksStrip ? (
-        <AttentionCard section={tasksStrip} onOpen={props.onOpenEntity} />
-      ) : null}
+      {/* MY LIVE SESSIONS and MY TASKS USED TO BE DRAWN HERE, AND THEY WERE THE
+          SAME ROWS AGAIN.
+          Measured on the live build: the five running sessions appeared twice
+          on one screen — as cards in the strip above, then as full-width rows
+          immediately below. The strip did not exist when those two sections
+          were added; now that it carries sessions, chats and tasks in one
+          list, with a cap and a tail, restating two of the three underneath is
+          the duplication the owner has objected to three times ("why cant it
+          be simplified why are you complicating it remove all this shit").
+          NEEDS YOU stays: it answers a different question — what is waiting on
+          YOU — and is not a subset of what the strip draws. */}
       </div>
 
       {/* THE RIGHT TWO THIRDS: what is happening now. The session list, the
