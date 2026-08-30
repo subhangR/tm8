@@ -215,6 +215,7 @@ import type {
   WorkInput,
   WorkSessionStatus,
   WorkStatus,
+  LivenessConfidence,
 } from '@tm8/contract';
 import type { ChatTurnFrame } from '../chat-home/types';
 
@@ -1082,6 +1083,23 @@ export interface Seam {
      *  Accepts both vocabularies (Amendment 1): tasks carry WorkStatus, work
      *  sessions carry WorkSessionStatus — 'running' lives in the latter. */
     statusOf(session: { id: EntityId; status: WorkStatus | WorkSessionStatus | null }): SessionLiveness;
+    /**
+     * HOW the node knows what it last said about this session, or null when it
+     * has said nothing and a periodic read is the only evidence there is.
+     *
+     * `reported` — the node observed it (it spawned that terminal, or reaped it).
+     * `guessed`  — inferred from stream silence, which cannot distinguish an
+     *              agent thinking hard from one waiting at a permission prompt.
+     * `null`     — no push has been received about this session at all.
+     *
+     * NULL IS THE ANSWER THAT MATTERS. `statusOf` alone cannot tell a caller
+     * whether its verdict rests on something the node reported a moment ago or
+     * on a snapshot read up to 90 seconds back, and a surface that renders both
+     * identically is claiming a confidence it does not have. This is DESIGN 2's
+     * (#507) central rule — provenance on every reading — reduced to the one
+     * question a view model needs to ask.
+     */
+    confidenceOf(sessionId: string): LivenessConfidence | null;
   };
 }
 
