@@ -213,9 +213,31 @@ export const INVITE_REDEEM_NOT_HERE = reason(
 // T2-1 — space profile, axes, danger zone
 // ---------------------------------------------------------------------------
 
+/**
+ * WRITTEN FOR THE READER, NOT FOR US. This reason renders on Settings ›
+ * Profile — the first page anyone opens after Home — under the only control on
+ * it, unconditionally. It used to say:
+ *
+ *   cause:  "Editing space details has no executor in this build"
+ *   remedy: "seam.commands has no space-mutation verb; spaces() is a read."
+ *
+ * Both true, and both in OUR vocabulary. A customer reading "seam.commands"
+ * and "spaces() is a read" learns nothing they can act on and quite a lot
+ * about our internals. The owner asked for this surface on 2026-08-30 and the
+ * copy is what a client sees first.
+ *
+ * `DisabledAction` STAYS. The pattern is right and it has caught real defects
+ * — a dead control that says why beats one that silently does nothing. What
+ * was wrong was the AUDIENCE of the string, not the decision to show one.
+ *
+ * THE MECHANISM, kept here where it is useful: `seam.commands` has no
+ * space-mutation verb and `spaces()` is a read, so there is no executor to
+ * call. Re-verify that before deleting this reason — two stale refusals have
+ * already been found in this file by checking the thing they named.
+ */
 export const SPACE_EDIT_UNAVAILABLE = reason(
-  'Editing space details has no executor in this build',
-  'seam.commands has no space-mutation verb; spaces() is a read.',
+  "Space details can't be edited yet",
+  'This space is read-only in this version.',
 );
 
 /* AXES_UNREADABLE stood here until 2026-08-16 and was measured FALSE on both
