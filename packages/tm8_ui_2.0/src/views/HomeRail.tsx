@@ -43,7 +43,6 @@ export interface HomeRailProps {
 }
 
 export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleCollapsed }: HomeRailProps) {
-  const kindCount = groups.reduce((sum, group) => sum + group.items.length, 0);
 
   return (
     <nav
@@ -52,19 +51,10 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
       data-testid="home-rail"
       data-collapsed={collapsed ? 'true' : 'false'}
     >
-      {!collapsed ? (
-        /* A rail header, not a featured card. `k-hero` painted a brand→violet
-           wash and `k-accent-top` a 2px gradient rule across the top of it,
-           which — once the workspace map beside it went flat — left the whole
-           of Home with exactly one gradient, spending it on the least
-           consequential words on the page ("Browse", "19 entity types") rather
-           than on anything the reader had chosen. Fewer colours means the ones
-           that remain have to mean something. */
-        <div className="hr-rail__mast">
-          <span className="hr-rail__mast-label k-label">Browse</span>
-          <span className="hr-rail__mast-count">{kindCount} entity types</span>
-        </div>
-      ) : null}
+      {/* NO MASTHEAD. It said "Browse · 19 entity types" — a label for a column
+          of labelled icons, over a census of things that merely exist.
+          The owner, pointing at it (2026-08-30): "I DONT NEED THIS MAN".
+          The rail's own rows already say what the rail is. */}
       <div className="hr-rail__scroll">
         {groups.map((group) => (
           <div

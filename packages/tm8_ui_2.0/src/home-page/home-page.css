@@ -437,21 +437,6 @@
    whose whole job is that everything lines up. The hairline is the same
    separator the groups below use, and the 6px inset lands the word on the
    group eyebrows' edge. */
-.cv2-root .hr-rail__mast {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  flex: none;
-  margin: 0 6px;
-  padding: 11px 6px 9px;
-  border-bottom: 1px solid var(--pn-line);
-}
-.cv2-root .hr-rail__mast-count {
-  color: var(--pn-ink-3);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-fine);
-  font-weight: 600;
-}
 .cv2-root .hr-rail__scroll {
   flex: 1;
   min-height: 0;
