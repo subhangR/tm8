@@ -313,24 +313,33 @@ export function splitActive<T extends HomeRow & { lens: ActiveLens }>(
   n: number,
 ): { top: readonly T[]; rest: readonly T[] } {
   if (rows.length <= n) return { top: rows, rest: [] };
-  const key = (r: T) => `${r.lens}-${r.id}`;
-  const picked = new Set<string>();
-  for (const row of rows) {
-    if (picked.size >= n) break;
-    if (isLive(row)) picked.add(key(row));
-  }
-  /* One queue per kind, each already newest-first, drained a row at a time. */
-  const queues = LENS_KINDS.map((k) => rows.filter((r) => r.lens === k && !picked.has(key(r))));
+  /* SEATS ARE HELD BY POSITION, NOT BY IDENTITY. An earlier draft kept a Set of
+     `${lens}-${id}` and filtered the list against it — which meant that if two
+     rows ever shared an id, seating one seated them all and the cap silently
+     stopped capping. That is not hypothetical: it is exactly what shipped, when
+     a bad cast upstream gave every chat `id === undefined` and sixty-three
+     cards rendered where ten were asked for. An index cannot collide. */
+  const picked = new Set<number>();
+  rows.forEach((row, i) => {
+    if (picked.size < n && isLive(row)) picked.add(i);
+  });
+  /* One queue of INDEXES per kind, each already newest-first because `rows` is,
+     drained one at a time so no kind can take every remaining seat. */
+  const queues = LENS_KINDS.map((k) =>
+    rows.reduce<number[]>((acc, row, i) => {
+      if (row.lens === k && !picked.has(i)) acc.push(i);
+      return acc;
+    }, []),
+  );
   let turn = 0;
   while (picked.size < n && queues.some((q) => q.length > 0)) {
-    const q = queues[turn % queues.length];
+    const next = queues[turn % queues.length]?.shift();
     turn += 1;
-    const next = q?.shift();
-    if (next) picked.add(key(next));
+    if (next !== undefined) picked.add(next);
   }
   return {
-    top: rows.filter((r) => picked.has(key(r))),
-    rest: rows.filter((r) => !picked.has(key(r))),
+    top: rows.filter((_, i) => picked.has(i)),
+    rest: rows.filter((_, i) => !picked.has(i)),
   };
 }
 

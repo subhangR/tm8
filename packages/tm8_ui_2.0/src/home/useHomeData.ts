@@ -20,7 +20,7 @@
  * `livenessOf`, which is THE verdict and is never recomputed here.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { EntitySummary, NotificationItem } from '@tm8/contract';
+import type { ChatThreadSummary, EntitySummary, NotificationItem } from '@tm8/contract';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { getKind } from '../domain';
 import { activityRowOf, appendActivity, type ActivityRow } from './home-activity';
@@ -88,6 +88,38 @@ export interface ChatThreadLite {
   title?: string | null;
   activityAt?: string | null;
   messageCount?: number | null;
+}
+
+/**
+ * THE CONTRACT'S NAMES ARE NOT THIS SCREEN'S NAMES, AND THE TRANSLATION HAS TO
+ * BE WRITTEN DOWN.
+ *
+ * This was `snapshot as { chatThreads?: ChatThreadLite[] }` — a cast asserting
+ * that the contract's threads already had `id`, `activityAt` and
+ * `messageCount`. They have none of the three. `ChatThreadSummary` carries
+ * `rootMessageId`, `lastReplyAt`/`createdAt` and `replyCount`, so every chat
+ * row reached the strip with `id === undefined`, which:
+ *
+ *   - collapsed sixty threads onto ONE React key (`chats-undefined`), so the
+ *     top-ten split seated one chat and every other chat rode in on its key —
+ *     sixty-three cards where ten were asked for, and no tail at all;
+ *   - made `onOpen(row.id)` a no-op, so a chat card was never clickable;
+ *   - left every chat with no time, which the screen drew as a blank rather
+ *     than as the wrong field it was.
+ *
+ * A cast is an assertion the compiler is told not to check. This one was
+ * wrong in three fields at once and nothing said so — which is the argument
+ * for mapping explicitly rather than asserting.
+ */
+export function chatRowOf(thread: ChatThreadSummary): ChatThreadLite {
+  return {
+    id: thread.rootMessageId,
+    title: thread.title ?? null,
+    /* The thread's last sign of life, falling back to its birth — a thread
+       nobody has replied to is not a thread with no time. */
+    activityAt: thread.lastReplyAt ?? thread.createdAt,
+    messageCount: thread.replyCount ?? null,
+  };
 }
 
 /**
@@ -161,7 +193,7 @@ export function useHomeData(data: HomeScreenData): HomeData {
     void read(spaceId)
       .then((snapshot) => {
         if (cancelled) return;
-        setChatThreads((snapshot as { chatThreads?: readonly ChatThreadLite[] }).chatThreads ?? []);
+        setChatThreads((snapshot.chatThreads ?? []).map(chatRowOf));
       })
       .catch(() => {
         if (!cancelled) setChatThreads(null);

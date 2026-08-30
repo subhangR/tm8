@@ -95,6 +95,23 @@ describe('the active list splits at ten', () => {
     }
   });
 
+  it('caps at ten even when every row carries the same id', () => {
+    /* THE REGRESSION THIS FILE WAS WRITTEN TOO LATE TO PREVENT. A cast in
+       useHomeData claimed the contract's chat threads had an `id`; they carry
+       `rootMessageId`, so every chat arrived with `id === undefined`. The split
+       held seats in a Set of `lens-id` and filtered the list against it, so
+       seating one chat seated all sixty and the cap stopped capping — 63 cards
+       shipped where 10 were asked for, and no tail rendered at all. Seats are
+       held by POSITION now, and this is the test that says so. */
+    const same = rows(Array.from({ length: 30 }, (_, i) => ['chats', i] as const)).map((r) => ({
+      ...r,
+      id: undefined as unknown as string,
+    }));
+    const { top, rest } = splitActive(same, TOP_N);
+    expect(top, 'one duplicate id let every row ride in on it').toHaveLength(TOP_N);
+    expect(rest).toHaveLength(20);
+  });
+
   it('fills all ten seats even when only one kind has anything', () => {
     const only = rows(Array.from({ length: 25 }, (_, i) => ['chats', i] as const));
     const { top, rest } = splitActive(only, TOP_N);
