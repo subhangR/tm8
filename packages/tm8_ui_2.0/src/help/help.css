@@ -301,7 +301,7 @@
 
 .hlp-row {
   display: grid;
-  grid-template-columns: 24px 16px minmax(0, 1fr) 18px;
+  grid-template-columns: 24px minmax(0, 1fr) 18px;
   gap: 9px;
   align-items: start;
   width: 100%;
@@ -332,7 +332,7 @@
   letter-spacing: .06em;
 }
 
-.hlp-row__mark { margin-top: 1px; color: var(--pn-ink-3); }
+.cv2-root .hlp-row__mark { display: none; }
 .hlp-row--active .hlp-row__mark,
 .hlp-row--active .hlp-row__n,
 .hlp-row:hover .hlp-row__arrow { color: var(--pn-brand); }
