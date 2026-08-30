@@ -146,16 +146,12 @@ const PRE_EXISTING_ORPHANS = new Set([
 ]);
 
 describe('chat-home CSS coverage', () => {
-  it('keeps the fullwidth plus code point out of every runtime source', () => {
-    const fullwidthPlus = String.fromCodePoint(0xff0b);
-    const offenders = filesUnder(
-      DIR,
-      (name) => /\.(?:css|ts|tsx)$/.test(name) && !name.includes('.test.'),
-    )
-      .filter((file) => readFileSync(file, 'utf8').includes(fullwidthPlus))
-      .map(rel);
-    expect(offenders).toEqual([]);
-  });
+  /* THE FULLWIDTH-PLUS BAN LIVES AT PACKAGE LEVEL, not here. `src/fullwidth-plus-ban.test.ts`
+     runs a lexical scanner over every .ts/.tsx and fails only on the glyph in code the compiler
+     emits — string literals and JSX text — so the comments EXPLAINING the character survive.
+     The lane-local rule this replaces banned the codepoint from every non-test source including
+     comments, which would have failed a future author for documenting the very glyph the sweep
+     removed. A package law also belongs where it turns the PACKAGE red, not one unlucky lane. */
 
   it('a class a component writes is styled, or declared unstyled on purpose', () => {
     const styled = classesStyled();
