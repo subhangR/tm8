@@ -1,17 +1,24 @@
 /**
  * HomePage — the merged single home (user ruling, task 01a0027d, 2026-08-14).
  *
- * ONE canvas, four altitudes:
+ * A DASHBOARD, NOT A DIRECTORY (owner ruling, 2026-08-30). Every element here
+ * is one of three things — something LIVE, something MINE and recent, or an
+ * ACTION I can start. Anything that is none of the three belongs on another
+ * screen:
  *
- *   1. The WORKSPACE MAP is compact peripheral vision across every entity
- *      family. It shares the rail's registry-derived model and exact counts.
- *   2. The CHAT is the hero — the existing chat-home surface, mounted solo
- *      (its thread sidebar hidden by this module's stylesheet; full thread
- *      management stays on the Messages screen).
- *   3. NEEDS YOU directly beneath, only when it has rows — triage outranks
- *      everything, and an inbox-zero space shows rails only.
- *   4. The explicit escape hatch to the full Workspace stays visible in the
- *      map header; Home never becomes a capability cul-de-sac.
+ *   1. MY LIVE SESSIONS first: what is running right now, wearing the seam's
+ *      verdict rather than its own record, so a session the node cannot
+ *      account for reads `stale` instead of claiming to run.
+ *   2. NEEDS YOU beneath it — triage outranks everything.
+ *   3. MY TASKS — mine, and recent.
+ *   4. The CHAT is the hero, mounted solo (its thread sidebar hidden by this
+ *      module's stylesheet; full thread management stays on Messages).
+ *
+ * The WORKSPACE MAP used to lead this page and is gone: it rendered the same
+ * `EntityNavigationGroup[]` as the rail beside it, so the screen asked "what
+ * kinds of thing exist here" twice and answered "what am I doing" nowhere.
+ * The taxonomy lives in the rail, once; `Open Workspace` is still the escape
+ * hatch, so Home never becomes a capability cul-de-sac.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
  *   - `useHomeData` / `composeMyWork` (src/home) — the NEEDS YOU composition
@@ -32,6 +39,7 @@
 import { useMemo, type ReactNode } from 'react';
 import {
   entityNavigationLabel,
+  getKind,
   KindIcon,
   summarizeEntityNavigation,
   type EntityNavigationGroup,
@@ -39,7 +47,6 @@ import {
 import {
   composeMyWork,
   useHomeData,
-  type HomeRow,
   type HomeScreenData,
   type HomeSection,
 } from '../home';
@@ -89,182 +96,166 @@ export interface HomePageProps {
   onOpenWorkspace(): void;
 }
 
-/* WHICH CARDS HAVE A WIDE NOUN — registry data, not a selector list.
- *
- * A map row holds its noun and its count side by side. Measured in the live
- * build (`ui-calm-pass/laneb-budget.mjs`, every count forced visible): a row
- * spends 50px on chrome, the widest ROW count is 56px (`612 · 8 live`), and
- * the widest noun the registry can hand this card is `Interaction profiles` at
- * 114px. So only a card carrying a noun near that width can ever be forced to
- * choose between the two, and only that card should drop its count.
- *
- * The stylesheet cannot ask "how long is this card's longest label", so the
- * card answers in `data-noun` and `home-page.css` queries the answer. Deciding
- * it here — from `labelPlural`, which is registry data — is what keeps the rule
- * from rotting the next time a label changes, and it names no kind (§15.2).
- *
- * The conversion is measured, not assumed: `Interaction profiles` is 20
- * characters and 114px, `Pull requests` is 13 and 74px — 5.7px per character
- * across both. WIDE_NOUN_PX sits between them so that the group carrying the
- * long noun is wide and the busiest group (WORK) is not.
- */
-const NOUN_PX_PER_CHAR = 5.7;
-const WIDE_NOUN_PX = 100;
 
-function hasWideNoun(group: EntityNavigationGroup): boolean {
-  const longest = group.items.reduce(
-    (most, item) => Math.max(most, item.config.labelPlural.length),
-    0,
-  );
-  return longest * NOUN_PX_PER_CHAR > WIDE_NOUN_PX;
+/* WHICH GROUPS RENDER AS ROWS, AND WHICH AS WRAPPING CHIPS.
+ *
+ * The target uses two densities deliberately: WORK is a vertical list because
+ * its nouns are long, LIBRARY and PEOPLE are wrapping chips because theirs are
+ * short. One shape cannot serve both — a long noun in a chip either wraps the
+ * chip onto its own line, wasting the density chips exist for, or truncates,
+ * which the law forbids.
+ *
+ * THE BUDGET, with its arithmetic, because a rule without one is how
+ * `--tt-actions-reserve` became the worst defect on the screen. The left column
+ * is a third of the canvas — about 360px at the narrowest desktop Home reaches,
+ * 336px inside the card. Two chips to a line with an 8px gap gives each 164px.
+ * A chip spends ~46px on its own chrome (8px padding, a 16px mark, two 6px
+ * gaps, 8px padding, 2px border) and up to ~62px on an `N new` pill, leaving
+ * ~56px for the noun.
+ *
+ * ITS MARGIN IS THIN AND THAT IS STATED RATHER THAN HIDDEN: measured last cycle
+ * at 5.7px per character, the longest noun in WORK is `Pull requests` (13ch,
+ * ~74px) and in LIBRARY it is `Collections` (11ch, ~63px). The threshold
+ * separating them is worth about two characters. It is set at 12 so the
+ * registry's real data reproduces the target's grouping — the mockup shows only
+ * four of LIBRARY's seven kinds, so its own data would not have exercised this.
+ * UNMEASURED: the 56px chip budget is arithmetic, not a browser reading. It
+ * needs one scheduled run to confirm, and until then this is the number I would
+ * check first if the cards look wrong.
+ */
+const CHIP_NOUN_MAX_CHARS = 12;
+
+function rendersAsRows(group: EntityNavigationGroup): boolean {
+  return group.items.some((item) => item.config.labelPlural.length > CHIP_NOUN_MAX_CHARS);
 }
 
-function WorkspaceOverview({
-  groups,
+/**
+ * One entity family as its own card: an eyebrow with the group's totals, the
+ * registry's one-line description, then its kinds.
+ *
+ * THE LAW, unchanged from the surface this replaces: the mark never shrinks,
+ * the NAME takes every remaining pixel and ellipses inside them, and the count
+ * keeps its own width but never takes the name's. The noun is plain text and
+ * the count is its own pill beside it — deliberately NOT one bordered container
+ * holding both, which is a different component for a different job.
+ */
+function GroupCard({
+  group,
   activeKind,
   onOpenKind,
-  onOpenWorkspace,
 }: {
-  groups: readonly EntityNavigationGroup[];
+  group: EntityNavigationGroup;
   activeKind?: string | null;
   onOpenKind?(kind: string): void;
-  onOpenWorkspace(): void;
 }) {
-  const summary = summarizeEntityNavigation(groups);
-
+  const rows = rendersAsRows(group);
   return (
-    <section
-      className="hp-overview k-enter"
-      aria-labelledby="hp-overview-title"
-      data-testid="hp-entity-overview"
+    <article
+      className="hp-group"
+      data-density={rows ? 'rows' : 'chips'}
+      aria-labelledby={`hp-group-${group.id}`}
     >
-      <header className="hp-overview__head">
-        {/* One line of chrome, not four. The map's job is the menu of nouns
-            beneath it; a headline and a sentence restating what the reader can
-            already see were two rows of vertical budget the WORK card needed
-            (owner, 2026-08-29: the card was clipped mid-row by the panel's
-            bottom edge). "19 entity types" also still reads on the rail mast. */}
-        <h2 id="hp-overview-title" className="hp-overview__title">Workspace map</h2>
-        <div className="hp-overview__pulse" aria-label="Workspace totals">
-          <EntityNavigationMetrics total={summary.total} live={summary.live} density="full" />
+      <div className="hp-group__head">
+        <h2 id={`hp-group-${group.id}`} className="hp-group__name">
+          {group.label}
+        </h2>
+        <EntityNavigationMetrics total={group.total} unseen={group.unseen} live={group.live} />
+      </div>
+      {group.description ? <p className="hp-group__note">{group.description}</p> : null}
+      <div className="hp-group__items">
+        {group.items.map((item) => (
           <button
+            key={item.config.kind}
             type="button"
-            className="k-btn k-btn--secondary k-btn--sm"
-            onClick={onOpenWorkspace}
+            className="hp-group__item k-press"
+            aria-current={item.config.kind === activeKind ? 'page' : undefined}
+            aria-label={entityNavigationLabel(item)}
+            title={entityNavigationLabel(item)}
+            disabled={!onOpenKind}
+            onClick={() => onOpenKind?.(item.config.kind)}
           >
-            Open Workspace <span aria-hidden>→</span>
+            <span className="hp-group__mark" aria-hidden>
+              <KindIcon kind={item.config.kind} />
+            </span>
+            <span className="hp-group__noun">{item.config.labelPlural}</span>
+            {/* `N new` is UNATTENDED WORK, not a quantity — it changes what you
+                do next, which is the test colour has to pass. The raw total is
+                a quantity and stays ink. Both facts come from the same
+                component; the tone is the kit's business, not this card's. */}
+            <EntityNavigationMetrics unseen={item.counts?.unseen} live={item.live} />
           </button>
-        </div>
-      </header>
-
-      <div className="hp-overview__families">
-        {groups.map((group) => {
-          const groupIsActive = group.items.some((item) => item.config.kind === activeKind);
-          return (
-            <article
-              key={group.id}
-              className="hp-overview__family"
-              data-active={groupIsActive ? 'true' : undefined}
-              /* The card tells the stylesheet how long its longest noun is, so
-                 the count budget in `home-page.css` can bind on the ONE card
-                 where the noun and the count genuinely compete instead of
-                 emptying every card to protect it. See `hasWideNoun`. */
-              data-noun={hasWideNoun(group) ? 'wide' : undefined}
-              /* The description moves to the hover text: it was a permanently
-                 ellipsed line ("Plan, run, and ship the work i…") spending a
-                 row of the card's height to say nothing it finished saying. */
-              title={group.description}
-            >
-              <div className="hp-overview__family-head">
-                <h3>{group.label}</h3>
-                <EntityNavigationMetrics total={group.total} live={group.live} />
-              </div>
-              <div className="hp-overview__kinds" aria-label={`${group.label} entity types`}>
-                {group.items.map((item) => (
-                  <button
-                    key={item.config.kind}
-                    type="button"
-                    className="hp-overview__kind k-press"
-                    aria-current={item.config.kind === activeKind ? 'page' : undefined}
-                    aria-label={entityNavigationLabel(item)}
-                    title={entityNavigationLabel(item)}
-                    disabled={!onOpenKind}
-                    onClick={() => onOpenKind?.(item.config.kind)}
-                  >
-                    <span className="hp-overview__kind-mark" aria-hidden>
-                      <KindIcon kind={item.config.kind} />
-                    </span>
-                    <span className="hp-overview__kind-name">{item.config.labelPlural}</span>
-                    {/* ONE number per row. The unseen pill is deliberately not
-                        passed: a row carrying both a total and an "N new" chip
-                        is what squeezed these nouns down to `Tas…`, `Do…`,
-                        `Pul…`, and "2078 new out of 2283" was never the fact
-                        the reader wanted (owner ruling, 2026-08-29). The exact
-                        unseen count still reads in the button's accessible name
-                        and hover text via `entityNavigationLabel`. */}
-                    <EntityNavigationMetrics total={item.counts?.total} live={item.live} />
-                  </button>
-                ))}
-              </div>
-            </article>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function RowCard({ row, onOpen }: { row: HomeRow; onOpen(id: string): void }) {
-  return (
-    <button
-      type="button"
-      className="hp-card"
-      title={row.detail ?? row.title}
-      onClick={() => onOpen(row.id)}
-    >
-      <span className="hp-card__head">
-        {row.kind ? (
-          <span className="hp-card__glyph" aria-hidden="true">
-            <KindIcon kind={row.kind} />
-          </span>
-        ) : null}
-        {row.word ? (
-          <span className={`hp-card__word hp-card__word--${row.tone}`}>
-            {row.dot ? <span className={`hp-card__dot hp-card__dot--${row.dot}`} aria-hidden="true" /> : null}
-            {row.word}
-          </span>
-        ) : null}
-      </span>
-      <span className="hp-card__title">{row.title}</span>
-    </button>
-  );
-}
-
-function NeedsYouStrip({ section, onOpen }: { section: HomeSection; onOpen(id: string): void }) {
-  return (
-    <section className="hp-needs" aria-label={section.label} data-testid="hp-needs-you">
-      <div className="hp-rail__head">
-        <span className="hp-rail__label kit-eyebrow">
-          {section.label} · {section.rows.length}
-        </span>
-      </div>
-      <div className="hp-rail__scroll">
-        {section.rows.map((row) => (
-          <RowCard key={row.id} row={row} onOpen={onOpen} />
         ))}
       </div>
-    </section>
+    </article>
   );
 }
+
+/**
+ * NEEDS YOUR ATTENTION — a card of rows, each carrying its status word, its
+ * title and what it is. The status also paints the row's left edge, so the card
+ * can be read as a column of urgencies before any word is read; the WORD is
+ * always there too, because status is never colour alone (C8/L10).
+ */
+function AttentionCard({ section, onOpen }: { section: HomeSection; onOpen(id: string): void }) {
+  return (
+    <article className="hp-attention" aria-label={section.label} data-testid="hp-needs-you">
+      <h2 className="hp-attention__eyebrow k-label">{section.label}</h2>
+      <div className="hp-attention__rows">
+        {section.rows.map((row) => (
+          <button
+            key={row.id}
+            type="button"
+            className={`hp-attention__row k-press hp-attention__row--${row.tone}`}
+            title={row.detail ?? row.title}
+            onClick={() => onOpen(row.id)}
+          >
+            <span className="hp-attention__status">
+              {row.word ? (
+                <span className={`hp-card__word hp-card__word--${row.tone}`}>
+                  {row.dot ? (
+                    <span className={`hp-card__dot hp-card__dot--${row.dot}`} aria-hidden="true" />
+                  ) : null}
+                  {row.word}
+                </span>
+              ) : null}
+            </span>
+            <span className="hp-attention__title">{row.title}</span>
+            {row.kind ? (
+              <span className="hp-attention__ref">
+                <span className="hp-attention__ref-mark" aria-hidden>
+                  <KindIcon kind={row.kind} />
+                </span>
+                {getKind(row.kind).label}
+              </span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 
 export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
 
-  /* The full T5-1 composition, reused for its NEEDS YOU section alone — the
-     other sections' facts render as rails below, where the whole space (not
-     just "mine") is the design. */
-  const needsYou = useMemo(() => {
+  /* THE COMPOSITION WAS ALWAYS COMPLETE; HOME THREW THREE QUARTERS OF IT AWAY.
+   *
+   * `composeMyWork` returns four sections — NEEDS YOU, MY LIVE SESSIONS, MY
+   * TASKS, MENTIONS & ASSIGNMENTS. This memo used to `.find()` the needs-you
+   * one and discard the rest on every render, under a comment saying the
+   * others "render as rails below". That stopped being true at R4
+   * (2026-08-15), when the rails retired to the Work tab — the comment
+   * outlived the code by a fortnight.
+   *
+   * So "current running things" (owner, 2026-08-30) is not a new capability
+   * here. MY LIVE SESSIONS was already composed from the seam VERDICT rather
+   * than the record — a session whose row claims running while the node holds
+   * no PTY reads `stale`, which is the honest word — and then dropped on the
+   * floor. It is wired below.
+   */
+  const work = useMemo(() => {
     const work = composeMyWork({
       sessionPool: home.sessionPool,
       myTasks: home.myTasks,
@@ -276,8 +267,27 @@ export function HomePage(props: HomePageProps) {
       viewerKnown: home.viewer !== null,
       viewerError: home.viewerError,
     });
-    return work.sections.find((section) => section.emphasis === 'needs-you') ?? null;
+    return {
+      needsYou: work.sections.find((section) => section.emphasis === 'needs-you') ?? null,
+    };
   }, [home, data.livenessOf, data.activity]);
+
+  /* THREE STATES, AND THIS ONE RENDERS ONLY THE THIRD.
+   *
+   * `rowsFor` returns [] while a kind is still hydrating, so an empty array
+   * here means "pending" and "genuinely empty" indistinguishably. A strip that
+   * drew `MY LIVE SESSIONS · 0` off that array would assert the workspace is
+   * empty during the window where the screen knows nothing — the same defect
+   * as "No agent teammate is available in this space" in a space that has 34,
+   * and on a demo it lands in the first second of the screen.
+   *
+   * So a strip with no rows renders NOTHING. Absence is not a claim; "nothing
+   * here yet" is, and it may only be made after a read that came back empty.
+   * NEEDS YOU keeps its note because its emptiness is derived from resolved
+   * facts (`viewerKnown`, `notificationsError`) rather than from an array. */
+  const withRows = (section: HomeSection | null) =>
+    section && section.rows.length > 0 ? section : null;
+  const needsYouStrip = withRows(work.needsYou);
 
   /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
      merged conversation column — fills the canvas and triage rides above it.
@@ -292,24 +302,61 @@ export function HomePage(props: HomePageProps) {
     >
       {props.rail ?? null}
       <div className="hp-page">
+      {/* THE HERO. It names the space in one line and says how much is in it —
+          the sentence the map's header used to carry, back because the 4/8
+          split gives the left column its own scroll region and can afford it.
+          The count comes from the same summary the cards do; it is never a
+          literal. */}
       {props.navigationGroups && props.navigationGroups.length > 0 ? (
-        <WorkspaceOverview
-          groups={props.navigationGroups}
+        <header className="hp-hero">
+          <h1 className="hp-hero__line">Everything connected, one move away</h1>
+          <p className="hp-hero__note">
+            {summarizeEntityNavigation(props.navigationGroups).kinds} entity types across the work,
+            context, and people around you.
+          </p>
+        </header>
+      ) : null}
+      <div className="hp-home">
+      {/* THE LEFT THIRD: what exists. Its own scroll region, because four cards
+          go where one capped card used to be — `.hp-overview` was
+          `max-height: 38%` with `overflow: hidden`, which clipped silently with
+          no scrollbar and no keyboard path. This column carries
+          `overflow-y: auto` and `min-height: 0` so it cannot repeat that. */}
+      <div className="hp-side">
+      {/* NEEDS YOUR ATTENTION leads the column: triage outranks inventory.
+          It renders only when it HAS rows — `rowsFor` returns [] while a kind
+          is still hydrating, so an empty array cannot tell "pending" from
+          "genuinely empty", and a card that drew "nothing needs you" off it
+          would assert calm during the window where the screen knows nothing.
+          Absence is not a claim; "nothing here" is one, and it may only be
+          made after a read that came back empty. */}
+      {needsYouStrip ? (
+        <AttentionCard section={needsYouStrip} onOpen={props.onOpenEntity} />
+      ) : work.needsYou && (home.viewerError || home.notificationsError) ? (
+        <p className="hp-note" role="status">{work.needsYou.emptyNote}</p>
+      ) : null}
+      {/* THE KIND LIST, ONCE. It lived here and in the rail beside it; the rail
+          is gone and these cards are its one home. */}
+      {(props.navigationGroups ?? []).map((group) => (
+        <GroupCard
+          key={group.id}
+          group={group}
           activeKind={props.activeKind}
           onOpenKind={props.onOpenKind}
-          onOpenWorkspace={props.onOpenWorkspace}
         />
-      ) : null}
-      {needsYou && needsYou.rows.length > 0 ? (
-        <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
-      ) : needsYou && (home.viewerError || home.notificationsError) ? (
-        <p className="hp-note" role="status">{needsYou.emptyNote}</p>
-      ) : null}
+      ))}
+      </div>
 
-      <section className="hp-chat hp-chat--full" aria-label="Chat">
+      {/* THE RIGHT TWO THIRDS: what is happening now. The session list, the
+          create verbs and the embedded terminal are the host's (lane H2); this
+          column only makes room for them, exactly as the page makes room for
+          the aside. The 4/8 ratio IS the brief — "current sessions, current
+          chat, anything I created" expressed as screen area. */}
+      <section className="hp-live" aria-label="Chat">
         {props.chat}
         {props.listRail ?? null}
       </section>
+      </div>
       </div>
 
       {props.aside ?? null}
