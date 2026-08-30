@@ -1044,8 +1044,17 @@
      this region takes is a pixel the conversation does not get. Two rows is
      enough to see what is running; the peek of the third is what tells you
      there is more without spending a control on saying so. */
-  max-height: 210px;
+  max-height: 240px;
   overflow-y: auto;
+  /* `grid-auto-rows: max-content` IS LOAD-BEARING AND WAS A REAL BUG.
+     With `max-height` making the grid's block size definite, the implicit
+     `auto` rows were divided across that height instead of taken from their
+     content: measured on the live build, eleven rows at 11.8182px each
+     (130px of box split eleven ways) holding cards 87 to 156px tall, so every
+     card painted straight through the ones below it and the strip read as one
+     illegible pile. `max-content` sizes each row from what is in it, whatever
+     the container's height is, which is the only thing a scroller can mean. */
+  grid-auto-rows: max-content;
   align-content: start;
   padding-right: 2px;
 }
@@ -1057,7 +1066,6 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  align-self: start;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   background: var(--pn-card);

@@ -210,6 +210,15 @@ describe('a name is never truncated by its own count', () => {
     /* A short list sits at the top of the region rather than stretching two
        cards down its whole height. */
     expect(grid).toMatch(/align-content:\s*start/);
+    /* AND THE ROWS COME FROM THEIR CONTENT, NOT FROM THE BOX. `max-height`
+       makes the grid's block size definite, and with implicit `auto` rows the
+       browser divided that height across them: measured live, eleven rows at
+       11.8182px holding cards 87-156px tall, every card painting through the
+       one below it. A scroller whose rows are sized by its own height is not a
+       scroller. */
+    expect(grid, 'the rows will be divided across the box and the cards will overlap').toMatch(
+      /grid-auto-rows:\s*max-content/,
+    );
 
     /* THE FLOOR SURVIVED THE REWRITE. L4: never an unfloored track. */
     expect(grid).toContain('minmax(200px, 1fr)');
