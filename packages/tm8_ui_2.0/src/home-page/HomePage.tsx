@@ -240,9 +240,27 @@ function RowCard({ row, onOpen }: { row: HomeRow; onOpen(id: string): void }) {
   );
 }
 
-function NeedsYouStrip({ section, onOpen }: { section: HomeSection; onOpen(id: string): void }) {
+/**
+ * One composed section, drawn as the strip Home already uses for NEEDS YOU.
+ *
+ * It was `NeedsYouStrip` and it only ever differed from the others by a class
+ * name — `composeMyWork` hands every section the same shape, so one component
+ * draws all of them. The variant carries the tone (NEEDS YOU keeps its amber
+ * border) and the test id; nothing else changes per section.
+ */
+function SectionStrip({
+  section,
+  variant,
+  testId,
+  onOpen,
+}: {
+  section: HomeSection;
+  variant: string;
+  testId: string;
+  onOpen(id: string): void;
+}) {
   return (
-    <section className="hp-needs" aria-label={section.label} data-testid="hp-needs-you">
+    <section className={`hp-strip ${variant}`} aria-label={section.label} data-testid={testId}>
       <div className="hp-rail__head">
         <span className="hp-rail__label kit-eyebrow">
           {section.label} · {section.rows.length}
@@ -261,10 +279,22 @@ export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
 
-  /* The full T5-1 composition, reused for its NEEDS YOU section alone — the
-     other sections' facts render as rails below, where the whole space (not
-     just "mine") is the design. */
-  const needsYou = useMemo(() => {
+  /* THE COMPOSITION WAS ALWAYS COMPLETE; HOME THREW THREE QUARTERS OF IT AWAY.
+   *
+   * `composeMyWork` returns four sections — NEEDS YOU, MY LIVE SESSIONS, MY
+   * TASKS, MENTIONS & ASSIGNMENTS. This memo used to `.find()` the needs-you
+   * one and discard the rest on every render, under a comment saying the
+   * others "render as rails below". That stopped being true at R4
+   * (2026-08-15), when the rails retired to the Work tab — the comment
+   * outlived the code by a fortnight.
+   *
+   * So "current running things" (owner, 2026-08-30) is not a new capability
+   * here. MY LIVE SESSIONS was already composed from the seam VERDICT rather
+   * than the record — a session whose row claims running while the node holds
+   * no PTY reads `stale`, which is the honest word — and then dropped on the
+   * floor. It is wired below.
+   */
+  const work = useMemo(() => {
     const work = composeMyWork({
       sessionPool: home.sessionPool,
       myTasks: home.myTasks,
@@ -276,8 +306,32 @@ export function HomePage(props: HomePageProps) {
       viewerKnown: home.viewer !== null,
       viewerError: home.viewerError,
     });
-    return work.sections.find((section) => section.emphasis === 'needs-you') ?? null;
+    const by = (id: string) => work.sections.find((section) => section.id === id) ?? null;
+    return {
+      needsYou: work.sections.find((section) => section.emphasis === 'needs-you') ?? null,
+      live: by('live'),
+      tasks: by('tasks'),
+    };
   }, [home, data.livenessOf, data.activity]);
+
+  /* THREE STATES, AND THIS ONE RENDERS ONLY THE THIRD.
+   *
+   * `rowsFor` returns [] while a kind is still hydrating, so an empty array
+   * here means "pending" and "genuinely empty" indistinguishably. A strip that
+   * drew `MY LIVE SESSIONS · 0` off that array would assert the workspace is
+   * empty during the window where the screen knows nothing — the same defect
+   * as "No agent teammate is available in this space" in a space that has 34,
+   * and on a demo it lands in the first second of the screen.
+   *
+   * So a strip with no rows renders NOTHING. Absence is not a claim; "nothing
+   * here yet" is, and it may only be made after a read that came back empty.
+   * NEEDS YOU keeps its note because its emptiness is derived from resolved
+   * facts (`viewerKnown`, `notificationsError`) rather than from an array. */
+  const withRows = (section: HomeSection | null) =>
+    section && section.rows.length > 0 ? section : null;
+  const liveStrip = withRows(work.live);
+  const needsYouStrip = withRows(work.needsYou);
+  const tasksStrip = withRows(work.tasks);
 
   /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
      merged conversation column — fills the canvas and triage rides above it.
@@ -300,10 +354,34 @@ export function HomePage(props: HomePageProps) {
           onOpenWorkspace={props.onOpenWorkspace}
         />
       ) : null}
-      {needsYou && needsYou.rows.length > 0 ? (
-        <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
-      ) : needsYou && (home.viewerError || home.notificationsError) ? (
-        <p className="hp-note" role="status">{needsYou.emptyNote}</p>
+      {/* LIVE first: the dashboard's top line is what is happening right now.
+          Its rows carry the seam's verdict, so a session the node cannot
+          account for reads `stale` here rather than claiming to run. */}
+      {liveStrip ? (
+        <SectionStrip
+          section={liveStrip}
+          variant="hp-strip--live"
+          testId="hp-live-sessions"
+          onOpen={props.onOpenEntity}
+        />
+      ) : null}
+      {needsYouStrip ? (
+        <SectionStrip
+          section={needsYouStrip}
+          variant="hp-needs"
+          testId="hp-needs-you"
+          onOpen={props.onOpenEntity}
+        />
+      ) : work.needsYou && (home.viewerError || home.notificationsError) ? (
+        <p className="hp-note" role="status">{work.needsYou.emptyNote}</p>
+      ) : null}
+      {tasksStrip ? (
+        <SectionStrip
+          section={tasksStrip}
+          variant="hp-strip--mine"
+          testId="hp-my-tasks"
+          onOpen={props.onOpenEntity}
+        />
       ) : null}
 
       <section className="hp-chat hp-chat--full" aria-label="Chat">

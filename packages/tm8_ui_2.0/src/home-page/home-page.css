@@ -61,6 +61,16 @@
 }
 .cv2-root .hp-needs .hp-rail__label { color: var(--pn-wait); }
 .cv2-root .hp-needs .hp-card { border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-line)); }
+/* THE OTHER STRIPS CARRY NO COLOUR OF THEIR OWN.
+   `hp-needs` is toned because "waiting on you" changes what you do. A list of
+   things that are mine, or a list of what is running, does not — the run state
+   inside a row already says that, in its own word and its own colour, once.
+   Tinting the container as well would spend the accent on the box rather than
+   on the fact, which is the same trade this lane already refused on the map
+   (`k-hero`). Colour is for state that changes what you do; a heading is not
+   state (lane I, 2026-08-30). */
+.cv2-root .hp-strip--live .hp-rail__label,
+.cv2-root .hp-strip--mine .hp-rail__label { color: var(--pn-ink-3); }
 
 .cv2-root .hp-card {
   display: flex;
@@ -898,7 +908,20 @@
    the old 10/14 gutter spent a visible band of the canvas on nothing on every
    side of the screen. All three rules move together — they are the same edge,
    and a needs strip inset further than the chat under it reads as a misalign. */
-.cv2-root .hp-root--chat .hp-needs {
+/* THE VERTICAL BUDGET, STATED, BECAUSE THIS AXIS HAS THE SAME LAW AS THE OTHER.
+   A strip is `flex: none` and the chat below is `flex: 1; min-height: 0` — so
+   the strips are the incompressible side and the chat is the one that can give
+   way. That is the pass's own law pointed at the vertical axis, and it means
+   the strip count is a budget rather than a free choice.
+   Each strip costs ~92px: 18px of eyebrow + a 66px card + 8px of margin. Home
+   draws at most three, and only ever the ones that HAVE rows — an empty strip
+   renders nothing at all, so the common case is one or two. Three strips is
+   ~276px, which the workspace map's 38% ceiling (~250px at 700px tall) more
+   than covers once the map moves to the Work tab, where the taxonomy belongs.
+   UNTIL THAT LANDS the two can coexist only on a tall window; on a short one
+   the chat pays. Stated rather than discovered — see the PR. */
+.cv2-root .hp-root--chat .hp-needs,
+.cv2-root .hp-root--chat .hp-strip {
   flex: none;
   margin: 5px 7px 0;
 }
