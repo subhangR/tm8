@@ -4437,10 +4437,28 @@
    Facts stay grouped inside one card, in two columns. Labels lead values and
    hairlines organise the cells without turning static metadata into a stack
    of hoverable pseudo-controls. `box-sizing: border-box` remains in the SAME
-   block because row-height-parity reads this file as text. */
+   block because row-height-parity reads this file as text.
+
+   THE TRACK IS FLOORED, AND L4 IS WHY. This rule shipped as
+   `repeat(2, minmax(0, 1fr))` and the full-package gate caught it:
+   `no-branching.test.ts` L4 bans an unfloored track by name, 4100 lines above
+   this line, because "an unfloored track is how this app has been broken three
+   separate times: the region collapses to zero and the content simply
+   vanishes". That is the same failure this card's own `flex-shrink: 0` exists
+   to prevent — reintroduced one property over, by me, inside the pass fixing
+   it. A floor is not decoration; it is the difference between two narrow
+   columns and two columns of nothing.
+
+   134px is arithmetic, not taste: the 320px panel floor, less its 2px border,
+   less 24px body padding, less this card's 2px border and 24px padding, is
+   268px of content box — exactly two 134px columns at the narrowest panel this
+   app can build. `auto-fit` rather than a hard `repeat(2)` so that anywhere
+   narrower drops to ONE WHOLE column instead of crushing both, which is the
+   same surrender-order choice the rest of this pass makes: let the thing that
+   can yield do so cleanly, never let everything shrink into illegibility. */
 .cv2-root .sb-body > .sb-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(134px, 1fr));
   gap: 0;
 }
 .cv2-root .sb-body .sb-grid__cell {
