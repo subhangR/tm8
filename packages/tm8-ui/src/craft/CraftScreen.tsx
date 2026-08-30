@@ -434,7 +434,19 @@ export function CraftScreen({
             anchorId={selectedId}
             selectedId={activeThreadId}
             onSelect={(id) => setRequestedThreadId(id)}
-            onNewChat={() => setRequestedThreadId(null)}
+            /* BOTH halves move, or ＋ appears dead.
+               `requestedThreadId` is what the chat is ASKED to show;
+               `activeThreadId` is what the picker DRAWS. After a send has
+               created a thread, the chat published that thread and both halves
+               name it. Clearing only the request left the picker naming the old
+               thread, so pressing ＋ changed nothing on screen and the composer
+               it had switched to was invisible behind a stale title. The
+               adoption docblock above states the rule this restores: the
+               header's subject and the request move together. */
+            onNewChat={() => {
+              setActiveThreadId(null);
+              setRequestedThreadId(null);
+            }}
           />
           <div className="crf-chat__body">
             <ChatHomeSurface
