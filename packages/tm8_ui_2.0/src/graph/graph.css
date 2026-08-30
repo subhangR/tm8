@@ -21,10 +21,10 @@
 .gv-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--pn-space-3);
-  padding: var(--pn-space-3) var(--pn-space-4);
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
   border-bottom: 1px solid var(--pn-line);
-  background: var(--pn-surface);
+  background: var(--pn-paper);
   flex-wrap: wrap;
   flex: none;
 }
@@ -83,16 +83,16 @@
   text-decoration: line-through;
 }
 
-/* Action chips (re-layout, focus breadcrumb) — a gv-filter with a brand-soft
-   fill so it reads as an available action rather than a passive filter. */
+/* Action chips (re-layout, focus breadcrumb) use one accent border rather than
+   another tinted fill, so they read as available without adding a new plane. */
 .gv-filter--action {
   color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
-  border-color: rgba(var(--pn-brand-rgb), 0.35);
+  background: var(--pn-card);
+  border-color: var(--pn-brand);
 }
 .gv-filter--action:hover {
-  background: var(--pn-brand-soft);
-  border-color: rgba(var(--pn-brand-rgb), 0.55);
+  background: var(--pn-hover);
+  border-color: var(--pn-brand-2);
 }
 
 /* -- the lens ---------------------------------------------------------------
@@ -106,7 +106,7 @@
   align-items: center;
   gap: 1px;
   padding: 2px;
-  background: var(--pn-surface-2);
+  background: transparent;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
 }
@@ -121,7 +121,7 @@
   line-height: 1;
   color: var(--pn-ink-2);
   background: transparent;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--pn-r-pill);
   padding: 4px var(--pn-space-2);
   cursor: pointer;
@@ -135,8 +135,9 @@
 
 .gv-lens__opt--on,
 .gv-lens__opt--on:hover {
-  color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border-color: var(--pn-line-2);
 }
 
 /* The folded-count affordance inside the count line: a plain-text button, so it
@@ -165,7 +166,8 @@
   padding: var(--pn-space-2) var(--pn-space-4);
   font-size: var(--pn-fs-sm);
   color: var(--pn-ink-2);
-  background: var(--pn-wait-soft);
+  background: var(--pn-surface);
+  border-left: 3px solid var(--pn-wait);
   border-bottom: 1px solid var(--pn-line);
   flex: none;
 }
@@ -306,15 +308,14 @@
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
   cursor: pointer;
   transition:
     opacity var(--pn-dur-base) var(--pn-ease-standard),
-    border-color var(--pn-dur-slow) var(--pn-ease-standard),
-    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+    border-color var(--pn-dur-slow) var(--pn-ease-standard);
 }
 
-.gv-node:hover { box-shadow: var(--pn-sh-md); }
+.gv-node:hover { border-color: var(--pn-line-2); }
 
 .gv-node:focus-visible {
   outline: 2px solid var(--pn-brand);
@@ -343,10 +344,11 @@
    block so a selected+matched node keeps the full ring (source-order wins). */
 .gv-node--unmatched { opacity: 0.25; }
 .gv-node--match {
-  box-shadow: 0 0 0 1px rgba(var(--pn-brand-rgb), 0.55), var(--pn-sh-sm);
+  outline: 1px solid var(--pn-brand);
+  outline-offset: 1px;
 }
 .gv-node--match:hover {
-  box-shadow: 0 0 0 1px rgba(var(--pn-brand-rgb), 0.55), var(--pn-sh-md);
+  outline-color: var(--pn-brand-2);
 }
 
 /* Materialize: fade + 4px rise with a brass ring that decays. */
@@ -358,16 +360,15 @@
 
 .gv-node--flash { animation: gv-ring 1.8s var(--pn-ease-standard); }
 
-/* Selected — the node bound to the aside wears a PERSISTENT brass ring
-   (box-shadow, never a border, so content never shifts), visually distinct
-   from the decaying gv-node--flash pulse. Selection outranks hover-dimming:
-   a selected node never fades below legibility even inside a dimmed
-   neighborhood. */
+/* Selected — the node bound to the aside wears a persistent outline, visually
+   distinct from the decaying arrival ring and free of layout shift. */
 .gv-node--selected {
-  box-shadow: 0 0 0 2px var(--pn-brand), var(--pn-sh-sm);
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+  box-shadow: none;
 }
 .gv-node--selected:hover {
-  box-shadow: 0 0 0 2px var(--pn-brand), var(--pn-sh-md);
+  box-shadow: none;
 }
 .gv-node--selected.gv-node--dim,
 .gv-node--selected.gv-node--unmatched {
@@ -439,8 +440,8 @@
 .gv-node__focus--on {
   opacity: 1;
   color: var(--pn-brand-2);
-  border-color: rgba(var(--pn-brand-rgb), 0.4);
-  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand);
+  background: var(--pn-card);
 }
 
 @keyframes gv-rise {
@@ -449,8 +450,8 @@
 }
 
 @keyframes gv-ring {
-  0% { box-shadow: 0 0 0 2px var(--pn-brand); }
-  100% { box-shadow: 0 0 0 2px rgba(var(--pn-brand-rgb), 0); }
+  0% { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+  100% { outline: 2px solid transparent; outline-offset: 1px; }
 }
 
 .gv-node__head {
@@ -520,8 +521,8 @@
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
-  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
   padding: 0 6px;
   margin-left: auto;
@@ -529,20 +530,20 @@
   white-space: nowrap;
   transition: border-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.gv-node__folded:hover { border-color: rgba(var(--pn-brand-rgb), 0.65); }
+.gv-node__folded:hover { border-color: var(--pn-brand); }
 
 /* -- shelf ------------------------------------------------------------------ */
 
 .gv-shelf {
   position: absolute;
   left: var(--pn-space-4);
-  bottom: var(--pn-space-4);
+  bottom: 64px;
   max-width: 46%;
   padding: var(--pn-space-2) var(--pn-space-3);
   background: var(--pn-surface);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-lg);
-  box-shadow: var(--pn-sh-md);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
@@ -573,7 +574,7 @@
    bottom-right corner opposite the shelf. */
 .gv-rail {
   position: absolute;
-  right: var(--pn-space-4);
+  right: 64px;
   bottom: var(--pn-space-4);
   display: flex;
   flex-direction: column;
@@ -592,7 +593,7 @@
   background: var(--pn-surface);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-lg);
-  box-shadow: var(--pn-sh-md);
+  box-shadow: none;
 }
 
 .gv-ticker__row {
@@ -734,10 +735,9 @@
   position: relative;
   flex: none;
 }
-/* Dropdown TRIGGERS are labels wearing the compact button grammar
-   (RECLASSIFICATION 2026-08-29): 28px, r-sm, ui 600 at fs-sm, bordered,
-   hover fill. The visible/total figures inside stay honest either way —
-   only the face's type changed. */
+/* Dropdown TRIGGERS are labels wearing the compact button grammar. An
+   unfiltered trigger carries no redundant total; changed filters disclose the
+   visible/total state after the name. */
 .gv-select__face {
   appearance: none;
   display: inline-flex;
@@ -764,8 +764,8 @@
    popover reveals is how "where did my nodes go" happens. */
 .gv-select__face--filtered {
   color: var(--pn-brand-2);
-  border-color: rgba(var(--pn-brand-rgb), 0.35);
-  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand);
+  background: var(--pn-card);
 }
 .gv-select__pop {
   position: absolute;
@@ -778,7 +778,7 @@
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: 8px;
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: none;
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -824,69 +824,94 @@
   text-overflow: ellipsis;
 }
 
+/* A trigger's noun is the invariant; optional state/count text is the first
+   thing allowed to contract. This is the graph's width-budget form of the
+   house law: the name of a thing always beats its count. */
+.gv-select__name,
+.gv-select__chevron {
+  flex: none;
+}
+
+/* THE OTHER HALF OF THE LAW: cap the incompressible side. flex: none alone only
+   changes WHICH child loses, not THAT one does — an uncapped nowrap name in a
+   nowrap face overflows its own trigger. Today the labels are fixed short
+   literals and .gv-toolbar happens to wrap, so nothing is visibly wrong; both
+   of those are properties of the DATA and the container, not of this rule, and
+   a dynamic label (a kind name, a saved-view name) would end that. The ceiling
+   makes the guarantee belong to the rule. The name is a flex item of the
+   inline-flex face and so is blockified — text-overflow reaches it. */
+.gv-select__name {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gv-select__state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ==========================================================================
-   FLOW-CARD CANVAS (2026-08-28) — the Stitch-direction rework: rich kind-
-   colored entity cards on a dotted grid, curved edges, floating legend /
-   filter dock / zoom dock. Colors resolve through the Astryx palette family
-   tokens (falling back to bridged --pn-* where a family has no analog), so
+   FLOW-CARD CANVAS — calm pass: neutral entity cards on a quiet dotted grid,
+   one organized kind edge, curved edges and compact canvas docks. Family
+   colors resolve through Astryx tokens (falling back to bridged --pn-*), so
    both themes come for free and no hex lives here.
    ========================================================================== */
 
-.gv-root [data-family='blue']    { --gvf: var(--color-icon-blue,   var(--pn-info));      --gvf-soft: var(--color-background-blue,   var(--pn-info-soft)); }
-.gv-root [data-family='green']   { --gvf: var(--color-icon-green,  var(--pn-run));       --gvf-soft: var(--color-background-green,  var(--pn-run-soft)); }
-.gv-root [data-family='orange']  { --gvf: var(--color-icon-orange, var(--pn-wait));      --gvf-soft: var(--color-background-orange, var(--pn-wait-soft)); }
-.gv-root [data-family='red']     { --gvf: var(--color-icon-red,    var(--pn-block));     --gvf-soft: var(--color-background-red,    var(--pn-block-soft)); }
-.gv-root [data-family='purple']  { --gvf: var(--color-icon-purple, var(--pn-pr-merged)); --gvf-soft: var(--color-background-purple, var(--pn-pr-merged-soft)); }
-.gv-root [data-family='teal']    { --gvf: var(--color-icon-teal,   var(--pn-run));       --gvf-soft: var(--color-background-teal,   var(--pn-run-soft)); }
-.gv-root [data-family='cyan']    { --gvf: var(--color-icon-cyan,   var(--pn-info));      --gvf-soft: var(--color-background-cyan,   var(--pn-info-soft)); }
-.gv-root [data-family='yellow']  { --gvf: var(--color-icon-yellow, var(--pn-wait));      --gvf-soft: var(--color-background-yellow, var(--pn-wait-soft)); }
-.gv-root [data-family='pink']    { --gvf: var(--color-icon-pink,   var(--pn-brand-2));   --gvf-soft: var(--color-background-pink,   var(--pn-brand-soft)); }
-.gv-root [data-family='gray']    { --gvf: var(--pn-ink-3);                               --gvf-soft: var(--pn-hover); }
+.gv-root [data-family='blue']   { --gvf: var(--color-icon-blue, var(--pn-info)); }
+.gv-root [data-family='green']  { --gvf: var(--color-icon-green, var(--pn-run)); }
+.gv-root [data-family='orange'] { --gvf: var(--color-icon-orange, var(--pn-wait)); }
+.gv-root [data-family='red']    { --gvf: var(--color-icon-red, var(--pn-block)); }
+.gv-root [data-family='purple'] { --gvf: var(--color-icon-purple, var(--pn-pr-merged)); }
+.gv-root [data-family='teal']   { --gvf: var(--color-icon-teal, var(--pn-run)); }
+.gv-root [data-family='cyan']   { --gvf: var(--color-icon-cyan, var(--pn-info)); }
+.gv-root [data-family='yellow'] { --gvf: var(--color-icon-yellow, var(--pn-wait)); }
+.gv-root [data-family='pink']   { --gvf: var(--color-icon-pink, var(--pn-brand-2)); }
+.gv-root [data-family='gray']   { --gvf: var(--pn-ink-3); }
 
-/* The dotted drafting grid. Dots are hairline-colored so they survive both
-   themes without a hex. */
+/* The drafting grid recedes behind the work: a wider cadence leaves enough
+   orientation to pan without turning every empty pixel into texture. */
 .gv-viewport {
-  background-image: radial-gradient(var(--pn-line) 1px, transparent 1.5px);
-  background-size: 18px 18px;
-  background-position: 9px 9px;
+  background-image: radial-gradient(var(--pn-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 12px 12px;
 }
 
-/* The card. Left accent names the kind before a single word is read. */
+/* The card. One family-colored edge names kind; the icon and kind word stay
+   neutral so color is organized at a single, predictable location. */
 .gv-node {
-  /* Frosted, not opaque: the dotted grid reads through the card's edge just
-     enough to seat it ON the canvas instead of over it. color-mix keeps this
-     a pure token derivation — no literal color enters the file. */
-  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-left: 4px solid var(--gvf);
   border-radius: var(--pn-r-lg);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
   padding: var(--pn-space-3) var(--pn-space-3) var(--pn-space-2);
   display: flex;
   flex-direction: column;
   gap: 6px;
   transition:
-    box-shadow var(--pn-dur-fast) var(--pn-ease-out),
     border-color var(--pn-dur-fast) var(--pn-ease-out),
-    transform var(--pn-dur-fast) var(--pn-ease-out);
+    opacity var(--pn-dur-base) var(--pn-ease-standard);
 }
 .gv-node:hover {
-  box-shadow: var(--pn-sh-md);
-  border-color: var(--pn-line-2);
+  box-shadow: none;
+  border-color: var(--pn-ink-3);
   border-left-color: var(--gvf);
-  /* The kinetic lift — 2px, shadow-backed, and honest about what it is: a
-     hover affordance, so reduced-motion turns exactly this off below. */
-  transform: translateY(-2px);
 }
 @media (prefers-reduced-motion: reduce) {
   .gv-node, .gv-node:hover { transform: none; transition: none; }
 }
-.gv-node--selected { box-shadow: var(--pn-sh-md), 0 0 0 2px var(--pn-brand-soft); border-color: var(--pn-brand); border-left-color: var(--gvf); }
+.gv-node--selected {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+  box-shadow: none;
+  border-color: var(--pn-brand);
+  border-left-color: var(--gvf);
+}
 
 .gv-node__head { display: flex; align-items: center; gap: 6px; }
-.gv-node__glyph { color: var(--gvf); display: inline-flex; }
+.gv-node__glyph { color: var(--pn-ink-2); display: inline-flex; }
 /* The card's kind word is an EYEBROW, so it wears the eyebrow uniform (caps
    face, 700) — the mono claim on the earlier block would otherwise leak
    through, since that rule only ever set the family. The id tail below stays
@@ -897,7 +922,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--gvf);
+  color: var(--pn-ink-2);
 }
 /* The id's own tail in mono — TASK · 82df, the ticket-number read. Dimmed a
    step below the kind word so it identifies without shouting. */
@@ -906,8 +931,8 @@
   font-size: var(--pn-fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--gvf);
-  opacity: 0.65;
+  color: var(--pn-ink-3);
+  opacity: 1;
 }
 .gv-node__pills { margin-left: auto; display: inline-flex; gap: 4px; }
 
@@ -928,7 +953,7 @@
   display: block; height: 5px; border-radius: var(--pn-r-pill);
   background: var(--pn-hover); overflow: hidden;
 }
-.gv-node__bar i { display: block; height: 100%; border-radius: inherit; background: var(--gvf); }
+.gv-node__bar i { display: block; height: 100%; border-radius: inherit; background: var(--pn-brand); }
 .gv-node__bodymeta { font-size: var(--pn-fs-fine); color: var(--pn-ink-3); font-family: var(--pn-mono); }
 .gv-node__snippet {
   display: block;
@@ -952,30 +977,44 @@
 .gv-edge__line { stroke: var(--pn-line-2); stroke-width: 1.6; fill: none; }
 .gv-arrowhead { fill: var(--pn-ink-4, var(--pn-ink-3)); }
 
-/* THE ACTIVE PATH. An edge touching the hovered or selected card is the one
-   being read, and it steps forward: brass, wider, with a soft cast so it sits
-   visually ABOVE the hairline crowd — the mockup's glow, done with a shadow
-   instead of an SVG filter (cheaper, and it inherits both themes from the
-   token). Blocked is exempt: its color is a statement, not a style, so the
-   hot rule refuses to touch it. */
+/* THE ACTIVE PATH. Width + the single accent are sufficient; a decorative
+   glow added visual noise without adding another state. Blocked is exempt. */
 .gv-edge--hot:not(.gv-edge--blocked) .gv-edge__line {
   stroke: var(--pn-brand);
   stroke-width: 2.4;
-  filter: drop-shadow(0 1px 2px var(--pn-brand-soft));
+  filter: none;
 }
 .gv-edge--hot:not(.gv-edge--blocked) .gv-edge__label { fill: var(--pn-brand-2); }
 
 /* --- floating chrome ------------------------------------------------------ */
 .gv-legend {
-  position: absolute; top: 58px; right: 14px; z-index: 6;
+  position: absolute; top: 14px; right: 14px; z-index: 6;
   background: var(--pn-card); border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-lg); box-shadow: var(--pn-sh-sm);
-  padding: var(--pn-space-3); display: flex; flex-direction: column; gap: 2px;
-  max-height: calc(100% - 72px); overflow-y: auto;
+  border-radius: var(--pn-r-md); box-shadow: none;
+  padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  max-height: calc(100% - 28px); overflow-y: auto;
+}
+.gv-legend:not([open]) > :not(summary) { display: none; }
+.gv-legend:not([open]) { overflow: hidden; }
+.gv-legend[open] { min-width: 172px; }
+.gv-legend__title::-webkit-details-marker { display: none; }
+.gv-legend__title::after {
+  content: '▸';
+  color: var(--pn-ink-3);
+  margin-left: auto;
+  font-size: var(--pn-fs-micro);
+}
+.gv-legend[open] .gv-legend__title::after { content: '▾'; }
+.gv-legend[open] .gv-legend__title {
+  border-bottom-color: var(--pn-line);
+  margin-bottom: 4px;
 }
 .gv-legend__title {
+  display: flex; align-items: center; gap: var(--pn-space-2);
+  min-height: 28px;
   font-size: var(--pn-fs-sm); font-weight: 650; color: var(--pn-ink);
-  border-bottom: 1px solid var(--pn-line); padding-bottom: 6px; margin-bottom: 4px;
+  border-bottom: 1px solid transparent;
+  padding: 0 8px; cursor: pointer; list-style: none;
 }
 /* Legend rows are toggles, so they take the compact grammar's metrics — 28px
    box, r-sm, ui 600 at fs-sm, hover fill — in the grammar's ghost (unbordered)
@@ -997,7 +1036,7 @@
   position: absolute; left: 14px; bottom: 14px; z-index: 6;
   display: flex; align-items: center; gap: 4px;
   background: var(--pn-card); border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill); box-shadow: var(--pn-sh-sm);
+  border-radius: var(--pn-r-md); box-shadow: none;
   padding: 5px 6px 5px 14px;
 }
 .gv-filterdock__label {
@@ -1010,19 +1049,23 @@
 .gv-filterdock__opt {
   display: inline-flex; align-items: center;
   min-height: 28px;
-  border: none; background: none; cursor: pointer;
+  border: 1px solid transparent; background: none; cursor: pointer;
   font: 600 var(--pn-fs-sm) var(--pn-ui); color: var(--pn-ink-2);
   line-height: 1;
   padding: 0 12px; border-radius: var(--pn-r-pill);
 }
 .gv-filterdock__opt:hover { background: var(--pn-hover); color: var(--pn-ink); }
-.gv-filterdock__opt--on { background: var(--pn-info-soft); color: var(--pn-info); }
+.gv-filterdock__opt--on {
+  background: var(--pn-card);
+  border-color: var(--pn-brand);
+  color: var(--pn-ink);
+}
 
 .gv-zoomdock {
   position: absolute; right: 14px; bottom: 14px; z-index: 6;
   display: flex; flex-direction: column; gap: 4px;
   background: var(--pn-card); border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md); box-shadow: var(--pn-sh-sm); padding: 4px;
+  border-radius: var(--pn-r-md); box-shadow: none; padding: 4px;
 }
 
 /* -- contextual bands -------------------------------------------------------
@@ -1047,7 +1090,7 @@
   pointer-events: none;
   border: 1px solid var(--pn-line);
   border-radius: 12px;
-  background: color-mix(in oklab, var(--pn-surface) 55%, transparent);
+  background: none;
 }
 
 /* The residual band — "Unassigned", "No status". A real band holding real
@@ -1062,7 +1105,7 @@
 /* Collapsed: header only. Kept visually complete rather than shrunk to a
    sliver, because it carries the only control that brings its contents back. */
 .gv-band--collapsed {
-  background: color-mix(in oklab, var(--pn-surface) 78%, transparent);
+  background: var(--pn-surface);
 }
 
 /* Lifts above the edge layer (which is positioned at `z-index: auto`), so a
@@ -1075,6 +1118,7 @@
   left: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   max-width: 100%;
   appearance: none;
@@ -1082,7 +1126,7 @@
   /* The label sits ON the frame's top border, so it needs its own ground to be
      legible where the hairline — and any edge routed past it — runs behind.
      Must come AFTER the `appearance` reset, or the reset wins. */
-  background: color-mix(in oklab, var(--pn-surface) 92%, transparent);
+  background: var(--pn-card);
   padding: var(--pn-space-2) var(--pn-space-3);
   cursor: pointer;
   color: var(--pn-ink-2);
@@ -1109,18 +1153,30 @@
   font-size: var(--pn-fs-label);
   font-weight: 600;
   letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* The count is the band's whole promise: whatever the frame is doing to the
    layout, this many entities are in here. It never disappears on collapse. */
 .gv-band__count {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  /* NEVER CLIP A NUMBER BARE. This is the child elected to yield, so it is the
+     one that can actually truncate — and a bare clip turns 128 into 12, which
+     is not a smaller number, it is a WRONG one that looks right. The ellipsis
+     is what makes the truncation legible as truncation. The exact figure is in
+     the header's own title either way. */
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
-  background: var(--pn-hover);
+  background: transparent;
+  border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
   padding: 1px 7px;
 }
@@ -1136,7 +1192,7 @@
   gap: 2px;
   text-align: left;
   background: none;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 6px;
   padding: 5px 8px;
   cursor: pointer;
@@ -1156,7 +1212,8 @@
 .gv-select__opt--on,
 .gv-select__opt--on:hover {
   color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-brand);
 }
 
 /* The hint is why this control can be single-select without being a guess: the
