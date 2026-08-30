@@ -14,7 +14,7 @@ import {
 /**
  * THE FOLD PRIMITIVE's own contract: one hairline head row, content only when
  * open, ARIA wiring intact, state persisted globally per section id, and the
- * empty/reveal choreography that the body's `⋯ N empty sections` line drives.
+ * empty/reveal choreography that the body's one quiet reveal line drives.
  */
 
 beforeEach(() => {
@@ -98,6 +98,19 @@ describe('CollapsibleSection', () => {
       'utf8',
     );
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+  });
+
+  it('lets the section name keep width before its count', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'collapsible-section.css'),
+      'utf8',
+    );
+    const label = css.match(/\.cv2-root \.pn-fold__label \{[^}]*\}/)?.[0] ?? '';
+    const count = css.match(/\.cv2-root \.pn-fold__count \{[^}]*\}/)?.[0] ?? '';
+    expect(label).toContain('min-width: min-content');
+    expect(label).not.toContain('text-overflow: ellipsis');
+    expect(count).toContain('flex: 0 1 auto');
+    expect(count).toContain('max-width: 30%');
   });
 
   it('the reading measure is a token, consumed by the measured body column', () => {

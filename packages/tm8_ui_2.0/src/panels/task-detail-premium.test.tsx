@@ -79,9 +79,23 @@ describe('premium task detail — one coherent surface', () => {
       /saving is not wired/i,
     );
 
+    /*
+     * THE DESCRIPTION CARD MUST NOT CLIP ITSELF. This pinned `k-hero` and
+     * `k-accent-top`; both were removed 2026-08-29 on the owner's ruling, and
+     * `k-accent-top` turned out to be a layout defect rather than decoration.
+     * It sets `overflow: hidden`, which costs a flex item its content-based
+     * automatic minimum size (Flexbox §4.5), and this card is a flex item in
+     * `.sb-body` — a fixed-height scrolling column. Measured against prod
+     * `6423d07d`: the card rendered 32px tall around 282px of description and
+     * clipped every pixel of it with no way to scroll.
+     *
+     * jsdom cannot measure that, so the guard is on the mechanism: no clipping
+     * utility on this card. The shared panels.css card rule supplies the
+     * `flex-shrink: 0` half.
+     */
     const description = within(panel).getByTestId('task-description-editor');
-    expect(description.className).toContain('k-hero');
-    expect(description.className).toContain('k-accent-top');
+    expect(description.className).not.toContain('k-accent-top');
+    expect(description.className).not.toContain('k-hero');
 
     const progress = within(panel).getByTestId('acceptance-progress');
     expect(progress.getAttribute('data-state')).toBe('in-progress');

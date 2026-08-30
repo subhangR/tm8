@@ -40,6 +40,7 @@
 .cv2-root .pn-profile__name {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
   /* T0-4 423: `font-size:14px;font-weight:600`. */
@@ -48,9 +49,10 @@
   color: var(--pn-ink);
 }
 .cv2-root .pn-profile__name-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: min-content;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 /* T0-4 423 (inner span): mono 9.5px/600, #5B564C on #ECE8DF, r4, 1px 5px. */
 .cv2-root .pn-profile__tag {
@@ -80,19 +82,25 @@
  * The tiles ARE `HollowStat` — the dash-not-zero law lives in that component
  * and is not worth re-implementing for a size change. What differs here is
  * only geometry: T1-4's stat (its home surface) is a 17px value in a 9px 12px
- * box, and T0-4's panel tile at line 428 is `padding:8px 10px` with a 15px
- * value and a 9px label. Scoped to this grid, so nothing else moves.
+ * box. In this panel the calm-pass hierarchy is deliberately inverted: the
+ * stat name leads, then its smaller value. Scoped here, so HollowStat keeps
+ * its original anatomy everywhere else.
  */
 .cv2-root .pn-profile__stats .hon-stat {
   min-width: 0;
-  padding: 8px 10px;
+  padding: 7px 9px;
   overflow: hidden;
 }
 .cv2-root .pn-profile__stats .hon-stat__value {
-  font-size: 15px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pn-ink-3);
 }
 .cv2-root .pn-profile__stats .hon-stat__label {
-  font-size: 9px;
+  order: -1;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--pn-ink-2);
 }
 
 /* --- field grid (agent frame, T0-4 474–478) ------------------------------ */

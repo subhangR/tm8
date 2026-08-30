@@ -61,20 +61,27 @@
 }
 
 .cv2-root .pn-fold__label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: min-content;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .cv2-root .pn-fold__spacer {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .cv2-root .pn-fold__count {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 30%;
+  overflow: hidden;
   color: var(--pn-ink-3);
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* No box around content — the fold body is plain flow, air supplied by gap. */

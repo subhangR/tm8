@@ -124,13 +124,13 @@ export function HubBody({
                * own job, which the redirect note below points at. There is no
                * verb here, so there is no unwired verb to disable (R7).
                *
-               * The count is always shown, including a literal 0 — the same
-               * law as the panel tab strip: a zero a read produced is an
-               * answer, and hiding it makes it indistinguishable from a count
-               * nobody measured.
+               * The count remains in the document, including a literal 0. It
+               * gets its own yielding span so the thing's name keeps the
+               * width budget when a long label and its count compete.
                */
               <span key={tab.key} className="hub-tab">
-                {`${tab.label} · ${tab.count}`}
+                <span className="hub-tab__label">{tab.label}</span>
+                <span className="hub-tab__count">{` · ${tab.count}`}</span>
               </span>
             ))}
           </div>
@@ -254,4 +254,3 @@ function tabArray(raw: unknown): { key: string; label: string; count: number }[]
       typeof (t as { count?: unknown }).count === 'number',
   );
 }
-

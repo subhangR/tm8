@@ -128,7 +128,7 @@ function renderBody(over: Partial<React.ComponentProps<typeof SubtreeBody>> = {}
 /*
  * FOLDS (2026-08-16 redesign): sections collapse to hairline rows and persist
  * per section id in localStorage, and EMPTY sections leave the flow entirely
- * behind the `⋯ N empty sections` toggle. So: state is cleared between tests,
+ * behind the one empty-sections toggle. So: state is cleared between tests,
  * and assertions on section CONTENT expand (and where empty, reveal) first —
  * expand before asserting, never delete an assertion.
  */
@@ -485,8 +485,18 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     const refused = renderBody({ detail: withCriteria([]) });
     const section = expandFold(refused.getByTestId('acceptance-section'));
     expect(section.textContent).toMatch(/no acceptance criteria/i);
-    expect(within(section).getByTestId('acceptance-progress').getAttribute('data-state')).toBe('empty');
-    expect(within(section).getByTestId('acceptance-progress').textContent).toContain('Ready to define');
+    /*
+     * NO METER WHERE THERE IS NOTHING TO MEASURE (owner ruling, 2026-08-29 —
+     * "the name of a thing beats its count"; every element earns its slot).
+     * This used to pin a tinted, accent-barred summary reading "Ready to
+     * define" above a progress bar pinned at 0/0 — while the fold head one
+     * line above already read `ACCEPTANCE 0/0` and the card below said the
+     * same nothing again. One state, four tellings, `0/0` printed three times.
+     * The zero-state summary is gone; the worded line carries the fact alone,
+     * and the add affordance (or its refusal) is still reachable.
+     */
+    expect(within(section).queryByTestId('acceptance-progress')).toBeNull();
+    expect(section.textContent).not.toMatch(/0\s*\/\s*0.*0\s*\/\s*0/s);
     expect(within(section).getByTestId('disabled-with-reason').textContent).toMatch(/add criterion/i);
     refused.unmount();
 
@@ -1174,7 +1184,7 @@ describe('folds — hairline sections, persisted globally per section id', () =>
     expect(head2.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('hides secondary empty sections behind ⋯ N empty sections, and reveals them IN ORDER', () => {
+  it('hides secondary empty sections behind one quiet reveal, and reveals them IN ORDER', () => {
     const childless = withChildren([]);
     const detail: EntityDetail = {
       ...childless,
@@ -1188,10 +1198,10 @@ describe('folds — hairline sections, persisted globally per section id', () =>
     expect(view.queryByTestId('runs-section')).toBeNull();
     expect(view.queryByTestId('dependencies-section')).toBeNull();
     const toggle = view.getByTestId('empty-sections-toggle');
-    /* MOVED PIN (2026-08-29, premium task detail): the count remains exact at
-       two, but the members are now Runs + Dependencies rather than Acceptance
-       + Dependencies. The disclosure contract is unchanged. */
-    expect(toggle.textContent).toMatch(/2 empty sections/);
+    /* The visible verb wins the width budget; the exact hidden count remains
+       in its accessible name. */
+    expect(toggle.textContent).toBe('Show empty sections');
+    expect(toggle.getAttribute('aria-label')).toBe('Show 2 empty sections');
     // Revealed in normal anatomy order: ACCEPTANCE → RUNS → SUBTREE.
     fireEvent.click(toggle);
     const runs = view.getByTestId('runs-section');
