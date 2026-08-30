@@ -454,6 +454,55 @@
 }
 .cv2-root .hp-group__item > .enav-metrics { flex: none; white-space: nowrap; }
 
+/* ===================== THE NOUN FLOOR, AND THE ESCAPE HATCH =================
+   The collapsed rail (owner, 065613-81ca.png) rendered `Sessio…`, `Projec…`,
+   `Pull re…`, `Workt…`, `Com…` — seven of nine nouns STUBBED. A stub is worse
+   than an overflow: an overflow is visibly broken, while `Com…` looks handled
+   and could be Commits, Comments, Components or Communications. The rail's own
+   docblock promised "collapsed keeps the word" and its CSS kept the word SLOT
+   and lost the word, at a width where the promise was unachievable.
+
+   These rows are the same shape — mark · noun ......... pill — so they can fail
+   the same way. What this card has and the rail did not is an ESCAPE HATCH: the
+   mark is already drawn and every row already carries its full name in
+   `aria-label` and `title` (`entityNavigationLabel`). So below the floor the
+   noun is DROPPED, not stubbed. An icon with a name you can hover is a control
+   you can learn; `Memo…` is a control you have to guess.
+
+   UNITS FIRST, because this lane has already paid for getting them wrong:
+   `container-type: inline-size` queries the CONTENT box. This card spends 24px
+   on padding and 2px on its border, so `container = card border box - 26px`.
+   That 26 is arithmetic for THIS card — it is not the 42 measured on the map,
+   which had different padding. Re-probe with the ladder before trusting either.
+
+   THE BUDGET, at 5.7px per character (measured last cycle):
+     row chrome (16px mark + two 8px gaps + 16px padding + 2px border)   50px
+     a 9-character noun, the floor lane C proved on the top bar          ~51px
+     the widest `N new` pill                                            ~62px
+   So a row needs ~163px of container to hold a 9-character noun AND a count,
+   and ~101px to hold the noun alone.
+
+   AND THE INEQUALITY, which is the actual safeguard: the left column is a third
+   of the canvas, so at the narrowest desktop Home reaches (1024px) the card is
+   ~330px wide and ~304px of container. FLOOR 304 > 163 > 101 — NEITHER RULE CAN
+   FIRE AT ANY WIDTH THIS LAYOUT PRODUCES TODAY. They exist so that a future
+   narrower column degrades honestly instead of stubbing, and the inequality is
+   written down so the next layout change has to break it on purpose.
+
+   PROVISIONAL: every number above is arithmetic, not a browser reading. It
+   wants one scheduled render pass. If these cards ever look wrong, this block
+   is the first thing to re-measure. */
+.cv2-root .hp-group {
+  container-type: inline-size;
+  container-name: hp-card;
+}
+@container hp-card (max-width: 162px) {
+  .cv2-root .hp-group[data-density='rows'] .hp-group__item > .enav-metrics { display: none; }
+}
+@container hp-card (max-width: 100px) {
+  .cv2-root .hp-group[data-density='rows'] .hp-group__noun { display: none; }
+}
+
 @media (forced-colors: active) {
   .cv2-root .hp-group__item[aria-current='page'] {
     border-color: Highlight;

@@ -128,6 +128,35 @@ describe('a name is never truncated by its own count', () => {
     expect(homeCss).not.toMatch(/\.hp-side[^{]*\{[^}]*overflow: hidden/);
   });
 
+  it('drops a noun whole rather than stubbing it, and cannot fire today', () => {
+    /* The collapsed rail rendered `Sessio…`, `Projec…`, `Com…` — the word slot
+       kept, the word lost. This card degrades to mark + accessible name
+       instead, because it HAS a mark and the rail did not. The floor and the
+       count budget are both stated in container units, and both must sit below
+       the narrowest container this layout can build (~304px at 1024) so that
+       neither fires by accident — the inequality is the safeguard, not the
+       comment describing it. */
+    expect(homeCss).toContain('container-name: hp-card');
+    const thresholds = [...homeCss.matchAll(/@container hp-card \(max-width: (\d+)px\)/g)].map(
+      (m) => Number(m[1]),
+    );
+    expect(thresholds.length).toBe(2);
+    const NARROWEST_CONTAINER_PX = 304;
+    for (const t of thresholds) expect(t).toBeLessThan(NARROWEST_CONTAINER_PX);
+    /* The count gives way BEFORE the noun does — the law's own order. */
+    const [countBudget, nounFloor] = [Math.max(...thresholds), Math.min(...thresholds)];
+    expect(nounFloor).toBeLessThan(countBudget);
+    const dropped = homeCss.match(
+      /@container hp-card \(max-width: \d+px\)\s*\{([^}]*\}[^}]*)\}[\s\S]*?@container hp-card \(max-width: \d+px\)\s*\{([^}]*\}[^}]*)\}/s,
+    );
+    expect(dropped?.[1]).toContain('.enav-metrics');
+    expect(dropped?.[2]).toContain('.hp-group__noun');
+    /* Dropped WHOLE. A stub is what this exists to prevent, so the noun must
+       never be handed an ellipsis at the floor instead of being removed. */
+    expect(dropped?.[2]).toContain('display: none');
+    expect(dropped?.[2]).not.toMatch(/text-overflow/);
+  });
+
   it('splits the canvas four/eight, which is the brief as screen area', () => {
     const home = homeCss.match(/\.cv2-root \.hp-home\s*\{([^}]*)\}/s)?.[1] ?? '';
     expect(home).toContain('grid-template-columns: 4fr 8fr');
