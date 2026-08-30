@@ -126,15 +126,24 @@ describe('a name is never truncated by its own count', () => {
     // And the row that replaced them exists, so this is not merely an absence.
     const start = homeCss.match(/\.cv2-root \.hp-start\s*\{([^}]*)\}/s)?.[1] ?? '';
     expect(start, 'no .hp-start rule — the verbs have no row').not.toBe('');
-    // WRAPS rather than scrolls or clips: three verbs do not fit one line at
-    // the 320px floor, and a deleted control is the defect the list header was
-    // fixed for this same cycle.
-    expect(start).toContain('flex-wrap: wrap');
+    // THE TRACK IS FLOORED. `repeat(auto-fit, minmax(148px, 1fr))` — at the
+    // 320px floor three cards cannot sit side by side, and a floored track
+    // drops to one whole column instead of crushing all three. An unfloored
+    // `minmax(0, …)` is banned by name in this package because it collapses a
+    // region to nothing.
+    expect(start).toContain('minmax(148px, 1fr)');
+    expect(start).not.toContain('minmax(0');
 
     // A REFUSED VERB IS SHOWN, NOT HIDDEN. If this rule disappears the verb
     // silently vanishes when the server refuses it, which reads as a missing
     // feature rather than a known state.
-    expect(homeCss).toContain('.hp-start__verb--off');
+    expect(homeCss).toContain('.hp-start__card--off');
+
+    // PROGRESS AND ACTIVITY — the two facts a running card carries. Tabular,
+    // because these numbers stack down a column and must not dance.
+    const facts = homeCss.match(/\.cv2-root \.hp-attention__facts\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(facts, 'no .hp-attention__facts rule — the running cards show no progress').not.toBe('');
+    expect(facts).toContain('tabular-nums');
   });
 
   it('splits the canvas four/eight, which is the brief as screen area', () => {

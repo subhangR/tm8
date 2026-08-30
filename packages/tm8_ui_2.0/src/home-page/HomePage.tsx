@@ -128,19 +128,21 @@ function HomeStart({
      that never wired it, which is different from a host that wired it and the
      server refused. The second gets a disabled control with its reason; the
      first would be a button we invented. */
-  const kindVerb = (kind: string, label: string) => {
+  const kindVerb = (kind: string, label: string, blurb: string) => {
     if (!onCreateKind) return null;
     const refusal = createKindUnavailable?.(kind) ?? null;
     if (refusal) {
       return (
-        <span className="hp-start__verb hp-start__verb--off" title={`${refusal.cause} — ${refusal.remedy}`}>
-          {label}
+        <span className="hp-start__card hp-start__card--off" title={`${refusal.cause} — ${refusal.remedy}`}>
+          <b>{label}</b>
+          <span>{refusal.cause}</span>
         </span>
       );
     }
     return (
-      <button type="button" className="hp-start__verb" onClick={() => onCreateKind(kind)}>
-        {label}
+      <button type="button" className="hp-start__card" onClick={() => onCreateKind(kind)}>
+        <b>{label}</b>
+        <span>{blurb}</span>
       </button>
     );
   };
@@ -167,8 +169,8 @@ function HomeStart({
    * SO THIS IS THE OWNER'S CALL, NOT A SETTLED DESIGN. If they want all three
    * verbs together, the `+` moves into this row and those tests move with it.
    * What is not on the table is shipping two buttons that say "New chat". */
-  const session = kindVerb('session', 'New session');
-  const task = kindVerb('task', 'New task');
+  const session = kindVerb('session', 'New session', 'Put an agent on it and watch it work');
+  const task = kindVerb('task', 'New task', 'Track a piece of work to done');
 
   /* Nothing wired ⇒ no row, rather than an empty box asserting "you can start
      things" and offering none. */
@@ -182,6 +184,26 @@ function HomeStart({
   );
 }
 
+
+/**
+ * "2m" / "3h" / "5d" — the shortest true form.
+ *
+ * NO "just now" AND NO ROUNDING UP. A session stamped four minutes ago reads
+ * `4m`, not `just now`, because the whole point of this line is telling a
+ * stalled session from a live one at a glance. Anything under a minute is the
+ * only case where a word beats a number, and it says `now` rather than `0m`.
+ *
+ * An unparseable stamp renders NOTHING rather than `NaN` or a guess.
+ */
+function sinceLabel(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 60) return 'now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
+  return `${Math.floor(secs / 86400)}d`;
+}
 
 function AttentionCard({
   section,
@@ -219,6 +241,22 @@ function AttentionCard({
               ) : null}
             </span>
             <span className="hp-attention__title">{row.title}</span>
+            {/* PROGRESS AND ACTIVITY (owner, 2026-08-30) — the two facts the
+                node actually stamps. Each renders only when present: a card
+                that draws "0 turns" or "never" states something false about a
+                session whose counters have not arrived yet. */}
+            {row.turns !== undefined || row.activityAt ? (
+              <span className="hp-attention__facts">
+                {row.turns !== undefined ? (
+                  <span className="hp-attention__turns">{row.turns} turns</span>
+                ) : null}
+                {row.activityAt ? (
+                  <time className="hp-attention__when" dateTime={row.activityAt}>
+                    {sinceLabel(row.activityAt)}
+                  </time>
+                ) : null}
+              </span>
+            ) : null}
             {row.kind ? (
               <span className="hp-attention__ref">
                 <span className="hp-attention__ref-mark" aria-hidden>

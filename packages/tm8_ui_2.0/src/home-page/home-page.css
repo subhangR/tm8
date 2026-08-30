@@ -868,37 +868,10 @@
    `flex-wrap` because at the 320px floor three verbs do not sit on one line
    and wrapping is the honest failure — the alternative is a scroll with no cue
    or a deleted control, which is the defect the list header was fixed for. */
-.cv2-root .hp-start {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--pn-space-2);
-  padding: var(--pn-space-3);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-card);
-}
-.cv2-root .hp-start__verb {
-  appearance: none;
-  font: 600 var(--pn-fs-sm)/1 var(--pn-ui);
-  color: var(--pn-ink);
-  background: none;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: var(--pn-space-2) var(--pn-space-3);
-  cursor: pointer;
-}
-.cv2-root .hp-start__verb:hover {
-  border-color: var(--pn-brand-2);
-  color: var(--pn-brand-2);
-}
+
 /* A REFUSED VERB IS SHOWN, NOT HIDDEN — it carries its reason in `title`.
    A missing button reads as a missing feature; a disabled one that says why
    reads as a product that knows its own state. */
-.cv2-root .hp-start__verb--off {
-  color: var(--pn-ink-3);
-  border-style: dashed;
-  cursor: default;
-}
 
 /* THE RUNNING CARDS' HEADER — a label and, when the section has one, a live
    tally. `MY LIVE SESSIONS · 6 live` is a count of things HAPPENING, which is
@@ -917,3 +890,61 @@
   color: var(--pn-run);
   white-space: nowrap;
 }
+
+/* THE THREE WAYS IN, AS CARDS (owner, 2026-08-30: "three cards").
+   Each says what it does — a client who has never seen this product learns
+   what it is from these three lines. `auto-fit` with a floor rather than
+   `repeat(3, …)`: at the 320px floor three cards cannot sit side by side, and
+   a floored track drops to one whole column instead of crushing all three.
+   L4 — never an unfloored minmax. */
+.cv2-root .hp-start {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: var(--pn-space-2);
+}
+.cv2-root .hp-start__card {
+  appearance: none;
+  display: block;
+  text-align: left;
+  padding: var(--pn-space-3);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  cursor: pointer;
+}
+.cv2-root .hp-start__card > b {
+  display: block;
+  font: 700 var(--pn-fs-title)/1.2 var(--pn-ui);
+  color: var(--pn-ink);
+  margin-bottom: 2px;
+}
+.cv2-root .hp-start__card > span {
+  display: block;
+  font: 400 var(--pn-fs-micro)/1.35 var(--pn-ui);
+  color: var(--pn-ink-3);
+}
+.cv2-root .hp-start__card:hover {
+  border-color: var(--pn-brand-2);
+}
+.cv2-root .hp-start__card:hover > b {
+  color: var(--pn-brand-2);
+}
+/* A refused verb keeps its card and its reason — never hidden. */
+.cv2-root .hp-start__card--off {
+  border-style: dashed;
+  cursor: default;
+}
+.cv2-root .hp-start__card--off > b { color: var(--pn-ink-3); }
+
+/* PROGRESS AND ACTIVITY on a running row. Two facts, one line, tabular so the
+   numbers align down the card rather than dancing. */
+.cv2-root .hp-attention__facts {
+  display: flex;
+  gap: var(--pn-space-2);
+  align-items: baseline;
+  font: 400 var(--pn-fs-micro)/1.3 var(--pn-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+.cv2-root .hp-attention__turns { flex: none; }
+.cv2-root .hp-attention__when { flex: none; font-family: var(--pn-mono); }
