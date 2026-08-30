@@ -357,6 +357,7 @@ export function HomePage(props: HomePageProps) {
         {props.listRail ?? null}
       </section>
       </div>
+      </div>
 
       {props.aside ?? null}
     </div>

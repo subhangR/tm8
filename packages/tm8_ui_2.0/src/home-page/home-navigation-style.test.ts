@@ -32,7 +32,6 @@ describe('Home entity navigation surface contract', () => {
     expect(homeCss).not.toMatch(/calc\(\s*100vh/i);
   });
 });
-});
 
 /**
  * THE NAME BEATS THE COUNT (owner ruling, 2026-08-29).

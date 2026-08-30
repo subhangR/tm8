@@ -224,6 +224,11 @@
   min-width: 0;
   color: var(--pn-ink);
   font-family: var(--pn-ui);
+  /* `--pn-fs-xl` is NOT defined anywhere in the package — checked, not assumed.
+     The fallback is therefore load-bearing and deliberate: a bare
+     `var(--pn-fs-xl)` would be invalid at computed-value time and the heading
+     would silently inherit its parent's size. If a display size token is ever
+     added, this picks it up; until then 30px is the value. */
   font-size: var(--pn-fs-xl, 30px);
   font-weight: 700;
   letter-spacing: -0.02em;
