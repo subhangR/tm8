@@ -157,16 +157,6 @@ describe('chat-home CSS coverage', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('replaces inherited New-control glyphs with an ASCII plus on Chat Home', () => {
-    const css = readFileSync(join(DIR, 'chat-home.css'), 'utf8');
-    expect(css).toMatch(
-      /\.tch-root button\[aria-label\^='New '\] > span\[aria-hidden\]\s*\{[^}]*font-size:\s*0;/s,
-    );
-    expect(css).toMatch(
-      /\.tch-root button\[aria-label\^='New '\] > span\[aria-hidden\]::before\s*\{[^}]*content:\s*'\+';/s,
-    );
-  });
-
   it('a class a component writes is styled, or declared unstyled on purpose', () => {
     const styled = classesStyled();
     const undeclared = [...classesUsed()]

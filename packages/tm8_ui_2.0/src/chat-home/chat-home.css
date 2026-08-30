@@ -16,21 +16,6 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* ListRootHeader is shared with Work, outside this lane's edit boundary. Its
-   generic "New …" controls currently hand us a fullwidth plus, which the
-   self-hosted Latin fonts cannot draw. Suppress that text glyph on Chat Home
-   and paint the same affordance with ASCII instead. The aria-label gate leaves
-   verb-specific controls such as Sessions' terminal icon alone. */
-.tch-root button[aria-label^='New '] > span[aria-hidden] {
-  font-size: 0;
-}
-
-.tch-root button[aria-label^='New '] > span[aria-hidden]::before {
-  content: '+';
-  font-size: var(--pn-fs-body);
-  line-height: 1;
-}
-
 .tch-sidebar {
   display: flex;
   flex-direction: column;
