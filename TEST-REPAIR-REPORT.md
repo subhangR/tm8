@@ -263,3 +263,137 @@ Tests:
 * `chat-home/phone-chat-defects.test.tsx`
 * `chat-home/ChatHomeScreen.stability.test.tsx`
 * `chat-home/GateChatHome.test.tsx`
+
+## Solo dashboard mount
+
+Two cases in `chat-home/GateChatHome.test.tsx > dashboard route` were red after
+Home began mounting the chat surface with `soloConversation`:
+
+* *mounts the merged single home* — `getAllByText('Plan the launch sequence')`
+  found ZERO, expected 1.
+* *is EXACTLY TWO PANES …* — `.tch-conversation__head` was `null`.
+
+### Root cause — two defects, not one
+
+**1. The head was suppressed for the wrong reason.**
+`chat-home/ChatHomeScreen.tsx:1695` (pre-fix) read
+
+```
+{soloConversation || centre != null ? null : (<header className="tch-conversation__head">
+```
+
+The suppression exists because Craft's `CraftChatPicker` prints the same title
+one row above the transcript. But it was conditioned on `soloConversation`,
+which means "the thread COLUMN belongs to the host" — a different fact. Craft is
+the only host where the two coincide. The phone's header deliberately prints no
+title on the chat screen (`views/MobileShell.tsx:517`), and Home's dashboard has
+no picker at all, so on both of them the inference deleted the ONLY place the
+open conversation named itself. The dashboard's cold-started thread was
+anonymous, which is exactly what the two cases measured: the head was absent, so
+the title had zero sightings.
+
+The suspected cause in the brief — the solo effect's `else` branch at
+`ChatHomeScreen.tsx:571` — is NOT the cause of these two failures, which is why
+deleting it changed nothing. It is reached at boot (`selectionSpaceRef.current`
+is `null`, not `spaceId`) and calls `setSelectedRootId(null)` on state that is
+already `null`; the cold-start auto-open at `:756` then runs and opens the most
+recent thread normally. Verified: with only fix 1 applied, the conversation
+renders and the auto-open works. The branch is left as it is.
+
+**2. Home's New chat card really was dead, and the address cannot fix it.**
+`views/HomeView.tsx` derived the screen's selection straight from the address:
+
+```
+const routeThreadId = routeRoot?.type === 'chats' ? routeRoot.threadId : null;
+```
+
+Under solo, `null` is not silence — the screen reads a solo host's `null` as the
+instruction "no thread, show the new-chat composer" — and every arm of that
+expression produced `null`. So:
+
+* At boot the address was already `null`; New chat's
+  `navigate({ root: { type: 'chats', threadId: null } })` was the same value, the
+  effect's deps never changed, and nothing happened. Identical to the phone's
+  `setThreadId(null)`-from-`null` defect (MobileShell, task 01a01c3f).
+* `{ type: 'chats', threadId: null }` is not even an addressable state:
+  `routes/codec.ts:443-448` collapses it to the bare `/home` form on the way out
+  and `:616-624` normalizes it away on the way back in. A signal the codec is
+  entitled to erase cannot be the signal a button stands on.
+* Two further addresses spell `null` while meaning nothing of the sort: every
+  KIND root (browsing a list must not blank the conversation behind it, D6) and
+  `setRoot(CHATS_ROOT)`, which writes `threadId: null` only to name the root.
+  Both would have blanked the open chat once solo was declared.
+
+### Intended behaviour, as decided and now stated by the tests
+
+On the Home dashboard with no thread in the address, the screen opens the MOST
+RECENT chat (the cold-start auto-open, unchanged and still viewer-local — it
+writes no history), the conversation NAMES ITSELF in `.tch-conversation__head`,
+and Home's New chat card moves it to the new-chat composer. All three are
+asserted by `GateChatHome.test.tsx`.
+
+### Changes (all under `packages/tm8_ui_2.0/src`)
+
+* `chat-home/ChatHomeScreen.tsx` — new prop `hostNamesConversation` (default
+  `false`); the head is now suppressed by that, not by `soloConversation`.
+  Default is that the conversation names itself.
+* `chat-home/ChatHomeSurface.tsx` — pass-through for the new prop.
+* `craft/CraftScreen.tsx` — passes `hostNamesConversation`; Craft is the host
+  that earns the suppression, so Craft is the host that declares it. Its
+  `craft-screen.test.tsx` claim (`.tch-conversation__head` is null) still holds.
+* `views/HomeView.tsx` — the open conversation is MIRRORED state
+  (`chatSelection`), the way `MobileShell` mirrors it for the phone, adopted
+  render-phase from the address whenever the address NAMES a thread
+  (`/home/chat/{id}` — back/forward and shared links still win). A bare address
+  says nothing and the mirror keeps its answer. `onShowChat` sets the mirror to
+  `null` instead of navigating; `onThreadSelected` writes both; `onStageChange`
+  carries the mirrored thread so a stage opened on a cold-started conversation
+  is a stage OF it rather than of nothing.
+
+Tests repaired (no test deleted; both are readiness probes whose CLAIM is
+unchanged, only the query shape):
+
+* `chat-home/new-conversation-not-stolen.test.tsx` (4 probes) and
+  `chat-home/phone-chat-defects.test.tsx` (1 probe) —
+  `getByText(/Plan the launch sequence/)` also matched the thread's first turn
+  ("Plan the launch sequence and check what is already blocked.") and passed
+  only while a solo host named the conversation nowhere. With the head back the
+  substring matches twice and `getByText` refuses two. Switched to the exact
+  string, which names the head — the one element that STATES which thread is
+  open — matching the two probes already written that way in the same file. The
+  desktop probe at `new-conversation-not-stolen.test.tsx:184` keeps its regex:
+  there the thread column names it too, so the head is not the sole namer.
+
+### Results actually observed
+
+* `npx vitest run --maxWorkers=1 src/chat-home/GateChatHome.test.tsx` —
+  4 passed (was 2 failed / 2 passed).
+* `npx vitest run --maxWorkers=1 src/home-page/ src/views/ src/chat-home/` —
+  **104 files, 926 passed, 1 skipped, 0 failed.**
+* `npx vitest run --maxWorkers=1 src/craft/` — 31 passed (2 files), run because
+  `CraftScreen` changed.
+* `npx tsc -p tsconfig.json --noEmit` — exit 0, no output.
+* No hex added; `src/styles/tokens.css` untouched; no CSS changed by this repair.
+
+### Still open / believed wrong
+
+* **The phone now draws the conversation head too**, and that is deliberate:
+  `MobileShell`'s header prints no title on the chat screen (its comment reasons
+  that the screen below "is a blank canvas whose whole job is to invite a first
+  message", which stopped being true when cold start began auto-opening the most
+  recent thread). It is the same anonymity defect as Home's. Nothing pins the
+  phone's chat-screen chrome height, so no test moved — but it is a visual change
+  on the phone that nobody asked for in this task and should be looked at.
+* **The auto-opened conversation is still not addressable on Home.** The cold
+  start writes no history by design, so a viewer who lands on the dashboard and
+  reads a thread cannot copy a link to it until they select it explicitly. The
+  seam for closing this exists (`onSelectionChange`, which `MobileShell` uses)
+  and is deliberately NOT wired here: `navStore.navigate` is push-only, so
+  publishing the auto-open would put a history entry behind every boot. A
+  replace-history navigate verb is the missing piece.
+* **`ChatHomeScreen.tsx:570-571`** — the solo effect's
+  `if (selectionSpaceRef.current === spaceId) chooseRoot(null); else setSelectedRootId(null);`
+  is still there and is still doing nothing useful at boot. It is not a defect
+  today (Home no longer sends a bare `null`), but its `else` branch is now
+  unreachable from any shipped host that sends `null` deliberately, so it is
+  dead weight that reads like a rule.

@@ -181,9 +181,17 @@ export interface HomeChatRegions {
   createKindUnavailable: (kind: string) => { cause: string; remedy: string } | null;
   /** B's non-chat occupant, rendered inside the chat grid (D8). */
   centerOverride?: ReactNode;
-  /** The conversation the ADDRESS names (`/home/chat/{id}`), for the screen
-   *  to adopt — back/forward and shared links land on the right thread. */
-  routeThreadId?: EntityId | null;
+  /**
+   * The conversation the ADDRESS names (`/home/chat/{id}`), for the screen
+   * to adopt — back/forward and shared links land on the right thread.
+   *
+   * THREE STATES, NOT TWO, and the screen's props say so: `undefined` is "the
+   * address answers nothing, keep your own selection", `null` is "the answer
+   * is NO THREAD — the new-chat composer", and an id is that thread. Collapsing
+   * the first two is what made Home's New chat card inert; see `routeThreadId`
+   * below the root resolution for the whole account.
+   */
+  routeThreadId?: EntityId | null | undefined;
   /** The screen's thread selection, so the address can carry it (D1). */
   onThreadSelected?(id: EntityId | null): void;
   /**
@@ -254,7 +262,57 @@ export function HomeView(props: HomeViewProps) {
              everybody types has to mean the same thing every time. The rail
              still remembers within a visit; the address no longer does. */
           CHATS_ROOT;
-  const routeThreadId = routeRoot?.type === 'chats' ? routeRoot.threadId : null;
+  /* ── WHICH CONVERSATION IS OPEN IS MIRRORED STATE, NOT AN ADDRESS ─────────
+   *
+   * It used to be read straight off the address:
+   *
+   *     const routeThreadId = routeRoot?.type === 'chats' ? routeRoot.threadId : null;
+   *
+   * and every arm of that expression is a `null` the screen cannot act on.
+   * Home declares `soloConversation` now (`GateApp`), and under solo the
+   * screen reads the host's `null` as the INSTRUCTION "no thread — the
+   * new-chat composer". The screen's own props document a THIRD state for
+   * exactly this: `undefined` means "the host is driving nothing, keep your
+   * own selection". Home never spelt it.
+   *
+   * THAT IS WHY NEW CHAT WAS DEAD, and the address cannot fix it:
+   *
+   *  - The card's verb is "no thread". From an address already reporting
+   *    `null` that is not a change — same prop, same deps, the solo effect
+   *    never re-runs, the open conversation stays open. Exactly the phone's
+   *    `setThreadId(null)`-from-`null` defect (MobileShell, task 01a01c3f).
+   *  - And `{ type: 'chats', threadId: null }` is NOT AN ADDRESSABLE STATE.
+   *    `routes/codec` collapses it to the bare `/home` form on the way out and
+   *    normalizes it away on the way back in — deliberately, since `/home` IS
+   *    that address. A signal the codec is entitled to erase cannot be the
+   *    signal a button depends on.
+   *  - Two other addresses spell `null` while meaning nothing of the sort:
+   *    every KIND root (browsing a list must not blank the conversation
+   *    behind it, D6) and `setRoot(CHATS_ROOT)`, which writes `threadId: null`
+   *    just to name the root.
+   *
+   * So the selection is mirrored here, the way `MobileShell` mirrors it for
+   * the phone — the other solo host, which owns this state locally for the
+   * same reason. The ADDRESS still wins whenever it NAMES a thread
+   * (`/home/chat/{id}`: back/forward and shared links), which is the whole of
+   * what it can say; a bare address says nothing and the mirror keeps its
+   * answer. The cold-start auto-open stays viewer-local and writes no history,
+   * as its prop's docblock requires.
+   *
+   * The adoption is a render-phase adjustment rather than an effect, the same
+   * pattern (and for the same reason) as the screen's own: an effect would
+   * paint one frame of the outgoing conversation first.
+   */
+  const addressThreadId = routeRoot?.type === 'chats' ? routeRoot.threadId : null;
+  const [chatSelection, setChatSelection] = useState<EntityId | null | undefined>(
+    addressThreadId ?? undefined,
+  );
+  const [addressThreadSeen, setAddressThreadSeen] = useState<EntityId | null>(addressThreadId);
+  if (addressThreadSeen !== addressThreadId) {
+    setAddressThreadSeen(addressThreadId);
+    if (addressThreadId !== null) setChatSelection(addressThreadId);
+  }
+  const routeThreadId = chatSelection;
   /* THE STAGE the address names. A stage and an entity both want region B, and
      the ENTITY WINS when both are addressed: the entity was opened by a click
      the viewer just made, while a stage can persist in a link from yesterday.
@@ -653,7 +711,22 @@ export function HomeView(props: HomeViewProps) {
     rootKindOptions,
     selectedEntityId: centerId,
     onSelectEntity: (id) => navStore.getState().openCenter(id as EntityId),
-    onShowChat: () => navStore.getState().clearStack(),
+    /* NEW CHAT IS TWO FACTS, NOT ONE. `clearStack()` alone puts region B back
+       on the chat — which on the dashboard is already true, so the button did
+       NOTHING (measured live: same heading, same placeholder, same fourteen
+       turns). The second fact is the ANSWER "no thread", which the screen reads
+       as the new-chat composer once it knows it owns no thread column. Home's
+       card is the only New chat on this screen now that the surface is solo, so
+       it has to carry both.
+
+       THE SECOND FACT IS NOT A NAVIGATION, and trying to make it one is how
+       this stayed dead: `navigate({ root: { type: 'chats', threadId: null } })`
+       writes a state the codec collapses to the bare `/home` it already was.
+       It goes to the mirror instead — see `chatSelection` above. */
+    onShowChat: () => {
+      navStore.getState().clearStack();
+      setChatSelection(null);
+    },
     ...(cellBirth.refusal === null ? { onNewEntity: cellBirth.perform } : {}),
     newEntityUnavailable: cellBirth.refusal,
     onCreateKind: (kind) => birthFor(kind).perform(),
@@ -661,12 +734,17 @@ export function HomeView(props: HomeViewProps) {
     ...(centerOverride !== undefined ? { centerOverride } : {}),
     routeThreadId,
     /* The open conversation is part of the address (`/home/chat/{id}`), so
-       back/forward walk threads and a conversation can be linked to. */
-    onThreadSelected: (id) =>
+       back/forward walk threads and a conversation can be linked to.
+       The mirror is written too, and first: a NAMED thread round-trips through
+       the address unchanged, but `null` does not (the codec collapses it), so
+       the address alone cannot carry both halves of this verb. */
+    onThreadSelected: (id) => {
+      setChatSelection(id);
       navStore.getState().navigate({
         view: 'home',
         root: { type: 'chats', threadId: id },
-      }),
+      });
+    },
     /* The Cockpit's non-entity stages are part of the address too (`?stage=`,
        replacing `?graph=full`/`?gf=`): opening PUSHES history, so Back leaves
        the stage, a reload restores it, and a viewer can send someone the fleet
@@ -680,7 +758,12 @@ export function HomeView(props: HomeViewProps) {
         view: 'home',
         root: {
           type: 'chats',
-          threadId: routeThreadId,
+          /* THE OPEN CONVERSATION, so a stage opened on it is a stage OF it —
+             the address's own thread would be `null` on a cold-started
+             conversation the viewer never navigated to, and the shared link
+             would then name a stage of nothing. Two states here, not the
+             mirror's three: an address either names a thread or it does not. */
+          threadId: chatSelection ?? null,
           ...(next ? { stage: next } : {}),
         },
       }),

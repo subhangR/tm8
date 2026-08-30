@@ -193,6 +193,26 @@ export interface ChatHomeScreenProps {
    */
   soloConversation?: boolean;
   /**
+   * THE HOST ALREADY PRINTS THE CONVERSATION'S NAME, so this screen must not
+   * print it a second time.
+   *
+   * This used to be inferred from `soloConversation`, and the inference was
+   * wrong the moment a second solo host existed. Solo says "the thread COLUMN
+   * is yours"; it says nothing about whether anything on screen NAMES the open
+   * conversation. Craft is the host where the two coincide —
+   * `CraftChatPicker` prints the title one row above the transcript, so the
+   * screen's own head restated it and the pair was measured a row apart. The
+   * phone's header deliberately carries no title on the chat screen, and
+   * Home's dashboard has no picker at all: for both of them the inference
+   * deleted the ONLY place the conversation named itself, leaving a
+   * cold-started thread anonymous on the surface that is the product's front
+   * door.
+   *
+   * So the suppression is now declared by the host that earns it, and the
+   * default is that the conversation names itself.
+   */
+  hostNamesConversation?: boolean;
+  /**
    * The loaded thread list, published up for a host that draws its own
    * selector. ONE read stays behind it: a host that re-listed for its picker
    * would have a second list free to disagree with this one about what
@@ -323,6 +343,7 @@ export function ChatHomeScreen({
   routeThreadId,
   onThreadSelected,
   soloConversation = false,
+  hostNamesConversation = false,
   onThreadsChange,
   onSelectionChange,
   stage = null,
@@ -1675,14 +1696,26 @@ export function ChatHomeScreen({
           else onShowChat?.();
         }}
       >
-        {/* NOT IN SOLO MODE. Solo means the HOST drew the thread column as its
-            own header — Craft's `CraftChatPicker` prints this exact title one
-            row above — so rendering it again spends 57px restating what the
-            viewer just read, and the fallback line ("Work with your graph from
-            one place") is a caption for a chooser that solo does not have.
-            Full Chat Home keeps the header: there the title lives nowhere else
-            on screen, since the thread LIST names threads, not the open one.
-            The teammate is not lost — the picker's meta line carries it.
+        {/* NOT WHEN THE HOST ALREADY NAMES IT — `hostNamesConversation`, which
+            Craft passes because `CraftChatPicker` prints this exact title one
+            row above, so rendering it again spends 57px restating what the
+            viewer just read.
+
+            THE CONDITION USED TO BE `soloConversation`, AND THAT WAS THE BUG.
+            Solo means the thread COLUMN belongs to the host; it does not mean
+            anything on screen names the open conversation. Craft is the only
+            host where the two coincide. The phone's header prints no title on
+            the chat screen, and Home's dashboard — solo since 2026-08-30 — has
+            no picker at all, so on both of them the inference deleted the last
+            place a conversation named itself: a cold-started thread was
+            anonymous, and `GateChatHome`'s "the head is the only place a
+            conversation names itself" found zero sightings of the open
+            thread's title.
+
+            Full Chat Home keeps the header for the same reason it always did:
+            there the title lives nowhere else on screen, since the thread LIST
+            names threads, not the open one. Under Craft the teammate is not
+            lost — the picker's meta line carries it.
 
             NOT WHILE SOMETHING ELSE HOLDS THE STAGE EITHER (user report
             2026-08-19, task 01a017d3). The header names the CONVERSATION, and
@@ -1692,7 +1725,7 @@ export function ChatHomeScreen({
             nothing to do with. It is the chat's chrome; it belongs to the chat.
             (The rest of the chat's chrome around region B — the tray and the
             composer — is a separate open ruling on the same task.) */}
-        {soloConversation || centre != null ? null : (
+        {hostNamesConversation || centre != null ? null : (
           <header className="tch-conversation__head">
             <div className="tch-title">
               <strong>{detail?.summary.title ?? 'New chat'}</strong>

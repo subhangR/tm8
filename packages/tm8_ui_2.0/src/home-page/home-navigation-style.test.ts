@@ -260,7 +260,15 @@ describe('a name is never truncated by its own count', () => {
        `:not()` could only approximate. The hairline that this case is named
        for — measured 9px x 901px at x=370 against a 0px panel — is now
        impossible for a better reason than a hide: nothing renders it. */
-    expect(homeCss).toMatch(/\.hp-live \.tch-sidebar\s*\{\s*display:\s*none/);
+    /* THE HIDE IS GONE, AND ITS ABSENCE IS THE CLAIM. Home used to switch the
+       chat's thread column off with `display: none`, which hides a column the
+       screen is still building and still reasoning about — and that belief is
+       load-bearing: `soloConversation` is what makes a null selection mean
+       "the new-chat composer". Hiding it left New chat dead. Home declares
+       solo now, so there is no column to hide. */
+    expect(homeCss, 'the CSS hide came back and New chat will be dead again').not.toMatch(
+      /\.hp-live \.tch-sidebar\s*\{\s*display:\s*none/,
+    );
     expect(
       homeCss,
       'the column is conditioned again — a third column that can come back is the one that was removed twice',
@@ -290,11 +298,17 @@ describe('a name is never truncated by its own count', () => {
        replacement track must be floored — an unfloored `1fr` lets a long
        unbroken line in the transcript set the minimum (L4). Unconditional now,
        for the same reason the hide above is. */
-    const root = homeCss.match(/\.hp-live \.tch-root\s*\{([^}]*)\}/s)?.[1] ?? '';
-    expect(root, 'the hidden sidebar still reserves its column').toContain(
-      'grid-template-columns',
+/* THE TRACK OVERRIDE WENT WITH THE HIDE, and its absence is the claim.
+       Home used to collapse `.tch-root` to one column because it had hidden the
+       sidebar and `display: none` removes a grid ITEM but not its TRACK — the
+       conversation landed in the sidebar's 280px column and overflowed it at
+       308px beside a thousand empty pixels. None of that arises now: the screen
+       is told it is solo, so it renders `.tch-root--solo` (its own one-column
+       rule) and never builds the column at all. An override here would be Home
+       correcting a layout the screen no longer produces. */
+    expect(homeCss, 'Home is overriding a grid the chat screen no longer builds').not.toMatch(
+      /\.hp-live \.tch-root\s*\{/,
     );
-    expect(root).toContain('minmax(0, 1fr)');
   });
 
   it('gives the kind’s list the whole working area, and floors both tracks when B opens', () => {

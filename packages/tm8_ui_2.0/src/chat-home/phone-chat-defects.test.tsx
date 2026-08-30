@@ -214,7 +214,13 @@ describe('the screen tells a solo host what it actually selected', () => {
         onSelectionChange={(id) => seen.push(id)}
       />,
     );
-    await waitFor(() => expect(view.getByText(/Plan the launch sequence/)).toBeTruthy());
+    /* EXACT, like the two probes above it and unlike the regex it replaced.
+       `/Plan the launch sequence/` also matched the thread's first turn, and
+       got away with it only while a solo host named the conversation nowhere.
+       `.tch-conversation__head` names it again (2026-08-30), so the substring
+       matches twice. The claim — cold start opened the most recent thread and
+       PUBLISHED it — is the line below, and is untouched. */
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
     expect(seen.at(-1)).toBe(CHAT_HOME_FIXTURE_THREAD.summary.rootId);
   });
 });

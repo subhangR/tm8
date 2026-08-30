@@ -2270,6 +2270,19 @@ export function GateApp(props: GateAppProps = {}) {
                      a session is created by RUNNING a task, whose Run lives
                      on the hosted tile itself. */
                   renderRootList={regions.renderRootList}
+                  /* SOLO ON HOME, AND THE SCREEN HAS TO BE TOLD.
+                     Home's thread column was switched off by a stylesheet —
+                     `.hp-live .tch-sidebar { display: none }` — which hides the
+                     column but leaves the screen believing it still owns one.
+                     That belief is load-bearing: `soloConversation` is what
+                     makes a `null` from the host mean "the new-chat composer"
+                     rather than "the host has not chosen yet", so the New chat
+                     card clicked and NOTHING happened — measured on the live
+                     build, same heading, same placeholder, same fourteen turns.
+                     Declaring it instead of hiding it also stops the column
+                     being built at all, and retires three CSS overrides that
+                     existed only to undo it. */
+                  soloConversation
                   root={regions.root}
                   onRoot={regions.onRoot}
                   kindCell={regions.kindCell}

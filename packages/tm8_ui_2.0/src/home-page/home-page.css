@@ -1036,6 +1036,13 @@
      there is more without spending a control on saying so. */
   max-height: 240px;
   overflow-y: auto;
+  /* IT MUST NOT COME TO REST MID-CARD. At 240px the second row is cut through
+     its middle, which reads as a broken box rather than as "there is more" —
+     and the cards are not a fixed height (a session with pull requests is
+     taller than a chat), so no max-height can land on a row boundary by
+     arithmetic. Snapping does it by construction: the scroller always settles
+     with a row's top edge at the top, whatever that row happens to be. */
+  scroll-snap-type: y proximity;
   /* `grid-auto-rows: max-content` IS LOAD-BEARING AND WAS A REAL BUG.
      With `max-height` making the grid's block size definite, the implicit
      `auto` rows were divided across that height instead of taken from their
@@ -1053,6 +1060,7 @@
    interactive swallows its own clicks. So the open gesture is an inner button
    that fills the card, and the chips sit beside it. */
 .cv2-root .hp-acard {
+  scroll-snap-align: start;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1132,9 +1140,20 @@
 /* THE MIDDLE COLUMN IS GONE. It stated the same taxonomy the rail states, and
    it was the only way to pick a conversation — which is why it could not go
    until the Active strip above could carry chats. It can now. */
-.cv2-root .hp-live .tch-sidebar { display: none; }
 
-/* AND THE TRACK IT LEFT BEHIND HAS TO GO WITH IT.
+
+/* THE THREE OVERRIDES THAT USED TO LIVE HERE ARE GONE, and their absence is
+   the fix rather than a tidy-up. They hid `.tch-sidebar`, collapsed
+   `.tch-root` to one column, and hid the divider — undoing, in CSS, a column
+   the chat screen was still building and still reasoning about. The screen has
+   a `soloConversation` prop that means exactly "you do not own a thread
+   column"; Home passes it now (views/GateApp.tsx). Hiding a thing is not the
+   same as not having it, and the difference was a dead New chat button.
+
+   Kept below for the record, because the next reader will otherwise
+   re-introduce the hide:
+
+     AND THE TRACK IT LEFT BEHIND HAS TO GO WITH IT.
    `display: none` stops an element being a grid ITEM; it does not remove the
    grid TRACK it used to sit in. `.tch-root` stayed two columns — measured on
    the live build as `280px 1005.82px` — so with the sidebar gone the
@@ -1144,7 +1163,7 @@
    screen. One floored column here; L4 forbids an unfloored `1fr`, and this one
    holds a transcript that would otherwise set the minimum by its longest
    unbroken line. */
-.cv2-root .hp-live .tch-root { grid-template-columns: minmax(0, 1fr); }
+
 
 /* AND WHAT SELECTING A KIND IN THE RAIL MEANS IS ANSWERED SOMEWHERE ELSE NOW.
    These two rules were briefly conditioned on `:not([data-kind])` so that the

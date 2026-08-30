@@ -88,7 +88,13 @@ export function HomeRail({ groups, activeKind, onSelect, onHome, collapsed, onTo
                 <path d="M4 11l8-7 8 7" /><path d="M6 10v9h12v-9" />
               </svg>
             </span>
-            {!collapsed ? <span className="hr-rail__label">Home</span> : null}
+            {/* UNCONDITIONAL, like every other row. I gated this on
+                `!collapsed` and the row rendered as a bare house icon beside
+                nine labelled rows — the collapsed variant is handled by CSS
+                (`.hr-rail--collapsed .hr-rail__label`), not by not rendering
+                the word, which is exactly how the label stays available to a
+                screen reader when the rail is narrow. */}
+            <span className="hr-rail__label">Home</span>
           </button>
         ) : null}
         {groups.map((group) => (

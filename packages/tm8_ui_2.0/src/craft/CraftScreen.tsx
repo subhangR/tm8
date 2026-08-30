@@ -467,6 +467,15 @@ export function CraftScreen({
               /* TWO PANES: the thread column is this screen's, drawn as the
                  picker above. `routeThreadId` is authoritative in solo mode. */
               soloConversation
+              /* AND THE PICKER ABOVE IS WHERE THIS CONVERSATION IS NAMED, so
+                 the screen must not print its own head under it — the pair was
+                 measured one row apart. This used to ride on `soloConversation`
+                 and it should never have: solo is about the COLUMN, and the
+                 other two solo hosts (the phone, Home's dashboard) print no
+                 title anywhere, so inferring it there left the open thread
+                 anonymous. Craft is the host that earns the suppression, so
+                 Craft is the host that declares it. */
+              hostNamesConversation
               routeThreadId={requestedThreadId}
               onThreadsChange={setThreads}
               onSelectionChange={adoptSelection}
