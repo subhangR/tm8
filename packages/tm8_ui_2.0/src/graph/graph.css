@@ -832,6 +832,20 @@
   flex: none;
 }
 
+/* THE OTHER HALF OF THE LAW: cap the incompressible side. flex: none alone only
+   changes WHICH child loses, not THAT one does — an uncapped nowrap name in a
+   nowrap face overflows its own trigger. Today the labels are fixed short
+   literals and .gv-toolbar happens to wrap, so nothing is visibly wrong; both
+   of those are properties of the DATA and the container, not of this rule, and
+   a dynamic label (a kind name, a saved-view name) would end that. The ceiling
+   makes the guarantee belong to the rule. The name is a flex item of the
+   inline-flex face and so is blockified — text-overflow reaches it. */
+.gv-select__name {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .gv-select__state {
   min-width: 0;
   overflow: hidden;

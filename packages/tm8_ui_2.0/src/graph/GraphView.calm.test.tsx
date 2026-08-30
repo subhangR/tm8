@@ -105,5 +105,12 @@ describe('calm graph CSS invariants', () => {
     // number wearing a right one's clothes. The ellipsis is what makes the
     // truncation legible AS truncation.
     expect(rule('.gv-band__count')).toMatch(/text-overflow:\s*ellipsis/);
+    // BOTH HALVES OF THE LAW. A yielding count is only half of it: the child
+    // that cannot shrink needs a ceiling, or it overflows its own trigger the
+    // moment a label stops being a short fixed literal. `rule` matches the
+    // standalone .gv-select__name block, not the grouped flex: none selector
+    // above it, because that one is followed by a comma rather than a brace.
+    expect(rule('.gv-select__name')).toMatch(/max-width/);
+    expect(rule('.gv-select__name')).toMatch(/text-overflow:\s*ellipsis/);
   });
 });
