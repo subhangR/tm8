@@ -93,8 +93,6 @@ export interface HomePageProps {
   onOpenKind?(kind: string): void;
   onOpenEntity(id: string): void;
   onOpenWorkspace(): void;
-  /** Back to the new-conversation composer. Chat's own create. */
-  onNewChat?: (() => void) | undefined;
   /** Create a kind and land on its root. The host already owns this verb. */
   onCreateKind?: ((kind: string) => void) | undefined;
   /**
@@ -120,11 +118,9 @@ export interface HomePageProps {
  * controls for one verb is how "options repeating" comes back.
  */
 function HomeStart({
-  onNewChat,
   onCreateKind,
   createKindUnavailable,
 }: {
-  onNewChat?: (() => void) | undefined;
   onCreateKind?: ((kind: string) => void) | undefined;
   createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
 }) {
@@ -149,21 +145,37 @@ function HomeStart({
     );
   };
 
-  const chat = onNewChat ? (
-    <button type="button" className="hp-start__verb" onClick={onNewChat}>
-      New chat
-    </button>
-  ) : null;
+  /* NEW CHAT IS DELIBERATELY ABSENT, and this is the one place this row
+   * departs from the owner's literal words ("one create new chat, New SESSIONS
+   * AND New Task first").
+   *
+   * The chat surface ALREADY owns that verb — `ListRootHeader` renders a `+`
+   * labelled "New chat" beside the Chats tab, two inches from here, on this
+   * same screen. Adding a second one made the gate fail with
+   *
+   *   Found multiple elements with the role "button" and name /^New chat$/
+   *
+   * which is exactly what `HomeCreateVerbs`' own docblock predicted: "Two
+   * controls for one verb is how 'options repeating' comes back, which is the
+   * complaint the dashboard exists to answer." I quoted that rule and then
+   * broke it in the same change.
+   *
+   * Removing the OTHER control was the alternative and it is the riskier half:
+   * seven assertions across three files defend it, one of them the subtle
+   * "a new conversation is not stolen" case.
+   *
+   * SO THIS IS THE OWNER'S CALL, NOT A SETTLED DESIGN. If they want all three
+   * verbs together, the `+` moves into this row and those tests move with it.
+   * What is not on the table is shipping two buttons that say "New chat". */
   const session = kindVerb('session', 'New session');
   const task = kindVerb('task', 'New task');
 
   /* Nothing wired ⇒ no row, rather than an empty box asserting "you can start
-     three things" and offering none. */
-  if (!chat && !session && !task) return null;
+     things" and offering none. */
+  if (!session && !task) return null;
 
   return (
     <section className="hp-start" aria-label="Start something">
-      {chat}
       {session}
       {task}
     </section>
@@ -302,7 +314,6 @@ export function HomePage(props: HomePageProps) {
        * surface, which is the whole of the complaint. */}
       <div className="hp-side">
       <HomeStart
-        onNewChat={props.onNewChat}
         onCreateKind={props.onCreateKind}
         createKindUnavailable={props.createKindUnavailable}
       />
