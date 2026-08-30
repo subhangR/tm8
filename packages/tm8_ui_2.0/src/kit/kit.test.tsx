@@ -84,6 +84,30 @@ describe('kit primitives', () => {
     );
   });
 
+  it('Pill filled variant keeps its tone and adds the delta-badge class', () => {
+    const { container, getByText } = render(
+      <Pill tone="brand" filled>
+        2147 new
+      </Pill>,
+    );
+    // The tone must survive: `filled` is a SURFACE, not a replacement tone.
+    expect(container.querySelector('.kit-pill--brand')).not.toBeNull();
+    expect(container.querySelector('.kit-pill--filled')).not.toBeNull();
+    getByText('2147 new');
+  });
+
+  it('Pill filled and outline stay mutually exclusive', () => {
+    // outline is its own form (the list-header control); asking for both must
+    // not produce a half-outlined delta badge.
+    const { container } = render(
+      <Pill outline filled>
+        filter ▾
+      </Pill>,
+    );
+    expect(container.querySelector('.kit-pill--outline')).not.toBeNull();
+    expect(container.querySelector('.kit-pill--filled')).toBeNull();
+  });
+
   it('Eyebrow renders mono micro-label with faint variant', () => {
     const { container } = render(<Eyebrow faint>Runs · 1 live</Eyebrow>);
     expect(container.querySelector('.kit-eyebrow--faint')).not.toBeNull();
@@ -233,6 +257,50 @@ function block(css: string, selector: string, sheet: string): string {
 /* The grammar itself: 2px solid through the dedicated --pn-focus token with
    the brass fallback — the exact wave-1 ring (panels.css, auth.css). */
 const RING = /outline:\s*2px solid var\(--pn-focus,\s*var\(--pn-brand-2\)\)/;
+
+/**
+ * The delta badge, pinned as a CSS contract because `css: false` means no
+ * rendered-DOM assertion in this suite can see a background or a border.
+ *
+ * The values come from MEASURING the owner's target, not from reading it —
+ * three careful readers disagreed by eye about whether these pills were filled
+ * or outlined, and a pixel scan settled it: border rgb(194,217,253) over fill
+ * rgb(236,243,254). Both, not either.
+ */
+describe('the delta badge — filled pill carries BOTH a fill and an edge', () => {
+  const TONES = ['run', 'wait', 'block', 'info', 'idle', 'brand'] as const;
+
+  it('declares its own border rather than inheriting one', () => {
+    const filled = block(kitCss, '.kit-pill--filled {', 'kit.css');
+    expect(filled).toMatch(/border:\s*1px solid/);
+    // A border added to a pill that sizes by content must not grow it.
+    expect(filled).toMatch(/box-sizing:\s*border-box/);
+  });
+
+  it.each(TONES)('%s sets BOTH background and border-color, never one', (tone) => {
+    const rule = block(kitCss, `.kit-pill--filled.kit-pill--${tone}`, 'kit.css');
+    expect(rule).toMatch(new RegExp(`background:\\s*var\\(--pn-${tone}-soft\\)`));
+    expect(rule).toMatch(/border-color:\s*color-mix\(/);
+  });
+
+  /**
+   * THE REASON THIS RULE RESTATES A FILL IT LOOKS LIKE IT COULD INHERIT.
+   * `.kit-pill`'s default is not the same on every branch this can land on: on
+   * `main` it is a soft fill with no border; on the calm branch it is a
+   * bordered neutral card with no fill. A variant supplying only the missing
+   * half would be correct on one base and wrong on the other — the
+   * "depends on another branch's commit" defect, expressed in CSS. Specifying
+   * both makes it base-independent, and this test is what stops a later tidier
+   * "simplifying" it back to one property.
+   */
+  it('is base-independent: neither property may be dropped as redundant', () => {
+    for (const tone of TONES) {
+      const rule = block(kitCss, `.kit-pill--filled.kit-pill--${tone}`, 'kit.css');
+      expect(rule.match(/background:/g) ?? []).toHaveLength(1);
+      expect(rule.match(/border-color:/g) ?? []).toHaveLength(1);
+    }
+  });
+});
 
 describe('kit focus rings — every interactive atom, one grammar', () => {
   it.each([
