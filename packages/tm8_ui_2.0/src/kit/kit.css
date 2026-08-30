@@ -43,6 +43,56 @@
 .cv2-root .kit-pill--idle   { color: var(--pn-idle); }
 .cv2-root .kit-pill--brand  { color: var(--pn-brand-2); }
 
+/* --- Filled — the DELTA badge ("2147 new", "9 live") ---------------------
+   Soft fill AND a hairline in the same hue. Measured off the owner's Home
+   target rather than read off it, because three careful readers disagreed
+   about this element by eye and the scan settled it in a minute:
+
+     "2147 new"   border rgb(194,217,253)   over fill rgb(236,243,254)
+     "9 live"     border rgb(205,240,228)   over fill rgb(231,248,242)
+
+   White -> one distinctly darker border row -> a sustained fill body -> border
+   -> white. Both, not either. `--pn-*-soft` is the 10-12% fill and the edge is
+   ~25% of the same tone over the card, so no new colour token is needed.
+
+   WHY THIS RULE RESTATES THE FILL IT SEEMS TO INHERIT. The default `.kit-pill`
+   is NOT the same on every branch this can land on: on `main` it is a soft fill
+   with no border; on the calm branch it is a bordered neutral card with no fill.
+   A variant that only added the missing half would be correct on one base and
+   wrong on the other — the "depends on another branch's commit" defect, in CSS.
+   So this fully specifies both properties and is right on either.
+
+   `filled` is for a DELTA. A raw total ("2351", "62", "13/30") is reference and
+   stays plain ink with no pill at all. */
+.cv2-root .kit-pill--filled {
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line);
+}
+.cv2-root .kit-pill--filled.kit-pill--run {
+  background: var(--pn-run-soft);
+  border-color: color-mix(in srgb, var(--pn-run) 25%, var(--pn-card));
+}
+.cv2-root .kit-pill--filled.kit-pill--wait {
+  background: var(--pn-wait-soft);
+  border-color: color-mix(in srgb, var(--pn-wait) 25%, var(--pn-card));
+}
+.cv2-root .kit-pill--filled.kit-pill--block {
+  background: var(--pn-block-soft);
+  border-color: color-mix(in srgb, var(--pn-block) 25%, var(--pn-card));
+}
+.cv2-root .kit-pill--filled.kit-pill--info {
+  background: var(--pn-info-soft);
+  border-color: color-mix(in srgb, var(--pn-info) 25%, var(--pn-card));
+}
+.cv2-root .kit-pill--filled.kit-pill--idle {
+  background: var(--pn-idle-soft);
+  border-color: color-mix(in srgb, var(--pn-idle) 25%, var(--pn-card));
+}
+.cv2-root .kit-pill--filled.kit-pill--brand {
+  background: var(--pn-brand-soft);
+  border-color: color-mix(in srgb, var(--pn-brand) 25%, var(--pn-card));
+}
+
 /* Outlined variant — the T0-3 list-header filter/sort pills. */
 .cv2-root .kit-pill--outline {
   font-size: 10px;
@@ -52,6 +102,33 @@
   padding: 2px 9px;
 }
 
+/* The status dot is DRAWN, not typed. It used to be a literal U+25CF BLACK
+   CIRCLE in the JSX — a codepoint from a font we do not ship, which is the
+   U+FF0B failure with the trigger not pulled. The glyph census cleared six
+   geometric characters but never tested this one, and its own caveat is the
+   point: the ones it cleared render IDENTICALLY in both font columns, so a
+   SYSTEM FALLBACK supplies them and our shipped subsets do not. "It renders
+   here" is the weakest possible evidence about a machine none of us has seen.
+
+   `currentColor` is doing real work: the dot takes the pill's own tone, so all
+   six tones are covered by one rule and the dot can never drift from the word
+   beside it. That is the colour+word law holding by construction rather than
+   by six rules agreeing.
+
+   SIZE IS IN em, DELIBERATELY. I tried to measure the target's dot and could
+   not isolate it — the amber label shares its colour window, so the scan reads
+   the dot and the words as one run. Bounded at roughly 5-6px at that raster and
+   no tighter. Rather than pin a px I could not cleanly measure, 0.5em tracks
+   the pill's own 9.5px face (~4.75px) and stays correct if that face ever
+   changes. An unmeasurable number reported as measured is the failure this
+   pass keeps finding; a bound and a ratio is the honest form. */
+.cv2-root .kit-pill__dot {
+  flex: none;
+  inline-size: 0.5em;
+  block-size: 0.5em;
+  border-radius: 50%;
+  background: currentColor;
+}
 .cv2-root .kit-pill__dot--pulse {
   animation: pnPulse 1.6s infinite;
 }
