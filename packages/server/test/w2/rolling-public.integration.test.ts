@@ -337,9 +337,13 @@ const COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS = [
   'collections.removeItem',
 ] as const;
 
-/** TM8 Chat's one budgeted catalog command, mounted in degraded mode too. */
+/** TM8 Chat's budgeted catalog commands, mounted in degraded mode too. */
 const CHAT_NET_NEW_OPERATIONS = [
   'chat.threads.start',
+  // Stopping the turn a thread is running. Its own operation rather than a
+  // reuse of `execution.terminate`, which targets a work_session — and a chat
+  // thread has none in its path.
+  'chat.threads.interrupt',
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
@@ -489,7 +493,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
-    expect(registry.size).toBe(152); // +3 (148): the spaces.workflows handlers
+    expect(registry.size).toBe(153); // +1: the chat.threads.interrupt handler
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -661,7 +665,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // their bodies (auth.claim.reissue takes no body, so it binds nothing).
     // +2 (148): .upsert binds WorkflowInputSchema, .delete binds
     // RequiredCommandContextSchema; .list is a READ and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(99);
+    // +1: InterruptChatThreadInputSchema binds chat.threads.interrupt.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(100);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -819,8 +824,9 @@ describe.sequential('W2.I02 real production public surface', () => {
     // all mounted and all registered.
     // +3 (148): the three spaces.workflows routes, all mounted and all
     // registered. MEASURED off /health.
-    expect(health).toMatchObject({ ok: true, operations: 171, implemented: 169 });
-    expect(harness.production.server.registry.size).toBe(169);
+    // +1 each: chat.threads.interrupt is catalogued AND mounted.
+    expect(health).toMatchObject({ ok: true, operations: 172, implemented: 170 });
+    expect(harness.production.server.registry.size).toBe(170); // +1 chat.threads.interrupt
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -840,7 +846,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(169); // +3 (148): the spaces.workflows handlers
+    expect(registered.size + residual.length).toBe(170); // +1 chat.threads.interrupt
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

@@ -133,6 +133,8 @@ import {
   type HomeSnapshot,
   type StartChatThreadInput,
   type StartChatThreadResult,
+  type InterruptChatThreadInput,
+  type InterruptChatThreadResult,
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
@@ -942,6 +944,17 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** Amendment 10: `chat.threads.start` — the chat-home bridge's write half. */
     startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult> {
       return http.call<StartChatThreadResult>('chat.threads.start', { body: input });
+    },
+
+    /** `chat.threads.interrupt` — stop the turn this thread is running. */
+    interruptChatThread(
+      rootMessageId: EntityId,
+      input: InterruptChatThreadInput,
+    ): Promise<InterruptChatThreadResult> {
+      return http.call<InterruptChatThreadResult>('chat.threads.interrupt', {
+        params: { rootMessageId },
+        body: input,
+      });
     },
 
     /** Note 2: bare `MessageView` lifted into the seam's `CommandResult`. */

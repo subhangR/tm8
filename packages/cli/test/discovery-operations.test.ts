@@ -63,7 +63,7 @@ import { createOutput } from '../src/output.js';
 // public, all with `space task-workflow` commands. MEASURED.
 // 166 -> 169 (141): the three account-lifecycle ops. MEASURED.
 // 169 -> 172 (148): the three spaces.workflows ops. MEASURED.
-const EXPECTED_ROWS = 172;
+const EXPECTED_ROWS = 173; // +1: chat.threads.interrupt
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -177,7 +177,8 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    expect(histogram).toEqual({ public: 168, composite: 1, internal: 1, reserved: 2 });
+    // 168 -> 169: chat.threads.interrupt is public too.
+    expect(histogram).toEqual({ public: 169, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -191,8 +192,11 @@ describe('the CLI command projection', () => {
     // oblige four command implementations in the same change.
     expect(commandless.sort()).toEqual([
       'bridge.fetchBlob',
-      // chat.threads.start is browser-composer-only by design (D1/D2): a chat
+      // Both chat rows are browser-composer-only by design (D1/D2): a chat
       // turn is a UI conversation, and the CLI already has message send.
+      // Stopping one is the same argument — the person who wants to stop a run
+      // is the one watching it, and they are watching it in the composer.
+      'chat.threads.interrupt',
       'chat.threads.start',
       'credentials.delete',
       'credentials.loginSessions.finish',
@@ -240,8 +244,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the 25 commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 25);
+    // Minus the 26 commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 26);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

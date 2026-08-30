@@ -56,10 +56,15 @@ interface ThreadState {
   closed: boolean;
 }
 
+/**
+ * What a resume must MATCH about the runtime it is resuming. Only the two facts
+ * that identify the conversation: which native session, and where. The model is
+ * not recorded here because it is not part of that identity — see the resume
+ * guard in `startThread` for why a resume on a different model is legitimate.
+ */
 interface InterruptedThread {
   readonly nativeSessionId: string;
   readonly cwd: string;
-  readonly model: string;
 }
 
 export interface ClaudeHeadlessAdapterOptions {
@@ -133,11 +138,26 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     }
     const interrupted = this.interruptedThreads.get(input.threadId);
     if (input.resume === 'post_interrupt') {
+      /**
+       * THE MODEL IS DELIBERATELY NOT PART OF THIS TEST.
+       *
+       * `nativeSessionId` and `cwd` are: resuming a different conversation, or
+       * the right conversation in the wrong directory, is a resume of something
+       * other than what was interrupted, and the guard is the whole point.
+       *
+       * The model is not the same kind of fact. `--resume <id>` with a
+       * different `--model` continues the SAME conversation on a different
+       * model, which is a thing a person may legitimately want and, since the
+       * per-turn model override (170), a thing they can now ask for. Keeping
+       * the model in this test made the sequence "stop the run, pick another
+       * model, send again" fail with `resume_mismatch` — the two run controls
+       * refusing each other, and the second one is exactly what a person does
+       * after stopping the first.
+       */
       if (
         interrupted &&
         (interrupted.nativeSessionId !== input.nativeSessionId ||
-          interrupted.cwd !== input.cwd ||
-          interrupted.model !== input.model)
+          interrupted.cwd !== input.cwd)
       ) {
         throw new AgentRuntimeError(
           `agent thread '${input.threadId}' resume config does not match its interrupted runtime`,
@@ -666,7 +686,6 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       this.interruptedThreads.set(state.input.threadId, {
         nativeSessionId: state.input.nativeSessionId,
         cwd: state.input.cwd,
-        model: state.input.model,
       });
     }
     if (state.active) {

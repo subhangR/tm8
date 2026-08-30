@@ -116,6 +116,10 @@ export const OPERATIONS = [
   // chat — configure an already-posted human root and start its first turn.
   // Every later user turn still travels through messages.post.
   { name: 'chat.threads.start',      method: 'POST',   path: '/v2/chat/threads',                            kind: 'command', status: 'v1' },
+  // …and stop the turn one is running. Addressed by the thread root, because
+  // that is what the chat runtime is keyed by — there is no work_session in a
+  // chat thread's path for `execution.terminate` to target.
+  { name: 'chat.threads.interrupt',  method: 'POST',   path: '/v2/chat/threads/:rootMessageId/interrupt',   kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },

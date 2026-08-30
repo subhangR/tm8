@@ -38,6 +38,11 @@ export interface ChatHomeL2Bridge {
   listThreads?(spaceId: SpaceId | string): Promise<readonly ChatThreadListItem[]>;
   readParts?(messageId: EntityId): Promise<readonly ChatTurnPart[]>;
   configureThread?(input: ChatConfigureInput): Promise<ChatStartResult>;
+  /**
+   * `chat.threads.interrupt`. Absent ⇒ this node cannot stop a running turn,
+   * and the composer says so on the control rather than hiding it.
+   */
+  interruptThread?(rootMessageId: EntityId): Promise<void>;
 }
 
 const LIST_UNAVAILABLE =
@@ -233,9 +238,31 @@ export function createChatHomePortFromSeam(
         parentMessageId: input.threadRootId,
         body: input.body,
         ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
+        // The per-turn model rides on the message, exactly as attachments do.
+        ...(input.model ? { model: input.model } : {}),
       });
       return { messageId: messageIdFrom(result) };
     },
+    /**
+     * STOP.
+     *
+     * Present only when L2 supplied the bridge, and that optionality is the
+     * whole point: the composer draws a live Stop when `port.interrupt` exists
+     * and a disabled loader WITH ITS REASON when it does not, so a node without
+     * the operation never looks as though stopping simply went unconsidered.
+     *
+     * Before this, no port supplied it and every real chat took the second
+     * branch — the affordance was designed, built, tested against the fixture
+     * port, and unreachable in the app. That was the whole of "there is no
+     * option to stop".
+     */
+    ...(bridge.interruptThread
+      ? {
+        async interrupt(threadRootId: EntityId): Promise<void> {
+          await bridge.interruptThread!(threadRootId);
+        },
+      }
+      : {}),
     subscribe(listener) {
       return seam.onChatTurn(listener);
     },
