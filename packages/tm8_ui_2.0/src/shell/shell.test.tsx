@@ -671,10 +671,10 @@ describe('SpaceSwitcher — the identity block (revision 11)', () => {
     const onAddServer = vi.fn();
     const { getByLabelText, getByText } = renderSwitcher({ onAddSpace, onAddServer });
     fireEvent.click(getByLabelText('Server and space: local · atelier'));
-    fireEvent.click(getByText('＋ new space'));
+    fireEvent.click(getByText('+ new space'));
     expect(onAddSpace).toHaveBeenCalledOnce();
     fireEvent.click(getByLabelText('Server and space: local · atelier'));
-    fireEvent.click(getByText('＋ add server'));
+    fireEvent.click(getByText('+ add server'));
     expect(onAddServer).toHaveBeenCalledOnce();
   });
 

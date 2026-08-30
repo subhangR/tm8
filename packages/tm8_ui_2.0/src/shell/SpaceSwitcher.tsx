@@ -176,6 +176,12 @@ export function SpaceSwitcher(props: SpaceSwitcherProps) {
             );
           })}
 
+          {/* PLAIN ASCII `+`, not `＋` (U+FF0B FULLWIDTH PLUS), on both rows.
+              The self-hosted webfonts are latin/latin-ext subsets, so the
+              fullwidth codepoint is in none of them and falls through to a
+              system font that may not carry it either — on Linux it renders as
+              a literal FF/0B hex box. A control's verb must not depend on a
+              CJK-width codepoint. `+` is in every subset the product ships. */}
           <div className="shell-switcher__footer">
             <button
               type="button"
@@ -191,7 +197,7 @@ export function SpaceSwitcher(props: SpaceSwitcherProps) {
                   : (event) => event.preventDefault()
               }
             >
-              ＋ new space
+              + new space
             </button>
             <button
               type="button"
@@ -207,7 +213,7 @@ export function SpaceSwitcher(props: SpaceSwitcherProps) {
                   : (event) => event.preventDefault()
               }
             >
-              ＋ add server
+              + add server
             </button>
           </div>
         </div>
