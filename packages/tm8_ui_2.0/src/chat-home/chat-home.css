@@ -16,6 +16,21 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* ListRootHeader is shared with Work, outside this lane's edit boundary. Its
+   generic "New …" controls currently hand us a fullwidth plus, which the
+   self-hosted Latin fonts cannot draw. Suppress that text glyph on Chat Home
+   and paint the same affordance with ASCII instead. The aria-label gate leaves
+   verb-specific controls such as Sessions' terminal icon alone. */
+.tch-root button[aria-label^='New '] > span[aria-hidden] {
+  font-size: 0;
+}
+
+.tch-root button[aria-label^='New '] > span[aria-hidden]::before {
+  content: '+';
+  font-size: var(--pn-fs-body);
+  line-height: 1;
+}
+
 .tch-sidebar {
   display: flex;
   flex-direction: column;
@@ -1984,7 +1999,7 @@ button.tch-entity-chip:focus-visible { outline: 2px solid var(--pn-focus, var(--
 /* THE REFUSED-ATTACH CONTROL WAS THE TALLEST THING IN THE ROW, at 50px against
    a 44px floor — `rich-input.css` gives `.ri-card__foot .hon-disabled` a
    `min-height` and the `DisabledIconControl` inside it adds its own box on top.
-   It is a `＋` in the same slot as `.tch-attach`, so the two must measure the
+   It is a `+` in the same slot as `.tch-attach`, so the two must measure the
    same or the row's height depends on whether this surface happens to have an
    attachment port wired. Pinned to the floor exactly, both axes, the way
    `.tch-attach` is. */
