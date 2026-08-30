@@ -1917,16 +1917,23 @@
    widths where the four could not fit on one line; nothing moves at a width
    where they already fit. Height is the cheapest thing in this trade: the
    alternative was spending a whole category. */
+/* ONE HEADER, NOT A BOX PLUS A ROW (owner, 2026-08-30: "To do in progress done
+   cancelled filters people these can be more better in one card cleanly").
+   The tabs used to carry their own 1px frame and card ground, so the header
+   read as a segmented CONTROL sitting above a separate strip of filters — two
+   objects doing one job. The frame is gone: the tabs are now words in the
+   header, the active one marked by the ring the owner chose, and the filter
+   row's rule closes the region. One card, two lines inside it. */
 .cv2-root .lp__tabs {
   flex: none;
   display: inline-flex;
   flex-wrap: wrap;
   row-gap: 2px;
   max-width: 100%;
-  border: 1px solid var(--pn-line-2);
-  border-radius: 6px;
+  border: 0;
+  border-radius: 0;
   overflow-y: hidden;
-  background: var(--pn-card);
+  background: none;
 }
 .cv2-root .lp__tabs::-webkit-scrollbar { display: none; }
 /* TIER 3 (Kinetic W4), RECLASSIFIED (wave 3): the LENS — whisper chips. 28px

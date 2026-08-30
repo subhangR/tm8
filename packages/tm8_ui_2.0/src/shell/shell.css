@@ -105,8 +105,18 @@
   font-weight: 700;
   color: var(--pn-ink);
 }
+/* THE NAV SITS IN THE MIDDLE (owner, 2026-08-30: "home work craft all these
+   move into between for better visual").
+   The spacer used to take ALL the free space, which pinned the tabs hard left
+   against the space name. It now takes none, and the tabs take the free space
+   EQUALLY on both sides via `margin-inline: auto` — so Home/Work/Board/Craft
+   sit centred between the identity block and the account controls, and stay
+   centred as either side changes width. */
 .cv2-root .shell-tabbar__spacer {
-  flex: 1;
+  flex: none;
+}
+.cv2-root .shell-tabbar__tabs {
+  margin-inline: auto;
 }
 /* R1/R2 (2026-08-15): the top ROW hosts the identity block and the tabs.
    The tabs are the menu's groups — a segmented control. Kinetic (W3): the
