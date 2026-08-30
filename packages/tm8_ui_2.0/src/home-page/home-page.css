@@ -1033,8 +1033,37 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--pn-space-2);
+  /* SCROLLS INSTEAD OF CAPPING. Owner, 2026-08-30: "grid idea bane undi kani,
+     showing only top few is not scalable and limiting". A fixed top-N is a
+     guess about how much work a space has and is wrong as soon as it grows;
+     a bounded scroller costs the same page height for ten items or a hundred,
+     and drops none of them. `align-content: start` so a short list sits at the
+     top of the region rather than stretching two cards down 260px. */
+  /* TWO ROWS AND A GLIMPSE OF A THIRD. Owner, 2026-08-30: "why chat is taking
+     only half of the height". Row one of `.hp-home` is `auto`, so every pixel
+     this region takes is a pixel the conversation does not get. Two rows is
+     enough to see what is running; the peek of the third is what tells you
+     there is more without spending a control on saying so. */
+  max-height: 210px;
+  overflow-y: auto;
+  align-content: start;
+  padding-right: 2px;
 }
+/* THE CARD IS A CONTAINER; THE BUTTON IS INSIDE IT. The PR chips carry real
+   links, and an anchor inside a button is invalid HTML whose nested
+   interactive swallows its own clicks. So the open gesture is an inner button
+   that fills the card, and the chips sit beside it. */
 .cv2-root .hp-acard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  align-self: start;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  overflow: hidden;
+}
+.cv2-root .hp-acard__open {
   appearance: none;
   display: flex;
   flex-direction: column;
@@ -1042,10 +1071,18 @@
   text-align: left;
   min-width: 0;
   padding: var(--pn-space-3);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-card);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
   cursor: pointer;
+  font: inherit;
+}
+/* The chips keep the card's own tint, so the footer reads as part of the card
+   rather than a strip glued under it. */
+.cv2-root .hp-acard__prs {
+  padding: 0 var(--pn-space-3) var(--pn-space-3);
+  min-width: 0;
 }
 /* LIGHT COLOUR, BY KIND (owner: "add light colors combination of colors make
    beautiful"). The SOFT tone variants the app already defines — never the full
@@ -1089,90 +1126,15 @@
   color: var(--pn-ink-3);
 }
 
-/* ═══ THE TAIL — top ten as cards, everything past it as rows ═══
-   Owner, 2026-08-30: "1 and 2 are good displaying top 10 rest everything as
-   expansion button like row items". Two shapes, one list: a card is worth its
-   vertical space for the ten things you are likely to act on, and costs too
-   much for the fifty you are not. */
-.cv2-root .hp-active__more {
-  appearance: none;
-  align-self: flex-start;
-  font: 600 var(--pn-fs-micro)/1 var(--pn-ui);
-  color: var(--pn-brand-2);
-  background: none;
-  border: 0;
-  border-bottom: 1px solid var(--pn-line-2);
-  border-radius: 0;
-  padding: 2px 0;
-  cursor: pointer;
-}
-.cv2-root .hp-active__more:hover { border-bottom-color: var(--pn-brand-2); }
-.cv2-root[data-theme='dark'] .hp-active__more { color: var(--pn-brand); }
-.cv2-root[data-theme='dark'] .hp-active__more:hover { border-bottom-color: var(--pn-brand); }
-
-.cv2-root .hp-arows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-card);
-  overflow: hidden;
-}
-.cv2-root .hp-arows > li + li { border-top: 1px solid var(--pn-line); }
-/* FOUR COLUMNS, AND ONLY THE TITLE GIVES WAY. The kind and the time are short
-   and fixed; the name is the one that can absorb a narrow viewport, so it is
-   the one floored at 0 and clipped. Everything else is `auto` and stays whole
-   — a truncated timestamp is a wrong timestamp. */
-.cv2-root .hp-arow {
-  appearance: none;
-  display: grid;
-  grid-template-columns: 7px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--pn-space-2);
-  width: 100%;
-  text-align: left;
-  padding: 6px var(--pn-space-3);
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-.cv2-root .hp-arow:hover { background: var(--pn-hover); }
-.cv2-root .hp-arow__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--pn-line-2);
-}
-/* The tail keeps the same kind→colour pairing the cards use, spent on a 6px
-   dot instead of a ground. One language, two volumes. */
-.cv2-root .hp-arow__dot--sessions { background: var(--pn-run); }
-.cv2-root .hp-arow__dot--tasks    { background: var(--pn-wait); }
-.cv2-root .hp-arow__dot--chats    { background: var(--pn-info); }
-.cv2-root .hp-arow__title {
-  font: 500 var(--pn-fs-sm)/1.3 var(--pn-ui);
-  color: var(--pn-ink);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cv2-root .hp-arow__kind {
-  font: 700 var(--pn-fs-micro)/1 var(--pn-ui);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--pn-ink-3);
-}
-.cv2-root .hp-arow__when {
-  font: 400 var(--pn-fs-micro)/1 var(--pn-ui);
-  font-variant-numeric: tabular-nums;
-  color: var(--pn-ink-3);
-}
+/* THE TAIL AND ITS BUTTON RETIRED WITH THE CAP (owner, 2026-08-30). They
+   existed to hold the fifty-three cards that did not fit in ten; the grid
+   scrolls now, so every one of them is a card again and nothing is behind a
+   control. `.hp-active__more`, `.hp-arows` and `.hp-arow*` went with them. */
 
 /* THE MIDDLE COLUMN IS GONE. It stated the same taxonomy the rail states, and
    it was the only way to pick a conversation — which is why it could not go
    until the Active strip above could carry chats. It can now. */
-.cv2-root .hp-live .tch-sidebar { display: none; }
+.cv2-root .hp-root--chat:not([data-kind]) .hp-live .tch-sidebar { display: none; }
 
 /* AND THE TRACK IT LEFT BEHIND HAS TO GO WITH IT.
    `display: none` stops an element being a grid ITEM; it does not remove the
@@ -1184,7 +1146,19 @@
    screen. One floored column here; L4 forbids an unfloored `1fr`, and this one
    holds a transcript that would otherwise set the minimum by its longest
    unbroken line. */
-.cv2-root .hp-live .tch-root { grid-template-columns: minmax(0, 1fr); }
+.cv2-root .hp-root--chat:not([data-kind]) .hp-live .tch-root {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* AND WHAT SELECTING A KIND IN THE RAIL MEANS, RESTORED.
+   It means what it always meant: "show me the list of all of those". The rail
+   renders that list into `.tch-sidebar` — the very column hidden above — so
+   with the hide unconditional the rail lit up and nothing happened. All three
+   rules that retire the column are now conditioned on there being no kind, so
+   the dashboard stays clean and a selection brings the list, its divider and
+   its track back together. They were switched off as a set and they come back
+   as a set; splitting them is how a panel returns into a track that is no
+   longer there. */
 
 /* AND SO IS ITS DIVIDER. The list panel's drag handle stayed behind when the
    panel went: measured on the live build, `.hp-listsep` was 9px x 901px at
@@ -1194,15 +1168,6 @@
    a flex row overflows it. A control that cannot move anything is not a
    control. Scoped to this surface only: everywhere else the panel is real and
    so is its handle. */
-.cv2-root .hp-live .hp-listsep { display: none; }
+.cv2-root .hp-root--chat:not([data-kind]) .hp-live .hp-listsep { display: none; }
 
-/* THE TAIL SCROLLS IN ITS OWN BOX, so expanding it cannot crush the
-   conversation. `.hp-home` row one is `auto`: with fifty-three rows in it, row
-   one takes the whole grid and row two — the chat — resolves to nothing. That
-   is not hypothetical either; before the duplicated sections below the strip
-   were removed, `.hp-live` measured 2px on the live build. Capping the tail
-   bounds row one to something the layout can pay for. */
-.cv2-root .hp-arows {
-  max-height: 300px;
-  overflow-y: auto;
-}
+

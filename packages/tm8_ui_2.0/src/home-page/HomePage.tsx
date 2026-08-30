@@ -52,6 +52,7 @@ import {
   type HomeRow,
 } from '../home';
 import { EntityNavigationMetrics } from '../navigation';
+import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import './home-page.css';
 
 export interface HomePageProps {
@@ -106,6 +107,19 @@ export interface HomePageProps {
    * product that knows its own state. That difference is visible in a demo.
    */
   createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
+  /**
+   * THE PULL REQUESTS ALREADY ATTACHED TO A ROW. Owner, 2026-08-30, on the
+   * deployed build: "PR links are clearly there" — they are, on the task list,
+   * and Home simply never asked for them.
+   *
+   * Nothing new is fetched. `useGateData` already builds this index from the
+   * graph nodes and edges it holds (`indexLinkedPullRequests`) and already
+   * hands it to `EntityListPanel`; this is the same function reaching one more
+   * surface. Optional, because a host that has not built the index must render
+   * no chips rather than an empty row: "no PR row" and "no pull requests" are
+   * different claims and only one of them is ours to make.
+   */
+  linkedPullRequestsOf?: ((id: string) => readonly LinkedPullRequestFacts[]) | undefined;
 }
 
 /**
@@ -270,77 +284,34 @@ function activeRows(
 }
 
 
-/**
- * How many things get a CARD before the rest becomes a list.
- *
- * Ten is the owner's number ("displaying top 10 rest everything as expansion
- * button like row items"), and it is also about where a card grid stops paying
- * for itself: past ten cards the reader is scanning a list anyway, so the card
- * is spending vertical space on a shape they have stopped reading.
- */
-export const TOP_N = 10;
-
 /** A row is LIVE iff its dot says so. Same predicate `liveCountLabel` counts
  *  with (home-model `liveCount`) — one definition of "running", not two. */
 function isLive(row: HomeRow): boolean {
   return row.dot === 'pulse' || row.dot === 'solid';
 }
 
-/** The kinds the round-robin draws from, in the order it draws them. Sessions
- *  and tasks lead because they are the work; chats are the loudest source and
- *  would otherwise crowd both. */
-const LENS_KINDS: readonly ActiveLens[] = ['sessions', 'tasks', 'chats'];
-
 /**
- * TOP TEN, THEN THE REST — the two rules that keep the top of the screen honest.
+ * RUNNING FIRST, THEN BY ACTIVITY — and EVERYTHING is on the screen.
  *
- *  1. **Anything running takes a seat first.** A session the agent is actually
- *     working in cannot be pushed below the fold by a two-word chat from an
- *     hour ago, whatever the timestamps say.
- *  2. **The remaining seats go ROUND-ROBIN across the kinds.** This space has
- *     sixty chats and five sessions; a straight recency cut gives all ten seats
- *     to chats and the owner never sees a task again. Taking one of each in
- *     turn means every kind that has anything active is represented, which is
- *     the only version of "what is happening" that is true.
+ * THIS REPLACED A TOP-TEN CAP. The cap seated ten cards and put the other
+ * fifty-three behind a button as rows. The owner's verdict on it, seeing it
+ * live: "grid idea bane undi kani, showing only top few is not scalable and
+ * limiting" — the grid is right, the ceiling is not. A fixed N is a guess
+ * about how much work a space has, and it is wrong the moment the space grows.
  *
- * ORDERING IS STILL BY ACTIVITY. Selection is balanced; the READING ORDER of
- * whatever got selected stays newest-first, because `rows` arrives sorted and
- * both halves are filtered out of it in place. Balance decides who is on the
- * screen, time decides where they sit.
+ * So nothing is dropped and nothing is hidden. The grid became a bounded
+ * SCROLL REGION instead (`.hp-active__grid`), which is what actually scales:
+ * ten items and a hundred items both cost the same vertical space on the page,
+ * and the lens chips narrow it when you want less. The cap's one real job —
+ * stopping sixty chats burying five running sessions — survives as the sort:
+ * anything running comes first, everything else follows it by time.
  */
-export function splitActive<T extends HomeRow & { lens: ActiveLens }>(
-  rows: readonly T[],
-  n: number,
-): { top: readonly T[]; rest: readonly T[] } {
-  if (rows.length <= n) return { top: rows, rest: [] };
-  /* SEATS ARE HELD BY POSITION, NOT BY IDENTITY. An earlier draft kept a Set of
-     `${lens}-${id}` and filtered the list against it — which meant that if two
-     rows ever shared an id, seating one seated them all and the cap silently
-     stopped capping. That is not hypothetical: it is exactly what shipped, when
-     a bad cast upstream gave every chat `id === undefined` and sixty-three
-     cards rendered where ten were asked for. An index cannot collide. */
-  const picked = new Set<number>();
-  rows.forEach((row, i) => {
-    if (picked.size < n && isLive(row)) picked.add(i);
+export function orderActive<T extends HomeRow>(rows: readonly T[]): readonly T[] {
+  const at = (r: T) => r.activityAt ?? '';
+  return [...rows].sort((a, b) => {
+    const live = Number(isLive(b)) - Number(isLive(a));
+    return live !== 0 ? live : at(b).localeCompare(at(a));
   });
-  /* One queue of INDEXES per kind, each already newest-first because `rows` is,
-     drained one at a time so no kind can take every remaining seat. */
-  const queues = LENS_KINDS.map((k) =>
-    rows.reduce<number[]>((acc, row, i) => {
-      if (row.lens === k && !picked.has(i)) acc.push(i);
-      return acc;
-    }, []),
-  );
-  let turn = 0;
-  while (picked.size < n && queues.some((q) => q.length > 0)) {
-    const next = queues[turn % queues.length]?.shift();
-    turn += 1;
-    if (next !== undefined) picked.add(next);
-  }
-  return {
-    top: rows.filter((_, i) => picked.has(i)),
-    rest: rows.filter((_, i) => !picked.has(i)),
-  };
 }
 
 const LENSES: readonly { id: ActiveLens; label: string }[] = [
@@ -371,19 +342,16 @@ function ActiveStrip({
   onLens,
   liveLabel,
   onOpen,
+  linkedPullRequestsOf,
 }: {
   rows: readonly (HomeRow & { lens: ActiveLens })[];
   lens: ActiveLens;
   onLens(next: ActiveLens): void;
   liveLabel: string;
   onOpen(id: string): void;
+  linkedPullRequestsOf?: ((id: string) => readonly LinkedPullRequestFacts[]) | undefined;
 }) {
-  /* Expansion is remembered AGAINST THE LENS it was opened in, so switching
-     filter collapses back to ten without an effect and without a stale `true`
-     surviving into a list it was never opened on. Derived, not synchronised. */
-  const [openFor, setOpenFor] = useState<ActiveLens | null>(null);
-  const expanded = openFor === lens;
-  const { top, rest } = splitActive(rows, TOP_N);
+  const shown = orderActive(rows);
   return (
     <section className="hp-active" aria-label="Active work">
       <div className="hp-active__bar">
@@ -419,80 +387,62 @@ function ActiveStrip({
         </p>
       ) : (
         <div className="hp-active__grid">
-          {top.map((row) => (
-            <button
-              key={`${row.lens}-${row.id}`}
-              type="button"
-              className={`hp-acard hp-acard--${row.lens} k-press`}
-              title={row.detail ?? row.title}
-              onClick={() => onOpen(row.id)}
-            >
-              <span className="hp-acard__top">
-                <span className="hp-acard__kind">{row.lens.replace(/s$/, '')}</span>
-                {row.word ? (
-                  <span className={`hp-card__word hp-card__word--${row.tone}`}>
-                    {row.dot ? (
-                      <span className={`hp-card__dot hp-card__dot--${row.dot}`} aria-hidden="true" />
+          {shown.map((row) => {
+            /* THE CARD IS NO LONGER THE BUTTON, and it had to stop being one.
+               `LinkedPullRequestChips` renders an `<a>` per PR — an anchor
+               inside a button is invalid HTML and the nested interactive eats
+               its own clicks. So the card is a container, the OPEN gesture is
+               an inner button that fills it, and the chips are its sibling. */
+            const prs = row.lens === 'chats' ? [] : linkedPullRequestsOf?.(row.id) ?? [];
+            return (
+              <div key={`${row.lens}-${row.id}`} className={`hp-acard hp-acard--${row.lens}`}>
+                <button
+                  type="button"
+                  className="hp-acard__open k-press"
+                  title={row.detail ?? row.title}
+                  onClick={() => onOpen(row.id)}
+                >
+                  <span className="hp-acard__top">
+                    <span className="hp-acard__kind">{row.lens.replace(/s$/, '')}</span>
+                    {row.word ? (
+                      <span className={`hp-card__word hp-card__word--${row.tone}`}>
+                        {row.dot ? (
+                          <span
+                            className={`hp-card__dot hp-card__dot--${row.dot}`}
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        {row.word}
+                      </span>
                     ) : null}
-                    {row.word}
                   </span>
+                  <span className="hp-acard__title">{row.title}</span>
+                  <span className="hp-acard__facts">
+                    {row.turns !== undefined ? (
+                      <span>{row.turns} {row.turns === 1 ? 'turn' : 'turns'}</span>
+                    ) : null}
+                    {row.activityAt ? (
+                      <time dateTime={row.activityAt}>{sinceLabel(row.activityAt)}</time>
+                    ) : null}
+                  </span>
+                </button>
+                {/* A CHAT NEVER GETS THIS ROW, and not because it is tidier.
+                    A chat is keyed by its root message and carries no PR edges
+                    at all, so the index can only ever answer "none" for one —
+                    and an empty row labelled with pull requests would be
+                    stating "this conversation has none", which is a claim
+                    about the world rather than about our read. Absence states
+                    nothing; that is the correct thing to state here. */}
+                {prs.length > 0 ? (
+                  <div className="hp-acard__prs">
+                    <LinkedPullRequestChips pullRequests={prs} placement="tile" />
+                  </div>
                 ) : null}
-              </span>
-              <span className="hp-acard__title">{row.title}</span>
-              <span className="hp-acard__facts">
-                {row.turns !== undefined ? (
-                  <span>{row.turns} {row.turns === 1 ? 'turn' : 'turns'}</span>
-                ) : null}
-                {row.activityAt ? (
-                  <time dateTime={row.activityAt}>{sinceLabel(row.activityAt)}</time>
-                ) : null}
-              </span>
-            </button>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
-      {rest.length > 0 ? (
-        <>
-          {/* THE REST IS A LIST, NOT MORE CARDS. Everything past the tenth is a
-              row — dot, title, kind, time — so the tail costs one line each
-              instead of one card each, and the title finally gets the width to
-              be read rather than truncated at four words. */}
-          <button
-            type="button"
-            className="hp-active__more"
-            aria-expanded={expanded}
-            onClick={() => setOpenFor(expanded ? null : lens)}
-          >
-            {expanded ? 'Show less' : `Show ${rest.length} more`}
-          </button>
-          {expanded ? (
-            <ul className="hp-arows">
-              {rest.map((row) => (
-                <li key={`${row.lens}-${row.id}`}>
-                  <button
-                    type="button"
-                    className="hp-arow k-press"
-                    title={row.detail ?? row.title}
-                    onClick={() => onOpen(row.id)}
-                  >
-                    <span
-                      className={`hp-arow__dot hp-arow__dot--${row.lens}`}
-                      aria-hidden="true"
-                    />
-                    <span className="hp-arow__title">{row.title}</span>
-                    <span className="hp-arow__kind">{row.lens.replace(/s$/, '')}</span>
-                    <span className="hp-arow__when">
-                      {row.activityAt ? (
-                        <time dateTime={row.activityAt}>{sinceLabel(row.activityAt)}</time>
-                      ) : null}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </>
-      ) : null}
     </section>
   );
 }
@@ -654,6 +604,13 @@ export function HomePage(props: HomePageProps) {
       className="hp-root hp-root--chat"
       data-testid="home-page"
       data-aside={props.aside ? 'open' : undefined}
+      /* THE RAIL'S SELECTION, ON THE PAGE. Hiding the list column
+         unconditionally made "select Tasks in the rail" a no-op: the rail lit
+         up and nothing appeared, because the panel it renders into is
+         `.tch-sidebar` and this page had switched it off. The kind rides on
+         the root now, so the column can come back exactly when there is a kind
+         to list, and stay away on the dashboard where it duplicated the rail. */
+      data-kind={props.activeKind ?? undefined}
       data-focus={props.focus ? 'true' : undefined}
     >
       {props.rail ?? null}
@@ -698,6 +655,7 @@ export function HomePage(props: HomePageProps) {
         onLens={setLens}
         liveLabel={work.liveCountLabel}
         onOpen={props.onOpenEntity}
+        linkedPullRequestsOf={props.linkedPullRequestsOf}
       />
       {/* NEEDS YOUR ATTENTION follows the verbs: you start something, or you
           deal with what is asking for you. It renders only when it HAS rows —

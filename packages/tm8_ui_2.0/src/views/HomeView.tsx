@@ -865,6 +865,10 @@ export function HomeView(props: HomeViewProps) {
         onNewChat={regions.onShowChat}
         onCreateKind={regions.onCreateKind}
         createKindUnavailable={regions.createKindUnavailable}
+        /* THE SAME PR INDEX THE LIST PANEL ALREADY GETS (line 613). Built once
+           by `useGateData` from graph nodes and edges; nothing is fetched for
+           Home's sake. */
+        linkedPullRequestsOf={data.linkedPullRequestsOf}
       />
       {/* D11/D14: the full launch sheet over this screen while the shell
           holds a subject — Run on a task row opened it. Its own capture-phase

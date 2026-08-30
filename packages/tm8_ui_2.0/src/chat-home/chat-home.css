@@ -207,6 +207,34 @@
   padding: var(--pn-space-6) max(var(--pn-space-4), calc((100% - 760px) / 2));
 }
 
+/* THE TRANSCRIPT IS PROSE, AND IT IS NOW SET AS PROSE.
+   Owner, 2026-08-30: "chat font naturally consistent". Three things were
+   wrong, and the measure was NOT as wrong as it first looked — `.tch-transcript`
+   already centres its content at 760px, so widening the pane did not widen the
+   lines. What it did was make 760px at 14px visible for what it is: about a
+   hundred characters a line, where the eye starts losing the return sweep past
+   seventy-five.
+
+     · SIZE. `--pn-fs-body` is 14px, which is right for a label beside a control
+       and tiring for four paragraphs. Reading size is its own token now.
+     · MEASURE. `--pn-measure`, so a wider window gives a reader MARGIN rather
+       than longer lines. It composes with the 760px centring: whichever is
+       narrower wins, so this can only ever shorten a line.
+     · INK. The body was `--pn-ink-2`. Muted grey is fine for a caption and
+       tiring for a transcript; the words a person came to read take full ink.
+
+   NOT FIXED HERE, because it is a token-wide decision rather than this
+   surface's: `--pn-serif` and `--pn-ui` resolve to the SAME Figtree stack, so
+   the "serif body, sans headings" contrast this stylesheet is written for has
+   never once rendered. Either give the body a real second face or retire the
+   token — but that lands on every surface, not just the chat. */
+.cv2-root .tch-transcript .md-root {
+  font-size: var(--pn-fs-read);
+  line-height: var(--pn-lh-read);
+  color: var(--pn-ink);
+  max-width: var(--pn-measure);
+}
+
 .tch-welcome {
   display: flex;
   flex-direction: column;
@@ -282,16 +310,24 @@
    stylesheets import in. Found by the transcript lane (D-VIS-1): a plain
    `.tch-user-body` lost that war and typed messages came out serif. */
 .cv2-root .md-root.tch-user-body {
-  max-width: 80%;
+  /* The bubble gains the transcript's reading size, leading and ink, so your
+     words and the reply are one voice at two volumes rather than two
+     typefaces. Folded into THIS rule rather than added as a
+     `.tch-transcript`-scoped one: that selector is (0,4,0) and would have tied
+     `.tch-turn[data-self='true'] .tch-user-body`, where at equal specificity
+     source order decides and the own-right margin silently dies. The cascade
+     test next door exists because that shipped once already. */
+  max-width: min(var(--pn-measure), 80%);
+  font-size: var(--pn-fs-read);
+  line-height: var(--pn-lh-read);
   width: fit-content;
   margin-left: 26px;
   padding: 8px 11px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
   background: var(--pn-card);
-  color: var(--pn-ink-2);
+  color: var(--pn-ink);
   font-family: var(--pn-ui);
-  font-size: var(--pn-fs-sm);
   /* No pre-wrap: the body renders as markdown now (chatMarkdownSource keeps
      a lone newline a line break), and pre-wrap over rendered HTML turns
      inter-element whitespace into phantom gaps. */

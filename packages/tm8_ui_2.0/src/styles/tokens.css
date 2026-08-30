@@ -88,10 +88,23 @@
   --pn-fs-fine: 10px;
   --pn-fs-tick: 9px;
   --pn-fs-mono: 12.5px;
+  /* READING SIZE — for continuous prose a person actually reads, as opposed to
+     interface body text they scan. A transcript, a doc body, a long note. It is
+     a size larger than `--pn-fs-body` on purpose: 14px is right for a label
+     beside a control and tiring for four paragraphs. */
+  --pn-fs-read: 15px;
 
   --pn-lh-tight: 1.18;
   --pn-lh-snug: 1.35;
   --pn-lh-body: 1.5;
+  --pn-lh-read: 1.62;
+
+  /* THE MEASURE. How wide a line of prose may get before it stops being
+     readable — the eye loses the return sweep somewhere past about 75
+     characters. A wide window should give a reader MARGIN, never longer lines,
+     and every surface that sets prose should reach for this rather than
+     inventing its own number. */
+  --pn-measure: 68ch;
 
   --pn-track-mega: 0.12em;
   --pn-track-label: 0.06em;

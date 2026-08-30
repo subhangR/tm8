@@ -1,26 +1,24 @@
 /**
- * TOP TEN, THEN A LIST — the owner's ruling of 2026-08-30 ("1 and 2 are good
- * displaying top 10 rest everything as expansion button like row items").
+ * EVERYTHING IS ON THE SCREEN, RUNNING WORK FIRST.
  *
- * WHAT THIS FILE EXISTS TO CATCH. The live space has sixty chats and five
- * sessions. Sorted by activity alone, the ten cards at the top of Home are ten
- * chats, and the sessions and tasks the owner opened Home to see are below a
- * fold they have to click through. That is not a styling defect and no CSS
- * assertion can see it — it is a SELECTION defect, so it is tested here as
- * behaviour, on the function that selects.
+ * THIS FILE USED TO PIN A TOP-TEN CAP. Ten cards, the other fifty-three behind
+ * a button as rows. The owner's verdict on the deployed build was that the grid
+ * was right and the ceiling was not — "showing only top few is not scalable and
+ * limiting" — so the cap is gone and the grid scrolls instead. Every assertion
+ * about `splitActive` went with it; what survives is the one job the cap was
+ * really doing, which was stopping sixty chats burying five running sessions.
+ * That is the SORT now, and a sort has no ceiling.
  *
- * The CSS half of the change is pinned in home-navigation-style.test.ts, which
- * is where this package keeps its source-shape claims. This file only asks
- * questions with answers.
+ * The scroll region itself is a CSS claim and is pinned in
+ * home-navigation-style.test.ts. This file only asks questions with answers.
  */
 import { describe, expect, it } from 'vitest';
-import { splitActive, TOP_N } from './HomePage';
+import { orderActive } from './HomePage';
 import type { HomeRow } from '../home';
 
 type Lens = 'chats' | 'sessions' | 'tasks';
 type Row = HomeRow & { lens: Lens };
 
-/** Rows as the strip receives them: already newest-first, across all kinds. */
 function rows(spec: readonly (readonly [Lens, number, boolean?])[]): Row[] {
   return spec.map(([lens, minutesAgo, live], i) => ({
     id: `${lens}-${i}`,
@@ -34,7 +32,8 @@ function rows(spec: readonly (readonly [Lens, number, boolean?])[]): Row[] {
   }));
 }
 
-/** The shape of the real space: chats outnumber the work ten to one. */
+/** The shape of the real space: chats outnumber the work ten to one, and every
+ *  one of them is newer than every running session. */
 const flood: Row[] = rows([
   ...Array.from({ length: 40 }, (_, i) => ['chats', i] as const),
   ['sessions', 100, true],
@@ -43,79 +42,40 @@ const flood: Row[] = rows([
   ['tasks', 400],
 ]);
 
-describe('the active list splits at ten', () => {
-  it('gives a card to exactly ten and a row to the rest', () => {
-    const { top, rest } = splitActive(flood, TOP_N);
-    expect(top).toHaveLength(TOP_N);
-    expect(rest).toHaveLength(flood.length - TOP_N);
+describe('the active list', () => {
+  it('drops nobody and duplicates nobody', () => {
+    /* THE POINT OF RETIRING THE CAP. Fifty-three of these used to be behind a
+       button; a list that hides work is a list you cannot trust to answer
+       "what is happening". */
+    const out = orderActive(flood);
+    expect(out).toHaveLength(flood.length);
+    expect(new Set(out.map((r) => r.id)).size).toBe(flood.length);
   });
 
-  it('splits nothing when there is nothing to split', () => {
-    const short = rows([['chats', 1], ['sessions', 2, true]]);
-    const { top, rest } = splitActive(short, TOP_N);
-    expect(top).toEqual(short);
-    // No tail means no expansion button — the control appears because there is
-    // something behind it, never as furniture.
-    expect(rest).toEqual([]);
+  it('puts everything running above everything that is not', () => {
+    const out = orderActive(flood);
+    const lastLive = out.findLastIndex((r) => r.dot === 'pulse');
+    const firstIdle = out.findIndex((r) => r.dot !== 'pulse');
+    expect(lastLive, 'a running session sank below an idle chat').toBeLessThan(firstIdle);
   });
 
-  it('loses nobody and duplicates nobody', () => {
-    const { top, rest } = splitActive(flood, TOP_N);
-    const ids = [...top, ...rest].map((r) => r.id);
-    expect(new Set(ids).size).toBe(flood.length);
-  });
-
-  it('never lets one kind take every seat', () => {
-    /* THE WHOLE POINT. Forty chats are newer than every session and task here,
-       so a straight recency cut fills all ten cards with chats. */
-    const { top } = splitActive(flood, TOP_N);
-    const kinds = new Set(top.map((r) => r.lens));
-    expect(kinds, 'the newest kind swallowed the top of Home').toEqual(
-      new Set(['chats', 'sessions', 'tasks']),
-    );
-  });
-
-  it('seats everything that is running before anything that is not', () => {
-    const { top } = splitActive(flood, TOP_N);
-    const live = flood.filter((r) => r.dot === 'pulse');
-    for (const row of live) {
-      expect(top.map((r) => r.id), `a running ${row.lens} was pushed below the fold`).toContain(
-        row.id,
-      );
+  it('orders by activity within each half', () => {
+    const out = orderActive(flood);
+    const live = out.filter((r) => r.dot === 'pulse').map((r) => r.activityAt ?? '');
+    const idle = out.filter((r) => r.dot !== 'pulse').map((r) => r.activityAt ?? '');
+    for (const half of [live, idle]) {
+      expect([...half].sort((a, b) => b.localeCompare(a))).toEqual(half);
     }
   });
 
-  it('still reads newest-first once the seats are filled', () => {
-    /* Selection is balanced; ORDER is time. Both halves are filtered out of an
-       already-sorted list, so neither may reorder it. */
-    const { top, rest } = splitActive(flood, TOP_N);
-    for (const half of [top, rest]) {
-      const times = half.map((r) => r.activityAt ?? '');
-      expect([...times].sort((a, b) => b.localeCompare(a))).toEqual(times);
-    }
+  it('does not mutate what it was handed', () => {
+    const input = rows([['chats', 1], ['sessions', 9, true]]);
+    const before = input.map((r) => r.id);
+    orderActive(input);
+    expect(input.map((r) => r.id)).toEqual(before);
   });
 
-  it('caps at ten even when every row carries the same id', () => {
-    /* THE REGRESSION THIS FILE WAS WRITTEN TOO LATE TO PREVENT. A cast in
-       useHomeData claimed the contract's chat threads had an `id`; they carry
-       `rootMessageId`, so every chat arrived with `id === undefined`. The split
-       held seats in a Set of `lens-id` and filtered the list against it, so
-       seating one chat seated all sixty and the cap stopped capping — 63 cards
-       shipped where 10 were asked for, and no tail rendered at all. Seats are
-       held by POSITION now, and this is the test that says so. */
-    const same = rows(Array.from({ length: 30 }, (_, i) => ['chats', i] as const)).map((r) => ({
-      ...r,
-      id: undefined as unknown as string,
-    }));
-    const { top, rest } = splitActive(same, TOP_N);
-    expect(top, 'one duplicate id let every row ride in on it').toHaveLength(TOP_N);
-    expect(rest).toHaveLength(20);
-  });
-
-  it('fills all ten seats even when only one kind has anything', () => {
-    const only = rows(Array.from({ length: 25 }, (_, i) => ['chats', i] as const));
-    const { top, rest } = splitActive(only, TOP_N);
-    expect(top).toHaveLength(TOP_N);
-    expect(rest).toHaveLength(15);
+  it('is stable on an empty list', () => {
+    expect(orderActive([])).toEqual([]);
   });
 });

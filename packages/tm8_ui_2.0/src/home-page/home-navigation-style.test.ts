@@ -187,52 +187,49 @@ describe('a name is never truncated by its own count', () => {
     expect(home).toContain('minmax(0, 1fr)');
   });
 
-  it('gives the tail past ten a row, not another card', () => {
-    /* Owner, 2026-08-30: "displaying top 10 rest everything as expansion button
-       like row items". The SELECTION rule is tested as behaviour in
-       home-active-tail.test.ts; what is pinned here is that the tail has its
-       own shape at all, because a tail rendered as more cards is the crowded
-       screen the whole pass exists to undo. */
-    expect(pageTsx).toContain('hp-arows');
-    expect(pageTsx, 'the expansion control lost its state for assistive tech').toContain(
-      'aria-expanded',
+  it('scrolls the whole grid instead of capping it', () => {
+    /*
+     * THIS PINNED A TAIL: ten cards, everything past them as rows behind a
+     * button. The owner replaced it on 2026-08-30 — "grid idea bane undi kani,
+     * showing only top few is not scalable and limiting" — so the assertion is
+     * REPLACED rather than relaxed. A test still demanding `.hp-arows` would
+     * have made the owner's own decision a failure.
+     */
+    expect(pageTsx, 'the tail rows came back').not.toContain('hp-arows');
+    expect(pageTsx, 'the top-N cap came back').not.toContain('splitActive');
+
+    const grid = homeCss.match(/\.cv2-root \.hp-active__grid\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(grid, 'no .hp-active__grid rule').not.toBe('');
+    /* BOUNDED AND SCROLLING. Unbounded, row one of `.hp-home` is `auto` and
+       sixty cards take the whole grid — which is measurably how the
+       conversation ended up at 2px once already. */
+    expect(grid, 'the grid can grow until it eats the conversation').toMatch(/max-height/);
+    expect(grid, 'a bounded grid that does not scroll just hides work').toMatch(
+      /overflow-y:\s*auto/,
     );
+    /* A short list sits at the top of the region rather than stretching two
+       cards down its whole height. */
+    expect(grid).toMatch(/align-content:\s*start/);
 
-    const row = homeCss.match(/\.cv2-root \.hp-arow\s*\{([^}]*)\}/s)?.[1] ?? '';
-    expect(row, 'no .hp-arow rule — the tail is unstyled').not.toBe('');
-    /* FOUR COLUMNS AND ONLY THE TITLE GIVES WAY. The name is the sole track
-       floored at 0; kind and time are `auto` and stay whole. CSS flex/grid
-       yields whatever CAN yield, not whatever should, so the floor is how the
-       choice is made rather than hoped for. */
-    expect(row).toContain('minmax(0, 1fr)');
-    expect(row).toContain('grid-template-columns');
+    /* THE FLOOR SURVIVED THE REWRITE. L4: never an unfloored track. */
+    expect(grid).toContain('minmax(200px, 1fr)');
+  });
 
-    const title = homeCss.match(/\.cv2-root \.hp-arow__title\s*\{([^}]*)\}/s)?.[1] ?? '';
-    expect(title).toContain('min-width: 0');
-    expect(title).toContain('text-overflow: ellipsis');
+  it('lets a card carry links without nesting them in a button', () => {
+    /* The PR chips render an `<a>` each. An anchor inside a button is invalid
+       HTML and the nested interactive swallows its own clicks, so the card is
+       a container and the open gesture is an inner button. */
+    expect(pageTsx).toContain('hp-acard__open');
+    expect(pageTsx).toContain('LinkedPullRequestChips');
 
-    /* THE TIME IS A NUMBER IN A COLUMN. Same tabular rule the cards keep. */
-    const when = homeCss.match(/\.cv2-root \.hp-arow__when\s*\{([^}]*)\}/s)?.[1] ?? '';
-    expect(when).toContain('tabular-nums');
+    const open = homeCss.match(/\.cv2-root \.hp-acard__open\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(open, 'no .hp-acard__open rule — the card body is unstyled').not.toBe('');
+    expect(open).toContain('cursor: pointer');
 
-    /* One kind→colour language at two volumes: a ground on the cards, a 6px
-       dot on the rows. All three must be spelt, or the tail loses the kind. */
-    for (const kind of ['sessions', 'tasks', 'chats']) {
-      expect(homeCss, `the tail rows lost the colour for ${kind}`).toContain(
-        `.hp-arow__dot--${kind}`,
-      );
-    }
-
-    /* THE TAIL SCROLLS IN ITS OWN BOX. `.hp-home`'s first row is `auto`, so
-       fifty-three expanded rows take the whole grid and the conversation row
-       resolves to nothing. Measured, not feared: `.hp-live` was 2px on the
-       live build when this row grew unchecked. */
-    const tailRules = [...homeCss.matchAll(/\.cv2-root \.hp-arows\s*\{([^}]*)\}/g)]
-      .map((m) => m[1])
-      .join('\n');
-    expect(tailRules, 'no .hp-arows rule at all').not.toBe('');
-    expect(tailRules, 'the expanded tail can grow without limit').toMatch(/max-height/);
-    expect(tailRules, 'a capped box that does not scroll just clips').toMatch(/overflow-y:\s*auto/);
+    /* A CHAT NEVER GETS A PR ROW. It is keyed by its root message and carries
+       no PR edges, so the index can only answer "none" — and a row that said
+       so would be a claim about the world rather than about our read. */
+    expect(pageTsx).toMatch(/row\.lens === 'chats' \? \[\]/);
   });
 
   it('draws no divider for a panel that is not there', () => {
@@ -241,8 +238,16 @@ describe('a name is never truncated by its own count', () => {
        9px x 901px at x=370, a hairline down a third of the screen dividing
        nothing from nothing and painted over the cards. Both halves of the
        hidden pair are pinned together so neither can come back alone. */
-    expect(homeCss).toMatch(/\.hp-live \.tch-sidebar\s*\{\s*display:\s*none/);
-    expect(homeCss).toMatch(/\.hp-live \.hp-listsep\s*\{\s*display:\s*none/);
+    expect(homeCss).toMatch(/:not\(\[data-kind\]\) \.hp-live \.tch-sidebar\s*\{\s*display:\s*none/);
+    expect(homeCss).toMatch(/:not\(\[data-kind\]\) \.hp-live \.hp-listsep\s*\{\s*display:\s*none/);
+
+    /* AND ALL THREE COME BACK TOGETHER WHEN THE RAIL PICKS A KIND. Selecting
+       a kind renders its list into `.tch-sidebar`; with the hide
+       unconditional the rail lit up and nothing appeared. The panel, its
+       divider and its track are switched off as a set, so they must be
+       conditioned as a set — a panel returning into a track that is no longer
+       there is the same defect one level down. */
+    expect(pageTsx, 'the rail selection never reaches the page').toContain('data-kind=');
 
     /* HIDING AN ITEM DOES NOT REMOVE ITS TRACK. `.tch-root` measured
        `280px 1005.82px` with the sidebar hidden, so the conversation took the
@@ -250,7 +255,7 @@ describe('a name is never truncated by its own count', () => {
        empty pixels. The column collapse has to travel with the hide, and the
        replacement track must be floored — an unfloored `1fr` lets a long
        unbroken line in the transcript set the minimum (L4). */
-    const root = homeCss.match(/\.cv2-root \.hp-live \.tch-root\s*\{([^}]*)\}/s)?.[1] ?? '';
+    const root = homeCss.match(/:not\(\[data-kind\]\) \.hp-live \.tch-root\s*\{([^}]*)\}/s)?.[1] ?? '';
     expect(root, 'the hidden sidebar still reserves its column').toContain(
       'grid-template-columns',
     );
