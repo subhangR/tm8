@@ -897,44 +897,7 @@
    `repeat(3, …)`: at the 320px floor three cards cannot sit side by side, and
    a floored track drops to one whole column instead of crushing all three.
    L4 — never an unfloored minmax. */
-.cv2-root .hp-start {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-  gap: var(--pn-space-2);
-}
-.cv2-root .hp-start__card {
-  appearance: none;
-  display: block;
-  text-align: left;
-  padding: var(--pn-space-3);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-card);
-  cursor: pointer;
-}
-.cv2-root .hp-start__card > b {
-  display: block;
-  font: 700 var(--pn-fs-title)/1.2 var(--pn-ui);
-  color: var(--pn-ink);
-  margin-bottom: 2px;
-}
-.cv2-root .hp-start__card > span {
-  display: block;
-  font: 400 var(--pn-fs-micro)/1.35 var(--pn-ui);
-  color: var(--pn-ink-3);
-}
-.cv2-root .hp-start__card:hover {
-  border-color: var(--pn-brand-2);
-}
-.cv2-root .hp-start__card:hover > b {
-  color: var(--pn-brand-2);
-}
 /* A refused verb keeps its card and its reason — never hidden. */
-.cv2-root .hp-start__card--off {
-  border-style: dashed;
-  cursor: default;
-}
-.cv2-root .hp-start__card--off > b { color: var(--pn-ink-3); }
 
 /* PROGRESS AND ACTIVITY on a running row. Two facts, one line, tabular so the
    numbers align down the card rather than dancing. */
@@ -948,3 +911,50 @@
 }
 .cv2-root .hp-attention__turns { flex: none; }
 .cv2-root .hp-attention__when { flex: none; font-family: var(--pn-mono); }
+
+/* THE WAYS IN — ONE SURFACE, NOT TWO BOXES.
+   Owner, 2026-08-30, on the first render: "why is the line in between create
+   chat and create task".
+   They were right. Two bordered cards with a gap read as two separate things,
+   and a border around a verb is chrome around a word. What is actually being
+   offered is one small set of choices, so it is one surface: a single hairline
+   frame, the verbs inside it, and a single divider only where a divider earns
+   its place — between them, hairline, not a box each.
+   `auto-fit` with a FLOOR: at 320px they stack whole rather than crushing. */
+.cv2-root .hp-start {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  overflow: hidden;
+}
+.cv2-root .hp-start__card {
+  appearance: none;
+  display: block;
+  text-align: left;
+  padding: var(--pn-space-3);
+  border: 0;
+  /* The ONE line, and it is a divider rather than a frame — it separates two
+     verbs instead of boxing each. Falls away on the first of each row so a
+     wrapped grid never opens with a stray rule. */
+  border-left: 1px solid var(--pn-line);
+  background: none;
+  cursor: pointer;
+}
+.cv2-root .hp-start__card:first-child { border-left: 0; }
+.cv2-root .hp-start__card > b {
+  display: block;
+  font: 700 var(--pn-fs-title)/1.25 var(--pn-ui);
+  color: var(--pn-ink);
+}
+.cv2-root .hp-start__card > span {
+  display: block;
+  margin-top: 1px;
+  font: 400 var(--pn-fs-micro)/1.35 var(--pn-ui);
+  color: var(--pn-ink-3);
+}
+.cv2-root .hp-start__card:hover { background: var(--pn-hover); }
+.cv2-root .hp-start__card:hover > b { color: var(--pn-brand-2); }
+.cv2-root .hp-start__card--off { cursor: default; }
+.cv2-root .hp-start__card--off > b { color: var(--pn-ink-3); }

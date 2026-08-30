@@ -366,8 +366,21 @@ export function composeMyWork(input: ComposeInput): MyWork {
   // the same entities and open the same Z3 panel. Rows already surfaced above
   // are not repeated; one fact, one place on the screen.
   const shownAbove = new Set(needsYou.map((r) => r.id));
+  /* FINISHED WORK IS NOT CURRENT WORK.
+   *
+   * The first render of this strip put a task marked `done` above one marked
+   * `open`, under a heading the owner reads as "what I am working on". The
+   * filter is the entity's own `category` — the closed four, identical on
+   * every kind — and NOT a status word, which is per-kind and would make this
+   * line a second place that decides what "finished" means.
+   *
+   * A summary with NO category is KEPT. Absent is not `done`, and dropping a
+   * row because a field did not arrive hides work rather than tidying it —
+   * the same rule the strips follow about empty arrays.
+   */
   const tasks = input.myTasks
     .filter((row) => !shownAbove.has(row.id))
+    .filter((row) => row.category !== 'done' && row.category !== 'cancelled')
     .map((row) => homeRowOf(row, { compact }));
 
   const liveCount = live.filter((row) => row.dot === 'pulse' || row.dot === 'solid').length;

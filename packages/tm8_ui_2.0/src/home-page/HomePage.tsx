@@ -209,11 +209,15 @@ function AttentionCard({
   section,
   onOpen,
   count,
+  showKind = false,
 }: {
   section: HomeSection;
   onOpen(id: string): void;
   /** A live tally, when the section has one. Absent ⇒ no number is claimed. */
   count?: string | undefined;
+  /** Only where the strip MIXES kinds. A heading that names the kind already
+      said it, and saying it twice is the repetition this screen is for. */
+  showKind?: boolean;
 }) {
   return (
     <article className="hp-attention" aria-label={section.label} data-testid="hp-needs-you">
@@ -248,7 +252,12 @@ function AttentionCard({
             {row.turns !== undefined || row.activityAt ? (
               <span className="hp-attention__facts">
                 {row.turns !== undefined ? (
-                  <span className="hp-attention__turns">{row.turns} turns</span>
+                  <span className="hp-attention__turns">
+                    {/* One turn is a turn. The plural bug was visible in the
+                        first render of this card and nowhere in 4,974 tests —
+                        no assertion reads the rendered string. */}
+                    {row.turns} {row.turns === 1 ? 'turn' : 'turns'}
+                  </span>
                 ) : null}
                 {row.activityAt ? (
                   <time className="hp-attention__when" dateTime={row.activityAt}>
@@ -257,7 +266,17 @@ function AttentionCard({
                 ) : null}
               </span>
             ) : null}
-            {row.kind ? (
+            {/* THE KIND LINE IS GONE FROM THE STRIPS THAT NAME THEIR KIND.
+                "Session" under a heading reading MY LIVE SESSIONS, on all five
+                rows, is the repetition the owner has objected to four times —
+                and it was five lines of it in the first render.
+
+                `showKind` keeps it for NEEDS YOU, which genuinely mixes kinds:
+                a row there can be a task, a session or a pull request, and
+                without the mark the reader cannot tell which. One heading, one
+                statement of the kind — either the heading says it or the row
+                does, never both. */}
+            {showKind && row.kind ? (
               <span className="hp-attention__ref">
                 <span className="hp-attention__ref-mark" aria-hidden>
                   <KindIcon kind={row.kind} />
@@ -385,7 +404,7 @@ export function HomePage(props: HomePageProps) {
           here" is one, and it may only be made after a read that came back
           empty. */}
       {needsYouStrip ? (
-        <AttentionCard section={needsYouStrip} onOpen={props.onOpenEntity} />
+        <AttentionCard section={needsYouStrip} onOpen={props.onOpenEntity} showKind />
       ) : work.needsYou && (home.viewerError || home.notificationsError) ? (
         <p className="hp-note" role="status">{work.needsYou.emptyNote}</p>
       ) : null}

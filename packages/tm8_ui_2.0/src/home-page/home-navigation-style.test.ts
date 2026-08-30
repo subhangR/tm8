@@ -131,8 +131,18 @@ describe('a name is never truncated by its own count', () => {
     // drops to one whole column instead of crushing all three. An unfloored
     // `minmax(0, …)` is banned by name in this package because it collapses a
     // region to nothing.
-    expect(start).toContain('minmax(148px, 1fr)');
+    expect(start).toContain('minmax(150px, 1fr)');
     expect(start).not.toContain('minmax(0');
+
+    // ONE SURFACE, NOT A BOX PER VERB. The owner, on the first render:
+    // "why is the line in between create chat and create task". The frame
+    // belongs to the SET; the only rule inside it separates two verbs, and it
+    // falls away on the first so a wrapped grid never opens with a stray line.
+    const card = homeCss.match(/\.cv2-root \.hp-start__card\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(card, 'no .hp-start__card rule').not.toBe('');
+    expect(card).toContain('border: 0');
+    expect(card).toContain('border-left: 1px solid');
+    expect(homeCss).toContain('.hp-start__card:first-child');
 
     // A REFUSED VERB IS SHOWN, NOT HIDDEN. If this rule disappears the verb
     // silently vanishes when the server refuses it, which reads as a missing
