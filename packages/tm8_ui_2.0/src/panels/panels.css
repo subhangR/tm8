@@ -1855,7 +1855,13 @@
   gap: 4px;
   padding-left: 3px;
 }
-.cv2-root .lp__chip:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
+/* HOVER IS AN EDGE HERE TOO — the same retired `--pn-hover` fill as the tab
+   row above, and THIS is the rule the owner actually photographed: the
+   `collections` chip under the pointer measured (239, 242, 244) against a
+   (247, 249, 251) page. It was read as a third control shape; it was this
+   fill. The border is already reserved at 1px transparent, so strengthening
+   it is free and the row stops growing a filled plane under the cursor. */
+.cv2-root .lp__chip:hover { border-color: var(--pn-line-2); color: var(--pn-ink); }
 .cv2-root .lp__chip--active {
   /* One full step above the resting 600 — 650 was a half-step nobody saw. */
   font-weight: 700;
@@ -1954,24 +1960,70 @@
     color var(--pn-dur-fast) var(--pn-ease-standard),
     border-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-root .lp__tab:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
+/* HOVER IS AN EDGE, NOT A FILL. The calm pass retired `--pn-hover` across the
+   kit in favour of strengthening the border, and this row was still filling —
+   measured in the owner's own screenshot, where the hovered `collections`
+   chip renders (239, 242, 244) while the page behind it is (247, 249, 251).
+   The border already exists at 1px transparent, so darkening it costs no
+   layout and adds no plane of paint to the busiest row in the product. */
+.cv2-root .lp__tab:hover { border-color: var(--pn-line-2); color: var(--pn-ink); }
+/* THE ACCENT KEEPS ITS JOB AND LOSES ONE PLANE.
+   "Where you are" is the canonical sanctioned use of the accent, so the
+   active tab STAYS accented — decolouring it would delete the only cue saying
+   which lifecycle band the reader is looking at, which is the opposite of the
+   fix. What changes is that it was spending the accent TWICE: coloured text
+   AND a `--pn-brand-soft` fill. The fill is the half that competes, because a
+   filled tab sits on the same plane as every other filled thing on screen and
+   there are dozens. Rings and fills are different jobs; this takes the ring.
+   The 1px border is already reserved and already transparent, so this is a
+   colour change with zero layout consequence — the row does not move. */
 .cv2-root .lp__tab--active {
   /* One full step above the resting 600 — 650 was a half-step nobody saw. */
   font-weight: 700;
   color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand-2);
 }
-/* The selected chip keeps its fill under the pointer — hover must not read
-   as deselection. */
+/* AN EMPTY BAND IS AVAILABLE, NOT DISABLED. It keeps its name, its tab stop
+   and its click; only its weight drops, from the resting 600 to 500, and its
+   ink from `--pn-ink-2` to `--pn-ink-3`. That is the whole demotion: enough
+   that the eye skips it while scanning for somewhere to go, not so much that
+   it reads as refused. It must NOT use the disabled treatment — an empty
+   status is a legitimate destination that happens to hold nothing today, and
+   a client asking "where is To Do?" should find it greyed, not gone.
+   `:not(.lp__tab--active)` is belt-and-braces: `tabClass` already refuses to
+   emit both, and this guarantees the CSS agrees even if a future caller does. */
+.cv2-root .lp__tab--empty:not(.lp__tab--active) {
+  font-weight: 500;
+  color: var(--pn-ink-3);
+}
+/* THE SELECTED TAB KEEPS ITS RING UNDER THE POINTER — hover must not read as
+   deselection. This rule previously re-asserted the fill and set
+   `border-color: transparent`, which was correct when the ACTIVE marker WAS
+   the fill: the border was decoration and clearing it stopped hover drawing a
+   second edge inside a filled pill. Now that the ring IS the active marker,
+   the same declaration would erase it on hover — the tab would lose its
+   "where you are" cue exactly when the pointer is on it. So hover reasserts
+   the ring rather than clearing it, and this is the half of the change that
+   would have shipped as a silent regression if the fill had been swapped
+   without reading what the hover rule was for. */
 .cv2-root .lp__tab--active:hover {
-  background: var(--pn-brand-soft);
-  border-color: transparent;
+  border-color: var(--pn-brand-2);
   color: var(--pn-brand-2);
 }
+/* DARK FLIPS THE RING TOO, and this is the audit the fill-to-ring change
+   forces: when you move what CARRIES a state, every rule that restates that
+   state has to move with it. This block existed to lift the active text off
+   `--pn-brand-2` (the dark blue, legible on paper, muddy on a dark surface)
+   onto `--pn-brand`. The ring now carries the same meaning, so leaving it on
+   `--pn-brand-2` would have shipped a dark-mode tab whose text said "here"
+   in one blue and whose edge said it in a barely-visible other. */
 .cv2-root[data-theme='dark'] .lp__tab--active,
 [data-theme='dark'] .cv2-root .lp__tab--active,
 .cv2-root[data-theme='dark'] .lp__tab--active:hover,
-[data-theme='dark'] .cv2-root .lp__tab--active:hover { color: var(--pn-brand); }
+[data-theme='dark'] .cv2-root .lp__tab--active:hover {
+  color: var(--pn-brand);
+  border-color: var(--pn-brand);
+}
 
 .cv2-root .lp__body {
   flex: 1 1 auto;
@@ -2957,10 +3009,22 @@
   display: flex;
   align-items: center;
   gap: var(--pn-space-1);
-  /* 8px below — the filter row is the same tier (12px between tiers is the
-     search row's own bottom margin, so board mode, which drops this row,
-     keeps its rhythm without it). */
-  padding: 0 var(--pn-space-3) var(--pn-space-2);
+  /* 4px below, WITHIN the tier. The filter row is the same tier as this one —
+     tabs are the lifecycle band, filters narrow within it — so the gap
+     between them is an intra-tier gap and was reading as an inter-tier one at
+     8px. The filter row keeps its own 8px bottom, which is the tier's real
+     bottom margin before the border, so the rhythm the original comment
+     protects is preserved: 4px inside the tier, 8px below it, 12px between
+     tiers. Board mode drops this row and is unaffected either way.
+
+     HONEST ABOUT THE SIZE: this reclaims 4px, not a row. The brief asks for
+     less chrome before content, and the large win — merging the two rows — is
+     refused deliberately: they answer two different questions and collapsing
+     them conflates a lifecycle band with a filter within it. So the available
+     win is spacing, and 4px is what spacing is worth. Anyone reading this
+     expecting the header to have visibly shrunk should read the row count
+     instead: it is still two, on purpose. */
+  padding: 0 var(--pn-space-3) var(--pn-space-1);
 }
 /* ---------------------------------------------------------------------------
    The inline launch flow (D44)

@@ -857,6 +857,25 @@ export function EntityListPanel(props: EntityListPanelProps) {
           tabLabel={(tab: StatusCategoryTab) =>
             tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
           }
+          /*
+           * EMPTY MEANS THE QUERY ANSWERED ZERO — NOT "the label looks like a
+           * zero", and not "nothing has loaded yet".
+           *
+           * `n` is the server total when the page reports one and the loaded
+           * length otherwise (`tabCount`, :1204), so `n === 0` is the same
+           * fact the footer and the kind-selector total are drawn from. Read
+           * off the SAME `tabCounts` array as the label, so the two cannot
+           * disagree about one tab.
+           *
+           * `?? false` is the load-bearing default, and it defaults toward
+           * SHOWING the count: a tab with no entry in `tabCounts` is one this
+           * function knows nothing about, and demoting it would be asserting
+           * emptiness from ignorance — the composer's bug in another costume.
+           * Absent evidence, the tab renders exactly as it does today.
+           */
+          tabEmpty={(tab: StatusCategoryTab) =>
+            tabCounts.find((c) => c.tab.id === tab.id)?.n === 0
+          }
         />
       )}
 
@@ -1734,6 +1753,21 @@ function SearchRow({
 }
 
 /**
+ * THE THREE STATES OF A TIER TAB, resolved in one place so the class list and
+ * the label can never disagree about which one a tab is in.
+ *
+ * ACTIVE WINS OVER EMPTY, and the order matters: the tab you are standing in
+ * keeps its full weight and its count even when the band it names holds
+ * nothing, because "where you are" outranks "how much is here". An empty tab
+ * you are NOT in is the one that demotes. Without this precedence, landing on
+ * an empty band would dim the one tab the reader most needs to locate.
+ */
+function tabClass(active: boolean, empty: boolean): string {
+  if (active) return 'lp__tab lp__tab--active';
+  return empty ? 'lp__tab lp__tab--empty' : 'lp__tab';
+}
+
+/**
  * THE LIFECYCLE TIER TABS — Open / Done / Archived, universal across
  * collection kinds (D41, user-ratified). Their own row: a tab is the
  * lifecycle band you are looking at, and the filter chips below narrow WITHIN
@@ -1745,12 +1779,23 @@ function CategoryTabs({
   activeTabId,
   onTab,
   tabLabel,
+  tabEmpty,
 }: {
   tabs?: readonly StatusCategoryTab[];
   activeTabId: string | null;
   onTab: (id: string) => void;
   /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
   tabLabel: (tab: StatusCategoryTab) => string;
+  /**
+   * Does this tab's own query hold nothing? PASSED, not parsed back out of
+   * `tabLabel`. The producer (`tabCount`) already computes `{ n, label, exact }`
+   * and this component was only ever handed the rendered string, so the only
+   * way to know a tab was empty was to read its label back as a number — which
+   * is how `22+` becomes 22 and how `0` from a truncated page becomes a lie.
+   * A fact the producer holds is threaded, never re-derived from its own
+   * rendering. Absent ⇒ nothing is treated as empty, so the row is unchanged.
+   */
+  tabEmpty?: (tab: StatusCategoryTab) => boolean;
 }) {
   /*
    * THE PHONE DRAWS THE MARKS AND NOT THE WORDS — owner ruling, 2026-08-19.
@@ -1780,11 +1825,33 @@ function CategoryTabs({
           type="button"
           role="tab"
           aria-selected={tab.id === activeTabId}
-          className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
+          className={tabClass(tab.id === activeTabId, tabEmpty?.(tab) ?? false)}
           onClick={() => onTab(tab.id)}
-          {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
+          /* THE COUNT IS NEVER LOST, IT ONLY STOPS BEING PAINTED. The phone
+             already moved it here because four counted tabs do not fit across
+             390px; an emptied desktop tab moves it here for the same reason in
+             a different currency — the zero was spending pixels and attention
+             to say nothing. Either way a screen reader still hears "Cancelled,
+             0", and dropping the label without this line would delete the fact
+             instead of demoting it. */
+          {...(oneSurface || (tabEmpty?.(tab) ?? false)
+            ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` }
+            : {})}
         >
-          {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
+          {oneSurface ? (
+            <CategoryGlyph category={tab.id} />
+          ) : (tabEmpty?.(tab) ?? false) ? (
+            /* NAME WITHOUT COUNT. A tab reading `To Do 0` is a control
+               advertising its own emptiness — the count is the only part
+               saying "nothing here", and it says it in the row the reader
+               scans to choose where to go. The NAME is what makes the
+               workflow legible, so the name stays and the zero goes. The tab
+               remains present, focusable and clickable: hiding it answers
+               "where is To Do?" with silence, which is worse than a zero. */
+            tab.label
+          ) : (
+            `${tab.label} ${tabLabel(tab)}`
+          )}
         </button>
       ))}
     </div>
@@ -1948,7 +2015,16 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="filter-trigger"
         >
-          filter ▾
+          {/* ONE CASING RULE FOR THE WHOLE HEADER: Title Case, because the
+              tier row above already speaks it and its labels are registry
+              data this file does not own. Two casing systems in adjacent rows
+              is noise the reader has to resolve before deciding it means
+              nothing — `To Do` / `In Progress` above, `filter` / `people` /
+              `collections` below, with no semantic difference to justify the
+              split. Matching UP to the row we cannot change is the only
+              choice that makes the header consistent without touching the
+              registry. */}
+          Filter ▾
         </button>
       ) : null}
       {people.length > 1 ? (
@@ -1960,7 +2036,7 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="people-filter-trigger"
         >
-          {selectedPeople.length > 0 ? `people · ${selectedPeople.length}` : 'people ▾'}
+          {selectedPeople.length > 0 ? `People · ${selectedPeople.length}` : 'People ▾'}
         </button>
       ) : null}
       {/* The collection lens trigger. Rendered exactly when the registry
@@ -1988,7 +2064,13 @@ function FilterRow({
             aria-haspopup="menu"
             data-testid="collection-lens-trigger"
           >
-            {`${membership.label.toLowerCase()} ▾`}
+            {/* `.toLowerCase()` DROPPED, not overlooked. It was the one place
+                the lowercasing was applied in code rather than typed into a
+                literal, so it was also the only one that would have kept
+                re-lowercasing a registry label after the other two were fixed
+                — the header would have gone back to two casings the moment a
+                kind declared a lens. The registry's own casing now stands. */}
+            {`${membership.label} ▾`}
           </button>
         )
       ) : null}
@@ -2008,6 +2090,15 @@ function FilterRow({
           aria-expanded={picker === 'sort'}
           aria-haspopup="menu"
           title={`Sorted by ${current.label}`}
+          /* A LONE GLYPH IS NOT A NAME. At the floor this collapses to `↓`,
+             and an arrow is not self-describing: it could be sort direction,
+             download, or scroll-to-bottom, and the reader is left inferring a
+             meaning the control asserts about itself. `title` gives a pointer
+             user a tooltip on hover and gives a touch user nothing at all.
+             The accessible name is stated in words, always — the same
+             colour+word rule the status pills follow, applied to a glyph:
+             never let the mark be the only thing carrying the meaning. */
+          aria-label={`Sort: ${current.label}`}
           data-testid="sort-trigger"
         >
           {/* At the floor the sort chip collapses to its glyph — T0-3 frame 4
