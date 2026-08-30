@@ -156,9 +156,25 @@ describe('a name is never truncated by its own count', () => {
     expect(facts).toContain('tabular-nums');
   });
 
-  it('splits the canvas four/eight, which is the brief as screen area', () => {
+  it('stacks the ways-in and the active work above the conversation', () => {
+    /*
+     * THIS PINNED `grid-template-columns: 4fr 8fr` — the side-by-side split
+     * that WAS the brief expressed as screen area. The owner replaced it on
+     * 2026-08-30, choosing a mix of two drawn layouts: the create cards and the
+     * active work run across the FULL WIDTH, and the conversation takes what is
+     * left beneath them.
+     *
+     * The old assertion is not relaxed, it is REPLACED — a test that still
+     * demanded columns would have made the owner's own layout a failure.
+     */
     const home = homeCss.match(/\.cv2-root \.hp-home\s*\{([^}]*)\}/s)?.[1] ?? '';
-    expect(home).toContain('grid-template-columns: 4fr 8fr');
+    expect(home).toContain('grid-template-rows');
+    expect(home).not.toContain('grid-template-columns');
     expect(home).toContain('min-height: 0');
+
+    /* THE CONVERSATION ROW IS FLOORED. `minmax(0, 1fr)` — an unfloored track
+     * lets a long transcript grow the row and push the cards off the top,
+     * which is the same collapse L4 bans by name elsewhere in this package. */
+    expect(home).toContain('minmax(0, 1fr)');
   });
 });

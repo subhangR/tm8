@@ -215,9 +215,16 @@
 /* LEFT THIRD what exists, RIGHT TWO THIRDS what is happening now. The ratio is
    the brief itself — "current sessions, current chat, anything I created" —
    expressed as screen area, so it is a `4fr 8fr` grid and not a taste. */
+/* CARDS ON TOP, CONVERSATION UNDERNEATH (owner, 2026-08-30 — a mix of
+   layouts 3 and 4). It was `4fr 8fr` side by side, which is why the active
+   cards were two abreast in a narrow column instead of spread across the
+   width. Now it is ROWS: the ways in and the active work take the full width
+   at their natural height, and the conversation takes everything left over.
+   `minmax(0, 1fr)` on the conversation row — L4 floors every track, and an
+   unfloored one here would let a long transcript push the cards off-screen. */
 .cv2-root .hp-home {
   display: grid;
-  grid-template-columns: 4fr 8fr;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   flex: 1 1 auto;
   min-width: 0;
@@ -237,7 +244,10 @@
   min-width: 0;
   min-height: 0;
   padding-right: 2px;
-  overflow-y: auto;
+  /* Sizes to its content now that it is a ROW rather than a column. It kept
+     `overflow-y: auto` from the side-by-side layout, which in a grid row that
+     is already `auto` produces a scroller inside a box that never overflows —
+     a scrollbar with nothing to scroll. */
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--pn-line-2) transparent;
@@ -770,7 +780,7 @@
    the seam instead of occupying a track of its own. Centred ON the edge —
    half its 8px sits either side — so the pointer target matches the line the
    eye sees. */
-.cv2-root .hp-listsep {
+.cv2-root .hp-listsep { display: none;
   position: absolute;
   top: 0;
   bottom: 0;
