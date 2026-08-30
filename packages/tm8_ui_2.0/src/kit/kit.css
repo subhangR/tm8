@@ -61,7 +61,15 @@
   }
 }
 
-/* --- Label + count — the noun always wins the width budget --------------- */
+/* --- Label + count — the noun yields LAST, which is not the same as never --
+   The order comes from the RATIO of shrink factors, never from exempting the
+   noun. `flex: none` on a name does not protect it: an unshrinkable child does
+   not truncate, it OVERFLOWS its container and paints over whatever sits
+   beside it, which is strictly worse than an ellipsis. `max-width: 100%` caps
+   the BOX, not the text inside it. So both children shrink; the count simply
+   yields eight times faster, and the root clips as a backstop.
+   (Credit: lane C, which paid for this lesson on the switcher pill — an
+   unshrinkable 280.6px name drawn inside a 105.6px box, across the tab row.) */
 .cv2-root .kit-label-count {
   box-sizing: border-box;
   display: inline-flex;
@@ -69,6 +77,10 @@
   gap: 5px;
   min-width: 0;
   max-width: 100%;
+  /* The backstop. Nothing this component contains may paint outside it.
+     Note this makes the inline-flex box take its bottom margin edge as its
+     baseline, which is the intended trade: never overlap a neighbour. */
+  overflow: hidden;
   padding: 2px 8px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
@@ -78,14 +90,24 @@
   color: var(--pn-ink-2);
   white-space: nowrap;
 }
+/* The noun shrinks — last, and only to a floor where it is still a word.
+   `display: block` is required before `text-overflow` does anything: ellipsis
+   cannot reach an anonymous text run. The floor is a TOKEN, not a constant:
+   hardcoding e.g. 9ch would force `PRs` to occupy nine characters of dead
+   width, so each surface sets the floor its own labels actually need. */
 .cv2-root .kit-label-count__label {
-  flex: 0 0 auto;
+  display: block;
+  flex: 0 1 auto;
+  min-width: var(--kit-label-floor, 0);
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--pn-ink);
 }
+/* The count yields FIRST — shrink factor 8 against the label's 1. */
 .cv2-root .kit-label-count__quantity {
   display: block;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 8 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--pn-ink-4);
