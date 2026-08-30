@@ -888,6 +888,30 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           ) : undefined
         }
         onCommitTitle={(title) => void save.commitNow({ title })}
+        /*
+         * THE PHONE'S SURFACE SLOT — user ruling 2026-08-29, "the terminal and
+         * transcript tab is taking too much height, just make them icons and
+         * put it on the tab bar above to the right end".
+         *
+         * SAME `surfaceSlot` STATE AS THE DESKTOP'S, and that is deliberate:
+         * the two arrangements are mutually exclusive by shell, so one slot
+         * node can only ever have one home, and `WorkSessionContent` decides
+         * which shape to portal into it. A second piece of state would let the
+         * two disagree about where the switch is.
+         *
+         * TERMINAL ONLY. Every other kind's header stays exactly as it was —
+         * this is the one archetype that HAS surface tabs, and the slot renders
+         * no box when it is not asked for.
+         */
+        trailing={
+          oneSurface && isTerminal ? (
+            <div
+              className="pn-head__surface"
+              ref={setSurfaceSlot}
+              data-testid="panel-head-surface-slot"
+            />
+          ) : undefined
+        }
       />
 
       {stalePin ? (
@@ -927,10 +951,12 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            * `src/transfer` owns (§15.2). It self-gates to null, so where it
            * does not apply the row collapses with it.
            *
-           * BOTH ARMS OMIT THE SURFACE SLOT. `WorkSessionContent` declines the
-           * slot on a phone anyway (`ridesPanelBar`), so passing one here has
-           * had no effect on this shell since `099c3a03`; not passing it is the
-           * same fact said in the direction that cannot rot.
+           * THE PHONE ARM OMITS THE SURFACE SLOT, AND NO LONGER BECAUSE THERE
+           * IS NOTHING TO PUT IN IT. Under the 2026-08-29 ruling the switch is
+           * hosted on this shell after all — it just is not hosted HERE. The
+           * slot node is rendered by `PanelHeader`'s `trailing` above, because
+           * that is the row the ruling names and because this branch draws no
+           * row at all when `end` is empty. One slot, one home.
            */
           oneSurface ? (
             <>

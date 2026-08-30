@@ -322,6 +322,37 @@ export function WorkSessionContent({
   const ridesPanelBar = switchSlot !== null && !oneSurface;
 
   /*
+   * USER RULING 2026-08-29 — "the terminal and transcript tab is taking too
+   * much height, just make them icons and put it on the tab bar above to the
+   * right end."
+   *
+   * THIS SUPERSEDES THE PHONE ROW ABOVE FOR THE HOSTED CASE, and the reasoning
+   * that built that row is not being called wrong — it is being outranked on
+   * the one axis it traded away. It bought a 44px thumb floor by spending a
+   * ~56px band of its own directly above the terminal, on a 844px screen that
+   * had already spent ~90px on chrome. The person reading that screen says the
+   * band costs more than the floor is worth.
+   *
+   * The `switchSlot` the phone now RECEIVES is not the 30px `.pn-panelbar` the
+   * comment above declines — `TabStrip` draws no bar at all on this shell. It
+   * is a slot at the right end of the identity row (`.pn-head__row`), which is
+   * a row this panel was already paying for. So the height is not moved, it is
+   * reclaimed: two marks ride a row that already exists.
+   *
+   * THE 44px FLOOR IS NOT SILENTLY DROPPED BACK TO 22px. The head slot sizes
+   * its marks at 36px square (work-session-content-phone.css), which is short
+   * of R2's floor and stated as such rather than left for a census to find —
+   * the ruling is explicit that the height matters more here, and 36 is the
+   * largest square that leaves the identity row its title.
+   *
+   * With no slot (the standalone tests, and any host that draws no head) the
+   * phone still gets its own row exactly as before.
+   */
+  const ridesHeadRow = switchSlot !== null && oneSurface;
+  /** Marks, not words — in the bar and in the head row alike. */
+  const asMarks = ridesPanelBar || ridesHeadRow;
+
+  /*
    * IN THE BAR THE CHIPS ARE MARKS; IN THEIR OWN ROW THEY STAY WORDS.
    *
    * The panel bar is a fixed 30px row that `.pn-tabs` and `.pn-panelbar__end`
@@ -332,11 +363,17 @@ export function WorkSessionContent({
    * "Co" and "Activity" clean off the edge, with `scrollbar-width: none` to
    * hide that anything had happened. Five marks give that width back.
    *
-   * THE PHONE ARRANGEMENT KEEPS ITS WORDS, and that is not an oversight. There
-   * the switch declines the slot and owns a 44px row of its own
-   * (`ridesPanelBar` above), offering TWO surfaces and competing with nothing —
-   * no width to buy, and buying it anyway would cost a reader two labels for no
-   * gain.
+   * THE PHONE BUYS THE SAME WIDTH FOR A DIFFERENT REASON — and it did NOT,
+   * until the 2026-08-29 ruling. This paragraph used to read "the phone
+   * arrangement keeps its words, and that is not an oversight… no width to buy",
+   * which was true of a switch that owned a whole row of its own. Hosted in the
+   * identity row it is buying width off a TITLE rather than off four panel
+   * tabs, and two uppercase words there would push the title into extra lines —
+   * spending vertically exactly what the ruling asked to reclaim.
+   *
+   * The slot-less phone row is unchanged and still keeps its words: it has no
+   * neighbour to take width from, so the paragraph above is still right about
+   * the case it was written for.
    *
    * The label is never lost either way: it becomes the button's accessible name
    * and its tooltip, so the mark is shorthand for a word that is still there
@@ -352,9 +389,7 @@ export function WorkSessionContent({
       type="button"
       role="tab"
       className={
-        ridesPanelBar
-          ? 'pn-surface-switch__tab pn-surface-switch__tab--mark'
-          : 'pn-surface-switch__tab'
+        asMarks ? 'pn-surface-switch__tab pn-surface-switch__tab--mark' : 'pn-surface-switch__tab'
       }
       data-surface={s}
       aria-selected={surface === s}
@@ -363,11 +398,11 @@ export function WorkSessionContent({
       /* The name goes on the BUTTON, not on the svg: the mark is decorative
          shorthand, so `getByRole('tab', { name: 'Git' })` keeps working and a
          screen reader hears the word exactly as it did before. */
-      {...(ridesPanelBar ? { 'aria-label': SURFACE_LABEL[s], title: SURFACE_LABEL[s] } : {})}
+      {...(asMarks ? { 'aria-label': SURFACE_LABEL[s], title: SURFACE_LABEL[s] } : {})}
       onClick={() => select(s)}
       onKeyDown={onTabKeyDown}
     >
-      {ridesPanelBar ? <VectorIcon paths={SURFACE_ART[s]} size={14} /> : SURFACE_LABEL[s]}
+      {asMarks ? <VectorIcon paths={SURFACE_ART[s]} size={ridesHeadRow ? 16 : 14} /> : SURFACE_LABEL[s]}
     </button>
   ));
 
@@ -389,8 +424,61 @@ export function WorkSessionContent({
    * exactly the markup it had — one element that is both — because it has no
    * marker to place and no reason to grow a wrapper.
    */
+  /*
+   * THE THREE THAT ARE NOT HERE, SAID OUT LOUD — see the long note at its
+   * placement below for why it is one control and why it is a real tap target.
+   *
+   * IN THE HEAD ROW IT SHRINKS TO A MARK, and that is the one concession the
+   * 2026-08-29 ruling forces. `Git · Debug · Graph` is ~90px of 10px text, and
+   * spending it in the identity row would give the title back less than the
+   * removed band gained. So the words move from the FACE of the control to its
+   * accessible name, its tooltip and its disclosure — one tap, or one focus on
+   * a keyboard, and the same three names with the same reason are there.
+   *
+   * That is a real demotion and it is recorded as one. What it is NOT is the
+   * DEF-003 pathology this marker exists to prevent: the control is still
+   * PRESENT, still reachable, still answers "where did Git, Debug and Graph
+   * go". Absence measures as health; a mark that discloses does not.
+   */
+  const refusalMarker = (
+    <span
+      className="pn-surface-switch__refused"
+      data-testid="work-session-surface-refused-marker"
+      data-form={ridesHeadRow ? 'mark' : 'words'}
+    >
+      <DisabledIconControl
+        label={`${PHONE_REFUSED_LIST} — not on a phone`}
+        reason={{
+          cause: `${PHONE_REFUSED_LIST} have no phone arrangement`,
+          remedy: 'each is refused for its own reason — open this session on a desktop to reach them',
+        }}
+      >
+        {ridesHeadRow ? '⋯' : PHONE_REFUSED_LIST}
+      </DisabledIconControl>
+    </span>
+  );
+
   const switchEl = showSwitch ? (
-    oneSurface ? (
+    ridesHeadRow ? (
+      /*
+       * THE HEAD ROW'S ARRANGEMENT. Same two parts as the phone row below and
+       * the same reason they are two: `role="tablist"` promises its children
+       * are tabs, and the refusal marker is a `role="button"` that no reader
+       * can select. The wrapper is what the head slot positions; the inner
+       * element is what the accessibility tree walks.
+       */
+      <div className="pn-surface-switch" data-arrangement="phone-head">
+        <div
+          className="pn-surface-switch__tabs"
+          role="tablist"
+          aria-label="Work session surface"
+          data-testid="work-session-surface-switch"
+        >
+          {tabs}
+        </div>
+        {refusalMarker}
+      </div>
+    ) : oneSurface ? (
       <div className="pn-surface-switch" data-arrangement="phone-row">
         <div
           className="pn-surface-switch__tabs"
@@ -438,17 +526,7 @@ export function WorkSessionContent({
           `panels.css:54-60`, and one lane must not restyle a shared honesty
           primitive while that is open.
         */}
-        <span className="pn-surface-switch__refused" data-testid="work-session-surface-refused-marker">
-          <DisabledIconControl
-            label={`${PHONE_REFUSED_LIST} — not on a phone`}
-            reason={{
-              cause: `${PHONE_REFUSED_LIST} have no phone arrangement`,
-              remedy: 'each is refused for its own reason — open this session on a desktop to reach them',
-            }}
-          >
-            {PHONE_REFUSED_LIST}
-          </DisabledIconControl>
-        </span>
+        {refusalMarker}
       </div>
     ) : (
       <div
@@ -473,7 +551,7 @@ export function WorkSessionContent({
          this says which set of surfaces was on offer to show it. */
       data-arrangement={oneSurface ? 'phone' : 'desktop'}
     >
-      {switchEl ? (ridesPanelBar && switchSlot ? createPortal(switchEl, switchSlot) : switchEl) : null}
+      {switchEl ? (asMarks && switchSlot ? createPortal(switchEl, switchSlot) : switchEl) : null}
 
       {/*
         A ROUTE THAT NAMED A REFUSED SURFACE GETS AN ANSWER ABOUT THAT SURFACE.
