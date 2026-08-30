@@ -48,81 +48,90 @@ function blocksFor(selector: string): readonly string[] {
 const declares = (selector: string, needle: string): boolean =>
   blocksFor(selector).some((body) => body.includes(needle));
 
-describe('the active tab is marked by an underline', () => {
+describe('the active tab is marked by an outline', () => {
   it('finds the blocks it claims to read (a helper matching nothing proves nothing)', () => {
     expect(blocksFor('.lp__tab').length).toBeGreaterThanOrEqual(2);
     expect(blocksFor('.lp__tab--active').length).toBeGreaterThanOrEqual(1);
-    // TWO, not one: the light bar and its dark-theme override. Asserting `1`
-    // here was my own first draft and it was wrong — the dark group's last
-    // selector before `{` is also `… .lp__tab--active::after`, so it matches.
-    // Counting blocks I expected rather than blocks the pattern opens is the
-    // same miscount lane I caught in its own helper comment.
-    expect(blocksFor('.lp__tab--active::after').length).toBeGreaterThanOrEqual(1);
     expect(() => blocksFor('.lp__tab--nonexistent')).toThrow();
   });
 
-  it('carries no fill and no border — the owner asked for that shape to go', () => {
+  it('carries no fill — the shape the owner rejected TWICE', () => {
     /*
-     * THE SEQUENCE, because the reasoning is not obvious from the result. The
-     * owner was sent the status row with a FILLED active pill, asked for that
-     * shape to be changed, was given three options — underline, ring, ink-only
-     * — and chose the underline. So `TARGET.png` showing a fill is not the
-     * instruction: it is the artefact the owner looked at before asking for
-     * something else. A measurement of a design tells you what the design
-     * does, never whether it is still what was asked for.
+     * THE SEQUENCE, and it now has three steps rather than two. The owner was
+     * sent the status row with a FILLED active pill, asked for that shape to
+     * go, was offered underline / ring / ink-only, and chose the UNDERLINE.
+     * That shipped as an `::after` rule and was never deployed. Looking at
+     * prod — still the fill, because none of this has shipped — the owner then
+     * asked for "nice bordered one same right side": the RING they had earlier
+     * declined. It was put to them again with the underline named as the
+     * alternative, and they chose bordered. Latest instruction wins.
      *
-     * The accent STAYS on the word: "where you are" is its one sanctioned job,
-     * and decolouring the active tab would delete the only cue naming the band
-     * on screen. What goes is the box.
+     * THE INVARIANT ACROSS ALL THREE ROUNDS IS THE FILL. It is the one shape
+     * that has been rejected every time, so `background` is the assertion that
+     * must never soften here, whatever carries the mark next.
+     *
+     * The accent also STAYS on the word: "where you are" is its one sanctioned
+     * job, and decolouring the active tab would delete the only cue naming the
+     * band on screen. The border joins the word; it does not replace it.
      */
     expect(declares('.lp__tab--active', 'color: var(--pn-brand-2)')).toBe(true);
     expect(declares('.lp__tab--active', 'font-weight: 700')).toBe(true);
     expect(declares('.lp__tab--active', 'background')).toBe(false);
-    expect(declares('.lp__tab--active', 'border-color')).toBe(false);
   });
 
-  it('draws a 2px rule under the label, positioned so it cannot move the row', () => {
-    const bar = blocksFor('.lp__tab--active::after')[0] ?? '';
-    expect(bar).toContain('height: 2px');
-    expect(bar).toContain('position: absolute');
-    expect(bar).toContain('background: var(--pn-brand-2)');
-    // Inset by the tab's own horizontal padding, so the rule spans the LABEL
-    // rather than the hit area — the shape in the owner's drawing.
-    expect(bar).toContain('left: var(--pn-space-2)');
-    expect(bar).toContain('right: var(--pn-space-2)');
-    // The base rule owns the positioning context. Declared there and not on
-    // `--active`, so the containing block does not appear and disappear with
-    // the state.
-    expect(declares('.lp__tab', 'position: relative')).toBe(true);
+  it('draws the ring on the tab\'s own reserved border, so the mark costs no layout', () => {
+    expect(declares('.lp__tab--active', 'border-color: var(--pn-brand-2)')).toBe(true);
+    // The 1px is reserved TRANSPARENT on the base rule precisely so turning it
+    // on cannot reflow the row. If that ever becomes `border: none`, this mark
+    // starts moving its neighbours and the failure looks like a spacing bug.
+    expect(declares('.lp__tab', 'border: 1px solid transparent')).toBe(true);
+    // The underline is GONE, not left dead. Seven built-but-unrendered rules
+    // were catalogued on 2026-08-30; a retired mark that still ships is how an
+    // eighth happens.
+    expect(() => blocksFor('.lp__tab--active::after')).toThrow();
+    expect(CSS).not.toContain('lp__tab--active::after');
   });
 
-  it('keeps the mark under the pointer, and never grows a fill on hover', () => {
-    // Hover must not read as deselection. The bar is a pseudo-element no hover
-    // rule touches, so hover only has to stop the accent word reverting to
-    // `--pn-ink` via the base `:hover`. A background here would rebuild the
-    // box the owner asked to remove.
+  it('keeps BOTH halves of the mark under the pointer, and never grows a fill', () => {
+    // Hover must not read as deselection. Under the underline this needed only
+    // the word defended, because a pseudo-element no hover rule touched
+    // carried the state. The ring lives on the tab's own border, which the
+    // base `:hover` does touch — so hover now has to hold two declarations
+    // where it used to hold one. That is the cost of moving a state onto a
+    // property something else already writes.
     expect(declares('.lp__tab--active:hover', 'color: var(--pn-brand-2)')).toBe(true);
+    expect(declares('.lp__tab--active:hover', 'border-color: var(--pn-brand-2)')).toBe(true);
     expect(declares('.lp__tab--active:hover', 'background')).toBe(false);
   });
 
-  it('flips the bar in dark, not only the word', () => {
+  it('flips the ring in dark, not only the word', () => {
     // WHEN YOU MOVE WHAT CARRIES A STATE, EVERY RULE THAT RESTATES IT MOVES
-    // TOO. The dark block lifts the active word off `--pn-brand-2` (muddy on a
-    // dark surface) onto `--pn-brand`; the underline now says the same thing,
-    // so it flips with it. A pseudo-element does not inherit `background`, so
-    // it needs its own selector — which is exactly the kind of half-audit that
-    // ships a dark-mode tab whose word and rule disagree.
-    // COLLECT BOTH DARK GROUPS AND ASK WHICH PROPERTY EACH CARRIES, rather
-    // than writing one regex per group. My first draft did the latter and the
-    // text regex used `[^{:]*`, which cannot match a group whose last selector
+    // TOO — and this is the SECOND time that audit has been forced on this
+    // element. The dark block lifts the active word off `--pn-brand-2` (muddy
+    // on a dark surface) onto `--pn-brand`. Under the underline the bar had to
+    // follow, in its own selector, because a pseudo-element does not inherit
+    // `background`. The ring follows too, but it can ride the SAME group,
+    // because `border-color` is a property of the element the word is on.
+    //
+    // That is the one respect in which the ring is cheaper than the underline:
+    // one carrier, one dark override, no pseudo-element to keep in step.
+    //
+    // COLLECT THE DARK GROUPS AND ASK WHICH PROPERTY EACH CARRIES, rather than
+    // writing one regex per group. My first draft did the latter and the text
+    // regex used `[^{:]*`, which cannot match a group whose last selector
     // before `{` is `… .lp__tab--active:hover` — it excluded the very colon it
     // had to cross. It failed while the CSS was correct, which is the same
     // false-red the first-match helper produces one level up.
     const dark = [...CSS.matchAll(/\[data-theme='dark'\][^{]*\.lp__tab--active[^{]*\{([^}]*)\}/g)]
       .map((m) => m[1] ?? '');
-    expect(dark.length).toBeGreaterThanOrEqual(2);
+    expect(dark.length).toBeGreaterThanOrEqual(1);
     expect(dark.some((b) => b.includes('color: var(--pn-brand)'))).toBe(true);
-    expect(dark.some((b) => b.includes('background: var(--pn-brand)'))).toBe(true);
+    expect(dark.some((b) => b.includes('border-color: var(--pn-brand)'))).toBe(true);
+    // The word and the edge must flip TOGETHER. A dark tab whose ring stays on
+    // `--pn-brand-2` while its word moves to `--pn-brand` is two blues arguing
+    // about which one means "here" — the exact defect the underline version
+    // had to answer, inherited by the shape that replaced it.
+    expect(dark.some((b) => b.includes('color: var(--pn-brand)') && b.includes('border-color: var(--pn-brand)'))).toBe(true);
   });
 
   it('hovers with an edge, never with the retired --pn-hover fill', () => {
