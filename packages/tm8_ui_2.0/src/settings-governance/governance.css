@@ -67,7 +67,7 @@
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -77,7 +77,7 @@
    node-side truths never share a treatment, so this one sits on the surface
    ramp with a stronger edge rather than repeating the paper card. */
 .cv2-root .gov-card--node {
-  background: var(--pn-surface);
+  background: var(--pn-card);
   border-color: var(--pn-line-2);
 }
 
@@ -93,6 +93,8 @@
   font-family: var(--pn-serif);
   font-size: 16px;
   font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .cv2-root .gov-card__sub {
@@ -100,6 +102,10 @@
   font-size: var(--pn-fs-micro);
   font-weight: 500;
   color: var(--pn-ink-4);
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cv2-root .gov-card__spacer {
@@ -136,7 +142,8 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 9px 14px;
+  padding: 9px 12px;
+  border-left: 2px solid transparent;
   /* SIBLING separator, not a component bound. */
   border-bottom: 1px solid var(--pn-x-hairline-soft);
 }
@@ -146,7 +153,8 @@
 }
 
 .cv2-root .gov-row--selected {
-  background: var(--pn-active);
+  background: var(--pn-hover);
+  border-left-color: var(--pn-brand);
 }
 
 .cv2-root .gov-row__head {
@@ -258,7 +266,7 @@
   padding: 9px 11px;
   border: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
   border-radius: var(--pn-r-sm);
-  background: var(--pn-x-warn-fill);
+  background: transparent;
 }
 
 .cv2-root .gov-unread__cause {
@@ -306,12 +314,12 @@
 }
 
 .cv2-root .gov-refused--primary .hon-disabled {
-  border: 1px solid color-mix(in srgb, var(--pn-brand) 35%, transparent);
-  background: rgba(var(--pn-brand-rgb), 0.11);
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
   border-radius: var(--pn-r-sm);
   padding: 2px 9px;
   font-weight: 600;
-  color: var(--pn-brand-2);
+  color: var(--pn-ink-2);
 }
 
 /* Kit button grammar, compact form (Kinetic W3): 28px box, bordered r-sm,
@@ -428,7 +436,7 @@
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-xs);
   overflow: hidden;
-  background: var(--pn-surface);
+  background: var(--pn-card);
 }
 
 .cv2-root .gov-segment .hon-disabled-group + .hon-disabled-group {
@@ -466,7 +474,7 @@
   padding: 7px 9px;
   border: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
   border-radius: var(--pn-r-sm);
-  background: color-mix(in srgb, var(--pn-wait) 10%, var(--pn-card));
+  background: transparent;
   color: var(--pn-wait);
   font-size: var(--pn-fs-label);
   font-weight: 500;
@@ -683,7 +691,7 @@
 
 .cv2-root .gov-glyph--on {
   border-color: var(--pn-brand);
-  background: rgba(var(--pn-brand-rgb), 0.11);
+  background: var(--pn-card);
   color: var(--pn-brand-2);
 }
 
@@ -776,7 +784,7 @@
 }
 
 .cv2-root .gov-preview-card {
-  background: var(--pn-surface);
+  background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   padding: 8px 10px;
@@ -854,7 +862,7 @@
 .cv2-root .gov-pre {
   margin: 0;
   padding: 8px 10px;
-  background: var(--pn-surface);
+  background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   font-family: var(--pn-mono);

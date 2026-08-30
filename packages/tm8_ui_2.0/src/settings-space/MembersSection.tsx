@@ -77,7 +77,7 @@ export interface MembersSectionProps {
    * that does not still gets the same title rather than a blank head.
    */
   heading?: string;
-  /** The oracle's ＋ Invite jumps to the invites section (L49). */
+  /** The Invite action jumps to the invites section. */
   onInvite?: () => void;
   /**
    * Perform the write. Absent means this surface is READ-ONLY and every role
@@ -270,7 +270,7 @@ export function MembersSection({
       action={
         onInvite ? (
           <button type="button" className="set-chip" onClick={onInvite}>
-            ＋ Invite
+            Invite
           </button>
         ) : undefined
       }
@@ -410,33 +410,38 @@ export function MembersSection({
             </p>
           ) : null}
 
-          <span className="set-eyebrow">Roles</span>
-          {roleLegendRows().map((row) => {
-            // Which of the oracle's four words this build can actually store,
-            // read off the registry vocabulary rather than typed — the same
-            // derivation the selects use, so the legend cannot claim a role
-            // the control does not offer.
-            const representable = roles.includes(row.role);
-            return (
-              <span className="set-members__legend-row" key={row.role}>
-                <span
-                  className={`set-members__legend-role${representable ? '' : ' set-members__legend-role--absent'}`}
-                >
-                  {row.role}
-                </span>
-                <span className="set-members__legend-what">{row.what}</span>
-              </span>
-            );
-          })}
-          <span className="set-prose">{AGENTS_ARE_NOT_MEMBERS}</span>
-          <span className="set-prose">{ROLE_RULES_NOTE}</span>
-          <span className="set-absent__why">{VIEWER_ROLE_FOOTNOTE}</span>
-          {viewerIsAdmin && !viewerIsOwner ? (
-            <span className="set-absent__why">{ROLE_CHANGE_NEEDS_OWNER.remedy}</span>
-          ) : null}
-          {!viewerIsAdmin ? (
-            <span className="set-absent__why">{ROLE_CHANGE_NOT_ADMIN.remedy}</span>
-          ) : null}
+          <details className="set-members__details">
+            <summary className="set-members__details-summary">Role guide and ownership rules</summary>
+            <div className="set-members__details-body">
+              <span className="set-eyebrow">Roles</span>
+              {roleLegendRows().map((row) => {
+                // Which of the oracle's four words this build can actually store,
+                // read off the registry vocabulary rather than typed — the same
+                // derivation the selects use, so the legend cannot claim a role
+                // the control does not offer.
+                const representable = roles.includes(row.role);
+                return (
+                  <span className="set-members__legend-row" key={row.role}>
+                    <span
+                      className={`set-members__legend-role${representable ? '' : ' set-members__legend-role--absent'}`}
+                    >
+                      {row.role}
+                    </span>
+                    <span className="set-members__legend-what">{row.what}</span>
+                  </span>
+                );
+              })}
+              <span className="set-prose">{AGENTS_ARE_NOT_MEMBERS}</span>
+              <span className="set-prose">{ROLE_RULES_NOTE}</span>
+              <span className="set-absent__why">{VIEWER_ROLE_FOOTNOTE}</span>
+              {viewerIsAdmin && !viewerIsOwner ? (
+                <span className="set-absent__why">{ROLE_CHANGE_NEEDS_OWNER.remedy}</span>
+              ) : null}
+              {!viewerIsAdmin ? (
+                <span className="set-absent__why">{ROLE_CHANGE_NOT_ADMIN.remedy}</span>
+              ) : null}
+            </div>
+          </details>
         </div>
       </div>
     </SectionFrame>

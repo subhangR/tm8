@@ -102,7 +102,7 @@ export function InteractionProfilesScreen({
           }
           subtitle={spaceLabel}
           action={
-            <RefusedControl reason={GOVERNANCE_REASONS.newProfile} glyph="＋" emphasis="primary">
+            <RefusedControl reason={GOVERNANCE_REASONS.newProfile} emphasis="primary">
               New
             </RefusedControl>
           }
@@ -285,7 +285,7 @@ function LifecycleGovernanceCard() {
             Duplicate as draft
           </RefusedControl>
           <RefusedControl reason={GOVERNANCE_REASONS.retireProfile}>Retire</RefusedControl>
-          <RefusedControl reason={GOVERNANCE_REASONS.setProfileDefault} glyph="＋">
+          <RefusedControl reason={GOVERNANCE_REASONS.setProfileDefault}>
             Set default
           </RefusedControl>
         </div>

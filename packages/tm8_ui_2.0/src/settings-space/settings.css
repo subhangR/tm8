@@ -97,13 +97,13 @@
 }
 
 .set-card {
-  background: var(--pn-surface);
+  background: var(--pn-card);
   /* Oracle L30 draws the card border as #2C2719 — that is the DARK --pn-line,
      used because the card sits on the review board's dark stage. In product
      the same edge is --pn-line, which inverts correctly. RULED, HANDOVER §2. */
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md); /* L30 radius:10px */
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
   display: flex;
   overflow: hidden;
   min-height: 0;
@@ -137,7 +137,7 @@
 .set-nav {
   width: 160px; /* L31 */
   flex: none;
-  background: var(--pn-surface);
+  background: var(--pn-card);
   border-right: 1px solid var(--pn-line);
   display: flex;
   flex-direction: column;
@@ -184,7 +184,7 @@
   font-weight: 600; /* L34 */
   color: var(--pn-ink);
   border-left-color: var(--pn-brand);
-  background: var(--pn-active);
+  background: var(--pn-hover);
   padding: 6px 14px 6px 11px; /* L34 — the 3px rule eats from the left pad */
 }
 /* `flex: none` because the nav now scrolls: without it a twelve-row column in
@@ -290,17 +290,17 @@
   box-sizing: border-box;
   min-height: 28px;
   font-family: var(--pn-ui);
-  color: var(--pn-brand-2);
+  color: var(--pn-ink-2);
   font-weight: 600;
-  background: var(--pn-brand-soft);
-  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   padding: 0 12px;
   font-size: var(--pn-fs-sm);
   line-height: 1;
   cursor: pointer;
 }
-.set-chip:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+.set-chip:hover { background: var(--pn-hover); }
 
 /* A DISABLED CHIP MUST NOT LOOK LIVE. This base rule was missing entirely —
    `settings.css` carried zero `:disabled` rules while six sections disabled a
@@ -415,22 +415,22 @@
   padding: 2px 9px;
   white-space: nowrap;
 }
-.set-role--locked { font-weight: 600; color: var(--pn-brand-2); background: var(--pn-brand-soft); }
+.set-role--locked { font-weight: 600; color: var(--pn-ink-2); background: transparent; border: 1px solid var(--pn-line-2); }
 .set-role--select { color: var(--pn-ink-2); border: 1px solid var(--pn-line-2); background: var(--pn-card); }
-.set-role--pending { font-weight: 600; color: var(--pn-wait); background: var(--pn-wait-soft); }
+.set-role--pending { font-weight: 600; color: var(--pn-wait); background: transparent; border: 1px solid color-mix(in srgb, var(--pn-wait) 40%, transparent); }
 
 /* L78: the pending row is tinted rgba(162,156,142,.06). --pn-idle-soft is the
    same colour at .16, so this DERIVES the .06 rather than restating a literal
    the guard would (correctly) reject — and it tracks the token in dark. */
-.set-member--pending { background: color-mix(in srgb, var(--pn-idle-soft) 38%, transparent); }
+.set-member--pending { background: transparent; }
 
 /* --- T2-1c · invites (oracle L92–L122) ----------------------------------- */
 
 .set-panel {
-  background: var(--pn-surface);
+  background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -509,7 +509,7 @@
   background: var(--pn-paper); /* L125 — paper, not surface: it is a page */
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -740,7 +740,7 @@
 }
 .set-prev__row--active {
   padding: 5px 12px 5px 9px;
-  background: var(--pn-active);
+  background: var(--pn-hover);
   border-left-color: var(--pn-brand);
 }
 .set-prev__row--active .set-prev__label { font-weight: 600; color: var(--pn-ink); }
@@ -774,14 +774,14 @@
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: none;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 .set-state__banner {
-  background: var(--pn-hover);
+  background: transparent;
   border-radius: var(--pn-r-md);
   padding: 9px 11px;
   display: flex;

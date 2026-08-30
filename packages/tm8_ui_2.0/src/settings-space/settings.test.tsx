@@ -157,7 +157,7 @@ const LIVE_VERBS = [
   // control from it.
   /^Agent credentials$/,
   /^Danger zone$/,
-  /^＋ Invite$/,
+  /^Invite$/,
   /^discard$/,
   /^reorder .* — alt\+arrow to move$/,
   // The touch reorder path. Live for exactly the reason the grip beside them is:
@@ -168,10 +168,10 @@ const LIVE_VERBS = [
   /^move .+ (up|down)$/,
   /^rename /,
   /^remove /,
-  /^＋ view ref$/,
-  /^＋ kind ref$/,
-  /^＋ group$/,
-  /^＋ add child$/,
+  /^Add view$/,
+  /^Add kind$/,
+  /^Add group$/,
+  /^Add child$/,
   /^add group$/,
   /^cancel$/,
   /^add to group$/,
@@ -215,7 +215,7 @@ const LIVE_VERBS = [
   /^Model id$/,
   /^Display label$/,
   /^Agent tool$/,
-  /^＋ Add model$/,
+  /^Add model$/,
   /^Edit /,
   /^Hide /,
   /^Delete /,
@@ -747,9 +747,9 @@ describe('T2-3 — the menu editor', () => {
    * control is LIVE. That is the editor-side proof that those views were
    * unrouted rather than deleted — a viewer who wants one back can put it back.
    */
-  it('“＋ view ref” is LIVE, offering the refs the default leaves free', () => {
+  it('“Add view” is LIVE, offering the refs the default leaves free', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
-    const add = screen.getByRole('button', { name: '＋ view ref' });
+    const add = screen.getByRole('button', { name: 'Add view' });
     expect(add.getAttribute('aria-disabled')).toBeNull();
     fireEvent.click(add);
     const options = screen.getAllByRole('button').filter((b) => b.className === 'set-add');
@@ -762,10 +762,12 @@ describe('T2-3 — the menu editor', () => {
     expect(labels.some((l) => /Inbox/i.test(l))).toBe(true);
   });
 
-  it('“＋ kind ref” is LIVE, and adding one lands in the preview', () => {
+  it('“Add kind” is LIVE, and adding one lands in the preview', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
-    fireEvent.click(screen.getByRole('button', { name: '＋ kind ref' }));
-    const options = screen.getAllByRole('button').filter((b) => /^[^＋]/.test(b.textContent ?? ''));
+    fireEvent.click(screen.getByRole('button', { name: 'Add kind' }));
+    const options = screen.getAllByRole('button').filter(
+      (b) => b.className === 'set-add' && !/^Add (view|kind|group|child)$/.test(b.textContent ?? ''),
+    );
     const pick = options.find((b) => (b.textContent ?? '').trim().length > 2 && b.className === 'set-add');
     expect(pick, 'the picker must offer at least one kind').toBeTruthy();
     const label = (pick!.textContent ?? '').trim().split(' ').slice(1).join(' ');
@@ -782,7 +784,10 @@ describe('T2-3 — the menu editor', () => {
     // full row stating its numbers, not about the control class.)
     const capped = screen.getByRole('button', { name: 'add child' });
     expect(capped.getAttribute('aria-disabled')).toBe('true');
-    expect(capped.textContent).toMatch(/this row has 8 of 8/);
+    expect(capped.textContent).toBe('Add child');
+    const reasonId = capped.getAttribute('aria-describedby');
+    expect(reasonId).toBeTruthy();
+    expect(document.getElementById(reasonId!)?.textContent).toMatch(/this row has 8 of 8/);
   });
 
   it('the conflict panel appears only when a NEWER revision is known', () => {

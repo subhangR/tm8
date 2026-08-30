@@ -1,5 +1,5 @@
 /**
- * "＋ ATTACH A FILE" — the picker half of an upload, as one control.
+ * "Attach a file" — the picker half of an upload, as one control.
  *
  * WHY IT LIVES IN `files/` AND NOT BESIDE THE HOOK. `useRichInput` owns the
  * upload MACHINE and takes files from three entry points (paste, drop, the
@@ -31,7 +31,7 @@ export function ChooseFilesControl({
   title?: string;
   className?: string;
   inputClassName?: string;
-  /** Visible content. Default: the ＋ every attach control in the app uses. */
+  /** Visible content. Default: the compact add mark used by attach controls. */
   children?: ReactNode;
   onChoose: (files: FileList) => void;
 }) {
@@ -45,7 +45,7 @@ export function ChooseFilesControl({
         title={title}
         onClick={() => input.current?.click()}
       >
-        {children ?? <span aria-hidden>＋</span>}
+        {children ?? <span aria-hidden>+</span>}
       </button>
       <input
         ref={input}
