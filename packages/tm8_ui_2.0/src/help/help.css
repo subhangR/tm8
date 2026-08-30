@@ -18,7 +18,7 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: var(--pn-surface);
+  background: var(--pn-paper);
   border-right: 1px solid var(--pn-line);
   scrollbar-color: var(--pn-line-2) transparent;
 }
@@ -40,7 +40,7 @@
 }
 
 .hlp-masthead::after {
-  content: '◆';
+  content: none;
   position: absolute;
   left: 50%;
   bottom: -6px;
@@ -67,7 +67,7 @@
 }
 
 .hlp-masthead__kicker span:nth-child(2),
-.hlp-reader__crumb span:nth-child(2) { color: var(--pn-brand); font-size: 7px; }
+.hlp-reader__crumb span:nth-child(2) { display: none; }
 
 .hlp-masthead__title {
   margin: 12px 0 6px;
@@ -89,6 +89,7 @@
 }
 
 .hlp-masthead__measure {
+  display: none;
   margin: 14px 0 0;
   color: var(--pn-ink-3);
   font-family: var(--pn-mono);
@@ -137,7 +138,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.hlp-map__item--open { color: var(--pn-brand); border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.hlp-map__item--open { color: var(--pn-ink-1); border-color: var(--pn-line-2); background: var(--pn-card); }
 
 .hlp-library { display: flex; flex-direction: column; gap: 34px; }
 
@@ -178,7 +179,7 @@
   font-size: var(--pn-fs-label);
   letter-spacing: normal;
   text-align: left;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .hlp-search__control {
@@ -258,9 +259,9 @@
 }
 
 .hlp-chapter__number {
-  color: var(--pn-brand);
+  color: var(--pn-ink-4);
   font-family: var(--pn-serif);
-  font-size: 23px;
+  font-size: 18px;
   font-style: italic;
   line-height: 1;
 }
@@ -317,8 +318,8 @@
   transition: background var(--pn-dur-fast) var(--pn-ease-out), border-color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-.hlp-row:hover { background: var(--pn-card); border-color: var(--pn-line); transform: translateX(2px); }
-.hlp-row--active { background: var(--pn-brand-soft); border-color: var(--pn-brand); }
+.hlp-row:hover { background: var(--pn-card); border-color: var(--pn-line); }
+.hlp-row--active { background: var(--pn-hover); border-color: var(--pn-line-2); }
 .hlp-row:focus-visible,
 .hlp-back:focus-visible,
 .hlp-step:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 2px; }
@@ -340,7 +341,7 @@
 .hlp-row__title { font-family: var(--pn-ui); font-size: var(--pn-fs-body); font-weight: 600; line-height: 1.3; }
 .hlp-row__excerpt { display: -webkit-box; overflow: hidden; color: var(--pn-ink-2); font-family: var(--pn-ui); font-size: var(--pn-fs-sm); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .hlp-row__arrow { padding-top: 1px; color: var(--pn-ink-4); font-size: 13px; transition: color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out); }
-.hlp-row:hover .hlp-row__arrow { transform: translateX(2px); }
+.hlp-row:hover .hlp-row__arrow { color: var(--pn-ink-2); }
 
 /* THE READER IS THE SCROLLER, not the plate. A frame sized to the pane scrolls
    internally, which pins the header above it forever — two stacked headers and
@@ -371,7 +372,7 @@
   min-height: 78px;
   padding: 11px 18px 13px;
   border-bottom: 1px solid var(--pn-line-2);
-  background: var(--pn-surface);
+  background: var(--pn-paper);
   animation: hlp-arrive var(--pn-dur-slow) var(--pn-ease-out) both;
 }
 
@@ -400,7 +401,7 @@
   transition: border-color var(--pn-dur-fast) var(--pn-ease-out), color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-.hlp-step:hover:not(:disabled), .hlp-back:hover { color: var(--pn-brand); border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.hlp-step:hover:not(:disabled), .hlp-back:hover { color: var(--pn-ink-1); border-color: var(--pn-line-2); background: var(--pn-hover); }
 .hlp-step:disabled { cursor: default; opacity: .38; }
 .hlp-back { gap: 5px; padding: 0 10px; }
 
@@ -454,7 +455,7 @@
   padding: 6px 14px;
   color: var(--pn-ink-4);
   border-top: 1px solid var(--pn-line-2);
-  background: var(--pn-surface);
+  background: var(--pn-paper);
   font-family: var(--pn-mono);
   font-size: 9.5px;
   letter-spacing: .05em;
@@ -474,7 +475,7 @@
   width: 100%;
   max-width: 880px;
   margin: 0 auto;
-  padding: 52px 40px 64px;
+  padding: 40px 40px 52px;
   animation: hlp-page-in var(--pn-dur-base) var(--pn-ease-out) both;
 }
 
@@ -486,7 +487,7 @@
 }
 
 .hlp-home__hero::after {
-  content: '◆';
+  content: none;
   position: absolute;
   left: 50%;
   bottom: -6px;
@@ -512,13 +513,13 @@
   text-transform: uppercase;
 }
 
-.hlp-home__kicker span:nth-child(even) { color: var(--pn-brand); font-size: 7px; }
+.hlp-home__kicker span:nth-child(even) { display: none; }
 
 .hlp-home__title {
   margin: 18px 0 14px;
   color: var(--pn-ink-1);
   font-family: var(--pn-serif);
-  font-size: 54px;
+  font-size: 46px;
   font-weight: 400;
   letter-spacing: -.035em;
   line-height: .98;
@@ -556,7 +557,7 @@
   overflow: hidden;
 }
 
-.hlp-home__pillar { padding: 18px 18px 20px; background: var(--pn-surface); }
+.hlp-home__pillar { padding: 18px 18px 20px; background: var(--pn-paper); }
 
 .hlp-home__pillar h2 {
   margin: 0 0 7px;
@@ -588,20 +589,20 @@
   color: var(--pn-ink-1);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
-  background: var(--pn-surface);
+  background: var(--pn-paper);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: border-color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-.hlp-home__cta:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); transform: translateY(-1px); }
+.hlp-home__cta:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
 .hlp-home__cta:focus-visible,
 .hlp-card:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 2px; }
 .hlp-home__cta-verb { font-family: var(--pn-serif); font-size: 17px; font-weight: 500; letter-spacing: -.01em; }
 .hlp-home__cta-where { grid-row: 2; color: var(--pn-ink-3); font-family: var(--pn-caps); font-size: var(--pn-fs-fine); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .hlp-home__cta-arrow { grid-row: 1 / span 2; color: var(--pn-brand); font-size: 17px; transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
-.hlp-home__cta:hover .hlp-home__cta-arrow { transform: translateX(3px); }
+.hlp-home__cta:hover .hlp-home__cta-arrow { color: var(--pn-brand-2); }
 
 .hlp-home__starts { margin: 38px 0 0; }
 
@@ -625,14 +626,14 @@
   color: var(--pn-ink-1);
   border: 1px solid var(--pn-line);
   border-radius: 4px;
-  background: var(--pn-surface);
+  background: var(--pn-paper);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: border-color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-.hlp-start:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); transform: translateY(-1px); }
+.hlp-start:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
 .hlp-start:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 
 .hlp-start__eyebrow {
@@ -676,7 +677,7 @@
 }
 
 .hlp-start__foot span:last-child { color: var(--pn-brand); font-size: 13px; transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
-.hlp-start:hover .hlp-start__foot span:last-child { transform: translateX(2px); }
+.hlp-start:hover .hlp-start__foot span:last-child { color: var(--pn-brand-2); }
 
 .hlp-home__map { margin: 38px 0 0; }
 
@@ -712,14 +713,14 @@
   color: var(--pn-ink-1);
   border: 1px solid var(--pn-line);
   border-radius: 4px;
-  background: var(--pn-surface);
+  background: var(--pn-paper);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: border-color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-.hlp-card:hover:not(:disabled) { border-color: var(--pn-brand); background: var(--pn-brand-soft); transform: translateY(-1px); }
+.hlp-card:hover:not(:disabled) { border-color: var(--pn-line-2); background: var(--pn-hover); }
 .hlp-card:disabled { cursor: default; opacity: .55; }
 
 .hlp-card__number {
@@ -777,15 +778,15 @@
 }
 
 .hlp-card__arrow { color: var(--pn-ink-4); font-size: 13px; transition: color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out); }
-.hlp-card:hover:not(:disabled) .hlp-card__arrow { color: var(--pn-brand); transform: translateX(2px); }
+.hlp-card:hover:not(:disabled) .hlp-card__arrow { color: var(--pn-brand-2); }
 
 /* Stacked, the home heads the contents surface, whose body already pads. */
 .hlp-contents .hlp-home { max-width: none; padding: 6px 0 0; }
 .hlp-contents .hlp-home__hero::after { background: var(--pn-surface); }
-.hlp-contents .hlp-home__pillar { background: var(--pn-card); }
-.hlp-contents .hlp-home__cta { background: var(--pn-card); }
-.hlp-contents .hlp-card { background: var(--pn-card); }
-.hlp-contents .hlp-start { background: var(--pn-card); }
+.hlp-contents .hlp-home__pillar { background: var(--pn-paper); }
+.hlp-contents .hlp-home__cta { background: var(--pn-paper); }
+.hlp-contents .hlp-card { background: var(--pn-paper); }
+.hlp-contents .hlp-start { background: var(--pn-paper); }
 .hlp-home + .hlp-search { margin-top: 36px; }
 
 .hlp-empty { max-width: 52ch; margin: 0; padding: 30px 24px; color: var(--pn-ink-3); font-family: var(--pn-serif); font-size: 14px; line-height: 1.6; }
@@ -799,6 +800,15 @@
 .hlp-root--stacked .hlp-reader__title { max-width: 38vw; font-size: 16px; }
 .hlp-root--stacked .hlp-reader__crumb { max-width: 38vw; }
 .hlp-root--stacked .hlp-reader__steps { margin-left: auto; }
+
+/* Wide help already has the chapter library in its shelf. Repeating the
+   numbered map above it and the full map again on the home page makes the
+   navigation louder than the guide. The stacked surface keeps both because
+   it has no persistent shelf. */
+.hlp-root:not(.hlp-root--stacked) .hlp-map,
+.hlp-root:not(.hlp-root--stacked) .hlp-home__map,
+.hlp-root:not(.hlp-root--stacked) .hlp-chapter__summary,
+.hlp-root:not(.hlp-root--stacked) .hlp-chapter__count { display: none; }
 
 @keyframes hlp-arrive { from { opacity: .68; } to { opacity: 1; } }
 /* OPACITY ONLY. This used to lift 4px, which is a `transform` on an element
