@@ -914,3 +914,21 @@
   border-style: dashed;
   cursor: default;
 }
+
+/* THE RUNNING CARDS' HEADER — a label and, when the section has one, a live
+   tally. `MY LIVE SESSIONS · 6 live` is a count of things HAPPENING, which is
+   the one kind of number this screen keeps: it changes what you do next. The
+   counts that came off were inventories of things that merely exist. */
+.cv2-root .hp-attention__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+}
+.cv2-root .hp-attention__count {
+  flex: none;
+  font: 600 var(--pn-fs-micro)/1 var(--pn-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-run);
+  white-space: nowrap;
+}

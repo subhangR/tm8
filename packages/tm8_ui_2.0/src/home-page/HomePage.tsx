@@ -183,10 +183,22 @@ function HomeStart({
 }
 
 
-function AttentionCard({ section, onOpen }: { section: HomeSection; onOpen(id: string): void }) {
+function AttentionCard({
+  section,
+  onOpen,
+  count,
+}: {
+  section: HomeSection;
+  onOpen(id: string): void;
+  /** A live tally, when the section has one. Absent ⇒ no number is claimed. */
+  count?: string | undefined;
+}) {
   return (
     <article className="hp-attention" aria-label={section.label} data-testid="hp-needs-you">
-      <h2 className="hp-attention__eyebrow k-label">{section.label}</h2>
+      <div className="hp-attention__head">
+        <h2 className="hp-attention__eyebrow k-label">{section.label}</h2>
+        {count ? <span className="hp-attention__count">{count}</span> : null}
+      </div>
       <div className="hp-attention__rows">
         {section.rows.map((row) => (
           <button
@@ -254,8 +266,15 @@ export function HomePage(props: HomePageProps) {
       viewerKnown: home.viewer !== null,
       viewerError: home.viewerError,
     });
+    const byId = (id: string) => work.sections.find((section) => section.id === id) ?? null;
     return {
       needsYou: work.sections.find((section) => section.emphasis === 'needs-you') ?? null,
+      /* "i just need chats taks and session srunning in the dashboard" —
+         these two were composed and discarded on every render. */
+      live: byId('live'),
+      tasks: byId('tasks'),
+      liveCount: work.liveCount,
+      liveCountLabel: work.liveCountLabel,
     };
   }, [home, data.livenessOf, data.activity]);
 
@@ -275,6 +294,8 @@ export function HomePage(props: HomePageProps) {
   const withRows = (section: HomeSection | null) =>
     section && section.rows.length > 0 ? section : null;
   const needsYouStrip = withRows(work.needsYou);
+  const liveStrip = withRows(work.live);
+  const tasksStrip = withRows(work.tasks);
 
   /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
      merged conversation column — fills the canvas and triage rides above it.
@@ -329,6 +350,21 @@ export function HomePage(props: HomePageProps) {
         <AttentionCard section={needsYouStrip} onOpen={props.onOpenEntity} />
       ) : work.needsYou && (home.viewerError || home.notificationsError) ? (
         <p className="hp-note" role="status">{work.needsYou.emptyNote}</p>
+      ) : null}
+      {/* RUNNING SESSIONS, then TASKS. Both were already composed and thrown
+          away; this renders them. A row opens the entity BESIDE this column —
+          the same gesture as a NEEDS YOU row — which is "their screens while
+          running": the session's own screen, in the detail region, without
+          leaving Home. */}
+      {liveStrip ? (
+        <AttentionCard
+          section={liveStrip}
+          onOpen={props.onOpenEntity}
+          count={work.liveCountLabel}
+        />
+      ) : null}
+      {tasksStrip ? (
+        <AttentionCard section={tasksStrip} onOpen={props.onOpenEntity} />
       ) : null}
       </div>
 
