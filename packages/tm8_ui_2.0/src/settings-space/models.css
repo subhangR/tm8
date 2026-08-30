@@ -44,8 +44,8 @@
    "you are about to change something" colour, and the something here is
    invisible to everyone but the person reading it. */
 .set-models__scope {
-  background: var(--pn-brand-soft);
-  border: 1px solid rgba(var(--pn-brand-rgb), 0.3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
   padding: 10px 12px;
   display: flex;

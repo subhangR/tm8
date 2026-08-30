@@ -168,7 +168,7 @@
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
-  box-shadow: var(--pn-sh-md);
+  box-shadow: none;
 }
 .fn-menu__item {
   appearance: none;
@@ -311,7 +311,7 @@
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: none;
   outline: none;
 }
 .fn-lightbox__head {

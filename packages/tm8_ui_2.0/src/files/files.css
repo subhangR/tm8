@@ -68,13 +68,13 @@
   gap: var(--pn-space-2); /* L31 gap:10px */
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md); /* L31 border-radius:10px */
-  box-shadow: var(--pn-sh-md); /* L31 0 2px 8px rgba(0,0,0,.5) */
+  box-shadow: none;
   padding: 13px 14px; /* L31 verbatim */
   box-sizing: border-box;
 }
 
 .cv2-root .fn-card--paper {
-  background: var(--pn-surface); /* L31 #FBFAF6 */
+  background: var(--pn-card);
 }
 
 /* The always-dark cards (preview overlay card, every node card) carry their
@@ -138,22 +138,22 @@
   flex-direction: column;
   align-items: center;
   gap: var(--pn-space-1); /* L33 gap:4px */
-  border: 1.5px dashed rgba(var(--pn-brand-rgb), 0.55); /* L33 verbatim alpha */
-  background: rgba(var(--pn-brand-rgb), 0.06); /* L33 */
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
   border-radius: var(--pn-r-sm); /* L33 8px → 7px token step */
   padding: var(--pn-space-4); /* L33 padding:16px */
   text-align: center;
 }
 
 .cv2-root .fn-drop__glyph {
-  color: var(--pn-brand-2); /* L34 #9A581F */
+  color: var(--pn-ink-3);
   font-size: 14px;
 }
 
 .cv2-root .fn-drop__title {
   font-size: 12px; /* L35 */
   font-weight: 600;
-  color: var(--pn-brand-2);
+  color: var(--pn-ink);
 }
 
 .cv2-root .fn-drop__cap {
@@ -645,7 +645,7 @@
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: none;
   padding: var(--pn-space-4);
 }
 
@@ -842,7 +842,8 @@
 }
 
 .cv2-root .fn-provider--bad {
-  background: color-mix(in srgb, var(--pn-wait) 5%, transparent); /* L204 rgba(217,170,73,.05) */
+  background: transparent;
+  border-left: 2px solid color-mix(in srgb, var(--pn-wait) 45%, transparent);
 }
 
 .cv2-root .fn-provider__head {
@@ -943,9 +944,9 @@
 }
 
 .cv2-root .fn-btn--brass {
-  color: var(--pn-brand);
-  background: var(--pn-brand-soft); /* L227 rgba(224,164,90,.15) */
-  border: 1px solid color-mix(in srgb, var(--pn-brand) 40%, transparent); /* L227 */
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
 }
 
 .cv2-root .fn-btn--ghost {
@@ -983,8 +984,9 @@
   height: 15px;
   flex: none;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--pn-brand) 18%, transparent); /* L123 */
-  color: var(--pn-brand);
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
+  color: var(--pn-ink-3);
   display: flex;
   align-items: center;
   justify-content: center;
