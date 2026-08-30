@@ -1,7 +1,7 @@
 /**
- * THE ENTITY LIST HEADER — the calm pass's contract for the row that renders
- * above EVERY entity list in the product (Tasks, Docs, Artifacts, Files, …).
- * One header, every kind, which is why it is worth pinning.
+ * THE ENTITY LIST HEADER — the contract for the row that renders above EVERY
+ * entity list in the product (Tasks, Docs, Artifacts, Files, …). One header,
+ * every kind, which is why it is worth pinning.
  *
  * WHY THIS READS CSS AS TEXT RATHER THAN RENDERING IT. `vite.config.ts:57`
  * sets `environment: 'node'` with no `css` key, so vitest's default
@@ -15,7 +15,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'panels.css'), 'utf8');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const CSS = readFileSync(join(HERE, 'panels.css'), 'utf8');
+const TSX = readFileSync(join(HERE, 'EntityListPanel.tsx'), 'utf8');
 
 /**
  * EVERY BLOCK FOR A SELECTOR, NOT THE FIRST.
@@ -31,95 +33,104 @@ const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'panels.c
  * be able to fail an assertion about the base rule, so the question asked here
  * is "does ANY block for this selector declare it", never "does the first".
  *
- * Anchored on `.cv2-root ` and a following `{` so that `.lp__tab` cannot match
- * `.lp__tab--active`, which would silently widen every assertion below.
+ * THROWS when it finds none, rather than returning []. A silent empty makes
+ * every `.not` assertion below pass vacuously, so a renamed selector would
+ * read as a satisfied invariant — lane I's hardening, same shape, same file.
  */
 function blocksFor(selector: string): readonly string[] {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`\\.cv2-root\\s+${escaped}\\s*\\{([^}]*)\\}`, 'g');
-  return [...CSS.matchAll(re)].map((m) => m[1] ?? '');
+  const found = [...CSS.matchAll(re)].map((m) => m[1] ?? '');
+  if (found.length === 0) throw new Error(`no block opens for selector: ${selector}`);
+  return found;
 }
 
 const declares = (selector: string, needle: string): boolean =>
   blocksFor(selector).some((body) => body.includes(needle));
 
-describe('the list header is one shape with one casing and one accent', () => {
+describe('the active tab is marked by an underline', () => {
   it('finds the blocks it claims to read (a helper matching nothing proves nothing)', () => {
-    // THE BOTH-HALVES DETECTOR. Every assertion below is of the form "some
-    // block declares X". If `blocksFor` silently matched zero blocks, every
-    // `.not` assertion would pass vacuously and this file would report green
-    // while checking nothing. Pin the counts that make the rest meaningful.
     expect(blocksFor('.lp__tab').length).toBeGreaterThanOrEqual(2);
     expect(blocksFor('.lp__tab--active').length).toBeGreaterThanOrEqual(1);
-    expect(blocksFor('.lp__tab--empty:not(.lp__tab--active)').length).toBe(1);
-    expect(blocksFor('.lp__chip').length).toBeGreaterThanOrEqual(1);
+    // TWO, not one: the light bar and its dark-theme override. Asserting `1`
+    // here was my own first draft and it was wrong — the dark group's last
+    // selector before `{` is also `… .lp__tab--active::after`, so it matches.
+    // Counting blocks I expected rather than blocks the pattern opens is the
+    // same miscount lane I caught in its own helper comment.
+    expect(blocksFor('.lp__tab--active::after').length).toBeGreaterThanOrEqual(1);
+    expect(() => blocksFor('.lp__tab--nonexistent')).toThrow();
   });
 
-  it('spends the accent on the ring, not on a fill — the active tab keeps its job', () => {
+  it('carries no fill and no border — the owner asked for that shape to go', () => {
     /*
-     * COLOUR IS FOR STATE THAT CHANGES WHAT YOU DO. An active tab is the
-     * canonical "where you are", so it KEEPS the accent — decolouring it would
-     * delete the only cue naming the lifecycle band on screen.
+     * THE SEQUENCE, because the reasoning is not obvious from the result. The
+     * owner was sent the status row with a FILLED active pill, asked for that
+     * shape to be changed, was given three options — underline, ring, ink-only
+     * — and chose the underline. So `TARGET.png` showing a fill is not the
+     * instruction: it is the artefact the owner looked at before asking for
+     * something else. A measurement of a design tells you what the design
+     * does, never whether it is still what was asked for.
      *
-     * What it must not do is spend the accent TWICE. It used to carry both
-     * `color: var(--pn-brand-2)` and `background: var(--pn-brand-soft)`, and
-     * the fill is the half that competes: a filled tab sits on the same plane
-     * as every other filled thing, and Von Restorff only pays while the accent
-     * is scarce. Rings and fills are different jobs; this row takes the ring.
+     * The accent STAYS on the word: "where you are" is its one sanctioned job,
+     * and decolouring the active tab would delete the only cue naming the band
+     * on screen. What goes is the box.
      */
     expect(declares('.lp__tab--active', 'color: var(--pn-brand-2)')).toBe(true);
-    expect(declares('.lp__tab--active', 'border-color: var(--pn-brand-2)')).toBe(true);
-    expect(declares('.lp__tab--active', 'background: var(--pn-brand-soft)')).toBe(false);
+    expect(declares('.lp__tab--active', 'font-weight: 700')).toBe(true);
+    expect(declares('.lp__tab--active', 'background')).toBe(false);
+    expect(declares('.lp__tab--active', 'border-color')).toBe(false);
   });
 
-  it('keeps the ring under the pointer — hover must not read as deselection', () => {
-    // THE HALF THAT WOULD HAVE SHIPPED AS A SILENT REGRESSION. The hover rule
-    // used to clear `border-color`, which was correct while the fill carried
-    // the active state and the border was decoration. With the ring carrying
-    // it, the same declaration erases "where you are" exactly when the pointer
-    // is on the tab. Swapping fill for ring without reading what the hover
-    // rule was FOR is the whole defect this pins.
-    expect(declares('.lp__tab--active:hover', 'border-color: var(--pn-brand-2)')).toBe(true);
-    expect(declares('.lp__tab--active:hover', 'border-color: transparent')).toBe(false);
+  it('draws a 2px rule under the label, positioned so it cannot move the row', () => {
+    const bar = blocksFor('.lp__tab--active::after')[0] ?? '';
+    expect(bar).toContain('height: 2px');
+    expect(bar).toContain('position: absolute');
+    expect(bar).toContain('background: var(--pn-brand-2)');
+    // Inset by the tab's own horizontal padding, so the rule spans the LABEL
+    // rather than the hit area — the shape in the owner's drawing.
+    expect(bar).toContain('left: var(--pn-space-2)');
+    expect(bar).toContain('right: var(--pn-space-2)');
+    // The base rule owns the positioning context. Declared there and not on
+    // `--active`, so the containing block does not appear and disappear with
+    // the state.
+    expect(declares('.lp__tab', 'position: relative')).toBe(true);
   });
 
-  it('flips the ring in dark, not only the text', () => {
-    // WHEN YOU MOVE WHAT CARRIES A STATE, EVERY RULE THAT RESTATES THAT STATE
-    // MOVES WITH IT. The dark block existed to lift active TEXT off
-    // `--pn-brand-2` onto `--pn-brand`. The ring now says the same thing, so
-    // leaving it behind gives dark mode a tab whose text and edge disagree.
-    const dark = CSS.match(/\[data-theme='dark'\][^{]*\.lp__tab--active[^{]*\{([^}]*)\}/);
-    expect(dark).not.toBeNull();
-    expect(dark?.[1]).toContain('color: var(--pn-brand)');
-    expect(dark?.[1]).toContain('border-color: var(--pn-brand)');
+  it('keeps the mark under the pointer, and never grows a fill on hover', () => {
+    // Hover must not read as deselection. The bar is a pseudo-element no hover
+    // rule touches, so hover only has to stop the accent word reverting to
+    // `--pn-ink` via the base `:hover`. A background here would rebuild the
+    // box the owner asked to remove.
+    expect(declares('.lp__tab--active:hover', 'color: var(--pn-brand-2)')).toBe(true);
+    expect(declares('.lp__tab--active:hover', 'background')).toBe(false);
   });
 
-  it('demotes an empty band without disabling it', () => {
-    /*
-     * A TAB READING `To Do 0` IS A CONTROL ADVERTISING ITS OWN EMPTINESS, and
-     * three of four on the owner's screen read zero. The count is the part
-     * saying "nothing here" and it says it in the row the reader scans to
-     * choose where to go — so the NAME stays and the zero goes.
-     *
-     * DEMOTED, NEVER HIDDEN, and never disabled: an empty status is a
-     * legitimate destination that happens to hold nothing today. A client
-     * asking "where is To Do?" must find it greyed, not gone.
-     */
-    const empty = blocksFor('.lp__tab--empty:not(.lp__tab--active)')[0] ?? '';
-    expect(empty).toContain('font-weight: 500');
-    expect(empty).toContain('color: var(--pn-ink-3)');
-    // Not a refusal: no opacity dimming, no pointer-events removal.
-    expect(empty).not.toContain('pointer-events');
-    expect(empty).not.toContain('opacity');
+  it('flips the bar in dark, not only the word', () => {
+    // WHEN YOU MOVE WHAT CARRIES A STATE, EVERY RULE THAT RESTATES IT MOVES
+    // TOO. The dark block lifts the active word off `--pn-brand-2` (muddy on a
+    // dark surface) onto `--pn-brand`; the underline now says the same thing,
+    // so it flips with it. A pseudo-element does not inherit `background`, so
+    // it needs its own selector — which is exactly the kind of half-audit that
+    // ships a dark-mode tab whose word and rule disagree.
+    // COLLECT BOTH DARK GROUPS AND ASK WHICH PROPERTY EACH CARRIES, rather
+    // than writing one regex per group. My first draft did the latter and the
+    // text regex used `[^{:]*`, which cannot match a group whose last selector
+    // before `{` is `… .lp__tab--active:hover` — it excluded the very colon it
+    // had to cross. It failed while the CSS was correct, which is the same
+    // false-red the first-match helper produces one level up.
+    const dark = [...CSS.matchAll(/\[data-theme='dark'\][^{]*\.lp__tab--active[^{]*\{([^}]*)\}/g)]
+      .map((m) => m[1] ?? '');
+    expect(dark.length).toBeGreaterThanOrEqual(2);
+    expect(dark.some((b) => b.includes('color: var(--pn-brand)'))).toBe(true);
+    expect(dark.some((b) => b.includes('background: var(--pn-brand)'))).toBe(true);
   });
 
   it('hovers with an edge, never with the retired --pn-hover fill', () => {
     // MEASURED, NOT ASSUMED. The owner's screenshot shows the hovered
     // `collections` chip at (239,242,244) against a (247,249,251) page — that
-    // grey IS `--pn-hover` rendering. It was read as a third control shape;
-    // it was this fill. The calm pass retired the pattern for
-    // edge-strengthening, and these two rules are the busiest row in the
-    // product, so they are the ones that matter.
+    // grey IS `--pn-hover` rendering. It was read as a third control shape; it
+    // was this fill. The calm pass retired the pattern for edge-strengthening,
+    // and these two rules are the busiest row in the product.
     expect(declares('.lp__tab:hover', 'var(--pn-hover)')).toBe(false);
     expect(declares('.lp__chip:hover', 'var(--pn-hover)')).toBe(false);
     expect(declares('.lp__tab:hover', 'border-color: var(--pn-line-2)')).toBe(true);
@@ -127,69 +138,41 @@ describe('the list header is one shape with one casing and one accent', () => {
   });
 });
 
-describe('the header speaks one casing', () => {
-  const TSX = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), 'EntityListPanel.tsx'),
-    'utf8',
-  );
-
-  it('title-cases the filter row to match the tier row above it', () => {
+describe('the header says what the design says', () => {
+  it('shows every count, including a zero', () => {
     /*
-     * The tier row's labels are REGISTRY DATA (`To Do`, `In Progress`) that
-     * this file does not own, so the only casing choice available is to match
-     * up to them. Two casing systems in adjacent rows is noise the reader
-     * resolves before discovering it means nothing.
+     * Measured off TARGET.png: `To Do 0` and `Done 603` sample the SAME black
+     * (0,0,0). The empty tab carries no demotion — not lighter ink, not
+     * lighter weight — and it keeps its number.
      *
-     * The `.toLowerCase()` is the one that mattered: it was applied in CODE
-     * rather than typed into a literal, so it alone would have kept
-     * re-lowercasing a registry label after the literals were fixed — the
-     * header would revert to two casings the moment a kind declared a lens.
+     * I had dropped the zero and greyed the tab, on the argument that `To Do 0`
+     * is a control advertising its own emptiness. The design says otherwise and
+     * the design is the bar. `0` is the honest answer to "how many are in this
+     * band", and a reader comparing four bands wants four numbers.
+     *
+     * Pinned as ONE label expression, because the failure mode is a future
+     * branch that renders the name alone for some state.
      */
-    expect(TSX).toContain('Filter ▾');
-    expect(TSX).toContain("'People ▾'");
-    expect(TSX).not.toContain('membership.label.toLowerCase()');
+    expect(TSX).toContain('`${tab.label} ${tabLabel(tab)}`');
+    expect(CSS).not.toContain('lp__tab--empty');
+  });
+
+  it('keeps the filter controls lowercase beneath Title-Case tabs', () => {
+    // The two casings are DELIBERATE in the design: Title Case names the
+    // lifecycle bands (registry copy this file does not own), lowercase names
+    // the controls acting on them. I Title-Cased these on the reading that it
+    // was unjustified noise; the owner's design keeps both, so it stays.
+    expect(TSX).toContain('filter ▾');
+    expect(TSX).toContain("'people ▾'");
+    expect(TSX).toContain('membership.label.toLowerCase()');
   });
 
   it('names the sort control in words, never with a lone glyph', () => {
     // At the floor this collapses to `↓`, and an arrow is not self-describing
     // — sort direction, download and scroll-to-bottom all draw it. `title` is
     // a pointer-only affordance. The accessible name is stated, which is the
-    // colour+word rule applied to a mark: never let the glyph be the only
-    // thing carrying the meaning.
+    // colour+word rule applied to a mark. The design does not speak to
+    // accessible names, so it cannot contradict this one.
     expect(TSX).toContain('aria-label={`Sort: ${current.label}`}');
-  });
-
-  it('threads emptiness from the producer instead of parsing the rendered label', () => {
-    // `tabCount` already computes `{ n, label, exact }`; the component was
-    // handed only the rendered string. Recovering "is this empty" by reading
-    // that string back as a number is how `22+` becomes 22 and how a
-    // truncated page's `0` becomes a lie. The fact is passed, never
-    // re-derived from its own rendering.
-    expect(TSX).toContain('tabEmpty');
-    // And the count survives for a screen reader even when it stops painting.
-    expect(TSX).toContain("'aria-label': `${tab.label}, ${tabLabel(tab)}`");
-  });
-
-  it('demotes only on a SETTLED zero — never on an unread one', () => {
-    /*
-     * THE ONE THAT WOULD HAVE SHIPPED THE COMPOSER'S BUG TO EVERY LIST.
-     *
-     * `tabCount` computes `n: page?.total ?? loaded`, and `loaded` is
-     * `rowsFor(...).length` — which is 0 while the first page is in flight
-     * (`ListPageState.loading`: "a page is in flight, including the first,
-     * before anything has arrived"). So `n === 0` is true of an EMPTY band
-     * AND of an UNREAD one, and `tabEmpty` written as `n === 0` alone would
-     * demote every tab on the opening read, then un-demote them as rows land.
-     *
-     * That is deriving "there is none" from a value that also means "we have
-     * not asked yet" — the exact defect this pass removed from Home's
-     * composer, which claimed a space with 34 teammates was empty.
-     *
-     * `exact` is `page?.total !== undefined`: the server VOLUNTEERED a total,
-     * which silence can never look like. `exact && n === 0` is a settled zero
-     * and nothing else, and every uncertain case falls through to showing the
-     * count. Pinned because dropping `exact` leaves code that reads correct.
-     */
-    expect(TSX).toContain('count?.exact === true && count.n === 0');
   });
 });

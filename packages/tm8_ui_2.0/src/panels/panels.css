@@ -1943,6 +1943,11 @@
   align-items: center;
   height: 28px;
   box-sizing: border-box;
+  /* Positioning context for the active underline's `::after`. Declared on the
+     BASE rule, not on `--active`, so the bar's containing block does not
+     appear and disappear with the state — a `position` that toggles is how a
+     pseudo-element ends up measured against the wrong ancestor. */
+  position: relative;
   border: 1px solid transparent;
   background: none;
   font-family: var(--pn-ui);
@@ -1967,62 +1972,93 @@
    The border already exists at 1px transparent, so darkening it costs no
    layout and adds no plane of paint to the busiest row in the product. */
 .cv2-root .lp__tab:hover { border-color: var(--pn-line-2); color: var(--pn-ink); }
-/* THE ACCENT KEEPS ITS JOB AND LOSES ONE PLANE.
-   "Where you are" is the canonical sanctioned use of the accent, so the
-   active tab STAYS accented — decolouring it would delete the only cue saying
-   which lifecycle band the reader is looking at, which is the opposite of the
-   fix. What changes is that it was spending the accent TWICE: coloured text
-   AND a `--pn-brand-soft` fill. The fill is the half that competes, because a
-   filled tab sits on the same plane as every other filled thing on screen and
-   there are dozens. Rings and fills are different jobs; this takes the ring.
-   The 1px border is already reserved and already transparent, so this is a
-   colour change with zero layout consequence — the row does not move. */
+/* A FILL, AND THE OWNER'S DESIGN IS WHY.
+   I briefly moved this to a ring — accent on the edge rather than the plane —
+   on a Von Restorff argument that a filled tab competes with every other
+   filled thing on screen. The argument was sound and the owner then supplied
+   a design that says fill. Measured off TARGET.png, vertical scan at x=658
+   through the active `In Progress 9` tab:
+       y=376 (255,255,255) page · y=377 (250,251,255) antialias
+       y=378 (244,246,255) FILL  … y=401 antialias · y=402 page
+   White, one antialiased step, fill. NO darker stroke row at either boundary,
+   which a 1px ring would draw. So: soft fill, coloured text, no border.
+
+   THE DESIGN'S OWN RULE, which is better than the one I argued: FILLS MARK
+   WHERE YOU ARE; OUTLINES MARK WHAT CHANGED. The target spends a fill in
+   exactly three places — the active row, this tab, and the create verb — and
+   gives every `N new` / `N live` delta an OUTLINE instead. That is the
+   scarcity Von Restorff actually asks for, reached by quieting the deltas
+   rather than by demoting the one thing that says where you are.
+
+   AND THE RING HAD AN UNAUDITED CONSUMER. mobile-screens.css:1234 already
+   marks this tab with an inset underline and sets only `color` and
+   `box-shadow` — it never resets `border-color`, so the ring bled through and
+   the phone drew an underline AND a ring. Restoring the fill restores the
+   phone exactly as it was. Change what carries a state and you owe every
+   consumer an audit; I changed it and audited one surface. */
 .cv2-root .lp__tab--active {
   /* One full step above the resting 600 — 650 was a half-step nobody saw. */
   font-weight: 700;
   color: var(--pn-brand-2);
-  border-color: var(--pn-brand-2);
 }
-/* AN EMPTY BAND IS AVAILABLE, NOT DISABLED. It keeps its name, its tab stop
-   and its click; only its weight drops, from the resting 600 to 500, and its
-   ink from `--pn-ink-2` to `--pn-ink-3`. That is the whole demotion: enough
-   that the eye skips it while scanning for somewhere to go, not so much that
-   it reads as refused. It must NOT use the disabled treatment — an empty
-   status is a legitimate destination that happens to hold nothing today, and
-   a client asking "where is To Do?" should find it greyed, not gone.
-   `:not(.lp__tab--active)` is belt-and-braces: `tabClass` already refuses to
-   emit both, and this guarantees the CSS agrees even if a future caller does. */
-.cv2-root .lp__tab--empty:not(.lp__tab--active) {
-  font-weight: 500;
-  color: var(--pn-ink-3);
+/* THE UNDERLINE IS THE MARK. No fill, no border, no box — a 2px accent rule
+   under the label, which is what the owner picked from three previews.
+
+   `::after` rather than the inset box-shadow the phone uses, and the reason is
+   the radius: this tab is `--pn-r-pill` (999px), and an inset shadow follows
+   the border-radius, so on a pill it draws a crescent rather than a rule. The
+   bar is inset by the tab's own horizontal padding so it spans the LABEL, not
+   the hit area — that is the shape in the owner's drawing.
+
+   No layout consequence: absolutely positioned, so it cannot move the row.
+   The tab keeps its transparent 1px border and its radius for hover, which is
+   still an edge.
+
+   ONE LANGUAGE FOR "WHERE YOU ARE". mobile-screens.css:1234 already marks this
+   exact element with an underline, and its comment already argues for it —
+   "the bottom edge of the row it sits on rather than a floating rule, so it
+   reads as this is where you are on the axis". The phone got there first; the
+   top nav marks Home the same way. Desktop was the odd one out with a fill.
+   The two implementations differ (inset shadow vs `::after`) because the phone
+   row is not pill-radiused and this one is — unifying them belongs to the
+   active-state sweep, not to this file. */
+.cv2-root .lp__tab--active::after {
+  content: '';
+  position: absolute;
+  left: var(--pn-space-2);
+  right: var(--pn-space-2);
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--pn-brand-2);
+  pointer-events: none;
 }
-/* THE SELECTED TAB KEEPS ITS RING UNDER THE POINTER — hover must not read as
-   deselection. This rule previously re-asserted the fill and set
-   `border-color: transparent`, which was correct when the ACTIVE marker WAS
-   the fill: the border was decoration and clearing it stopped hover drawing a
-   second edge inside a filled pill. Now that the ring IS the active marker,
-   the same declaration would erase it on hover — the tab would lose its
-   "where you are" cue exactly when the pointer is on it. So hover reasserts
-   the ring rather than clearing it, and this is the half of the change that
-   would have shipped as a silent regression if the fill had been swapped
-   without reading what the hover rule was for. */
+/* THE UNDERLINE SURVIVES THE POINTER — hover must not read as deselection.
+   This rule used to re-assert the fill and clear `border-color`, which was
+   right when the fill WAS the active marker. The mark is now the `::after`
+   bar, which no hover declaration touches, so hover only has to keep the
+   accent text from reverting to `--pn-ink` via the base `:hover` rule above.
+   Nothing here may set a background: a fill under a hovered active tab is the
+   box the owner asked to remove. */
 .cv2-root .lp__tab--active:hover {
-  border-color: var(--pn-brand-2);
   color: var(--pn-brand-2);
 }
-/* DARK FLIPS THE RING TOO, and this is the audit the fill-to-ring change
-   forces: when you move what CARRIES a state, every rule that restates that
-   state has to move with it. This block existed to lift the active text off
-   `--pn-brand-2` (the dark blue, legible on paper, muddy on a dark surface)
-   onto `--pn-brand`. The ring now carries the same meaning, so leaving it on
-   `--pn-brand-2` would have shipped a dark-mode tab whose text said "here"
-   in one blue and whose edge said it in a barely-visible other. */
+/* DARK FLIPS THE BAR TOO — the audit that changing the carrier forces. This
+   block existed to lift the active TEXT off `--pn-brand-2` (legible on paper,
+   muddy on a dark surface) onto `--pn-brand`. The underline now says the same
+   thing, so it flips with it; leaving the bar on `--pn-brand-2` would give
+   dark mode a tab whose word and whose rule disagree about which blue means
+   "here". The `::after` needs its own selector because a pseudo-element does
+   not inherit `background`. */
 .cv2-root[data-theme='dark'] .lp__tab--active,
 [data-theme='dark'] .cv2-root .lp__tab--active,
 .cv2-root[data-theme='dark'] .lp__tab--active:hover,
 [data-theme='dark'] .cv2-root .lp__tab--active:hover {
   color: var(--pn-brand);
-  border-color: var(--pn-brand);
+}
+.cv2-root[data-theme='dark'] .lp__tab--active::after,
+[data-theme='dark'] .cv2-root .lp__tab--active::after {
+  background: var(--pn-brand);
 }
 
 .cv2-root .lp__body {

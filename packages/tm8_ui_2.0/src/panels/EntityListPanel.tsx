@@ -857,42 +857,6 @@ export function EntityListPanel(props: EntityListPanelProps) {
           tabLabel={(tab: StatusCategoryTab) =>
             tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
           }
-          /*
-           * EMPTY MEANS THE SERVER SAID ZERO. NOT "the label looks like a
-           * zero", and — the part that matters — NOT "nothing has arrived
-           * yet".
-           *
-           * `exact` IS THE LOAD-BEARING HALF, AND `n === 0` ALONE IS A BUG.
-           * `tabCount` (:1204) computes `n: page?.total ?? loaded`, and
-           * `loaded` is `rowsFor(...).length` — which is 0 while the first
-           * page is still in flight (`ListPageState.loading`: "a page is in
-           * flight, including the first, before anything has arrived"). So
-           * `n === 0` is true of an EMPTY band and of an UNREAD one, and a
-           * predicate that cannot tell those apart would demote every tab on
-           * the opening read and then un-demote them as rows land.
-           *
-           * That is the composer's bug exactly — deriving "there is none"
-           * from a value that also means "we have not asked yet" — which this
-           * fleet spent the day removing from Home. It would have been
-           * cheerfully reintroduced here, on every list in the product, by a
-           * predicate that reads correct.
-           *
-           * `exact` is `page?.total !== undefined`: the server VOLUNTEERED a
-           * total. That cannot be confused with silence. So the pair
-           * `exact && n === 0` is a settled zero and nothing else.
-           *
-           * IT FAILS TOWARD SHOWING THE COUNT, on purpose and in every
-           * uncertain case: a host that wired no `pageStateOf`, a page still
-           * loading, a tab absent from `tabCounts`. Those tabs render exactly
-           * as they do today. The cost is that a host which never reports a
-           * total never gets the demotion; the alternative is asserting
-           * emptiness from ignorance, which is the failure this whole pass
-           * exists to stop.
-           */
-          tabEmpty={(tab: StatusCategoryTab) => {
-            const count = tabCounts.find((c) => c.tab.id === tab.id);
-            return count?.exact === true && count.n === 0;
-          }}
         />
       )}
 
@@ -1770,21 +1734,6 @@ function SearchRow({
 }
 
 /**
- * THE THREE STATES OF A TIER TAB, resolved in one place so the class list and
- * the label can never disagree about which one a tab is in.
- *
- * ACTIVE WINS OVER EMPTY, and the order matters: the tab you are standing in
- * keeps its full weight and its count even when the band it names holds
- * nothing, because "where you are" outranks "how much is here". An empty tab
- * you are NOT in is the one that demotes. Without this precedence, landing on
- * an empty band would dim the one tab the reader most needs to locate.
- */
-function tabClass(active: boolean, empty: boolean): string {
-  if (active) return 'lp__tab lp__tab--active';
-  return empty ? 'lp__tab lp__tab--empty' : 'lp__tab';
-}
-
-/**
  * THE LIFECYCLE TIER TABS — Open / Done / Archived, universal across
  * collection kinds (D41, user-ratified). Their own row: a tab is the
  * lifecycle band you are looking at, and the filter chips below narrow WITHIN
@@ -1796,23 +1745,12 @@ function CategoryTabs({
   activeTabId,
   onTab,
   tabLabel,
-  tabEmpty,
 }: {
   tabs?: readonly StatusCategoryTab[];
   activeTabId: string | null;
   onTab: (id: string) => void;
   /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
   tabLabel: (tab: StatusCategoryTab) => string;
-  /**
-   * Does this tab's own query hold nothing? PASSED, not parsed back out of
-   * `tabLabel`. The producer (`tabCount`) already computes `{ n, label, exact }`
-   * and this component was only ever handed the rendered string, so the only
-   * way to know a tab was empty was to read its label back as a number — which
-   * is how `22+` becomes 22 and how `0` from a truncated page becomes a lie.
-   * A fact the producer holds is threaded, never re-derived from its own
-   * rendering. Absent ⇒ nothing is treated as empty, so the row is unchanged.
-   */
-  tabEmpty?: (tab: StatusCategoryTab) => boolean;
 }) {
   /*
    * THE PHONE DRAWS THE MARKS AND NOT THE WORDS — owner ruling, 2026-08-19.
@@ -1842,33 +1780,21 @@ function CategoryTabs({
           type="button"
           role="tab"
           aria-selected={tab.id === activeTabId}
-          className={tabClass(tab.id === activeTabId, tabEmpty?.(tab) ?? false)}
+          className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
           onClick={() => onTab(tab.id)}
-          /* THE COUNT IS NEVER LOST, IT ONLY STOPS BEING PAINTED. The phone
-             already moved it here because four counted tabs do not fit across
-             390px; an emptied desktop tab moves it here for the same reason in
-             a different currency — the zero was spending pixels and attention
-             to say nothing. Either way a screen reader still hears "Cancelled,
-             0", and dropping the label without this line would delete the fact
-             instead of demoting it. */
-          {...(oneSurface || (tabEmpty?.(tab) ?? false)
-            ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` }
-            : {})}
+          {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
         >
-          {oneSurface ? (
-            <CategoryGlyph category={tab.id} />
-          ) : (tabEmpty?.(tab) ?? false) ? (
-            /* NAME WITHOUT COUNT. A tab reading `To Do 0` is a control
-               advertising its own emptiness — the count is the only part
-               saying "nothing here", and it says it in the row the reader
-               scans to choose where to go. The NAME is what makes the
-               workflow legible, so the name stays and the zero goes. The tab
-               remains present, focusable and clickable: hiding it answers
-               "where is To Do?" with silence, which is worse than a zero. */
-            tab.label
-          ) : (
-            `${tab.label} ${tabLabel(tab)}`
-          )}
+          {/* EVERY TAB SHOWS ITS COUNT, INCLUDING A ZERO — measured off the
+              owner's design, where `To Do 0` and `Done 603` sample the SAME
+              black (0,0,0) and the empty tab carries no demotion at all.
+
+              I briefly dropped the zero and greyed the tab, on the argument
+              that a tab reading `To Do 0` is a control advertising its own
+              emptiness. The reasoning was sound and the owner's design says
+              otherwise, so the design wins: `0` is the honest answer to "how
+              many are in this band" and a reader comparing bands wants all
+              four numbers, not three numbers and a gap. */}
+          {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
         </button>
       ))}
     </div>
@@ -2032,16 +1958,18 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="filter-trigger"
         >
-          {/* ONE CASING RULE FOR THE WHOLE HEADER: Title Case, because the
-              tier row above already speaks it and its labels are registry
-              data this file does not own. Two casing systems in adjacent rows
-              is noise the reader has to resolve before deciding it means
-              nothing — `To Do` / `In Progress` above, `filter` / `people` /
-              `collections` below, with no semantic difference to justify the
-              split. Matching UP to the row we cannot change is the only
-              choice that makes the header consistent without touching the
-              registry. */}
-          Filter ▾
+          {/* LOWERCASE, AND THE TWO CASINGS ARE DELIBERATE. I Title-Cased
+              this row on the reading that `To Do` above and `filter` below
+              was unjustified noise. The owner's design keeps both: Title Case
+              for the lifecycle TABS, lowercase for the filter CONTROLS.
+
+              Read that way it is a distinction rather than an inconsistency —
+              the tabs name bands of work and carry registry copy this file
+              does not own; these name controls that act on them. Casing is
+              doing the same job the two rows already do structurally. The
+              design is the acceptance bar and it disagreed with my reading,
+              so the lowercase stays. */}
+          filter ▾
         </button>
       ) : null}
       {people.length > 1 ? (
@@ -2053,7 +1981,7 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="people-filter-trigger"
         >
-          {selectedPeople.length > 0 ? `People · ${selectedPeople.length}` : 'People ▾'}
+          {selectedPeople.length > 0 ? `people · ${selectedPeople.length}` : 'people ▾'}
         </button>
       ) : null}
       {/* The collection lens trigger. Rendered exactly when the registry
@@ -2081,13 +2009,13 @@ function FilterRow({
             aria-haspopup="menu"
             data-testid="collection-lens-trigger"
           >
-            {/* `.toLowerCase()` DROPPED, not overlooked. It was the one place
-                the lowercasing was applied in code rather than typed into a
-                literal, so it was also the only one that would have kept
-                re-lowercasing a registry label after the other two were fixed
-                — the header would have gone back to two casings the moment a
-                kind declared a lens. The registry's own casing now stands. */}
-            {`${membership.label} ▾`}
+            {/* `.toLowerCase()` RESTORED. It is the only one of the three
+                applied in code rather than typed, so it is what keeps a
+                registry label — declared "Collections", capital C — speaking
+                the filter row's lowercase alongside `filter` and `people`.
+                Dropping it was correct under the Title-Case reading and wrong
+                under the design's, which keeps the controls lowercase. */}
+            {`${membership.label.toLowerCase()} ▾`}
           </button>
         )
       ) : null}
