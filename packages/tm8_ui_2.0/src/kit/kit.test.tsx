@@ -39,17 +39,40 @@ describe('kit primitives', () => {
     expect(badge?.getAttribute('title')).toBe('Sessions: 2,281 new');
   });
 
-  it('LabelCountBadge gives width to the noun before the count', () => {
+  // The three halves of the width budget. The first is the one that matters
+  // most: an earlier revision of this badge exempted the noun with
+  // `flex: 0 0 auto`, and an unshrinkable child does not truncate — it
+  // overflows and paints across its neighbour. `max-width: 100%` caps the box,
+  // not the text. Never re-exempt the label; change the ratio instead.
+  it('LabelCountBadge clips at the root so nothing paints over a neighbour', () => {
     const root = block(kitCss, '.kit-label-count {', 'kit.css');
+    expect(root).toMatch(/min-width:\s*0/);
+    expect(root).toMatch(/max-width:\s*100%/);
+    expect(root).toMatch(/overflow:\s*hidden/);
+  });
+
+  it('LabelCountBadge lets the noun shrink — last, and only to its floor', () => {
+    const label = block(kitCss, '.kit-label-count__label', 'kit.css');
+    // It MUST be able to shrink; `flex: 0 0 auto` here is the overflow bug.
+    expect(label).not.toMatch(/flex:\s*0 0 auto/);
+    expect(label).toMatch(/flex:\s*0 1 auto/);
+    // `text-overflow` cannot reach an anonymous text run — block is required.
+    expect(label).toMatch(/display:\s*block/);
+    expect(label).toMatch(/overflow:\s*hidden/);
+    expect(label).toMatch(/text-overflow:\s*ellipsis/);
+    // The floor is per-surface and defaults to 0, so a short noun such as
+    // "PRs" is never padded out to a floor it does not need.
+    expect(label).toMatch(/min-width:\s*var\(--kit-label-floor,\s*0\)/);
+  });
+
+  it('LabelCountBadge makes the count yield first, by ratio not by exemption', () => {
     const label = block(kitCss, '.kit-label-count__label', 'kit.css');
     const quantity = block(kitCss, '.kit-label-count__quantity', 'kit.css');
-    expect(root).toMatch(/min-width:\s*0/);
-    expect(label).toMatch(/flex:\s*0 0 auto/);
-    expect(label).not.toMatch(/overflow|text-overflow/);
     expect(quantity).toMatch(/min-width:\s*0/);
-    expect(quantity).toMatch(/flex:\s*0 1 auto/);
     expect(quantity).toMatch(/overflow:\s*hidden/);
     expect(quantity).toMatch(/text-overflow:\s*ellipsis/);
+    const shrink = (rule: string) => Number(/flex:\s*\d+\s+(\d+)\s+auto/.exec(rule)![1]);
+    expect(shrink(quantity)).toBeGreaterThan(shrink(label));
   });
 
   it('LabelCountBadge accepts precise count tooltip copy', () => {
