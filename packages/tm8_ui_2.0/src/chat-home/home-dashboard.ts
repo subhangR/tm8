@@ -56,11 +56,29 @@ interface KeyedRead<T> {
   value: readonly T[];
 }
 
-export interface HomeRegion<T> {
-  status: HomeRegionStatus;
-  /** Empty in ALL THREE states. Never branch on this alone — branch on `status`. */
-  items: readonly T[];
-}
+/**
+ * A REGION, WHERE `items` DOES NOT EXIST UNTIL YOU HAVE NARROWED.
+ *
+ * The earlier shape was `{ status; items }` with `items` empty in all three
+ * states and a comment saying "never branch on this alone". That made the
+ * fleet's demo blocker — never claim "nothing here" before a read settles — a
+ * CONVENTION: `items.length === 0 ? 'Nothing yet' : …` compiled, passed review,
+ * and reintroduced the exact defect the owner reported.
+ *
+ * A comment and a test do not stop someone who knows the rule. In the hour this
+ * type was written, a sibling lane wrote that same bug into an `n === 0`
+ * predicate WHILE quoting the rule against it, on the header above every entity
+ * list. So the guarantee moves into the type: reading `items` without checking
+ * `status` is now a compile error rather than a code-review question.
+ *
+ * `pending` and `failed` carry no `items` FIELD AT ALL — not an empty array.
+ * An empty array is the thing that reads as "we looked and found none", and it
+ * is exactly what must not be reachable before the read settles.
+ */
+export type HomeRegion<T> =
+  | { status: 'pending' }
+  | { status: 'failed' }
+  | { status: 'loaded'; items: readonly T[] };
 
 /**
  * Run one space-scoped read and report it as three states.
@@ -84,11 +102,11 @@ export function useKeyedRead<T>(
   const readRef = useRef(read);
   readRef.current = read;
 
-  /* DERIVED DURING RENDER, not in an effect — see KeyedRead's docblock. */
-  const status: HomeRegionStatus =
-    answer !== null && answer.port === port && answer.spaceId === spaceId
-      ? answer.status
-      : 'pending';
+  /* DERIVED DURING RENDER, not in an effect — see KeyedRead's docblock. An
+     answer whose key does not match the CURRENT props is not this region's
+     answer, so it is discarded here rather than shown while a new read runs. */
+  const settled =
+    answer !== null && answer.port === port && answer.spaceId === spaceId ? answer : null;
 
   useEffect(() => {
     let alive = true;
@@ -108,10 +126,13 @@ export function useKeyedRead<T>(
     };
   }, [port, spaceId]);
 
-  return {
-    status,
-    items: status === 'loaded' && answer !== null ? answer.value : NOTHING,
-  };
+  /* RETURNING THE ARM, not a flat object with a status field on it. `settled`
+     narrows to the loaded case, so `items` is attached in exactly one branch and
+     the other two are structurally incapable of carrying rows. */
+  if (settled === null) return { status: 'pending' };
+  return settled.status === 'loaded'
+    ? { status: 'loaded', items: settled.value }
+    : { status: 'failed' };
 }
 
 /**
@@ -162,8 +183,17 @@ export function useRecentChats(
   limit = 5,
 ): HomeRegion<ChatThreadSummary> & { note: string | null } {
   const region = useKeyedRead(port, spaceId, readThreads);
-  const items = useMemo(() => region.items.slice(0, limit), [region.items, limit]);
-  return { status: region.status, items, note: homeRegionNote(region.status, 'conversations') };
+  /* Narrow BEFORE trimming: there is no list to trim in the other two states,
+     which is the point of the union. `useMemo` is keyed on the rows themselves,
+     so pending and failed share one stable identity rather than a fresh []. */
+  const rows = region.status === 'loaded' ? region.items : null;
+  const items = useMemo(() => (rows === null ? NOTHING : rows.slice(0, limit)), [rows, limit]);
+  const note = homeRegionNote(region.status, 'conversations');
+  /* Branch on `region.status`, never on `items` — TS cannot correlate a derived
+     value back to the discriminant, and the whole guarantee is the discriminant.
+     Every hook above runs unconditionally; only the return is narrowed. */
+  if (region.status === 'loaded') return { status: 'loaded', items, note };
+  return { status: region.status, note };
 }
 
 /**

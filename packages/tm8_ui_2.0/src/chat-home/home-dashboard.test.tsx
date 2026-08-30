@@ -31,15 +31,27 @@ function Probe({
   spaceId: SpaceId | string;
   limit?: number;
 }) {
-  const { status, items, note } = useRecentChats(port, spaceId, limit);
+  const region = useRecentChats(port, spaceId, limit);
+
+  /* THE UNION IS PINNED AT COMPILE TIME, HERE. `@ts-expect-error` fails the
+     build if the next line STOPS being an error — i.e. if someone flattens the
+     region back to `{ status; items }` and makes rows readable before the read
+     settles. That is the guarantee a comment and a runtime test could not give,
+     and it is the whole reason for the union. */
+  // @ts-expect-error — `items` must be unreachable without narrowing on `status`
+  void region.items;
+
+  /* The only way to rows is through the discriminant. */
+  const items = region.status === 'loaded' ? region.items : [];
   return (
     <div>
-      <span data-testid="status">{status}</span>
+      <span data-testid="status">{region.status}</span>
       <span data-testid="count">{items.length}</span>
-      <span data-testid="note">{note ?? ''}</span>
-      {/* The empty SENTENCE is only ever drawn from `status`, never from
-          `items.length` — which is the whole contract under test. */}
-      {status === 'loaded' && items.length === 0 ? (
+      <span data-testid="note">{region.note ?? ''}</span>
+      {/* The empty SENTENCE is only ever drawn from `status`. It is now
+          impossible to draw it from a length alone — the length does not exist
+          until this branch has been taken. */}
+      {region.status === 'loaded' && region.items.length === 0 ? (
         <span data-testid="empty-claim">No conversations yet.</span>
       ) : null}
       <ul>
