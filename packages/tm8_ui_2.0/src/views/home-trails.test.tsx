@@ -56,19 +56,13 @@ async function openInProgressTask(view: { getByTestId: (id: string) => HTMLEleme
 }
 
 describe('Home trails live in the URL (D1)', () => {
-  it('a map-card click switches the root AND the address; a tile click roots the centre trail', async () => {
+  it('a rail click switches the root AND the address; a tile click roots the centre trail', async () => {
     const target = createMemoryTarget(`#/s/${SPACE}/home`);
     const view = render(<GateApp routerTarget={target} />);
     await waitFor(() => view.getByTestId('home-page'));
 
-    /* THE MAP CARD IS THE SWITCHER now that the icon rail is retired (owner
-       design, 2026-08-30). Same seam and same accessible name — both surfaces
-       always labelled their kind rows with `entityNavigationLabel(item)` — so
-       only the container this reaches through has changed. Scoped to the card
-       rather than the screen because the list header names its current kind
-       too, and an unscoped query would be ambiguous rather than wrong. */
-    const map = view.container.querySelector('.hp-overview') as HTMLElement;
-    fireEvent.click(within(map).getByRole('button', { name: /^Tasks/ }));
+    /* The rail is the switcher (R4): its Tasks row makes tasks the root… */
+    fireEvent.click(within(view.getByTestId('home-rail')).getByRole('button', { name: /^Tasks/ }));
     await waitFor(() => view.getByTestId('tch-hosted-list'));
     /* …and the ADDRESS says so. */
     await waitFor(() => expect(target.getHash()).toContain(`/home/k/tasks`));
@@ -92,8 +86,7 @@ describe('Home trails live in the URL (D1)', () => {
     const first = createMemoryTarget(`#/s/${SPACE}/home`);
     const a = render(<GateApp routerTarget={first} />);
     await waitFor(() => a.getByTestId('home-page'));
-    const aMap = a.container.querySelector('.hp-overview') as HTMLElement;
-    fireEvent.click(within(aMap).getByRole('button', { name: /^Tasks/ }));
+    fireEvent.click(within(a.getByTestId('home-rail')).getByRole('button', { name: /^Tasks/ }));
     await openInProgressTask(a);
     await waitFor(() => expect(first.getHash()).toContain('p='));
     const shared = first.getHash();
