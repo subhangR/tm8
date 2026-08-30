@@ -932,6 +932,15 @@
    its place — between them, hairline, not a box each.
    `auto-fit` with a FLOOR: at 320px they stack whole rather than crushing. */
 .cv2-root .hp-start {
+  /* `flex: none` IS LOad-BEARING AND WAS THE WHOLE BUG. This box sits in a
+     flex column beside a much taller strip. It carries `overflow: hidden` for
+     the rounded corners, and per Flexbox §4.5 any `overflow` other than
+     `visible` sets the automatic minimum size to ZERO — so the column was free
+     to shrink it, and did, all the way to its two border pixels. The cards
+     were in the DOM with their text the entire time; they had no height.
+     Measured on the live build: `.hp-start` height 2px, two children.
+     An item that must not yield has to SAY so. */
+  flex: none;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   border: 1px solid var(--pn-line-2);

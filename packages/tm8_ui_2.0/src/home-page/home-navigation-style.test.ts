@@ -141,6 +141,15 @@ describe('a name is never truncated by its own count', () => {
     const card = homeCss.match(/\.cv2-root \.hp-start__card\s*\{([^}]*)\}/s)?.[1] ?? '';
     expect(card, 'no .hp-start__card rule').not.toBe('');
     expect(card).toContain('border: 0');
+
+    /* THE BOX MUST NOT YIELD. It sits in a flex column beside a much taller
+     * strip and carries `overflow: hidden` for its corners — which by Flexbox
+     * §4.5 sets its automatic minimum size to ZERO. Without `flex: none` the
+     * column crushes it to its two border pixels, cards and all: measured at
+     * exactly 2px on the live build 2026-08-30, with both buttons present in
+     * the DOM and their text intact. Nothing in 4,974 tests could see it.
+     */
+    expect(start, 'the create box will be crushed by the flex column').toContain('flex: none');
     expect(card).toContain('border-left: 1px solid');
     expect(homeCss).toContain('.hp-start__card:first-child');
 

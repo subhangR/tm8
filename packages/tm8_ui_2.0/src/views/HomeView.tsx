@@ -862,6 +862,7 @@ export function HomeView(props: HomeViewProps) {
            chat, New SESSIONS AND New Task first". These are the SAME handlers
            the chat surface and the list header already use — `regions` owns
            them — so Home reaches them rather than growing a second set. */
+        onNewChat={regions.onShowChat}
         onCreateKind={regions.onCreateKind}
         createKindUnavailable={regions.createKindUnavailable}
       />

@@ -94,6 +94,8 @@ export interface HomePageProps {
   onOpenKind?(kind: string): void;
   onOpenEntity(id: string): void;
   onOpenWorkspace(): void;
+  /** Back to the new-conversation composer. Chat's own create. */
+  onNewChat?: (() => void) | undefined;
   /** Create a kind and land on its root. The host already owns this verb. */
   onCreateKind?: ((kind: string) => void) | undefined;
   /**
@@ -119,9 +121,11 @@ export interface HomePageProps {
  * controls for one verb is how "options repeating" comes back.
  */
 function HomeStart({
+  onNewChat,
   onCreateKind,
   createKindUnavailable,
 }: {
+  onNewChat?: (() => void) | undefined;
   onCreateKind?: ((kind: string) => void) | undefined;
   createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
 }) {
@@ -170,15 +174,27 @@ function HomeStart({
    * SO THIS IS THE OWNER'S CALL, NOT A SETTLED DESIGN. If they want all three
    * verbs together, the `+` moves into this row and those tests move with it.
    * What is not on the table is shipping two buttons that say "New chat". */
+  /* NEW CHAT IS BACK. It was pulled on 2026-08-30 because `ListRootHeader`
+     rendered a second control with the same accessible name and the gate
+     caught it — "Found multiple elements with the role button and name
+     /^New chat$/". That header lived in the middle column. The column is gone,
+     so the duplicate is gone, so the third card returns. */
+  const chat = onNewChat ? (
+    <button type="button" className="hp-start__card" onClick={onNewChat}>
+      <b>New chat</b>
+      <span>Ask, plan, or think out loud</span>
+    </button>
+  ) : null;
   const session = kindVerb('session', 'New session', 'Put an agent on it and watch it work');
   const task = kindVerb('task', 'New task', 'Track a piece of work to done');
 
   /* Nothing wired ⇒ no row, rather than an empty box asserting "you can start
      things" and offering none. */
-  if (!session && !task) return null;
+  if (!chat && !session && !task) return null;
 
   return (
     <section className="hp-start" aria-label="Start something">
+      {chat}
       {session}
       {task}
     </section>
@@ -541,6 +557,7 @@ export function HomePage(props: HomePageProps) {
        * surface, which is the whole of the complaint. */}
       <div className="hp-side">
       <HomeStart
+        onNewChat={props.onNewChat}
         onCreateKind={props.onCreateKind}
         createKindUnavailable={props.createKindUnavailable}
       />
