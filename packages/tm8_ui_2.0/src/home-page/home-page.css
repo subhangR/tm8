@@ -958,3 +958,119 @@
 .cv2-root .hp-start__card:hover > b { color: var(--pn-brand-2); }
 .cv2-root .hp-start__card--off { cursor: default; }
 .cv2-root .hp-start__card--off > b { color: var(--pn-ink-3); }
+
+/* ═══ ACTIVE — the dashboard strip (owner, 2026-08-30, layouts 3+4 mixed) ═══
+   Work as wide cards across the width, the conversation keeping its own home
+   beneath them. 03 alone had nowhere for a conversation to live; 04 alone made
+   the work a strip you could not read. */
+.cv2-root .hp-active {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+.cv2-root .hp-active__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+.cv2-root .hp-active__label { flex: none; color: var(--pn-ink-3); }
+.cv2-root .hp-active__lenses { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.cv2-root .hp-active__live {
+  flex: none;
+  margin-left: auto;
+  font: 600 var(--pn-fs-micro)/1 var(--pn-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-run);
+}
+/* THE LENS CHIPS. Quiet until chosen; the chosen one takes the brand hairline
+   and tint — the same "you are here" grammar as the list header's active tab,
+   so one language marks selection everywhere. */
+.cv2-root .hp-lens {
+  appearance: none;
+  font: 600 var(--pn-fs-micro)/1 var(--pn-ui);
+  color: var(--pn-ink-3);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-pill);
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.cv2-root .hp-lens:hover { color: var(--pn-ink); }
+.cv2-root .hp-lens--on {
+  color: var(--pn-brand-2);
+  border-color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+}
+.cv2-root .hp-active__none {
+  margin: 0;
+  font: 400 var(--pn-fs-sm)/1.4 var(--pn-ui);
+  color: var(--pn-ink-3);
+}
+
+/* THE CARDS — wide, three abreast, floored so 320px drops to one whole column
+   rather than crushing three. L4: never an unfloored track. */
+.cv2-root .hp-active__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--pn-space-2);
+}
+.cv2-root .hp-acard {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  min-width: 0;
+  padding: var(--pn-space-3);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  cursor: pointer;
+}
+/* LIGHT COLOUR, BY KIND (owner: "add light colors combination of colors make
+   beautiful"). The SOFT tone variants the app already defines — never the full
+   tone, which behind body text reads as a badge demanding attention rather
+   than a card inviting a read. Three kinds become legible without a second row
+   of labels, and the status WORD still carries the state (C8/L10). */
+.cv2-root .hp-acard--sessions { background: var(--pn-run-soft);   border-color: var(--pn-run); }
+.cv2-root .hp-acard--chats    { background: var(--pn-info-soft);  border-color: var(--pn-info); }
+.cv2-root .hp-acard--tasks    { background: var(--pn-wait-soft);  border-color: var(--pn-wait); }
+.cv2-root .hp-acard:hover { border-color: var(--pn-brand-2); }
+
+.cv2-root .hp-acard__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--pn-space-1);
+  min-width: 0;
+}
+.cv2-root .hp-acard__kind {
+  font: 700 var(--pn-fs-micro)/1 var(--pn-ui);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  flex: none;
+}
+/* THE NAME TAKES THE ROOM AND CLIPS INSIDE IT — a sliced number is a wrong
+   number, but a clipped name is still the right name. */
+.cv2-root .hp-acard__title {
+  font: 600 var(--pn-fs-sm)/1.3 var(--pn-ui);
+  color: var(--pn-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .hp-acard__facts {
+  display: flex;
+  gap: var(--pn-space-2);
+  font: 400 var(--pn-fs-micro)/1.3 var(--pn-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+
+/* THE MIDDLE COLUMN IS GONE. It stated the same taxonomy the rail states, and
+   it was the only way to pick a conversation — which is why it could not go
+   until the Active strip above could carry chats. It can now. */
+.cv2-root .hp-live .tch-sidebar { display: none; }

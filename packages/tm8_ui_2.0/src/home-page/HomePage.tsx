@@ -36,7 +36,7 @@
  * kinds come from `domain/home-page.ts`, presence state is read structurally
  * (`'liveWork' in state`), and every glyph resolves through the registry.
  */
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   entityNavigationLabel,
   getKind,
@@ -45,6 +45,7 @@ import {
 } from '../domain';
 import {
   composeMyWork,
+  type ChatThreadLite,
   useHomeData,
   type HomeScreenData,
   type HomeSection,
@@ -205,6 +206,153 @@ function sinceLabel(iso: string): string {
   return `${Math.floor(secs / 86400)}d`;
 }
 
+
+/** The four lenses on the active strip. `all` is the resting state. */
+type ActiveLens = 'all' | 'chats' | 'sessions' | 'tasks';
+
+/**
+ * ONE LIST OF WHAT IS HAPPENING — sessions, chats and tasks together, because
+ * the owner asked for exactly that ("Running sessions chats all active works
+ * across all these is filter by chats active sessions active task active").
+ *
+ * THE LENS FILTERS; IT DOES NOT FETCH. Every row is already on the page, so
+ * switching lens cannot fail, cannot spin, and cannot show a different truth
+ * than `all` did a moment earlier. A filter that re-reads is a second source
+ * of truth wearing a chip.
+ */
+function activeRows(
+  live: HomeSection | null,
+  tasks: HomeSection | null,
+  chats: readonly ChatThreadLite[] | null,
+  lens: ActiveLens,
+): readonly (HomeRow & { lens: ActiveLens })[] {
+  const s = (live?.rows ?? []).map((r) => ({ ...r, lens: 'sessions' as const }));
+  const t = (tasks?.rows ?? []).map((r) => ({ ...r, lens: 'tasks' as const }));
+  /* Chats arrive from the seam rather than the registry, so they are shaped
+     here into the same row the other two already are — one row type, one card,
+     one renderer. A second card shape per source is how a list stops looking
+     like a list. */
+  const c = (chats ?? []).map((thread) => ({
+    id: thread.id,
+    kind: null,
+    title: thread.title?.trim() || 'Untitled conversation',
+    word: null,
+    tone: 'idle' as const,
+    dot: null,
+    ...(thread.activityAt ? { activityAt: thread.activityAt } : {}),
+    ...(typeof thread.messageCount === 'number' && thread.messageCount > 0
+      ? { turns: thread.messageCount }
+      : {}),
+    lens: 'chats' as const,
+  }));
+  const all = [...s, ...c, ...t];
+  const picked = lens === 'all' ? all : all.filter((r) => r.lens === lens);
+  /* Most recently active first, across all three kinds — the only ordering
+     that answers "what is happening" rather than "what kind is it". */
+  return [...picked].sort((a, b) => (b.activityAt ?? '').localeCompare(a.activityAt ?? ''));
+}
+
+
+const LENSES: readonly { id: ActiveLens; label: string }[] = [
+  { id: 'all', label: 'all' },
+  { id: 'chats', label: 'chats' },
+  { id: 'sessions', label: 'sessions' },
+  { id: 'tasks', label: 'tasks' },
+];
+
+/**
+ * ACTIVE — the whole dashboard, in one strip.
+ *
+ * ORDERED BY ACTIVITY, NOT BY KIND (owner: "have everything modified based on
+ * date activity and progress"). The newest thing is first whether it is a
+ * session, a chat or a task, because "what is happening" is a question about
+ * time and the kind is a detail of the answer.
+ *
+ * COLOUR CARRIES THE KIND, LIGHTLY. Each card takes a soft tint of its kind's
+ * tone — the tokens the rest of the app already uses for run/wait/info — so
+ * three kinds are legible in one list without a second row of labels. The tint
+ * is the SOFT variant, never the full tone: a full-strength ground behind body
+ * text is a badge, not a card, and this list is read rather than scanned for
+ * alarm. Status still carries its WORD; the colour never stands alone (C8/L10).
+ */
+function ActiveStrip({
+  rows,
+  lens,
+  onLens,
+  liveLabel,
+  onOpen,
+}: {
+  rows: readonly (HomeRow & { lens: ActiveLens })[];
+  lens: ActiveLens;
+  onLens(next: ActiveLens): void;
+  liveLabel: string;
+  onOpen(id: string): void;
+}) {
+  return (
+    <section className="hp-active" aria-label="Active work">
+      <div className="hp-active__bar">
+        <h2 className="hp-active__label k-label">Active</h2>
+        <div className="hp-active__lenses" role="tablist" aria-label="Filter active work">
+          {LENSES.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              role="tab"
+              aria-selected={l.id === lens}
+              className={`hp-lens${l.id === lens ? ' hp-lens--on' : ''}`}
+              onClick={() => onLens(l.id)}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+        <span className="hp-active__live">{liveLabel}</span>
+      </div>
+      {rows.length === 0 ? (
+        /* A LENS THAT MATCHES NOTHING SAYS SO. This is not the "absence is not
+           a claim" case — the reader chose this lens, so silence would read as
+           a broken filter rather than an empty one. */
+        <p className="hp-active__none" role="status">
+          Nothing active {lens === 'all' ? 'right now' : `in ${lens}`}.
+        </p>
+      ) : (
+        <div className="hp-active__grid">
+          {rows.map((row) => (
+            <button
+              key={`${row.lens}-${row.id}`}
+              type="button"
+              className={`hp-acard hp-acard--${row.lens} k-press`}
+              title={row.detail ?? row.title}
+              onClick={() => onOpen(row.id)}
+            >
+              <span className="hp-acard__top">
+                <span className="hp-acard__kind">{row.lens.replace(/s$/, '')}</span>
+                {row.word ? (
+                  <span className={`hp-card__word hp-card__word--${row.tone}`}>
+                    {row.dot ? (
+                      <span className={`hp-card__dot hp-card__dot--${row.dot}`} aria-hidden="true" />
+                    ) : null}
+                    {row.word}
+                  </span>
+                ) : null}
+              </span>
+              <span className="hp-acard__title">{row.title}</span>
+              <span className="hp-acard__facts">
+                {row.turns !== undefined ? (
+                  <span>{row.turns} {row.turns === 1 ? 'turn' : 'turns'}</span>
+                ) : null}
+                {row.activityAt ? (
+                  <time dateTime={row.activityAt}>{sinceLabel(row.activityAt)}</time>
+                ) : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AttentionCard({
   section,
   onOpen,
@@ -350,6 +498,7 @@ export function HomePage(props: HomePageProps) {
    * facts (`viewerKnown`, `notificationsError`) rather than from an array. */
   const withRows = (section: HomeSection | null) =>
     section && section.rows.length > 0 ? section : null;
+  const [lens, setLens] = useState<ActiveLens>('all');
   const needsYouStrip = withRows(work.needsYou);
   const liveStrip = withRows(work.live);
   const tasksStrip = withRows(work.tasks);
@@ -394,6 +543,18 @@ export function HomePage(props: HomePageProps) {
       <HomeStart
         onCreateKind={props.onCreateKind}
         createKindUnavailable={props.createKindUnavailable}
+      />
+      {/* THE ACTIVE STRIP — sessions, chats and tasks in ONE list, with a lens.
+          Owner, 2026-08-30, choosing a mix of layouts 3 and 4: the work reads
+          as wide cards, and the conversation keeps a permanent home beneath
+          them. That mix is better than either alone — 03 had nowhere for a
+          conversation to live, so opening one covered the dashboard. */}
+      <ActiveStrip
+        rows={activeRows(work.live, work.tasks, home.chatThreads, lens)}
+        lens={lens}
+        onLens={setLens}
+        liveLabel={work.liveCountLabel}
+        onOpen={props.onOpenEntity}
       />
       {/* NEEDS YOUR ATTENTION follows the verbs: you start something, or you
           deal with what is asking for you. It renders only when it HAS rows —

@@ -9,7 +9,14 @@
  * it, in `views/EmptyCenter`. What remains here is the live model HomePage
  * consumes.
  */
-export { useHomeData, reviewStatusValues, type HomeData, type HomeScreenData, type HomeViewer } from './useHomeData';
+export {
+  useHomeData,
+  reviewStatusValues,
+  type HomeData,
+  type HomeScreenData,
+  type HomeViewer,
+  type ChatThreadLite,
+} from './useHomeData';
 export {
   assignableKinds,
   composeMyWork,
