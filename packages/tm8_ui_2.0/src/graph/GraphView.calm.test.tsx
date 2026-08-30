@@ -100,5 +100,10 @@ describe('calm graph CSS invariants', () => {
     expect(rule('.gv-select__state')).toMatch(/overflow:\s*hidden/);
     expect(rule('.gv-band__label')).not.toMatch(/text-overflow/);
     expect(rule('.gv-band__count')).toMatch(/min-width:\s*0/);
+    // NEVER CLIP A NUMBER BARE. The count is the child elected to yield, so it
+    // is the one that can truncate — and a bare clip turns 128 into 12, a wrong
+    // number wearing a right one's clothes. The ellipsis is what makes the
+    // truncation legible AS truncation.
+    expect(rule('.gv-band__count')).toMatch(/text-overflow:\s*ellipsis/);
   });
 });
