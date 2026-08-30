@@ -857,7 +857,30 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // THIS NUMBER ASSUMES THIS BRANCH IS THE NEXT MIGRATION TO LAND. If #517
     // lands first it adds two files and the merged tree is 161, not 159.
     // Re-measure on the merged tree; do not adjust by arithmetic.
-    expect(server.appliedMigrations.length).toBe(159);
+    //
+    // 159 -> 161 (2026-08-28), TWO steps, and — as with every other row here —
+    // only one of them is this branch's. This branch owns
+    // 174_tracking_refresh_says_why_it_stopped.sql. The other +1 is MAIN'S OWN
+    // ARREARS: #523 landed 172_task_start_date.sql without moving this pin, so
+    // origin/main is red on this line at 159 with 160 files before this branch
+    // is considered at all. That is the fifth time this file has recorded main
+    // arriving here red.
+    //
+    // 174 was derived from the union of origin/main (max 172), both node
+    // databases, and `gh pr view --json files` over every OPEN pr — 169/170 are
+    // spoken for by #517 and 173 by #522, this lane's own sibling PR. That
+    // derivation is necessary and NOT sufficient: #522 originally took 172 by
+    // exactly this method and #523 then merged 172 from a branch open in
+    // parallel, which no CI run on either side can see, because `pull_request`
+    // builds the merge of ONE pr into its base and the duplicate exists only in
+    // a tree neither build constructs. Re-derive against origin/main
+    // immediately before merging, not only when the branch is cut.
+    //
+    // MEASURED, never derived by arithmetic:
+    //   origin/main @ 2a773fdc: git ls-tree --name-only origin/main db/migrations/ | grep -c sql -> 160
+    //   this branch:            ls db/migrations/*.sql | wc -l -> 161
+    // If #522 (173) lands first the merged tree is 162; if #517 lands too, 164.
+    expect(server.appliedMigrations.length).toBe(161);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

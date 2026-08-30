@@ -37,7 +37,8 @@
 
 import type { Db, DbClaims } from '../db/types.js';
 import type { JobContext, JobOutcome, ScheduledJob } from '../scheduler/types.js';
-import { GithubClient, resolveGithubToken, type CheckRunFacts, type ReviewThreadFacts } from './github.js';
+import { resolveTrackingCredential } from './credential.js';
+import { GithubClient, type CheckRunFacts, type ReviewThreadFacts } from './github.js';
 import {
   decideNudges,
   deliverPendingNudges,
@@ -53,6 +54,12 @@ export interface ForgeWatcherOptions {
   db: Db;
   /** Same identity story as 081's observer: the doors have no node-admin bypass. */
   claims: () => Promise<DbClaims>;
+  /**
+   * Same credential story as the observer too: `.git-credential.key` lives here,
+   * and without it this watcher calls GitHub anonymously at 60 requests/hour
+   * shared with the whole host. See `credential.ts` for the identity rule.
+   */
+  dataDir?: string;
   client?: GithubClient;
   /** PRs per tick. Small: this is a watcher, not a backfill. */
   targetBudget?: number;
@@ -102,8 +109,20 @@ export async function runForgeWatchTick(
   signal?: AbortSignal,
   log?: (message: string) => void,
 ): Promise<JobOutcome> {
-  const client = options.client ?? new GithubClient({ token: resolveGithubToken() });
   const claims = await options.claims();
+  // Resolved under this watcher's own claims, exactly as the observer does — the
+  // env var still wins, then the node account's stored credential. Before this,
+  // `resolveGithubToken()` read `process.env` and nothing else, so a node whose
+  // operator had connected GitHub through the UI still watched anonymously.
+  const credential = options.client
+    ? { token: undefined }
+    : await resolveTrackingCredential({
+      db: options.db,
+      claims,
+      dataDir: options.dataDir,
+      ...(log ? { logger: { warn: (m: string) => { log(m); } } } : {}),
+    });
+  const client = options.client ?? new GithubClient({ token: credential.token });
   const budget = options.targetBudget ?? 25;
 
   const listed = await options.db.rpc<{ targets?: unknown }>(

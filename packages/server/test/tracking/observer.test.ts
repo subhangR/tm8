@@ -246,6 +246,132 @@ describe('a rate limit is not a verdict about a pull request', () => {
   });
 });
 
+// 174. An abandoned request used to be claimed AND SILENT: `error` is written
+// only by `complete_tracking_refresh`, which the stoppedEarly branch correctly
+// does not call, so all three stop reasons left an identical NULL. A row that
+// stopped because GitHub refused looked exactly like a row that stopped on the
+// clock.
+//
+// That cost real time on the node this was written for. The observer was making
+// ANONYMOUS GitHub calls — 60 requests/hour for the whole host — and once a
+// backfill spent the hour's budget, every tick after it stopped on the first
+// target with no row, no log line and no error text. Reconstructing that needed
+// `curl https://api.github.com/rate_limit` from the host and an arithmetic
+// coincidence. The queue could simply have said so.
+describe('an abandoned request says why it stopped', () => {
+  const notes = (calls: Call[]): Call[] =>
+    calls.filter((c) => c.fn === 'public.note_tracking_refresh_stop');
+
+  it('a rate limit writes the reason WITHOUT completing the request', async () => {
+    const { db, calls } = fakeDb({ claimed: [request(targets(4))] });
+    const gh = client(
+      () =>
+        new Response('{}', {
+          status: 403,
+          headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '999' },
+        }),
+    );
+
+    await runTrackingObserverTick(options({ db, client: gh }));
+
+    // Both halves matter. The note must be written...
+    expect(notes(calls)).toHaveLength(1);
+    expect(notes(calls)[0]?.args[0]).toBe(REQ);
+    expect(String(notes(calls)[0]?.args[1])).toContain('rate limit');
+    // ...and it must NOT have become a completion on the way. The row stays
+    // `running` so the stale window still returns it: a note, not a verdict.
+    expect(completions(calls)).toEqual([]);
+  });
+
+  it('names the CREDENTIAL beside the cause, because that is the missing half', async () => {
+    // "rate limited" on its own reads as "GitHub is busy". The content is
+    // usually "this node is calling GitHub anonymously, and 60/hour is all
+    // anonymous gets" — which is only legible if both facts are in one sentence.
+    const { db, calls } = fakeDb({ claimed: [request(targets(2))] });
+    const gh = client(
+      () => new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0' } }),
+    );
+
+    await runTrackingObserverTick(options({ db, client: gh }));
+
+    const reason = String(notes(calls)[0]?.args[1]);
+    expect(reason).toContain('supplied directly'); // the injected-client seam, named honestly
+    expect(reason).toContain('0 of 2 target(s) refreshed first');
+    expect(reason).toMatch(/still claimed/i);
+  });
+
+  it('an ABORT is distinguishable from a rate limit, and warns about the restart', async () => {
+    const controller = new AbortController();
+    const { db, calls } = fakeDb({ claimed: [request(targets(5))] });
+    const gh = client(() => { controller.abort(); return okPr(); });
+
+    await runTrackingObserverTick(options({ db, client: gh }), controller.signal);
+
+    const reason = String(notes(calls)[0]?.args[1]);
+    expect(reason).toContain('aborted');
+    expect(reason).not.toContain('rate limit');
+    // The trap that cost a whole backfill: a resumed tick restarts at target 1,
+    // so a request bigger than one tick can burn every attempt without ever
+    // finishing. An operator reading this row should not have to derive that.
+    expect(reason).toMatch(/restarts at the FIRST target/);
+    expect(completions(calls)).toEqual([]);
+  });
+
+  it('the TARGET BUDGET is its own reason, not silently filed as an abort', async () => {
+    const { db, calls } = fakeDb({ claimed: [request(targets(3))] });
+    const gh = client(() => okPr());
+
+    await runTrackingObserverTick(options({ db, client: gh, targetBudget: 1 }));
+
+    const reason = String(notes(calls)[0]?.args[1]);
+    expect(reason).toContain('per-target budget');
+    expect(reason).toContain('1 of 3 target(s) refreshed first');
+  });
+
+  it('a finished request is NOT noted — the note is for abandonment only', async () => {
+    const { db, calls } = fakeDb({ claimed: [request(targets(2))] });
+    const gh = client(() => okPr());
+    await runTrackingObserverTick(options({ db, client: gh }));
+    expect(notes(calls)).toEqual([]);
+    expect(completions(calls)).toHaveLength(1);
+  });
+
+  it('a note that THROWS is logged, and does not take the tick down with it', async () => {
+    // This is a diagnostic. A diagnostic that can abort the tick it is
+    // describing is worse than no diagnostic at all — it would turn a
+    // recoverable rate limit into a dead poller.
+    const { db, calls } = fakeDb({
+      claimed: [request(targets(2))],
+      throwOn: (fn) => (fn === 'public.note_tracking_refresh_stop' ? new Error('42501') : null),
+    });
+    const gh = client(
+      () => new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0' } }),
+    );
+    const logged: string[] = [];
+
+    const outcome = await runTrackingObserverTick(
+      options({ db, client: gh }), undefined, (m) => logged.push(m),
+    );
+
+    expect(outcome.detail?.rateLimited).toBe(true);
+    expect(outcome.detail?.abandoned).toBe(1);
+    expect(logged.join(' ')).toContain('could not record the stop reason');
+    expect(notes(calls)).toHaveLength(1); // attempted, and swallowed
+  });
+});
+
+describe('the tick reports WHERE its token came from', () => {
+  it('carries the credential source, not just whether there was one', async () => {
+    // `authenticated` alone cannot tell "the operator set an env var" from "the
+    // node account's stored credential was opened" from "neither" — and the
+    // third case is the one that silently costs the hour's quota.
+    const { db } = fakeDb({ claimed: [request(targets(1))] });
+    const gh = client(() => okPr());
+    const outcome = await runTrackingObserverTick(options({ db, client: gh }));
+    expect(outcome.detail?.credentialSource).toBe('injected');
+  });
+});
+
 describe('the claim call carries its bounds', () => {
   it('passes batch size, stale window and the retirement budget', async () => {
     const { db, calls } = fakeDb({ claimed: [] });

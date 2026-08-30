@@ -737,6 +737,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     scheduler.register(
       createTrackingObserverJob({
         db,
+        // The node account's stored GitHub credential is opened with the key
+        // under this directory. Without it the observer calls GitHub
+        // anonymously — 60 requests/hour for the whole host — which is what it
+        // did for the nineteen days a credential sat stored and unread.
+        dataDir,
         claims: async () => {
           // The doors go through `require_space_member`, which has no
           // node-admin bypass, so bare `{ nodeAdmin: true }` would raise 42501
@@ -773,6 +778,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     scheduler.register(
       createForgeWatcherJob({
         db,
+        /** Same credential story as the observer above. */
+        dataDir,
         claims: async () => {
           const o = await owner();
           return {
