@@ -366,7 +366,10 @@
   margin-top: 5px;
 }
 /* THE LAW, in three declarations: the mark never shrinks, the name takes all
-   remaining room, and the count is capped so it can never take the name's.
+   remaining room, and the count keeps its intrinsic width but is DROPPED
+   WHOLE by the `@container` budget below once it can no longer be afforded.
+   It is not capped — a capped count is a clipped count, and a clipped number
+   reads as a different, entirely plausible number.
    See `.hr-rail__row`, which states the same law for the rail. */
 .cv2-root .hp-overview__kind {
   display: flex;
