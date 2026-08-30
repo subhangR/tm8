@@ -858,24 +858,41 @@ export function EntityListPanel(props: EntityListPanelProps) {
             tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
           }
           /*
-           * EMPTY MEANS THE QUERY ANSWERED ZERO — NOT "the label looks like a
-           * zero", and not "nothing has loaded yet".
+           * EMPTY MEANS THE SERVER SAID ZERO. NOT "the label looks like a
+           * zero", and — the part that matters — NOT "nothing has arrived
+           * yet".
            *
-           * `n` is the server total when the page reports one and the loaded
-           * length otherwise (`tabCount`, :1204), so `n === 0` is the same
-           * fact the footer and the kind-selector total are drawn from. Read
-           * off the SAME `tabCounts` array as the label, so the two cannot
-           * disagree about one tab.
+           * `exact` IS THE LOAD-BEARING HALF, AND `n === 0` ALONE IS A BUG.
+           * `tabCount` (:1204) computes `n: page?.total ?? loaded`, and
+           * `loaded` is `rowsFor(...).length` — which is 0 while the first
+           * page is still in flight (`ListPageState.loading`: "a page is in
+           * flight, including the first, before anything has arrived"). So
+           * `n === 0` is true of an EMPTY band and of an UNREAD one, and a
+           * predicate that cannot tell those apart would demote every tab on
+           * the opening read and then un-demote them as rows land.
            *
-           * `?? false` is the load-bearing default, and it defaults toward
-           * SHOWING the count: a tab with no entry in `tabCounts` is one this
-           * function knows nothing about, and demoting it would be asserting
-           * emptiness from ignorance — the composer's bug in another costume.
-           * Absent evidence, the tab renders exactly as it does today.
+           * That is the composer's bug exactly — deriving "there is none"
+           * from a value that also means "we have not asked yet" — which this
+           * fleet spent the day removing from Home. It would have been
+           * cheerfully reintroduced here, on every list in the product, by a
+           * predicate that reads correct.
+           *
+           * `exact` is `page?.total !== undefined`: the server VOLUNTEERED a
+           * total. That cannot be confused with silence. So the pair
+           * `exact && n === 0` is a settled zero and nothing else.
+           *
+           * IT FAILS TOWARD SHOWING THE COUNT, on purpose and in every
+           * uncertain case: a host that wired no `pageStateOf`, a page still
+           * loading, a tab absent from `tabCounts`. Those tabs render exactly
+           * as they do today. The cost is that a host which never reports a
+           * total never gets the demotion; the alternative is asserting
+           * emptiness from ignorance, which is the failure this whole pass
+           * exists to stop.
            */
-          tabEmpty={(tab: StatusCategoryTab) =>
-            tabCounts.find((c) => c.tab.id === tab.id)?.n === 0
-          }
+          tabEmpty={(tab: StatusCategoryTab) => {
+            const count = tabCounts.find((c) => c.tab.id === tab.id);
+            return count?.exact === true && count.n === 0;
+          }}
         />
       )}
 

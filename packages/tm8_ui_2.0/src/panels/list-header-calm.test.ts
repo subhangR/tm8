@@ -166,8 +166,30 @@ describe('the header speaks one casing', () => {
     // truncated page's `0` becomes a lie. The fact is passed, never
     // re-derived from its own rendering.
     expect(TSX).toContain('tabEmpty');
-    expect(TSX).toContain('?.n === 0');
     // And the count survives for a screen reader even when it stops painting.
     expect(TSX).toContain("'aria-label': `${tab.label}, ${tabLabel(tab)}`");
+  });
+
+  it('demotes only on a SETTLED zero — never on an unread one', () => {
+    /*
+     * THE ONE THAT WOULD HAVE SHIPPED THE COMPOSER'S BUG TO EVERY LIST.
+     *
+     * `tabCount` computes `n: page?.total ?? loaded`, and `loaded` is
+     * `rowsFor(...).length` — which is 0 while the first page is in flight
+     * (`ListPageState.loading`: "a page is in flight, including the first,
+     * before anything has arrived"). So `n === 0` is true of an EMPTY band
+     * AND of an UNREAD one, and `tabEmpty` written as `n === 0` alone would
+     * demote every tab on the opening read, then un-demote them as rows land.
+     *
+     * That is deriving "there is none" from a value that also means "we have
+     * not asked yet" — the exact defect this pass removed from Home's
+     * composer, which claimed a space with 34 teammates was empty.
+     *
+     * `exact` is `page?.total !== undefined`: the server VOLUNTEERED a total,
+     * which silence can never look like. `exact && n === 0` is a settled zero
+     * and nothing else, and every uncertain case falls through to showing the
+     * count. Pinned because dropping `exact` leaves code that reads correct.
+     */
+    expect(TSX).toContain('count?.exact === true && count.n === 0');
   });
 });
