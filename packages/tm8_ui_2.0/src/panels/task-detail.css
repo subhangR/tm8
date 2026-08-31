@@ -206,8 +206,12 @@
 
 /* --- Editable metadata band --------------------------------------------- */
 
+.cv2-root .pn-panel[data-archetype='subtree'] {
+  container-type: inline-size;
+  container-name: pn-panel;
+}
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls {
-  padding: 10px var(--pn-space-4);
+  padding: 14px 18px;
   background: var(--pn-card);
 }
 
@@ -244,7 +248,41 @@
    floor, so a wide panel lays the fields out three or four abreast and a
    narrow one drops to one — the same discipline as every other grid in this
    package, and never an unfloored track. */
-/* THE GRID GOES ON THE ELEMENT THAT ACTUALLY HOLDS THE FIELDS.
+/* ═══ BUILT TO THE OWNER'S OWN REFERENCE ═══════════════════════════════════
+   2026-08-31: the owner sent a mockup of this band and the React project
+   behind it (`TM8_Production_React_Project1.zip`), with the note "see how
+   every icon is organized". Its `.properties-grid` is:
+
+       grid-template-columns: repeat(4, <unfloored 1fr tracks>)
+       gap: 12px 14px;  padding: 14px 18px;
+       field height 38px, radius 7px, 1px border, 0 10px inset
+       label 10.5px / weight 800 / .7px tracking, in this package's own ink-3
+
+   TWO THINGS IN THAT REFERENCE ARE BANNED HERE, AND THE GUARDS CAUGHT BOTH
+   THE MOMENT I COPIED THEM:
+
+     · Its track floor is ZERO, and `no-branching.test.ts` ("L4 — floors are
+       law") forbids `minmax(0, …)` outright. The reason is on the record in
+       this package: an unfloored track collapses its region to nothing, and
+       this repository has shipped a 2px create box, a 2px chat pane and a
+       divided grid whose rows painted through each other. The columns are
+       floored at 120px instead — the reference's four-column DECISION kept,
+       its unfloored implementation refused.
+     · I transcribed its label colour as a literal into this comment, and
+       `task-detail-premium.test.tsx` rejects a hex anywhere in this file,
+       comment or not. It is `--pn-ink-3`, which is what it should have said.
+
+   A reference is a set of intentions, not a set of lines to paste.
+
+   Taken as the measurements they are, translated to this package's tokens
+   where one exists (its label ink is this package's `--pn-ink-3`; 7px sits between `--pn-r-sm` and
+   `--pn-r-md` and takes the smaller). FOUR FIXED COLUMNS, not the `auto-fit`
+   I had: auto-fit lays as many as fit and the row count changes with the pane
+   width, which is why the fields kept re-flowing into a different shape every
+   time the divider moved. Four columns is a decision; auto-fit was an
+   abdication of one. It drops to two below 900px, as the reference does.
+
+   THE GRID GOES ON THE ELEMENT THAT ACTUALLY HOLDS THE FIELDS.
    `.pn-controls__measure` has exactly ONE child — `.lp__rowdetail--chips` —
    which is the flex row every control lives in. Putting the grid on the
    measure laid out a single item and changed nothing; the labels appeared
@@ -255,9 +293,19 @@
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure,
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
   align-items: end;
-  gap: var(--pn-space-3);
+  gap: 12px 14px;
+}
+/* The query needs a CONTAINER. The panel is the box whose width actually
+   changes — the reader drags it — so it is the one that answers. Without this
+   the query has no container to measure and never matches, which is the same
+   class of mistake as a rule aimed one level above its subjects. */
+@container pn-panel (max-width: 900px) {
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure,
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
 }
 
 /* Each control becomes a labelled cell. The label sits ABOVE rather than
@@ -285,9 +333,9 @@
   display: block;
   margin-bottom: 3px;
   font-family: var(--pn-caps);
-  font-size: var(--pn-fs-fine);
-  font-weight: 700;
-  letter-spacing: var(--pn-track-label);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.7px;
   text-transform: uppercase;
   color: var(--pn-ink-3);
   white-space: nowrap;
@@ -1202,14 +1250,17 @@
       pill; nothing else in the band is coloured. A form where every field
       shouts has no hierarchy, and hierarchy is the thing being bought. */
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls :is(select, input, .lp__statesel) {
-  block-size: 32px;
+  block-size: 38px;
   box-sizing: border-box;
   inline-size: 100%;
   min-inline-size: 0;
-  padding-inline: var(--pn-space-2);
+  padding-inline: 10px;
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
 }
 /* The two date fields were indistinguishable; equal width and a shared
    baseline is what lets their LABELS do the distinguishing. */
