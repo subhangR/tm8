@@ -1,0 +1,288 @@
+# Implementation Plan: CodeBrain — a top-level view in `tm8_ui_2.0`
+
+Task: `01a056f3-f6e2-7cf4-bc3c-9825dcbbd7eb`
+Phase: PLAN (`/plan`) · CodeBrain 2 · `01a0566f-3f4e-77a6-a31f-f443e5750a42`
+Spec: `SPEC.md` at the repo root, DEFINE, gate-approved 2026-08-31
+Branch: `tm8/01a0574e` @ `adc75255` (fast-forwarded onto DEFINE's tip so SPEC.md
+and this plan travel together — BUILD needs both)
+Written: 2026-08-31
+
+**Task list target: the tm8 graph, not `tasks/todo.md`.** Eight `task` entities
+as children of `01a056f3`, wired with `depends_on` edges. The Task List section
+below is an ordered index of their ids, not a duplicate checklist. This follows
+`planning-and-task-breakdown` §"Task List Target" — the project has a tracker,
+so the tracker gets the tasks.
+
+---
+
+## 0. What PLAN re-verified, and what it found
+
+SPEC.md said "do not re-derive, but confirm before editing". Every structural
+claim this plan's slicing rests on was re-read in **this** worktree at
+`41c824b4` before the fast-forward. All of DEFINE's claims held. Three facts
+below are the ones that actually shape the breakdown.
+
+| Claim | Evidence | Consequence for slicing |
+|---|---|---|
+| `landingOfRoute` is a switch over `NavView` with **no default arm** | `src/domain/nav-targets.ts:215-323` | adding the union member without its case is a **compile error** |
+| `pathOf` (codec build) is a switch over `NavView` with **no default arm** | `src/routes/codec.ts:433-489` | same — the build case cannot be deferred |
+| `navViewOfName` **does** have `default: return null` | `src/domain/nav-targets.ts:159-178` | this one case *could* be deferred; AC2 says it must not be |
+| `navigateToRouteView` collapses the two nulls | `src/views/GateApp.tsx:544-551` | the chord cannot work until this is split — confirmed verbatim |
+| `destinationOf` has the same collapse; `toBe(9)` guard | `src/keyboard/guaranteed-destinations.test.ts:30-39`, `:52` | both amendments are deliberate, not incidental |
+| `g r` is free — `h t s d m p c i ,` are taken | `src/keyboard/contract.ts:212-222` | the chord key is available |
+| Board v2's route-only navigation is `navStore.getState().navigate(...)` | `src/views/GateApp.tsx:1630-1636` | the two-nulls fix has a precedent to copy, not invent |
+| `newSession` / `boardV2` return `{ target: null, openEntity: null }` | `src/domain/nav-targets.ts:239-256` | CodeBrain's landing is the third of these |
+| No `codebrain` identifier in the package | `grep -rni codebrain packages/tm8_ui_2.0/src` → no hits | greenfield; nothing to migrate |
+| No `node_modules` in this worktree | `ls node_modules` → ENOENT; `readlink -f packages/tm8_ui_2.0/node_modules/@tm8/contract` → empty, exit 1 | Task 1 exists, and it is first |
+| `vite.config.ts` sets no `css` key | `grep -n css packages/tm8_ui_2.0/vite.config.ts` → no hits | default `css: false`; CSS is asserted as source, never claimed as covered |
+
+### The one finding PLAN adds that DEFINE did not have
+
+**`ALL_ROUTE_VIEWS` is a hand-written array, not a compiler-enforced record.**
+
+`src/domain/nav-targets.test.ts:31-54` declares `const ALL_ROUTE_VIEWS:
+NavView[] = [...]`. It is a plain literal. It already omits `craft`, `help` and
+`boardV2`, and its own docblock (`:41-44`) says of an earlier omission that "a
+hand-written exhaustiveness list that omits a member silently stops guarding
+it, which is the one failure mode this list has."
+
+So: adding `codebrain` to `NavView` will **not** break this test, and nothing
+will tell BUILD that CodeBrain has quietly fallen outside the exhaustiveness
+guard. The compiler forces `codec.ts` and `nav-targets.ts`; it does not force
+this list. It is therefore an explicit acceptance criterion on Task 2 rather
+than something left to notice.
+
+---
+
+## 1. Architecture decisions
+
+**D1 — The route module is atomic, and the compiler decides that, not taste.**
+`types.ts` + `codec.ts` parse + `codec.ts` build + `landingOfRoute` land in one
+task because the package does not typecheck in any state between them. Splitting
+them would produce a red tree at every intermediate commit, which violates
+"every task leaves the system working" more loudly than a 5-file task does.
+
+**D2 — The screen is split at the empty state, not at the layer.**
+Task 4 delivers *a reachable screen with a real empty state*; Task 5 fills its
+rail. Both are vertical: each ends with something a person can open in a browser
+and look at. The alternative — "all the components, then wire them" — would put
+the first visible moment at the end, which is exactly the failure mode this
+phase is supposed to prevent.
+
+**D3 — `codebrain-model` is parallel to the route because it shares no file and
+no import.** SPEC §3 asserts this; PLAN confirms it is true of the *file sets*
+too — Task 2 touches `routes/` and `domain/`, Task 3 touches only `codebrain/`.
+That disjointness is what makes the parallelism real rather than nominal.
+
+**D4 — Tasks 4 and 7 are serialized because they edit the same file.**
+Both touch `views/GateApp.tsx` — Task 4 the render switch (`:1939`), Task 7 the
+chord dispatch (`:544-551`). They are the only two tasks that do, and running
+them concurrently would buy a conflict for no wall-clock. `4 → 7` is a
+dependency of the file system, and it is stated so it is a decision.
+
+**D5 — Task 1 is a task, not a preamble.** A precondition whose failure is a
+stop needs an owner and a receipt. It also carries the *baseline* run: without a
+green before the first change, no later red can be attributed.
+
+---
+
+## 2. Task list — index into the graph
+
+| # | tm8 id | Title | Files | Size | Depends on |
+|---|---|---|---|---|---|
+| 1 | `01a0575a-68e3-7ba2-9b42-fe6139368189` | Install dependencies in the BUILD worktree, and take the baseline | 0 | XS | — |
+| 2 | `01a0575a-706b-7413-b11d-5beab4862be0` | `codebrain-route` — the route member, its codec, its landing | 5 | M | 1 |
+| 3 | `01a0575a-7888-7969-bc70-923ffbca1e0a` | `codebrain-model` — six phases, their states, what a run is | 2 | S | 1 |
+| 4 | `01a0575a-7ffb-7216-adca-02ccd3a88661` | `CodeBrainScreen` — mounted, addressable, real empty state | 5 | M | 2, 3 |
+| 5 | `01a0575a-872c-7009-b70a-744800859c40` | The phase rail — six rows with state, model and agent tool | 3 | M | 4 |
+| 6 | `01a0575a-8ea1-7617-b343-7730a51f9202` | The cross-vendor mark | 3 | S | 5 |
+| 7 | `01a0575a-96ae-7968-841c-f339bf00b365` | The `g r` chord, and the two-nulls fix it needs first | 3 | S | 4 |
+| 8 | `01a0575a-9e38-750b-a615-550b5271a833` | Screenshot, PR, and the closing receipt | 0 | S | 5, 6, 7 |
+
+All eight are children of `01a056f3`, and the ten `depends_on` edges above are
+in the graph — the `Depends on` column is a rendering of the edges, not a
+parallel record of them. No task touches more than five files, and none is
+larger than M.
+
+### Files, per task — the collision check
+
+| Task | Files |
+|---|---|
+| 2 | `routes/types.ts`, `routes/codec.ts`, `routes/codec.test.ts`, `domain/nav-targets.ts`, `domain/nav-targets.test.ts` |
+| 3 | `codebrain/codebrain-model.ts`, `codebrain/codebrain-model.test.ts` |
+| 4 | `codebrain/CodeBrainScreen.tsx`, `codebrain/codebrain.css`, `codebrain/index.ts`, `codebrain/codebrain-screen.test.tsx`, `views/GateApp.tsx` |
+| 5 | `codebrain/CodeBrainScreen.tsx` (or a `PhaseRail.tsx`), `codebrain/codebrain.css`, `codebrain/codebrain-screen.test.tsx` |
+| 6 | `codebrain/CodeBrainScreen.tsx`, `codebrain/codebrain.css`, `codebrain/codebrain-screen.test.tsx` |
+| 7 | `keyboard/contract.ts`, `keyboard/guaranteed-destinations.test.ts`, `views/GateApp.tsx` |
+
+`views/GateApp.tsx` appears exactly twice — Tasks 4 and 7 — and they are
+serialized. That is the whole of the collision surface.
+
+---
+
+## 3. The dependency graph
+
+```mermaid
+graph LR
+  T1["<b>1 · Install deps + baseline</b><br/>XS · no source files<br/><i>readlink resolves inside the tree</i>"]
+
+  T2["<b>2 · codebrain-route</b><br/>M · types + codec + landing<br/><i>atomic: no default arm</i>"]
+  T3["<b>3 · codebrain-model</b><br/>S · pure, no React<br/><i>phases · states · isRun</i>"]
+
+  T4["<b>4 · CodeBrainScreen</b><br/>M · mount + empty state<br/><i>first visible moment</i>"]
+
+  T5["<b>5 · The phase rail</b><br/>M · six rows, state/model/tool"]
+  T6["<b>6 · Cross-vendor mark</b><br/>S · from agentTool, not a name list"]
+  T7["<b>7 · g r chord + two-nulls fix</b><br/>S · keyboard/ + GateApp dispatch"]
+
+  T8["<b>8 · Screenshot · PR · receipt</b><br/>S · AC8, AC9"]
+
+  CA(["◆ Checkpoint A — baseline green"])
+  CB(["◆ Checkpoint B — route round-trips, model resolves"])
+  CC(["◆ Checkpoint C — screen opens, empty state is real"])
+  CD(["◆ Checkpoint D — full slice green"])
+
+  T1 --> CA
+  CA --> T2
+  CA --> T3
+  T2 --> CB
+  T3 --> CB
+  CB --> T4
+  T4 --> CC
+  CC --> T5
+  CC --> T7
+  T5 --> T6
+  T6 --> CD
+  T7 --> CD
+  CD --> T8
+
+  classDef par fill:#e2f0ed,stroke:#0d6155,stroke-width:3px,color:#0d6155;
+  classDef seq fill:#f8ece0,stroke:#9c5511,stroke-width:1px,color:#9c5511;
+  classDef gate fill:#fff,stroke:#555,stroke-width:1px,color:#333,stroke-dasharray:4 3;
+
+  class T2,T3,T5,T7 par;
+  class T1,T4,T6,T8 seq;
+  class CA,CB,CC,CD gate;
+```
+
+**Teal, heavy border = parallel-safe.** Two windows, and they are real because
+the file sets are disjoint, not because the work merely feels independent:
+
+| Window | Tasks | Why they cannot collide |
+|---|---|---|
+| after Checkpoint A | **2 ∥ 3** | 2 touches `routes/` + `domain/`; 3 touches only `codebrain/`. 3 imports nothing from `routes/`; 2 reads no graph. |
+| after Checkpoint C | **5 ∥ 7** | 5 touches only `codebrain/`; 7 touches `keyboard/` + `views/GateApp.tsx`. |
+
+Everything else is forced. `6` follows `5` because the mark decorates rows that
+must exist first. `7` follows `4` for D4's file reason as much as for the
+screen's. `8` follows all three because a screenshot of two-thirds of a screen
+is not evidence of a screen.
+
+**Two agents is the useful width.** A third has nothing to do at any point in
+this graph, and fanning out further would be motion rather than progress.
+
+---
+
+## 4. Checkpoints
+
+### Checkpoint A — after Task 1. **Nothing has changed yet.**
+- [ ] `readlink -f packages/tm8_ui_2.0/node_modules/@tm8/contract` prints a path
+      **inside this worktree** and exits 0
+- [ ] `bun run typecheck:tm8-ui-2.0` green
+- [ ] `bunx vitest run src/routes src/domain src/keyboard` green
+- [ ] every one of the above echoed with `git rev-parse HEAD` in the **same**
+      command
+
+This is the line every later red is measured against. A typecheck run from a
+sibling tree is a typecheck of another tree, and a first green that arrives
+*after* the first edit cannot tell you which of the two it belongs to.
+
+### Checkpoint B — after Tasks 2 and 3
+- [ ] typecheck green; `src/routes`, `src/domain`, `src/codebrain` green
+- [ ] `#/s/{s}/codebrain` and `#/s/{s}/codebrain/{taskId}` both round-trip
+- [ ] `landingOfRoute({view:'codebrain',runId:null})` returns a `Landing`, and a
+      test says `target` is `null` while the `Landing` itself is not
+- [ ] `codebrain` is present in `ALL_ROUTE_VIEWS`
+- [ ] **human review**: the route shape as it actually landed, against the
+      gate's approval of Option A
+
+### Checkpoint C — after Task 4. **First human-visible moment.**
+- [ ] the dev server serves `#/s/{s}/codebrain` and it is the CodeBrain screen,
+      not the fallback
+- [ ] **screenshot taken here**, Chrome, `--js-flags=--jitless` — not deferred
+      to Task 8
+- [ ] the empty state reads as a real screen: a person who has never heard of
+      CodeBrain learns what it is and how to start one
+- [ ] a `runId` naming nothing shows the empty state plus a not-found line
+
+If the empty state is a blank panel, AC4 has already failed and Task 5 would be
+building the rail on top of a failure. This checkpoint exists to catch that
+before three more tasks land on it.
+
+### Checkpoint D — after Tasks 5, 6, 7
+- [ ] typecheck green; full vitest green for every touched file
+- [ ] CSS asserted as **source text**; the closing message does not claim the
+      suite covered it
+- [ ] `g r` lands on CodeBrain in the running app
+- [ ] the six phases render from the graph, and `grep -rn "'DEFINE'\|\"DEFINE\"" src/codebrain` finds
+      nothing — a hardcoded name fails AC3
+- [ ] all nine acceptance criteria on `01a056f3` reviewed one by one
+
+---
+
+## 5. Risks and mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| The worktree has no `node_modules` and installing may need a human | **High** — nothing can be verified at all | Task 1 is first and its failure is a **stop**, not a workaround. Never substitute a sibling tree's green. §7 asks who owns this. |
+| `ALL_ROUTE_VIEWS` is not compiler-enforced | Medium — CodeBrain silently unguarded, forever | An explicit acceptance criterion on Task 2, with the file's own docblock quoted as the reason |
+| Tasks 4 and 7 both edit `GateApp.tsx` | Medium — conflict if fanned out | Serialized `4 → 7`; they are the only two, and the parallel window is 5 ∥ 7 instead |
+| Vitest is `css: false` | Medium — a green run cannot have seen a CSS change | Task 5 asserts CSS as source text and greps for the reduced-motion rule; §11's "Never" list forbids the claim |
+| The run predicate over-includes (A2) | Low | Visible and correctable. Under-inclusion would hide a real run, which is worse. Open question, not a blocker. |
+| The two-nulls fix touches shared navigation | Medium — it changes behaviour for `newSession` and `boardV2` too | That is the *point* — their chords do not exist yet, so nothing regresses, but Task 7 must say so and the `guaranteed-destinations` amendment is the guard |
+| AC8 needs a dev server and real data | Medium | **Task `01a056f3` is itself a run** — CodeBrain 1 and CodeBrain 2 are its assignees, so §6.2's first disjunct classifies it. The screenshot can show the screen rendering its own task, which is stronger evidence than a fixture. |
+| Wrong screen after Task 2 and before Task 4 | Low | `#/codebrain` resolves but nothing is mounted, so the render switch falls through. Checkpoint B does not claim a working screen, and Task 4 is the very next thing. |
+
+---
+
+## 6. Boundaries this plan inherits and will not relax
+
+From SPEC §11 and §12, restated because a plan that drops them invites a BUILD
+that widens. **Out of scope, and a diff containing any of these has left the
+slice:** the setup wizard, the approval gate, chat, the live stage viewports,
+the cross-browser matrix, the four specialists (positions 7–10), the BUILD
+parallel-lane table, CodeBrain on the phone, and any rail seat, menu group or
+`MenuViewRef`.
+
+**Never**, per SPEC §11: hardcode the six phase names/models/tools/ids; invent a
+`run` kind; read the roster from `data.launch.teammates`; stub a handler
+(`no-op-handler-ban.test.ts`); copy the prototype's markup or hex; claim a green
+Vitest run covered CSS; say "waiting on you" is targeted at the viewer.
+
+---
+
+## 7. Open questions — none blocks BUILD except the first
+
+1. **Who installs dependencies, and does BUILD get a tree where `@tm8/contract`
+   resolves locally?** SPEC §9.1 asked it and it is still unanswered. This is
+   the only item that stops work. PLAN's recommendation: BUILD attempts
+   `bun install` in the worktree as Task 1, and if it cannot, raises it on the
+   anchor rather than typechecking a sibling tree.
+2. **A5** — the per-phase command (`/spec`, `/plan`, …) and skills list are on
+   no read this slice makes. Not rendered, no placeholder. Answer before the
+   phase detail grows.
+3. **A2** — should a run be marked explicitly (an axis, a label, a parent
+   collection) rather than inferred? An explicit mark would end the
+   over-inclusion.
+4. **A3** — `badges.attention` carries no actor, so "waiting on you" is not
+   viewer-targeted. Flagged for the approval-gate phase, which is the one that
+   will need per-viewer truth.
+
+Carried forward from DEFINE unchanged; PLAN adds no new open question, only the
+`ALL_ROUTE_VIEWS` finding in §0, which is answered rather than asked.
+
+---
+
+*Written by CodeBrain 2 · PLAN. The dependency graph in §3 is the plan; the
+table in §2 is an index to it. BUILD is entitled to refuse a task whose
+acceptance criteria this document does not carry.*
