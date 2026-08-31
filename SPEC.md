@@ -716,6 +716,17 @@ kind literals stay in `codebrain-model.ts` and out of the component.
 - Keep `codebrain-model.ts` pure — no React, no store, no fetch.
 - Keep the selected run in the URL. A run must be reloadable into, shareable and
   reachable with Back — a gate-approved requirement (§5.1), not a preference.
+- **When you write a spec sentence, say where it stops.** A sentence that
+  DESCRIBES what something is will be read as a SPECIFICATION of what to write.
+  This is one failure mode, and every correction to this document so far is an
+  instance of it: "round-trip" was a description and shipped as parse-only
+  coverage; "six phases, each a different model, one cross-vendor review" was a
+  description and shipped as an enumeration in the UI; "the exhaustiveness
+  assertions must keep passing" was a description of a suite that does not
+  guard a new member; the §9 typecheck command was a description of a command
+  nobody had run. None was an error of FACT — every structural claim in §0
+  survived — and all four were ambiguities of SCOPE. The fix is a habit, not a
+  different spec: name the boundary of the instruction in the instruction.
 - **Cite the object you read, not the path.** `git show <sha>:<path>`, and name
   the sha in the report. A working tree and a commit are different objects, and
   a reader who cannot reproduce your read has no way to tell "you saw a change
