@@ -396,10 +396,43 @@ Liveness, when a session id is in hand, goes through `data.livenessOf(id)` —
 
 ### 6.4 Tests for this module
 
-`src/codebrain/codebrain-model.test.ts`, fixture rows only, no DOM:
+`src/codebrain/codebrain-model.test.ts`, fixture rows only, no DOM.
 
-- six phases resolve in `position` order from unordered input; specialists 7–10
-  are excluded; a tie on `position` falls through to `id` (A6)
+**THE FIXTURE MUST NOT MIRROR THE REAL ROSTER, and this is AC3's actual guard.**
+Added 2026-08-31 after PLAN found the first implementation's order test could
+not catch the thing AC3 names.
+
+A fixture that mirrors production data cannot detect an implementation that
+hardcodes production data. The order test asserted `result.map(p => p.title)`
+against `['DEFINE','PLAN','BUILD','VERIFY','REVIEW','SHIP']` — the six real
+names — and never read `id`. A `phases()` replaced by a six-element literal of
+those names passes it exactly. The suite still caught the mutation, but only
+through the different-parent, deleted, A6 and A7 tests, which expect one or two
+specific ids and fail on arity. **AC3's protection was therefore incidental**:
+it came from tests written for other criteria, and the one test a reader would
+point at to say AC3 is met proved the least. Retighten those four for any
+unrelated reason and AC3 loses its guard silently.
+
+So: **give the order fixture titles that are not the six real names** — `Alpha`,
+`Bravo`, `Charlie`, `Delta`, `Echo`, `Foxtrot` — and assert against those. Then
+the test proves the titles were *read*, rather than proving they coincide with
+what a hardcoder would have typed.
+
+**And size the mutation to the mistake you actually fear.** A two-element
+literal fails on arity and proves only that the suite counts. The adversarial
+mutation is the six-element one, because six is the answer a lazy
+implementation is trying to fake. A mutation that does not resemble the mistake
+is not evidence about it.
+
+The same trap waits at AC5 (§7.4): `model.startsWith('gpt')` and
+`agentTool !== 'claude-code'` mark the identical single phase against the real
+roster, so a mutation there proves nothing unless the fixture contains a phase
+where the two spellings disagree — a novel model on `claude-code`, and a novel
+model on a non-`claude-code` tool.
+
+- six phases resolve in `position` order from unordered input, **with fixture
+  titles that are not the real six**; specialists 7–10 are excluded; a tie on
+  `position` falls through to `id` (A6)
 - fewer than six members ⇒ fewer than six phases, and the count is reported,
   not padded (A7)
 - each state rule fires, and **precedence**: attention beats running; failed
