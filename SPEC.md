@@ -685,9 +685,11 @@ checks, and neither substitutes for the other.
    above. `bun run typecheck:core && bun run typecheck:tm8-ui-2.0`, in that
    order, always.
 
-3. **No browser in this container can render, so AC8's capture cannot be taken
-   here.** Measured 2026-08-31 after BUILD raised it, and confirmed
-   independently rather than relayed:
+3. **`chromium-1208` cannot launch here. A browser CAN — see the retraction
+   below, which is the load-bearing part of this item.** An earlier heading read
+   "No browser in this container can render", which is false and is the
+   generalisation that produced everything wrong in this section. What follows
+   is accurate about the binaries named and about nothing wider:
    - `~/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome` — `ldd` shows
      **12** missing libraries (`libatk-1.0.so.0`, `libatk-bridge-2.0.so.0`,
      `libcups.so.2`, `libatspi.so.0`, `libXcomposite/Xdamage/Xfixes/Xrandr`,
@@ -900,7 +902,7 @@ Traced to the task's acceptance criteria.
 | 5 | The `codex` phase is distinguishable from the five `claude-code` phases by a non-colour channel | `codebrain-screen.test.tsx` |
 | 6 | `bun run typecheck:core && bun run typecheck:tm8-ui-2.0` green — **both, in that order** (§9.2) — and `readlink -f packages/tm8_ui_2.0/node_modules/@tm8/contract` resolving inside this worktree. Two checks, two different failures; neither substitutes for the other. | command output + the readlink, echoed with `git rev-parse HEAD` in the same command |
 | 7 | Vitest green for the touched files; CSS asserted as source, not claimed as covered | command output, same echo |
-| 8 | Screenshot of the rendered screen attached to the task, Chrome, `--js-flags=--jitless`. **BLOCKED in this container (§9.3) — no browser can render here, and this stays open rather than being met by a substitute.** Checkpoint C's substance is separately provable by text (§7.6); AC8 is not. | the attachment |
+| 8 | Screenshot of the rendered screen attached to the task, Chrome, `--js-flags=--jitless`. **NOT MET, and the reason is narrower than it looks (§9.3).** The screen HAS been rendered and photographed three times in real Chrome, by the coordinator. AC8 names BUILD's *own* capture — it is a criterion about who produced the evidence. BUILD's session was blocked twice over: it tested `chromium-1208` (genuinely broken), and its later attempt with the working binary was refused by the app's origin allowlist. The working path is `chrome-headless-shell` + `LD_LIBRARY_PATH=/home/tm8/.local/pw-min/lib` + `--js-flags=--jitless`. | the attachment |
 | 9 | PR linked with `tm8 task link-pr` when it exists; closing message names branch, PR, exact command and output | the task anchor |
 
 Additionally, and not in the AC list because it was found during DEFINE:
