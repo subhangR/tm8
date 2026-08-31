@@ -635,6 +635,14 @@ kind literals stay in `codebrain-model.ts` and out of the component.
 - Keep `codebrain-model.ts` pure — no React, no store, no fetch.
 - Keep the selected run in the URL. A run must be reloadable into, shareable and
   reachable with Back — a gate-approved requirement (§5.1), not a preference.
+- **For any criterion that names a specific failure, prove the test can fail.**
+  Break the thing the test guards, watch it go red, restore it. Re-running a
+  green suite establishes attendance, not coverage — this slice shipped an AC1
+  box ticked against four parse-direction tests, and it survived a re-run, a
+  source read, and two reviewers, because none of those three could distinguish
+  "passes" from "would catch the failure it names". Mutation can. Applies with
+  most force at VERIFY, and to AC1, AC3 and AC5, each of which names its
+  failure in its own text.
 
 **Ask first**
 - Any change to `MenuViewRef`, the kind registry, or a DB migration. This slice
