@@ -2,10 +2,11 @@
 
 Task: `01a056f3-f6e2-7cf4-bc3c-9825dcbbd7eb`
 Phase: PLAN (`/plan`) · CodeBrain 2 · `01a0566f-3f4e-77a6-a31f-f443e5750a42`
-Spec: `SPEC.md` at the repo root, DEFINE, gate-approved 2026-08-31
-Branch: `tm8/01a0574e` @ `adc75255` (fast-forwarded onto DEFINE's tip so SPEC.md
-and this plan travel together — BUILD needs both)
-Written: 2026-08-31
+Spec: `SPEC.md` at the repo root, DEFINE, final at `9470eb57`
+Branch: `tm8/01a0574e`, rebased onto `9470eb57` so SPEC.md and this plan travel
+together — BUILD needs both, and a tree with only one is missing half its
+instructions
+Written: 2026-08-31 · **revised the same day** — see §8
 
 **Task list target: the tm8 graph, not `tasks/todo.md`.** Eight `task` entities
 as children of `01a056f3`, wired with `depends_on` edges. The Task List section
@@ -62,12 +63,25 @@ task because the package does not typecheck in any state between them. Splitting
 them would produce a red tree at every intermediate commit, which violates
 "every task leaves the system working" more loudly than a 5-file task does.
 
-**D2 — The screen is split at the empty state, not at the layer.**
-Task 4 delivers *a reachable screen with a real empty state*; Task 5 fills its
-rail. Both are vertical: each ends with something a person can open in a browser
-and look at. The alternative — "all the components, then wire them" — would put
-the first visible moment at the end, which is exactly the failure mode this
-phase is supposed to prevent.
+**D2 — The screen is split at *no run* vs *a run*, not at the layer.**
+**Revised 2026-08-31 after DEFINE's review of this plan.** The first cut split
+it as *shell + explainer* (Task 4) then *the rail* (Task 5). That was wrong, and
+DEFINE was right to catch it: SPEC §7.5 requires the empty state to render **the
+six phases, from the graph, all queued** — deliberately, because that is what
+makes AC3 observable before any run exists. An explainer-only empty state does
+not satisfy AC4, so Task 5 would have had to rewrite Task 4's empty-state test.
+The rail would have been built twice.
+
+The boundary that holds is the *state of the world*, not the layer:
+
+- **Task 4 — the no-run case, complete.** Mount, explainer, the six queued
+  phases, the run pick list, the how-to-start line. A whole working screen.
+- **Task 5 — the run case.** The same rows telling the truth about a selected
+  run: derived states, elapsed, the detail pane.
+
+Both are vertical and each leaves something whole. The alternative — "all the
+components, then wire them" — would put the first visible moment at the end,
+which is exactly the failure this phase exists to prevent.
 
 **D3 — `codebrain-model` is parallel to the route because it shares no file and
 no import.** SPEC §3 asserts this; PLAN confirms it is true of the *file sets*
@@ -93,8 +107,8 @@ green before the first change, no later red can be attributed.
 | 1 | `01a0575a-68e3-7ba2-9b42-fe6139368189` | Install dependencies in the BUILD worktree, and take the baseline | 0 | XS | — |
 | 2 | `01a0575a-706b-7413-b11d-5beab4862be0` | `codebrain-route` — the route member, its codec, its landing | 5 | M | 1 |
 | 3 | `01a0575a-7888-7969-bc70-923ffbca1e0a` | `codebrain-model` — six phases, their states, what a run is | 2 | S | 1 |
-| 4 | `01a0575a-7ffb-7216-adca-02ccd3a88661` | `CodeBrainScreen` — mounted, addressable, real empty state | 5 | M | 2, 3 |
-| 5 | `01a0575a-872c-7009-b70a-744800859c40` | The phase rail — six rows with state, model and agent tool | 3 | M | 4 |
+| 4 | `01a0575a-7ffb-7216-adca-02ccd3a88661` | `CodeBrainScreen` — mounted, addressable, the **complete** empty state | 5 | M | 2, 3 |
+| 5 | `01a0575a-872c-7009-b70a-744800859c40` | The selected run — derived states, elapsed, detail pane | 3 | M | 4 |
 | 6 | `01a0575a-8ea1-7617-b343-7730a51f9202` | The cross-vendor mark | 3 | S | 5 |
 | 7 | `01a0575a-96ae-7968-841c-f339bf00b365` | The `g r` chord, and the two-nulls fix it needs first | 3 | S | 4 |
 | 8 | `01a0575a-9e38-750b-a615-550b5271a833` | Screenshot, PR, and the closing receipt | 0 | S | 5, 6, 7 |
@@ -111,7 +125,7 @@ larger than M.
 | 2 | `routes/types.ts`, `routes/codec.ts`, `routes/codec.test.ts`, `domain/nav-targets.ts`, `domain/nav-targets.test.ts` |
 | 3 | `codebrain/codebrain-model.ts`, `codebrain/codebrain-model.test.ts` |
 | 4 | `codebrain/CodeBrainScreen.tsx`, `codebrain/codebrain.css`, `codebrain/index.ts`, `codebrain/codebrain-screen.test.tsx`, `views/GateApp.tsx` |
-| 5 | `codebrain/CodeBrainScreen.tsx` (or a `PhaseRail.tsx`), `codebrain/codebrain.css`, `codebrain/codebrain-screen.test.tsx` |
+| 5 | `codebrain/CodeBrainScreen.tsx` (may extract a `PhaseRail.tsx`), `codebrain/codebrain.css`, `codebrain/codebrain-screen.test.tsx` |
 | 6 | `codebrain/CodeBrainScreen.tsx`, `codebrain/codebrain.css`, `codebrain/codebrain-screen.test.tsx` |
 | 7 | `keyboard/contract.ts`, `keyboard/guaranteed-destinations.test.ts`, `views/GateApp.tsx` |
 
@@ -173,13 +187,23 @@ the file sets are disjoint, not because the work merely feels independent:
 | after Checkpoint A | **2 ∥ 3** | 2 touches `routes/` + `domain/`; 3 touches only `codebrain/`. 3 imports nothing from `routes/`; 2 reads no graph. |
 | after Checkpoint C | **5 ∥ 7** | 5 touches only `codebrain/`; 7 touches `keyboard/` + `views/GateApp.tsx`. |
 
-Everything else is forced. `6` follows `5` because the mark decorates rows that
-must exist first. `7` follows `4` for D4's file reason as much as for the
-screen's. `8` follows all three because a screenshot of two-thirds of a screen
-is not evidence of a screen.
+Everything else is forced. `6` follows `5` for a **file** reason rather than a
+logical one — the rows it decorates exist from Task 4 onward, but 5 and 6 edit
+the same three files in `codebrain/`; same shape as D4, stated so it reads as a
+decision. `7` follows `4` for D4's file reason as much as for the screen's. `8`
+follows all three because a screenshot of two-thirds of a screen is not evidence
+of a screen.
 
 **Two agents is the useful width.** A third has nothing to do at any point in
 this graph, and fanning out further would be motion rather than progress.
+
+**Execution note from the gate (2026-08-31).** On this 4-core node the two
+windows are to be run **sequentially** unless the box is quiet, to avoid the
+spawn-wedge seen earlier under load. That changes nothing this plan specifies:
+the windows are a claim about **disjoint file sets**, not about wall-clock. The
+constraint that actually matters is the `4 → 7` serialization on
+`views/GateApp.tsx`, and it holds either way. Running a parallel-safe pair
+sequentially is always sound; running a colliding pair concurrently is not.
 
 ---
 
@@ -209,15 +233,23 @@ sibling tree is a typecheck of another tree, and a first green that arrives
 ### Checkpoint C — after Task 4. **First human-visible moment.**
 - [ ] the dev server serves `#/s/{s}/codebrain` and it is the CodeBrain screen,
       not the fallback
-- [ ] **screenshot taken here**, Chrome, `--js-flags=--jitless` — not deferred
-      to Task 8
+- [ ] **six real phases are in the empty state**, read from the graph, in
+      position order, all `queued` — see the note below
 - [ ] the empty state reads as a real screen: a person who has never heard of
       CodeBrain learns what it is and how to start one
 - [ ] a `runId` naming nothing shows the empty state plus a not-found line
+- [ ] **screenshot taken here**, Chrome, `--js-flags=--jitless` — not deferred
+      to Task 8
 
-If the empty state is a blank panel, AC4 has already failed and Task 5 would be
-building the rail on top of a failure. This checkpoint exists to catch that
-before three more tasks land on it.
+**This checkpoint is not "is the panel non-blank".** DEFINE's caution on the
+first draft of this plan, and it is the right one: SPEC §7.5 requires the six
+phases in the empty state, so a C that passes on an explainer with no rail has
+passed the wrong test — and Task 5 would then be building the rail a second
+time. Count the rows.
+
+If the empty state is a blank panel, or has fewer than six rows for a reason
+other than the graph genuinely holding fewer members (SPEC A7), AC4 has already
+failed and Tasks 5–7 would be landing on top of a failure.
 
 ### Checkpoint D — after Tasks 5, 6, 7
 - [ ] typecheck green; full vitest green for every touched file
@@ -280,6 +312,31 @@ Vitest run covered CSS; say "waiting on you" is targeted at the viewer.
 
 Carried forward from DEFINE unchanged; PLAN adds no new open question, only the
 `ALL_ROUTE_VIEWS` finding in §0, which is answered rather than asked.
+
+---
+
+---
+
+## 8. Revision log
+
+**2026-08-31, after DEFINE's review and the gate's approval.** The dependency
+graph is unchanged — same eight tasks, same ten edges, same two windows, all
+approved as they stand. What changed is what sits *inside* Tasks 4 and 5, plus
+two hardenings.
+
+| Change | Why |
+|---|---|
+| **Task 4 absorbs the six-phase rail; Task 5 becomes the selected-run path** | DEFINE's caution, and it was correct. SPEC §7.5 requires the empty state to render the six phases queued; an explainer-only empty state does not meet AC4, so Task 5 would have rewritten Task 4's test and built the rail twice. See D2. |
+| **Checkpoint C now counts rows** | Follows from the above. "Non-blank panel" was the wrong test. |
+| **Task 2 gains a do-not-"fix"-it criterion** | The `ALL_ROUTE_VIEWS` assertion at `nav-targets.test.ts:64-68` is `expect(landingOfRoute(view)).not.toBeNull()` — the **Landing**, not its `target`. That is why `newSession` passes with `target: null`. A BUILD agent who assumes it *should* assert `.target` would "correct" it and destroy the exact distinction Task 7 exists to preserve. |
+| **Task 2 gains the both-forms criterion** | Per corrected SPEC §5.5: add `runId: null` **and** `runId: ENTITY`. The two forms take different codec paths, and only the pair covers §5.2. |
+| **Task 8 must say what the screenshot does *not* show** | Rendering `01a056f3` exercises done / running / queued, but not `waiting` (no attention pending at capture time) and not `failed`. A three-state capture is not proof of five, and the closing message must not let a reader infer it is. |
+| **Branch rebased `adc75255` → `9470eb57`** | DEFINE corrected §5.5 after PLAN found that `ALL_ROUTE_VIEWS` does not guard a new member. Without the rebase, BUILD would have read a spec and a task that disagree about whether the suite guards CodeBrain — and SPEC.md is the document its Boundaries tell it to obey. |
+
+The `ALL_ROUTE_VIEWS` finding travelled the whole way: PLAN found it, DEFINE
+verified it independently rather than taking it on trust, it became a spec
+correction at `9470eb57` and a `Boundaries > Never` entry, and it is now a
+stated criterion on Task 2. That is the pipeline working.
 
 ---
 
