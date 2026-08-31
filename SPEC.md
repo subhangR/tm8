@@ -716,6 +716,16 @@ kind literals stay in `codebrain-model.ts` and out of the component.
 - Keep `codebrain-model.ts` pure — no React, no store, no fetch.
 - Keep the selected run in the URL. A run must be reloadable into, shareable and
   reachable with Back — a gate-approved requirement (§5.1), not a preference.
+- **Before signing off a criterion, list the OTHER rules binding those same
+  lines** — Boundaries entries, sibling ACs, package bans — and check those
+  too. The list is short and mostly the same each time. Every review miss in
+  this slice was a correct check of the wrong question, and in every one the
+  thing missed sat ONE RULE SIDEWAYS from the thing being verified: the source
+  checked when the criterion asked about the test; the suite's green checked
+  when the question was which direction each test exercises; the fixture ids
+  checked when the criterion says names; §7.5's content checked when §11
+  forbade what its explainer contained. "Reviews can be wrong" is not
+  actionable. "Look one rule sideways" is.
 - **When you write a spec sentence, say where it stops.** A sentence that
   DESCRIBES what something is will be read as a SPECIFICATION of what to write.
   This is one failure mode, and every correction to this document so far is an
