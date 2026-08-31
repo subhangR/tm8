@@ -217,6 +217,9 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'g.projects', layer: 'global', keys: 'g p', label: 'Projects', command: 'nav.kind', ref: 'projects', guaranteed: true, match: chord('p') },
   { id: 'g.channels', layer: 'global', keys: 'g c', label: 'Channels', command: 'nav.view', ref: 'channels', guaranteed: true, match: chord('c') },
   { id: 'g.inbox', layer: 'global', keys: 'g i', label: 'Inbox', command: 'nav.view', ref: 'inbox', guaranteed: true, match: chord('i') },
+  // `g r` for CodeBrain (SPEC §5.4) — `r` for *run*. `g b` reads as Board and
+  // `g c` is taken by Channels.
+  { id: 'g.codebrain', layer: 'global', keys: 'g r', label: 'CodeBrain', command: 'nav.view', ref: 'codebrain', guaranteed: true, match: chord('r') },
   // `g ,` is the GUARANTEED Settings path: Mod+, is browser Settings on
   // Chrome/macOS and Safari/macOS, so it is not bound at all.
   { id: 'g.settings', layer: 'global', keys: 'g ,', label: 'Settings', command: 'nav.view', ref: 'settings', guaranteed: true, match: chord(',') },

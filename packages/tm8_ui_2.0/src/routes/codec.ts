@@ -373,6 +373,13 @@ function parseTarget(
       /* Hyphenated in the URL, camel in the union: the segment is read by
          people and the member is read by TypeScript. */
       return { view: 'newSession' };
+    case 'codebrain': {
+      /* Optional trailing run id, exactly the `help/{plate}` shape — an
+         unknown id is not the codec's business to validate; it survives
+         intact and the screen decides what to do with it (SPEC §5.1/§5.2). */
+      const runId = rest[1];
+      return { view: 'codebrain', runId: runId && runId.length > 0 ? runId : null };
+    }
     case 'voice': {
       /* Shaped like `channel/{id}`, because a voice room is addressed the same
          way one channel is: an id in the path, no collection view behind it. A
@@ -474,6 +481,8 @@ function pathOf(route: Route): string {
       return `${base}/board-v2`;
     case 'newSession':
       return `${base}/new-session`;
+    case 'codebrain':
+      return t.runId ? `${base}/codebrain/${enc(t.runId)}` : `${base}/codebrain`;
     case 'voice':
       /* Must match `registry.ts`'s voice `routeBuilder` exactly — that builder
          is the authority and has been emitting this shape all along. */

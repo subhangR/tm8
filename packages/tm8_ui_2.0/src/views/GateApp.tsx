@@ -42,6 +42,7 @@ import { isUnbuiltViewRef } from './view-ref-screens';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
+import { CodeBrainScreen } from '../codebrain';
 import { CraftScreen } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -540,14 +541,27 @@ export function GateApp(props: GateAppProps = {}) {
    * never defaulted: a chord that quietly went Home instead of to the screen it
    * promised would be the same silent-wrong-screen failure this lane exists to
    * remove.
+   *
+   * THE TWO NULLS, SPLIT (SPEC §5.3). `landingOfRoute` returning `null` means
+   * the route is UNRESOLVABLE — refuse, exactly as before. `landing.target`
+   * being `null` means a REAL screen with no rail seat — CodeBrain, New
+   * Session, Board v2 — and collapsing that into the same refusal is what
+   * made every `g` chord to one of those screens log an error and do
+   * nothing instead of navigating. The store write for a route-only
+   * destination is the same move `openTab` already makes for Board v2,
+   * further down in this file — not a new pattern.
    */
   const navigateToRouteView = useCallback((view: NavView | null, ref: string) => {
-    const target = view ? landingOfRoute(view)?.target : null;
-    if (!target) {
+    const landing = view ? landingOfRoute(view) : null;
+    if (!landing) {
       console.error('[nav] no destination for keyboard ref', ref);
       return;
     }
-    navigateTo(target);
+    if (!landing.target) {
+      navStore.getState().navigate(view!);
+      return;
+    }
+    navigateTo(landing.target);
   }, [navigateTo]);
 
   /**
@@ -1953,6 +1967,15 @@ export function GateApp(props: GateAppProps = {}) {
                  workspace, which unmounted the board and took the kind, the
                  filters, the search and the scroll with it — the same reason
                  Craft stopped passing one. Nothing is stubbed in its place. */
+            />
+          ) : data.ready && navView.view === 'codebrain' ? (
+            /* CodeBrain (SPEC §7.1) — route-matched like New Session and
+               Board v2: `landingOfRoute` returns `target: null` for it, so
+               there is no `MenuTarget` to match on. */
+            <CodeBrainScreen
+              data={data}
+              runId={navView.runId}
+              onSelectRun={(id) => navStore.getState().navigate({ view: 'codebrain', runId: id })}
             />
           ) : data.ready &&
             activeTarget?.type === 'entity' &&

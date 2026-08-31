@@ -212,6 +212,20 @@ export type NavView =
    */
   | { view: 'newSession' }
   /*
+   * CODEBRAIN (2026-08-31, SPEC §5.1). `runId` is an optional trailing
+   * segment, shaped exactly like `help.plate`: the unit people SEND each
+   * other is a run, so it is a route segment and not `useState` — held in
+   * component state it could not be linked to, could not be reloaded into,
+   * and Back would leave CodeBrain entirely. APPROVED AT THE DEFINE GATE,
+   * 2026-08-31 (Tarkesh, admin) — shareable and reloadable runs are a
+   * requirement, not a preference.
+   *
+   * LOSSY-TOLERANT, exactly like `help.plate`: an id naming nothing still
+   * decodes — the screen renders its empty state with a not-found line,
+   * never a crash and never a silent redirect elsewhere.
+   */
+  | { view: 'codebrain'; runId: EntityId | null }
+  /*
    * A VOICE ROOM. Added 2026-08-14 to close a latent break, not to add a
    * feature.
    *
