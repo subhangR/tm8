@@ -106,7 +106,8 @@ nothing in this slice but must be answered before the phase after it.
 |---|---|---|
 | A1 | How is a run selected, and is it addressable? | **DECIDED** — optional run segment (§5). Approved at the DEFINE gate by Tarkesh (admin), 2026-08-31, msg `01a0573a-6a1b-7556-8248-b061c4ac2597` in reply to the fork `01a05738-e9f5-73e5-b59c-a4b0777825e3`. **Shareable and reloadable runs are a requirement, not a preference** — a change that trades them away is out of scope, not a simplification. |
 | A2 | What makes a task a "CodeBrain run"? The prototype has one, hardcoded. | **ASSUMED** — §6.2's predicate. Flagged: it will misclassify a task that a CodeBrain teammate touched incidentally. |
-| A3 | `waiting on you` is per-viewer in the prototype. `badges.attention` (`contract.ts:528-534`) carries `pendingCount`/`points`/`reason` and **no actor** — the summary cannot say *you*. | **ASSUMED** — §6.3 renders it from `pendingCount > 0`, and the label stays "waiting on you" because `tm8 attention` is by definition a request for *human* attention. Not per-viewer-targeted, and §11 says so. |
+| A3 | `waiting on you` is per-viewer in the prototype. `badges.attention` (`contract.ts:528-534`) carries `pendingCount`/`points`/`reason` and **no actor** — the summary cannot say *you*. | **ASSUMED** — §6.3 renders it from `pendingCount > 0`, and the label stays "waiting on you" because `tm8 attention` is by definition a request for *human* attention. Not per-viewer-targeted, and §11 says so. **WORSE THAN THIS ROW SAID — see A3b.** |
+| A3b | **NOT PHASE-TARGETABLE EITHER.** Found 2026-08-31 by PLAN, in the Checkpoint C run-view capture, and only findable there. The screenshot shows `1 DEFINE` badged `waiting` — for an attention request raised about **BUILD's** browser blocker. §6.3 works exactly as written: attention is task-level, `waiting` goes to the frontier phase, DEFINE's session was still live so it had no exited session so it *was* the frontier. Every unit test passes and the rail is legibly naming the wrong phase. | **OUT OF SCOPE, RECORDED NOT FIXED.** The slice implements the spec faithfully; the spec is what is thin. Whoever builds the approval gate needs **per-phase** attention, not merely per-viewer — A3 alone understates what is missing. Also the answer to what C's visual half was *for*: not layout or overlap, but a derivation correct by its own rules and wrong on screen. jsdom has no opinion about whether the phase named is the phase blocked. |
 | A4 | The prototype shows elapsed time per phase (`took: '6m 12s'`). | **ASSUMED** — derived from the phase's session `startedAt`/`exitedAt`. Absent ⇒ render nothing, never a zero. |
 | A5 | The prototype shows a `/spec`-style command and a skills list per phase. Neither is on `team_member` summary state. | **ASK.** Not rendered in v1. Absence is the finding; no placeholder. |
 | A6 | Ordering of phases when two members share a `position`. | Cannot happen in the read data; if it does, tie-break on `id` so the order is total. Stated so it is a decision, not an accident. |
@@ -703,17 +704,44 @@ checks, and neither substitutes for the other.
    with root — standard and reversible. Until then AC8 stays **open and
    stated**, never quietly deferred or satisfied with a substitute.
 
-   **AC8 IS NOW THE SOLE REMAINING PROOF THAT THIS SCREEN RENDERS AT ALL
-   OUTSIDE JSDOM, and that is more weight than its one line in §13 suggests.**
-   Recorded 2026-08-31 after PLAN audited the checkpoint outcomes. PLAN had
-   moved a capture forward from AC8 to Checkpoint C specifically so the visual
-   evidence would not all land at the end. It landed at the end anyway, because
-   the environment took it: C passed on substance — six rows counted from the
-   graph, the codex mark among them, by text and DOM — and **its visual half
-   was never obtained by anyone.** So no human or machine has yet seen this
-   screen draw. Every green in §13 is a jsdom green. Whoever unblocks the
-   browser is not ticking a documentation box; they are performing the only
-   check that has ever looked at the rendered thing.
+   **RETRACTED 2026-08-31 — an earlier version of this section said the screen
+   had never been rendered and that AC8 was "the sole remaining proof that this
+   screen renders at all outside jsdom". BOTH FALSE.** The coordinator captured
+   three screenshots in real Chrome against BUILD's dev server: the empty state
+   with six graph-read rows and the codex mark, the run view of this task
+   showing three of the five phase states, and the `g r` chord moving the hash.
+   Layout, overlap and the mark being *visible* have all been exercised.
+
+   **A working recipe exists and I verified it myself rather than relaying it:**
+
+   ```
+   LD_LIBRARY_PATH=/home/tm8/.local/pw-min/lib \
+     ~/.cache/ms-playwright/chromium_headless_shell-1208/\
+   chrome-headless-shell-linux64/chrome-headless-shell \
+     --headless --no-sandbox --disable-gpu --js-flags=--jitless --screenshot=…
+   ```
+
+   It produced a PNG on the first attempt. The blocker above is real **for
+   `chromium-1208`** and false as a statement about the container.
+
+   **HOW THE FALSE CLAIM GOT HERE, because the mechanism is the lesson.** BUILD
+   tested `chromium-1208`, found twelve missing libs, and reported exactly that
+   — sound evidence, correctly scoped. It became "no browser can render here",
+   then "the screen has never been seen". Nobody checked, because **a negative
+   claim does not look like it needs checking.** My own contribution made it
+   worse: I added the Firefox failure, which made a wrong conclusion look
+   *better* evidenced. Two failing binaries read as thoroughness; neither of us
+   tried the third.
+
+   **A CLAIM ABOUT WHAT DID NOT HAPPEN IS STILL A CLAIM, and it is the one a
+   phase is least equipped to make** — no phase can see another's artefacts, so
+   "nobody did X" is exactly the sentence that needs evidence and never looks
+   like it. Write "I have no evidence that" instead; they are different
+   sentences.
+
+   **AC8 remains NOT MET, and the distinction is worth keeping:** it names
+   BUILD's *own* capture. It is a criterion about who produced the evidence,
+   not about whether the screen renders.
 
    **Checkpoint C's purpose and AC8's letter are different requirements and
    only one of them is blocked.** C exists to prove the empty state is real
