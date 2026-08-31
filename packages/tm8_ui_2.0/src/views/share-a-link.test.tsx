@@ -21,9 +21,24 @@
  * Recipients are already members of the Space (ruling R1=(a)), so there is no
  * server, schema or authorization change behind any of this; the whole feature
  * is the client learning to say where it is.
+ *
+ * WHERE THE CONTROL LIVES CHANGED ON 2026-08-31, and this file changed with
+ * it. The owner asked for the top bar's Inbox and Copy link to move into the
+ * profile menu ("can you move inbox copy link to profile"), so the link is now
+ * offered from inside `AccountMenu` rather than from a `shareSlot` in the bar.
+ *
+ * That has one consequence this file has to carry: `AccountMenu` renders
+ * NOTHING outside a gate — deliberately, because a menu with no account and no
+ * sign-out verb would be an enabled-inert control. `GateApp` mounted bare
+ * therefore has no account menu and no copy link, so these mounts now supply
+ * the gate context the shipped app always has (`App.tsx` wraps `GateApp` in
+ * `AuthGate` unconditionally). NOT a workaround: an app nobody is signed into
+ * is a state the product does not have, and the requirement being proved here
+ * — one person copies a link, another opens it — starts from being signed in.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { AuthActionsContext, type AuthActions } from '../auth/gate-context';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
@@ -55,7 +70,46 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-const mount = (target: MemoryTarget) => render(<GateApp routerTarget={target} />);
+/**
+ * The signed-in account the shipped app always has by the time this shell
+ * renders. Only the fields the chrome reads are real; the verbs are never
+ * dispatched by these tests, and a stub that CLAIMED to sign out would be
+ * asserting about a path this file does not exercise.
+ */
+const SIGNED_IN = {
+  account: {
+    handle: 'amber',
+    displayName: 'Amber',
+    accountId: 'acct_amber',
+    identityId: 'idn_amber',
+    isOwner: true,
+    isNodeAdmin: false,
+  },
+  accounts: [],
+  nodeClaim: null,
+  busy: false,
+  failure: null,
+  createAccount: () => Promise.resolve(),
+  claimNode: () => Promise.resolve(),
+  signIn: () => Promise.resolve(),
+  signOut: () => {},
+  clearFailure: () => {},
+} as unknown as AuthActions;
+
+const mount = (target: MemoryTarget) =>
+  render(
+    <AuthActionsContext.Provider value={SIGNED_IN}>
+      <GateApp routerTarget={target} />
+    </AuthActionsContext.Provider>,
+  );
+
+/** Open the account menu, which is where Copy link lives since 2026-08-31. */
+async function openProfileMenu(view: ReturnType<typeof mount>): Promise<void> {
+  const trigger = await waitFor(() => view.getByTestId('account-menu-trigger'));
+  if (trigger.getAttribute('aria-expanded') === 'true') return;
+  fireEvent.click(trigger);
+  await waitFor(() => view.getByTestId('auth-account-menu'));
+}
 
 /** Let the debounced replace (50ms) settle so the address is measured once. */
 async function settle(): Promise<void> {
@@ -71,6 +125,11 @@ async function settle(): Promise<void> {
  * deployed where there isn't one.
  */
 async function copyLinkFrom(view: ReturnType<typeof mount>): Promise<string> {
+  /* THE LINK IS BEHIND THE PROFILE MENU (2026-08-31). Opening it is part of
+     the journey now, so the test walks it rather than reaching past it — if
+     the row stopped being reachable from the menu, the copy path would be
+     unreachable for a person too, and this waitFor is what would say so. */
+  await openProfileMenu(view);
   /* jsdom has no `navigator.clipboard`, which makes it a faithful stand-in for
      the PLAIN-HTTP NODES THIS APP IS ACTUALLY DEPLOYED ON — `clipboard`
      requires a secure context. So the control does here exactly what it does
@@ -90,12 +149,32 @@ describe('share a link — the whole requirement, end to end', () => {
        page", and for most of this lane's life only the first was true. */
     const view = mount(createMemoryTarget(`#/s/${SPACE}/workspace`));
     await waitFor(() => view.getByTestId('workspace-grid'));
+    await openProfileMenu(view);
     /* Either affordance counts as offering a link, and WHICH one appears is
        itself the honesty rule: with a clipboard it is a button, without one
        (plain http, as jsdom faithfully reproduces) it is a selectable field.
        What must never appear is a button that cannot perform. */
     const field = await waitFor(() => view.getByRole('textbox', { name: 'Share link' }));
     expect((field as HTMLInputElement).value).toContain(`/s/${SPACE}/workspace`);
+    view.unmount();
+  });
+
+  it('SAYS WHAT IT SHARES on hover, where the viewer actually meets it', async () => {
+    /* User-ordered 2026-08-31: "when they hover over copy link give
+       information that they are sharing the space". `CopyLinkControl.test.tsx`
+       proves the wording; this proves the wording SURVIVES THE MOUNT — the
+       control reaches the real shell with its hint intact, and a host that
+       overrode it into silence would fail here and pass there. */
+    const view = mount(createMemoryTarget(`#/s/${SPACE}/workspace`));
+    await waitFor(() => view.getByTestId('workspace-grid'));
+    await openProfileMenu(view);
+
+    const control = await waitFor(() =>
+      view.container.querySelector<HTMLElement>('.auth-menu__row.copy-link'),
+    );
+    const hint = control?.getAttribute('title') ?? '';
+    expect(hint).toMatch(/this space/i);
+    expect(hint).toMatch(/conversations|people|work/i);
     view.unmount();
   });
 

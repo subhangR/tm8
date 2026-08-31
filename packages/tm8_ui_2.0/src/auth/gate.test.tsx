@@ -1146,6 +1146,101 @@ describe('the workspace account menu — name + logout, in the app', () => {
     expect(screen.getByRole('button', { name: /create another account/i })).toBeTruthy();
   });
 
+  /**
+   * THE UTILITY GROUP — Inbox and Copy link, moved here from the top bar.
+   *
+   * User-ordered 2026-08-31: "palatte inbox copy link and Tarakesh profile
+   * section can you move inbox copy link to profile". These four assertions
+   * are where `shell/shell.test.tsx`'s two bell tests went: the claims about
+   * the control (it opens Inbox when wired; it keeps the D28 posture when it
+   * is not) are unchanged, and only their address moved, exactly like the
+   * control's did.
+   */
+  describe('the account menu’s utility group', () => {
+    const openMenu = async () => {
+      await createAccountThroughTheUI('amber', PASSWORD);
+      fireEvent.click(screen.getByTestId('account-menu-trigger'));
+      return screen.getByTestId('auth-account-menu');
+    };
+
+    it('the inbox row opens Inbox when a host wires it, and closes the menu', async () => {
+      const onOpenInbox = vi.fn();
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} onOpenInbox={onOpenInbox} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const row = within(menu).getByTestId('open-inbox');
+      expect(row.getAttribute('aria-disabled')).toBeNull();
+      fireEvent.click(row);
+      expect(onOpenInbox).toHaveBeenCalledOnce();
+      /* A navigation verb closes the popover behind it — leaving it open over
+         the screen it just navigated to is the same defect the row's
+         neighbours (Account & access tokens, Sign out) already avoid. */
+      expect(screen.queryByTestId('auth-account-menu')).toBeNull();
+    });
+
+    it('the inbox row keeps the D28 posture without a host: announced, reachable, refused', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const row = within(menu).getByTestId('open-inbox') as HTMLButtonElement;
+      expect(row.getAttribute('aria-disabled')).toBe('true'); // announced
+      expect(row.disabled).toBe(false); // inverted guard against the native attr
+      expect(row.getAttribute('title')).toMatch(/unavailable/i); // says why
+      row.focus(); // reachable
+      expect(document.activeElement).toBe(row);
+      // NAMED, and reachable by that name from inside the menu.
+      expect(within(menu).getByRole('button', { name: 'Inbox' })).toBe(row);
+    });
+
+    it('hosts the utility rows a host hands it, above Appearance', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu
+              actor={DISPLAY_ACTOR}
+              utilityRows={<button type="button">Copy link</button>}
+            />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const hosted = within(menu).getByRole('button', { name: 'Copy link' });
+      const inbox = within(menu).getByTestId('open-inbox');
+      // Same group as Inbox — one utility cluster, not two.
+      expect(hosted.closest('.auth-menu__group')).toBe(inbox.closest('.auth-menu__group'));
+      // ...and that group precedes the appearance group.
+      const appearance = within(menu).getByRole('group', { name: 'appearance' });
+      expect(
+        hosted.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('draws the utility group even with nothing hosted — Inbox is never hidden', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+      expect(within(menu).getByTestId('open-inbox')).toBeTruthy();
+    });
+  });
+
   it('names the SERVER account the node vouched for — never "local"', async () => {
     // The node authenticated this account at auth.login; the menu may say so,
     // and must no longer describe it as a local record.

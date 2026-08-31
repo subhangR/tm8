@@ -203,7 +203,7 @@
 
 /* oracle L39: Newsreader 23px/500, line-height 1.18 */
 .cv2-root .auth-title {
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-weight: 500;
   line-height: var(--pn-lh-tight);
   color: var(--pn-ink);
@@ -1223,6 +1223,46 @@
 }
 .cv2-root .auth-menu__group--last {
   border-top: 1px solid var(--pn-line);
+}
+/* THE UTILITY GROUP (2026-08-31) — Inbox + the hosted rows, between the
+   identity head and Appearance. It carries its own separator rather than
+   pushing a border onto the Appearance group, so the group that MOVED owns the
+   line it introduced and the appearance group's markup is untouched. Same
+   --pn-line, same 1px, as `--last` above: one boundary treatment in this menu,
+   not two. */
+.cv2-root .auth-menu__group--utility {
+  border-bottom: 1px solid var(--pn-line);
+}
+/* The inbox mark is DRAWN geometry in the 15px column the TYPED glyphs use, so
+   this variant centres a box instead of a baseline. A modifier rather than a
+   change to `.auth-menu__glyph` itself: the ◐ / ⌗ / ↩ rows are text and are
+   already centred correctly, and nudging all of them to lay out an icon that
+   only one row has would be paying for this move in rows that did not move. */
+.cv2-root .auth-menu__glyph--art {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* HOSTED ROWS wear `auth-menu__row`, and the copy-link control brings its own
+   layout from `share/copy-link.css`. These three rules are the seam between
+   the two, and only where they actually disagree. */
+.cv2-root .auth-menu__row .copy-link__glyph {
+  width: 15px;
+  flex: none;
+  text-align: center;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+}
+/* The manual-copy fallback is an instruction ABOVE a field, never a flex row:
+   inside a ~310px menu the row form would squeeze the field to nothing. It
+   also is not a verb, so it must not take the live row's pointer. */
+.cv2-root .auth-menu__row.copy-link--manual {
+  display: grid;
+  gap: var(--pn-space-1);
+  cursor: default;
+}
+.cv2-root .auth-menu__row.copy-link--manual:hover {
+  background: transparent;
 }
 .cv2-root .auth-menu__row {
   appearance: none;

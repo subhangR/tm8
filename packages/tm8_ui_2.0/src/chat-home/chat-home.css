@@ -43,7 +43,7 @@
 }
 
 .tch-title strong {
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: var(--pn-fs-h3);
   font-weight: 500;
   line-height: var(--pn-lh-tight);
@@ -224,7 +224,7 @@
        tiring for a transcript; the words a person came to read take full ink.
 
    NOT FIXED HERE, because it is a token-wide decision rather than this
-   surface's: `--pn-serif` and `--pn-ui` resolve to the SAME Figtree stack, so
+   surface's: `--pn-prose` and `--pn-ui` resolve to the SAME Figtree stack, so
    the "serif body, sans headings" contrast this stylesheet is written for has
    never once rendered. Either give the body a real second face or retire the
    token — but that lands on every surface, not just the chat. */
@@ -261,7 +261,7 @@
 
 .tch-welcome h1 {
   margin: 0;
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: var(--pn-fs-h1);
   font-weight: 500;
 }
@@ -392,7 +392,7 @@
 .tch-explain__heading h3 {
   margin: 0;
   color: var(--pn-ink);
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: var(--pn-fs-title);
   font-weight: 500;
 }
@@ -681,7 +681,7 @@ button.tch-entity-chip { cursor: pointer; }
 button.tch-entity-chip:hover {
   border-color: var(--pn-brand-2);
   background: var(--pn-brand-soft);
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 
 button.tch-entity-chip:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
@@ -893,7 +893,7 @@ button.tch-entity-chip:focus-visible { outline: 2px solid var(--pn-focus, var(--
 }
 
 .tch-composer-wrap[data-phase='stopped-continuable'] .tch-composer {
-  border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-border));
+  border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-line));
 }
 
 /* The card shell (border, field, foot geometry) is `ComposerCard`'s —
@@ -2148,7 +2148,7 @@ button.tch-entity-chip:focus-visible { outline: 2px solid var(--pn-focus, var(--
 .tch-ledger-tree__kind[aria-pressed='true'] {
   border-color: var(--pn-brand-2);
   background: var(--pn-brand-soft);
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 
 .tch-ledger-tree__list {
@@ -2189,7 +2189,7 @@ button.tch-entity-chip:focus-visible { outline: 2px solid var(--pn-focus, var(--
 /* A row is a button only where the press can land (the tray's honesty rule);
    only the button form takes hover affordances. */
 button.tch-ledger-tree__row { cursor: pointer; }
-button.tch-ledger-tree__row:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
+button.tch-ledger-tree__row:hover { background: var(--pn-hover); color: var(--pn-ink); }
 button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 .tch-ledger-tree__icon {
@@ -2249,7 +2249,7 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-focus, v
   cursor: pointer;
 }
 
-.tch-lpanel__scope:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
+.tch-lpanel__scope:hover { background: var(--pn-hover); color: var(--pn-ink); }
 .tch-lpanel__scope:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 /* The scope's summary — `5 live ·` / `3 tasks, 2 docs`. A statement, not a
@@ -2276,7 +2276,7 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-focus, v
   cursor: pointer;
 }
 
-.tch-lpanel__toggle:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
+.tch-lpanel__toggle:hover { background: var(--pn-hover); color: var(--pn-ink); }
 .tch-lpanel__toggle:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 /* Capped height with internal scroll (§7.5): a tree N deep must not eat the
@@ -2316,7 +2316,7 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-focus, v
   cursor: pointer;
 }
 
-.tch-lpanel__row:hover { background: var(--pn-hover); color: var(--pn-ink-1); }
+.tch-lpanel__row:hover { background: var(--pn-hover); color: var(--pn-ink); }
 .tch-lpanel__row:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
 
 .tch-lpanel__title {

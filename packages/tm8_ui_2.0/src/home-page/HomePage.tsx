@@ -409,7 +409,17 @@ function ActiveStrip({
                inside a button is invalid HTML and the nested interactive eats
                its own clicks. So the card is a container, the OPEN gesture is
                an inner button that fills it, and the chips are its sibling. */
-            const prs = row.lens === 'chats' ? [] : linkedPullRequestsOf?.(row.id) ?? [];
+            const allPrs = row.lens === 'chats' ? [] : linkedPullRequestsOf?.(row.id) ?? [];
+            /* THREE CHIPS AND A COUNT, so every card is the same height.
+               A session with eight pull requests wrapped its chips onto three
+               lines and grew to 156px beside 87px neighbours — which is why the
+               grid could not come to rest on a row boundary and cut the second
+               row through the middle of its cards. Uniform rows are what make a
+               bounded grid read as a grid instead of a broken box; the rest
+               of the pull requests are one click away on the session itself,
+               and the count says how many there are rather than hiding them. */
+            const prs = allPrs.slice(0, 3);
+            const morePrs = allPrs.length - prs.length;
             return (
               <div key={`${row.lens}-${row.id}`} className={`hp-acard hp-acard--${row.lens}`}>
                 <button
@@ -452,6 +462,9 @@ function ActiveStrip({
                 {prs.length > 0 ? (
                   <div className="hp-acard__prs">
                     <LinkedPullRequestChips pullRequests={prs} placement="tile" />
+                    {morePrs > 0 ? (
+                      <span className="hp-acard__prmore">+{morePrs}</span>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

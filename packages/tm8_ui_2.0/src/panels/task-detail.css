@@ -769,7 +769,7 @@
 
 .cv2-root .pn-panel[data-archetype='subtree'] .hon-caption {
   font-size: var(--pn-fs-label);
-  line-height: var(--pn-lh-normal);
+  line-height: var(--pn-lh-body);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end > .hon-disabled-group {

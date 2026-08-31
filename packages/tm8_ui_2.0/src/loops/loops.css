@@ -41,7 +41,7 @@
 /* A recorded failure is a warning the summary must not blend into: the loop
    stays enabled, so only the tone says something is wrong. */
 .cv2-root .loop-controls__error {
-  color: var(--pn-warn, var(--pn-ink-1));
+  color: var(--pn-warn, var(--pn-ink));
 }
 
 .cv2-root .loop-controls__actions {

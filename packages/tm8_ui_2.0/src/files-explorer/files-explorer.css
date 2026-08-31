@@ -70,7 +70,7 @@
 }
 
 .fx-dragover {
-  outline: 2px dashed var(--pn-brass);
+  outline: 2px dashed var(--pn-brand);
   outline-offset: -6px;
 }
 
@@ -285,7 +285,7 @@
 }
 
 .fx-queue-row[data-status='failed'] .fx-queue-status {
-  color: var(--pn-danger);
+  color: var(--pn-block);
 }
 
 /* -- overlays -------------------------------------------------------------- */

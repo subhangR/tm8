@@ -220,8 +220,19 @@ describe('a name is never truncated by its own count', () => {
        11.8182px holding cards 87-156px tall, every card painting through the
        one below it. A scroller whose rows are sized by its own height is not a
        scroller. */
+    /* THE ROWS MUST BE PINNED, and `max-content` is no longer enough. With
+       `max-height` making the grid's block size definite, implicit `auto` rows
+       were DIVIDED across it rather than taken from their content — measured
+       live at eleven rows of 11.8182px holding cards 87 to 156px tall, every
+       one painting through the row below. `max-content` cured the overlap and
+       left rows of UNEQUAL height, so the bounded region still cut its second
+       row through the middle of its cards. A fixed row cures both, and the
+       card's chips are capped to one line so the fixed row is honest. */
     expect(grid, 'the rows will be divided across the box and the cards will overlap').toMatch(
-      /grid-auto-rows:\s*max-content/,
+      /grid-auto-rows:\s*\d+px/,
+    );
+    expect(grid, 'the region no longer shows a whole number of rows').toMatch(
+      /max-height:\s*\d+px/,
     );
 
     /* THE FLOOR SURVIVED THE REWRITE. L4: never an unfloored track. */

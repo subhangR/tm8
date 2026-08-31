@@ -46,21 +46,34 @@ import type { Notice } from '../shell/notices';
 import type { GateData } from '../views/useGateData';
 import { useRowLifecycle } from '../views/useRowLifecycle';
 import { BoardEntityColumn } from './BoardEntityColumn';
+import { BoardSummaryStrip } from './BoardSummaryStrip';
+import { BoardTimeline } from './BoardTimeline';
 import {
+  BOARD_VIEWS,
   EMPTY_FILTERS,
   UNCATEGORISED_KEY,
   anyFilterActive,
   applyMoves,
+  axisFor,
   buildFilters,
   columnFilter,
+  isLive,
+  liveNarrow,
+  liveSignalsFor,
   matching,
   planFor,
   resolveWorkflow,
   settledMoves,
+  summarise,
+  timelineGroups,
+  todayKey,
   uncategorised,
   type BoardColumn,
   type BoardFilterState,
+  type BoardView,
   type ColumnPlan,
+  type LiveContext,
+  type LiveSignalId,
   type Move,
 } from './board-model';
 import { FilterSelect, type FilterOption } from './FilterSelect';
@@ -94,6 +107,11 @@ export function BoardV2Screen({
   const [filters, setFilters] = useState<BoardFilterState>(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   const [useWorkflowCols, setUseWorkflowCols] = useState(false);
+  /* THE VIEW. Columns is the default — it is what the board has always been,
+     and a new view earns its place by being chosen rather than imposed. State,
+     not a route, so switching keeps the kind, the filters, the search and the
+     open panel (the same reason a card opens the panel instead of navigating). */
+  const [view, setView] = useState<BoardView>('columns');
   /** card id → both endpoints of its optimistic move. */
   const [moves, setMoves] = useState<ReadonlyMap<string, Move>>(new Map());
   const [refusal, setRefusal] = useState<{ column: string; reason: string } | null>(null);
@@ -263,9 +281,42 @@ export function BoardV2Screen({
   const shownColumns = columns.filter(
     (c) => c.plan.key !== UNCATEGORISED_KEY || (c.items?.length ?? 0) > 0,
   );
+  /* THE LIVE AXIS. `livenessOf` IS the seam's verdict function, handed down
+     untouched — this screen never derives a verdict and never reads a status
+     field to guess one. `activity` can only REFINE a live verdict into a
+     pulsing one, never promote a dead session (the two-source law). */
+  const liveCtx: LiveContext = { livenessOf: data.livenessOf, activity: data.activity };
+  const liveSignals = useMemo(() => liveSignalsFor(kind), [kind]);
+  const liveOptions = useMemo<FilterOption[]>(
+    () => liveSignals.map((signal) => ({ id: signal.id, label: signal.label })),
+    [liveSignals],
+  );
+  /* Live by ANY signal the kind can answer — what the strip counts, and what
+     the timeline's per-row `live` chip states. Distinct from `filters.live`,
+     which is only the signals the reader has PRESSED. */
+  const isRowLive = (row: EntitySummary): boolean =>
+    isLive(row, liveSignals.map((signal) => signal.id), liveCtx);
+
   const shownOf = (column: BoardColumn): readonly EntitySummary[] =>
-    matching(column.items ?? [], search);
+    liveNarrow(matching(column.items ?? [], search), filters.live, liveCtx);
   const shownRows = shownColumns.map(shownOf);
+
+  /* THE TIMELINE'S INPUTS — all of them pure functions of the rows already
+     drawn. `today` is read ONCE per render and threaded through, so the axis
+     marker, every defaulted week and the strip cannot disagree about what day
+     it is mid-render. */
+  const today = todayKey();
+  const groups = useMemo(
+    () => timelineGroups(shownColumns, shownRows, today),
+    // Recomputed with the rows; `shownRows` is rebuilt every render by design.
+    [shownColumns, shownRows, today],
+  );
+  const axis = useMemo(
+    () => axisFor(groups.flatMap((group) => group.rows.map((r) => r.span)), today),
+    [groups, today],
+  );
+  const summary = summarise(shownColumns, shownRows, today, isRowLive);
+  const liveCountLabel = kind.list.liveCount?.label?.(summary.live) ?? `${summary.live} live`;
   const locateCard = (id: string | null): { col: number; row: number; item: EntitySummary } | null => {
     if (id === null) return null;
     for (let col = 0; col < shownRows.length; col += 1) {
@@ -438,6 +489,25 @@ export function BoardV2Screen({
       data-family={kind.graphFamily ?? 'gray'}
     >
       <header className="b2__bar" data-testid="b2-filters">
+        {/* THE VIEW SWITCH — a control on the board's own header, not a route.
+            Two shapes of one answer; Columns stays the default. */}
+        <span className="b2__pivots" role="group" aria-label="Board view">
+          {BOARD_VIEWS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className="b2__pivot"
+              aria-pressed={view === option.id}
+              data-testid={`b2-view-${option.id}`}
+              onClick={() => setView(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </span>
+
+        <span className="b2__sep" aria-hidden />
+
         {/* THE KIND SELECTOR — what makes this board universal. Radio
             semantics on the shared dropdown: choosing a kind replaces the
             previous choice. */}
@@ -499,6 +569,34 @@ export function BoardV2Screen({
           </>
         ) : null}
 
+        {/* LIVE WORK. Offered only where the REGISTRY says the selected kind
+            can answer a liveness question at all (`liveSignalsFor`): a "live"
+            chip on a kind with no verdict and no working_on badge could only
+            ever narrow to zero, which is a control that lies about having
+            found nothing. The narrowing itself is CLIENT-SIDE and page-scoped
+            — see `liveNarrow`; there is no server-side liveness predicate,
+            because liveness is the node's live PTY set and no collection query
+            consults it. */}
+        {liveSignals.length > 0 ? (
+          <FilterSelect
+            label="Live"
+            testId="b2-filter-live"
+            options={liveOptions}
+            selected={filters.live}
+            onToggle={(id) =>
+              setFilters((prior) => {
+                const list = prior.live;
+                const next = list.includes(id as LiveSignalId)
+                  ? list.filter((k) => k !== id)
+                  : [...list, id as LiveSignalId];
+                return { ...prior, live: next };
+              })
+            }
+            onClear={() => setFilters((prior) => ({ ...prior, live: [] }))}
+            emptyNote={`${kind.labelPlural} carry no liveness signal on this build.`}
+          />
+        ) : null}
+
         {/* ARCHIVED IS A FILTER, NEVER A COLUMN (the ruling, verbatim): the
             toggle swaps the whole board onto the archived rows, composing
             with every column rather than replacing one. */}
@@ -549,6 +647,18 @@ export function BoardV2Screen({
         )}
       </header>
 
+      {/* THE DASHBOARD STRIP — counts of the rows the board is drawing, from
+          the same arrays it draws them from. Never a placeholder. */}
+      <BoardSummaryStrip
+        summary={summary}
+        liveLabel={liveCountLabel}
+        liveNote={
+          liveSignals.length === 0
+            ? null
+            : liveSignals.map((signal) => signal.describe).join(' ')
+        }
+      />
+
       <div
         className="b2__body"
         role="region"
@@ -573,28 +683,44 @@ export function BoardV2Screen({
           className="b2__stage"
           style={{ ['--b2-cols' as string]: String(Math.max(1, shownColumns.length)) }}
         >
-          <div className="b2__cols">
-            {shownColumns.map((column, index) => (
-              <ColumnView
-                key={column.plan.key}
-                column={column}
-                shown={column.items === undefined ? undefined : shownRows[index]}
-                band={plan.mode === 'workflow' ? column.plan.category : null}
-                focusedId={activeCard?.item.id ?? null}
-                refusal={refusal?.column === column.plan.key ? refusal.reason : null}
-                pendingId={pendingId}
-                dragging={dragging}
-                onDragStart={setDragging}
-                onDrop={dispatchDrop}
-                onOpen={(id) => openEntity(id as EntityId)}
-                onCardFocus={setFocusedId}
-                buttonRef={(id, node) => {
-                  if (node) cardButtonsRef.current.set(id, node);
-                  else cardButtonsRef.current.delete(id);
-                }}
-              />
-            ))}
-          </div>
+          {view === 'timeline' ? (
+            <BoardTimeline
+              axis={axis}
+              groups={groups}
+              focusedId={activeCard?.item.id ?? null}
+              isRowLive={isRowLive}
+              loading={summary.loading}
+              onOpen={(id) => openEntity(id as EntityId)}
+              onFocus={setFocusedId}
+              buttonRef={(id, node) => {
+                if (node) cardButtonsRef.current.set(id, node);
+                else cardButtonsRef.current.delete(id);
+              }}
+            />
+          ) : (
+            <div className="b2__cols">
+              {shownColumns.map((column, index) => (
+                <ColumnView
+                  key={column.plan.key}
+                  column={column}
+                  shown={column.items === undefined ? undefined : shownRows[index]}
+                  band={plan.mode === 'workflow' ? column.plan.category : null}
+                  focusedId={activeCard?.item.id ?? null}
+                  refusal={refusal?.column === column.plan.key ? refusal.reason : null}
+                  pendingId={pendingId}
+                  dragging={dragging}
+                  onDragStart={setDragging}
+                  onDrop={dispatchDrop}
+                  onOpen={(id) => openEntity(id as EntityId)}
+                  onCardFocus={setFocusedId}
+                  buttonRef={(id, node) => {
+                    if (node) cardButtonsRef.current.set(id, node);
+                    else cardButtonsRef.current.delete(id);
+                  }}
+                />
+              ))}
+            </div>
+          )}
           {openId !== null ? (
             <aside
               ref={panelRef}

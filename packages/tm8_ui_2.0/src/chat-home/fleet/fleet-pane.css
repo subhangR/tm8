@@ -26,7 +26,7 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-body);
   font-weight: 600;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 
 .fleet__summary {
@@ -106,7 +106,7 @@
 }
 
 .fleet__open:disabled { cursor: default; }
-.fleet__open:hover:not(:disabled) { color: var(--pn-ink-1); }
+.fleet__open:hover:not(:disabled) { color: var(--pn-ink); }
 .fleet__open:focus-visible {
   outline: 2px solid var(--pn-focus);
   outline-offset: 2px;
@@ -120,7 +120,7 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-sm);
   font-weight: 500;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 
 /* A placeholder title is a truncated id standing in for a name we do not
@@ -165,7 +165,7 @@
 
 .fleet__transcript:hover {
   background: var(--pn-hover);
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 
 .fleet__transcript:focus-visible {

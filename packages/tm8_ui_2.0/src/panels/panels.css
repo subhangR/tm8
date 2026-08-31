@@ -79,7 +79,7 @@
      mark-form note below), and growing them re-clips the panel tabs beside
      them — the exact defect that measurement closed. */
   font: 600 var(--pn-fs-fine)/1 var(--pn-ui);
-  letter-spacing: var(--pn-track-wide);
+  letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -1384,14 +1384,14 @@
 /* The NAME reads the same either way — raised ink, 600 — so a mention is
    legible as a mention whether or not it can be opened. Only the affordance
    differs: with a handler it is a real button and takes the pointer. */
-.cv2-root .pn-msg__mention { color: var(--pn-ink-1); font-weight: 600; }
+.cv2-root .pn-msg__mention { color: var(--pn-ink); font-weight: 600; }
 .cv2-root button.pn-msg__mention {
   appearance: none;
   border: 0;
   padding: 0;
   background: transparent;
   font: inherit;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
   font-weight: 600;
   cursor: pointer;
 }
@@ -3204,7 +3204,7 @@
   text-decoration: underline;
   cursor: pointer;
 }
-.cv2-root .lq__more:hover { color: var(--pn-ink-1); }
+.cv2-root .lq__more:hover { color: var(--pn-ink); }
 /* THE LAUNCH VERB — the one class that distinguishes it, so it keeps the
    filled-brand treatment and takes the compact kit metrics (28px, r-sm,
    13/600, house focus ring). */
@@ -3287,7 +3287,7 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-label);
   line-height: 1.45;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 .cv2-root .lq__refusal-label { font-weight: 600; color: var(--pn-block); }
 .cv2-root .lq__launch:disabled { opacity: 0.6; cursor: default; }
@@ -3336,7 +3336,7 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-label);
   line-height: 1.5;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 .cv2-root .pm__actions { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
 .cv2-root .pm__spacer { flex: 1 1 auto; }
@@ -3408,7 +3408,7 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-label);
   line-height: 1.45;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 .cv2-root .pm__refusal-label { font-weight: 600; color: var(--pn-block); }
 /* The receipt is NOT success-green all through: the merge succeeded, but the
@@ -3422,7 +3422,7 @@
   font-family: var(--pn-mono);
   font-size: 10px;
   line-height: 1.45;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 .cv2-root .pm__receipt-note { display: block; margin-top: 3px; color: var(--pn-ink-4); }
 
@@ -4441,7 +4441,7 @@
   outline: 2px solid var(--pn-focus, var(--pn-brand-2));
   outline-offset: 1px;
 }
-.cv2-root .pn-st__count--open { color: var(--pn-ink-1); background: var(--pn-active); }
+.cv2-root .pn-st__count--open { color: var(--pn-ink); background: var(--pn-active); }
 
 /* The open group: SAME LEVEL as its owner (offset is the hierarchy tree's
    vocabulary, ruled 2026-08-16), so ownership is said by the thin rail and

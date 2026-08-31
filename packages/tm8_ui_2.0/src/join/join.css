@@ -16,7 +16,7 @@
   gap: 10px;
   padding: 32px 24px;
   text-align: center;
-  background: var(--pn-bg);
+  background: var(--pn-paper);
   color: var(--pn-ink);
 }
 
@@ -28,7 +28,7 @@
 }
 
 .join__title {
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: 26px;
   font-weight: 500;
   line-height: 1.22;
@@ -76,7 +76,7 @@
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  color: var(--pn-bg);
+  color: var(--pn-paper);
   background: var(--pn-ink);
   border: 1px solid var(--pn-ink);
   border-radius: var(--pn-r-sm);

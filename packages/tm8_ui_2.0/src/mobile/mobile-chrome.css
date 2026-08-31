@@ -376,7 +376,7 @@
  * actually comes from. The lines after it are the explanation.
  */
 .mobile-empty > :first-child {
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-weight: 500;
   font-size: var(--pn-fs-h3);
   line-height: var(--pn-lh-snug);

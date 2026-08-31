@@ -1034,7 +1034,14 @@
      this region takes is a pixel the conversation does not get. Two rows is
      enough to see what is running; the peek of the third is what tells you
      there is more without spending a control on saying so. */
-  max-height: 240px;
+  /* EXACTLY TWO ROWS, and the rows are uniform so "two rows" is a real
+     measurement rather than a hope. A card is 96px: kind line, title, facts,
+     and at most one line of pull-request chips (capped at three by the page —
+     eight of them wrapped to three lines and grew that one card to 156px
+     beside 87px neighbours, which is what made the second row cut through the
+     middle of its cards). 96 + 96 + one 8px gap = 200. */
+  grid-auto-rows: 96px;
+  max-height: 200px;
   overflow-y: auto;
   /* IT MUST NOT COME TO REST MID-CARD. At 240px the second row is cut through
      its middle, which reads as a broken box rather than as "there is more" —
@@ -1043,15 +1050,12 @@
      arithmetic. Snapping does it by construction: the scroller always settles
      with a row's top edge at the top, whatever that row happens to be. */
   scroll-snap-type: y proximity;
-  /* `grid-auto-rows: max-content` IS LOAD-BEARING AND WAS A REAL BUG.
-     With `max-height` making the grid's block size definite, the implicit
-     `auto` rows were divided across that height instead of taken from their
-     content: measured on the live build, eleven rows at 11.8182px each
-     (130px of box split eleven ways) holding cards 87 to 156px tall, so every
-     card painted straight through the ones below it and the strip read as one
-     illegible pile. `max-content` sizes each row from what is in it, whatever
-     the container's height is, which is the only thing a scroller can mean. */
-  grid-auto-rows: max-content;
+  /* WHY THE ROWS ARE PINNED AT ALL, and it is not tidiness. With `max-height`
+     making the grid's block size definite, implicit `auto` rows were DIVIDED
+     across that height instead of taken from their content — measured live at
+     eleven rows of 11.8182px holding cards 87 to 156px tall, so every card
+     painted straight through the ones below it. `max-content` fixed that and
+     left rows of unequal height; a fixed row fixes both. */
   align-content: start;
   padding-right: 2px;
 }
@@ -1087,9 +1091,24 @@
 /* The chips keep the card's own tint, so the footer reads as part of the card
    rather than a strip glued under it. */
 .cv2-root .hp-acard__prs {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
   padding: 0 var(--pn-space-3) var(--pn-space-3);
   min-width: 0;
+  /* ONE LINE. The count beside them says what did not fit, so a card can never
+     grow a second chip row and break the uniform grid. */
+  overflow: hidden;
 }
+.cv2-root .hp-acard__prmore {
+  flex: none;
+  font: 600 var(--pn-fs-fine)/1 var(--pn-mono);
+  color: var(--pn-ink-3);
+}
+/* The card content takes what the row gives it and clips inside — a fixed row
+   with an unclipped child is how a grid starts painting over itself. */
+.cv2-root .hp-acard { overflow: hidden; }
+.cv2-root .hp-acard__open { min-height: 0; overflow: hidden; }
 /* LIGHT COLOUR, BY KIND (owner: "add light colors combination of colors make
    beautiful"). The SOFT tone variants the app already defines — never the full
    tone, which behind body text reads as a badge demanding attention rather

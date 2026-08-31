@@ -110,7 +110,7 @@
 }
 
 .cv2-root .fn-card__title {
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: 16px; /* L142 */
   font-weight: 500;
   color: var(--pn-ink);

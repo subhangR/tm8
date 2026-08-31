@@ -543,7 +543,7 @@
   line-height: 1;
 }
 .cv2-root .pn-membership__remove:hover {
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 .cv2-root .pn-membership__remove[aria-disabled='true'] {
   cursor: not-allowed;
@@ -590,7 +590,7 @@
 }
 .cv2-root .pn-membership__input {
   font: inherit;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
   background: transparent;
   border: 1px solid var(--pn-line);
   border-radius: 5px;
@@ -602,7 +602,7 @@
   gap: 6px;
   border: none;
   background: none;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
   cursor: pointer;
   text-align: left;
   padding: 4px 6px;

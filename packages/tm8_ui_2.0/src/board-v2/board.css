@@ -575,7 +575,7 @@
   min-width: 0;
   max-width: 100%;
   cursor: grab;
-  transition: border-color var(--pn-dur-fast) var(--ease-standard), opacity var(--pn-dur-fast) var(--ease-standard);
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard), opacity var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
 .b2__card:hover {

@@ -89,20 +89,26 @@ export function SpaceSwitcher(props: SpaceSwitcherProps) {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`Server and space: ${label}`}
-        title={props.collapsed ? label : undefined}
+        title={label}
         onClick={() => setOpen((value) => !value)}
       >
         <span className="shell-switcher__monogram" aria-hidden="true">{monogramOf(active)}</span>
         {!props.collapsed ? (
           <span className="shell-switcher__names">
             <span className="shell-switcher__space">{activeSpace?.name ?? 'no space'}</span>
-            <span className="shell-switcher__server-line">
-              <span
-                className={`shell-rail__server-status shell-rail__server-status--${active?.reachability ?? 'checking'}`}
-                aria-hidden="true"
-              />
-              {active?.label ?? 'server'}
-            </span>
+            {/* THE DOT IS THE WHOLE SENTENCE (owner, 2026-08-31: "Utho prod
+                green dot is enough local this machine is not needed").
+                `local · this machine` restated, in the chrome of every screen,
+                a fact that never changes for a local server — and it made the
+                control two lines tall to say it. The dot already carries the
+                one thing that DOES change, which is whether the server is
+                reachable, so it keeps its own accessible name and the label
+                moves to the title where a reader who wants it can find it. */}
+            <span
+              className={`shell-rail__server-status shell-rail__server-status--${active?.reachability ?? 'checking'}`}
+              role="img"
+              aria-label={`${active?.label ?? 'server'} — ${active?.reachability ?? 'checking'}`}
+            />
           </span>
         ) : null}
         {!props.collapsed ? <span className="shell-switcher__caret" aria-hidden="true">{open ? '▾' : '▸'}</span> : null}

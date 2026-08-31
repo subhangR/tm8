@@ -47,7 +47,7 @@
    the serif voice the rest of the workspace reserves for content. */
 .sg-head__line {
   margin: 0;
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: var(--pn-fs-h3);
   line-height: var(--pn-lh-snug);
   color: var(--pn-ink);
@@ -338,7 +338,7 @@
 }
 
 .sg-card__title {
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: var(--pn-fs-title);
   color: var(--pn-ink);
 }

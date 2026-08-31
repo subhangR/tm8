@@ -480,3 +480,226 @@ describe('the create control', () => {
     view.unmount();
   });
 });
+
+// ===========================================================================
+// THE TIMELINE VIEW (owner request 2026-08-31), MOUNTED
+// ===========================================================================
+//
+// WHAT THESE CASES CAN AND CANNOT PROVE. vitest here runs with `css: false`,
+// so none of them sees a stylesheet: nothing below claims a bar LOOKS dashed
+// or that a colour rendered. What they pin is the STRUCTURE the stylesheet
+// keys on — `data-inferred`, `data-stated`, `data-tone`, and the sentence on
+// `title`/`aria-label` — plus the wiring: which view is default, that
+// switching keeps the board's state, and that the strip's numbers are the
+// board's own. The rules themselves are asserted as source in
+// `board-timeline-style.test.ts`.
+
+const showTimeline = (view: RenderResult) => {
+  fireEvent.click(view.getByTestId('b2-view-timeline'));
+  return view.getByTestId('b2-timeline');
+};
+
+const barFor = (view: RenderResult, title: string): HTMLElement => {
+  const row = view
+    .getAllByTestId('b2tl-row')
+    .find((node) => node.textContent?.includes(title));
+  expect(row, `timeline row for ${title}`).toBeDefined();
+  const id = row!.getAttribute('data-entity');
+  const bar = view
+    .getAllByTestId('b2tl-bar')
+    .find((node) => node.getAttribute('data-entity') === id);
+  expect(bar, `bar for ${title}`).toBeDefined();
+  return bar!;
+};
+
+describe('the view switch', () => {
+  it('offers Columns and Timeline on the board\'s OWN header, with Columns the default', async () => {
+    const view = await mountBoard();
+    expect(view.getByTestId('b2-view-columns').getAttribute('aria-pressed')).toBe('true');
+    expect(view.getByTestId('b2-view-timeline').getAttribute('aria-pressed')).toBe('false');
+    expect(view.queryByTestId('b2-timeline')).toBeNull();
+    expect(view.getAllByTestId('b2-column').length).toBeGreaterThan(0);
+    view.unmount();
+  });
+
+  it('swaps the surface without unmounting the board, and swaps back', async () => {
+    const view = await mountBoard();
+    showTimeline(view);
+    expect(view.queryAllByTestId('b2-column')).toHaveLength(0);
+    expect(view.getByTestId('b2-view-timeline').getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(view.getByTestId('b2-view-columns'));
+    expect(view.queryByTestId('b2-timeline')).toBeNull();
+    expect(columnKeys(view)).toEqual(CATEGORY_KEYS);
+    view.unmount();
+  });
+
+  it('KEEPS the question when it changes the shape of the answer: the search survives the switch', async () => {
+    const view = await mountBoard();
+    fireEvent.change(view.getByLabelText('Filter cards by title'), { target: { value: 'guide' } });
+    await waitFor(() => expect(view.getAllByTestId('b2-card')).toHaveLength(1));
+    showTimeline(view);
+    // One row, and it is the one the search left standing.
+    expect(view.getAllByTestId('b2tl-row')).toHaveLength(1);
+    expect(view.getAllByTestId('b2tl-row')[0]!.textContent).toContain(GUIDE);
+    view.unmount();
+  });
+
+  it('a timeline row opens the SAME panel a card does', async () => {
+    const view = await mountBoard();
+    showTimeline(view);
+    fireEvent.click(view.getByRole('button', { name: GUIDE }));
+    await waitFor(() => view.getByTestId('b2-entity-panel'));
+    // …and the timeline is still behind it, which is the whole point.
+    expect(view.getByTestId('b2-timeline')).toBeTruthy();
+    view.unmount();
+  });
+});
+
+describe('the timeline itself', () => {
+  it('draws a dated axis with today on it, inside its own horizontal scroller', async () => {
+    const view = await mountBoard();
+    showTimeline(view);
+    const scroll = view.getByTestId('b2tl-scroll');
+    expect(scroll).toBeTruthy();
+    // Today is marked once, not per row and not never.
+    expect(view.getAllByTestId('b2tl-today')).toHaveLength(1);
+    /* THE TODAY RULE SPANS EVERY ROW, counted rather than `-1`: the body rows
+       are IMPLICIT grid rows, and `-1` resolves against the explicit grid —
+       which declares none — so it would collapse onto the axis header alone. */
+    const rule = view.getByTestId('b2tl-todayrule');
+    const rows = view.getAllByTestId('b2tl-row').length;
+    const groups = view.getAllByTestId('b2tl-group').length;
+    const empties = view.getAllByTestId('b2tl-group').length; // one line each, empty or not
+    expect(rule.style.gridRow).not.toContain('-1');
+    expect(Number(rule.style.gridRow.split('/')[1]!.trim()))
+      .toBeGreaterThanOrEqual(1 + rows + groups);
+    expect(empties).toBeGreaterThan(0);
+    view.unmount();
+  });
+
+  it('groups by the board\'s OWN columns, so both views answer the same question', async () => {
+    const view = await mountBoard();
+    showTimeline(view);
+    expect(view.getAllByTestId('b2tl-group').map((g) => g.getAttribute('data-group')))
+      .toEqual(CATEGORY_KEYS);
+    view.unmount();
+  });
+
+  it('colours each bar by its category tone AND keeps the status WORD on it', async () => {
+    const view = await mountBoard();
+    showTimeline(view);
+    const bar = barFor(view, GUIDE);
+    // `Session tree guide lines` is `working` ⇒ in_progress ⇒ the run ramp.
+    expect(bar.getAttribute('data-tone')).toBe('run');
+    // Colour reinforces the word; it never replaces it.
+    expect(bar.textContent).toContain('In Progress');
+    view.unmount();
+  });
+});
+
+describe('the undated case — a guess must never read as a fact', () => {
+  it('gives a task with NO dates a default week, MARKED as inferred in the DOM', async () => {
+    const view = await mountBoard();
+    showTimeline(view);
+    // Every fixture task but one carries `dueDate: null` and no startDate.
+    const bar = barFor(view, GUIDE);
+    expect(bar.getAttribute('data-stated')).toBe('none');
+    expect(bar.getAttribute('data-inferred')).toBe('true');
+    view.unmount();
+  });
+
+  it('SAYS what it is — the sentence rides both the tooltip and the accessible name', async () => {
+    const view = await mountBoard();
+    showTimeline(view);
+    const bar = barFor(view, GUIDE);
+    expect(bar.getAttribute('title')).toContain('No dates set');
+    expect(bar.getAttribute('title')).toContain('default 7-day week');
+    // Not pixels-only: a reader who cannot see the dash pattern still gets it.
+    expect(bar.getAttribute('aria-label')).toBe(bar.getAttribute('title'));
+    // And it is legible on the bar itself, not only on hover.
+    expect(bar.textContent).toContain('default week');
+    view.unmount();
+  });
+
+  it('a STATED range carries none of those marks — the two are distinguishable in the DOM alone', async () => {
+    const view = await mountBoard();
+    showTimeline(view);
+    // The one fixture task with a real date: `4f8c2a9e…`, dueDate 2026-07-30.
+    const stated = barFor(view, taskUuidTitle.title);
+    expect(stated.getAttribute('data-stated')).toBe('end');
+    expect(stated.getAttribute('title')).toContain('2026-07-30');
+
+    const guessed = barFor(view, GUIDE);
+    expect(guessed.getAttribute('data-stated')).toBe('none');
+    // The discriminator a stylesheet keys on, and it differs.
+    expect(stated.getAttribute('data-stated')).not.toBe(guessed.getAttribute('data-stated'));
+    view.unmount();
+  });
+});
+
+describe('the live filter and the summary strip', () => {
+  it('offers a Live axis for a kind that can answer one, and none for a kind that cannot', async () => {
+    const view = await mountBoard();
+    // A task carries `workingActors`, so it can answer "is a live session on it".
+    expect(view.getByTestId('b2-filter-live')).toBeTruthy();
+    openAxis(view, 'b2-kind');
+    fireEvent.click(view.getByTestId('b2-kind-doc'));
+    // A doc has no verdict and no working_on badge: the axis is not drawn at
+    // all, rather than drawn and always answering nothing.
+    await waitFor(() => expect(view.queryByTestId('b2-filter-live')).toBeNull());
+    view.unmount();
+  });
+
+  it('narrows to the task a LIVE session is running on — the verdict, not the edge', async () => {
+    const view = await mountBoard();
+    // The fixture's `workingActors` edge names `sessionLive`, whose seam
+    // verdict is `live`; every other task carries no working_on actor at all.
+    fireEvent.click(view.getByTestId('b2-filter-live'));
+    fireEvent.click(view.getByTestId('b2-filter-live-worked-on'));
+    await waitFor(() => expect(view.getAllByTestId('b2-card')).toHaveLength(1));
+    expect(view.getAllByTestId('b2-card')[0]!.textContent).toContain(GUIDE);
+    view.unmount();
+  });
+
+  it('the live narrowing composes with the timeline, and the row wears the word', async () => {
+    const view = await mountBoard();
+    fireEvent.click(view.getByTestId('b2-filter-live'));
+    fireEvent.click(view.getByTestId('b2-filter-live-worked-on'));
+    await waitFor(() => expect(view.getAllByTestId('b2-card')).toHaveLength(1));
+    showTimeline(view);
+    expect(view.getAllByTestId('b2tl-row')).toHaveLength(1);
+    expect(view.getAllByTestId('b2tl-live')).toHaveLength(1);
+    view.unmount();
+  });
+
+  it('the strip counts what the board DREW — a column header and a strip figure agree', async () => {
+    const view = await mountBoard();
+    const strip = view.getByTestId('b2-summary');
+    const drawn = view.getAllByTestId('b2-card').length;
+    expect(view.getByTestId('b2sum-total').textContent).toContain(String(drawn));
+
+    // Per-category, against the column that produced it.
+    for (const key of CATEGORY_KEYS) {
+      const inColumn = within(
+        view.getAllByTestId('b2-column').find((c) => c.getAttribute('data-column') === key)!,
+      ).queryAllByTestId('b2-card').length;
+      expect(within(strip).getByTestId(`b2sum-cat-${key}`).textContent)
+        .toContain(String(inColumn));
+    }
+    view.unmount();
+  });
+
+  it('the strip\'s live and no-dates figures are real reads, and they MOVE with a filter', async () => {
+    const view = await mountBoard();
+    const liveBefore = view.getByTestId('b2sum-live').textContent ?? '';
+    expect(liveBefore).toContain('1');
+    // Only the live-worked-on task survives, and it has no dates of its own.
+    fireEvent.click(view.getByTestId('b2-filter-live'));
+    fireEvent.click(view.getByTestId('b2-filter-live-worked-on'));
+    await waitFor(() => expect(view.getAllByTestId('b2-card')).toHaveLength(1));
+    expect(view.getByTestId('b2sum-total').textContent).toContain('1');
+    expect(view.getByTestId('b2sum-live').textContent).toContain('1');
+    expect(view.getByTestId('b2sum-undated').textContent).toContain('1');
+    view.unmount();
+  });
+});

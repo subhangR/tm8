@@ -539,21 +539,52 @@ describe('SpaceTabBar (T0-1, D1 — revision 11: the product bar)', () => {
     expect(container.querySelector('[role="tablist"]')).toBeNull();
   });
 
-  it('the bell opens Inbox when a host wires it', () => {
-    const onOpenInbox = vi.fn();
-    const { getByTestId } = renderBar({ onOpenInbox });
-    const bell = getByTestId('open-inbox');
-    expect(bell.getAttribute('aria-disabled')).toBeNull();
-    fireEvent.click(bell);
-    expect(onOpenInbox).toHaveBeenCalledOnce();
+  it('renders NO inbox bell — Inbox is a row in the account menu now', () => {
+    /* SUPERSEDED 2026-08-31 by the owner's instruction "can you move inbox copy
+       link to profile". Two assertions used to live here: that the bell opened
+       Inbox when a host wired it, and that it kept the D28 posture when none
+       did. BOTH CLAIMS ARE STILL TRUE OF THE CONTROL — they just are not true
+       of this file, because the control is now `auth/AccountMenu`'s inbox row.
+       They moved there with it (see "the account menu's utility group" in
+       auth/gate.test.tsx), which is the only honest place to assert them: a
+       green test here about a control that left would be worse than no test.
+
+       What this file can still prove is the shape the bar was asked for — the
+       right side is the palette hint and the account slot, nothing else. Even
+       a host that still tries to wire the retired callback gets no bell. */
+    const { container, queryByTestId } = renderBar({
+      onOpenInbox: vi.fn(),
+    } as unknown as Partial<React.ComponentProps<typeof SpaceTabBar>>);
+    expect(queryByTestId('open-inbox')).toBeNull();
+    expect(container.querySelector('.shell-tabbar__bell')).toBeNull();
+    expect(container.textContent).not.toContain('Inbox');
   });
 
-  it('the bell keeps the D28 posture without a host: announced, reachable, refused', () => {
-    const bell = renderBar().getByTestId('open-inbox') as HTMLButtonElement;
-    expect(bell.getAttribute('aria-disabled')).toBe('true'); // announced
-    expect(bell.disabled).toBe(false); // inverted guard against the native attr
-    bell.focus(); // reachable
-    expect(document.activeElement).toBe(bell);
+  it('renders NO share slot — Copy link is a row in the account menu now', () => {
+    /* SUPERSEDED 2026-08-31, same instruction. `shareSlot` was removed rather
+       than left accepting a node it never renders: a prop nothing passes is a
+       control that cannot appear, and one that is passed and dropped is worse.
+       This asserts the removal is real, not just unwired — a host handing the
+       bar a share node gets nothing on screen for it. */
+    const { queryByTestId } = renderBar({
+      shareSlot: <span data-testid="stray-share">Copy link</span>,
+    } as unknown as Partial<React.ComponentProps<typeof SpaceTabBar>>);
+    expect(queryByTestId('stray-share')).toBeNull();
+  });
+
+  it('the right cluster is exactly the palette hint and the account slot', () => {
+    /* The owner's words for the target shape: "palatte … and Tarakesh profile
+       section". This is that shape, read off the DOM after the spacer. */
+    const { container } = renderBar({
+      accountSlot: <span data-testid="account-slot">Tarakesh</span>,
+    });
+    const spacer = container.querySelector('.shell-tabbar__spacer')!;
+    const after = [];
+    for (let n = spacer.nextElementSibling; n; n = n.nextElementSibling) after.push(n);
+    expect(after.map((n) => n.getAttribute('data-testid') ?? n.className)).toEqual([
+      'shell-tabbar__palette',
+      'account-slot',
+    ]);
   });
 
   it('renders NO prompts control, ever — the catalog lives inside Help now', () => {

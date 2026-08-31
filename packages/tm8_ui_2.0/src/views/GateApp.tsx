@@ -1844,7 +1844,6 @@ export function GateApp(props: GateAppProps = {}) {
              the conversation surface — the MARK does. Not an extra door: the
              tab it replaces was retired in the same change. */
           onGoHome={() => navigateTo(HOME_TARGET)}
-          onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
           // D1: theme's one home is the account menu. No tab-bar toggle.
@@ -1854,32 +1853,49 @@ export function GateApp(props: GateAppProps = {}) {
           // ACCOUNT. Undefined otherwise, so a GateApp rendered without an
           // AuthGate (every existing test) keeps the avatar fallback and its
           // behaviour is unchanged.
-          /* COPY LINK — the affordance that makes the routing usable by a
-             person. The app has been addressable since the router mounted and
-             offered its address to nobody; this is where a viewer gets it.
-
-             It names WHAT IS ON SCREEN: the active target, plus the entity open
-             on that screen if there is one, so a link to a task you are reading
-             reopens that task rather than the list it came from. `openOnScreen`
-             already existed for the reverse direction (drill in, address
-             updates) and is the same fact read the other way.
-
-             Rendered only with a Space, because a link with no Space addresses
-             nothing — `copyLinkUrl` would return null and the control would be
-             a button that cannot perform, which is the shape this codebase
-             refuses everywhere else. */
-          shareSlot={
-            data.spaceId ? (
-              <CopyLinkControl
-                spaceId={data.spaceId}
-                target={activeTarget ?? WORKSPACE_TARGET}
-                openEntity={openOnScreen}
-              />
-            ) : undefined
-          }
           accountSlot={
             authAccount && data.viewerActor ? (
-              <AccountMenu actor={data.viewerActor} theme={theme} onThemeChange={setTheme} />
+              <AccountMenu
+                actor={data.viewerActor}
+                theme={theme}
+                onThemeChange={setTheme}
+                /* INBOX, moved out of the bar 2026-08-31 by the owner's
+                   instruction. Same destination, same one door — only its
+                   address in the chrome changed. */
+                onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
+                /* COPY LINK — the affordance that makes the routing usable by
+                   a person. The app has been addressable since the router
+                   mounted and offered its address to nobody; this is where a
+                   viewer gets it.
+
+                   It names WHAT IS ON SCREEN: the active target, plus the
+                   entity open on that screen if there is one, so a link to a
+                   task you are reading reopens that task rather than the list
+                   it came from. `openOnScreen` already existed for the reverse
+                   direction (drill in, address updates) and is the same fact
+                   read the other way.
+
+                   Rendered only with a Space, because a link with no Space
+                   addresses nothing — `copyLinkUrl` would return null and the
+                   control would be a button that cannot perform, which is the
+                   shape this codebase refuses everywhere else.
+
+                   The row grammar (`auth-menu__row`) is passed from HERE
+                   rather than applied inside the menu: the host chose to hang
+                   this control in a menu, so the host says how it should sit
+                   there, and `CopyLinkControl` stays ignorant of auth's
+                   classes for its other mounts (the phone drawer). */
+                utilityRows={
+                  data.spaceId ? (
+                    <CopyLinkControl
+                      spaceId={data.spaceId}
+                      target={activeTarget ?? WORKSPACE_TARGET}
+                      openEntity={openOnScreen}
+                      className="auth-menu__row auth-menu__row--live"
+                    />
+                  ) : null
+                }
+              />
             ) : undefined
           }
         />

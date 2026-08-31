@@ -1,7 +1,12 @@
 /**
  * SpaceTabBar — the top row: product mark, the server⋄space switcher slot,
- * the top-level TABS, palette hint, the inbox bell, copy-link
- * slot, account avatar.
+ * the top-level TABS, palette hint, account menu slot.
+ *
+ * REVISION 21 (user-ordered, 2026-08-31: "palatte inbox copy link and Tarakesh
+ * profile section can you move inbox copy link to profile"): the bar's right
+ * side is now EXACTLY `/ palette · ⌘K` and the account menu. The inbox bell
+ * and the copy-link slot moved into that menu's utility group; see the note
+ * where they used to render, and `auth/AccountMenu` for where they went.
  *
  * REVISION 20 (Help/top-tab ruling, 2026-08-20): the shipped row is exactly
  * Home | Work | Board | Craft | Graph | Settings | Help. Board is the client-
@@ -38,13 +43,15 @@
  * changed. The name `SpaceTabBar` survives for continuity of tests and
  * imports.
  *
- * THE BELL is Inbox's new door. Inbox left the menu rail because its rows
- * already feed the Home page's NEEDS YOU / MENTIONS sections — a rail row, a
- * home section AND a bar control would be three doors to one fact; the chrome
- * keeps the one that is visible from every screen. No count rides on it
- * deliberately: the bar has no honest per-viewer unseen read today, and a
- * fabricated zero would assert "nothing wants you" about a fact nobody
- * measured.
+ * THE BELL WAS Inbox's door, and it is not in this file any more (r21). Inbox
+ * left the menu rail because its rows already feed the Home page's NEEDS YOU /
+ * MENTIONS sections — a rail row, a home section AND a bar control would be
+ * three doors to one fact. That ruling is unchanged; only the surviving door's
+ * address moved, from this bar to the account menu. What travelled with it: the
+ * `VIEW_ART.inbox` mark, the D28 refused-with-a-reason posture, and the
+ * deliberate ABSENCE OF A COUNT — the chrome still has no honest per-viewer
+ * unseen read, and a fabricated zero would assert "nothing wants you" about a
+ * fact nobody measured.
  *
  * D1 — THE ◐ THEME TOGGLE IS NOT BUILT. The T0-1 canvas still draws one
  * (the canvas is byte-unchanged), but the Round-2 amendment retires it: theme's
@@ -54,8 +61,7 @@
  * canvas would be restoring a retired control.
  */
 import type { ReactNode } from 'react';
-import { BrandMark, VectorIcon } from '../kit';
-import { VIEW_ART } from '../domain';
+import { BrandMark } from '../kit';
 
 /** One top-level tab — a menu GROUP, mapped by the host. */
 export interface ShellTab {
@@ -85,8 +91,6 @@ export interface SpaceTabBarProps {
    * container.
    */
   onGoHome?(): void;
-  /** Opens the Inbox screen — the bell. Absent, the bell renders disabled. */
-  onOpenInbox?(): void;
   /** Account menu — theme's home per D1. */
   onOpenAccount?(): void;
   onOpenPalette?(): void;
@@ -100,15 +104,11 @@ export interface SpaceTabBarProps {
    * existing shell test, and the app before anyone signs in — is unchanged.
    */
   accountSlot?: ReactNode;
-  /**
-   * COPY LINK for whatever is currently on screen.
-   *
-   * A slot, not a rendered control: the bar has no business knowing how a link
-   * is built or what a clipboard refusal looks like. Left undefined the bar is
-   * unchanged, so every existing shell test and a bar rendered with no host
-   * keep working.
-   */
-  shareSlot?: ReactNode;
+  /* REMOVED 2026-08-31: `shareSlot` and `onOpenInbox`. Copy link and Inbox now
+     hang inside the account menu (see the retirement note in the body). The
+     props went with the controls rather than being left behind unused — a prop
+     nothing passes is a control that cannot appear, and a bar that still
+     accepted `shareSlot` would advertise a seat it never renders. */
 }
 
 export function SpaceTabBar(props: SpaceTabBarProps) {
@@ -170,36 +170,14 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
           Keep no duplicate `?` door in chrome. The view, route and palette
           eligibility remain; only this dedicated control is gone. */}
 
-      {/* The bell keeps the D28 posture when no host wired it: focusable,
-          aria-disabled, with the reason on it — never hidden. */}
-      <button
-        type="button"
-        className="shell-tabbar__bell"
-        data-testid="open-inbox"
-        aria-disabled={props.onOpenInbox ? undefined : 'true'}
-        aria-label="Inbox"
-        title={props.onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'}
-        onClick={props.onOpenInbox ?? ((event) => event.preventDefault())}
-      >
-        {/* A DRAWN tray, not a typed one (2026-08-29 "organise the icons").
-            This was the literal character ▣ (U+25A3, Geometric Shapes). The
-            self-hosted webfonts are latin/latin-ext subsets, so that codepoint
-            missed every one of them and fell through to whatever the OS had:
-            on the owner's window it painted as a solid black square — a
-            redaction mark — and it was the ONLY typed icon in a bar whose
-            every other mark (the product mark, the rail, the kind rows) is
-            VectorIcon geometry. An icon must not depend on a codepoint the
-            product does not ship.
-
-            The art is `VIEW_ART.inbox` — the INBOX VIEW'S OWN MARK, not a new
-            drawing. The bell is Inbox's door, so the door and the room now
-            carry one mark; a second tray drawn only for this button is exactly
-            the icon sprawl the ruling names. It is also, finally, the tray the
-            old comment here claimed ▣ was. */}
-        <VectorIcon paths={VIEW_ART.inbox} size={15} />
-      </button>
-
-      {props.shareSlot ?? null}
+      {/* RETIRED 2026-08-31 (user-ordered: "can you move inbox copy link to
+          profile"): the INBOX BELL and the COPY-LINK slot both left this bar
+          for the account menu's utility group — `auth/AccountMenu`'s
+          `onOpenInbox` row and its `utilityRows`. The verbs, the inbox art
+          (`VIEW_ART.inbox`) and the bell's D28 refused-with-a-reason posture
+          all travelled with them; only these two chrome seats are gone, along
+          with the `onOpenInbox` and `shareSlot` props that fed them. The bar's
+          right side is now exactly the palette hint and the account menu. */}
 
       {/* D1: no ◐ toggle here. Theme lives in the account menu. THAT MENU NOW
           EXISTS and arrives through `accountSlot` — the fallback below is only

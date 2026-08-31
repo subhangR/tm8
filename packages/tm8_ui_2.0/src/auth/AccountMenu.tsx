@@ -12,10 +12,30 @@
  * face and display name are the active space actor; the handle and sign-out
  * verb remain the LOCAL login account. Keeping those two identities explicit
  * avoids borrowing server authority for a browser-local credential.
+ *
+ * THE UTILITY GROUP (user-ordered 2026-08-31: "palatte inbox copy link and
+ * Tarakesh profile section can you move inbox copy link to profile"). Inbox and
+ * Copy link used to be their own controls in the top bar. They are per-viewer
+ * utilities — what wants you, and where you are — rather than navigation, so
+ * the bar now ends at `/ palette · ⌘K` plus this menu, and both verbs live in
+ * the group directly under the identity head.
+ *
+ * TWO INPUTS CARRY THAT GROUP, NOT ONE, and the split is deliberate:
+ *   · `onOpenInbox` — the menu OWNS the inbox row, because the row has to keep
+ *     the D28 posture the bell had: with no handler it is still drawn, still
+ *     focusable, still named, and carries the reason it cannot act. A
+ *     host-supplied row could never be in that state — a host that renders one
+ *     has a handler by definition — so hosting it would have quietly deleted
+ *     the refusal this move is supposed to preserve.
+ *   · `utilityRows` — for rows the menu CANNOT build. `CopyLinkControl` owns a
+ *     URL codec, a clipboard refusal ladder and a manual-copy fallback, none of
+ *     which an auth component has any business knowing.
  */
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActorSummary } from '@tm8/contract';
-import { Avatar } from '../kit';
+import { Avatar, VectorIcon } from '../kit';
+import { VIEW_ART } from '../domain';
 import { useTheme, type Theme } from '../theme/useTheme';
 import { useAuthActions } from './gate-context';
 import { ACCOUNT_MENU } from './specimen';
@@ -29,6 +49,18 @@ export interface AccountMenuProps {
       state that stamps the root theme immediately. */
   theme?: Theme;
   onThemeChange?: (theme: Theme) => void;
+  /**
+   * Opens the Inbox screen. Absent, the row still renders — announced,
+   * reachable and refused with its reason, exactly as the retired bell did.
+   */
+  onOpenInbox?: () => void;
+  /**
+   * HOSTED UTILITY ROWS — elements the host hangs in the utility group beside
+   * Inbox. Today that is `CopyLinkControl`. The host dresses them in the
+   * menu's own `auth-menu__row` grammar so a hosted row and a menu-owned row
+   * sit on one grid; this component adds no chrome of its own around them.
+   */
+  utilityRows?: ReactNode;
 }
 
 export function AccountMenu({
@@ -36,6 +68,8 @@ export function AccountMenu({
   onOpenAccountScreen,
   theme: controlledTheme,
   onThemeChange,
+  onOpenInbox,
+  utilityRows,
 }: AccountMenuProps) {
   const actions = useAuthActions();
   const localTheme = useTheme();
@@ -117,6 +151,44 @@ export function AccountMenu({
                 @{account.handle} · {account.isOwner ? 'owner of this server' : 'server account'}
               </span>
             </div>
+          </div>
+
+          {/* THE UTILITY GROUP — Inbox and the hosted rows, above Appearance.
+              It is separated by the same --pn-line rule the other groups use
+              (D-law 4: the line BOUNDS a group inside one component). */}
+          <div className="auth-menu__group auth-menu__group--utility">
+            {/* INBOX, moved here from the top bar 2026-08-31. The bell's D28
+                posture travels with it: never hidden, focusable, announced,
+                and carrying the reason when no host wired the verb. */}
+            <button
+              type="button"
+              className={`auth-menu__row${onOpenInbox ? ' auth-menu__row--live' : ''}`}
+              data-testid="open-inbox"
+              aria-disabled={onOpenInbox ? undefined : 'true'}
+              aria-label="Inbox"
+              title={
+                onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'
+              }
+              onClick={
+                onOpenInbox
+                  ? () => {
+                      close();
+                      onOpenInbox();
+                    }
+                  : (event) => event.preventDefault()
+              }
+            >
+              {/* The INBOX VIEW'S OWN MARK, carried over unchanged from the
+                  bell: the door and the room keep one drawing, and it is
+                  geometry rather than a codepoint the product's subset fonts
+                  do not ship. */}
+              <span className="auth-menu__glyph auth-menu__glyph--art" aria-hidden>
+                <VectorIcon paths={VIEW_ART.inbox} size={15} />
+              </span>
+              Inbox
+            </button>
+
+            {utilityRows ?? null}
           </div>
 
           <div className="auth-menu__group">
