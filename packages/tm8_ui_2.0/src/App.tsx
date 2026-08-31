@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AuthGate } from './auth';
+import { AuthGate, AuthSplash, useSplashCurtain } from './auth';
 import { JoinBanner, capturePendingJoin } from './join';
 import { GateApp } from './views/GateApp';
 import { useServerRegistry } from './servers';
@@ -46,10 +46,34 @@ export function App() {
    */
   const [pendingJoin] = useState<string | null>(() => capturePendingJoin());
 
+  /**
+   * THE SPLASH IS MOUNTED HERE, ABOVE THE GATE, AND FOR THE SAME REASON THE
+   * JOIN CODE IS.
+   *
+   * It was written inside `AuthGate` first, filling the blank that gate draws
+   * on a cold browser (`return null` while the claim and loopback probes are
+   * out). That was the right wait to name and the wrong place to name it: the
+   * gate renders its flow INSTEAD of children, so a curtain in there is
+   * competing with the frame it is supposed to be introducing, and it made
+   * forty-six gate tests wait out a brand animation to reach an auth frame.
+   * A test that has to sit through a logo is telling you the logo is in the
+   * component's way.
+   *
+   * Above the gate it covers strictly more and owns strictly less. The wait it
+   * spans is the WHOLE page boot — bundle hydration, the server registry, the
+   * gate's own two probes — and `AuthGate` goes back to being a gate. It is
+   * `position: fixed` at a z-index over everything, so the blank underneath is
+   * covered without the gate knowing it exists.
+   */
+  const splash = useSplashCurtain(false);
+
   return (
-    <AuthGate signedOutBanner={<JoinBanner pending={pendingJoin !== null} />}>
-      <ConnectedGateApp pendingJoin={pendingJoin} />
-    </AuthGate>
+    <>
+      <AuthSplash phase={splash} />
+      <AuthGate signedOutBanner={<JoinBanner pending={pendingJoin !== null} />}>
+        <ConnectedGateApp pendingJoin={pendingJoin} />
+      </AuthGate>
+    </>
   );
 }
 

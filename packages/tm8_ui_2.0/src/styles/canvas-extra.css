@@ -201,3 +201,137 @@
   --color-icon-purple: #A990D6;
   --color-icon-gray:   #9AA1A8;
 }
+
+/* ── the gate's brand ground (auth splash + sign-in aside) ─────────────────
+   The sign-in and the splash both paint a DEEP BRAND PANEL that neither
+   `--pn-paper` nor `--pn-surface` can supply: those two are the app's own
+   grounds and in dark theme they sit within a few points of each other, which
+   is exactly what made the split stop reading — the brand side and the form
+   side collapsed into one black rectangle.
+
+   Measured rather than mixed. `color-mix(in oklab, var(--pn-brand-2) …)` was
+   tried first and lands in the same near-black in dark for the same reason,
+   so these are authored values in the one file the hex ban names for colours
+   tokens.css has no entry for.
+
+   `--au-act-ink` is the primary button's LABEL, and it is a contrast fix, not
+   a taste one: dark theme's `--pn-brand` is a pale blue, and white on it
+   measures ~2.3:1. Dark ink on the same fill measures ~10:1. */
+.cv2-root {
+  --au-ground-a:  #25384A;
+  --au-ground-b:  #16222D;
+  --au-brand-ink: #DDE6EC;
+  --au-brand-ink-2: #93A9B9;
+  --au-ribbon:    #D8E5EE;
+  --au-act-ink:   #FFFFFF;
+}
+.cv2-root[data-theme='dark'] {
+  --au-ground-a:  #1C2833;
+  --au-ground-b:  #0D1318;
+  --au-brand-ink: #E6EDF2;
+  --au-brand-ink-2: #8A9BA8;
+  --au-ribbon:    #A9C2D2;
+  --au-act-ink:   #101318;
+}
+
+/* ── the splash (owner's design, 2026-08-31) ───────────────────────────────
+   A LIGHT screen, which is the whole point of it and why these are not the
+   `--au-ground-*` pair above: the sign-in's brand panel is a deep slate and
+   the splash is near-white. The blue ramp is the owner's, transcribed from
+   the supplied CSS rather than sampled off the picture.
+
+   THE DARK SET IS AN ADDITION, and a deliberate one. The supplied design is
+   light-only; shipping it unchanged means a dark-theme viewer takes a full
+   screen of near-white for two and a half seconds on every load, which is the
+   one thing a boot curtain must not do. Same geometry, same ramp, dark ground.
+   FLAGGED to the owner as an addition rather than a transcription. */
+.cv2-root {
+  --au-splash-bg:    #F9FBFF;
+  --au-splash-ink:   #19223A;
+  --au-splash-grid:  rgba(77, 104, 159, 0.055);
+  --au-splash-text:  #8493AD;
+  --au-splash-track: rgba(113, 139, 191, 0.13);
+  --au-splash-glow:  rgba(94, 136, 255, 0.13);
+  --au-splash-fill-a: #4386FF;
+  --au-splash-fill-b: #689CFF;
+  --au-splash-fill-c: #91A9FF;
+  --au-splash-ribbon: #C3D3EE;
+}
+.cv2-root[data-theme='dark'] {
+  --au-splash-bg:    #070F1C;
+  --au-splash-ink:   #E8EEF8;
+  --au-splash-grid:  rgba(140, 168, 224, 0.055);
+  --au-splash-text:  #7C8AA6;
+  --au-splash-track: rgba(126, 152, 204, 0.16);
+  --au-splash-glow:  rgba(94, 136, 255, 0.15);
+  --au-splash-fill-a: #4386FF;
+  --au-splash-fill-b: #689CFF;
+  --au-splash-fill-c: #91A9FF;
+  --au-splash-ribbon: #7C93BC;
+}
+
+/* ── the sign-in page's accent ramp (owner's design, 2026-08-31) ───────────
+   A BLUE→VIOLET ramp, which the product's own palette does not carry: tm8's
+   brand is a slate (`--pn-brand: #3F6078`) chosen to sit quietly behind work,
+   and the front door is the one screen that is not behind work. Transcribed
+   from the supplied stylesheet rather than sampled off the picture, and SCOPED
+   to the auth page — nothing else in the app reads these. */
+.cv2-root {
+  --sp-page:      #F7F9FC;
+  --sp-page-2:    #F1F5FB;
+  --sp-surface:   rgba(255, 255, 255, 0.88);
+  --sp-surface-2: #FFFFFF;
+  --sp-input:     rgba(255, 255, 255, 0.82);
+  --sp-text:      #10182E;
+  --sp-text-soft: #65708B;
+  --sp-text-sub:  #8A94AA;
+  --sp-line:      rgba(52, 78, 145, 0.14);
+  --sp-line-2:    rgba(52, 78, 145, 0.23);
+  --sp-accent:    #2B7CFF;
+  --sp-accent-2:  #6853FF;
+  --sp-accent-3:  #8A40F4;
+  --sp-focus:     rgba(49, 125, 255, 0.15);
+  --sp-shadow:    0 30px 90px rgba(42, 67, 121, 0.15), 0 3px 10px rgba(31, 47, 84, 0.05);
+  --sp-tint:      rgba(80, 100, 145, 0.11);
+  /* The primary is a saturated blue→violet gradient in BOTH themes, so its
+     label is white in both — this does not flip. */
+  --sp-on-accent: #FFFFFF;
+}
+.cv2-root[data-theme='dark'] {
+  --sp-page:      #07101F;
+  --sp-page-2:    #0A1326;
+  --sp-surface:   rgba(10, 21, 41, 0.88);
+  --sp-surface-2: #0D182D;
+  --sp-input:     rgba(10, 20, 39, 0.84);
+  --sp-text:      #F8FBFF;
+  --sp-text-soft: #ADB8D2;
+  --sp-text-sub:  #7F8BA7;
+  --sp-line:      rgba(126, 151, 210, 0.18);
+  --sp-line-2:    rgba(129, 159, 229, 0.30);
+  --sp-accent:    #318CFF;
+  --sp-accent-2:  #6757FF;
+  --sp-accent-3:  #8D3CFF;
+  --sp-focus:     rgba(49, 140, 255, 0.18);
+  --sp-shadow:    0 32px 96px rgba(0, 0, 0, 0.44);
+  --sp-tint:      rgba(126, 151, 210, 0.13);
+  --sp-on-accent: #FFFFFF;
+}
+
+/* The six module tones. The design's values, both themes lifted for contrast
+   on the darker ground. */
+.cv2-root {
+  --sp-tone-green:  #25A56A;
+  --sp-tone-blue:   #2E86FF;
+  --sp-tone-purple: #8B45F6;
+  --sp-tone-pink:   #E45AA5;
+  --sp-tone-violet: #6757FF;
+  --sp-tone-orange: #F28A2B;
+}
+.cv2-root[data-theme='dark'] {
+  --sp-tone-green:  #4FCB92;
+  --sp-tone-blue:   #61A6FF;
+  --sp-tone-purple: #AD79FA;
+  --sp-tone-pink:   #F083C0;
+  --sp-tone-violet: #8E83FF;
+  --sp-tone-orange: #F7A85C;
+}

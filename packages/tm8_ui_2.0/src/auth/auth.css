@@ -1681,3 +1681,1046 @@
   color: var(--pn-ink-4);
   padding: 0 6px;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SPLASH — the owner's design, transcribed.
+
+   WHY THIS IS NOT A FAKE LOADER. `AuthGate` already renders literal nothing
+   on a cold browser while two real probes are in flight (`auth.claim.status`
+   and the loopback auto-owner check); this covers that, plus the bundle
+   hydration and server-registry read that surround it. It does not invent the
+   wait. The progress line is honest for the same reason it is unusual: it
+   measures the FLOOR, which is a fixed 2.5s the app controls, not a guess at
+   work of unknown length.
+
+   THE MARK IS `RibbonMark`, NOT THE SUPPLIED SVG PATH. The design image is
+   plainly the product's own 150-quad Möbius ribbon — the radial quad seams are
+   visible in it — while the supplied JSX draws a flat two-loop path with 53
+   decorative lines clipped inside. The real component is the higher-fidelity
+   answer to the picture, so the picture won.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.cv2-root .auth-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(750px 520px at 95% -5%, var(--au-splash-glow), transparent 66%),
+    radial-gradient(620px 500px at -6% 105%, var(--au-splash-glow), transparent 68%),
+    var(--au-splash-bg);
+  color: var(--au-splash-ink);
+  transition: opacity 240ms var(--pn-ease-standard), visibility 240ms linear;
+}
+
+.cv2-root .auth-splash[data-phase='lifting'] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.cv2-root .auth-splash__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.72;
+  background-image:
+    linear-gradient(to right, var(--au-splash-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--au-splash-grid) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(
+    ellipse 80% 75% at center,
+    rgba(0, 0, 0, 1) 10%,
+    rgba(0, 0, 0, 0.75) 56%,
+    transparent 100%
+  );
+}
+
+.cv2-root .auth-splash__glow {
+  position: absolute;
+  pointer-events: none;
+  border-radius: var(--pn-r-pill);
+  filter: blur(70px);
+  background: var(--au-splash-glow);
+}
+
+.cv2-root .auth-splash__glow--top {
+  inline-size: 460px;
+  block-size: 460px;
+  inset-block-start: -270px;
+  inset-inline-end: -130px;
+}
+
+.cv2-root .auth-splash__glow--bottom {
+  inline-size: 420px;
+  block-size: 420px;
+  inset-block-end: -250px;
+  inset-inline-start: -180px;
+}
+
+.cv2-root .auth-splash__stack {
+  position: relative;
+  inline-size: min(92vw, 430px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateY(-18px);
+}
+
+/* The standalone mark's design box is 560×700, so width follows from height at
+   that ratio and the two can never drift. */
+.cv2-root .auth-splash__ribbon {
+  display: block;
+  inline-size: 274px;
+  block-size: calc(274px * 700 / 560);
+  --pn-ribbon-ink: var(--au-splash-ribbon);
+  animation:
+    authSplashArrive 700ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    authSplashFloat 3400ms var(--pn-ease-standard) 700ms infinite;
+}
+
+@keyframes authSplashArrive {
+  from { opacity: 0; transform: translateY(12px) scale(0.955); filter: blur(3px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes authSplashFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-4px) rotate(0.25deg); }
+}
+
+.cv2-root .auth-splash__loader {
+  inline-size: 300px;
+  margin-block-start: 2px;
+}
+
+.cv2-root .auth-splash__track {
+  position: relative;
+  inline-size: 100%;
+  block-size: 3px;
+  overflow: hidden;
+  border-radius: var(--pn-r-pill);
+  background: var(--au-splash-track);
+}
+
+/* Fills across `--au-splash-ms`, which the component sets from the SAME
+   constant it holds the curtain for. One number, so the bar cannot finish
+   early or late. */
+.cv2-root .auth-splash__progress {
+  position: absolute;
+  inset: 0 auto 0 0;
+  inline-size: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  background: linear-gradient(
+    90deg,
+    var(--au-splash-fill-a) 0%,
+    var(--au-splash-fill-b) 45%,
+    var(--au-splash-fill-c) 100%
+  );
+  animation: authSplashFill var(--au-splash-ms) cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes authSplashFill {
+  0%   { transform: scaleX(0); }
+  12%  { transform: scaleX(0.08); }
+  45%  { transform: scaleX(0.47); }
+  76%  { transform: scaleX(0.81); }
+  100% { transform: scaleX(1); }
+}
+
+.cv2-root .auth-splash__shine {
+  position: absolute;
+  inset-block-start: -2px;
+  inset-inline-start: -25%;
+  inline-size: 24%;
+  block-size: 7px;
+  border-radius: var(--pn-r-pill);
+  filter: blur(2px);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.95),
+    transparent
+  );
+  animation: authSplashShine var(--au-splash-ms) var(--pn-ease-standard) forwards;
+}
+
+@keyframes authSplashShine {
+  from { inset-inline-start: -25%; }
+  to   { inset-inline-start: 105%; }
+}
+
+.cv2-root .auth-splash__label {
+  margin-block-start: 32px;
+  text-align: center;
+  color: var(--au-splash-text);
+  font-family: var(--pn-mono);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1;
+  letter-spacing: 0.34em;
+  /* The tracking is trailing, so without this the word sits left of centre by
+     half a letter-space. */
+  padding-inline-start: 0.34em;
+  opacity: 0;
+  animation: authSplashLabel 450ms var(--pn-ease-out) 360ms forwards;
+}
+
+@keyframes authSplashLabel {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (max-width: 600px) {
+  .cv2-root .auth-splash__stack { transform: translateY(-10px); }
+  .cv2-root .auth-splash__ribbon {
+    inline-size: 220px;
+    block-size: calc(220px * 700 / 560);
+  }
+  .cv2-root .auth-splash__loader { inline-size: min(260px, 68vw); }
+  .cv2-root .auth-splash__label {
+    margin-block-start: 27px;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    padding-inline-start: 0.3em;
+  }
+  .cv2-root .auth-splash__grid { background-size: 58px 58px; }
+}
+
+/* Reduced motion: `useSplashCurtain` never raises the curtain at all under
+   this query, so none of the above runs. The rules stay as the statement of
+   intent for any second mount, and the bar keeps a linear fill rather than an
+   eased one that reads as acceleration. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .auth-splash__ribbon { animation: none; }
+  .cv2-root .auth-splash__label { animation: none; opacity: 1; }
+  .cv2-root .auth-splash__shine { display: none; }
+  .cv2-root .auth-splash__progress { animation-timing-function: linear; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SIGN-IN PAGE — the owner's design, transcribed.
+
+   Every literal below comes from the supplied stylesheet. Where a value had a
+   house token that already carried it (radii, mono stack, pill radius) the
+   token wins, for the same reason `AuthCard`'s shadow ruling gives: three
+   alphas of one shadow is drift, not three intentions.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.cv2-root .sp-page {
+  position: relative;
+  min-block-size: 100%;
+  display: grid;
+  grid-template-rows: 90px 1fr;
+  isolation: isolate;
+  overflow: hidden;
+  color: var(--sp-text);
+  background:
+    radial-gradient(880px 620px at 14% 0%, rgba(64, 118, 255, 0.09), transparent 58%),
+    radial-gradient(900px 720px at 94% 100%, rgba(110, 67, 255, 0.08), transparent 60%),
+    linear-gradient(180deg, var(--sp-page), var(--sp-page-2));
+}
+
+.cv2-root .sp-page__grid {
+  position: absolute;
+  inset: 0;
+  z-index: -5;
+  opacity: 0.18;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--sp-tint) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--sp-tint) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.25) 12%,
+    rgba(0, 0, 0, 0.08) 74%,
+    transparent 100%
+  );
+}
+
+.cv2-root .sp-page__glow {
+  position: absolute;
+  z-index: -4;
+  pointer-events: none;
+  border-radius: var(--pn-r-pill);
+  filter: blur(90px);
+}
+
+.cv2-root .sp-page__glow--a {
+  inline-size: 360px;
+  block-size: 360px;
+  inset-inline-start: 10%;
+  inset-block-start: 17%;
+  background: rgba(59, 120, 255, 0.10);
+}
+
+.cv2-root .sp-page__glow--b {
+  inline-size: 390px;
+  block-size: 390px;
+  inset-inline-end: 7%;
+  inset-block-end: 5%;
+  background: rgba(122, 62, 255, 0.09);
+}
+
+/* ── top bar ─────────────────────────────────────────────────────────────── */
+
+.cv2-root .sp-top,
+.cv2-root .sp-main {
+  inline-size: min(1440px, calc(100% - 64px));
+  margin-inline: auto;
+}
+
+.cv2-root .sp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cv2-root .sp-logo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.03em;
+  font-family: var(--pn-ui);
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--sp-text);
+}
+
+.cv2-root .sp-logo__letters {
+  margin-inline-end: -0.03em;
+}
+
+/* The wordmark box is 360×520; height in `em` so the lockup scales as one. */
+.cv2-root .sp-logo__eight {
+  display: block;
+  block-size: 0.94em;
+  inline-size: calc(0.94em * 360 / 520);
+  position: relative;
+  inset-block-start: 0.055em;
+  --pn-ribbon-ink: var(--sp-accent);
+}
+
+.cv2-root .sp-top__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-4);
+}
+
+.cv2-root .sp-top__meta {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-theme {
+  inline-size: 72px;
+  block-size: 34px;
+  padding: 4px;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--sp-surface);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.cv2-root .sp-theme > span {
+  block-size: 24px;
+  border-radius: var(--pn-r-pill);
+  display: grid;
+  place-items: center;
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-theme > span.is-on {
+  color: var(--sp-text);
+  background: var(--sp-surface-2);
+  box-shadow: 0 2px 8px rgba(20, 35, 75, 0.10);
+}
+
+/* ── the two columns ─────────────────────────────────────────────────────── */
+
+.cv2-root .sp-main {
+  /* Flexbox/grid §4.5 again: this row is `1fr` inside a definite-height page
+     grid, and `overflow: auto` below would take its automatic minimum size to
+     zero without a floor of its own. Floored at 0 here is not the L4 ban —
+     that bans `minmax(0, …)` as a TRACK size; this is `min-block-size`. */
+  min-block-size: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 440px) minmax(520px, 600px);
+  justify-content: center;
+  align-items: center;
+  gap: clamp(68px, 8vw, 142px);
+  padding: 30px 0 36px;
+  overflow: auto;
+}
+
+.cv2-root .sp-product__eyebrow {
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 750;
+  letter-spacing: 0.24em;
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-product__title {
+  margin: 20px 0 0;
+  font-size: clamp(48px, 4.1vw, 58px);
+  line-height: 1.02;
+  font-weight: 790;
+  letter-spacing: -0.038em;
+  text-wrap: balance;
+}
+
+/* The one gradient in the product. `background-clip: text` needs a transparent
+   fill to show through, and the unprefixed pair is listed after the prefixed
+   one so a browser that understands both takes the standard. */
+.cv2-root .sp-product__title > span {
+  background: linear-gradient(90deg, var(--sp-accent), var(--sp-accent-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.cv2-root .sp-product__blurb {
+  max-inline-size: 414px;
+  margin: 22px 0 0;
+  color: var(--sp-text-soft);
+  font-size: 16px;
+  line-height: 1.68;
+}
+
+.cv2-root .sp-modstack {
+  margin-block-start: 30px;
+  display: grid;
+  gap: 10px;
+}
+
+.cv2-root .sp-mod {
+  min-block-size: 60px;
+  padding: 8px 12px 8px 10px;
+  border: 1px solid var(--sp-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--sp-surface) 82%, transparent);
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 11px;
+  align-items: center;
+}
+
+.cv2-root .sp-mod__icon {
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--sp-line);
+  display: grid;
+  place-items: center;
+}
+
+.cv2-root .sp-mod__icon--green  { color: var(--sp-tone-green);  background: color-mix(in srgb, var(--sp-tone-green) 8%, transparent); }
+.cv2-root .sp-mod__icon--blue   { color: var(--sp-tone-blue);   background: color-mix(in srgb, var(--sp-tone-blue) 8%, transparent); }
+.cv2-root .sp-mod__icon--purple { color: var(--sp-tone-purple); background: color-mix(in srgb, var(--sp-tone-purple) 8%, transparent); }
+.cv2-root .sp-mod__icon--pink   { color: var(--sp-tone-pink);   background: color-mix(in srgb, var(--sp-tone-pink) 8%, transparent); }
+.cv2-root .sp-mod__icon--violet { color: var(--sp-tone-violet); background: color-mix(in srgb, var(--sp-tone-violet) 9%, transparent); }
+.cv2-root .sp-mod__icon--orange { color: var(--sp-tone-orange); background: color-mix(in srgb, var(--sp-tone-orange) 8%, transparent); }
+
+.cv2-root .sp-mod__copy {
+  min-inline-size: 0;
+}
+
+.cv2-root .sp-mod__titleline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cv2-root .sp-mod__titleline strong {
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.cv2-root .sp-mod__badge {
+  min-block-size: 17px;
+  padding: 0 5px;
+  border-radius: var(--pn-r-pill);
+  display: inline-grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--sp-accent) 12%, transparent);
+  color: var(--sp-accent);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 850;
+}
+
+.cv2-root .sp-mod__text {
+  display: block;
+  margin-block-start: 3px;
+  color: var(--sp-text-soft);
+  font-size: 11.5px;
+  line-height: 1.38;
+}
+
+.cv2-root .sp-mod__arrow {
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-audience {
+  margin-block-start: 18px;
+  padding: 13px 15px;
+  border: 1px solid var(--sp-line);
+  border-radius: 15px;
+  background: var(--sp-surface);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.cv2-root .sp-audience__slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.cv2-root .sp-audience__rule {
+  inline-size: 1px;
+  block-size: 38px;
+  flex: none;
+  background: var(--sp-line);
+}
+
+.cv2-root .sp-audience__item {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  align-items: start;
+  color: var(--sp-accent-2);
+}
+
+.cv2-root .sp-audience__item strong {
+  display: block;
+  color: var(--sp-text);
+  font-size: 11.5px;
+  line-height: 1.2;
+}
+
+.cv2-root .sp-audience__item span {
+  display: block;
+  margin-block-start: 4px;
+  color: var(--sp-text-soft);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+/* ── the card ────────────────────────────────────────────────────────────── */
+
+.cv2-root .sp-card {
+  inline-size: 100%;
+  padding: 34px 46px 38px;
+  border: 1px solid var(--sp-line);
+  border-radius: 26px;
+  background: var(--sp-surface);
+  box-shadow: var(--sp-shadow);
+  backdrop-filter: blur(22px) saturate(125%);
+  -webkit-backdrop-filter: blur(22px) saturate(125%);
+}
+
+.cv2-root .sp-card__badge {
+  inline-size: 48px;
+  block-size: 48px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  color: var(--sp-accent-2);
+  background: color-mix(in srgb, var(--sp-accent-2) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sp-accent-2) 12%, transparent);
+}
+
+.cv2-root .sp-card__title {
+  margin: 22px 0 0;
+  font-family: var(--pn-ui);
+  font-size: 36px;
+  line-height: 1.05;
+  font-weight: 780;
+  letter-spacing: -0.035em;
+}
+
+.cv2-root .sp-card__sub {
+  margin: 11px 0 0;
+  color: var(--sp-text-soft);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+/* Not in the design, and here for a reason the design did not have to carry:
+   tm8 is many servers behind one client, so which node is about to receive
+   this password is a fact nobody can infer from the page. */
+.cv2-root .sp-card__server {
+  margin-block-start: 18px;
+  padding: 9px 11px;
+  border: 1px solid var(--sp-line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--sp-surface-2) 55%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cv2-root .sp-card__serverglyph {
+  inline-size: 28px;
+  block-size: 28px;
+  flex: none;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sp-accent-2);
+  background: color-mix(in srgb, var(--sp-accent-2) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sp-accent-2) 14%, transparent);
+}
+
+.cv2-root .sp-card__server strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.cv2-root .sp-card__server em {
+  display: block;
+  margin-block-start: 2px;
+  font-family: var(--pn-mono);
+  font-style: normal;
+  font-size: var(--pn-fs-micro);
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-form {
+  margin-block-start: 24px;
+}
+
+.cv2-root .sp-field__label {
+  display: block;
+  margin: 0 0 7px;
+  color: var(--sp-text);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.cv2-root .sp-field {
+  block-size: 55px;
+  margin-block-end: 18px;
+  padding: 0 14px;
+  border: 1px solid var(--sp-line-2);
+  border-radius: 11px;
+  background: var(--sp-input);
+  color: var(--sp-text-sub);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .sp-field:focus-within {
+  border-color: color-mix(in srgb, var(--sp-accent) 58%, transparent);
+  box-shadow: 0 0 0 4px var(--sp-focus);
+}
+
+/* Colour is never alone: the failed field keeps its ring AND the banner above
+   it, per the honesty law this flow is built to. */
+.cv2-root .sp-field[data-state='error'] {
+  border-color: var(--pn-block);
+}
+
+.cv2-root .sp-field > input {
+  inline-size: 100%;
+  min-inline-size: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--sp-text);
+  font: inherit;
+  font-size: 15px;
+}
+
+.cv2-root .sp-field > input::placeholder {
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-field__reveal {
+  inline-size: 30px;
+  block-size: 30px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sp-text-sub);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.cv2-root .sp-field__reveal:hover {
+  color: var(--sp-text);
+  background: color-mix(in srgb, var(--sp-text-sub) 12%, transparent);
+}
+
+.cv2-root .sp-form__row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.cv2-root .sp-primary {
+  inline-size: 100%;
+  block-size: 57px;
+  margin-block-start: 22px;
+  border: 0;
+  border-radius: 11px;
+  color: var(--sp-on-accent);
+  background: linear-gradient(
+    100deg,
+    var(--sp-accent) 0%,
+    var(--sp-accent-2) 48%,
+    var(--sp-accent-3) 100%
+  );
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  font: inherit;
+  font-size: 15.5px;
+  font-weight: 710;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(58, 80, 220, 0.22);
+  transition: transform var(--pn-dur-fast) var(--pn-ease-standard),
+              filter var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .sp-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: saturate(108%);
+}
+
+.cv2-root .sp-primary:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.cv2-root .sp-sep {
+  margin: 29px 0 18px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.cv2-root .sp-sep > span {
+  block-size: 1px;
+  background: var(--sp-line);
+}
+
+.cv2-root .sp-sep > em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-provs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+}
+
+/* ── the refused controls ───────────────────────────────────────────────────
+   D32 opacity (.45, the inline-caption value), D28 mechanics on the element
+   itself. `cursor: not-allowed` rather than `pointer`, because the pointer is
+   the promise. */
+
+.cv2-root .sp-prov,
+.cv2-root .sp-forgot {
+  position: relative;
+  display: block;
+}
+
+/* The refused control's FACE. `DisabledAction` supplies the mechanics — role,
+   aria-disabled, aria-describedby, tabIndex, and a caption that is always in
+   the DOM — and carries D32's .45 opacity itself. All this does is give it the
+   design's button geometry. */
+.cv2-root .sp-prov .hon-disabled {
+  display: block;
+  inline-size: 100%;
+}
+
+.cv2-root .sp-prov__face {
+  block-size: 49px;
+  border: 1px solid var(--sp-line);
+  border-radius: 10px;
+  background: var(--sp-surface-2);
+  color: var(--sp-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: not-allowed;
+}
+
+.cv2-root .sp-forgot .hon-disabled {
+  color: var(--sp-accent);
+  font-size: 12px;
+  font-weight: 620;
+  cursor: not-allowed;
+}
+
+/* ── the caption takes the TOOLTIP presentation here ───────────────────────
+   `DisabledAction`'s caption is normally visible prose, which is right in a
+   panel where a refusal has a line to itself. On this card it is not: three
+   provider reasons and a forgot-password reason rendered as prose added about
+   two hundred pixels of red text under a login form and pushed the separator
+   through the button. Measured, not predicted — the first build shipped it and
+   the screenshot is unusable.
+
+   So this is the SAME move the chip row already makes, and it is copied from
+   there deliberately rather than invented: `opacity` + `visibility`, NEVER
+   `display: none`, because the caption is the control's `aria-describedby`
+   target and dropping it from the accessibility tree would take the reason
+   with it. Hover, `:focus-visible`, and the tap flag that `useReasonDisclosure`
+   sets — a thumb can produce neither of the first two. */
+.cv2-root .sp-prov .hon-disabled-group,
+.cv2-root .sp-forgot .hon-disabled-group {
+  position: relative;
+  display: block;
+}
+
+.cv2-root .sp-prov .hon-caption,
+.cv2-root .sp-forgot .hon-caption {
+  position: absolute;
+  z-index: 70;
+  inset-block-end: calc(100% + 8px);
+  inset-inline-start: 0;
+  inline-size: max-content;
+  max-inline-size: 260px;
+  padding: 8px 11px;
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--sp-line-2);
+  background: var(--sp-surface-2);
+  color: var(--sp-text-soft);
+  box-shadow: var(--pn-sh-md);
+  font-size: 11.5px;
+  font-weight: 450;
+  line-height: 1.45;
+  text-align: start;
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* The link sits at the row's right edge, so its tooltip is anchored there or it
+   would leave the card. */
+.cv2-root .sp-forgot .hon-caption {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+
+.cv2-root .sp-prov .hon-disabled-group:hover > .hon-caption,
+.cv2-root .sp-prov .hon-disabled:focus-visible + .hon-caption,
+.cv2-root .sp-prov .hon-disabled-group[data-reason-open='true'] > .hon-caption,
+.cv2-root .sp-forgot .hon-disabled-group:hover > .hon-caption,
+.cv2-root .sp-forgot .hon-disabled:focus-visible + .hon-caption,
+.cv2-root .sp-forgot .hon-disabled-group[data-reason-open='true'] > .hon-caption {
+  opacity: 1;
+  visibility: visible;
+}
+
+.cv2-root .sp-card__foot {
+  max-inline-size: 360px;
+  margin: 28px auto 0;
+  text-align: center;
+  color: var(--sp-text-sub);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+
+/* ── the collapse ──────────────────────────────────────────────────────────
+   The design drops the product panel entirely under 1020px. Kept: at that
+   width the six module rows and the card cannot both be read, and the card is
+   the one somebody came for. */
+@media (max-width: 1020px) {
+  .cv2-root .sp-main {
+    max-inline-size: 680px;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .cv2-root .sp-product { display: none; }
+  .cv2-root .sp-card {
+    inline-size: min(100%, 600px);
+    justify-self: center;
+  }
+}
+
+@media (max-width: 680px) {
+  .cv2-root .sp-page { grid-template-rows: 72px 1fr; }
+  .cv2-root .sp-top,
+  .cv2-root .sp-main { inline-size: calc(100% - 28px); }
+  .cv2-root .sp-main { padding: 14px 0; }
+  .cv2-root .sp-top__meta { display: none; }
+  .cv2-root .sp-card {
+    padding: 26px 20px 30px;
+    border-radius: 20px;
+  }
+  .cv2-root .sp-card__title { font-size: 32px; }
+  .cv2-root .sp-provs { grid-template-columns: 1fr; }
+  .cv2-root .sp-logo { font-size: 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .sp-primary { transition: none; }
+}
+
+/* ── SHORT VIEWPORTS ───────────────────────────────────────────────────────
+   The design's vertical rhythm is authored for roughly a 1080px window. On the
+   1512×950 laptop this actually ships to, the product column runs past the
+   fold and Docs plus the audience card sit below it — measured, not guessed.
+
+   Keyed on HEIGHT, so nothing here touches the design at the size it was drawn
+   for. It compacts rather than removes: every module keeps its icon, title,
+   blurb and chevron, and only the padding and the leading give way. Removing a
+   row to make the rest fit would be answering "too tall" with "show less",
+   which is the wrong trade on the one screen that has to explain the product. */
+@media (max-height: 1000px) and (min-width: 1021px) {
+  .cv2-root .sp-main { padding: 18px 0 22px; }
+  .cv2-root .sp-product__title { margin-block-start: 14px; }
+  .cv2-root .sp-product__blurb { margin-block-start: 16px; }
+  .cv2-root .sp-modstack {
+    margin-block-start: 20px;
+    gap: 7px;
+  }
+  .cv2-root .sp-mod {
+    min-block-size: 52px;
+    padding: 6px 12px 6px 10px;
+  }
+  .cv2-root .sp-mod__icon {
+    inline-size: 34px;
+    block-size: 34px;
+    border-radius: 10px;
+  }
+  .cv2-root .sp-mod { grid-template-columns: 34px 1fr auto; }
+  .cv2-root .sp-audience {
+    margin-block-start: 12px;
+    padding: 10px 14px;
+  }
+  .cv2-root .sp-card { padding: 26px 40px 30px; }
+  .cv2-root .sp-card__title { margin-block-start: 16px; }
+  .cv2-root .sp-field {
+    block-size: 48px;
+    margin-block-end: 14px;
+  }
+  .cv2-root .sp-primary {
+    block-size: 50px;
+    margin-block-start: 16px;
+  }
+  .cv2-root .sp-sep { margin: 20px 0 14px; }
+  .cv2-root .sp-prov__face { block-size: 44px; }
+  .cv2-root .sp-card__foot { margin-block-start: 20px; }
+}
+
+/* The primary, refused. Same gradient, same geometry, wearing `DisabledAction`
+   so the reason is focusable and always in the DOM — see SignInPage for why a
+   natively `disabled` button was the wrong answer here. */
+.cv2-root .sp-primary--refused {
+  display: block;
+  inline-size: 100%;
+  margin-block-start: 22px;
+  block-size: auto;
+  background: none;
+  box-shadow: none;
+  position: relative;
+}
+
+.cv2-root .sp-primary--refused .hon-disabled-group { position: relative; display: block; }
+.cv2-root .sp-primary--refused .hon-disabled { display: block; inline-size: 100%; }
+
+.cv2-root .sp-primary__face {
+  block-size: 57px;
+  border-radius: 11px;
+  color: var(--sp-on-accent);
+  background: linear-gradient(
+    100deg,
+    var(--sp-accent) 0%,
+    var(--sp-accent-2) 48%,
+    var(--sp-accent-3) 100%
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  font-size: 15.5px;
+  font-weight: 710;
+  cursor: not-allowed;
+}
+
+.cv2-root .sp-primary--refused .hon-caption {
+  position: absolute;
+  z-index: 70;
+  inset-block-start: calc(100% + 8px);
+  inset-inline-start: 0;
+  inline-size: 100%;
+  padding: 8px 11px;
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--sp-line-2);
+  background: var(--sp-surface-2);
+  color: var(--sp-text-soft);
+  box-shadow: var(--pn-sh-md);
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-align: start;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cv2-root .sp-primary--refused .hon-disabled-group:hover > .hon-caption,
+.cv2-root .sp-primary--refused .hon-disabled:focus-visible + .hon-caption,
+.cv2-root .sp-primary--refused .hon-disabled-group[data-reason-open='true'] > .hon-caption {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (max-height: 1000px) and (min-width: 1021px) {
+  .cv2-root .sp-primary--refused { margin-block-start: 16px; }
+  .cv2-root .sp-primary__face { block-size: 50px; }
+}
+
+/* The design's account row, kept for the one path it is true on. */
+.cv2-root .sp-account {
+  margin-block-start: 23px;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  color: var(--sp-text-soft);
+  font-size: 12.5px;
+}
+
+.cv2-root .sp-account__link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--sp-accent);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cv2-root .sp-account__link:hover { text-decoration: underline; }
