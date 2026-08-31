@@ -445,8 +445,21 @@ describe('T2-1b — members & roles', () => {
   it('the handle is REAL for the viewer and hollow for everyone else', () => {
     renderMembers();
     expect(screen.getByText('@ada')).toBeTruthy();
-    // Two hollow handles — never a slugged guess like "@noa-lindqvist".
-    expect(screen.getAllByText('@—')).toHaveLength(2);
+
+    /* THE DASH IS GONE AND THE CLAIM IS NOT. This asserted two literal `@—`
+       markers; the owner screenshotted nine of them down one column and read
+       the page as nine broken records. A hollow marker teaches its lesson
+       once — after that it is noise wearing the costume of information.
+
+       What the block actually exists to protect is unchanged and asserted
+       harder below: no INVENTED handle ever appears (a slugged `@noa-lindqvist`
+       would be a lie of precision on the field a reader most trusts), and the
+       reason the handle is absent is still stated in words. The marker moved
+       off the row and onto the name; the honesty did not move at all. */
+    expect(screen.queryAllByText('@—')).toHaveLength(0);
+    for (const invented of [/@noa/i, /@lindqvist/i, /@ada-/i]) {
+      expect(document.body.textContent ?? '').not.toMatch(invented);
+    }
     expect(document.body.textContent).toMatch(/carry no username in this build/);
   });
 

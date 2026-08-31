@@ -591,6 +591,14 @@
   align-items: flex-end;
   gap: var(--pn-space-2);
   max-width: 44%;
+  /* THE OTHER HALF OF THE 42/52 SPLIT — see `.gv-legend`. This column is
+     bottom-anchored and grows upward, so without a ceiling a long BUILDING
+     list walks straight into the legend. `min-height: 0` is what lets the
+     children below actually shrink instead of the column overflowing its own
+     bound: an unfloored flex column ignores `max-height` at the child level,
+     which is the trap that has bitten this package repeatedly. */
+  max-height: 52%;
+  min-height: 0;
 }
 
 .gv-ticker {
@@ -1002,7 +1010,25 @@
   background: var(--pn-card); border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md); box-shadow: none;
   padding: 4px; display: flex; flex-direction: column; gap: 2px;
-  max-height: calc(100% - 28px); overflow-y: auto;
+  /* 42%, NOT `calc(100% - 28px)`. THE CANVAS CHROME IS TWO ABSOLUTELY
+     POSITIONED COLUMNS ON ONE EDGE — this legend anchored top-right, and
+     `.gv-rail` (minimap + BUILDING) anchored bottom-right and growing UPWARD.
+     Both were allowed to be nearly the full height of the canvas, so their
+     collision was guaranteed by arithmetic rather than unlucky: the owner
+     screenshotted BUILDING sitting on top of the legend with the minimap
+     clipping its foot.
+
+     Absolute positioning is also why nothing caught it. The render gate's
+     overlapping-siblings rule deliberately skips absolutely positioned
+     subtrees — which is precisely where overlap happens — so this class of
+     defect had no detector at all. Noted for the gate.
+
+     42 + 52 = 94 < 100, so the two columns cannot meet whatever either
+     contains, and each scrolls inside its own bound rather than growing into
+     the other's. A panel that scrolls has hidden nothing; a panel painted over
+     has hidden everything. */
+  max-height: 42%;
+  overflow-y: auto;
 }
 .gv-legend:not([open]) > :not(summary) { display: none; }
 .gv-legend:not([open]) { overflow: hidden; }
@@ -1453,7 +1479,11 @@
   max-width: 100%;
   display: flex;
   flex-direction: column;
+  /* The list scrolls inside the card so the CARD stays inside the rail's
+     bound. Without this the rail is bounded and its child simply overflows it,
+     which looks identical to having no bound at all. */
   min-height: 0;
+  overflow: hidden;
   gap: var(--pn-space-1);
   padding: var(--pn-space-3);
   background: var(--pn-card);
@@ -1513,6 +1543,8 @@
    content, never rows divided across a definite height — hence flex-column with
    `flex: none` rows and the overflow on the list, not on the panel. */
 .cv2-root .gv-building__list {
+  min-height: 0;
+  overflow-y: auto;
   list-style: none;
   margin: var(--pn-space-1) 0 0;
   padding: 0;

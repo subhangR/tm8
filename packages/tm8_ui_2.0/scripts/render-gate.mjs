@@ -163,6 +163,42 @@ function auditInPage() {
     }
   }
 
+  // 2b. FLOATING CHROME THAT COLLIDES. Rule 2 deliberately skips absolutely
+  //     positioned subtrees, and that is exactly where overlap happens — the
+  //     graph's canvas chrome is three independently-anchored panels on one
+  //     edge, and BUILDING was painting over the Legend with the minimap
+  //     clipping its foot. Nothing caught it, because the one overlap rule
+  //     excluded the one case that occurs.
+  //
+  //     Only CARD-LIKE floating boxes are compared: absolutely positioned,
+  //     opaque background, and big enough to hide something. That excludes the
+  //     legitimate overlaps — a menu over its trigger, a tooltip over a row, a
+  //     modal over everything — which are DELIBERATE and momentary, and which a
+  //     blunt rule would report forever until somebody muted it.
+  {
+    const floating = all.filter((el) => {
+      const cs = getComputedStyle(el);
+      if (cs.position !== 'absolute' && cs.position !== 'fixed') return false;
+      if (cs.backgroundColor.startsWith('rgba(0, 0, 0, 0)') || cs.backgroundColor === 'transparent') return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 120 && r.height > 60;
+    });
+    for (let i = 0; i < floating.length; i += 1) {
+      for (let j = i + 1; j < floating.length; j += 1) {
+        const a = floating[i];
+        const b = floating[j];
+        if (a.contains(b) || b.contains(a)) continue;
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        const ox = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+        const oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+        if (ox > 12 && oy > 12) {
+          out.push({ rule: 'floating-chrome-collides', el: `${name(a)} / ${name(b)}`, detail: `${Math.round(ox)}x${Math.round(oy)}px of overlap` });
+        }
+      }
+    }
+  }
+
   // 3. A CONTROL THAT CANNOT MOVE ANYTHING. A resizer or separator whose target
   //    is display:none — the 9x901px handle that painted over the cards.
   for (const el of all) {

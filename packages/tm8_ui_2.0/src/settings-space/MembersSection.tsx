@@ -321,13 +321,34 @@ export function MembersSection({
                     {isSelf && identity?.username ? (
                       <span className="set-members__handle">@{identity.username}</span>
                     ) : (
+                      /* THE HOLLOW MARKER IS STATED ONCE, NOT NINE TIMES.
+                         `EntitySummary` carries no username — only `identity()`
+                         does, and only for the viewer — so inventing `@`+slug
+                         would be a lie of precision on the field a reader most
+                         trusts. That reasoning stands and the marker stays; it
+                         moves off the ROW. Nine identical `@—` down one column
+                         taught nothing after the first and read as nine broken
+                         records. The reason now rides the name, where a reader
+                         who wonders can find it, and the caption below the
+                         table says it once in words. */
                       <HollowInline caption="member entities carry no username in this build — only the viewer's own identity does">
-                        <span className="set-members__handle">@—</span>
+                        <span className="set-members__handle set-members__handle--none" aria-hidden />
                       </HollowInline>
                     )}
                   </span>
 
-                  <span className="set-members__cell set-members__cell--role">
+                  {/* THE ROLE IS PUBLISHED AS DATA so the stylesheet can colour
+                      it. Owner, 2026-08-31: "each status items roles" should be
+                      colourful. A role is a STANDING FACT about a person's
+                      authority — the same class of fact as a kind, and it was
+                      three identical grey pills, so the one column a reader
+                      scans this page for carried no signal at all.
+                      Lowercased because the vocabulary is the server's and its
+                      casing is not ours to assume. */}
+                  <span
+                    className="set-members__cell set-members__cell--role"
+                    data-role={String(role).toLowerCase()}
+                  >
                     {role === null ? (
                       <HollowInline caption="this row carries no role in its state">
                         <span className="set-role set-role--select">—</span>
