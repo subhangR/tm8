@@ -24,7 +24,24 @@ describe('Board v2 motion contract', () => {
     expect(stage).toContain('width: 100%');
     expect(stage).toContain('max-width: 100%');
     expect(stage).toContain('min-width: 0');
-    expect(css).toMatch(/\.b2__panel\s*\{[^}]*min-width:\s*min\(272px, calc\(100% - 24px\)\);/s);
+    /* THE FLOOR MOVED INTO A `clamp()` AND DID NOT MOVE IN VALUE.
+       This pinned a standalone `min-width: min(272px, calc(100% - 24px))`. The
+       panel's width is now a clamp, because a detail panel is a READING
+       surface and was being sized like a board column — one column wide, so a
+       task's whole detail was squeezed into ~280px while a thousand pixels sat
+       empty beside it. The clamp's LOWER BOUND is that identical expression,
+       so the claim this test exists for is unchanged: on a stage too small for
+       272px the overlay still yields rather than overflowing, and the global
+       panel law is still untouched.
+
+       Asserted as the floor wherever it lives, so moving it again into some
+       third form does not silently drop it. */
+    const panel = css.match(/\.b2__panel\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(panel, 'the board panel lost its 272px yield floor').toContain(
+      'min(272px, calc(100% - 24px))',
+    );
+    expect(panel, 'the panel stopped being sized by a reading measure').toContain('--pn-measure');
+    expect(panel).toContain('max-width: calc(100% - 24px)');
     expect(css).toMatch(/\.b2__panel > \.pn-panel\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*min-width:\s*0;[^}]*box-sizing:\s*border-box;/s);
     expect(css).not.toContain('.b2 .b2__panel .pn-head__row > *');
     expect(css).not.toContain('.b2 .b2__panel .pn-panelbar > *');
