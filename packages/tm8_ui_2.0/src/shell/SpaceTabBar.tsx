@@ -61,7 +61,47 @@
  * canvas would be restoring a retired control.
  */
 import type { ReactNode } from 'react';
-import { BrandMark } from '../kit';
+import { BrandMark, VectorIcon } from '../kit';
+import { VIEW_ART } from '../domain/kind-art';
+
+/**
+ * A DESTINATION'S MARK, or none.
+ *
+ * The tab row drew seven destinations as bare words while every other
+ * navigation surface in this product leads with a glyph — the rail, the graph,
+ * the list tiles. Owner, 2026-08-31, with a reference: "you can replicate
+ * similar icons level same in home as well everywhere".
+ *
+ * NOTHING HERE WAS DRAWN. Every one of these marks already existed in
+ * `VIEW_ART` — including `board`, `craft`, `settings` and `help`, which I
+ * started to draw before finding them there, already better: the existing
+ * board glyph is three columns of DIFFERENT heights, an actual kanban, where
+ * mine was three of the same. The art was complete and the tab row simply
+ * never asked for it, which is the same shape as the ten kind colours the
+ * registry declared and no stylesheet ever defined.
+ *
+ * It is a LOOKUP, not a branch, and it returns `null` for a tab it does not
+ * know. A destination this shell has never heard of — a plugin's, a future
+ * group's — draws its word alone rather than borrowing a mark that means
+ * something else. A glyph must mean one thing, and a wrong glyph is worse
+ * than none.
+ */
+const TAB_ART: Readonly<Record<string, readonly string[]>> = {
+  home: VIEW_ART.dashboard,
+  chats: VIEW_ART.dashboard,
+  work: VIEW_ART.workspace,
+  board: VIEW_ART.board,
+  craft: VIEW_ART.craft,
+  graph: VIEW_ART.graph,
+  settings: VIEW_ART.settings,
+  help: VIEW_ART.help,
+  files: VIEW_ART.files,
+  messages: VIEW_ART.messages,
+  git: VIEW_ART.git,
+  inbox: VIEW_ART.inbox,
+  feed: VIEW_ART.feed,
+};
+const artForTab = (id: string): readonly string[] | null => TAB_ART[id] ?? null;
 
 /** One top-level tab — a menu GROUP, mapped by the host. */
 export interface ShellTab {
@@ -149,6 +189,12 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
                 className={`shell-tabbar__tab ${active ? 'shell-tabbar__tab--active' : ''}`}
                 onClick={() => props.onSelectTab?.(tab.id)}
               >
+                {/* The mark is DECORATIVE — the word beside it is the
+                    accessible name, and a glyph that repeated it would make a
+                    screen reader say the destination twice. */}
+                {artForTab(tab.id) ? (
+                  <VectorIcon paths={artForTab(tab.id)!} size={15} className="shell-tabbar__tabmark" />
+                ) : null}
                 {tab.label}
               </button>
             );

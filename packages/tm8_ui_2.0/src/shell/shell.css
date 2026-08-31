@@ -167,7 +167,21 @@
   padding: 2px 12px;
   border: 0;
   border-radius: var(--pn-r-sm);
+  /* THE MARK LEADS THE WORD, and gives way before it does. The glyph is
+     `flex: none` so a narrow bar clips the tray rather than squashing a 15px
+     icon into an unreadable smudge — the same ruling as the rail's: the NAME
+     of a destination beats its decoration. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
+.cv2-root .shell-tabbar__tabmark {
+  flex: none;
+  color: var(--pn-ink-3);
+}
+/* The selected tab's mark takes the accent with its word, so selection is one
+   statement rather than a coloured word beside a grey glyph. */
+.cv2-root .shell-tabbar__tab--active .shell-tabbar__tabmark { color: var(--pn-brand); }
 .cv2-root .shell-tabbar__tabs .shell-tabbar__tab--active {
   background: var(--pn-brand-soft);
 }

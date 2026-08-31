@@ -202,6 +202,7 @@ export const KIND_ART = {
  * channel mark — which is the same defect one level up.
  */
 export const VIEW_ART = {
+
   /** A house. */
   dashboard: ['M2.8 7.2 8 2.8l5.2 4.4v5.4a1.2 1.2 0 0 1-1.2 1.2H4a1.2 1.2 0 0 1-1.2-1.2z', 'M6.4 13.4V9.2h3.2v4.2'],
   /** Broadcast arcs — a feed is a stream arriving. */
