@@ -873,6 +873,16 @@ Additionally, and not in the AC list because it was found during DEFINE:
 - ~~**A1** — route shape.~~ **CLOSED at the DEFINE gate, 2026-08-31.** Option A:
   `{ view:'codebrain'; runId: EntityId | null }`, `#/s/{s}/codebrain` and
   `#/s/{s}/codebrain/{taskId}`, bare form round-tripping. See §2 A1 and §5.1.
+- **NEW, for REVIEW rather than this slice** — the §5.3 route-only branch has
+  exactly ONE live user and ONE test. Verified at `01fb90c8`: `navViewOfName`
+  resolves ten refs, and `codebrain` is the only one whose landing has
+  `target: null`. `newSession`, `boardV2`, `craft` and `help` are absent from
+  that switch entirely and fall to `default: return null`, so they reach the
+  dispatch as *unresolvable* and never exercise the new branch. This is correct
+  today — none of them has a chord. But it means adding any of those four to
+  `navViewOfName` later silently activates a code path currently proven by a
+  single assertion (`g.codebrain resolves route-only`). Not a defect and not
+  this slice's work; a fact whoever adds the next route-only chord should have.
 - **NEW, for REVIEW rather than this slice** — neither `codec.test.ts` nor
   `nav-targets.test.ts` sweeps the `NavView` union generically. Both keep
   hand-maintained lists (`ALL_ROUTE_VIEWS`; the property block's two hardcoded
