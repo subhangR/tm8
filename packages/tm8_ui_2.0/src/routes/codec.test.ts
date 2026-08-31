@@ -81,6 +81,32 @@ describe('grammar (WLT §2.2 verbatim)', () => {
     expect(route?.target).toEqual({ view: 'codebrain', runId: 'not-a-real-entity' });
   });
 
+  it('round-trips both codebrain forms — build then parse, not parse alone (AC1)', () => {
+    // The four cases above all exercise `parse`. A broken `build` arm sends
+    // every link the app generates to a dead address while every one of
+    // those stays green — SPEC §5.2: "Both directions, or it is a dead
+    // link." This is the half that catches that.
+    for (const target of [
+      { view: 'codebrain' as const, runId: null },
+      { view: 'codebrain' as const, runId: id(4) },
+    ]) {
+      const { hash, dropped: buildDropped } = build(routeOf({ target }));
+      expect(buildDropped).toEqual([]);
+      const { route, dropped: parseDropped } = parse(hash);
+      expect(parseDropped).toEqual([]);
+      expect(route?.target).toEqual(target);
+    }
+    // Pin the segment spelling itself, not merely self-consistency: a build
+    // and a parse that agreed on the SAME wrong spelling would still pass
+    // the loop above.
+    expect(build(routeOf({ target: { view: 'codebrain', runId: null } })).hash).toContain(
+      '/codebrain',
+    );
+    expect(
+      build(routeOf({ target: { view: 'codebrain', runId: id(4) } })).hash,
+    ).toContain(`/codebrain/${id(4)}`);
+  });
+
   it('renders the space picker when no space is addressed', () => {
     expect(parse('#/').route).toBeNull();
     expect(parse('#/home').route).toBeNull();
