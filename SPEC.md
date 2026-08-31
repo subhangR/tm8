@@ -668,6 +668,17 @@ kind literals stay in `codebrain-model.ts` and out of the component.
 - Keep `codebrain-model.ts` pure — no React, no store, no fetch.
 - Keep the selected run in the URL. A run must be reloadable into, shareable and
   reachable with Back — a gate-approved requirement (§5.1), not a preference.
+- **Cite the object you read, not the path.** `git show <sha>:<path>`, and name
+  the sha in the report. A working tree and a commit are different objects, and
+  a reader who cannot reproduce your read has no way to tell "you saw a change
+  that is not committed yet" from "you saw wrong" — their only correct move is
+  to challenge it. Four messages crossed on this during this slice, in both
+  directions: a stale base-ref, and a fixture read from an uncommitted tree and
+  reported as settled.
+- **Commit a fix before reporting it.** An uncommitted fix is invisible to every
+  reviewer and indistinguishable from the reporter having been mistaken. Worse,
+  once reviewers bless it, a single `git checkout` silently reverts it with the
+  blessing still on the record — a worse state than never having claimed it.
 - **For any criterion that names a specific failure, prove the test can fail.**
   Break the thing the test guards, watch it go red, restore it. Re-running a
   green suite establishes attendance, not coverage — this slice shipped an AC1
