@@ -45,6 +45,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Duplex } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 
 import { Pool, type QueryResultRow } from 'pg';
 
@@ -109,7 +110,32 @@ export interface WsE2eNode {
  * exercise PTY plumbing without a model or a key, which is precisely what
  * echo-agent is for.
  */
-process.env['TM8_AGENT_CMD'] = 'echo-agent';
+/*
+ * AND IT HAS TO BE A PATH, NOT THE BARE NAME. `echo-agent` was set here as a
+ * word, and `resolveAgentBinary` (packages/execution/src/spawn/manifest.ts)
+ * treats a name with no `/` as a PATH LOOKUP — it walks `$PATH` for a file
+ * called exactly `echo-agent`. Nothing in this repository ever puts one there:
+ * the file is `packages/execution/harness/echo-agent.mjs`, it is not
+ * executable (0644), it is not named `echo-agent`, no package.json declares a
+ * `bin` for it, and `tools/ci/check.sh` installs nothing. So on a runner the
+ * lookup returns null and the spawn never produces an agent — which is what
+ * the nine `expected 503 to be 201` failures on main are.
+ *
+ * That is the SAME defect this block's own comment already records one layer
+ * up: the config value was inert, so A6c's "REAL echo-agent PTY attach" was
+ * really spawning `claude`. The fix then set the env var and stopped there,
+ * leaving a name that resolves only on a machine where somebody happened to
+ * have put an `echo-agent` on PATH by hand.
+ *
+ * `resolveAgentBinary` documents the escape explicitly — "a caller-supplied
+ * path is not a PATH lookup at all, and must not be rewritten into one" — and
+ * the command is split on spaces with `[0]` taken as the binary, so `node`
+ * resolves from PATH and the script rides as its argument. That needs no
+ * execute bit and no install step, and it points at the file in THIS checkout
+ * rather than whatever a machine happens to have.
+ */
+process.env['TM8_AGENT_CMD'] =
+  `node ${fileURLToPath(new URL('../../../execution/harness/echo-agent.mjs', import.meta.url))}`;
 
 export async function startWsE2eNode(
   label: string,

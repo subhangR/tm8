@@ -854,10 +854,33 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // highest — 169 and 170 are spoken for and 171 was the first free prefix
     // above them.
     //
-    // THIS NUMBER ASSUMES THIS BRANCH IS THE NEXT MIGRATION TO LAND. If #517
-    // lands first it adds two files and the merged tree is 161, not 159.
-    // Re-measure on the merged tree; do not adjust by arithmetic.
-    expect(server.appliedMigrations.length).toBe(159);
+    // 159 -> 160 (2026-08-31): NOT this branch's migration — this branch adds
+    // NONE. main has carried 160 files against this pin of 159 since #517
+    // landed its two, exactly as the row above predicted ("if #517 lands first
+    // it adds two files"), and main has been RED on this line ever since. That
+    // is the fourth time this pin has gone red on main's arrears rather than on
+    // a branch's own change.
+    //
+    // MEASURED ON THE MERGED TREE, never derived, as this file has demanded
+    // every time:
+    //   origin/main:                 git ls-tree --name-only origin/main db/migrations/ | grep -c sql -> 160
+    //   this branch:                 git ls-tree --name-only HEAD db/migrations/        | grep -c sql -> 160
+    //   merge of main into this:     git merge-tree --write-tree origin/main HEAD, then
+    //                                git ls-tree --name-only <tree> db/migrations/ | grep -c sql -> 160
+    //   duplicate prefixes on main:  0
+    // All three agree, so 160 is the count of the tree this branch produces and
+    // not a number that only becomes right after somebody else merges.
+    //
+    // A NOTE FOR WHOEVER IS RED NEXT, because four occurrences is a pattern and
+    // not bad luck: this assertion catches a migration that VANISHES, which is
+    // worth catching. It cannot distinguish that from a migration somebody else
+    // legitimately added, so every branch open across a landing inherits the
+    // failure and each one pays to re-derive that it is not theirs. The
+    // duplicate-prefix assertion below is the one that catches the dangerous
+    // case, and it does so structurally. If this line goes red a fifth time on
+    // arrears, the honest repair is to assert the count against the tree rather
+    // than against a literal.
+    expect(server.appliedMigrations.length).toBe(160);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
