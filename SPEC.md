@@ -618,7 +618,35 @@ checks, and neither substitutes for the other.
    above. `bun run typecheck:core && bun run typecheck:tm8-ui-2.0`, in that
    order, always.
 
-3. **The Vitest runner never processes CSS.** `packages/tm8_ui_2.0/vite.config.ts`
+3. **No browser in this container can render, so AC8's capture cannot be taken
+   here.** Measured 2026-08-31 after BUILD raised it, and confirmed
+   independently rather than relayed:
+   - `~/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome` — `ldd` shows
+     **12** missing libraries (`libatk-1.0.so.0`, `libatk-bridge-2.0.so.0`,
+     `libcups.so.2`, `libatspi.so.0`, `libXcomposite/Xdamage/Xfixes/Xrandr`,
+     `libgbm.so.1`, `libcairo.so.2`, `libpango-1.0.so.0`, `libasound.so.2`),
+     and a launch dies on `libatk-1.0.so.0`.
+   - `firefox-1509` is **also** unusable and this is the trap: `ldd` reports
+     **zero** missing, because Firefox loads GTK through XPCOMGlue rather than
+     linking it. It fails at runtime on `libgtk-3.so.0`. A clean `ldd` is not
+     evidence a browser runs — only launching it is.
+   - `sudo -n true` refuses; installing the deps needs root.
+
+   **This does not block the code, and it must not be worked around.** The
+   remedy is `playwright install-deps` (or the equivalent `apt-get`) by someone
+   with root — standard and reversible. Until then AC8 stays **open and
+   stated**, never quietly deferred or satisfied with a substitute.
+
+   **Checkpoint C's purpose and AC8's letter are different requirements and
+   only one of them is blocked.** C exists to prove the empty state is real
+   before Tasks 5–7 build on it, and §7.6 already requires that content be
+   asserted **by text, never by CSS** — so C's substance (six rows read from
+   the graph, the codex mark among them) is provable by test evidence in this
+   container today. AC8 is an additional deliverable: a capture of the rendered
+   screen, in Chrome. Meeting C on text evidence is legitimate; reporting AC8
+   as met on the same evidence is not.
+
+4. **The Vitest runner never processes CSS.** `packages/tm8_ui_2.0/vite.config.ts`
    sets no `css` key at all (`grep -n css vite.config.ts` → no hits), so
    Vitest's default `css: false` applies. A green run therefore **cannot** have
    seen a CSS change. Assert CSS as source text, and never claim the suite
@@ -705,7 +733,7 @@ kind literals stay in `codebrain-model.ts` and out of the component.
 - Read the roster from `data.launch.teammates` (§6.1).
 - Stub a handler to satisfy a prop — `no-op-handler-ban.test.ts` is the law.
 - Copy the prototype's markup or its hex values.
-- Claim a green Vitest run covered CSS (§9.3), or a typecheck run against a
+- Claim a green Vitest run covered CSS (§9.4), or a typecheck run against a
   tree whose `@tm8/contract` resolves elsewhere (§9.1).
 - Run the UI typecheck without building the contract first, or report its red
   as a fact about your diff (§9.2). On a fresh tree it is a false red, and the
@@ -745,7 +773,7 @@ Traced to the task's acceptance criteria.
 | 5 | The `codex` phase is distinguishable from the five `claude-code` phases by a non-colour channel | `codebrain-screen.test.tsx` |
 | 6 | `bun run typecheck:core && bun run typecheck:tm8-ui-2.0` green — **both, in that order** (§9.2) — and `readlink -f packages/tm8_ui_2.0/node_modules/@tm8/contract` resolving inside this worktree. Two checks, two different failures; neither substitutes for the other. | command output + the readlink, echoed with `git rev-parse HEAD` in the same command |
 | 7 | Vitest green for the touched files; CSS asserted as source, not claimed as covered | command output, same echo |
-| 8 | Screenshot of the rendered screen attached to the task, Chrome, `--js-flags=--jitless` | the attachment |
+| 8 | Screenshot of the rendered screen attached to the task, Chrome, `--js-flags=--jitless`. **BLOCKED in this container (§9.3) — no browser can render here, and this stays open rather than being met by a substitute.** Checkpoint C's substance is separately provable by text (§7.6); AC8 is not. | the attachment |
 | 9 | PR linked with `tm8 task link-pr` when it exists; closing message names branch, PR, exact command and output | the task anchor |
 
 Additionally, and not in the AC list because it was found during DEFINE:
