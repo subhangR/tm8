@@ -178,6 +178,28 @@
 .cv2-root .shell-tabbar__tabmark {
   flex: none;
   color: var(--pn-ink-3);
+  /* ONE OPTICAL WEIGHT ACROSS THE WHOLE ROW (owner, 2026-08-31: "I need that
+     icons sizing everything to be adopted from Home button page to help button
+     page"). The marks are drawn in one 16-unit box, but they are not drawn to
+     one DENSITY: `craft` is two concentric rings, `graph` is three nodes and
+     three edges, `help` is a ring around a glyph. At a shared 15px and a
+     shared stroke the busy ones read heavier than the house and the sparse
+     ones read lighter.
+
+     Pinning the box AND the stroke here is what makes them one set: every mark
+     gets the same square and the same line, so what differs between them is
+     only what the mark actually depicts. `vector-effect` keeps that stroke
+     true — without it a path scaled from a 16-unit box to 15px carries a
+     stroke scaled with it, so the same declared weight renders differently per
+     glyph. */
+  inline-size: 15px;
+  block-size: 15px;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+.cv2-root .shell-tabbar__tabmark * {
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
 }
 /* The selected tab's mark takes the accent with its word, so selection is one
    statement rather than a coloured word beside a grey glyph. */

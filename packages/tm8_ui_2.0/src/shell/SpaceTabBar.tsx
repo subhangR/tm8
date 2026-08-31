@@ -90,7 +90,12 @@ const TAB_ART: Readonly<Record<string, readonly string[]>> = {
   home: VIEW_ART.dashboard,
   chats: VIEW_ART.dashboard,
   work: VIEW_ART.workspace,
+  /* `board-v2` and not `board`: the visible Board tab is the v2 route
+     (`BOARD_V2_TAB_ID` in GateApp), and the legacy `board` MenuViewRef is the
+     one nothing links to. Keyed on both, because a lookup that guesses which
+     of two ids is live is a lookup that goes wrong the day the other wins. */
   board: VIEW_ART.board,
+  'board-v2': VIEW_ART.board,
   craft: VIEW_ART.craft,
   graph: VIEW_ART.graph,
   settings: VIEW_ART.settings,
