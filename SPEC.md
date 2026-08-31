@@ -268,10 +268,32 @@ CodeBrain's destination is real; the resolver simply could not say so yet.
 - `src/routes/codec.test.ts` — `#/s/{s}/codebrain` and
   `#/s/{s}/codebrain/{id}` round-trip; an unknown trailing segment survives
   as an opaque `runId`; a bare `codebrain/` decodes to `runId: null`. (AC1)
-- `src/domain/nav-targets.test.ts` — the existing **both-direction
-  exhaustiveness** assertions must keep passing; add that
-  `navViewOfName('codebrain')` returns the member and `landingOfRoute` returns
-  a `Landing` with `target: null` (not `null`). (AC2)
+- `src/domain/nav-targets.test.ts` — **CORRECTED 2026-08-31, after PLAN read
+  the file this spec had only cited.** An earlier draft of this line said the
+  existing "both-direction exhaustiveness assertions must keep passing", which
+  overstates what passing proves. `ALL_ROUTE_VIEWS` (`:31-54`) is a
+  **hand-written literal, deliberately not derived from the type** — its own
+  docblock at `:25-30` says a derived list "would grow automatically and prove
+  nothing". It already omits `craft`, `help` and `boardV2`. So adding
+  `codebrain` to `NavView` breaks nothing here, the suite stays green, and
+  CodeBrain falls silently outside the guard. The file names this exact failure
+  at `:41-44`: an omission "silently stops guarding it, which is the one
+  failure mode this list has."
+
+  Therefore, as a **required edit and not a consequence**:
+  - add `{ view: 'codebrain', runId: null }` **and**
+    `{ view: 'codebrain', runId: ENTITY }` to `ALL_ROUTE_VIEWS`. Both, because
+    the two forms take different codec paths and only the pair covers §5.2.
+  - the list's assertion is `expect(landingOfRoute(view)).not.toBeNull()`
+    (`:64-68`) — the **Landing**, not its target — which is why `newSession`
+    passes with `target: null` and why CodeBrain will too. That is the assertion
+    we want; nothing about it needs changing.
+  - add that `navViewOfName('codebrain')` returns the member with
+    `runId: null`, and that `landingOfRoute` returns a `Landing` whose `target`
+    is `null` — not a `null` Landing. (AC2)
+
+  `routeViewOf` needs no row: the "emits a route for every view-ref target"
+  assertion (`:70-75`) iterates `MenuViewRef`, and CodeBrain is not one.
 - `src/keyboard/guaranteed-destinations.test.ts` — as amended in §5.4.
 
 ---
@@ -568,6 +590,10 @@ kind literals stay in `codebrain-model.ts` and out of the component.
 
 **Never**
 - Hardcode the six phase names, models, tools or ids (AC3).
+- Treat a green `nav-targets.test.ts` as evidence that CodeBrain is guarded.
+  `ALL_ROUTE_VIEWS` is hand-written and does not fail on an omission — that is
+  its one documented failure mode (`:41-44`). The row is a required edit
+  (§5.5), not something the suite will ask for.
 - Invent a `run` entity kind, or a `run` route that is not a `task`.
 - Read the roster from `data.launch.teammates` (§6.1).
 - Stub a handler to satisfy a prop — `no-op-handler-ban.test.ts` is the law.
