@@ -1490,11 +1490,51 @@
    with an unclipped child is how a grid starts painting over itself. */
 .cv2-root .hp-acard { overflow: hidden; }
 .cv2-root .hp-acard__open { min-height: 0; overflow: hidden; }
-/* LIGHT COLOUR, BY KIND (owner: "add light colors combination of colors make
-   beautiful"). The SOFT tone variants the app already defines — never the full
-   tone, which behind body text reads as a badge demanding attention rather
-   than a card inviting a read. Three kinds become legible without a second row
-   of labels, and the status WORD still carries the state (C8/L10). */
+/* ═══ COLOUR SAYS WHAT A THING IS; THE WORD SAYS WHAT IT IS DOING ═══
+   (owner, 2026-08-31: "if it has design system why it's only one color black
+   and white ... it can be lightish colors").
+
+   THE CARD TAKES ITS KIND'S OWN HUE. `data-family` carries the registry's
+   `graphFamily` — ten of them — and the same `--color-icon-<hue>` map the
+   graph and the list tiles resolve. Home was the one surface asking for none
+   of it: three status tints at 9% alpha across every card, which is a screen
+   with almost no colour on it, because most work is idle most of the time.
+
+   THE SPLIT OF LABOUR IS THE POINT, and it is what stops this becoming
+   decoration. KIND is a permanent fact and gets the GROUND — a doc is
+   doc-coloured whether or not anything is happening to it. STATUS is a
+   changing fact and keeps the DOT and the WORD, in run/wait/block, which are
+   deliberately not in the family set so a running thing never has to compete
+   with what it is. Two facts, two channels, neither borrowing the other's.
+
+   14%, not 9%. The old soft variants were a rounding error on white — a tint
+   nobody could see is a colour that is not there, which is most of why the
+   product read as greyscale. `color-mix` against the card keeps it a WASH
+   rather than a fill: legible body text over it in both themes. */
+.cv2-root .hp-acard[data-family] {
+  --hpf: var(--color-icon-gray);
+  background: color-mix(in srgb, var(--hpf) 14%, var(--pn-card));
+  border-color: color-mix(in srgb, var(--hpf) 42%, var(--pn-line-2));
+}
+.cv2-root .hp-acard[data-family='blue']   { --hpf: var(--color-icon-blue); }
+.cv2-root .hp-acard[data-family='cyan']   { --hpf: var(--color-icon-cyan); }
+.cv2-root .hp-acard[data-family='teal']   { --hpf: var(--color-icon-teal); }
+.cv2-root .hp-acard[data-family='green']  { --hpf: var(--color-icon-green); }
+.cv2-root .hp-acard[data-family='yellow'] { --hpf: var(--color-icon-yellow); }
+.cv2-root .hp-acard[data-family='orange'] { --hpf: var(--color-icon-orange); }
+.cv2-root .hp-acard[data-family='red']    { --hpf: var(--color-icon-red); }
+.cv2-root .hp-acard[data-family='pink']   { --hpf: var(--color-icon-pink); }
+.cv2-root .hp-acard[data-family='purple'] { --hpf: var(--color-icon-purple); }
+.cv2-root .hp-acard[data-family='gray']   { --hpf: var(--color-icon-gray); }
+/* The kind eyebrow takes the hue too, at full strength — it is the one place
+   the family is NAMED, so it is the one place the colour can be checked
+   against a word rather than remembered. */
+.cv2-root .hp-acard[data-family] .hp-acard__kind { color: var(--hpf); }
+
+/* A CHAT HAS NO KIND, so it has no family and keeps the tint it had. It is not
+   an entity in the registry — it is keyed by its root message — which is the
+   same reason it carries no pull requests. Absence of a family is a fact about
+   chats, not a gap to paper over with a borrowed hue. */
 /* THE KIND'S COLOUR IS NAMED ONCE AND SPENT TWICE. As a card it is the tint and
    the hairline; as a row (the narrow band below) it is a dot. Declaring the
    tone as a custom property is what makes those two the SAME fact rather than

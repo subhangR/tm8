@@ -861,8 +861,26 @@ export function EntityListPanel(props: EntityListPanelProps) {
         inputRef={props.searchInputRef}
       />
 
+      {/* ONE CARD, TWO ROWS (owner, 2026-08-31: "to do in progress done
+          cancelled filters people these can be more better in one card
+          cleanly").
+
+          THIS SUPERSEDES A DELIBERATE REFUSAL, and the refusal is worth
+          stating because it was not wrong on its own terms: `panels.css` said
+          merging the rows "conflates a lifecycle band with a filter within
+          it", and reclaimed 4px of spacing instead. That reasoning holds for
+          the SEMANTICS — a category and a narrowing are different questions —
+          and it does not follow that they belong in different visual objects.
+          They are one control surface: everything that decides WHICH ROWS YOU
+          SEE. Putting them in one bordered card says that, and says it without
+          claiming the two rows mean the same thing, because they keep their
+          own rows and their own hairline inside it.
+
+          The wrapper is drawn only when there are tabs to draw. Board mode
+          partitions by column and takes neither row, so it takes no card. */}
       {/* Hidden in board mode — the columns ARE this partition. See
           `activeTab`. */}
+      <div className={mode === 'board' ? 'lp__narrowing lp__narrowing--boardless' : 'lp__narrowing'}>
       {mode === 'board' ? null : (
         <CategoryTabs
           tabs={list.categories}
@@ -919,6 +937,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         lensSet={lensSet}
         onLens={setLensId}
       />
+      </div>
 
       {/* THE LENS SAYS WHAT IT HIDES. A kind-scoped list showing one set's
           members is NOT the set: a mixed collection holds items of every

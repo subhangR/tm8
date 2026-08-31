@@ -800,6 +800,23 @@ function ActiveStrip({
               <div
                 key={`${row.lens}-${row.id}`}
                 className={`hp-acard hp-acard--${row.lens}`}
+                /* THE KIND'S OWN COLOUR, from the registry, as DATA.
+                   `graphFamily` gives every kind one of ten hues, and the
+                   graph, the board and the list tiles all already resolve it
+                   through `data-family`. Home asked for it ZERO times — so the
+                   strip a reader looks at most threw away a ten-colour kind
+                   palette and painted every card with three status tints at 9%
+                   alpha, which is most of why the product read as greyscale.
+
+                   Never a kind literal (§15.2): the attribute carries what the
+                   registry says, so a kind that gains a family lights up here
+                   with no edit. `gray` is the declared fallback, exactly as the
+                   tile anatomies default it. A CHAT gets no attribute at all —
+                   it is keyed by its root message and is not a registry kind,
+                   which is the same reason it carries no pull requests. */
+                {...(row.kind
+                  ? { 'data-family': getKind(row.kind).graphFamily ?? 'gray' }
+                  : {})}
                 /* THE DEPTH IS PUBLISHED, NOT APPLIED. In the CARD band it is
                    read by nothing: a grid is a wrapped flow and an indent in it
                    reads as a misalignment, not as a hierarchy. In the ROW band

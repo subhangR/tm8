@@ -4832,3 +4832,58 @@
   font-size: var(--pn-fs-h3);
   font-weight: 700;
 }
+
+
+/* ═══ THE NARROWING CARD — one object for everything that decides which rows
+   you see (owner, 2026-08-31: "to do in progress done cancelled filters people
+   these can be more better in one card cleanly").
+
+   IT SUPERSEDES A STATED REFUSAL, and the refusal deserves an answer rather
+   than a silent overwrite. The note on `.lp__tierrow` argued that merging the
+   rows "conflates a lifecycle band with a filter within it", and settled for
+   reclaiming 4px of spacing. That is right about the SEMANTICS and does not
+   follow to the pixels: a category and a narrowing are different questions,
+   and they are still one control surface. The card says "this is where you
+   change what you are looking at"; the hairline inside it keeps the two
+   questions apart. Nothing is conflated — they simply stop floating loose on
+   the page as two unrelated strips.
+
+   The rows keep their own rules; this adds the object around them. */
+.cv2-root .lp__narrowing {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0 var(--pn-space-3) var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  overflow: hidden;
+}
+/* THE HAIRLINE IS THE SEPARATOR, and it belongs to the second row rather than
+   the first: a bottom border on the tabs would also draw when the tabs are the
+   only row present (board mode takes no tabs at all, and a kind with no
+   categories draws none), leaving a rule under nothing. */
+.cv2-root .lp__narrowing > .lp__filterbar {
+  border-top: 1px solid var(--pn-line);
+}
+.cv2-root .lp__narrowing > .lp__tierrow:only-child + .lp__filterbar,
+.cv2-root .lp__narrowing > .lp__filterbar:only-child {
+  border-top: 0;
+}
+/* Both rows lose their own outer spacing — the card owns the inset now, and
+   two boxes each keeping their own margin inside a third is how padding
+   doubles. */
+.cv2-root .lp__narrowing > .lp__tierrow,
+.cv2-root .lp__narrowing > .lp__filterbar {
+  margin: 0;
+  padding: var(--pn-space-2) var(--pn-space-3);
+}
+/* Board mode partitions by column and draws no tabs, so it gets no card —
+   only the filters, unboxed, exactly as before. */
+.cv2-root .lp__narrowing--boardless {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}

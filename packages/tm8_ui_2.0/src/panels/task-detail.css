@@ -358,9 +358,37 @@
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__cell {
-  min-block-size: 42px;
+  /* 42px -> 30px, and the label and value share a LINE rather than stacking.
+     Owner, repeatedly, on this card: "this looks worst bad", "why can't you
+     design this properly". Two facts were occupying two 42px slabs across the
+     full width of a pane — 84px of card to say `ID: <uuid>` and
+     `COMPLETION GATE: none`. A definition list is not a dashboard; these are
+     small labelled facts and they should read like a list, letting the
+     description — the thing a reader came for — start higher up the card. */
+  min-block-size: 30px;
   box-sizing: border-box;
-  padding: var(--pn-space-2);
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-2);
+}
+/* The label is the quiet half and takes a fixed column so the values line up
+   down the card instead of starting wherever their label happened to end. */
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__label {
+  flex: none;
+  min-width: 116px;
+  font: 700 var(--pn-fs-fine)/1.4 var(--pn-ui);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+/* The id is the one value that must not be broken across a line — a wrapped
+   uuid reads as two ids. Everything else may wrap. */
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__label {

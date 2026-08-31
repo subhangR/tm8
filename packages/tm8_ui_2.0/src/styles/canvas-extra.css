@@ -141,3 +141,63 @@
   /* MEASURED dark half of the reader prose pair (oracle T0-4:1345). */
   --pn-x-prose-ink: #D8D0BE;
 }
+
+/* ==========================================================================
+   THE TEN KIND FAMILIES — the lookup table that was never written.
+
+   THE DEFECT. `domain/registry.ts` gives every kind a `graphFamily`: red,
+   yellow, purple, pink, green, teal, orange, gray, cyan, blue. Ten hues.
+   `graph.css` maps each to `var(--color-icon-<hue>, <a --pn- fallback>)` and
+   `panels` resolves the same map into `--pnf`. But NOT ONE `--color-icon-<hue>`
+   is defined anywhere in this package — the Astryx bridge declares only
+   `primary`, `secondary`, `disabled` and `accent`. Every family therefore fell
+   through to its fallback, and the fallbacks collide:
+
+       blue   -> --pn-info        cyan   -> --pn-info      SAME COLOUR
+       green  -> --pn-run         teal   -> --pn-run       SAME COLOUR
+       orange -> --pn-wait        yellow -> --pn-wait      SAME COLOUR
+       purple -> --pn-pr-merged   pink   -> --pn-brand-2   near-identical
+
+   So a system that declares ten kind colours renders six, three pairs of them
+   indistinguishable. The owner, repeatedly: "why is it only one color black
+   and white types". The palette was never the problem. The lookup was empty,
+   and CSS resolves an undefined custom property to its fallback in silence.
+
+   WHY THE HUES LIVE HERE and not in tokens.css: tokens.css is a byte-verbatim
+   transplant guarded by an equality test and cannot grow. This file is the one
+   named, auditable extension the hex ban exempts, and its own header says it
+   exists for exactly this — colours the token ramp has no entry for.
+
+   HOW THEY WERE CHOSEN. Same construction as the status ramp they sit beside:
+   held to a similar lightness and chroma so no kind shouts over another, and
+   so a family tint never competes with a STATUS tint painted on the same card.
+   Colour here answers "what is this", never "is it urgent" — urgency is
+   --pn-run/wait/block and stays theirs alone.
+
+   Both themes, because a hue tuned on paper is wrong on ink: the dark set is
+   lifted in lightness and dropped in chroma so it reads on #0F1114 without
+   glowing. */
+.cv2-root {
+  --color-icon-blue:   #3F6078;
+  --color-icon-cyan:   #2F7480;
+  --color-icon-teal:   #2C7268;
+  --color-icon-green:  #367253;
+  --color-icon-yellow: #8A7118;
+  --color-icon-orange: #96591F;
+  --color-icon-red:    #A44141;
+  --color-icon-pink:   #97416B;
+  --color-icon-purple: #6A4C93;
+  --color-icon-gray:   #70767D;
+}
+.cv2-root[data-theme='dark'] {
+  --color-icon-blue:   #7FA3BE;
+  --color-icon-cyan:   #6FB2BE;
+  --color-icon-teal:   #6DB5A6;
+  --color-icon-green:  #78AF8C;
+  --color-icon-yellow: #C6B15E;
+  --color-icon-orange: #D09566;
+  --color-icon-red:    #D98A8A;
+  --color-icon-pink:   #D189AE;
+  --color-icon-purple: #A990D6;
+  --color-icon-gray:   #9AA1A8;
+}
