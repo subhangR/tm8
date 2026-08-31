@@ -358,7 +358,12 @@ export function WorkSessionContent({
       }
       data-surface={s}
       aria-selected={surface === s}
-      aria-controls={panelId(s)}
+      /* Only the SELECTED surface's panel is on screen; the others are kept
+         mounted but not rendered, so naming them here is a relationship that
+         leads nowhere (render gate, `controls-hidden`, measured on the session
+         route in both themes). The panels keep their `aria-labelledby` back to
+         these tabs, which is the direction that is always true. */
+      aria-controls={surface === s ? panelId(s) : undefined}
       tabIndex={surface === s ? 0 : -1}
       /* The name goes on the BUTTON, not on the svg: the mark is decorative
          shorthand, so `getByRole('tab', { name: 'Git' })` keeps working and a

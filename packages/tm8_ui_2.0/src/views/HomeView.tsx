@@ -37,7 +37,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { HomePage } from '../home-page';
 import { AuxEntityPanel } from './auxPanel';
-import { PanelResizer, useElementWidth, usePanelFlag, usePanelWidth } from '../kit';
+import {
+  PanelResizer,
+  useElementHeight,
+  useElementWidth,
+  usePanelChoice,
+  usePanelFlag,
+  usePanelHeight,
+  usePanelWidth,
+} from '../kit';
 import {
   EntityListPanel,
   type ControlHost,
@@ -64,7 +72,7 @@ import type { CockpitStage, NavView } from '../routes/types';
 import { rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
 import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
-import { inTreeOf } from './home-tree';
+import { usePaneScrollMemory } from './paneScrollMemory';
 import type { Notice } from '../shell';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { useLaunchPort } from './useLaunchPort';
@@ -119,6 +127,118 @@ export const HOME_LIST_CHROME = 8;
    live here now and are handed to CSS as `--hp-rail`. */
 export const HOME_RAIL_COLLAPSED = 72;
 export const HOME_RAIL_EXPANDED = 208;
+
+/* ---------------------------------------------------------------------------
+   THE DASHBOARD SPLIT (owner, 2026-08-31)
+   ---------------------------------------------------------------------------
+   "ideally we want sessions and chats and task to be occupying max height width
+   adjustable up and down" · "Need horizontal split full height is compulsory
+   strictly" · and then, correcting which shape leads: "Priority is vertical
+   split with full height".
+
+   So: two panes with a real handle between them, VERTICAL (side by side) by
+   default and STACKED on demand, with the choice and both extents remembered.
+   Every number below is a floor in the 02-LAYOUT §6 sense — the extent below
+   which the pane stops being itself — and every CEILING is solved from a
+   MEASUREMENT rather than typed, for the reason the rail's own constants moved
+   out of the stylesheet: a floor that lives in two places disagrees with
+   itself. */
+
+/**
+ * THE ACTIVE PANE SIDE BY SIDE — AND THE GRID CHANGES SHAPE RATHER THAN
+ * REFUSING TO MOVE (owner, 2026-08-31: "if i adjust width of chat these cards
+ * become a list?").
+ *
+ * A TWO-COLUMN DRAG FLOOR WAS THE FIRST ANSWER AND IT WAS THE WRONG ONE. It
+ * would have clamped the divider at 418px so the cards could never stop being
+ * two abreast — which makes a genuinely wide conversation unreachable (a real
+ * thing to want while reading a long reply) and makes the divider look broken
+ * on the way there, because a control that silently stops moving reads as
+ * broken whatever the reason. So there is no two-column clamp. The GRID takes
+ * three shapes as the pane narrows, and the two thresholds between them live in
+ * `home-page.css` as CONTAINER queries on the pane itself — the pane's width is
+ * what the divider sets, so the viewport cannot answer this and a JS breakpoint
+ * would be answering the wrong question.
+ *
+ *   1. WIDE   — cards, two or more columns, 96px rows (the approved mock).
+ *   2. NARROW — one column of ROWS: kind dot, title, kind word, time. Same
+ *               scroller, same click target, same facts; 44px rows.
+ *   3. GONE   — the pane collapses to the seam and the conversation takes the
+ *               width. Never without a way back: the reveal control is drawn
+ *               permanently in the seam (Subhang's ruling 3, 2026-08-16).
+ *
+ * 240 IS THE FLOOR OF BAND 2 AND THEREFORE THE RESIZER'S FLOOR: the narrowest
+ * pane on which a row is still a row — an 8px dot, two 8px gaps, a title with
+ * room to say something, the kind word, a 4-character time and 16px of padding.
+ * Below it the drag does not clamp, it COLLAPSES (`onBeyondFloor`), which is
+ * band 3 and the only honest thing left to do with a request for less.
+ *
+ * 480 is the resting default: two 200px card columns and their 8px gap, with
+ * room to breathe, and a hair under the 618 a third column would need.
+ */
+export const HOME_SIDE_W_MIN = 240;
+export const HOME_SIDE_W_DEFAULT = 480;
+/** THE ACTIVE PANE STACKED, and the floor is arithmetic rather than taste:
+      a create-verb card row                                  ~60px
+      the column gap                                           10px
+      the ACTIVE bar (label, lenses, live tally)              ~24px
+      its gap                                                   8px
+      ONE FULL 96px CARD ROW — the brief's floor                96px
+      the pane's seam gutter                                     8px
+                                                              ≈ 206
+    200 is that, rounded to the nearest ten, which keeps one whole card visible
+    at the floor. Half a card is the "broken box" reading the grid's scroll
+    snapping exists to avoid. 300 is the resting default because it is what the
+    retired `max-height: 200px` produced once the strips above it were paid —
+    nothing jumps for a reader who has never dragged the seam. */
+export const HOME_SIDE_H_MIN = 200;
+export const HOME_SIDE_H_DEFAULT = 300;
+/** The OTHER pane's floor when the two share the height. A transcript with its
+    composer under it stops being usable below this; it is the same order as the
+    380px `min-height` the solo chat hero carried before the split. */
+export const HOME_LOWER_MIN = 300;
+/** The seam track: the `PanelResizer`'s 8px hit target and nothing else. It has
+    no border of its own — that is why this is 8 and `ASIDE_CHROME` is 9. */
+export const HOME_SPLIT_CHROME = 8;
+
+/**
+ * WHERE SIDE-BY-SIDE STOPS FITTING, and it is measured, not a media query.
+ *
+ * Both panes have floors, and below their sum plus the rail there is no honest
+ * side-by-side arrangement left — one of them would have to go under its floor,
+ * which is the zero-floored track this package forbids by the back door. So the
+ * layout FALLS BACK to stacked, where the panes share the height instead of the
+ * width and both floors are payable again.
+ *
+ * With the rail collapsed and no aside that threshold is 72 + 240 + 8 + 360 =
+ * 680px of `.hp-host`. It moves with the rail and with the aside because it is
+ * computed from them; a hard-coded breakpoint would be wrong the moment either
+ * changed, which is the standing rule that breakpoints are DERIVED.
+ *
+ * THE FLOOR IT PAYS IS BAND 2's, not band 1's. Side by side stays available all
+ * the way down to a pane holding a ROW LIST beside a usable conversation —
+ * which is the whole point of the grid changing shape instead of clamping.
+ * Below even that there is no arrangement where both panes clear their floors,
+ * so the honest answer is stacked, where the grid gets the full width back.
+ *
+ * THE FALLBACK NEVER WRITES. It is a paint-time decision, exactly like the
+ * aside's overlay demotion and the width clamp beside it. A narrow window that
+ * persisted "stacked" would answer the reader's remembered choice with the
+ * accident of one session's window size, and widening again would not give it
+ * back — the same way clamping on write is how a width preference dies.
+ */
+export function homeSplitFits(outerWidth: number, railWidth: number, asideReserve: number): boolean {
+  /* 0 is jsdom, which cannot measure. An unmeasurable row imposes no fallback
+     rather than a fabricated one — the same law the overlay follows. */
+  if (outerWidth <= 0) return true;
+  return outerWidth >= railWidth + HOME_SIDE_W_MIN + HOME_SPLIT_CHROME + HOME_CENTER_MIN + asideReserve;
+}
+
+/** The two arrangements. `vertical` = panes side by side (the divider is a
+    vertical rule, dragged left and right); `horizontal` = stacked. */
+export type HomeSplitAxis = 'vertical' | 'horizontal';
+const isSplitAxis = (candidate: string): candidate is HomeSplitAxis =>
+  candidate === 'vertical' || candidate === 'horizontal';
 
 export interface HomeViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -241,7 +361,33 @@ export function HomeView(props: HomeViewProps) {
   const rightTrail = useNavStore((s) => s.right);
   const centerId = stack.length > 0 ? stack[stack.length - 1]! : null;
   const drillId = rightTrail.length > 0 ? rightTrail[rightTrail.length - 1]! : null;
-  const openEntity = useCallback((id: EntityId) => navStore.getState().openRight(id), []);
+  /**
+   * ONE GESTURE, ONE RESULT (ruling 2026-08-31, delegated by the owner: "You
+   * take the call which fits best"). A connection ALWAYS opens in the ENTITY
+   * PANE, in place, pushing a trail crumb. This SUPERSEDES R6's mechanism and
+   * keeps R6's reason.
+   *
+   * IT WAS `openRight` — region C, the 440px aside — and the discriminator for
+   * which of three berths a click landed in was WHERE THE CLICK CAME FROM: a
+   * dashboard card, an in-tree connection, or a chip inside the transcript. A
+   * reader cannot see that distinction, so they could not predict where a click
+   * would land, which is the definition of arbitrary navigation. Worse,
+   * `openFromCenter` branched on `inTreeOf`, so two connections on the SAME
+   * panel could land in different places depending on ancestry nothing on
+   * screen states.
+   *
+   * AND THE ASIDE COULD NOT KEEP ITS OWN PROMISE. It holds exactly one entity,
+   * so chip → chip → chip evicts the first anyway: the guarantee "you do not
+   * lose your place" expired on the second click, while costing 440px of a
+   * screen the owner has just split two ways and objected to a third column on
+   * three times.
+   *
+   * THE GUARANTEE IS KEPT BY OTHER MEANS, and it had to be built rather than
+   * assumed: the trail survives arbitrary depth AND `usePaneScrollMemory`
+   * restores where the reader was in each entity as they walk back. A crumb
+   * without the scroll memory would have been a downgrade wearing a ruling.
+   */
+  const openEntity = useCallback((id: EntityId) => navStore.getState().push(id), []);
 
   /* THE ROOT: the address wins; a bare `/home` falls back to the remembered
      root (D15). An unregistered slug is not a root we can list — the memory
@@ -357,16 +503,15 @@ export function HomeView(props: HomeViewProps) {
      everything else opens beside it. `inTreeOf` is the shared definition —
      see views/home-tree.ts and its decision table. */
   const treeRootId = stack.length > 0 ? stack[0]! : null;
-  const openFromCenter = useCallback(
-    (id: EntityId) => {
-      const nav = navStore.getState();
-      const parentOf = (cursor: EntityId) =>
-        (data.detailOf(cursor)?.parentId ?? null) as EntityId | null;
-      if (inTreeOf(treeRootId, id, parentOf)) nav.push(id);
-      else nav.openRight(id);
-    },
-    [treeRootId, data],
-  );
+  /* THE `inTreeOf` BRANCH IS GONE (same ruling). In-tree grew the trail and
+     out-of-tree opened the aside — two results for one gesture, chosen by an
+     ancestry the reader has no way to see. `push` was already the right
+     behaviour for the in-tree case and is now the only behaviour.
+
+     `inTreeOf` and `views/home-tree.ts` are NOT deleted: `EntityView` and the
+     workspace still ask the question for their own layouts. What is deleted is
+     Home asking it to decide a BERTH. */
+  const openFromCenter = useCallback((id: EntityId) => navStore.getState().push(id), []);
 
   /* Trail crumbs resolve titles through the same read the panels use. */
   const titleOf = useCallback(
@@ -546,6 +691,7 @@ export function HomeView(props: HomeViewProps) {
      reads as "the terminal is broken". */
   const rootRef = useRef<HTMLDivElement | null>(null);
   const rootWidth = useElementWidth(rootRef);
+  const rootHeight = useElementHeight(rootRef);
   const pref = usePanelWidth('home.aside', ASIDE_DEFAULT, ASIDE_MIN);
   const outerWidth = rootWidth > 0
     ? rootWidth
@@ -587,6 +733,137 @@ export function HomeView(props: HomeViewProps) {
       jsdom measures 0 ⇒ beside, so the overlay never triggers in tests that
       cannot measure (the same law as the workspace demotion loop). */
   const overlay = outerWidth > 0 && asideMax < ASIDE_MIN;
+
+  /* ───────────────────── THE DASHBOARD SPLIT ─────────────────────────────
+     The arrangement, the two extents, and the ceilings solved from the row's
+     and the column's real measurements. The constants and the reasoning are at
+     the top of this file; what happens here is only the arithmetic.
+
+     THE CHOICE IS PERSISTED THROUGH `usePanelChoice` — the third shape beside
+     the width and the flag, and it is the right one: this is a selection from a
+     CLOSED SET, so a value written by some earlier build that no longer names
+     an arrangement must read as "nothing remembered" and fall to the default,
+     never come back as a shape no CSS rule can draw. */
+  const [splitChoice, setSplitChoice] = usePanelChoice('home.split', 'vertical', isSplitAxis);
+  const splitFits = homeSplitFits(outerWidth, railWidth, asideReserve);
+  /* THE REMEMBERED CHOICE AND THE DRAWN ONE ARE DIFFERENT VALUES, deliberately.
+     `splitChoice` is what the reader asked for and is what persists; `splitAxis`
+     is what this window can actually afford. Widening the window restores the
+     vertical arrangement without the reader touching anything, because the
+     fallback never wrote. */
+  const splitAxis: HomeSplitAxis = splitChoice === 'vertical' && splitFits ? 'vertical' : 'horizontal';
+
+  const sideWidthPref = usePanelWidth('home.side', HOME_SIDE_W_DEFAULT, HOME_SIDE_W_MIN);
+  const sideHeightPref = usePanelHeight('home.side', HOME_SIDE_H_DEFAULT, HOME_SIDE_H_MIN);
+  /* BAND 3. A flag, not a width of zero: a zero width would be a floor of zero
+     by the back door, and the remembered extent has to survive the collapse
+     unchanged so revealing puts the pane back where the reader left it. */
+  const [sideCollapsed, setSideCollapsed] = usePanelFlag('home-side-collapsed', false);
+
+  /* SIDE BY SIDE: the ACTIVE pane may take everything the row can spare once
+     the rail, the other pane's floor and — when it is open — the aside's floor
+     have been paid. Unmeasurable (jsdom) ⇒ no ceiling rather than a fabricated
+     one, the same rule column A's ceiling follows twenty lines up. */
+  const sideWidthCeiling = outerWidth > 0
+    ? Math.max(
+        HOME_SIDE_W_MIN,
+        outerWidth - railWidth - HOME_SPLIT_CHROME - HOME_CENTER_MIN - (overlay ? 0 : asideReserve),
+      )
+    : Number.POSITIVE_INFINITY;
+  const sideWidth = Math.min(Math.max(HOME_SIDE_W_MIN, sideWidthPref.width), sideWidthCeiling);
+
+  /* STACKED: the same sentence turned through ninety degrees. The ceiling is
+     what the COLUMN can spare once the conversation's floor and the seam are
+     paid, and it is measured off the same element for the same reason — a `vh`
+     unit would answer for the window, which is not this region. */
+  const sideHeightCeiling = rootHeight > 0
+    ? Math.max(HOME_SIDE_H_MIN, rootHeight - HOME_LOWER_MIN - HOME_SPLIT_CHROME)
+    : Number.POSITIVE_INFINITY;
+  const sideHeight = Math.min(Math.max(HOME_SIDE_H_MIN, sideHeightPref.height), sideHeightCeiling);
+
+  /* ONE HANDLE, ONE GESTURE, BOTH AXES — `kit/PanelResizer`, extended rather
+     than twinned (its docblock says why). `side` names where the pane it moves
+     SITS relative to the seam: to its LEFT when the panes are side by side,
+     ABOVE it when they are stacked. `aria-controls` names `#hp-side`, which is
+     the element whose width or height this drag actually changes; the render
+     gate fails a handle whose target is not on the page. */
+  const splitter = (
+    <div className="hp-split" data-split={splitAxis} data-testid="hp-split">
+      {sideCollapsed ? (
+        /* THE WAY BACK, DRAWN PERMANENTLY. Subhang's ruling 3 (2026-08-16): a
+           collapse whose only escape is a keyboard shortcut or a hover target
+           is a panel most readers never get back. The subject changed — this is
+           the ACTIVE pane rather than the rail — and the ruling did not. */
+        <button
+          type="button"
+          className="hp-split__reveal"
+          data-testid="hp-side-reveal"
+          aria-label="Show active work"
+          aria-expanded={false}
+          aria-controls="hp-side"
+          title="Show active work"
+          onClick={() => setSideCollapsed(false)}
+        >
+          <span aria-hidden>{splitAxis === 'vertical' ? '›' : '⌄'}</span>
+        </button>
+      ) : (
+        <PanelResizer
+          side={splitAxis === 'vertical' ? 'left' : 'top'}
+          label="Active work"
+          controls="hp-side"
+          width={splitAxis === 'vertical' ? sideWidth : sideHeight}
+          minWidth={splitAxis === 'vertical' ? HOME_SIDE_W_MIN : HOME_SIDE_H_MIN}
+          maxWidth={
+            splitAxis === 'vertical'
+              ? (Number.isFinite(sideWidthCeiling) ? sideWidthCeiling : HOME_SIDE_W_DEFAULT)
+              : (Number.isFinite(sideHeightCeiling) ? sideHeightCeiling : HOME_SIDE_H_DEFAULT)
+          }
+          onResize={splitAxis === 'vertical' ? sideWidthPref.setWidth : sideHeightPref.setHeight}
+          onReset={splitAxis === 'vertical' ? sideWidthPref.reset : sideHeightPref.reset}
+          /* BAND 3, reached by the drag itself. The floor still CLAMPS
+             `onResize`; this fires only for a request well past it, and the
+             remembered extent is left untouched so the reveal restores it. */
+          onBeyondFloor={() => setSideCollapsed(true)}
+        />
+      )}
+      {/* THE FLIP, ON THE DIVIDER. A reader who wants the other shape is
+          already looking at the thing between the two panes, so the control
+          lives there rather than in a menu. It is DISABLED WITH ITS REASON
+          rather than hidden when the window is too narrow for side by side —
+          a vanished control reads as a missing feature, and this one's absence
+          would be especially confusing because the layout has just changed
+          shape on its own. */}
+      <button
+        type="button"
+        className="hp-split__flip"
+        data-testid="hp-split-flip"
+        /* THE LABEL READS OFF WHAT IS DRAWN, NOT OFF WHAT IS REMEMBERED, and
+           the difference is real: under the narrow fallback the choice still
+           says `vertical` while the screen is stacked, and a button offering to
+           "stack the panes" beside two already-stacked panes is a control
+           describing a state that is not on screen. */
+        aria-label={
+          splitAxis === 'vertical'
+            ? 'Stack the panes — active work above, conversation below'
+            : 'Place the panes side by side'
+        }
+        title={
+          splitFits
+            ? splitAxis === 'vertical'
+              ? 'Stack the panes (active work above, conversation below)'
+              : 'Place the panes side by side'
+            : 'Side by side needs a wider window — the panes are stacked until it fits'
+        }
+        aria-disabled={splitFits ? undefined : true}
+        onClick={() => {
+          if (!splitFits) return;
+          setSplitChoice(splitAxis === 'vertical' ? 'horizontal' : 'vertical');
+        }}
+      >
+        <span aria-hidden>{splitAxis === 'vertical' ? '⇕' : '⇔'}</span>
+      </button>
+    </div>
+  );
   const asideWidth = overlay
     ? Math.min(Math.max(ASIDE_MIN, pref.width), Math.max(ASIDE_MIN, outerWidth - 48))
     : Math.min(Math.max(ASIDE_MIN, pref.width), Math.max(ASIDE_MIN, asideMax));
@@ -625,12 +902,21 @@ export function HomeView(props: HomeViewProps) {
     viewerMemberId: props.viewerMemberId,
   };
 
+  /* THE PANE REMEMBERS WHERE YOU WERE IN EACH ENTITY. Half of the one-berth
+     ruling (2026-08-31) and the half that makes it not a loss: following a
+     connection replaces what is in this pane, and walking back — crumb, browser
+     Back or Escape — must return the reader to the offset they left, not to the
+     top. See `paneScrollMemory` for why it records on capture rather than in a
+     cleanup. */
+  const centerHostRef = useRef<HTMLDivElement | null>(null);
+  usePaneScrollMemory(centerHostRef, centerId);
+
   /* REGION B's entity occupant, under its trail crumb (R7). Clicks inside it
      split by R6: in-tree grows THIS trail (in place); relations open C —
      sideways lands BESIDE the selection, not over it. Closing returns B to
      the chat. */
   const centerOverride = centerId ? (
-    <div className="hp-trail-host" data-testid="hp-center-trail-host">
+    <div className="hp-trail-host" ref={centerHostRef} data-testid="hp-center-trail-host">
       <HomeTrail
         trail={stack}
         label="Centre trail"
@@ -822,7 +1108,10 @@ export function HomeView(props: HomeViewProps) {
         groups={navigationGroups}
         activeKind={root === CHATS_ROOT ? null : root}
         onSelect={setRoot}
-        onHome={() => setRoot(CHATS_ROOT)}
+        /* `onHome` GONE 2026-08-31 — the rail carried a Home row eight inches
+           from the top bar's Home tab (owner: "There are two homes make sure
+           one home is there"). `HomeRail`'s prop docblock carries the removal
+           and the verification behind it. */
         collapsed={railCollapsed}
         onToggleCollapsed={() => setRailCollapsed((collapsed) => !collapsed)}
       />
@@ -932,6 +1221,12 @@ export function HomeView(props: HomeViewProps) {
            live in `.hr-rail`. */
         '--hp-list': `${listWidth}px`,
         '--hp-rail': `${railWidth}px`,
+        /* The split's two extents, one per axis. Only the one matching
+           `data-split` is read by any rule, but both are published: a custom
+           property that changes on a flip would make the flip a paint of two
+           different numbers rather than a change of which track is used. */
+        '--hp-side-w': sideCollapsed ? '0px' : `${sideWidth}px`,
+        '--hp-side-h': sideCollapsed ? '0px' : `${sideHeight}px`,
       } as React.CSSProperties}
     >
       <HomePage
@@ -941,11 +1236,38 @@ export function HomeView(props: HomeViewProps) {
         activeKind={root === CHATS_ROOT ? null : root}
         onOpenKind={setRoot}
         rail={rail}
+        splitter={splitter}
+        splitAxis={splitAxis}
+        sideCollapsed={sideCollapsed}
         focus={focus}
         {...(aside ? { aside } : {})}
-        /* A NEEDS YOU card opens where a chip does. They are the same gesture
-           — "show me that" — from two places on one screen. */
-        onOpenEntity={(id) => openEntity(id as EntityId)}
+        /* A CARD ON THE DASHBOARD OPENS IN THE OTHER PANE, NOT IN THE ASIDE
+           (owner, 2026-08-31: "session or task when clicking how it shows —
+           ideally horizontal split like this?").
+         *
+         * IT USED TO BE `openEntity`, which is `openRight` — region C, the
+         * 440px column bolted onto the right edge. That is the wrong berth for
+         * this gesture and the owner's words say why: an ACTIVE card is the
+         * thing you came to Home to work on, and it was opening into the
+         * narrowest column on the screen while the widest pane went on showing
+         * a conversation you had just left.
+         *
+         * `openCenter` is the EXISTING plumbing for exactly this and it needed
+         * no new path: it sets region B's trail, `centerOverride` is built from
+         * it thirty lines above, and the chat surface already renders that in
+         * its centre berth (`centre = centerOverride ?? stagePane`) — which IS
+         * the other pane, at that pane's full height, with the ACTIVE grid
+         * still beside or above it. Nothing new is mounted; one call changes.
+         *
+         * THE ASIDE STAYS, AND IT STAYS FOR ONE CASE ONLY: an entity reached
+         * from INSIDE the conversation — a ledger row, a read line, a chip.
+         * `props.chat(openEntity, …)` still hands the chat surface `openRight`,
+         * because R6's law there is that sideways lands BESIDE the thing you
+         * are reading and never over it: evicting the transcript you clicked
+         * the reference in would lose your place. Two gestures, two berths,
+         * and the difference is whether the click came from the dashboard or
+         * from the conversation. */
+        onOpenEntity={(id) => navStore.getState().openCenter(id as EntityId)}
         onOpenWorkspace={props.onOpenWorkspace}
         /* THE THREE CREATE VERBS (owner, 2026-08-30): "have one create new
            chat, New SESSIONS AND New Task first". These are the SAME handlers

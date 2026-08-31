@@ -664,6 +664,45 @@
   outline: none;
 }
 
+/* THE Y-AXIS HANDLE — the same 8px hit target and the same 1px hairline, turned
+   through ninety degrees (owner, 2026-08-31: Home's split must flip between
+   side-by-side and stacked). Everything above still applies; these four rules
+   only swap which dimension is the target and which is the line, so the
+   hover/focus/drag emphasis, the disabled reading and the focus grammar are
+   inherited rather than restated. `align-self: stretch` is what makes an 8px
+   column fill its row; the row-wise twin needs `justify-self` instead, and the
+   pair is written out because a handle that does not span its seam is a
+   pointer target you have to hunt for. */
+.cv2-root .kit-resizer[data-side='top'],
+.cv2-root .kit-resizer[data-side='bottom'] {
+  width: auto;
+  height: 8px;
+  align-self: auto;
+  justify-self: stretch;
+  cursor: row-resize;
+}
+.cv2-root .kit-resizer[data-side='top'] .kit-resizer__line,
+.cv2-root .kit-resizer[data-side='bottom'] .kit-resizer__line {
+  width: 100%;
+  height: 1px;
+  transition: height 100ms, background 100ms;
+}
+.cv2-root .kit-resizer[data-side='top']:hover .kit-resizer__line,
+.cv2-root .kit-resizer[data-side='top']:focus-visible .kit-resizer__line,
+.cv2-root .kit-resizer[data-side='top'][data-resizing] .kit-resizer__line,
+.cv2-root .kit-resizer[data-side='bottom']:hover .kit-resizer__line,
+.cv2-root .kit-resizer[data-side='bottom']:focus-visible .kit-resizer__line,
+.cv2-root .kit-resizer[data-side='bottom'][data-resizing] .kit-resizer__line {
+  width: 100%;
+  height: 3px;
+  background: var(--pn-brand);
+}
+.cv2-root .kit-resizer[data-side='top'][aria-disabled='true']:hover .kit-resizer__line,
+.cv2-root .kit-resizer[data-side='bottom'][aria-disabled='true']:hover .kit-resizer__line {
+  height: 1px;
+  background: var(--pn-line);
+}
+
 /* ==========================================================================
    KINETIC EXPERIENCE GRAMMAR — the `k-` vocabulary every screen adopts in
    the next sweep: ONE button grammar, ONE input grammar, ONE field label,

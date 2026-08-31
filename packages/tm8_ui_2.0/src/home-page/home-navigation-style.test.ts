@@ -169,26 +169,58 @@ describe('a name is never truncated by its own count', () => {
     expect(facts).toContain('tabular-nums');
   });
 
-  it('stacks the ways-in and the active work above the conversation', () => {
+  it('splits the ways-in and the active work from the conversation, on either axis', () => {
     /*
-     * THIS PINNED `grid-template-columns: 4fr 8fr` — the side-by-side split
-     * that WAS the brief expressed as screen area. The owner replaced it on
-     * 2026-08-30, choosing a mix of two drawn layouts: the create cards and the
-     * active work run across the FULL WIDTH, and the conversation takes what is
-     * left beneath them.
+     * THIS PINNED `grid-template-rows` AND FORBADE `grid-template-columns` —
+     * "stacks the ways-in and the active work above the conversation", the
+     * arrangement the owner chose on 2026-08-30. SUPERSEDED 2026-08-31 by the
+     * owner's split ruling and its correction: the two panes are now a
+     * DRAGGABLE split that the reader flips between side by side and stacked,
+     * with side by side the default ("Priority is vertical split with full
+     * height"). A test forbidding `grid-template-columns` would have made the
+     * approved layout a failure — which is exactly what the note above says
+     * happened to the assertion this one replaced, one day earlier.
      *
-     * The old assertion is not relaxed, it is REPLACED — a test that still
-     * demanded columns would have made the owner's own layout a failure.
+     * What survives unchanged is the FLOOR LAW, because that never depended on
+     * which axis the split runs along.
      */
     const home = homeCss.match(/\.cv2-root \.hp-home\s*\{([^}]*)\}/s)?.[1] ?? '';
-    expect(home).toContain('grid-template-rows');
-    expect(home).not.toContain('grid-template-columns');
     expect(home).toContain('min-height: 0');
+    /* The seam is the whole gap — an 8px handle with a 10px gutter either side
+       is a 28px band of nothing pretending to be a divider. */
+    expect(home).toMatch(/gap:\s*0/);
 
-    /* THE CONVERSATION ROW IS FLOORED. `minmax(0, 1fr)` — an unfloored track
-     * lets a long transcript grow the row and push the cards off the top,
-     * which is the same collapse L4 bans by name elsewhere in this package. */
-    expect(home).toContain('minmax(0, 1fr)');
+    const vertical =
+      homeCss.match(/\.cv2-root \.hp-home\[data-split='vertical'\]\s*\{([^}]*)\}/s)?.[1] ?? '';
+    const horizontal =
+      homeCss.match(/\.cv2-root \.hp-home\[data-split='horizontal'\]\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(vertical, 'no side-by-side arrangement').not.toBe('');
+    expect(horizontal, 'no stacked arrangement').not.toBe('');
+
+    /* SIDE BY SIDE: three column tracks — the pane at the width the reader set,
+       the seam, and the conversation taking the rest. ONE row track, floored,
+       so each pane is full height on its own (the strict reading of "Entities
+       must be full height"). */
+    expect(vertical).toContain('grid-template-columns: var(--hp-side-w');
+    expect(vertical).toContain('grid-template-rows: minmax(0, 1fr)');
+    /* STACKED: the same sentence turned ninety degrees. */
+    expect(horizontal).toContain('grid-template-rows: var(--hp-side-h');
+    expect(horizontal).toContain('grid-template-columns: minmax(0, 1fr)');
+
+    /* THE CONVERSATION'S TRACK IS FLOORED IN BOTH — `minmax(0, 1fr)`. An
+     * unfloored track lets a long transcript set the track's minimum by its own
+     * content and push the other pane off the screen, which is the same
+     * collapse L4 bans by name elsewhere in this package. */
+    expect(vertical).toContain('minmax(0, 1fr)');
+    expect(horizontal).toContain('minmax(0, 1fr)');
+
+    /* AND THE FIRST TRACK IS FIXED, NOT A `minmax`. The clamp lives in the
+       solver (`views/HomeView`), the only thing that knows the rail's width,
+       the other pane's floor and whether the aside is open; a `minmax` here as
+       well would let the track disagree with the number the separator publishes
+       as `aria-valuenow`. Same ruling as `.tch-root`'s `--hp-list`. */
+    expect(vertical).not.toMatch(/grid-template-columns:\s*minmax\(0,\s*var\(--hp-side-w/);
+    expect(horizontal).not.toMatch(/grid-template-rows:\s*minmax\(0,\s*var\(--hp-side-h/);
   });
 
   it('scrolls the whole grid instead of capping it', () => {
@@ -204,11 +236,32 @@ describe('a name is never truncated by its own count', () => {
 
     const grid = homeCss.match(/\.cv2-root \.hp-active__grid\s*\{([^}]*)\}/s)?.[1] ?? '';
     expect(grid, 'no .hp-active__grid rule').not.toBe('');
-    /* BOUNDED AND SCROLLING. Unbounded, row one of `.hp-home` is `auto` and
-       sixty cards take the whole grid — which is measurably how the
-       conversation ended up at 2px once already. */
-    expect(grid, 'the grid can grow until it eats the conversation').toMatch(/max-height/);
-    expect(grid, 'a bounded grid that does not scroll just hides work').toMatch(
+    /* SUPERSEDED 2026-08-31 — this required `max-height` on the grid, under the
+       reasoning "unbounded, row one of `.hp-home` is `auto` and sixty cards
+       take the whole grid, which is measurably how the conversation ended up at
+       2px once already". BOTH HALVES OF THAT PREMISE ARE GONE:
+
+         · row one of `.hp-home` is no longer `auto`. The pane is a definite
+           track — the width or height the reader dragged the seam to — so the
+           grid cannot set its own container's size whatever it holds.
+         · and the conversation is no longer downstream of it. Side by side (the
+           default) the two panes do not compete for height at all.
+
+       What replaces the ceiling is a FLOOR, and it is the stronger guard: the
+       grid FILLS its pane and scrolls inside it (owner, 2026-08-31: "Vertical
+       mock boxes must be scrollable if there are more"), and `min-height` is
+       what stops that fill becoming a collapse. This box carries `overflow-y`,
+       and per Flexbox §4.5 any `overflow` other than `visible` sets an item's
+       automatic minimum size to ZERO — the 2px create box, the 2px chat pane
+       and the sliced card titles all shipped from that one rule. 96px is one
+       whole card row: half a card is the "broken box" reading this grid's
+       scroll snapping exists to avoid. */
+    expect(grid, 'the ceiling came back — the pane sets the size now').not.toMatch(/max-height/);
+    expect(grid, 'the grid no longer fills its pane').toMatch(/flex:\s*1 1 auto/);
+    expect(grid, '§4.5 — an overflow box with no floor collapses instead of scrolling').toMatch(
+      /min-height:\s*96px/,
+    );
+    expect(grid, 'a filled grid that does not scroll just hides work').toMatch(
       /overflow-y:\s*auto/,
     );
     /* A short list sits at the top of the region rather than stretching two
@@ -231,12 +284,83 @@ describe('a name is never truncated by its own count', () => {
     expect(grid, 'the rows will be divided across the box and the cards will overlap').toMatch(
       /grid-auto-rows:\s*\d+px/,
     );
-    expect(grid, 'the region no longer shows a whole number of rows').toMatch(
-      /max-height:\s*\d+px/,
-    );
+    /* SUPERSEDED with the ceiling above — "the region no longer shows a whole
+       number of rows" was a claim about a `max-height` that had to land on a
+       row boundary. It does not have one. What still has to hold is that the
+       rows are PINNED and a short list sits at the TOP of a tall pane rather
+       than being stretched down it — both asserted just above and just below. */
+    expect(grid).toMatch(/align-content:\s*start/);
 
     /* THE FLOOR SURVIVED THE REWRITE. L4: never an unfloored track. */
     expect(grid).toContain('minmax(200px, 1fr)');
+  });
+
+  it('turns the cards into a list rather than squashing them, at a threshold derived from the track', () => {
+    /*
+     * TWO RULINGS ARE PINNED HERE AND NEITHER SHOULD BE RE-LITIGATED.
+     *
+     * 1. A CARD IS NEVER RENDERED NARROWER THAN ITS TRACK (owner, 2026-08-31:
+     *    "let's not squash."). `minmax(200px, 1fr)` is a HARD floor. The moment
+     *    the pane cannot afford two whole cards and the gap between them, the
+     *    grid switches to the single-column ROW form. It does not render two
+     *    narrow cards, and it does not render one 200px card in a column — "one
+     *    column of ROWS reads well; one column of 200px cards looks like a
+     *    mistake".
+     *
+     * 2. THE DIVIDER NEVER REFUSES TO MOVE. The first design here CLAMPED the
+     *    drag at two columns instead, and that was rejected: a divider that
+     *    silently stops moving reads as broken, and it makes a genuinely wide
+     *    conversation unreachable — which is a real thing to want while reading
+     *    a long reply. Changing shape is the answer; refusing to move is not.
+     *
+     * WHY THIS IS A TEST AND NOT ONLY A COMMENT: the threshold is the kind of
+     * number a later tweak moves without noticing what it was protecting. So
+     * the claim pinned is the ARITHMETIC — the switch point is COMPUTED from
+     * the card track, the gap and the grid's own scrollbar reserve, and if the
+     * track ever stops being 200px the threshold has to move with it or this
+     * fails. A hardcoded pixel that has drifted away from the track it guards
+     * is exactly the failure being prevented.
+     */
+    const grid = homeCss.match(/\.cv2-root \.hp-active__grid\s*\{([^}]*)\}/s)?.[1] ?? '';
+    const cardFloor = Number(grid.match(/minmax\((\d+)px,\s*1fr\)/)?.[1]);
+    expect(cardFloor, 'no floored card track to derive a threshold from').toBeGreaterThan(0);
+
+    /* The gap is a token, and `--pn-space-N` is N*4px (house rule). Read the
+       token name off the rule rather than assuming which one it is. */
+    const gapToken = grid.match(/gap:\s*var\(--pn-space-(\d+)\)/)?.[1];
+    expect(gapToken, 'the grid gap stopped being a space token').toBeTruthy();
+    const gap = Number(gapToken) * 4;
+
+    /* And the grid reserves room on the right for its own scrollbar, which is
+       part of the container the query measures. */
+    const reserve = Number(grid.match(/padding-right:\s*(\d+)px/)?.[1] ?? 0);
+
+    /* Two whole cards + their gap + the reserve is the narrowest CONTAINER on
+       which the card band is honest; one pixel under it, the band must change.
+       `.hp-side` is the container, and its own seam gutter is outside its
+       content box, so it does not enter this sum. */
+    const cardsNeed = cardFloor * 2 + gap + reserve;
+    expect(
+      homeCss,
+      `the row band's threshold is not ${cardsNeed - 1}px — it has drifted from the ${cardFloor}px card track it protects`,
+    ).toContain(`@container hp-side (max-width: ${cardsNeed - 1}px)`);
+
+    /* THE CONTAINER HAS TO EXIST, or the query never matches and the band
+       silently never happens — a rule that cannot fire. */
+    const side = homeCss.match(/\.cv2-root \.hp-side\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(side, 'the pane is not a query container').toContain('container-name: hp-side');
+    expect(side).toContain('container-type: inline-size');
+
+    /* AND THE ROW BAND IS A REAL BAND, not a squeezed card grid: one column,
+       and the rows still PINNED (implicit `auto` rows inside a definite-height
+       container get divided across it — that shipped as cards painting through
+       each other, and it is no less true at 44px than at 96px). */
+    const band = homeCss.match(/@container hp-side \(max-width: \d+px\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(band, 'no row band').not.toBe('');
+    expect(band).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(band, 'the row band lost its pinned rows').toMatch(/grid-auto-rows:\s*\d+px/);
+    /* THE KIND COLOUR SURVIVES AS THE DOT — one fact, two presentations. */
+    expect(band).toContain('--hp-acard-tone');
   });
 
   it('lets a card carry links without nesting them in a button', () => {

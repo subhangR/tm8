@@ -302,10 +302,18 @@ describe('Home’s left side — the icon rail, and no column beside it', () => 
        structural, so that is what is asserted. */
     const view = await openHome();
 
-    /* No drag handle on Home. (The ENTITY screen still has one — the cases at
-       the top of this file — so this is Home's arrangement, not a retreat from
-       resizable panels.) */
-    expect(view.queryByTestId('panel-resizer-left')).toBeNull();
+    /* SUPERSEDED 2026-08-31 by the owner's split ruling: this read "no drag
+       handle on Home", which was true only while Home had nothing on it worth
+       resizing. It has a handle again — but for the DASHBOARD SPLIT, not for
+       the list column, and the difference is the whole point of the claim. So
+       the assertion is replaced by the sharper one: there is a separator, and
+       what it controls is the ACTIVE pane rather than a list column that is not
+       drawn. A handle naming a missing region is the 9px x 901px defect this
+       file's block comment is about; naming the pane it really moves is the
+       repair. */
+    const split = view.getByTestId('panel-resizer-left');
+    expect(split.getAttribute('aria-controls')).toBe('hp-side');
+    expect(view.getByTestId('hp-side').id).toBe('hp-side');
     expect(view.queryByTestId('hp-list-separator')).toBeNull();
 
     /* And no dashboard-plus-list arrangement: bare Home is the dashboard. */
@@ -331,9 +339,24 @@ describe('Home’s left side — the icon rail, and no column beside it', () => 
     /* The dashboard and the chat are NOT rendered underneath or beside it. */
     expect(view.queryByTestId('chat-home-screen')).toBeNull();
 
-    /* THE WAY BACK IS A ROW IN THE RAIL, not the browser's Back. Home is a
-       destination and `activeKind: null` alone reads as "nothing selected". */
-    fireEvent.click(view.getByTestId('home-rail-home'));
+    /* THE WAY BACK IS THE TOP BAR'S HOME TAB, and this is the claim that
+       SUPERSEDED "the way back is a row in the rail" (2026-08-31, owner: "There
+       are two homes make sure one home is there").
+     *
+     * The rail grew a Home row because `activeKind: null` alone reads as
+     * "nothing selected", and there was a worry that the tab would be inert —
+     * Home is already the ACTIVE tab while a kind list is open, so a click on
+     * it could short-circuit. IT DOES NOT: verified on the deployed build by
+     * driving the three steps (land, pick Tasks in the rail, click the tab) and
+     * now pinned here, which is the assertion that lets the rail stay a list of
+     * KINDS with no destination row in it.
+     *
+     * The rail's own row is asserted GONE in the same breath, because a test
+     * that only checked the tab would go green with both controls present —
+     * which is the state the owner was objecting to. */
+    expect(view.queryByTestId('home-rail-home'), 'the duplicate Home is back in the rail').toBeNull();
+    const tabBar = view.getByTestId('space-tab-bar');
+    fireEvent.click(within(tabBar).getByRole('tab', { name: /^Home$/ }));
     await waitFor(() => expect(view.queryByTestId('hp-list-main')).toBeNull());
     expect(view.getByTestId('chat-home-screen')).toBeTruthy();
 
@@ -396,8 +419,16 @@ describe('Home’s left side — the icon rail, and no column beside it', () => 
     expect(reveal.getAttribute('aria-expanded')).toBe('false');
     expect(reveal.getAttribute('aria-label')).toBe('Show the icon rail');
     expect(reveal.getAttribute('aria-controls')).toBe('home-rail');
-    /* And no drag handle appears in its place: there is nothing to resize. */
-    expect(view.queryByTestId('panel-resizer-left')).toBeNull();
+    /* SUPERSEDED 2026-08-31 (the split ruling) — this read "and no drag handle
+       appears in its place: there is nothing to resize". The handle that
+       appears now is not "in its place": it is the dashboard split's, it exists
+       whether the rail is collapsed or not, and it moves `#hp-side`. The claim
+       worth keeping from the original is that COLLAPSING THE RAIL GROWS THE
+       PANES rather than leaving a dead strip — the rail's width goes to 0 and
+       the separator that remains is still the split's, not a revived column
+       A's. */
+    expect(view.getByTestId('panel-resizer-left').getAttribute('aria-controls')).toBe('hp-side');
+    expect(view.queryByTestId('hp-list-separator')).toBeNull();
 
     fireEvent.click(reveal);
     await waitFor(() => expect(view.getByTestId('home-rail')).toBeTruthy());

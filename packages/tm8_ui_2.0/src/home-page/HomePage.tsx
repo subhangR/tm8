@@ -53,6 +53,10 @@ import {
 } from '../home';
 import { EntityNavigationMetrics } from '../navigation';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
+/* THE LIST PANEL'S OWN BADGE ROW, mounted here rather than re-implemented — see
+   the links-line note at its mount. One component, one vocabulary, one set of
+   honesty rules about absent and zero counters. */
+import { TileCountBadges, hasTileCounts } from '../panels/list/TileCountBadges';
 import './home-page.css';
 
 export interface HomePageProps {
@@ -76,6 +80,45 @@ export interface HomePageProps {
    * exactly as it makes room for the aside.
    */
   rail?: ReactNode;
+  /**
+   * THE SPLITTER BETWEEN THE TWO PANES — the drag handle and the control that
+   * flips which way they sit (owner, 2026-08-31: "ideally horizontal split like
+   * this? or some other layout … max height width adjustable up and down",
+   * then "Priority is vertical split with full height").
+   *
+   * The host builds it for the same reason it builds the aside and the rail:
+   * only the host holds the measurement the ceiling is solved from, and only
+   * the host owns the persisted preference. This page seats it BETWEEN the two
+   * panes as a real sibling — a separator nested inside one of the things it
+   * moves cannot be dragged past that thing's own edge.
+   *
+   * Absent ⇒ the two panes still render, stacked, at their natural sizes. A
+   * page that drew a seam with no handle on it would be a divider pretending to
+   * be a control.
+   */
+  splitter?: ReactNode;
+  /**
+   * WHICH WAY THE TWO PANES SIT. `vertical` is side by side (each pane full
+   * height on its own — the ruled default); `horizontal` is stacked (the grid
+   * above, the conversation below, sharing the height).
+   *
+   * IT IS AN ATTRIBUTE, NOT A BRANCH, and that is load-bearing. Flipping the
+   * arrangement must not remount either pane: the chat holds a scroll position,
+   * a draft in its composer and possibly an in-flight read, and a conditional
+   * that rendered two different trees would drop all three every time the
+   * reader changed their mind about the shape. So the JSX below is IDENTICAL in
+   * both arrangements and the axis reaches CSS as `data-split`.
+   */
+  splitAxis?: 'vertical' | 'horizontal';
+  /**
+   * BAND 3 — the ACTIVE pane collapsed to the seam, the conversation taking the
+   * whole area. An attribute for the same reason `splitAxis` is one: the pane
+   * stays MOUNTED and keeps its scroll position, its lens and any loaded page,
+   * so revealing it puts the reader back exactly where they were. Unmounting it
+   * would re-read on every toggle — the same reasoning `.tch-sidebar` carries
+   * for its own collapse.
+   */
+  sideCollapsed?: boolean;
   /* `listRail` RETIRED (2026-08-30). It was the drag handle and reveal button
      for column A — `.tch-sidebar` — which no longer exists on this page: a
      kind's list is the working area now, not a third column. A separator for a
@@ -254,6 +297,34 @@ function sinceLabel(iso: string): string {
 }
 
 
+/* ---------------------------------------------------------------------------
+   THE ACTIVE STRIP'S TREE CONSTANTS (owner, 2026-08-31, choosing option B:
+   "make sessions expand and collapse with limits — if it reaches limits break
+   UI, just show 'other 3 sessions are running' … like a pagination approach
+   within a tree")
+   ---------------------------------------------------------------------------
+   VALUES, NOT NUMBERS BURIED IN A BRANCH, so they can be tuned without hunting.
+   They live HERE rather than beside the split's geometry in `views/HomeView`
+   because the dependency only runs one way — the view mounts the page — and a
+   page constant imported from its own host would be a cycle. */
+
+/** How many children of one parent are drawn before the tree pages. Six is a
+    glance: past it the eye stops counting rows and starts scanning, which is
+    the point at which "how many are running under this" is better answered by
+    a number than by a list. */
+export const ACTIVE_CHILD_PAGE = 6;
+/**
+ * HOW FAR THE PANE INDENTS BEFORE IT STOPS.
+ *
+ * The DEPTH IS NOT CAPPED IN THE MODEL — `orderActive` walks n-deep and a
+ * depth-6 subtree is fully ordered. What is capped is the INDENT, because 16px
+ * a level walks a deep tree off the right edge of a 480px pane and the rows
+ * that suffer are the deepest ones, which is exactly backwards. Past the cap
+ * the row stops moving right and states its lineage in words instead — the
+ * tether mark, which is the same fact carried by a different means.
+ */
+export const ACTIVE_INDENT_MAX_DEPTH = 4;
+
 /** The four lenses on the active strip. `all` is the resting state. */
 type ActiveLens = 'all' | 'chats' | 'sessions' | 'tasks';
 
@@ -322,12 +393,224 @@ function isLive(row: HomeRow): boolean {
  * stopping sixty chats burying five running sessions — survives as the sort:
  * anything running comes first, everything else follows it by time.
  */
-export function orderActive<T extends HomeRow>(rows: readonly T[]): readonly T[] {
+export function orderActive<T extends HomeRow>(rows: readonly T[]): readonly (T & { depth: number })[] {
   const at = (r: T) => r.activityAt ?? '';
-  return [...rows].sort((a, b) => {
+  const byStanding = (a: T, b: T) => {
     const live = Number(isLive(b)) - Number(isLive(a));
     return live !== 0 ? live : at(b).localeCompare(at(a));
-  });
+  };
+
+  /*
+   * THE TREE IS A DEPTH-FIRST WALK OF THE SAME ORDER, NOT A SECOND ORDER.
+   *
+   * Sessions spawn sessions, so `parentId` describes a real hierarchy on this
+   * strip (owner ruling, 2026-08-31: "the session/sub-session tree must be
+   * visible in the grid"). Two constraints decide the shape and they pull
+   * against each other:
+   *
+   *   · A RUNNING CHILD IS ACTIVE WORK IN ITS OWN RIGHT. It must be a card and
+   *     a row of its own — never something you have to expand a parent to
+   *     find, because hiding running work is the exact opposite of what this
+   *     strip is for. So nothing is nested AWAY; every row is still emitted.
+   *   · AND THE TWO BANDS SHARE ONE DOM. The cards and the rows are the same
+   *     markup under a container query, so there is ONE order and it has to
+   *     serve both. A row band that nests needs children adjacent to their
+   *     parent; a card band does not care, as long as the top-level ordering
+   *     still puts what is running first.
+   *
+   * Depth-first satisfies both: siblings are ranked by the SAME running-first,
+   * then-most-recent rule at every level, and each row is followed immediately
+   * by its own children. The card band reads it as a flat sequence (and it is
+   * one — no indentation, which in a wrapped grid reads as misalignment rather
+   * than hierarchy); the row band indents on `depth`.
+   *
+   * A ROW WHOSE PARENT IS NOT IN THIS SET IS A ROOT HERE. That is the honest
+   * reading: the lens may have filtered the parent out, or it may be older than
+   * anything on screen. It is still marked as having a parent — see
+   * `lineageOf` — so the card can say "spawned by something" without naming a
+   * title it does not have.
+   *
+   * NO COLLAPSE MACHINERY, DELIBERATELY. The live data is depth two and one
+   * child wide; expand/collapse state, its persistence and its keyboard model
+   * would be a mechanism for a problem that does not exist yet. The depth is
+   * uncapped in the MODEL — an n-deep walk — and capped only by what the pane
+   * can show before it scrolls.
+   */
+  const present = new Set(rows.map((r) => r.id));
+  const childrenOf = new Map<string, T[]>();
+  const roots: T[] = [];
+  for (const row of rows) {
+    const parent = row.parentId && present.has(row.parentId) ? row.parentId : null;
+    if (parent === null || parent === row.id) {
+      roots.push(row);
+      continue;
+    }
+    const bucket = childrenOf.get(parent);
+    if (bucket) bucket.push(row);
+    else childrenOf.set(parent, [row]);
+  }
+
+  const out: (T & { depth: number })[] = [];
+  /* `seen` is a cycle guard, not defensive decoration: `parentId` comes off the
+     wire and a cycle would make this walk never return. A row already emitted
+     is skipped rather than repeated. */
+  const seen = new Set<string>();
+  const walk = (level: readonly T[], depth: number) => {
+    for (const row of [...level].sort(byStanding)) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      out.push({ ...row, depth });
+      const kids = childrenOf.get(row.id);
+      if (kids) walk(kids, depth + 1);
+    }
+  };
+  walk(roots, 0);
+  /* Anything a cycle stranded is still WORK, and work is never dropped from
+     this strip. It comes out at the end, at the top level, in the same order. */
+  for (const row of [...rows].sort(byStanding)) {
+    if (!seen.has(row.id)) {
+      seen.add(row.id);
+      out.push({ ...row, depth: 0 });
+    }
+  }
+  return out;
+}
+
+/**
+ * WHAT A CARD SAYS ABOUT WHERE IT CAME FROM — resolved against the rows already
+ * on screen, and never by asking for more.
+ *
+ * THREE ANSWERS, and the middle one is the one that is easy to get wrong:
+ *   · no parent at all      → nothing is drawn. Absence is not a claim.
+ *   · a parent WE CAN NAME  → "↳ from {title}".
+ *   · a parent we cannot    → "↳ sub-session" — it says the row was spawned by
+ *                             something without naming a title it does not
+ *                             have. An empty "↳ from " is the failure this
+ *                             branch exists to prevent: it reads as a missing
+ *                             name rather than as an unresolved one.
+ */
+export function lineageOf(
+  row: HomeRow,
+  titleOf: (id: string) => string | undefined,
+): string | null {
+  if (!row.parentId) return null;
+  const parent = titleOf(row.parentId)?.trim();
+  return parent ? `↳ from ${parent}` : '↳ sub-session';
+}
+
+/** What a parent is hiding, counted from the DATA and never from what is drawn. */
+export interface ChildTally {
+  /** Direct children present in this result set. */
+  total: number;
+  /** How many of them are RUNNING. */
+  running: number;
+}
+
+export function childTallies<T extends HomeRow>(rows: readonly T[]): Map<string, ChildTally> {
+  const present = new Set(rows.map((r) => r.id));
+  const out = new Map<string, ChildTally>();
+  for (const row of rows) {
+    if (!row.parentId || row.parentId === row.id || !present.has(row.parentId)) continue;
+    const tally = out.get(row.parentId) ?? { total: 0, running: 0 };
+    tally.total += 1;
+    if (isLive(row)) tally.running += 1;
+    out.set(row.parentId, tally);
+  }
+  return out;
+}
+
+/**
+ * WHICH ROWS ARE ON SCREEN — expansion and pagination, applied to the ordered
+ * walk (owner, 2026-08-31, option B).
+ *
+ * "make sessions expand and collapse with limits — if it reaches limits break
+ *  UI, just show 'other 3 sessions are running'; if they wanted to close
+ *  others, sessions open before sessions view so other can be seen — like a
+ *  pagination approach within a tree"
+ *
+ * THE RULE THAT DECIDES EVERY BRANCH BELOW: a running child session is ACTIVE
+ * WORK. It may be put away by the READER's own action — that is a choice they
+ * made and can undo — but it must never be hidden by the LAYOUT deciding there
+ * is no room. Hence:
+ *
+ *   · a parent with a running child DEFAULTS OPEN. A parent whose children are
+ *     all idle may default closed; nothing running is behind a control the
+ *     reader has not touched.
+ *   · past `ACTIVE_CHILD_PAGE` the tree does not keep growing and it does not
+ *     push the parent off the top. One more row stands in the child position
+ *     saying how many are left AND that they are running — "3 more running" and
+ *     "3 more" are different facts and only the first is worth interrupting a
+ *     reader for. Pressing it pages the next N in, in place; nothing already
+ *     open closes and the scroll does not move, because nothing above it
+ *     changes height.
+ *   · a collapsed parent still STATES its tally on its own row, so a closed
+ *     branch never silently swallows running work.
+ *
+ * IT IS PURE. The strip owns the expansion state; this decides only what that
+ * state means, which is what makes both halves testable without a browser.
+ */
+export type ActiveNode<T> =
+  | { type: 'row'; key: string; row: T; depth: number }
+  /** The pagination row. `running` is a subset of `hidden`, both counted from
+   *  the data — a tally that read the visible rows would be a number that gets
+   *  smaller as you reveal, which is the opposite of what it means. */
+  | { type: 'more'; key: string; parentId: string; depth: number; hidden: number; running: number };
+
+export function visibleTree<T extends HomeRow>(
+  rows: readonly T[],
+  opts: {
+    /** The reader's override, where they have expressed one. */
+    expandedOf(id: string): boolean | undefined;
+    /** How many PAGES of children this parent has revealed (1 = the first N). */
+    pagesOf(id: string): number;
+    perPage?: number;
+  },
+): readonly ActiveNode<T>[] {
+  const perPage = opts.perPage ?? ACTIVE_CHILD_PAGE;
+  const ordered = orderActive(rows);
+  const byId = new Map(ordered.map((r) => [r.id, r]));
+  /* The ordered walk already has children immediately after their parent, so
+     the child groups can be read straight off it — no second sort, and the
+     sibling ranking (running first, then most recent) is inherited rather than
+     recomputed, which is what stops the two orders drifting apart. */
+  const kidsOf = new Map<string, (T & { depth: number })[]>();
+  for (const row of ordered) {
+    const parent = row.parentId && byId.has(row.parentId) && row.parentId !== row.id
+      ? row.parentId
+      : null;
+    if (!parent) continue;
+    const bucket = kidsOf.get(parent);
+    if (bucket) bucket.push(row);
+    else kidsOf.set(parent, [row]);
+  }
+
+  const out: ActiveNode<T>[] = [];
+  const emit = (row: T & { depth: number }, depth: number) => {
+    out.push({ type: 'row', key: row.id, row, depth });
+    const kids = kidsOf.get(row.id);
+    if (!kids || kids.length === 0) return;
+    const override = opts.expandedOf(row.id);
+    /* DEFAULT OPEN IFF SOMETHING UNDER IT IS RUNNING. */
+    const open = override ?? kids.some(isLive);
+    if (!open) return;
+    const shown = Math.min(kids.length, Math.max(1, opts.pagesOf(row.id)) * perPage);
+    for (const kid of kids.slice(0, shown)) emit(kid, depth + 1);
+    const rest = kids.slice(shown);
+    if (rest.length > 0) {
+      out.push({
+        type: 'more',
+        key: `more:${row.id}`,
+        parentId: row.id,
+        depth: depth + 1,
+        hidden: rest.length,
+        running: rest.filter(isLive).length,
+      });
+    }
+  };
+  for (const row of ordered) {
+    if (row.depth === 0) emit(row, 0);
+  }
+  return out;
 }
 
 const LENSES: readonly { id: ActiveLens; label: string }[] = [
@@ -367,7 +650,34 @@ function ActiveStrip({
   onOpen(id: string): void;
   linkedPullRequestsOf?: ((id: string) => readonly LinkedPullRequestFacts[]) | undefined;
 }) {
-  const shown = orderActive(rows);
+  /* THE READER'S OWN TREE STATE, and only the reader's: `expanded` holds the
+     parents they have TOUCHED, so a parent they have not is free to follow the
+     default (open iff something under it is running). Storing a boolean for
+     every parent instead would freeze the default at first render and a child
+     that started running later would stay behind a closed control.
+
+     VIEWER-LOCAL AND NOT PERSISTED, deliberately. Which branches are open is a
+     property of this sitting, not a preference: a session tree that was worth
+     opening yesterday is usually finished today, and restoring it would put a
+     dead branch in front of a live one. */
+  const [tree, setTree] = useState<{
+    expanded: Record<string, boolean>;
+    pages: Record<string, number>;
+  }>({ expanded: {}, pages: {} });
+  const toggle = (id: string, open: boolean) =>
+    setTree((state) => ({ ...state, expanded: { ...state.expanded, [id]: open } }));
+  const pageIn = (id: string) =>
+    setTree((state) => ({ ...state, pages: { ...state.pages, [id]: (state.pages[id] ?? 1) + 1 } }));
+
+  /* THE LINEAGE IS RESOLVED FROM THE ROWS ALREADY ON SCREEN — one map over the
+     set this render was handed, no second read and no graph query. A parent
+     outside the set is unresolvable, which `lineageOf` says in words. */
+  const titles = new Map(rows.map((row) => [row.id, row.title]));
+  const tallies = childTallies(rows);
+  const shown = visibleTree(rows, {
+    expandedOf: (id) => tree.expanded[id],
+    pagesOf: (id) => tree.pages[id] ?? 1,
+  });
   return (
     <section className="hp-active" aria-label="Active work">
       <div className="hp-active__bar">
@@ -403,7 +713,38 @@ function ActiveStrip({
         </p>
       ) : (
         <div className="hp-active__grid">
-          {shown.map((row) => {
+          {shown.map((node) => {
+            if (node.type === 'more') {
+              /* THE PAGINATION ROW (owner: "just show 'other 3 sessions are
+                 running'"). It stands in the CHILD position, at the child's
+                 depth, so it reads as part of the branch rather than as a
+                 footer under the list — and pressing it pages the next N in
+                 WITHOUT closing anything already open. Nothing above it changes
+                 height, so the reader's scroll does not move.
+
+                 IT STATES RUNNING SPECIFICALLY when any of them are. "3 more"
+                 and "3 more running" are different facts and only the second is
+                 worth interrupting a reader for; when none of the hidden ones
+                 are running it says so plainly instead of borrowing the word. */
+              const label = node.running > 0
+                ? `${node.running} more running${node.running < node.hidden ? ` · ${node.hidden - node.running} idle` : ''}`
+                : `${node.hidden} more`;
+              return (
+                <div key={node.key} className="hp-acard hp-acard--more" data-depth={node.depth}
+                  style={{ '--hp-acard-depth': Math.min(node.depth, ACTIVE_INDENT_MAX_DEPTH) } as React.CSSProperties}>
+                  <div className="hp-acard__main">
+                    <button
+                      type="button"
+                      className="hp-acard__more k-press"
+                      onClick={() => pageIn(node.parentId)}
+                    >
+                      {label}
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            const row = node.row;
             /* THE CARD IS NO LONGER THE BUTTON, and it had to stop being one.
                `LinkedPullRequestChips` renders an `<a>` per PR — an anchor
                inside a button is invalid HTML and the nested interactive eats
@@ -420,8 +761,44 @@ function ActiveStrip({
                and the count says how many there are rather than hiding them. */
             const prs = allPrs.slice(0, 3);
             const morePrs = allPrs.length - prs.length;
+            /* THE CAP IS IN THE PAGE, NOT IN CSS. A CSS-only cap still hands
+               the browser eight chips and hopes; slicing here is what makes
+               "three and a count" a fact rather than an appearance — and it is
+               the SAME slice both bands read, so a card and a row can never
+               show a different number. */
+            const hasLinks = allPrs.length > 0 || (row.counters ? hasTileCounts(row.counters) : false);
+            const lineage = lineageOf(row, (id) => titles.get(id));
+            const tally = tallies.get(row.id) ?? null;
+            /* A PARENT'S OPEN STATE, resolved the same way `visibleTree`
+               resolves it — the reader's override where they gave one, the
+               running-child default where they did not. Two answers to one
+               question would be a control whose caret disagrees with the rows
+               under it. */
+            const open = tally
+              ? (tree.expanded[row.id] ?? tally.running > 0)
+              : false;
             return (
-              <div key={`${row.lens}-${row.id}`} className={`hp-acard hp-acard--${row.lens}`}>
+              <div
+                key={`${row.lens}-${row.id}`}
+                className={`hp-acard hp-acard--${row.lens}`}
+                /* THE DEPTH IS PUBLISHED, NOT APPLIED. In the CARD band it is
+                   read by nothing: a grid is a wrapped flow and an indent in it
+                   reads as a misalignment, not as a hierarchy. In the ROW band
+                   the container query turns it into padding, because a list is
+                   the one shape that nests legibly. Same DOM, same order, two
+                   readings. */
+                style={{
+                  /* CAPPED FOR THE INDENT, uncapped in the model. 16px a level
+                     walks a depth-6 subtree off the right edge of a 480px pane,
+                     and the rows that suffer are the deepest — exactly
+                     backwards. Past the cap the row stops moving right and
+                     states its lineage in words instead (`data-deep`). */
+                  '--hp-acard-depth': Math.min(node.depth, ACTIVE_INDENT_MAX_DEPTH),
+                } as React.CSSProperties}
+                data-depth={node.depth}
+                data-deep={node.depth > ACTIVE_INDENT_MAX_DEPTH ? 'true' : undefined}
+              >
+                <div className="hp-acard__main">
                 <button
                   type="button"
                   className="hp-acard__open k-press"
@@ -443,15 +820,68 @@ function ActiveStrip({
                     ) : null}
                   </span>
                   <span className="hp-acard__title">{row.title}</span>
+                  {/* WHERE IT CAME FROM. Drawn only when there IS a parent, and
+                      it never invents a name for one it cannot resolve — see
+                      `lineageOf`. Clipped like any other name: a truncated
+                      title is still the right title. */}
+                  {lineage ? (
+                    <span className="hp-acard__lineage" title={lineage}>{lineage}</span>
+                  ) : null}
                   <span className="hp-acard__facts">
                     {row.turns !== undefined ? (
                       <span>{row.turns} {row.turns === 1 ? 'turn' : 'turns'}</span>
+                    ) : null}
+                    {/* AND WHAT IT SPAWNED, in the facts line rather than on a
+                        line of its own: the card is a fixed 96px row and a
+                        fourth line is what pushes the facts off it. The count
+                        is only ever what is ON SCREEN — sessions this strip is
+                        holding — so it can never claim a subtree it has not
+                        seen. */}
+                    {tally ? (
+                      /* WHAT IT SPAWNED, on the parent's own row, so a COLLAPSED
+                         branch never silently swallows running work — the count
+                         is there whether the branch is open or shut. Counted
+                         from the DATA (`childTallies`), never from the visible
+                         rows: a tally that shrank as you revealed would be
+                         measuring the wrong thing. */
+                      <span className="hp-acard__kids">
+                        {tally.total} {tally.total === 1 ? 'sub-session' : 'sub-sessions'}
+                        {tally.running > 0 ? ` · ${tally.running} running` : ''}
+                      </span>
                     ) : null}
                     {row.activityAt ? (
                       <time dateTime={row.activityAt}>{sinceLabel(row.activityAt)}</time>
                     ) : null}
                   </span>
                 </button>
+                {/* THE FOLD — a parent's own control, and a SIBLING of the open
+                    gesture rather than a child of it: a button inside a button
+                    is invalid HTML whose nested interactive swallows its own
+                    clicks, which is the defect this card already paid for once
+                    with the pull-request anchors.
+
+                    NO `aria-controls`. The children are sibling grid items, not
+                    a container this could name — and a handle naming an element
+                    that is not there is the render gate's `controls-nothing`.
+                    `aria-expanded` plus a name that says what will happen is
+                    the whole of what this control has to state. */}
+                {tally ? (
+                  <button
+                    type="button"
+                    className="hp-acard__fold"
+                    aria-expanded={open}
+                    aria-label={
+                      open
+                        ? `Hide ${tally.total} sub-sessions of ${row.title}`
+                        : `Show ${tally.total} sub-sessions of ${row.title}`
+                    }
+                    title={open ? 'Collapse' : 'Expand'}
+                    onClick={() => toggle(row.id, !open)}
+                  >
+                    <span aria-hidden>{open ? '⌄' : '›'}</span>
+                  </button>
+                ) : null}
+                </div>
                 {/* A CHAT NEVER GETS THIS ROW, and not because it is tidier.
                     A chat is keyed by its root message and carries no PR edges
                     at all, so the index can only ever answer "none" for one —
@@ -459,9 +889,52 @@ function ActiveStrip({
                     stating "this conversation has none", which is a claim
                     about the world rather than about our read. Absence states
                     nothing; that is the correct thing to state here. */}
-                {prs.length > 0 ? (
+                {/* ═══ THE LINKS LINE ═══ (owner, 2026-08-31, on the mobile
+                    task list: "ee links line add it, we can know the edges for
+                    each of the entity — gives more information at one glance")
+
+                    IT IS NOT PULL REQUESTS ONLY, and it is not new. This is the
+                    SAME pair `EntityListPanel` composes for every tile — PR and
+                    commit chips, then the count badges for what the entity
+                    carries (docs, memories, people, messages) — in the same
+                    ORDER, so a task reads identically on Home and in the list.
+                    Two compositions of one fact set is how they drift.
+
+                    THE HONESTY RULES ARE THE COMPONENTS' AND ARE NOT RESTATED:
+                    a ZERO renders nothing, and an ABSENT counter renders
+                    nothing either, because "this server never counted" is not
+                    "there are none". Which means the line is often empty — and
+                    when it is, `hasLinks` is false and nothing is drawn at all:
+                    no slot, no placeholder, no reserved width. A chat has no
+                    pull requests and must not carry a gap where a session's
+                    chips would be.
+
+                    THE BADGES ARE READ-ONLY HERE. `onToggleKind` is deliberately
+                    not passed: the list panel's badges are DOORS onto a relation
+                    group rendered under the tile, and this strip has no such
+                    group to open. A badge wired to nothing would be a control
+                    that renders and does nothing, which is the thing the owner
+                    asked to have removed rather than left drawn. */}
+                {hasLinks ? (
                   <div className="hp-acard__prs">
-                    <LinkedPullRequestChips pullRequests={prs} placement="tile" />
+                    {/* THE COUNT CHIP — the narrow band's answer, rendered
+                        beside the chips and shown instead of them by the
+                        container query. THE NAME BEATS THE COUNT is the house
+                        ruling, so when the pane cannot hold both a readable
+                        title and three chips, it is the CHIPS that give way to
+                        a number, never the title that clips. Rendered here
+                        rather than swapped in by JS because both bands are one
+                        DOM: a card and a row are two presentations of one row
+                        model, and a fact may not exist in one and vanish in the
+                        other. */}
+                    {allPrs.length > 0 ? (
+                      <span className="hp-acard__prcount" title={`${allPrs.length} linked pull requests`}>
+                        <span aria-hidden>⑃ </span>{allPrs.length}
+                      </span>
+                    ) : null}
+                    {prs.length > 0 ? (
+                      <LinkedPullRequestChips pullRequests={prs} placement="tile" />
+                    ) : null}
                     {morePrs > 0 ? (
                       /* THE COUNT NAMES WHAT IT IS HIDING. A bare "+5" says
                          only that something was withheld; the tooltip lists
@@ -479,6 +952,12 @@ function ActiveStrip({
                       >
                         +{morePrs}
                       </span>
+                    ) : null}
+                    {row.counters ? (
+                      <TileCountBadges
+                        counters={row.counters}
+                        humanAuthors={row.badges?.humanMessageAuthors}
+                      />
                     ) : null}
                   </div>
                 ) : null}
@@ -667,7 +1146,12 @@ export function HomePage(props: HomePageProps) {
       {props.activeKind && props.list ? (
         <div className="hp-listmain" data-testid="hp-list-main">{props.list}</div>
       ) : (
-      <div className="hp-home">
+      <div
+        className="hp-home"
+        data-split={props.splitAxis ?? 'vertical'}
+        data-side-collapsed={props.sideCollapsed ? 'true' : undefined}
+        data-testid="hp-home"
+      >
       {/* THE LEFT THIRD. START, then WHAT NEEDS YOU. Nothing else.
        *
        * WHAT WAS HERE AND WHY IT IS GONE (owner, 2026-08-30, on the deployed
@@ -690,7 +1174,12 @@ export function HomePage(props: HomePageProps) {
        * database is not empty. Home answers "what is happening and what can I
        * start", and the rail answers "what is there" — one question per
        * surface, which is the whole of the complaint. */}
-      <div className="hp-side">
+      {/* NAMED, because the separator beside it has to say what it moves. The
+          render gate fails a handle whose `aria-controls` points at nothing —
+          it was written after a drag handle outlived its panel and painted a
+          9px x 901px hairline over the cards. This is the element whose width
+          (side by side) or height (stacked) the drag actually changes. */}
+      <div className="hp-side" id="hp-side" data-testid="hp-side">
       <HomeStart
         onNewChat={props.onNewChat}
         onCreateKind={props.onCreateKind}
@@ -735,11 +1224,16 @@ export function HomePage(props: HomePageProps) {
           YOU — and is not a subset of what the strip draws. */}
       </div>
 
-      {/* THE RIGHT TWO THIRDS: what is happening now. The session list, the
-          create verbs and the embedded terminal are the host's (lane H2); this
-          column only makes room for them, exactly as the page makes room for
-          the aside. The 4/8 ratio IS the brief — "current sessions, current
-          chat, anything I created" expressed as screen area. */}
+      {/* THE SEAM. Between the panes in the DOM as well as on screen, in both
+          arrangements — the grid decides whether that means "to the right of"
+          or "below", and the markup never changes. */}
+      {props.splitter ?? null}
+
+      {/* THE OTHER PANE: what is happening now — the conversation, or the
+          entity a card opened (`centerOverride`, routed through the chat
+          surface's centre berth). The session list, the create verbs and the
+          embedded terminal are the host's (lane H2); this pane only makes room
+          for them, exactly as the page makes room for the aside. */}
       <section className="hp-live" aria-label="Chat">
         {props.chat}
       </section>

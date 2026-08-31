@@ -62,6 +62,24 @@ const ROUTES = [
   { name: 'board', hash: `#/s/${SPACE}/board` },
   { name: 'graph', hash: `#/s/${SPACE}/graph` },
   { name: 'settings', hash: `#/s/${SPACE}/settings` },
+  /* THE ENTITY VIEWS, added 2026-08-31 with the full-height rule — the owner's
+     "chat, sessions, docs, tasks all entity views should be full height etc
+     all". A rule about a class of defect still only sees the routes it is
+     pointed at, and the four screens the ruling names were none of them.
+
+     THE IDS ARE REAL AND THEREFORE PERISHABLE. They came from
+     `tm8 entity query --kind <k> --space <SPACE> --limit 2` against this same
+     space; if one is archived the route reports DID NOT RENDER, which is a
+     loud, correct failure rather than a silent skip — but it is a failure about
+     the FIXTURE, not the screen. Re-fetch with that command before assuming a
+     regression. A `--entity` flag would be the better shape if this list needs
+     to move often. */
+  { name: 'entity/task', hash: `#/s/${SPACE}/e/01a054d8-5e57-7ad4-9035-f30195868b78` },
+  { name: 'entity/session', hash: `#/s/${SPACE}/e/01a04f57-0462-7b98-81bb-3704850aad11` },
+  { name: 'entity/doc', hash: `#/s/${SPACE}/e/01a053f9-5ede-7478-b018-2e035256686f` },
+  /* Chat is not an `/e/` screen: a conversation lives on Home, in its own
+     berth, so the route that audits it is Home's chat address. */
+  { name: 'home/chat', hash: `#/s/${SPACE}/home/chat` },
 ];
 
 /**
@@ -144,10 +162,16 @@ function auditInPage() {
     }
   }
 
-  // 4. THE PAGE MUST NOT SCROLL SIDEWAYS. Wide content scrolls in its own box.
+  // 4. THE PAGE MUST NOT SCROLL, IN EITHER DIRECTION. Wide or tall content
+  //    scrolls in its OWN box; this is an app shell, not a document. A page
+  //    scrollbar means some region escaped its container, and it takes the
+  //    shell's own chrome off the screen with it.
   const de = document.documentElement;
   if (de.scrollWidth > de.clientWidth + 2) {
     out.push({ rule: 'horizontal-page-scroll', el: 'document', detail: `${de.scrollWidth} > ${de.clientWidth}` });
+  }
+  if (de.scrollHeight > de.clientHeight + 2) {
+    out.push({ rule: 'vertical-page-scroll', el: 'document', detail: `${de.scrollHeight} > ${de.clientHeight}` });
   }
 
   // 5. A NAME CLIPPED BY ITS OWN COUNT — the house law, checked as geometry.
@@ -194,6 +218,119 @@ function auditInPage() {
       if (!cs.getPropertyValue(t).trim()) {
         out.push({ rule: 'token-unresolved', el: '.cv2-root', detail: `${t} resolves to nothing on this page` });
       }
+    }
+  }
+
+  // 7. THE PRIMARY REGION MUST REACH THE FLOOR OF THE VIEWPORT.
+  //
+  //    "chat, sessions, docs, tasks all entity views should be full height etc
+  //    all — Entities must be full height" (owner, 2026-08-31). That is a RULE,
+  //    so it is checked as one rather than screen by screen: this app is a
+  //    fixed-height shell, and on every route there is one region that is the
+  //    working area. A band of empty `--pn-paper` between the bottom of that
+  //    region and the bottom of the window is the defect, whatever produced it
+  //    — a `height: 52vh` left over from an older layout, a flex child that
+  //    never got `flex: 1`, a grid row that sized to its content.
+  //
+  //    HOW THE REGION IS FOUND, and this is the part that decides whether the
+  //    rule is useful or noise. The gate's own history has the counter-example:
+  //    a rule aimed at the wrong element does not report "no answer", it
+  //    reports "everything is broken" (see the token probe below, which read
+  //    `documentElement` and flagged ten tokens on every route). So the region
+  //    is not a selector list — it is found by walking the SPINE:
+  //
+  //      from `.cv2-root`, step into the BIGGEST visible in-flow child by AREA,
+  //      and keep stepping while that child is either (a) at least 60% of its
+  //      parent's height — it still IS the region, not a part of it — or (b)
+  //      its parent's only in-flow child, in which case it is the whole of what
+  //      the parent holds and must fill it.
+  //
+  //    (b) is what catches the actual reported defect: a full-height host with
+  //    one short panel inside it. Without it the walk stops at the host, whose
+  //    own bottom is at the floor, and reports nothing. (a) is what stops the
+  //    walk descending into a short list inside a tall panel — a list with
+  //    three rows in a 700px scroller is correct, and a rule that fired on it
+  //    would be muted within a week.
+  //
+  //    BY AREA AND NOT BY HEIGHT, because on this app height alone picks the
+  //    wrong sibling every time: Home's 72px icon rail and its 1350px working
+  //    area are BOTH full height, and "tallest" resolves that tie by DOM order,
+  //    which handed the rule the rail. It then walked down the rail and audited
+  //    a column of nine icons as "the primary content region". Area breaks the
+  //    tie the way a reader does.
+  //
+  //    AND THE WALK STOPS AT A SCROLLER. An `overflow-y: auto` box IS the
+  //    region; the content inside it is routinely taller than the viewport (a
+  //    1783px tree inside a 580px list body was the first thing this walk found)
+  //    and its bottom edge is meaningless as a layout claim. Descending past a
+  //    scroller measures the scrollable content, not the screen.
+  //
+  //    THE TWO MEASUREMENTS ARE IN DIFFERENT SPACES ON PURPOSE, and getting
+  //    that wrong made the first version of this rule silently inert.
+  //
+  //    Rule 1's lesson is "`getBoundingClientRect` is post-transform, so use
+  //    `offsetHeight` for layout questions". The first draft of THIS rule read
+  //    that as "never trust a rect" and skipped any element whose rect height
+  //    disagreed with its `offsetHeight`. That skipped `.cv2-root` itself on
+  //    every route — the shell paints inside a ~1.1 scale (its zoom control),
+  //    so the root measures 864 layout px and 950 viewport px — and the rule
+  //    audited nothing at all while reporting green. Measured with a deliberate
+  //    `height: 40vh` injected into the shell: still green. A check that cannot
+  //    fail is not a check.
+  //
+  //    The correct reading is that the two questions live in different spaces:
+  //
+  //      · IS THIS CHILD THE REGION? — a RATIO between two boxes in the same
+  //        subtree. `offsetHeight`, per rule 1; and a ratio is scale-invariant
+  //        anyway, so the two never disagree about this.
+  //      · DOES IT REACH THE FLOOR? — a question about the VIEWPORT, which is
+  //        composited space by definition. `getBoundingClientRect().bottom`
+  //        against `clientHeight` is the only honest pair; comparing a layout
+  //        height to a viewport height is what produced the 86px phantom gap.
+  //
+  //    The two are never compared with each other, which is what makes mixing
+  //    them safe here and unsafe in rule 1.
+  //
+  //    THE THRESHOLD IS 120px, and the arithmetic is: the largest legitimate
+  //    gutter under a region on any of these screens is the page's own bottom
+  //    padding, 7px, plus a hairline and sub-pixel rounding — call it 12. The
+  //    smallest band a reader calls "the screen stops halfway" is one card row
+  //    of this dashboard, 96px, plus its 8px gap: 104. 120 sits above every
+  //    legitimate gutter by an order of magnitude and below the smallest real
+  //    band, so nothing in between can be argued about. It is deliberately NOT
+  //    a percentage of the viewport: the defect is an absolute band of dead
+  //    paint, and on a short window a percentage would let a bigger one pass.
+  const FULL_HEIGHT_SLACK = 120;
+  const viewportBottom = document.documentElement.clientHeight;
+  const inFlow = (el) =>
+    seen(el) && !['absolute', 'fixed'].includes(getComputedStyle(el).position);
+
+  const area = (el) => el.offsetWidth * el.offsetHeight;
+  const scrolls = (el) => ['auto', 'scroll'].includes(getComputedStyle(el).overflowY);
+
+  const spineStart = document.querySelector('.cv2-root');
+  if (spineStart) {
+    let region = spineStart;
+    for (let depth = 0; depth < 40; depth += 1) {
+      if (scrolls(region)) break;
+      const kids = [...region.children].filter(inFlow);
+      if (kids.length === 0) break;
+      const biggest = kids.reduce((a, b) => (area(b) > area(a) ? b : a));
+      const dominant = biggest.offsetHeight >= region.offsetHeight * 0.6;
+      if (!dominant && kids.length !== 1) break;
+      // Below this a box is chrome, not a region — a 30px toolbar that happens
+      // to be an only child must not become "the primary content region".
+      if (biggest.offsetHeight < 40) break;
+      region = biggest;
+    }
+    const box = region.getBoundingClientRect();
+    const gap = viewportBottom - box.bottom;
+    if (gap > FULL_HEIGHT_SLACK) {
+      out.push({
+        rule: 'region-not-full-height',
+        el: name(region),
+        detail: `${Math.round(gap)}px of unused height below it (bottom at ${Math.round(box.bottom)} in a ${viewportBottom}px viewport)`,
+      });
     }
   }
 

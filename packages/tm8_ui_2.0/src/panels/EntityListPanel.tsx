@@ -1409,7 +1409,11 @@ function KindSelector({
         }}
         onKeyDown={onTriggerKeyDown}
         aria-haspopup="menu"
-        aria-controls={menuId}
+        /* The menu is mounted only while open. `aria-haspopup` + `aria-expanded`
+           state that a popup exists and whether it is showing; `aria-controls`
+           may only name it once it is actually there (render gate,
+           `controls-nothing`, measured on every entity route 2026-08-31). */
+        aria-controls={open ? menuId : undefined}
         aria-expanded={open}
         aria-label={config.labelPlural}
       >

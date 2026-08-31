@@ -1249,8 +1249,20 @@ export function EntityView(props: EntityViewProps) {
         invisible `AttentionInbox` still runs its space-wide attention query on
         every phone screen, and the phone is where that costs the most.
       */}
+      {/* THE `id` BELOW IS WHAT THE DRAG HANDLE ABOVE NAMES. It carried only a
+          `data-testid` of the same string, which no `aria-controls` can
+          resolve — so the separator announced a relationship to an element
+          that, as far as the accessibility tree was concerned, did not exist.
+          Measured on the deployed build on all three entity routes in both
+          themes (render gate, `controls-nothing`, 2026-08-31). The handle was
+          right all along; the target had no name. */}
       {boardMode || (oneSurface && !selectedId) ? null : (
-        <main className="ev-detail" aria-label={`${config.label} detail`} data-testid="entity-view-detail">
+        <main
+          className="ev-detail"
+          id="entity-view-detail"
+          aria-label={`${config.label} detail`}
+          data-testid="entity-view-detail"
+        >
           {/* The empty detail column is the space-wide triage list, not a
               placeholder: every entity waiting on a human, its requests
               combined into one row. Deliberately NOT filtered to `kind` —

@@ -222,14 +222,148 @@
    at their natural height, and the conversation takes everything left over.
    `minmax(0, 1fr)` on the conversation row — L4 floors every track, and an
    unfloored one here would let a long transcript push the cards off-screen. */
+/* ═══ AND NOW IT IS A SPLIT WITH A HANDLE ON IT (owner, 2026-08-31) ═══
+   "ideally we want sessions and chats and task to be occupying max height
+   width adjustable up and down" · "Need horizontal split full height is
+   compulsory strictly" · then, correcting the default: "Priority is vertical
+   split with full height".
+
+   TWO ARRANGEMENTS, ONE MARKUP. `data-split` is an attribute on this element
+   and nothing else changes — same three children, same order, in both. That is
+   not tidiness: flipping the shape must not remount either pane, because the
+   conversation holds a scroll position, a composer draft and possibly an
+   in-flight read, and a JSX branch would drop all three on every flip.
+
+     vertical   (default) — side by side. EACH pane is full height on its own,
+                which is the strict reading of "full height is compulsory": the
+                row is a single `minmax(0, 1fr)` track, so neither pane can be
+                shorter than the region.
+     horizontal — stacked. The two panes SHARE the height and the seam decides
+                the share; the lower one takes what is left over, floored.
+
+   THE MIDDLE TRACK IS `auto` AND HOLDS THE SEAM. It is the `PanelResizer`'s 8px
+   hit target, so the gap is 0: a 10px gap either side of an 8px handle is a
+   28px band of nothing pretending to be a divider.
+
+   A FIXED FIRST TRACK, NOT A `minmax`, and for the reason `.tch-root` states
+   thirty lines up — the clamp lives in the SOLVER (`views/HomeView`), which is
+   the only thing that knows the rail's width, the other pane's floor and
+   whether the aside is open. A `minmax` here as well would let the track
+   disagree with the number the separator publishes as `aria-valuenow`. */
 .cv2-root .hp-home {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 10px;
+  gap: 0;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   padding: 4px 7px 7px;
+}
+.cv2-root .hp-home[data-split='vertical'] {
+  grid-template-columns: var(--hp-side-w, 480px) auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.cv2-root .hp-home[data-split='horizontal'] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--hp-side-h, 300px) auto minmax(0, 1fr);
+}
+/* The pane breathes on the side the seam is on, and only that side — a gutter
+   on all four edges is the inset this file already halved once. */
+.cv2-root .hp-home[data-split='vertical'] > .hp-side { padding-right: 8px; }
+.cv2-root .hp-home[data-split='horizontal'] > .hp-side { padding-right: 0; padding-bottom: 8px; }
+
+/* THE SEAM ITSELF. A wrapper rather than a bare handle because it carries two
+   controls: the drag target, and the button that flips the arrangement. The
+   flip lives HERE — on the divider — rather than in a menu, because a reader
+   who wants the other shape is already looking at the thing between the two
+   panes. `position: relative` is what the button pins to. */
+.cv2-root .hp-split {
+  position: relative;
+  display: flex;
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+}
+/* Same 16x22 chevron box, same permanent visibility, and the same reason:
+   Subhang's ruling 3 (2026-08-16) — a control you have to hover to discover is
+   a control most readers never find. This one is not even a way BACK from a
+   collapse; it is the only statement on screen that the other arrangement
+   exists. */
+.cv2-root .hp-split__flip {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard),
+    border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+/* Side by side: the seam is an 8px column, so the button rides its top, centred
+   across the 8px (−4px of its own 16px). Stacked: the seam is an 8px row, so it
+   rides the left end, centred across the 8px (−7px of its own 22px). */
+.cv2-root .hp-home[data-split='vertical'] .hp-split__flip { top: 8px; left: -4px; }
+.cv2-root .hp-home[data-split='horizontal'] .hp-split__flip { left: 12px; top: -7px; }
+.cv2-root .hp-split__flip:hover { color: var(--pn-ink); border-color: var(--pn-brand); }
+.cv2-root .hp-split__flip:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+
+/* BAND 3 — THE PANE COLLAPSED TO THE SEAM, AND THE WAY BACK.
+   The reveal wears the flip's box (one control grammar on this seam) and sits
+   where the pane used to start. It is drawn PERMANENTLY, never on hover: with
+   the pane gone this button is the only thing on screen that says the pane
+   exists, and a hover-reveal is the arrangement Subhang ruled out in 2026-08-16
+   — the subject changed, the ruling did not. */
+.cv2-root .hp-split__reveal {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+.cv2-root .hp-home[data-split='vertical'] .hp-split__reveal { top: 36px; left: -4px; }
+.cv2-root .hp-home[data-split='horizontal'] .hp-split__reveal { left: 40px; top: -7px; }
+.cv2-root .hp-split__reveal:hover { color: var(--pn-ink); border-color: var(--pn-brand); }
+.cv2-root .hp-split__reveal:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* THE PANE STAYS MOUNTED AND STOPS BEING RENDERED, which are two different
+   things and the difference is the whole design here.
+
+   `--hp-side-w` / `--hp-side-h` go to 0 (the host writes them), so the track
+   closes. `content-visibility: hidden` is what takes the CONTENT off the screen
+   and out of the accessibility tree while KEEPING the element, its state and
+   its scroll position — which is the property `display: none` and `visibility:
+   hidden` both destroy, and preserving it is the point: a reader who collapses
+   and reveals must land back where they were, not at the top of a re-read list.
+
+   `display: none` would ALSO have taken the grid TRACK's item away, which is
+   the defect measured on the live build when the hidden chat sidebar left its
+   280px track standing and the conversation landed in it. Zeroing the track and
+   keeping the item is the arrangement that has no such second half. */
+.cv2-root .hp-home[data-side-collapsed='true'] > .hp-side {
+  padding: 0;
+  overflow: hidden;
+  content-visibility: hidden;
 }
 /* THE COLUMN SCROLLS, AND NOTHING ELSE CLIPS. Four cards go where one capped
    card used to be. Its predecessor was `max-height: 38%` + `overflow: hidden`,
@@ -244,6 +378,21 @@
   min-width: 0;
   min-height: 0;
   padding-right: 2px;
+  /* IT IS A PANE NOW, NOT A HEADER STRIP. Side by side it takes the whole
+     height of the region; stacked it takes the height the seam was dragged to.
+     Either way it is a definite box with a scroll region inside it, which is
+     what lets the ACTIVE grid below fill rather than cap. */
+  /* AND IT IS THE QUERY CONTAINER FOR ITS OWN CONTENTS (owner, 2026-08-31: "if
+     i adjust width of chat these cards become a list?"). The pane's width is
+     what the DIVIDER sets, so the viewport cannot answer "is there room for
+     cards here" and a JS-measured breakpoint would be answering about the
+     window. The rail two hundred lines down already uses this idiom for exactly
+     the same reason — a width that lives in a custom property is invisible to
+     every selector, and asking the container is the only thing that reads it.
+     `inline-size` is safe here because the pane's width is set by the grid
+     track above it and never by its contents. */
+  container-type: inline-size;
+  container-name: hp-side;
   /* Sizes to its content now that it is a ROW rather than a column. It kept
      `overflow-y: auto` from the side-by-side layout, which in a grid row that
      is already `auto` produces a scroller inside a box that never overflows —
@@ -269,7 +418,30 @@
   margin: 0 0 8px;
   color: var(--pn-ink-2);
 }
-.cv2-root .hp-attention__rows { display: flex; flex-direction: column; gap: 6px; }
+/* NEEDS YOU KEEPS ITS SIZE AND TAKES A CEILING (2026-08-31). Now that the pane
+   has a definite height, three strips in a flex column have to agree on who
+   yields. `flex: none` says this is NOT the one — a card that can be crushed is
+   the 2px create box for the fourth time — and the 40% cap says it may not eat
+   the pane either: twelve things waiting on you must not push what is RUNNING
+   off the screen. Between the two, the ACTIVE grid grows and this scrolls. */
+.cv2-root .hp-attention {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-height: 0;
+  max-height: 40%;
+  overflow: hidden;
+}
+.cv2-root .hp-attention__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* The scroller is the ROWS, not the card: the eyebrow and its count are the
+     one line that must never scroll away, or the reader loses what the list
+     they are scrolling actually is. */
+  min-height: 0;
+  overflow-y: auto;
+}
 /* The status paints the row's left edge so the card reads as a column of
    urgencies before a word is read — and the WORD is always there beside it,
    because status is colour AND word, never colour alone (C8/L10). */
@@ -723,6 +895,22 @@
   min-height: 0;
 }
 .cv2-root .hp-trail-host > *:last-child { flex: 1; min-height: 0; }
+/* THE ENTITY PANE IS FULL HEIGHT AND CAPPED MEASURE (owner ruling, 2026-08-31).
+   "Full height, but prose inside it is capped at `--pn-measure` and stays LEFT
+   aligned" — the same treatment `.tch-transcript .md-root` took the day before,
+   for the same reason: a wider pane should give a reader MARGIN, not a
+   hundred-character line where the eye loses the return sweep.
+
+   LEFT, NOT CENTRED, and that is the half that is easy to get wrong. `margin:
+   0 auto` on a capped block centres the column and leaves the pane's own labels
+   and controls hanging off an edge the prose no longer touches; the reading
+   column has to start where everything else in the panel starts. `max-width`
+   alone does that — no auto margin, deliberately. */
+.cv2-root .hp-trail-host .md-root {
+  max-width: var(--pn-measure);
+  margin-right: auto;
+  margin-left: 0;
+}
 /* The aside's every-child flex:1 must not stretch its crumb strip. */
 .cv2-root .hp-aside > .hp-trail { flex: none; }
 
@@ -1008,6 +1196,13 @@
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
+  /* THE ONE THING IN THIS PANE THAT GROWS. The create verbs are `flex: none`
+     and NEEDS YOU is capped below, so every pixel the pane is given that they
+     do not want lands here — which is the whole of "Entities must be full
+     height" on this surface. `min-height: 0` because the growth has to be
+     absorbable by the scroller inside, not by the box. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .cv2-root .hp-active__bar {
   display: flex;
@@ -1061,19 +1256,38 @@
      a bounded scroller costs the same page height for ten items or a hundred,
      and drops none of them. `align-content: start` so a short list sits at the
      top of the region rather than stretching two cards down 260px. */
-  /* TWO ROWS AND A GLIMPSE OF A THIRD. Owner, 2026-08-30: "why chat is taking
-     only half of the height". Row one of `.hp-home` is `auto`, so every pixel
-     this region takes is a pixel the conversation does not get. Two rows is
-     enough to see what is running; the peek of the third is what tells you
-     there is more without spending a control on saying so. */
-  /* EXACTLY TWO ROWS, and the rows are uniform so "two rows" is a real
-     measurement rather than a hope. A card is 96px: kind line, title, facts,
-     and at most one line of pull-request chips (capped at three by the page —
-     eight of them wrapped to three lines and grew that one card to 156px
-     beside 87px neighbours, which is what made the second row cut through the
-     middle of its cards). 96 + 96 + one 8px gap = 200. */
+  /* SUPERSEDED 2026-08-31 — "TWO ROWS AND A GLIMPSE OF A THIRD" was the rule
+     here, and its premise was that "row one of `.hp-home` is `auto`, so every
+     pixel this region takes is a pixel the conversation does not get". That
+     premise died with the split: side by side the two panes do not compete for
+     height at all, and stacked the trade is one the reader makes with a drag
+     rather than one this stylesheet makes for them. A ceiling chosen here is a
+     guess about how much work a space has — the same objection that retired the
+     top-ten cap a day earlier, arriving one axis later. */
+  /* THE ROWS ARE STILL EXACTLY 96px AND STILL NOT ELASTIC. A card is 96px: kind
+     line, title, facts, and at most one line of pull-request chips (capped at
+     three by the page — eight of them wrapped to three lines and grew that one
+     card to 156px beside 87px neighbours, which is what made the second row cut
+     through the middle of its cards).
+
+     WHAT WENT IS `max-height: 200px` — the fixed two-row ceiling (2026-08-31).
+     It was the number the owner was objecting to: a dashboard whose ACTIVE
+     region is 200px tall no matter how much is running, on a screen with 750px
+     of room. The region FILLS its pane now and the pane's extent is the
+     persisted, draggable one (`--hp-side-w` / `--hp-side-h`, solved in
+     `views/HomeView`), so how much of the work is on screen is the reader's
+     choice rather than a constant.
+
+     `min-height: 96px` IS THE FLOOR AND IT IS NOT DECORATION. This box carries
+     `overflow-y: auto`, and per Flexbox §4.5 any `overflow` other than
+     `visible` sets an item's automatic minimum size to ZERO — so inside a flex
+     column it does not overflow, it VANISHES. That is the 2px create box, the
+     2px chat pane and the sliced card titles, all three of which shipped from
+     this exact rule. One full row is the smallest honest ACTIVE region: half a
+     card is the "broken box" reading this grid snapped its scrolling to avoid. */
   grid-auto-rows: 96px;
-  max-height: 200px;
+  flex: 1 1 auto;
+  min-height: 96px;
   overflow-y: auto;
   /* IT MUST NOT COME TO REST MID-CARD. At 240px the second row is cut through
      its middle, which reads as a broken box rather than as "there is more" —
@@ -1105,6 +1319,75 @@
   background: var(--pn-card);
   overflow: hidden;
 }
+/* THE CARD'S FIRST ROW: the open gesture and, when the row has children, the
+   fold beside it. A wrapper rather than two loose children because the fold has
+   to sit against the card's edge at full height in BOTH bands, and because a
+   button inside a button is invalid HTML — the fold cannot live inside the open
+   gesture, so something has to hold the pair. */
+.cv2-root .hp-acard__main {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+/* A parent's disclosure. Quiet until wanted, but always DRAWN — a fold you have
+   to hover to discover is the hover-reveal arrangement ruled out in 2026-08-16,
+   and here it would be hiding running work behind a control nobody can see. */
+.cv2-root .hp-acard__fold {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--pn-line);
+  background: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+.cv2-root .hp-acard__fold:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .hp-acard__fold:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
+}
+/* THE PAGINATION ROW. It is a card/row like any other so the grid's fixed rows
+   stay honest — a differently-sized item is what made the grid cut through the
+   middle of its cards once already. Quieter than a real row, because it is a
+   control about the list rather than a thing IN the list. */
+.cv2-root .hp-acard--more {
+  background: var(--pn-card);
+  border-style: dashed;
+  border-color: var(--pn-line-2);
+}
+.cv2-root .hp-acard__more {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 0 var(--pn-space-3);
+  border: 0;
+  background: none;
+  text-align: left;
+  font: 600 var(--pn-fs-micro)/1.3 var(--pn-ui);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root .hp-acard__more:hover { color: var(--pn-brand-2); }
+.cv2-root .hp-acard__more:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
+}
+/* THE COUNT CHIP stands down wherever the chips themselves fit — one of the two
+   is on screen, never both. */
+.cv2-root .hp-acard__prcount { display: none; }
+
 .cv2-root .hp-acard__open {
   appearance: none;
   display: flex;
@@ -1156,9 +1439,14 @@
    tone, which behind body text reads as a badge demanding attention rather
    than a card inviting a read. Three kinds become legible without a second row
    of labels, and the status WORD still carries the state (C8/L10). */
-.cv2-root .hp-acard--sessions { background: var(--pn-run-soft);   border-color: var(--pn-run); }
-.cv2-root .hp-acard--chats    { background: var(--pn-info-soft);  border-color: var(--pn-info); }
-.cv2-root .hp-acard--tasks    { background: var(--pn-wait-soft);  border-color: var(--pn-wait); }
+/* THE KIND'S COLOUR IS NAMED ONCE AND SPENT TWICE. As a card it is the tint and
+   the hairline; as a row (the narrow band below) it is a dot. Declaring the
+   tone as a custom property is what makes those two the SAME fact rather than
+   two colour tables that can disagree — the failure this file has already paid
+   for with floors written in two places. */
+.cv2-root .hp-acard--sessions { --hp-acard-tone: var(--pn-run);  background: var(--pn-run-soft);   border-color: var(--pn-run); }
+.cv2-root .hp-acard--chats    { --hp-acard-tone: var(--pn-info); background: var(--pn-info-soft);  border-color: var(--pn-info); }
+.cv2-root .hp-acard--tasks    { --hp-acard-tone: var(--pn-wait); background: var(--pn-wait-soft);  border-color: var(--pn-wait); }
 .cv2-root .hp-acard:hover { border-color: var(--pn-brand-2); }
 
 .cv2-root .hp-acard__top {
@@ -1218,6 +1506,213 @@
   font: 400 var(--pn-fs-micro)/1.3 var(--pn-ui);
   font-variant-numeric: tabular-nums;
   color: var(--pn-ink-3);
+  /* A THIRD FACT JOINED THIS LINE (`N sub-sessions`), so it has to be able to
+     give way sideways without giving way DOWNWARD. `flex: none` is the §4.5
+     guard — this box now carries `overflow`, which zeroes its automatic minimum
+     size, and a facts line crushed to nothing on a 96px card is the failure
+     this file has paid for three times. The clip is horizontal only. */
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cv2-root .hp-acard__kids { flex: none; }
+/* WHERE A SESSION CAME FROM — one line, one clip, never an invented name.
+   A grid is a wrapped flow, so a child card is NOT indented: an indent here
+   reads as a misalignment rather than as a hierarchy. The lineage line is what
+   carries the relationship in this band, and the row band below carries it by
+   indenting, which is the shape that actually nests. */
+.cv2-root .hp-acard__lineage {
+  /* `flex: none` for the same §4.5 reason as the title beside it: this element
+     clips its own content, so inside a fixed-height column it would shrink to
+     a sliver of a line rather than overflow. */
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 500 var(--pn-fs-micro)/1.3 var(--pn-ui);
+  color: var(--pn-ink-3);
+}
+/* AND A CARD THAT SPENDS A LINE ON ITS LINEAGE CAN ONLY AFFORD ONE LINE OF
+   NAME. The 96px arithmetic, again: 16 padding + 12 kind + 14 facts + 6 gaps
+   leaves 48px; two lines of 13/1.3 type is 34px and fits until a 15px lineage
+   line is added, at which point it does not. Making the choice HERE means it is
+   the line count that gives, on purpose, rather than the glyphs, by accident —
+   the same ruling the pull-request chips already forced. */
+.cv2-root .hp-acard:has(.hp-acard__lineage) .hp-acard__title {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+/* ═══ BAND 2 — THE SAME CARDS, AS A LIST OF ROWS ═══════════════════════════
+   Owner, 2026-08-31: "if i adjust width of chat these cards become a list?"
+
+   THE THRESHOLD, AND ITS ARITHMETIC. `.hp-active__grid` is
+   `repeat(auto-fit, minmax(200px, 1fr))` with a `--pn-space-2` (8px) gap, and
+   it reserves 2px on the right for its scrollbar. Two cards abreast therefore
+   need 200 + 8 + 200 = 408px of grid content box, i.e. 410px of THIS container
+   (`.hp-side`'s content box — the pane less its own 8px seam gutter). At 409
+   `auto-fit` would give one 200px column and the grid would be a single file of
+   200px boxes, which is the shape the owner is objecting to: "one column of
+   ROWS reads well; one column of 200px cards looks like a mistake". So 409 is
+   where the cards become rows, and the number is the grid's own track rather
+   than a taste — if `minmax(200px, 1fr)` or the gap moves, this moves with it.
+
+   NOTHING IS RE-RENDERED AND NOTHING IS RE-FETCHED. Both bands are the SAME
+   markup and the same `HomeRow` facts — the kind word, the status word and its
+   dot, the title, the turns, the time, the pull-request chips. CSS decides the
+   arrangement, so a fact cannot be present in one band and missing in the
+   other, the scroller keeps its position across the threshold, and no row
+   remounts (which would drop focus and any in-flight read).
+
+   THE ROWS STAY PINNED, at 44 instead of 96. `grid-auto-rows` is not optional
+   in either band: with the grid's block size definite, implicit `auto` rows are
+   DIVIDED across it rather than sized from their content — measured live at
+   eleven rows of 11.8182px holding cards 87–156px tall, every card painting
+   through the ones below it. 44 = a 20px line of 13/1.3 type, 12px of padding
+   either side, on one line. */
+@container hp-side (max-width: 409px) {
+  .cv2-root .hp-active__grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: 44px;
+  }
+  /* The card becomes the row: one line, the chips beside the open gesture
+     rather than under it. */
+  .cv2-root .hp-acard {
+    flex-direction: row;
+    align-items: center;
+    /* THE TINT BECOMES A DOT. A full-strength kind ground behind a 44px row of
+       body text is a badge, not a list — the same trade this file already
+       refused for the card, arriving at the density where even the SOFT tint is
+       too much ink. The colour is not lost, it is concentrated. */
+    background: var(--pn-card);
+    border-color: var(--pn-line-2);
+  }
+  .cv2-root .hp-acard__open {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--pn-space-2);
+    padding: 0 var(--pn-space-3);
+  }
+  /* The dot IS the kind, in the tone the card spends on its tint. The fallback
+     keeps a row honest for a lens this stylesheet has not met. */
+  .cv2-root .hp-acard__open::before {
+    content: '';
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--hp-acard-tone, var(--pn-ink-4));
+  }
+  /* THE TITLE TAKES THE ROOM AND CLIPS INSIDE IT; everything else keeps its own
+     width. Same law as the rail's rows, same reason: a clipped name is still
+     the right name, and a count or a time sliced in half is a different and
+     entirely plausible fact. */
+  .cv2-root .hp-acard__title {
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    -webkit-line-clamp: none;
+    line-clamp: none;
+  }
+  .cv2-root .hp-acard__top { order: 2; flex: none; gap: var(--pn-space-2); }
+  .cv2-root .hp-acard__facts { order: 3; flex: none; align-items: center; }
+  .cv2-root .hp-acard__prs { flex: none; padding: 0 var(--pn-space-3) 0 0; }
+  /* AND THIS IS WHERE THE SESSION TREE RENDERS (owner, 2026-08-31: "the
+     session/sub-session tree must be visible in the grid").
+     A LIST NESTS; A WRAPPED GRID CANNOT. The rows are already emitted
+     depth-first — every child immediately after its parent, every child still
+     a row of its own so running work is never hidden behind an expand — so the
+     only thing this band adds is the indent that makes the relationship
+     legible. 16px a level, off the depth the page published.
+
+     UNCAPPED IN THE MODEL, capped only by the pane: the walk is n-deep, and
+     what limits how much of a deep tree you see is the scroller, not a
+     hardcoded level count. Today the live data is depth two.
+
+     THE LINEAGE LINE STANDS DOWN HERE. The indent already states the
+     relationship, and a row is one line — "↳ from X" beside an indented title
+     would say the same thing twice and take the room the title needs. The
+     parent's own `N sub-sessions` stays: that is the fact the indent does NOT
+     state, because a parent scrolled away from its children still has to say
+     it has them. */
+  .cv2-root .hp-acard {
+    margin-left: calc(var(--hp-acard-depth, 0) * 16px);
+  }
+  .cv2-root .hp-acard__lineage { display: none; }
+  /* PAST THE INDENT CAP THE TETHER MARK COMES BACK. A depth-6 row stops moving
+     right — the alternative is a tree that walks off the edge and punishes its
+     own deepest rows — and states where it came from in words instead. Same
+     fact, different means, never both on screen at once. */
+  .cv2-root .hp-acard[data-deep='true'] .hp-acard__lineage {
+    display: inline;
+    order: 2;
+    flex: none;
+    max-width: 12ch;
+  }
+  /* THE LINKS LINE RIDES THE ROW. `.hp-acard__prs` is already a sibling of the
+     open gesture (an anchor inside a button is invalid HTML — the card paid for
+     that once), so in a row it lands after the title, the kind and the time.
+     `flex: none` and a clip: the NAME is the only thing that may yield. */
+  .cv2-root .hp-acard__prs {
+    align-self: center;
+    max-width: 45%;
+    overflow: hidden;
+  }
+  .cv2-root .hp-acard__prs .pn-st__counts { flex-wrap: nowrap; }
+  /* The card band's "a card with chips gets one line of name" rule has nothing
+     to decide here — every row is one line already. */
+  .cv2-root .hp-acard:has(.hp-acard__prs) .hp-acard__title {
+    -webkit-line-clamp: none;
+    line-clamp: none;
+  }
+}
+
+/* ═══ AND WHEN EVEN A ROW CANNOT HOLD BOTH ═══════════════════════════════════
+   THE NAME BEATS THE COUNT. That is the house ruling — it is why the rail drops
+   its metrics at 150px rather than clipping "Pull requests" — and it decides
+   this too: below the width at which a readable title and three chips coexist,
+   the CHIPS collapse to a single count and the title keeps its room. The title
+   never clips first, and the order of sacrifice is stated rather than emergent:
+   PR numbers collapse to a count, THEN the badges go, and the name outlives
+   both.
+
+   THE ARITHMETIC. A row spends, at 5.7px per character: 24px of padding, an 8px
+   dot, four 8px gaps, a kind word at ~56px and a time at ~28px — 148px of
+   chrome. A title worth reading needs ~100px on top of that (the nine-character
+   floor lane C proved on the top bar, plus room to be a sentence), so a row is
+   ~248px before a single chip. Three tile chips run to ~150px. 248 + 150 ≈ 395:
+   above it both fit, below it one of them has to go. 395 is that boundary, and
+   it is a second, narrower STEP inside the row band (409) rather than a third
+   arrangement — the bands are still three.
+
+   PROVISIONAL, and flagged as such for the same reason the card's budget block
+   is: every number above is arithmetic, not a browser reading. If the row ever
+   looks wrong at these widths, re-measure here first. */
+@container hp-side (max-width: 395px) {
+  .cv2-root .hp-acard__prs .pr-chips { display: none; }
+  .cv2-root .hp-acard__prmore { display: none; }
+  .cv2-root .hp-acard__prcount {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    font: 600 var(--pn-fs-fine)/1 var(--pn-mono);
+    color: var(--pn-ink-3);
+    white-space: nowrap;
+  }
+  .cv2-root .hp-acard__prs { max-width: 30%; }
+}
+@container hp-side (max-width: 300px) {
+  /* The badge row is the list panel's own and keeps ITS behaviour up to here —
+     it is already a compact glyph+count set and gives way only after the PR
+     numbers have. */
+  .cv2-root .hp-acard__prs .pn-st__counts { display: none; }
 }
 
 /* THE TAIL AND ITS BUTTON RETIRED WITH THE CAP (owner, 2026-08-30). They

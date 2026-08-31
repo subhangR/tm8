@@ -45,11 +45,16 @@ export {
 export {
   PanelResizer,
   RESIZE_STEP,
+  COLLAPSE_SLACK,
+  resizerAxis,
   usePanelWidth,
+  usePanelHeight,
   usePanelFlag,
   usePanelChoice,
   useElementWidth,
+  useElementHeight,
   type PanelResizerProps,
   type PanelWidth,
+  type PanelHeight,
   type ResizerSide,
 } from './PanelResizer';

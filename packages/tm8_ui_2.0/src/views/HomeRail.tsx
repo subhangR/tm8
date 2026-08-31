@@ -37,20 +37,30 @@ export interface HomeRailProps {
    *  active then — chats live in the list header, not the rail). */
   activeKind: string | null;
   onSelect(kind: string): void;
-  /**
-   * BACK TO THE DASHBOARD. The rail had rows for the nineteen kinds and no row
-   * for Home itself, so once you selected a kind there was no way back to the
-   * dashboard except the browser's Back — and `activeKind: null` rendered a
-   * rail with nothing current, which reads as "nothing selected" rather than
-   * "you are on Home". Home is a destination; it gets a row.
-   */
-  onHome?(): void;
+  /* `onHome` RETIRED 2026-08-31 (owner: "There are two homes make sure one home
+     is there"). It drew a Home row at the top of this rail, eight inches from
+     the top bar's own Home tab — two controls for one destination, which is the
+     one-control-per-verb rule this package keeps everywhere else.
+
+     IT WAS ADDED FOR A REAL DEFECT and the defect is gone, which is why the row
+     can be: selecting a kind here replaces the dashboard with that kind's list,
+     and the worry was that the top tab's Home would be a no-op because Home was
+     already the ACTIVE tab. VERIFIED ON THE DEPLOYED BUILD before removing it,
+     by driving the three steps rather than reading the source: land on
+     `/home` → click Tasks in this rail (`/home/k/tasks`, `.hp-listmain`
+     rendered) → click Home in the TOP TAB ROW → back to `/home` with
+     `.hp-home` rendered and `.hp-listmain` gone. The tab answers.
+
+     THE TWO THINGS THAT HAD TO SURVIVE, and do: the rail still shows WHICH kind
+     is current (`aria-current="page"` on its row), and the way back is a
+     permanently visible on-screen control rather than a keyboard-only escape —
+     which is the standing ruling here (2026-08-16), satisfied by the tab. */
   /** Owned by `HomeView` — see the docblock. */
   collapsed: boolean;
   onToggleCollapsed(): void;
 }
 
-export function HomeRail({ groups, activeKind, onSelect, onHome, collapsed, onToggleCollapsed }: HomeRailProps) {
+export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleCollapsed }: HomeRailProps) {
 
   return (
     <nav
@@ -70,33 +80,10 @@ export function HomeRail({ groups, activeKind, onSelect, onHome, collapsed, onTo
           The owner, pointing at it (2026-08-30): "I DONT NEED THIS MAN".
           The rail's own rows already say what the rail is. */}
       <div className="hr-rail__scroll">
-        {/* HOME FIRST, and it is the only row that is not a kind. Selecting a
-            kind replaces the working area with that kind's list; selecting
-            Home brings the dashboard back. One rail, one meaning: "show me
-            these". */}
-        {onHome ? (
-          <button
-            type="button"
-            className="hr-rail__row hr-rail__row--home k-press"
-            aria-current={activeKind === null ? 'page' : undefined}
-            title="Home — what is running, and the chat"
-            data-testid="home-rail-home"
-            onClick={onHome}
-          >
-            <span className="hr-rail__glyph" aria-hidden>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6">
-                <path d="M4 11l8-7 8 7" /><path d="M6 10v9h12v-9" />
-              </svg>
-            </span>
-            {/* UNCONDITIONAL, like every other row. I gated this on
-                `!collapsed` and the row rendered as a bare house icon beside
-                nine labelled rows — the collapsed variant is handled by CSS
-                (`.hr-rail--collapsed .hr-rail__label`), not by not rendering
-                the word, which is exactly how the label stays available to a
-                screen reader when the rail is narrow. */}
-            <span className="hr-rail__label">Home</span>
-          </button>
-        ) : null}
+        {/* THE HOME ROW IS GONE (2026-08-31) — see `onHome`'s note above. This
+          rail is a list of KINDS and a Home row was never one of them; the top
+          bar's Home tab is the single door to the dashboard, verified on the
+          deployed build before this came out. */}
         {groups.map((group) => (
           <div
             key={group.id}
