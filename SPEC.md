@@ -265,9 +265,29 @@ CodeBrain's destination is real; the resolver simply could not say so yet.
 
 ### 5.5 Tests for this module
 
-- `src/routes/codec.test.ts` — `#/s/{s}/codebrain` and
-  `#/s/{s}/codebrain/{id}` round-trip; an unknown trailing segment survives
-  as an opaque `runId`; a bare `codebrain/` decodes to `runId: null`. (AC1)
+- `src/routes/codec.test.ts` — **CORRECTED 2026-08-31, after PLAN found that
+  the first implementation of this bullet tested only `parse`.** The word
+  "round-trip" was read as parse-direction coverage, which is the half that
+  *cannot* produce the failure AC1 names: a wrong parse fails loudly on
+  arrival, a wrong **build** fails silently at every site that emits a link.
+  So spell it out rather than trusting the word:
+  - **BUILD-THEN-PARSE, both forms**, as one assertion each: `build` the route,
+    assert `dropped` is empty, `parse` the hash back, assert it equals the
+    route you started from. Without this, `pathOf`'s `codebrain` arm has no
+    test at all — it can be changed to any string, or made to drop `runId`
+    entirely, and the typecheck and the whole suite stay green while every
+    link the app emits is dead.
+  - **Assert the literal hash too**, not only self-consistency. Build-then-parse
+    alone still passes if both directions are wrong in the same way.
+  - Parse-direction cases, which are necessary but not sufficient: an unknown
+    trailing segment survives as an opaque `runId`; a bare `codebrain/` decodes
+    to `runId: null`. (AC1)
+
+  Note for whoever adds the next `NavView` member: `codec.test.ts` has **no
+  generic sweep over the union** — its round-trip property block (`:122`)
+  hardcodes two targets. This is the same structural hole as `ALL_ROUTE_VIEWS`
+  in `nav-targets.test.ts`, in the sibling file, and it is not closed here.
+  See §14.
 - `src/domain/nav-targets.test.ts` — **CORRECTED 2026-08-31, after PLAN read
   the file this spec had only cited.** An earlier draft of this line said the
   existing "both-direction exhaustiveness assertions must keep passing", which
@@ -698,6 +718,16 @@ Additionally, and not in the AC list because it was found during DEFINE:
 - ~~**A1** — route shape.~~ **CLOSED at the DEFINE gate, 2026-08-31.** Option A:
   `{ view:'codebrain'; runId: EntityId | null }`, `#/s/{s}/codebrain` and
   `#/s/{s}/codebrain/{taskId}`, bare form round-tripping. See §2 A1 and §5.1.
+- **NEW, for REVIEW rather than this slice** — neither `codec.test.ts` nor
+  `nav-targets.test.ts` sweeps the `NavView` union generically. Both keep
+  hand-maintained lists (`ALL_ROUTE_VIEWS`; the property block's two hardcoded
+  targets at `codec.test.ts:122`), so **every future route member arrives with
+  an untested `build` arm and outside the landing guard unless someone
+  remembers**. Closing it is a real change and not a drive-by: a generic sweep
+  may legitimately fail for `craft`, `help` or `boardV2`, which are already
+  outside these lists, and diagnosing that is its own piece of work. Out of
+  scope here; it should reach REVIEW as a known hole rather than be discovered
+  by the next member added.
 - **§9.1** — the worktree has no `node_modules`. Who installs, and does the
   BUILD phase get a tree where `@tm8/contract` resolves locally?
 
