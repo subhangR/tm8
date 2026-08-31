@@ -9,8 +9,20 @@ Written: 2026-08-31
 
 ## 0. What this spec is grounded on
 
-Everything below was read in this worktree at `41c824b4`, not recalled. Every
-structural claim carries `file:line`.
+**The original grounding** — §0 through §14 as first written — was read in this
+worktree at `41c824b4`, not recalled. Every structural claim carries
+`file:line`.
+
+**The corrections are NOT at that commit and do not claim to be.** Eleven
+correction blocks were added during BUILD, each verified against the object it
+names — `4c568658`, `c5a4524d`, `c5f6f698`, `3c05539a`, `a9b8b00c`, `01fb90c8`
+— none of which existed at `41c824b4`. Each cites its own sha inline.
+
+Stated because a blanket "read at `41c824b4`" would now be false for a
+substantial part of this document, and a spec whose Boundaries say *cite the
+object you read* must not misname the objects behind its own content. Found by
+applying that rule to this file after PLAN found the same defect in
+`tasks/plan.md`'s header.
 
 | Claim | Evidence |
 |---|---|
