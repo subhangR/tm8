@@ -1141,6 +1141,37 @@
    frame, the verbs inside it, and a single divider only where a divider earns
    its place — between them, hairline, not a box each.
    `auto-fit` with a FLOOR: at 320px they stack whole rather than crushing. */
+/* ═══ TWO OF THESE OPEN A FORM; ONE OPENS A SENTENCE ═══════════════════════
+   Owner, 2026-08-31: "how can i raise a task like this if its horizontal — make
+   session and create task option vertical and keep new chat horizontal."
+
+   NEW SESSION and NEW TASK lead into the TALL PANE. A task has a status, a
+   priority, points, a start date, a due date and an assignee; that wants column
+   height, not a strip of width. NEW CHAT opens nothing — it starts a
+   conversation in place — so it stays the compact horizontal entry.
+
+   AND THE ARRANGEMENT IS THE `auto-fit` TRACK, NOT A NEW BREAKPOINT. The floor
+   moves from 150px to 240px and everything else follows from it, on the ONE
+   container this pane already queries:
+
+     · side by side, the pane is ~470px of content, two 240px tracks do not fit
+       (480 > 470), so `auto-fit` gives ONE COLUMN and the three verbs stack —
+       each with its full row and its blurb intact;
+     · stacked, the pane is the full width and all three sit across the top,
+       which is where the width is.
+
+   240 IS THE BLURB'S OWN MEASURE, not a taste: "Put an agent on it and watch it
+   work" is 36 characters, ~205px at the 5.7px/char this file measures with,
+   plus 24px of padding — 230, rounded up. Below it the sentence that explains
+   the verb wraps to three lines or clips, and a create card whose explanation
+   does not fit is a card that has stopped explaining. The previous 150px floor
+   is what made three cards "cramped" in a 46% pane: it fit three tracks that
+   could not hold their own text.
+
+   ONE CONTAINER, ONE STORY. No `@container` step is added for this — the pane
+   already tells the cards how much room there is through the same `auto-fit`
+   mechanism that was here before, and a second threshold system would give the
+   pane two accounts of how narrow it is. */
 .cv2-root .hp-start {
   /* `flex: none` IS LOad-BEARING AND WAS THE WHOLE BUG. This box sits in a
      flex column beside a much taller strip. It carries `overflow: hidden` for
@@ -1152,32 +1183,57 @@
      An item that must not yield has to SAY so. */
   flex: none;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  background: var(--pn-card);
+  /* THE DIVIDER IS THE GAP, NOT A BORDER ON EACH CARD.
+     It was `border-left` on every card but the first, with a comment promising
+     it "falls away on the first of each row so a wrapped grid never opens with
+     a stray rule" — which `:first-child` cannot do: it matches the first card
+     of the GRID, not of each row. One column made that harmless; making the
+     grid wrap at a real floor makes it visible. A 1px gap over the line colour
+     draws a divider between every neighbour, in both directions, at any wrap,
+     and needs no selector to know where a row begins. */
+  gap: 1px;
+  background: var(--pn-line);
   overflow: hidden;
 }
 .cv2-root .hp-start__card {
   appearance: none;
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--pn-space-2);
   text-align: left;
   padding: var(--pn-space-3);
   border: 0;
-  /* The ONE line, and it is a divider rather than a frame — it separates two
-     verbs instead of boxing each. Falls away on the first of each row so a
-     wrapped grid never opens with a stray rule. */
-  border-left: 1px solid var(--pn-line);
-  background: none;
+  /* Opaque, so the 1px grid gap above shows as the divider and nothing else
+     does. `--pn-card` and not `transparent`: a translucent card would let the
+     line colour wash the whole cell. */
+  background: var(--pn-card);
   cursor: pointer;
 }
-.cv2-root .hp-start__card:first-child { border-left: 0; }
+/* THE TWO THAT OPEN A FORM say so with a lead-in mark, and take a little more
+   room to do it. The difference is deliberately small — this is a hint about
+   where the verb goes, not a second visual hierarchy. */
+.cv2-root .hp-start__card--form { padding-block: calc(var(--pn-space-3) + 2px); }
+.cv2-root .hp-start__lead {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-body);
+  line-height: 1;
+}
+.cv2-root .hp-start__card--form:hover .hp-start__lead { color: var(--pn-brand-2); }
 .cv2-root .hp-start__card > b {
+  grid-column: 1;
   display: block;
   font: 700 var(--pn-fs-title)/1.25 var(--pn-ui);
   color: var(--pn-ink);
 }
-.cv2-root .hp-start__card > span {
+.cv2-root .hp-start__card > span:not(.hp-start__lead) {
+  grid-column: 1;
   display: block;
   margin-top: 1px;
   font: 400 var(--pn-fs-micro)/1.35 var(--pn-ui);
@@ -1516,7 +1572,56 @@
   overflow: hidden;
   white-space: nowrap;
 }
-.cv2-root .hp-acard__kids { flex: none; }
+/* ═══ WHICH FACT YIELDS WHEN THE LINE IS SHORT ═══════════════════════════════
+   Measured on the deployed build: this line wanted 216px in 183px of room, and
+   the `<time>` finished 36px past the right edge — clipped away entirely. So
+   the fact the whole strip is SORTED BY was invisible on exactly the cards that
+   had the most to say.
+
+   BOTH SURVIVORS ARE COUNTS, so "the name beats the count" does not arbitrate
+   here. Usefulness does, and RECENCY WINS: the list is ordered by it, and it is
+   what tells you whether a thing is still moving. A turn count you can read to
+   the last digit on a session that stopped yesterday is worth less than knowing
+   it stopped yesterday.
+
+   SO THE TIME IS `flex: none` AND NEVER YIELDS. The two counts shrink, in place,
+   and clip.
+
+   AND CLIPPING A COUNT IS SAFE HERE ONLY BECAUSE THE DIGITS COME FIRST. The
+   standing rule is that a count is never sliced — `577` cut to `57` is a
+   different and entirely plausible number, which is why the rail DROPS its
+   metrics rather than clipping them. Both strings here put their number at the
+   start (`113 turns`, `↳2`), so a right-side clip eats the unit and never a
+   digit: `113 tu` is the same count, and `↳` is no count at all rather than a
+   wrong one. If either label is ever reworded to lead with a word, that
+   guarantee is gone and this comment is the one that has to be revisited.
+
+   THE REAL CULPRIT WAS `flex: none` ON THE SUB-SESSION COUNT — mine, added with
+   the tree. An unyielding 26-character box next to two other facts is what
+   pushed the time out; it shrinks now, and it also got much shorter. */
+.cv2-root .hp-acard__facts > * { min-width: 0; overflow: hidden; }
+.cv2-root .hp-acard__turns,
+.cv2-root .hp-acard__kids { flex: 0 1 auto; }
+.cv2-root .hp-acard__facts > time { flex: none; }
+/* The sub-session count, compact: the lineage line's own `↳` and the number.
+   The full sentence rides `title`, where it costs no width. */
+.cv2-root .hp-acard__kids {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+/* RUNNING KEEPS A PRESENCE OF ITS OWN, and it is a dot rather than a word
+   because "there is running work under this" is the fact the collapse ruling
+   turns on — it may not become something you have to hover to find. Colour is
+   never alone here: the number beside it is the count, and the title spells the
+   whole sentence for anyone who cannot use the hue (C8/L10). */
+.cv2-root .hp-acard__kidsdot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+}
 /* WHERE A SESSION CAME FROM — one line, one clip, never an invented name.
    A grid is a wrapped flow, so a child card is NOT indented: an indent here
    reads as a misalignment rather than as a hierarchy. The lineage line is what

@@ -236,25 +236,58 @@
   white-space: nowrap;
 }
 
+/* ═══ A CONTROL STRIP WRAPS. IT NEVER SCROLLS SIDEWAYS. ═══════════════════
+   Owner, 2026-08-31, on a task open in the pane: this row —
+   `open · MEDIUM · points · mm/dd/yyyy · mm/dd/yyyy · assignee` — was one
+   `flex-wrap: nowrap` line with `overflow-x: auto` under it, so the panel grew
+   a horizontal scrollbar across its own form.
+
+   THIS IS NOT THE "WIDE CONTENT SCROLLS IN ITS OWN BOX" CASE, and conflating
+   the two is what put the scroller here. That rule is for TABLES and DIAGRAMS
+   — artefacts you READ, where the whole is a picture and panning across it is
+   the natural gesture. A control strip is something you OPERATE, and operating
+   it requires seeing all of it at once: a due date you have to scroll to find
+   is a field most people never discover, and a form you must scroll sideways
+   to fill is not a form you can fill.
+
+   SO THE STRIP WRAPS. Every control keeps its own width (`> * { flex: none }`
+   below, unchanged — a shrinkable `<select>` compresses to its content rather
+   than moving to the next line, which is the clipping failure arriving through
+   a different property), and the ones that do not fit take the next row. In a
+   tall narrow pane that resolves to very nearly one control per line, which is
+   the column reading the vertical berth exists for.
+
+   ARCHETYPE-SCOPED, SO IT IS ONE FIX. Every kind whose panel is `subtree` draws
+   this same band from the same rule — the selector was already keyed on the
+   archetype rather than on `task`, so nothing here is a task-shaped exception
+   and no other kind keeps the scroller.
+
+   THE MOBILE STRIP IS DELIBERATELY LEFT ALONE (`detail/panel-controls-phone.css`).
+   It is also `nowrap` + `overflow-x`, and there it is correct and reasoned: a
+   390px viewport cannot hold six chips on any number of lines without spending
+   the whole screen on them, so the phone trades panning for height ON PURPOSE
+   and hides the scrollbar. That file's rules are (0,4,0) via the shell
+   attribute and win over this one regardless of import order — the specificity
+   trap its own docblock records — so this change cannot reach the phone. */
 .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: var(--pn-space-1);
   padding: 3px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
   background: var(--pn-card);
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--pn-line-2) transparent;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips > * {
   flex: none;
 }
 
+/* The assignee used to be pushed to the far end of a single line. On a wrapped
+   strip that margin is a stray indent wherever the last chip happens to land,
+   so it goes: the controls read as one set now, in order, and the row they end
+   on is whichever row they end on. */
 .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips > :last-child {
-  margin-left: var(--pn-space-2);
+  margin-left: 0;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips :is(.lp__statesel, .pn-badge, .lp__rowaction) {

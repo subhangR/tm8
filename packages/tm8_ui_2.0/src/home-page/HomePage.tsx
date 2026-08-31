@@ -202,16 +202,30 @@ function HomeStart({
     const refusal = createKindUnavailable?.(kind) ?? null;
     if (refusal) {
       return (
-        <span className="hp-start__card hp-start__card--off" title={`${refusal.cause} — ${refusal.remedy}`}>
+        <span
+          className="hp-start__card hp-start__card--form hp-start__card--off"
+          title={`${refusal.cause} — ${refusal.remedy}`}
+        >
           <b>{label}</b>
           <span>{refusal.cause}</span>
         </span>
       );
     }
     return (
-      <button type="button" className="hp-start__card" onClick={() => onCreateKind(kind)}>
+      <button
+        type="button"
+        /* A VERB THAT OPENS A FORM IS MARKED AS ONE (owner, 2026-08-31: "make
+           session and create task option vertical and keep new chat
+           horizontal"). A session and a task open into the TALL PANE and have
+           real forms behind them — status, priority, points, a start date, a
+           due date, an assignee — so they read as leading entries into that
+           column. New chat opens nothing: it is the compact horizontal box. */
+        className="hp-start__card hp-start__card--form"
+        onClick={() => onCreateKind(kind)}
+      >
         <b>{label}</b>
         <span>{blurb}</span>
+        <span className="hp-start__lead" aria-hidden>›</span>
       </button>
     );
   };
@@ -244,7 +258,12 @@ function HomeStart({
      /^New chat$/". That header lived in the middle column. The column is gone,
      so the duplicate is gone, so the third card returns. */
   const chat = onNewChat ? (
-    <button type="button" className="hp-start__card" onClick={onNewChat}>
+    /* THE HORIZONTAL ONE. It stays as it is — no lead-in mark, because it leads
+       nowhere: it starts a conversation in place. When the compact composer box
+       lands at the foot of this pane this control is what it replaces, and the
+       marking here is what will make that swap a removal rather than a
+       redesign. */
+    <button type="button" className="hp-start__card hp-start__card--chat" onClick={onNewChat}>
       <b>New chat</b>
       <span>Ask, plan, or think out loud</span>
     </button>
@@ -829,7 +848,9 @@ function ActiveStrip({
                   ) : null}
                   <span className="hp-acard__facts">
                     {row.turns !== undefined ? (
-                      <span>{row.turns} {row.turns === 1 ? 'turn' : 'turns'}</span>
+                      <span className="hp-acard__turns">
+                        {row.turns} {row.turns === 1 ? 'turn' : 'turns'}
+                      </span>
                     ) : null}
                     {/* AND WHAT IT SPAWNED, in the facts line rather than on a
                         line of its own: the card is a fixed 96px row and a
@@ -843,10 +864,32 @@ function ActiveStrip({
                          is there whether the branch is open or shut. Counted
                          from the DATA (`childTallies`), never from the visible
                          rows: a tally that shrank as you revealed would be
-                         measuring the wrong thing. */
-                      <span className="hp-acard__kids">
-                        {tally.total} {tally.total === 1 ? 'sub-session' : 'sub-sessions'}
-                        {tally.running > 0 ? ` · ${tally.running} running` : ''}
+                         measuring the wrong thing.
+
+                         TERSE, AND THAT IS A MEASURED CORRECTION. This read
+                         `2 sub-sessions · 2 running` — twenty-six characters on
+                         a facts line with 183px of room, next to a turn count
+                         and a time. Measured on the deployed build: the line
+                         needed 216px, and the `<time>` ended up 36px past the
+                         right edge and clipped away entirely. The mark is the
+                         same `↳` the lineage line uses, so it is one vocabulary
+                         and not a new glyph, and the full sentence is on
+                         `title` where it costs no width. The RUNNING half keeps
+                         a presence of its own — a dot, not a word — because
+                         "this branch has running work under it" is the fact the
+                         collapse ruling turns on and it may not become a
+                         hover. */
+                      <span
+                        className="hp-acard__kids"
+                        title={`${tally.total} ${tally.total === 1 ? 'sub-session' : 'sub-sessions'}${
+                          tally.running > 0 ? ` · ${tally.running} running` : ''
+                        }`}
+                      >
+                        <span aria-hidden>↳</span>
+                        {tally.total}
+                        {tally.running > 0 ? (
+                          <span className="hp-acard__kidsdot" aria-hidden />
+                        ) : null}
                       </span>
                     ) : null}
                     {row.activityAt ? (

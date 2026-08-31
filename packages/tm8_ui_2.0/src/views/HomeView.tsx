@@ -952,6 +952,12 @@ export function HomeView(props: HomeViewProps) {
              draw a second one. The layout is the kind's registry default —
              there is no switcher on either row any more. */
           selectorSlot="host"
+                    /* THE KIND'S UNIVERSE, so every lifecycle bucket is bounded by it
+             (`bucketCountLabel`). Not a new read: this is the aggregate the
+             entity rail already draws beside the kind, so the header and the
+             rail now answer to one number instead of the header answering to
+             a client-side array length. See the 898-of-466 report. */
+          kindTotal={data.countsFor(kind)?.total}
           rowsFor={data.rowsFor(kind)}
           pageStateOf={data.pageStateOf(kind)}
           loadMore={data.loadMore(kind)}

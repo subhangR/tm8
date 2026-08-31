@@ -130,12 +130,27 @@ describe('a name is never truncated by its own count', () => {
     // And the row that replaced them exists, so this is not merely an absence.
     const start = homeCss.match(/\.cv2-root \.hp-start\s*\{([^}]*)\}/s)?.[1] ?? '';
     expect(start, 'no .hp-start rule — the verbs have no row').not.toBe('');
-    // THE TRACK IS FLOORED. `repeat(auto-fit, minmax(148px, 1fr))` — at the
-    // 320px floor three cards cannot sit side by side, and a floored track
-    // drops to one whole column instead of crushing all three. An unfloored
-    // `minmax(0, …)` is banned by name in this package because it collapses a
-    // region to nothing.
-    expect(start).toContain('minmax(150px, 1fr)');
+    /* THE TRACK IS FLOORED, and the floor is now the BLURB'S MEASURE.
+     *
+     * SUPERSEDED 2026-08-31: this pinned `minmax(150px, 1fr)`, on the reasoning
+     * that at the 320px floor three cards cannot sit side by side and a floored
+     * track drops to one whole column instead of crushing all three. The floor
+     * was right in kind and wrong in size — 150px fits three tracks that cannot
+     * hold their own text, which is what made the row read as "cramped" in a
+     * pane that is 46% of the width (owner, on the vertical split).
+     *
+     * 240 is the sentence under the verb: "Put an agent on it and watch it
+     * work" is 36 characters, ~205px at this file's measured 5.7px/char, plus
+     * 24px of padding. Below it the explanation wraps to three lines or clips,
+     * and a create card whose blurb does not fit has stopped explaining.
+     *
+     * It is also the whole of the arrangement change the owner asked for —
+     * session and task stacked in the vertical pane, all three across in the
+     * stacked one — with NO new breakpoint: at ~470px of pane two 240 tracks do
+     * not fit, at full width three do. One container, one story.
+     *
+     * The unfloored ban is unchanged and still checked. */
+    expect(start).toContain('minmax(240px, 1fr)');
     expect(start).not.toContain('minmax(0');
 
     // ONE SURFACE, NOT A BOX PER VERB. The owner, on the first render:
@@ -154,8 +169,21 @@ describe('a name is never truncated by its own count', () => {
      * the DOM and their text intact. Nothing in 4,974 tests could see it.
      */
     expect(start, 'the create box will be crushed by the flex column').toContain('flex: none');
-    expect(card).toContain('border-left: 1px solid');
-    expect(homeCss).toContain('.hp-start__card:first-child');
+    /* THE DIVIDER MOVED FROM A BORDER TO THE GRID GAP (2026-08-31), and this is
+     * a repair rather than a restyle. The old rule was `border-left` on every
+     * card but the first, under a comment promising it "falls away on the first
+     * of each row so a wrapped grid never opens with a stray rule" — which
+     * `:first-child` cannot do: it matches the first card of the GRID, not of
+     * each row. One column made the bug invisible; raising the track floor so
+     * the grid really wraps would have made it visible. A 1px gap over the line
+     * colour draws the divider between every neighbour in both directions, at
+     * any wrap, and needs no selector to know where a row begins. */
+    expect(start, 'the divider is not the gap').toMatch(/gap:\s*1px/);
+    expect(start).toContain('background: var(--pn-line)');
+    expect(card, 'the per-card border divider came back').not.toContain('border-left: 1px solid');
+    expect(card, 'a translucent card would let the divider colour wash the cell').toContain(
+      'background: var(--pn-card)',
+    );
 
     // A REFUSED VERB IS SHOWN, NOT HIDDEN. If this rule disappears the verb
     // silently vanishes when the server refuses it, which reads as a missing
@@ -361,6 +389,54 @@ describe('a name is never truncated by its own count', () => {
     expect(band, 'the row band lost its pinned rows').toMatch(/grid-auto-rows:\s*\d+px/);
     /* THE KIND COLOUR SURVIVES AS THE DOT — one fact, two presentations. */
     expect(band).toContain('--hp-acard-tone');
+  });
+
+  it('never lets the time be pushed out of the facts line', () => {
+    /*
+     * MEASURED ON THE DEPLOYED BUNDLE (Firefox, 1512x950), before the fix:
+     *
+     *   .hp-acard__facts scrollW=216 clientW=183 over=33
+     *     span            "113 turns"                  flex 0/1/auto
+     *     span.hp-acard__kids "2 sub-sessions · 2 running"  flex 0/0/auto
+     *     time            "56m"    past-right=+36px    ← clipped away entirely
+     *
+     * The fact the whole strip is SORTED BY was invisible on exactly the cards
+     * that had the most to say, and the culprit was the sub-session count:
+     * `flex: none` on a twenty-six-character box, which I added with the tree.
+     *
+     * THE RULING (owner's coordinator, 2026-08-31): both survivors are counts,
+     * so "the name beats the count" does not arbitrate. Usefulness does, and
+     * recency wins — the list is ordered by it. So the time never yields and
+     * the counts shrink.
+     *
+     * ASSERTED AS SOURCE, and that boundary is the point: `vitest` runs
+     * `css: false`, and the render gate measures the DEPLOYED bundle, which
+     * does not contain this change. Neither can see this fix render today. What
+     * source can prove is the three declarations the behaviour rests on — and
+     * `flex: none` reappearing on a count is precisely the one-word regression
+     * that reads as harmless in a diff.
+     */
+    const facts = homeCss.match(/\.cv2-root \.hp-acard__facts > time\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(facts, 'the time no longer holds its width').toContain('flex: none');
+
+    const counts =
+      homeCss.match(
+        /\.cv2-root \.hp-acard__turns,\s*\.cv2-root \.hp-acard__kids\s*\{([^}]*)\}/s,
+      )?.[1] ?? '';
+    expect(counts, 'the counts stopped being the ones that yield').toContain('flex: 0 1 auto');
+
+    /* AND THE CLIP IS ONLY SAFE BECAUSE THE DIGITS COME FIRST. The standing
+       rule is that a count is never sliced — `577` cut to `57` is a different
+       and entirely plausible number. Both labels lead with their number, so a
+       right-side clip eats the unit and never a digit. If either is reworded to
+       lead with a word, that guarantee is gone; this is the line that says so. */
+    expect(pageTsx, 'the turn count no longer leads with its number').toMatch(
+      /\{row\.turns\}\s*\{/,
+    );
+    expect(
+      pageTsx,
+      'the sub-session count went back to a sentence — it will push the time out again',
+    ).not.toMatch(/\{tally\.total\} \{tally\.total === 1 \? 'sub-session'/);
   });
 
   it('lets a card carry links without nesting them in a button', () => {

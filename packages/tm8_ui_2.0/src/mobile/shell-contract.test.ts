@@ -398,8 +398,28 @@ describe('DEF-030 — the list chrome is a BUDGET, and it is spent in three band
     // Labels and counts came off the screen, not out of the accessibility
     // tree. A row of four unlabelled rings is a row of four unnamed buttons
     // to a screen reader, which is a worse screen than the one we shrank.
-    expect(listPanel).toMatch(/oneSurface \? <CategoryGlyph category=\{tab\.id\} \/>/);
-    expect(listPanel).toMatch(/'aria-label': `\$\{tab\.label\}, \$\{tabLabel\(tab\)\}`/);
+    /* PINNED AS THE CLAIM, NOT AS A LITERAL. Both assertions matched exact
+       source text and both broke on 2026-08-31 when `tabLabel` gained a THIRD
+       arm: it now returns `null` when a bucket count cannot be trusted, so the
+       label is `${tab.label}, ${count}` when there is a number and the bare
+       `tab.label` when there is not.
+
+       That is the refusal that replaced a false count — the list header was
+       rendering "To Do 898" against a space with 466 tasks, because the count
+       fell back to the client's own row-array length, which nothing bounds. A
+       subset may not exceed its set, and when the number on offer breaks that
+       the honest answer is NO NUMBER. A screen reader saying "To Do, 898" was
+       the same lie in a different modality.
+
+       The CLAIM this block exists for is unchanged and still enforced: the
+       compact header draws a MARK, and the name a screen reader hears carries
+       the category and, when one is trustworthy, its count. A row of four
+       unlabelled rings is four unnamed buttons. */
+    expect(listPanel).toMatch(/oneSurface[\s\S]{0,40}<CategoryGlyph category=\{tab\.id\}/);
+    expect(listPanel, 'the mark lost the accessible name that says which category it is')
+      .toMatch(/'aria-label':[\s\S]{0,120}\$\{tab\.label\}/);
+    expect(listPanel, 'the count stopped being spoken when there IS one')
+      .toMatch(/'aria-label':[\s\S]{0,120}tabLabel\(tab\)/);
   });
 
   it('sends the narrowing verbs to sheets rather than back onto the header', () => {

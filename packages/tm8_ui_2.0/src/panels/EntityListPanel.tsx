@@ -41,6 +41,7 @@ import {
   VIEWER_ACTOR,
   allKinds,
   collectionKinds,
+  bucketCountLabel,
   countLabel,
   getKind,
   homeRailGroups,
@@ -176,6 +177,19 @@ export interface EntityListPanelProps {
    * no `hasMore` there is no evidence of a truncation to disclose.
    */
   pageStateOf?: (filter: QueryFilter, sort?: SortKey) => ListPageState;
+  /**
+   * THIS KIND'S UNIVERSE — how many of them exist in the space, unfiltered.
+   *
+   * The bound every lifecycle bucket is checked against (`bucketCountLabel`).
+   * It is NOT a new read: `useGateData.countsFor(kind).total` is the number the
+   * entity rail already draws beside each kind, so the header and the rail now
+   * answer to the same aggregate instead of the header answering to nothing.
+   *
+   * OPTIONAL, and absent means UNKNOWN rather than unbounded — a host that has
+   * not read the counts imposes no bound rather than a fabricated one, the same
+   * law the width solver follows for an unmeasurable row.
+   */
+  kindTotal?: number | undefined;
   /** Append the next page for that read. Absent ⇒ no infinite scroll. */
   loadMore?: (filter: QueryFilter, sort?: SortKey) => void;
   /** Real active-space membership. The people filter exists only at 2+. */
@@ -590,7 +604,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
   /* The selector total's `+` — carried only when a tab's number is still the
      loaded length rather than the server's. Once every tab reports an exact
      total the sum IS exact, and the hedge disappears on its own. */
-  const anyTabTruncated = tabCounts.some((c) => !c.exact && c.label.endsWith('+'));
+  const anyTabTruncated = tabCounts.some((c) => !c.exact && (c.label?.endsWith('+') ?? false));
 
   /**
    * THE LANDING TAB MUST NOT BE AN EMPTY BAND OVER A POPULATED KIND — the
@@ -854,9 +868,14 @@ export function EntityListPanel(props: EntityListPanelProps) {
           tabs={list.categories}
           activeTabId={openTabId}
           onTab={setCategoryTabId}
-          tabLabel={(tab: StatusCategoryTab) =>
-            tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
-          }
+          /* `null` means "no reconcilable count" and travels as null — the
+             `?? '0'` that used to stand here would have turned the one state
+             this repair exists to express back into a confident zero. A tab
+             with no entry at all is a different thing again and keeps the 0. */
+          tabLabel={(tab: StatusCategoryTab) => {
+            const found = tabCounts.find((c) => c.tab.id === tab.id);
+            return found ? found.label : '0';
+          }}
         />
       )}
 
@@ -1021,7 +1040,10 @@ export function EntityListPanel(props: EntityListPanelProps) {
           the tab above already shows them. */}
       {tabCounts.length > 0 ? (
         <div className="lp__foot" data-testid="list-footer">
-          {tabCounts.map((c) => `${c.label} ${c.tab.label.toLowerCase()}`).join(' · ')}
+          {tabCounts
+            .filter((c) => c.label !== null)
+            .map((c) => `${c.label} ${c.tab.label.toLowerCase()}`)
+            .join(' · ')}
         </div>
       ) : null}
     </section>
@@ -1205,14 +1227,25 @@ function tabCount(
   props: EntityListPanelProps,
   config: KindConfig,
   tab: StatusCategoryTab,
-): { n: number; label: string; exact: boolean } {
+): { n: number; label: string | null; exact: boolean } {
   const merged = bandFilter(tab.filter, tab, {}, config, props.ctx);
   if (merged === null) return { n: 0, label: '0', exact: true };
   const page = props.pageStateOf?.(merged);
   const loaded = props.rowsFor(merged).length;
+  /* BOUNDED BY THE KIND'S OWN TOTAL — see `bucketCountLabel`, which owns the
+     rule and its reasoning. `label` is now nullable: a number that cannot be
+     reconciled with its universe is not rendered at all, because a subset
+     larger than its set is a manufactured fact and this row is what people
+     navigate by. `898` over 466 tasks is the report this answers.
+
+     `n` FOLLOWS THE SAME VERDICT, and it has to: it drives the landing
+     correction, so an unreconcilable bucket must read as "nothing to show
+     here" rather than as the most populated band on the screen — otherwise the
+     one number we refuse to print still decides which tab opens. */
+  const label = bucketCountLabel(loaded, page, props.kindTotal);
   return {
-    n: page?.total ?? loaded,
-    label: countLabel(loaded, page),
+    n: label === null ? 0 : page?.total ?? loaded,
+    label,
     exact: page?.total !== undefined,
   };
 }
@@ -1754,7 +1787,7 @@ function CategoryTabs({
   activeTabId: string | null;
   onTab: (id: string) => void;
   /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
-  tabLabel: (tab: StatusCategoryTab) => string;
+  tabLabel: (tab: StatusCategoryTab) => string | null;
 }) {
   /*
    * THE PHONE DRAWS THE MARKS AND NOT THE WORDS — owner ruling, 2026-08-19.
@@ -1786,7 +1819,9 @@ function CategoryTabs({
           aria-selected={tab.id === activeTabId}
           className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
           onClick={() => onTab(tab.id)}
-          {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
+          {...(oneSurface
+            ? { 'aria-label': tabLabel(tab) === null ? tab.label : `${tab.label}, ${tabLabel(tab)}` }
+            : {})}
         >
           {/* EVERY TAB SHOWS ITS COUNT, INCLUDING A ZERO — measured off the
               owner's design, where `To Do 0` and `Done 603` sample the SAME
@@ -1798,7 +1833,15 @@ function CategoryTabs({
               otherwise, so the design wins: `0` is the honest answer to "how
               many are in this band" and a reader comparing bands wants all
               four numbers, not three numbers and a gap. */}
-          {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
+          {/* AND A COUNT THAT CANNOT BE RECONCILED WITH ITS UNIVERSE IS NOT
+              DRAWN AT ALL (2026-08-31). The zero above is kept because zero is
+              an ANSWER; `null` from `bucketCountLabel` is the absence of one,
+              and the two must not look alike — printing a placeholder would be
+              the manufactured-fact failure a second time. The tab keeps its
+              label, its seat and its click. */}
+          {oneSurface
+            ? <CategoryGlyph category={tab.id} />
+            : tabLabel(tab) === null ? tab.label : `${tab.label} ${tabLabel(tab)}`}
         </button>
       ))}
     </div>

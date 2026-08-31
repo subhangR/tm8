@@ -77,6 +77,20 @@ const ROUTES = [
   { name: 'entity/task', hash: `#/s/${SPACE}/e/01a054d8-5e57-7ad4-9035-f30195868b78` },
   { name: 'entity/session', hash: `#/s/${SPACE}/e/01a04f57-0462-7b98-81bb-3704850aad11` },
   { name: 'entity/doc', hash: `#/s/${SPACE}/e/01a053f9-5ede-7478-b018-2e035256686f` },
+  /* AN EMPTY DOCUMENT IS NOT A DOCUMENT. `01a053f9` above is "Untitled doc" and
+     its body is zero bytes — it renders the reader's designed empty state and
+     exercises none of the doc surface: no outline, no prose column, no table,
+     no fence, no diagram. It is kept because the empty state is worth auditing,
+     and this second route is the one that audits a DOCUMENT.
+
+     `01a04ee0` is "Frontend verification — what changed on 2026-08-29", the doc
+     in the owner's 2026-08-31 report. It is a representative worst case rather
+     than a convenient one: 6,085 characters, 5 headings, 3 tables, 2 code
+     fences and prose dense with inline identifiers. Measured on the deployed
+     bundle the day it was added, its body carried 168px of horizontal scroll
+     contributed by a hidden tooltip — the defect that produced the report — so
+     this route has already earned its place once. */
+  { name: 'entity/doc-full', hash: `#/s/${SPACE}/e/01a04ee0-aec6-73dd-a7a9-5fdea46aead2` },
   /* Chat is not an `/e/` screen: a conversation lives on Home, in its own
      berth, so the route that audits it is Home's chat address. */
   { name: 'home/chat', hash: `#/s/${SPACE}/home/chat` },
@@ -221,120 +235,281 @@ function auditInPage() {
     }
   }
 
-  // 7. THE PRIMARY REGION MUST REACH THE FLOOR OF THE VIEWPORT.
+  // 7. THE PRIMARY REGION MUST OCCUPY THE HEIGHT AVAILABLE TO IT.
   //
   //    "chat, sessions, docs, tasks all entity views should be full height etc
-  //    all — Entities must be full height" (owner, 2026-08-31). That is a RULE,
-  //    so it is checked as one rather than screen by screen: this app is a
-  //    fixed-height shell, and on every route there is one region that is the
-  //    working area. A band of empty `--pn-paper` between the bottom of that
-  //    region and the bottom of the window is the defect, whatever produced it
+  //    all — Entities must be full height" (owner, 2026-08-31). A rule, so it
+  //    is checked as one: this app is a fixed-height shell, and a band of empty
+  //    `--pn-paper` under the working area is the defect, whatever produced it
   //    — a `height: 52vh` left over from an older layout, a flex child that
   //    never got `flex: 1`, a grid row that sized to its content.
   //
-  //    HOW THE REGION IS FOUND, and this is the part that decides whether the
-  //    rule is useful or noise. The gate's own history has the counter-example:
-  //    a rule aimed at the wrong element does not report "no answer", it
-  //    reports "everything is broken" (see the token probe below, which read
-  //    `documentElement` and flagged ten tokens on every route). So the region
-  //    is not a selector list — it is found by walking the SPINE:
+  //    ═══ THIS RULE WAS WRONG TWICE AND BOTH CORRECTIONS ARE THE RULE ═══
   //
-  //      from `.cv2-root`, step into the BIGGEST visible in-flow child by AREA,
-  //      and keep stepping while that child is either (a) at least 60% of its
-  //      parent's height — it still IS the region, not a part of it — or (b)
-  //      its parent's only in-flow child, in which case it is the whole of what
-  //      the parent holds and must fill it.
+  //    DRAFT 1 WAS INERT. It skipped any element whose rect height disagreed
+  //    with its `offsetHeight`, reading rule 1's transform lesson as "never
+  //    trust a rect". That skipped `.cv2-root` on every route — the shell paints
+  //    inside a ~1.1 scale (its zoom control), 864 layout px against 950
+  //    viewport px — so the rule audited nothing while reporting green. Caught
+  //    only by injecting a deliberate `height: 40vh` and watching it still pass.
+  //    A check that cannot fail is not a check.
   //
-  //    (b) is what catches the actual reported defect: a full-height host with
-  //    one short panel inside it. Without it the walk stops at the host, whose
-  //    own bottom is at the floor, and reports nothing. (a) is what stops the
-  //    walk descending into a short list inside a tall panel — a list with
-  //    three rows in a 700px scroller is correct, and a rule that fired on it
-  //    would be muted within a week.
+  //    DRAFT 2 MEASURED A DEEP NODE AGAINST THE VIEWPORT FLOOR, and reported a
+  //    correct layout as broken. It walked into `.tch-transcript`, stopped
+  //    (a scroller), and compared THAT box's bottom to the bottom of the window:
   //
-  //    BY AREA AND NOT BY HEIGHT, because on this app height alone picks the
-  //    wrong sibling every time: Home's 72px icon rail and its 1350px working
-  //    area are BOTH full height, and "tallest" resolves that tie by DOM order,
-  //    which handed the rule the rail. It then walked down the rail and audited
-  //    a column of nine icons as "the primary content region". Area breaks the
-  //    tie the way a reader does.
+  //      region-not-full-height: div.tch-transcript — 170px of unused height
   //
-  //    AND THE WALK STOPS AT A SCROLLER. An `overflow-y: auto` box IS the
-  //    region; the content inside it is routinely taller than the viewport (a
-  //    1783px tree inside a 580px list body was the first thing this walk found)
-  //    and its bottom edge is meaningless as a layout claim. Descending past a
-  //    scroller measures the scrollable content, not the screen.
+  //    The 170px is the COMPOSER. Measured on the deployed build: the
+  //    transcript runs 135..780 and `.tch-composer-wrap` runs 780..928 right
+  //    under it, inside a `.tch-conversation` that ends at 941. Nothing is
+  //    unused — the transcript occupies exactly the height available to it,
+  //    which is the height its siblings leave. A rule that ignores what sits
+  //    BELOW the box it is measuring will call every composer, footer and
+  //    action bar in the product a defect.
   //
-  //    THE TWO MEASUREMENTS ARE IN DIFFERENT SPACES ON PURPOSE, and getting
-  //    that wrong made the first version of this rule silently inert.
+  //    AND IT WAS NON-DETERMINISTIC, which is the more dangerous half: it fired
+  //    on three route/theme pairs in one run and none in another, over the same
+  //    build. The cause was the 60% dominance gate sitting exactly on this
+  //    layout's boundary — Home's conversation pane is ~61% of the working area
+  //    and the fraction moves with how many active cards and NEEDS YOU rows
+  //    happen to have loaded — so whether the walk descended one level further
+  //    was decided by CONTENT. A gate whose verdict depends on what the server
+  //    returned that second is not a gate.
   //
-  //    Rule 1's lesson is "`getBoundingClientRect` is post-transform, so use
-  //    `offsetHeight` for layout questions". The first draft of THIS rule read
-  //    that as "never trust a rect" and skipped any element whose rect height
-  //    disagreed with its `offsetHeight`. That skipped `.cv2-root` itself on
-  //    every route — the shell paints inside a ~1.1 scale (its zoom control),
-  //    so the root measures 864 layout px and 950 viewport px — and the rule
-  //    audited nothing at all while reporting green. Measured with a deliberate
-  //    `height: 40vh` injected into the shell: still green. A check that cannot
-  //    fail is not a check.
+  //    ═══ SO THE QUESTION IS ASKED OF EVERY NODE, NOT OF ONE ═══
   //
-  //    The correct reading is that the two questions live in different spaces:
+  //    "Occupy the height available to it" is a statement about a box AND ITS
+  //    CONTAINER, so that is what is measured: at each node down the spine, the
+  //    DEAD BAND between the lowest edge of its own in-flow children and its own
+  //    bottom edge. The viewport enters exactly once, at the root, where the
+  //    container genuinely is the window.
   //
-  //      · IS THIS CHILD THE REGION? — a RATIO between two boxes in the same
-  //        subtree. `offsetHeight`, per rule 1; and a ratio is scale-invariant
-  //        anyway, so the two never disagree about this.
-  //      · DOES IT REACH THE FLOOR? — a question about the VIEWPORT, which is
-  //        composited space by definition. `getBoundingClientRect().bottom`
-  //        against `clientHeight` is the only honest pair; comparing a layout
-  //        height to a viewport height is what produced the 86px phantom gap.
+  //    This fixes both faults at their root rather than tuning around them:
   //
-  //    The two are never compared with each other, which is what makes mixing
-  //    them safe here and unsafe in rule 1.
+  //      · a sibling below the region now COUNTS as occupying the space, so the
+  //        transcript-plus-composer arrangement is read correctly;
+  //      · and the verdict no longer depends on how far the walk gets, because
+  //        every node on the way is checked. The dominance test now only decides
+  //        how DEEP the report points, never WHETHER there is one — so content
+  //        drift can no longer flip the answer.
   //
-  //    THE THRESHOLD IS 120px, and the arithmetic is: the largest legitimate
-  //    gutter under a region on any of these screens is the page's own bottom
-  //    padding, 7px, plus a hairline and sub-pixel rounding — call it 12. The
-  //    smallest band a reader calls "the screen stops halfway" is one card row
-  //    of this dashboard, 96px, plus its 8px gap: 104. 120 sits above every
-  //    legitimate gutter by an order of magnitude and below the smallest real
-  //    band, so nothing in between can be argued about. It is deliberately NOT
-  //    a percentage of the viewport: the defect is an absolute band of dead
-  //    paint, and on a short window a percentage would let a bigger one pass.
+  //    THE WALK still steps into the biggest visible in-flow child BY AREA.
+  //    Height alone picks the wrong sibling on this app every time: Home's 72px
+  //    icon rail and its 1350px working area are both full height, and
+  //    "tallest" resolves that tie by DOM order — which handed an earlier draft
+  //    the rail, and had it auditing a column of nine icons as the primary
+  //    content region. Area breaks the tie the way a reader does.
+  //
+  //    AND IT STOPS AT A SCROLLER. An `overflow-y: auto` box IS the region; its
+  //    content is routinely taller than the viewport (a 1783px tree inside a
+  //    580px list body was the first thing this walk ever found) and the
+  //    distance from the last child to the box's bottom means nothing there.
+  //
+  //    CENTRED CONTENT IS NOT A DEFECT, and the discriminator is symmetry. An
+  //    empty state centred in a tall pane leaves a band at the TOP as well as
+  //    the bottom; a pane whose content stops halfway leaves one only at the
+  //    bottom. So a bottom band is reported only when it is more than twice the
+  //    top one — which is exactly the difference between "laid out centred" and
+  //    "ran out".
+  //
+  //    THE THRESHOLD IS 120px. The largest legitimate gutter under a region on
+  //    any of these screens is the page's own 7px bottom padding plus a hairline
+  //    and sub-pixel rounding — call it 12. The smallest band a reader calls
+  //    "the screen stops halfway" is one card row of this dashboard (96px) plus
+  //    its 8px gap: 104. 120 sits an order of magnitude above every legitimate
+  //    gutter and below the smallest real band. Deliberately NOT a percentage of
+  //    the viewport: the defect is an absolute band of dead paint, and a
+  //    percentage would let a bigger one pass on a short window.
+  //
+  //    MEASUREMENT SPACES, since this rule mixes them on purpose: ratios and
+  //    "is this a real region" use `offsetHeight` (rule 1's law, and a ratio is
+  //    scale-invariant anyway); positions and bands use
+  //    `getBoundingClientRect()`, and are only ever compared with OTHER rects.
+  //    A layout height is never compared to a viewport height — that comparison
+  //    is what produced the 86px phantom gap in draft 1.
   const FULL_HEIGHT_SLACK = 120;
   const viewportBottom = document.documentElement.clientHeight;
   const inFlow = (el) =>
     seen(el) && !['absolute', 'fixed'].includes(getComputedStyle(el).position);
-
   const area = (el) => el.offsetWidth * el.offsetHeight;
   const scrolls = (el) => ['auto', 'scroll'].includes(getComputedStyle(el).overflowY);
 
+  /** The empty bands a node leaves above and below its own in-flow children. */
+  const bandsOf = (el, kids) => {
+    const box = el.getBoundingClientRect();
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const kid of kids) {
+      const r = kid.getBoundingClientRect();
+      if (r.height <= 0) continue;
+      top = Math.min(top, r.top);
+      bottom = Math.max(bottom, r.bottom);
+    }
+    if (bottom === -Infinity) return null;
+    return { top: top - box.top, bottom: box.bottom - bottom };
+  };
+
   const spineStart = document.querySelector('.cv2-root');
   if (spineStart) {
-    let region = spineStart;
-    for (let depth = 0; depth < 40; depth += 1) {
-      if (scrolls(region)) break;
-      const kids = [...region.children].filter(inFlow);
-      if (kids.length === 0) break;
-      const biggest = kids.reduce((a, b) => (area(b) > area(a) ? b : a));
-      const dominant = biggest.offsetHeight >= region.offsetHeight * 0.6;
-      if (!dominant && kids.length !== 1) break;
-      // Below this a box is chrome, not a region — a 30px toolbar that happens
-      // to be an only child must not become "the primary content region".
-      if (biggest.offsetHeight < 40) break;
-      region = biggest;
-    }
-    const box = region.getBoundingClientRect();
-    const gap = viewportBottom - box.bottom;
-    if (gap > FULL_HEIGHT_SLACK) {
+    /* THE VIEWPORT ENTERS ONCE, HERE. The app root's container IS the window,
+       so this is the one place the two spaces legitimately meet — and it is the
+       check that catches a globally short shell, which no inner band would. */
+    const rootGap = viewportBottom - spineStart.getBoundingClientRect().bottom;
+    if (rootGap > FULL_HEIGHT_SLACK) {
       out.push({
         rule: 'region-not-full-height',
-        el: name(region),
-        detail: `${Math.round(gap)}px of unused height below it (bottom at ${Math.round(box.bottom)} in a ${viewportBottom}px viewport)`,
+        el: name(spineStart),
+        detail: `the app root stops ${Math.round(rootGap)}px above the bottom of a ${viewportBottom}px viewport`,
+      });
+    } else {
+      let region = spineStart;
+      for (let depth = 0; depth < 40; depth += 1) {
+        if (scrolls(region)) break;
+        const kids = [...region.children].filter(inFlow);
+        if (kids.length === 0) break;
+        const bands = bandsOf(region, kids);
+        if (bands && bands.bottom > FULL_HEIGHT_SLACK && bands.bottom > bands.top * 2) {
+          out.push({
+            rule: 'region-not-full-height',
+            el: name(region),
+            detail: `${Math.round(bands.bottom)}px of unused height below its content (${kids.length} children, ${Math.round(bands.top)}px above)`,
+          });
+          break;
+        }
+        const biggest = kids.reduce((a, b) => (area(b) > area(a) ? b : a));
+        const dominant = biggest.offsetHeight >= region.offsetHeight * 0.6;
+        if (!dominant && kids.length !== 1) break;
+        // Below this a box is chrome, not a region — a 30px toolbar that
+        // happens to be an only child must not become "the content region".
+        if (biggest.offsetHeight < 40) break;
+        region = biggest;
+      }
+    }
+  }
+
+  // 8. AN INVISIBLE BOX MUST NOT CONTRIBUTE SCROLL.
+  //
+  //    Suggested by the probe that found it, and it earns its place because it
+  //    is the one horizontal-overflow rule that CANNOT fire on correct code.
+  //
+  //    THE FINDING IT GENERALISES: the doc reader had 168px of horizontal
+  //    scroll, and nothing visible was overflowing. The cause was a tooltip —
+  //    `visibility: hidden; opacity: 0`, anchored `left: 0` — on a control that
+  //    had drifted to the right edge of its row. Prose was not being clipped;
+  //    it was being SCROLLED SIDEWAYS by a box nobody can see. That is
+  //    unreadable as a symptom (the page just feels wrong) and undiagnosable by
+  //    eye, which is exactly the shape of defect this gate exists for.
+  //
+  //    WHY NOT A GENERAL HORIZONTAL-OVERFLOW RULE. Because a great deal of
+  //    legitimate content overflows its box on purpose: every `overflow-x: auto`
+  //    table and diagram in the product is a scroller BY DESIGN (this package's
+  //    own law is that wide content scrolls in its own container), and every
+  //    `text-overflow: ellipsis` box has `scrollWidth > clientWidth` WHENEVER IT
+  //    IS TRUNCATING — that inequality is the mechanism that draws the ellipsis.
+  //    Measured while chasing a report: `.lp__meta` on the docs list overflows
+  //    by 29px, has ZERO element children and `text-overflow: ellipsis`, and is
+  //    working exactly as designed. A rule that flagged it would be reporting
+  //    correct code, and would be muted inside a week.
+  //
+  //    An INVISIBLE contributor has no such defence. Nothing legitimate is
+  //    served by a box you cannot see making a box you can see scroll: if it is
+  //    hidden it should be out of flow, `display: none`, or clipped by an
+  //    ancestor. So the rule is narrow on purpose, and its narrowness is what
+  //    makes it trustworthy.
+  //
+  //    `display: none` needs no mention — it generates no box and contributes
+  //    no scroll. The two that do are `visibility: hidden` and `opacity: 0`,
+  //    which are precisely the two a tooltip or a popover uses to stay mounted
+  //    (for `aria-describedby`, and for a transition) while not being shown.
+  for (const el of all) {
+    if (el.scrollWidth <= el.clientWidth + 2) continue;
+    const cs = getComputedStyle(el);
+    if (!['auto', 'scroll', 'hidden'].includes(cs.overflowX)) continue;
+    const box = el.getBoundingClientRect();
+    let worst = null;
+    for (const node of el.querySelectorAll('*')) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none') continue;
+      const invisible = style.visibility === 'hidden' || Number(style.opacity) === 0;
+      if (!invisible) continue;
+      /* Out of flow AND not positioned relative to this box cannot be what is
+         stretching it — but an absolutely positioned child of THIS element very
+         much can, which is the reported case, so position is not a filter here.
+         The test is simply: does it stick out past the right edge? */
+      const r = node.getBoundingClientRect();
+      const past = r.right - box.right;
+      if (past > 2 && (worst === null || past > worst.past)) worst = { node, past };
+    }
+    if (worst) {
+      out.push({
+        rule: 'invisible-box-causes-scroll',
+        el: name(el),
+        detail: `scrolls ${el.scrollWidth - el.clientWidth}px because ${name(worst.node)} — which is not visible — sits ${Math.round(worst.past)}px past its right edge`,
       });
     }
   }
 
   return out;
+}
+
+/**
+ * WAIT FOR THE PAGE TO COME TO REST, rather than for a number.
+ *
+ * THE GATE USED TO `waitForTimeout(11000)` AND AUDIT WHATEVER HAD ARRIVED, and
+ * that is how a geometry gate becomes a coin flip. Measured on the deployed
+ * build while chasing a transcript violation: the same route, the same build,
+ * audited twice, gave `.tch-conversation` a 13px bottom band in one run and a
+ * 279px one in another — because in one the twelve turns had landed and in the
+ * other they had not. The same eleven seconds left `entity/task` with a fully
+ * populated list once and an empty tree the next time.
+ *
+ * A rule cannot be made deterministic while the thing it measures is not. So
+ * the wait is now a CONDITION: sample a geometry signature until it stops
+ * changing for `SETTLE_QUIET_MS`, and if it never does inside `SETTLE_CAP_MS`,
+ * report the route as unmeasured rather than auditing noise. "I could not
+ * measure this" is a third outcome beside pass and fail, and it is the honest
+ * one — the alternative is a violation list that changes when nothing did.
+ *
+ * THE SIGNATURE IS GEOMETRY, NOT MARKUP. A spinner swapping a class changes the
+ * DOM without changing the layout; a transcript arriving changes both. What
+ * this rule set asks about is boxes, so boxes are what has to hold still: the
+ * count of laid-out elements and a digest of every box taller than a hairline.
+ * Text length rides along because a re-flow that changes no box heights can
+ * still change what a text rule reads.
+ */
+const SETTLE_QUIET_MS = 1200;
+const SETTLE_CAP_MS = 25000;
+
+async function settle(page) {
+  const signature = () => {
+    let digest = 0;
+    let boxes = 0;
+    for (const el of document.querySelectorAll('body *')) {
+      const h = el.offsetHeight;
+      if (h < 4) continue;
+      boxes += 1;
+      /* Rounded, so sub-pixel jitter from a font metric settling is not read as
+         motion — the question is whether the LAYOUT moved, not whether a
+         fractional pixel did. */
+      digest = (digest * 31 + Math.round(h) + Math.round(el.offsetWidth) * 7 + Math.round(el.offsetTop) * 13) | 0;
+    }
+    return `${boxes}:${digest}:${(document.body.innerText || '').length}`;
+  };
+  const started = Date.now();
+  let last = null;
+  let steadySince = Date.now();
+  while (Date.now() - started < SETTLE_CAP_MS) {
+    const current = await page.evaluate(signature);
+    if (current === last) {
+      if (Date.now() - steadySince >= SETTLE_QUIET_MS) return true;
+    } else {
+      last = current;
+      steadySince = Date.now();
+    }
+    await page.waitForTimeout(200);
+  }
+  return false;
 }
 
 const browser = await firefox.launch({
@@ -361,7 +536,7 @@ for (const theme of ['light', 'dark']) {
     }, TOKEN);
     const page = await ctx.newPage();
     await page.goto(`${ORIGIN}/${route.hash}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(11000);
+    const settled = await settle(page);
 
     /* REFUSE TO PASS A DEAD PAGE. An error boundary and an empty document both
        audit perfectly cleanly, which would report a broken screen as green —
@@ -374,6 +549,16 @@ for (const theme of ['light', 'dark']) {
     });
     if (dead) {
       console.error(`  ✗ ${route.name} [${theme}] — DID NOT RENDER: ${dead}`);
+      failures += 1;
+      await ctx.close();
+      continue;
+    }
+    /* AND REFUSE TO AUDIT A PAGE THAT NEVER CAME TO REST, for the same reason
+       it refuses to pass a dead one: the geometry of a half-hydrated screen is
+       not this build's geometry, and reporting it either way is a claim about
+       something that was never on screen. Loud, and its own outcome. */
+    if (!settled) {
+      console.error(`  ✗ ${route.name} [${theme}] — NEVER SETTLED in ${SETTLE_CAP_MS}ms; not audited`);
       failures += 1;
       await ctx.close();
       continue;

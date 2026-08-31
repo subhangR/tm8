@@ -72,3 +72,80 @@ describe('Markdown images', () => {
     expect((getByTestId('markdown-image') as HTMLImageElement).getAttribute('alt')).toBe('image');
   });
 });
+
+/**
+ * CALLOUTS — asserted as STRUCTURE, never as appearance.
+ *
+ * `vitest` runs with `css: false` in this package, so nothing below can see the
+ * tone colour, the ground or the rule; a test that claimed to check "the
+ * warning is amber" would be checking nothing. What these DO check is every
+ * decision the renderer makes: which blockquotes are admitted, that the marker
+ * text is removed rather than shown beside the word it produced, that the tone
+ * reaches the attribute the stylesheet keys on, and — the one that matters most
+ * — that an ordinary quotation is still an ordinary quotation.
+ */
+describe('Markdown callouts', () => {
+  it('turns a GFM alert into a toned callout and drops the marker text', () => {
+    const { getByTestId } = render(
+      <Markdown source={'> [!WARNING]\n> Every count in this section is stale.'} />,
+    );
+    const callout = getByTestId('markdown-callout');
+    expect(callout.getAttribute('data-tone')).toBe('warning');
+    expect(callout.textContent).toContain('Every count in this section is stale.');
+    // The syntax must not survive beside the word it produced.
+    expect(callout.textContent).not.toContain('[!WARNING]');
+    expect(callout.textContent).toContain('Warning');
+  });
+
+  it.each([
+    ['NOTE', 'note', 'Note'],
+    ['TIP', 'tip', 'Tip'],
+    ['IMPORTANT', 'important', 'Important'],
+    ['WARNING', 'warning', 'Warning'],
+    ['CAUTION', 'caution', 'Caution'],
+  ])('recognises [!%s]', (marker, tone, word) => {
+    const { getByTestId } = render(<Markdown source={`> [!${marker}]\n> body`} />);
+    const callout = getByTestId('markdown-callout');
+    expect(callout.getAttribute('data-tone')).toBe(tone);
+    expect(callout.querySelector('.md-callout__title')?.textContent).toBe(word);
+  });
+
+  it('marks the callout with drawn geometry, not a text character', () => {
+    // `VectorIcon`'s standing argument: a pictographic character lands on its
+    // own font's baseline and resolves to a blob at 14px. If this ever becomes
+    // an emoji again, this is the test that says so.
+    const { getByTestId } = render(<Markdown source={'> [!CAUTION]\n> mind the gap'} />);
+    const title = getByTestId('markdown-callout').querySelector('.md-callout__title');
+    expect(title?.querySelector('svg')).not.toBeNull();
+  });
+
+  it('leaves an ordinary quotation alone', () => {
+    const { container, queryByTestId } = render(
+      <Markdown source="> A quotation is not a callout and must not become one." />,
+    );
+    expect(queryByTestId('markdown-callout')).toBeNull();
+    const quote = container.querySelector('blockquote');
+    expect(quote).not.toBeNull();
+    expect(quote?.className).toBe('');
+  });
+
+  it('leaves a marker it does not know alone, verbatim', () => {
+    const { container, queryByTestId } = render(<Markdown source={'> [!HINT]\n> not a GFM alert'} />);
+    expect(queryByTestId('markdown-callout')).toBeNull();
+    expect(container.querySelector('blockquote')?.textContent).toContain('[!HINT]');
+  });
+
+  it('only reads the marker on the FIRST line — a mention mid-quote is prose', () => {
+    const { queryByTestId, container } = render(
+      <Markdown source={'> We agreed to write\n> [!NOTE] blocks from now on.'} />,
+    );
+    expect(queryByTestId('markdown-callout')).toBeNull();
+    expect(container.querySelector('blockquote')?.textContent).toContain('[!NOTE]');
+  });
+
+  it('renders a callout with no body as the bare notice, not as a crash', () => {
+    // Reachable input: an author types the marker and saves before the body.
+    const { getByTestId } = render(<Markdown source="> [!NOTE]" />);
+    expect(getByTestId('markdown-callout').getAttribute('data-tone')).toBe('note');
+  });
+});

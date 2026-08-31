@@ -194,7 +194,13 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
           as asterisks. `Markdown` is CommonMark + GFM; the headings it draws
           in place are the SAME ones the outline above lists, which is
           deliberate — the outline is navigation, the body is the document. */}
-      <Markdown source={source ?? ''} className="rd-md" testId="reader-markdown" fileHref={fileHref} />
+      {/* `md-doc` is `kit/markdown.css`'s DOCUMENT stance — the reading size and
+          leading the chat transcript already uses, plus a measure so an
+          expanded panel does not serve a 1,400px line of prose. `.md-root` is
+          worn by chat bubbles and task descriptions too, and only this one is
+          read for minutes at a time, so the stance is opt-in rather than the
+          base. `rd-md` stays as the reader's own hook. */}
+      <Markdown source={source ?? ''} className="rd-md md-doc" testId="reader-markdown" fileHref={fileHref} />
 
       {notices.map((text) => (
         <p className="pn-notice" data-testid="reader-notice" key={text}>
@@ -303,6 +309,14 @@ function Outline({
    */
   return (
     <nav className="rd-toc" data-testid="reader-outline" aria-label="Table of contents">
+      {/* THE REGION SAYS WHAT IT IS. `aria-label` above told a screen reader
+          and nobody else; the reported defect was that a sighted reader saw
+          nineteen grey lines with "no indication they are navigation". The
+          <nav> keeps the accessible name, so this word is presentational and
+          carries `aria-hidden` rather than being announced twice. */}
+      <p className="rd-toc__head" aria-hidden="true">
+        Contents
+      </p>
       <ol className="rd-toc__list">
         {entries.map((entry) => (
           <li className="rd-toc__item" data-depth={entry.depth} key={entry.key}>

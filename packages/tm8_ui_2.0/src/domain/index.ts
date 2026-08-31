@@ -59,6 +59,7 @@ export type {
 export {
   CUSTOM_KIND_FALLBACK,
   VIEWER_ACTOR,
+  bucketCountLabel,
   countLabel,
   customKindSlug,
   needsViewer,

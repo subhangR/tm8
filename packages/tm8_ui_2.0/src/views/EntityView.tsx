@@ -938,6 +938,9 @@ export function EntityView(props: EntityViewProps) {
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
+          /* The kind's universe — bounds every lifecycle bucket (`bucketCountLabel`).
+             The aggregate the rail already draws; no new read. */
+          kindTotal={data.countsFor(kind)?.total}
           rowsFor={data.rowsFor(kind)}
           pageStateOf={data.pageStateOf(kind)}
           loadMore={data.loadMore(kind)}
