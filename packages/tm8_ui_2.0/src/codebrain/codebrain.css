@@ -92,10 +92,33 @@
   align-items: start;
   padding: 10px 4px;
   border-left: 2px solid var(--pn-line);
+  /* Rows render as <button> when selectable (a real run) and <div> in the
+     empty state — reset the button-specific defaults so both look alike. */
+  width: 100%;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  background: none;
+  text-align: left;
+  font-family: var(--pn-ui);
+  cursor: default;
+}
+
+button.cb-rail__row {
+  cursor: pointer;
 }
 
 .cb-rail__row:first-child {
   border-top-left-radius: var(--pn-r-sm);
+}
+
+.cb-rail__row--selected {
+  background: var(--pn-hover);
+  border-left-color: var(--pn-brand-2);
+}
+
+.cb-rail__elapsed::before {
+  content: '· ';
 }
 
 .cb-rail__bead {
@@ -147,7 +170,7 @@
   line-height: 1;
 }
 
-/* -- Detail pane placeholder (filled out in Task 5/6) ----------------------- */
+/* -- Detail pane (§7.2 right column) ---------------------------------------- */
 
 .cb-detail {
   border: 1px solid var(--pn-line-2);
@@ -155,6 +178,29 @@
   background: var(--pn-card);
   padding: 16px;
   min-height: 120px;
+}
+
+.cb-detail__kv {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.cb-detail__row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.cb-detail__row dt {
+  margin: 0;
+}
+
+.cb-detail__row dd {
+  margin: 0;
+  word-break: break-word;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -6,7 +6,7 @@
  * "fixture rows only" posture as `codebrain-model.test.ts`.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
 import { CodeBrainScreen } from './CodeBrainScreen';
 import { CODEBRAIN_ROOT_ID } from './codebrain-model';
@@ -71,6 +71,79 @@ const SIX_PHASES = [
   teamMember({ id: id(6), position: 6, title: 'CodeBrain 6 · SHIP — Go → Live' }),
 ];
 
+function task(opts: { id: EntityId; title?: string }): EntitySummary {
+  return {
+    id: opts.id,
+    spaceId: 'space-1',
+    kind: 'task',
+    title: opts.title ?? 'a run',
+    parentId: null,
+    position: 1,
+    visibility: 'space',
+    version: 1,
+    activityAt: '2026-08-31T00:00:00.000Z',
+    createdAt: '2026-08-31T00:00:00.000Z',
+    updatedAt: '2026-08-31T00:00:00.000Z',
+    deletedAt: null,
+    createdBy: { id: 'u1', kind: 'member' },
+    counters: {},
+    state: {
+      kind: 'task',
+      status: 'in_progress',
+      priority: 'medium',
+      axes: {},
+      assignees: [],
+      acceptance: { total: 0, completed: 0 },
+    },
+    badges: {},
+  } as unknown as EntitySummary;
+}
+
+function session(opts: {
+  id: string;
+  runId: EntityId;
+  teammateId: EntityId;
+  status: 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
+  startedAt?: string | null;
+  exitedAt?: string | null;
+}): EdgeView {
+  const sessionSummary = {
+    id: opts.id,
+    spaceId: 'space-1',
+    kind: 'work_session',
+    title: 'a session',
+    parentId: null,
+    position: 1,
+    visibility: 'space',
+    version: 1,
+    activityAt: '2026-08-31T00:00:00.000Z',
+    createdAt: '2026-08-31T00:00:00.000Z',
+    updatedAt: '2026-08-31T00:00:00.000Z',
+    deletedAt: null,
+    createdBy: { id: 'u1', kind: 'member' },
+    counters: {},
+    state: {
+      kind: 'work_session',
+      status: opts.status,
+      agentTool: 'claude-code',
+      model: 'claude-sonnet-5',
+      shareMode: 'private',
+      startedAt: opts.startedAt === undefined ? '2026-08-31T00:00:00.000Z' : opts.startedAt,
+      exitedAt: opts.exitedAt ?? null,
+      teammate: { id: opts.teammateId, kind: 'team_member' },
+    },
+    badges: {},
+  } as unknown as EntitySummary;
+  const runSummary = { id: opts.runId, kind: 'task' } as unknown as EntitySummary;
+  return {
+    id: `edge:working_on:${opts.id}:${opts.runId}`,
+    type: 'working_on',
+    source: sessionSummary,
+    target: runSummary,
+    props: {},
+  } as unknown as EdgeView;
+}
+
 /** Minimal GateData — only the surface CodeBrainScreen actually reads. */
 function dataOf(rows: EntitySummary[], edges: EdgeView[] = []): GateData {
   const byKind = new Map<string, EntitySummary[]>();
@@ -100,6 +173,22 @@ describe('CodeBrainScreen — empty state (SPEC §7.5, AC4)', () => {
     expect(screen.getByText(/tm8 session spawn/)).toBeTruthy();
     expect(screen.getByTestId('cb-no-runs').textContent).toBe('No runs in this space yet.');
     expect(screen.queryByTestId('cb-not-found')).toBeNull();
+  });
+
+  it('Boundaries > Never — the explainer and how-to-start line name phases from the graph, not a literal list', () => {
+    // A fixture whose names are NOT the real six — if the explainer or the
+    // how-to-start line hardcoded 'DEFINE' etc., this would show the wrong
+    // name instead of the fixture's.
+    const rows = [
+      teamMember({ id: id(41), position: 1, title: 'Aurora' }),
+      teamMember({ id: id(42), position: 2, title: 'Borealis' }),
+    ];
+    render(<CodeBrainScreen data={dataOf(rows)} runId={null} onSelectRun={() => {}} />);
+    expect(screen.getByText(/Aurora, Borealis/)).toBeTruthy();
+    expect(screen.getByText(/with the Aurora teammate/)).toBeTruthy();
+    for (const stale of ['DEFINE', 'PLAN', 'BUILD', 'VERIFY', 'REVIEW', 'SHIP']) {
+      expect(screen.queryByText(new RegExp(stale))).toBeNull();
+    }
   });
 
   it('AC3 — each phase row shows its model and agent tool, read from the graph', () => {
@@ -193,5 +282,85 @@ describe('CodeBrainScreen — empty state (SPEC §7.5, AC4)', () => {
     render(<CodeBrainScreen data={loadingData} runId={null} onSelectRun={() => {}} />);
     expect(screen.getByTestId('cb-phases-loading')).toBeTruthy();
     expect(screen.queryByTestId('cb-no-phases')).toBeNull();
+  });
+});
+
+describe('CodeBrainScreen — a selected run (SPEC §6.3, §7.2, A4, Task 5)', () => {
+  const RUN = id(50);
+
+  it('renders real derived states, not all queued, for a run', () => {
+    const edges = [
+      session({ id: 's1', runId: RUN, teammateId: id(1), status: 'exited', exitedAt: '2026-08-31T00:10:00.000Z' }),
+      session({ id: 's2', runId: RUN, teammateId: id(2), status: 'running' }),
+    ];
+    render(
+      <CodeBrainScreen
+        data={dataOf([...SIX_PHASES, task({ id: RUN, title: 'A real run' })], edges)}
+        runId={RUN}
+        onSelectRun={() => {}}
+      />,
+    );
+    expect(screen.getByText('A real run')).toBeTruthy();
+    // Scoped to the rail: the detail pane also names the selected phase's
+    // state, so an unscoped query double-counts the running phase.
+    const rail = within(screen.getByRole('list', { name: 'CodeBrain phases' }));
+    expect(rail.getAllByText('done')).toHaveLength(1);
+    expect(rail.getAllByText('running')).toHaveLength(1);
+    expect(rail.getAllByText('queued')).toHaveLength(4);
+  });
+
+  it('A4 — elapsed renders for a session with both startedAt and exitedAt, and never a bare zero for an absent one', () => {
+    const edges = [
+      session({
+        id: 's1',
+        runId: RUN,
+        teammateId: id(1),
+        status: 'exited',
+        startedAt: '2026-08-31T00:00:00.000Z',
+        exitedAt: '2026-08-31T00:06:12.000Z',
+      }),
+    ];
+    render(
+      <CodeBrainScreen
+        data={dataOf([...SIX_PHASES, task({ id: RUN })], edges)}
+        runId={RUN}
+        onSelectRun={() => {}}
+      />,
+    );
+    expect(screen.getAllByText(/took 6m 12s/).length).toBeGreaterThan(0);
+    // The five other phases have no session at all — nothing claims a duration.
+    expect(screen.queryAllByText(/took 0s/)).toHaveLength(0);
+  });
+
+  it('the detail pane defaults to the running phase and shows model/tool, teammate id, state', () => {
+    const edges = [
+      session({ id: 's1', runId: RUN, teammateId: id(3), status: 'running' }),
+    ];
+    render(
+      <CodeBrainScreen
+        data={dataOf([...SIX_PHASES, task({ id: RUN })], edges)}
+        runId={RUN}
+        onSelectRun={() => {}}
+      />,
+    );
+    const detail = screen.getByTestId('cb-detail-pane');
+    expect(detail.textContent).toContain('BUILD');
+    expect(detail.textContent).toContain('claude-sonnet-5');
+    expect(detail.textContent).toContain(id(3));
+    expect(detail.textContent).toContain('running');
+  });
+
+  it('clicking a phase row updates the detail pane to that phase', () => {
+    render(
+      <CodeBrainScreen
+        data={dataOf([...SIX_PHASES, task({ id: RUN })])}
+        runId={RUN}
+        onSelectRun={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByTestId(`cb-phase-${id(5)}`));
+    const detail = screen.getByTestId('cb-detail-pane');
+    expect(detail.textContent).toContain('REVIEW');
+    expect(detail.textContent).toContain('gpt-5.6-sol');
   });
 });
