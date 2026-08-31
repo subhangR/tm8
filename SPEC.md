@@ -514,13 +514,44 @@ packages/tm8_ui_2.0/src/
 ## 9. Commands
 
 ```
-Typecheck (AC6): bun run typecheck:tm8-ui-2.0
-                 # == tsc -p packages/tm8_ui_2.0/tsconfig.json --noEmit
-Test (AC7):      cd packages/tm8_ui_2.0 && bunx vitest run src/codebrain src/routes src/domain/nav-targets.test.ts src/keyboard
+Typecheck (AC6): bun run typecheck:core && bun run typecheck:tm8-ui-2.0
+Test (AC7):      cd packages/tm8_ui_2.0 && bun x vitest run src/codebrain src/routes src/domain/nav-targets.test.ts src/keyboard
 Dev server:      cd packages/tm8_ui_2.0 && bun run dev
 ```
 
-**Two preconditions, both measured in this worktree on 2026-08-31, both real:**
+**CORRECTED 2026-08-31, after BUILD hit it at Checkpoint A and PLAN traced it
+back to this section.** An earlier draft gave the typecheck as
+`bun run typecheck:tm8-ui-2.0` alone, annotated `# == tsc -p
+packages/tm8_ui_2.0/tsconfig.json --noEmit`. Both halves of that were wrong,
+and the annotation was the more dangerous half.
+
+`packages/tm8_ui_2.0` resolves `@tm8/contract` through the **built**
+`dist/*.d.ts` and through nothing else — `packages/contract/package.json`
+declares `"types": "./dist/index.d.ts"` with no `src` fallback, and the UI
+`tsconfig.json` declares no `paths`. `dist/` is gitignored (`.gitignore:2`;
+`git ls-files packages/contract/dist` → 0 files), so a **fresh worktree has no
+`dist` and the UI typecheck reports hundreds of errors for fields that exist in
+source** — `Cannot find module '@tm8/contract'` chief among them. That is a
+FALSE RED, and an agent who meets it will otherwise read it as a fact about
+their own diff.
+
+`tools/ci/check.sh:102-104` states this outright: *"The order is also
+load-bearing, not cosmetic: packages/tm8_ui_2.0 resolves @tm8/contract through
+its BUILT dist/*.d.ts, so it must run after the contract is built."* The lines
+immediately above it (`:98-100`) record that presenting the bare `tsc` as an
+equivalent shorthand once cost two lanes a day. This spec reproduced that exact
+shorthand. **Run `typecheck:core` first — it builds the contract — and never
+substitute a bare `tsc -p` for the pair.**
+
+(`bun x`, not `bunx`: `bunx` is not on PATH in these shells.)
+
+**THREE preconditions, all measured in this worktree on 2026-08-31, all real.**
+The first two are `node_modules` and CSS; the third is the one above, and it is
+listed separately because **the AC6 guard cannot catch it**. `readlink -f
+.../node_modules/@tm8/contract` answers "is this the *right tree*". An unbuilt
+contract is the *right* tree in the *wrong state* — the readlink resolves
+correctly and the typecheck still fails. Two different failures, two different
+checks, and neither substitutes for the other.
 
 1. **There is no `node_modules` in this worktree at all.**
    `ls node_modules` → no such file or directory;
@@ -530,7 +561,11 @@ Dev server:      cd packages/tm8_ui_2.0 && bun run dev
    worth anything — a typecheck run from a sibling tree is a typecheck of
    another tree. This is a BUILD-phase blocker recorded here, not a spec gap.
 
-2. **The Vitest runner never processes CSS.** `packages/tm8_ui_2.0/vite.config.ts`
+2. **The contract must be built before the UI typechecks.** See the correction
+   above. `bun run typecheck:core && bun run typecheck:tm8-ui-2.0`, in that
+   order, always.
+
+3. **The Vitest runner never processes CSS.** `packages/tm8_ui_2.0/vite.config.ts`
    sets no `css` key at all (`grep -n css vite.config.ts` → no hits), so
    Vitest's default `css: false` applies. A green run therefore **cannot** have
    seen a CSS change. Assert CSS as source text, and never claim the suite
@@ -598,8 +633,12 @@ kind literals stay in `codebrain-model.ts` and out of the component.
 - Read the roster from `data.launch.teammates` (§6.1).
 - Stub a handler to satisfy a prop — `no-op-handler-ban.test.ts` is the law.
 - Copy the prototype's markup or its hex values.
-- Claim a green Vitest run covered CSS (§9.2), or a typecheck run against a
+- Claim a green Vitest run covered CSS (§9.3), or a typecheck run against a
   tree whose `@tm8/contract` resolves elsewhere (§9.1).
+- Run the UI typecheck without building the contract first, or report its red
+  as a fact about your diff (§9.2). On a fresh tree it is a false red, and the
+  AC6 readlink guard **cannot** catch it — that guard answers "right tree", not
+  "built tree".
 - Say "waiting on you" is targeted at the viewer. It is not — `badges.attention`
   carries no actor (A3).
 
@@ -632,7 +671,7 @@ Traced to the task's acceptance criteria.
 | 3 | Six phases rendered from graph rows under the root, in `position` order, each with state + model + agent tool; no hardcoded names | `codebrain-model.test.ts` + `codebrain-screen.test.tsx` |
 | 4 | Empty state explains CodeBrain and how to start a run; no blank panel, no unresolving spinner | `codebrain-screen.test.tsx`, asserted by text |
 | 5 | The `codex` phase is distinguishable from the five `claude-code` phases by a non-colour channel | `codebrain-screen.test.tsx` |
-| 6 | `bun run typecheck:tm8-ui-2.0` green, **after** `readlink -f packages/tm8_ui_2.0/node_modules/@tm8/contract` resolves inside this worktree | command output + the readlink, echoed with `git rev-parse HEAD` in the same command |
+| 6 | `bun run typecheck:core && bun run typecheck:tm8-ui-2.0` green — **both, in that order** (§9.2) — and `readlink -f packages/tm8_ui_2.0/node_modules/@tm8/contract` resolving inside this worktree. Two checks, two different failures; neither substitutes for the other. | command output + the readlink, echoed with `git rev-parse HEAD` in the same command |
 | 7 | Vitest green for the touched files; CSS asserted as source, not claimed as covered | command output, same echo |
 | 8 | Screenshot of the rendered screen attached to the task, Chrome, `--js-flags=--jitless` | the attachment |
 | 9 | PR linked with `tm8 task link-pr` when it exists; closing message names branch, PR, exact command and output | the task anchor |
