@@ -1,0 +1,28 @@
+CodeBrain v3 on the tm8 platform itself. Task: the worktree branch-name collision.
+
+packages/execution/src/spawn/worktree-provisioning.ts:95 names a session's branch:
+
+    return `tm8/${worktreeId.replace(/-/g, '').slice(0, 8)}`;
+
+The worktree id is a UUIDv7 whose first 48 bits are a millisecond timestamp. Taking the first
+8 hex chars keeps only the TOP 32 BITS of that timestamp and discards the low 16 — so every
+worktree created inside the same 2^16 ms window gets the SAME branch name and `git worktree
+add -b` fails for the second. Collision window: 65,536 ms = 65.5 seconds. Not a race; it
+reproduces 100% of the time for two worktree spawns inside the same aligned minute.
+
+Measured 2026-08-31: three entities created seconds apart all mapped to `tm8/01a057c6`, and a
+live spawn failed with `invariant_violation: git worktree add failed for tm8/01a057d1`.
+
+Nobody had hit it because every pipeline here spawned ONE session at a time, minutes apart. It
+fires the instant anything fans out — which is every parallel review lens this platform will
+ever run.
+
+Note for whoever reviews the tests: worktree-reconcile.test.ts constructs branches as
+`tm8/${id.slice(-8)}` — the TAIL — while the implementation takes the HEAD. Tests and code
+disagree about which end of the id is used, so the tests are green against a naming scheme the
+code does not use.
+
+Produce your three outputs: restatement, DEPTH ROUTING with a one-line justification, and the
+todo list for that depth. Post to the task anchor and stop. Do not design the fix — that is
+ARCHITECT's, and the choice between "use the tail" and "keep the readable prefix and append the
+tail" is a real one.
