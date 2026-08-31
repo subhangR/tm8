@@ -92,7 +92,7 @@ nothing in this slice but must be answered before the phase after it.
 
 | # | Ambiguity | Resolution |
 |---|---|---|
-| A1 | How is a run selected, and is it addressable? | **ASSUMED** — optional run segment (§5). Posted as an open fork on the task anchor 2026-08-31 with both options and their trade-offs; **no human has answered it**. Reversing it is a change confined to `codebrain-route` plus one prop on the screen. |
+| A1 | How is a run selected, and is it addressable? | **DECIDED** — optional run segment (§5). Approved at the DEFINE gate by Tarkesh (admin), 2026-08-31, msg `01a0573a-6a1b-7556-8248-b061c4ac2597` in reply to the fork `01a05738-e9f5-73e5-b59c-a4b0777825e3`. **Shareable and reloadable runs are a requirement, not a preference** — a change that trades them away is out of scope, not a simplification. |
 | A2 | What makes a task a "CodeBrain run"? The prototype has one, hardcoded. | **ASSUMED** — §6.2's predicate. Flagged: it will misclassify a task that a CodeBrain teammate touched incidentally. |
 | A3 | `waiting on you` is per-viewer in the prototype. `badges.attention` (`contract.ts:528-534`) carries `pendingCount`/`points`/`reason` and **no actor** — the summary cannot say *you*. | **ASSUMED** — §6.3 renders it from `pendingCount > 0`, and the label stays "waiting on you" because `tm8 attention` is by definition a request for *human* attention. Not per-viewer-targeted, and §11 says so. |
 | A4 | The prototype shows elapsed time per phase (`took: '6m 12s'`). | **ASSUMED** — derived from the phase's session `startedAt`/`exitedAt`. Absent ⇒ render nothing, never a zero. |
@@ -147,6 +147,12 @@ migration** — confirmed against `packages/contract/src/contract.ts:2487`
 ## 5. Module: `codebrain-route`
 
 ### 5.1 The route member
+
+**APPROVED AT THE DEFINE GATE, 2026-08-31** (Tarkesh, admin —
+msg `01a0573a-6a1b-7556-8248-b061c4ac2597`). This shape is a decision, not a
+proposal, and the reason given with the approval is part of it: *shareable and
+reloadable runs are a requirement.* A later change that moves the selection into
+component state is a scope reversal and needs its own approval.
 
 ```ts
 /* packages/tm8_ui_2.0/src/routes/types.ts — added to the NavView union */
@@ -550,6 +556,8 @@ kind literals stay in `codebrain-model.ts` and out of the component.
 - Derive the vendor mark from `agentTool`, never from a model-name list.
 - Render `null` model / `null` tool / unknown elapsed as **nothing**.
 - Keep `codebrain-model.ts` pure — no React, no store, no fetch.
+- Keep the selected run in the URL. A run must be reloadable into, shareable and
+  reachable with Back — a gate-approved requirement (§5.1), not a preference.
 
 **Ask first**
 - Any change to `MenuViewRef`, the kind registry, or a DB migration. This slice
@@ -622,13 +630,9 @@ Additionally, and not in the AC list because it was found during DEFINE:
 - **A3** — "waiting on you" cannot be viewer-targeted from the summary. If the
   approval gate needs per-viewer truth, it needs a read the summary does not
   carry. Flagged now so the gate phase does not discover it late.
-- **A1 — THE ONE FORK THIS SPEC ASSUMES ITS WAY PAST.** Does the route carry
-  the selected run (`#/s/{s}/codebrain/{taskId}`, §5.1), or is `{view:'codebrain'}`
-  flat with selection in `useState`? The flat form matches AC1's literal wording;
-  the segment form matches every ruling this codebase has already made about
-  selections people share, and still round-trips the bare form AC1 names.
-  **Assumed: the segment form.** Answer at the DEFINE gate. Reversing it touches
-  `codebrain-route` and one prop; it does not reach `codebrain-model`.
+- ~~**A1** — route shape.~~ **CLOSED at the DEFINE gate, 2026-08-31.** Option A:
+  `{ view:'codebrain'; runId: EntityId | null }`, `#/s/{s}/codebrain` and
+  `#/s/{s}/codebrain/{taskId}`, bare form round-tripping. See §2 A1 and §5.1.
 - **§9.1** — the worktree has no `node_modules`. Who installs, and does the
   BUILD phase get a tree where `@tm8/contract` resolves locally?
 
