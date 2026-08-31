@@ -85,14 +85,32 @@ function uuidv7(): string {
 }
 
 /**
- * `tm8/<first 8 hex of the worktree id>` (§4.4).
+ * `tm8/<the whole worktree id>` (§4.4).
  *
  * Server-computed from a uuid, so no client-influenced byte reaches a ref name
  * — which is belt to `assertSafeBranchName`'s braces and to the argv array's
  * actual guarantee.
+ *
+ * It used to be the first 8 hex. A uuidv7's first 6 bytes are a 48-bit big-endian
+ * millisecond clock, so 8 hex characters retain the TOP 32 BITS of it and discard
+ * the low 16 plus all 74 bits of randomness — the name was `floor(ms / 65536)`.
+ * Two worktrees in the same 65,536 ms bucket therefore derived the SAME branch,
+ * `git worktree add -b` refused the duplicate, and the second spawn died with
+ * `worktree_add_failed`. That is a bucket, not a sliding window: two spawns 200 ms
+ * apart inside one bucket always collide, and any real fan-out is a burst.
+ *
+ * Measured on prod 2026-08-31: 16 of 47 `worktree_allocations` rows (34%) were
+ * `worktree_add_failed`, across 4 duplicate `(project_id, branch)` groups whose
+ * failure counts sum to exactly 16 — every such failure was a collision. The worst
+ * group had 10 failures behind one winner.
+ *
+ * The full id is what `computeWorktreePath` already uses one call later, and what
+ * `compose.ts`'s `tm8/chat/<rootMessageId>` has shipped with all along. A uuid is
+ * hex and hyphens, so it passes `assertSafeRefName` unchanged, and
+ * `worktrees.branch` is varchar(255).
  */
 export function branchNameFor(worktreeId: string): string {
-  return `tm8/${worktreeId.replace(/-/g, '').slice(0, 8)}`;
+  return `tm8/${worktreeId}`;
 }
 
 /** Git's own error taxonomy is already the contract's; carry it, do not invent one. */
