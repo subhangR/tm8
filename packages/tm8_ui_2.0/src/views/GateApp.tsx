@@ -42,6 +42,7 @@ import { isUnbuiltViewRef } from './view-ref-screens';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
+import { CodeBrainScreen } from '../codebrain';
 import { CraftScreen } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -1953,6 +1954,15 @@ export function GateApp(props: GateAppProps = {}) {
                  workspace, which unmounted the board and took the kind, the
                  filters, the search and the scroll with it — the same reason
                  Craft stopped passing one. Nothing is stubbed in its place. */
+            />
+          ) : data.ready && navView.view === 'codebrain' ? (
+            /* CodeBrain (SPEC §7.1) — route-matched like New Session and
+               Board v2: `landingOfRoute` returns `target: null` for it, so
+               there is no `MenuTarget` to match on. */
+            <CodeBrainScreen
+              data={data}
+              runId={navView.runId}
+              onSelectRun={(id) => navStore.getState().navigate({ view: 'codebrain', runId: id })}
             />
           ) : data.ready &&
             activeTarget?.type === 'entity' &&

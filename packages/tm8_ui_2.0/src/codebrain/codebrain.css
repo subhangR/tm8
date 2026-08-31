@@ -1,0 +1,164 @@
+/**
+ * CodeBrain screen styles (SPEC §7). Vitest never processes CSS
+ * (`css: false`, vite.config.ts carries no `css` key) — a green test run has
+ * NOT seen anything in this file. Colour resolves through tokens only
+ * (`hex-ban.test.ts`); font sizes through the `--pn-fs-*` scale only
+ * (`type-scale-ban.test.ts`).
+ */
+
+.cb-root {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  height: 100%;
+  overflow: auto;
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+}
+
+.cb-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 52rem) {
+  .cb-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cb-header {
+  margin: 0 0 4px;
+}
+
+/* -- Empty state (§7.5) --------------------------------------------------- */
+
+.cb-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 720px;
+}
+
+.cb-empty__not-found {
+  color: var(--pn-block);
+}
+
+.cb-empty__starts {
+  padding: 10px 12px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+
+.cb-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cb-runs__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.cb-runs__item:hover {
+  background: var(--pn-hover);
+}
+
+/* -- Phase rail (§7.2, §7.3) ------------------------------------------------ */
+
+.cb-rail {
+  display: flex;
+  flex-direction: column;
+}
+
+.cb-rail__row {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  column-gap: 10px;
+  align-items: start;
+  padding: 10px 4px;
+  border-left: 2px solid var(--pn-line);
+}
+
+.cb-rail__row:first-child {
+  border-top-left-radius: var(--pn-r-sm);
+}
+
+.cb-rail__bead {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 4px;
+  margin-left: -16px;
+  background: var(--pn-idle);
+  border: 2px solid var(--pn-card);
+}
+
+.cb-rail__bead--done { background: var(--pn-run); }
+.cb-rail__bead--running { background: var(--pn-run); }
+.cb-rail__bead--waiting { background: var(--pn-wait); }
+.cb-rail__bead--failed { background: var(--pn-block); }
+
+.cb-rail__name {
+  font-weight: 600;
+}
+
+.cb-rail__box {
+  color: var(--pn-ink-3);
+}
+
+.cb-rail__meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+/* -- Cross-vendor mark (§7.4, AC5) ------------------------------------------
+   Colour is never the only channel: the mark carries its own glyph and a
+   distinct border treatment, plus a title/aria-label naming the tool, so a
+   reader who cannot see hue still gets the split. */
+
+.cb-vendor-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--pn-brand-2);
+  color: var(--pn-brand-2);
+  font-size: var(--pn-fs-fine);
+  line-height: 1;
+}
+
+/* -- Detail pane placeholder (filled out in Task 5/6) ----------------------- */
+
+.cb-detail {
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  padding: 16px;
+  min-height: 120px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-root .kit-pill__dot--pulse {
+    animation: none;
+  }
+}
