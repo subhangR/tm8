@@ -494,6 +494,26 @@ person acts, ok = done, muted = queued, danger = failed. The running chip
 pulses, and the pulse is off under `prefers-reduced-motion` — the prototype
 already does this (`playground.html:77`) and it is not optional here.
 
+**INHERITED, NOT IMPLEMENTED — and say so when reporting it.** Verified
+2026-08-31 after PLAN raised it: `kit.css:53-60` declares BOTH halves scoped to
+`.cv2-root` — the `pnPulse` animation and its `prefers-reduced-motion` override
+— and `GateApp.tsx:1763` opens that wrapper above the CodeBrain mount. The
+requirement is met by `kit.css`; `codebrain.css:206-210`'s `.cb-root`-scoped
+duplicate changes nothing today.
+
+It also cannot help in the case it appears to defend. The kit scopes the
+**animation** to `.cv2-root` as well, so outside that wrapper there is no pulse
+to disable — the duplicate guards a state that cannot occur. Harmless, three
+lines, not worth a commit to remove; worth knowing so nobody treats it as
+load-bearing.
+
+The general rule, because §9.4 means a CSS criterion can only ever be asserted
+as source text: **text-presence proves a string exists, never that your file is
+what produces the behaviour.** A CSS-backed claim must say whether the
+behaviour is implemented here or inherited. "CodeBrain implements
+reduced-motion" is false. "§7.3 is met, by `kit.css:56-60`, with a scoped
+duplicate in `codebrain.css`" is true.
+
 ### 7.4 Cross-vendor (AC5)
 
 The mark is derived from **`agentTool !== 'claude-code'`**, never from a list of
