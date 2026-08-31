@@ -150,27 +150,42 @@ function session(opts: {
 
 describe('phases (SPEC §6.1, A6, A7)', () => {
   it('resolves six phases in position order from unordered input, specialists excluded', () => {
+    // AC3 says the six are READ, never assumed — so this fixture deliberately
+    // does NOT use the real phase names ('DEFINE', 'PLAN', ...). A fixture
+    // that coincides with production data cannot tell "read from the graph"
+    // apart from "hardcoded to match the graph": a literal six-name array
+    // would satisfy a title/position check against the REAL names, but
+    // cannot satisfy one against these, and the id check below closes the
+    // rest — a hardcoder has no fixture id to hardcode against.
     const rows = [
-      teamMember({ id: id(6), position: 6, title: 'SHIP' }),
+      teamMember({ id: id(26), position: 6, title: 'Foxtrot' }),
       teamMember({ id: id(9), position: 9, title: 'Specialist: Test Engineer' }),
-      teamMember({ id: id(1), position: 1, title: 'DEFINE' }),
-      teamMember({ id: id(3), position: 3, title: 'BUILD' }),
-      teamMember({ id: id(2), position: 2, title: 'PLAN' }),
+      teamMember({ id: id(21), position: 1, title: 'Alpha' }),
+      teamMember({ id: id(23), position: 3, title: 'Charlie' }),
+      teamMember({ id: id(22), position: 2, title: 'Bravo' }),
       teamMember({ id: id(10), position: 10, title: 'Specialist: Perf' }),
-      teamMember({ id: id(4), position: 4, title: 'VERIFY' }),
-      teamMember({ id: id(5), position: 5, title: 'REVIEW' }),
+      teamMember({ id: id(24), position: 4, title: 'Delta' }),
+      teamMember({ id: id(25), position: 5, title: 'Echo' }),
       teamMember({ id: id(7), position: 7, title: 'Specialist: Reviewer' }),
       teamMember({ id: id(8), position: 8, title: 'Specialist: Security' }),
     ];
     const result = phases(rows);
+    expect(result.map((p) => p.id)).toEqual([
+      id(21),
+      id(22),
+      id(23),
+      id(24),
+      id(25),
+      id(26),
+    ]);
     expect(result.map((p) => p.position)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(result.map((p) => p.title)).toEqual([
-      'DEFINE',
-      'PLAN',
-      'BUILD',
-      'VERIFY',
-      'REVIEW',
-      'SHIP',
+      'Alpha',
+      'Bravo',
+      'Charlie',
+      'Delta',
+      'Echo',
+      'Foxtrot',
     ]);
   });
 
