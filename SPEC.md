@@ -703,6 +703,18 @@ checks, and neither substitutes for the other.
    with root — standard and reversible. Until then AC8 stays **open and
    stated**, never quietly deferred or satisfied with a substitute.
 
+   **AC8 IS NOW THE SOLE REMAINING PROOF THAT THIS SCREEN RENDERS AT ALL
+   OUTSIDE JSDOM, and that is more weight than its one line in §13 suggests.**
+   Recorded 2026-08-31 after PLAN audited the checkpoint outcomes. PLAN had
+   moved a capture forward from AC8 to Checkpoint C specifically so the visual
+   evidence would not all land at the end. It landed at the end anyway, because
+   the environment took it: C passed on substance — six rows counted from the
+   graph, the codex mark among them, by text and DOM — and **its visual half
+   was never obtained by anyone.** So no human or machine has yet seen this
+   screen draw. Every green in §13 is a jsdom green. Whoever unblocks the
+   browser is not ticking a documentation box; they are performing the only
+   check that has ever looked at the rendered thing.
+
    **Checkpoint C's purpose and AC8's letter are different requirements and
    only one of them is blocked.** C exists to prove the empty state is real
    before Tasks 5–7 build on it, and §7.6 already requires that content be
