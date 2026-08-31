@@ -60,9 +60,19 @@ function nameAndBoxOf(title: string): { name: string; box: string | null } {
  * Colour is never the only channel: a persistent glyph plus `title`/
  * `aria-label` naming the tool carry the split for a reader who cannot see
  * hue.
+ *
+ * THE ONE derivation. Both the row's glyph and the detail pane's chip call
+ * this rather than each carrying their own `agentTool !== 'claude-code'`
+ * copy — two independent copies of the same rule can drift the moment one
+ * of them changes, which is exactly the row-says-one-thing /
+ * detail-says-another failure this mark exists to prevent.
  */
+function isCrossVendor(agentTool: string | null): boolean {
+  return agentTool !== null && agentTool !== 'claude-code';
+}
+
 function VendorMark({ agentTool }: { agentTool: string | null }) {
-  if (agentTool === null || agentTool === 'claude-code') return null;
+  if (!isCrossVendor(agentTool)) return null;
   const label = `Built on ${agentTool}, not claude-code`;
   return (
     <span className="cb-vendor-mark" role="img" aria-label={label} title={label}>
@@ -194,6 +204,12 @@ function PhaseDetail({
             <dt className="t-label">{'model'}</dt>
             <dd className="t-body">
               {[phase.model, phase.agentTool].filter(Boolean).join(' · ')}
+              {isCrossVendor(phase.agentTool) ? (
+                <span className="cb-detail__vendor-chip">
+                  <VendorMark agentTool={phase.agentTool} />
+                  {'cross-vendor'}
+                </span>
+              ) : null}
             </dd>
           </div>
         ) : null}

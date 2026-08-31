@@ -363,4 +363,59 @@ describe('CodeBrainScreen — a selected run (SPEC §6.3, §7.2, A4, Task 5)', (
     expect(detail.textContent).toContain('REVIEW');
     expect(detail.textContent).toContain('gpt-5.6-sol');
   });
+
+  it('SPEC §7.4 — the detail pane carries its own cross-vendor chip, distinct from the row mark', () => {
+    render(
+      <CodeBrainScreen
+        data={dataOf([...SIX_PHASES, task({ id: RUN })])}
+        runId={RUN}
+        onSelectRun={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByTestId(`cb-phase-${id(5)}`));
+    const detail = screen.getByTestId('cb-detail-pane');
+    expect(within(detail).getByText('cross-vendor')).toBeTruthy();
+    expect(within(detail).getByRole('img', { name: /codex/ })).toBeTruthy();
+
+    // The claude-code phases carry no such chip.
+    fireEvent.click(screen.getByTestId(`cb-phase-${id(3)}`));
+    const detail2 = screen.getByTestId('cb-detail-pane');
+    expect(within(detail2).queryByText('cross-vendor')).toBeNull();
+  });
+
+  it('§7.4 — the detail pane chip is derived from agentTool too, against a fixture that disagrees with model-name spelling', () => {
+    // Same disagreement shape as the row-level AC5 mutation test: a novel
+    // model on claude-code, and a novel non-'gpt' model on a non-claude-code
+    // tool. Only agentTool can tell them apart.
+    const rows = [
+      teamMember({
+        id: id(33),
+        position: 1,
+        title: 'Novel model, claude-code',
+        model: 'gpt-oss-20b',
+        agentTool: 'claude-code',
+      }),
+      teamMember({
+        id: id(34),
+        position: 2,
+        title: 'Non-gpt model, other vendor',
+        model: 'mystery-1',
+        agentTool: 'some-other-tool',
+      }),
+    ];
+    render(
+      <CodeBrainScreen
+        data={dataOf([...rows, task({ id: RUN })])}
+        runId={RUN}
+        onSelectRun={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByTestId(`cb-phase-${id(34)}`));
+    expect(within(screen.getByTestId('cb-detail-pane')).getByText('cross-vendor')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId(`cb-phase-${id(33)}`));
+    expect(
+      within(screen.getByTestId('cb-detail-pane')).queryByText('cross-vendor'),
+    ).toBeNull();
+  });
 });

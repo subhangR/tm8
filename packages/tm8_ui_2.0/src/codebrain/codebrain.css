@@ -170,6 +170,21 @@ button.cb-rail__row {
   line-height: 1;
 }
 
+/* The detail pane's version: a labelled chip, not just the glyph — a
+   distinct TREATMENT beside the row's mark, per §7.4's "on the phase row
+   AND in the detail". */
+.cb-detail__vendor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 1px 8px 1px 4px;
+  border: 1px solid var(--pn-brand-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-brand-2);
+  font-size: var(--pn-fs-label);
+}
+
 /* -- Detail pane (§7.2 right column) ---------------------------------------- */
 
 .cb-detail {
@@ -203,8 +218,9 @@ button.cb-rail__row {
   word-break: break-word;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .cb-root .kit-pill__dot--pulse {
-    animation: none;
-  }
-}
+/* SPEC §7.3's reduced-motion requirement is met by INHERITANCE, not by
+   anything in this file: kit.css:53-60 scopes both the running chip's
+   pulse animation AND its `prefers-reduced-motion` override to `.cv2-root`,
+   which GateApp opens above every CodeBrain mount. A local override here
+   would guard a state that cannot occur — deliberately absent rather than
+   a duplicate that looks load-bearing and is not. */
