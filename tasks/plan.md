@@ -35,6 +35,7 @@ below are the ones that actually shape the breakdown.
 | `newSession` / `boardV2` return `{ target: null, openEntity: null }` | `src/domain/nav-targets.ts:239-256` | CodeBrain's landing is the third of these |
 | No `codebrain` identifier in the package | `grep -rni codebrain packages/tm8_ui_2.0/src` → no hits | greenfield; nothing to migrate |
 | No `node_modules` in this worktree | `ls node_modules` → ENOENT; `readlink -f packages/tm8_ui_2.0/node_modules/@tm8/contract` → empty, exit 1 | Task 1 exists, and it is first |
+| `tm8_ui_2.0` resolves `@tm8/contract` through the **built** `dist/*.d.ts`, and `dist/` is gitignored | `tools/ci/check.sh:102-104`; `.gitignore:2`; `git ls-files packages/contract/dist` → 0 files | `typecheck:core` must run before `typecheck:tm8-ui-2.0` in **every** task, or the red is false (found by BUILD at Checkpoint A) |
 | `vite.config.ts` sets no `css` key | `grep -n css packages/tm8_ui_2.0/vite.config.ts` → no hits | default `css: false`; CSS is asserted as source, never claimed as covered |
 
 ### The one finding PLAN adds that DEFINE did not have
@@ -109,7 +110,7 @@ green before the first change, no later red can be attributed.
 | 3 | `01a0575a-7888-7969-bc70-923ffbca1e0a` | `codebrain-model` — six phases, their states, what a run is | 2 | S | 1 |
 | 4 | `01a0575a-7ffb-7216-adca-02ccd3a88661` | `CodeBrainScreen` — mounted, addressable, the **complete** empty state | 5 | M | 2, 3 |
 | 5 | `01a0575a-872c-7009-b70a-744800859c40` | The selected run — derived states, elapsed, detail pane | 3 | M | 4 |
-| 6 | `01a0575a-8ea1-7617-b343-7730a51f9202` | The cross-vendor mark | 3 | S | 5 |
+| 6 | `01a0575a-8ea1-7617-b343-7730a51f9202` | The cross-vendor mark — detail pane, non-colour channel, aria | 3 | S | 5 |
 | 7 | `01a0575a-96ae-7968-841c-f339bf00b365` | The `g r` chord, and the two-nulls fix it needs first | 3 | S | 4 |
 | 8 | `01a0575a-9e38-750b-a615-550b5271a833` | Screenshot, PR, and the closing receipt | 0 | S | 5, 6, 7 |
 
@@ -212,14 +213,33 @@ sequentially is always sound; running a colliding pair concurrently is not.
 ### Checkpoint A — after Task 1. **Nothing has changed yet.**
 - [ ] `readlink -f packages/tm8_ui_2.0/node_modules/@tm8/contract` prints a path
       **inside this worktree** and exits 0
+- [ ] `bun run typecheck:core` green **first** — see the build-order note below
 - [ ] `bun run typecheck:tm8-ui-2.0` green
-- [ ] `bunx vitest run src/routes src/domain src/keyboard` green
+- [ ] `bun x vitest run src/routes src/domain src/keyboard` green
 - [ ] every one of the above echoed with `git rev-parse HEAD` in the **same**
       command
 
 This is the line every later red is measured against. A typecheck run from a
 sibling tree is a typecheck of another tree, and a first green that arrives
 *after* the first edit cannot tell you which of the two it belongs to.
+
+**THE BUILD ORDER IS LOAD-BEARING — added 2026-08-31 from BUILD's Checkpoint A,
+and it applies to every task in this plan, not just Task 1.**
+`bun run typecheck:tm8-ui-2.0` **alone is a false red on a fresh worktree.**
+`packages/tm8_ui_2.0` resolves `@tm8/contract` through the **built**
+`dist/*.d.ts`; `dist/` is gitignored (`.gitignore:2`, and `git ls-files
+packages/contract/dist` returns 0 files), so a fresh tree has no dist and the
+run reports **558 errors, 299 of them `Cannot find module '@tm8/contract'`** —
+errors for fields that exist in source. `tools/ci/check.sh:102-104` says it in
+as many words: *"The order is also load-bearing, not cosmetic."*
+
+Always `bun run typecheck:core` (which is `tsc -b packages/contract …`) **then**
+`bun run typecheck:tm8-ui-2.0`. Also `bunx` is not on PATH in these shells —
+use `bun x vitest`.
+
+Measured by BUILD at Checkpoint A: 929 packages installed; `typecheck:core`
+green; `typecheck:tm8-ui-2.0` then 0 errors; `bun x vitest run src/routes
+src/domain src/keyboard` green — 11 files, 325 tests.
 
 ### Checkpoint B — after Tasks 2 and 3
 - [ ] typecheck green; `src/routes`, `src/domain`, `src/codebrain` green
@@ -238,6 +258,7 @@ sibling tree is a typecheck of another tree, and a first green that arrives
 - [ ] the empty state reads as a real screen: a person who has never heard of
       CodeBrain learns what it is and how to start one
 - [ ] a `runId` naming nothing shows the empty state plus a not-found line
+- [ ] **the codex row carries its vendor mark** — see the note below
 - [ ] **screenshot taken here**, Chrome, `--js-flags=--jitless` — not deferred
       to Task 8
 
@@ -250,6 +271,16 @@ time. Count the rows.
 If the empty state is a blank panel, or has fewer than six rows for a reason
 other than the graph genuinely holding fewer members (SPEC A7), AC4 has already
 failed and Tasks 5–7 would be landing on top of a failure.
+
+**Why the vendor mark is checked at C rather than at D.** SPEC §7.4 derives the
+mark from `agentTool` on the **phase** — a property of the phase, not of the
+run; §7.4 never mentions a run. Task 4 renders six phase rows and one of them is
+the codex phase, so the mark belongs on them from the start. And §7.5 item 1's
+explainer says in prose *"six phases, each a different model, one cross-vendor
+review"* — so a rail without the mark would have the screen **asserting the
+cross-vendor split in words while not showing it**, at the exact checkpoint a
+human reviews it. DEFINE raised this; it is the same defect as the 4/5 re-cut,
+one level down — build once, decorate twice.
 
 ### Checkpoint D — after Tasks 5, 6, 7
 - [ ] typecheck green; full vitest green for every touched file
@@ -337,6 +368,18 @@ The `ALL_ROUTE_VIEWS` finding travelled the whole way: PLAN found it, DEFINE
 verified it independently rather than taking it on trust, it became a spec
 correction at `9470eb57` and a `Boundaries > Never` entry, and it is now a
 stated criterion on Task 2. That is the pipeline working.
+
+### Second revision, same day — after BUILD's Checkpoint A
+
+The graph is *still* unchanged. Two more corrections to task contents:
+
+| Change | Why |
+|---|---|
+| **Every task's typecheck verification is now `typecheck:core` then `typecheck:tm8-ui-2.0`; `bunx` → `bun x`** | BUILD found it at Checkpoint A and I verified it: `dist/` is gitignored, a fresh tree has no dist, and `typecheck:tm8-ui-2.0` alone reports 558 errors that are not real. **Every** task in this plan carried the single-command form, so every one of them would have produced a false red. `check.sh:102-104` documents the order. |
+| **The vendor mark on the *row* moves into Task 4; Task 6 keeps the detail pane, the non-colour channel, aria, and the not-a-name-list test** | DEFINE, and it is the 4/5 defect one level down. §7.4 derives the mark from `agentTool` on the **phase**, and Task 4 now renders the phases. Without it, Checkpoint C shows a screen whose explainer claims "one cross-vendor review" beside a rail that does not show one. `6 → 5` is unaffected — still a file collision, not logic. |
+
+Both were caught by a phase downstream of the one that made the error, which is
+the arrangement working as intended rather than a sign that it is not.
 
 ---
 
