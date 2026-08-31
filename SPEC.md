@@ -513,6 +513,26 @@ It must be a real screen, not a blank and not a spinner that never resolves:
 
 1. One paragraph saying what CodeBrain is — six phases, each a different model,
    one cross-vendor review.
+
+   **It describes the SHAPE and never enumerates the NAMES.** Tightened
+   2026-08-31 after PLAN found `CodeBrainScreen.tsx:161` shipping
+   "… — DEFINE, PLAN, BUILD, VERIFY, REVIEW and SHIP …" and `:206` saying
+   "with the DEFINE teammate". Both violate Boundaries → Never
+   ("hardcode the six phase names"), and the sentence they came from is the one
+   directly above — this bullet supplied the phrasing and did not say where to
+   stop.
+
+   This is §7.4's vendor-mark problem **inverted**, in the same paragraph: there
+   the prose asserted a cross-vendor review beside a rail that omitted the mark;
+   here the prose asserts six specific names beside a rail that reads whatever
+   the graph holds. Rename a phase in the graph and the rail updates while the
+   paragraph keeps saying `VERIFY` — the screen contradicting itself, which we
+   already agreed was worth fixing when it ran the other way.
+
+   So: any name shown in the explainer comes from `phases`, and the
+   how-to-start line names `phases[0]` rather than the word DEFINE. **If the
+   rows are not hydrated, say what CodeBrain is without the enumeration** — the
+   description is safe, the list is the part that goes stale.
 2. **The six phases, read from the graph and rendered in the same rail**, with
    every state `queued`. This is not decoration: it makes AC3 observable with
    no run in existence, and it is the honest picture of a run that has not
