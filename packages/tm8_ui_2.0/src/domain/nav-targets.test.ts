@@ -16,7 +16,7 @@ import { MenuViewRefSchema } from '@tm8/contract';
 import type { EntityId } from '@tm8/contract';
 import type { NavView } from '../routes/types';
 import type { MenuTarget } from '../shell';
-import { VIEW_REF_ROUTE, landingOfRoute, routeViewOf } from './nav-targets';
+import { VIEW_REF_ROUTE, landingOfRoute, navViewOfName, routeViewOf } from './nav-targets';
 import { collectionKinds, kindOfSlug, slugOfKind } from './registry';
 
 const ENTITY = 'e1' as EntityId;
@@ -51,6 +51,14 @@ const ALL_ROUTE_VIEWS: NavView[] = [
   { view: 'entity', entityId: ENTITY, origin: { slug: 'tasks', mode: null } },
   { view: 'channel', channelId: ENTITY, msg: null },
   { view: 'voice', voiceChannelId: ENTITY },
+  /* CodeBrain (2026-08-31, SPEC §5.5) — BOTH forms, deliberately, because
+     they take different codec paths and only the pair covers the grammar.
+     This is a REQUIRED EDIT, not a consequence of the type change: this list
+     is hand-written and does not fail on an omission (see the docblock
+     above), so adding `codebrain` to `NavView` breaks nothing here on its
+     own — CodeBrain would fall silently outside this guard without this row. */
+  { view: 'codebrain', runId: null },
+  { view: 'codebrain', runId: ENTITY },
 ];
 
 describe('nav-targets — exhaustiveness', () => {
@@ -80,6 +88,26 @@ describe('nav-targets — exhaustiveness', () => {
       const target: MenuTarget = { type: 'kind', ref: config.kind };
       expect(routeViewOf(target), `no route for kind '${config.kind}'`).not.toBeNull();
     }
+  });
+});
+
+describe('nav-targets — codebrain (SPEC §5.3, AC2)', () => {
+  it('navViewOfName resolves a chord to the member with no run selected', () => {
+    // A chord names the screen, not a run within it — the same posture
+    // `settings` takes with its section (`navViewOfName('settings')`).
+    expect(navViewOfName('codebrain')).toEqual({ view: 'codebrain', runId: null });
+  });
+
+  it('landingOfRoute returns a Landing, and the Landing itself is not null', () => {
+    // THE distinction Task 7 exists to preserve: `landingOfRoute` returning
+    // `null` means unresolvable; a `Landing` whose `target` is `null` means a
+    // real screen with no rail seat. CodeBrain is the latter, same as
+    // `newSession` and `boardV2` — asserted as two separate facts so neither
+    // can be mistaken for the other.
+    const landing = landingOfRoute({ view: 'codebrain', runId: null });
+    expect(landing).not.toBeNull();
+    expect(landing?.target).toBeNull();
+    expect(landing?.openEntity).toBeNull();
   });
 });
 

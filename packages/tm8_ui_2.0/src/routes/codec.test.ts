@@ -54,6 +54,12 @@ describe('grammar (WLT §2.2 verbatim)', () => {
     [`#/s/${SPACE}/settings`, { view: 'settings', section: null }],
     [`#/s/${SPACE}/settings/projects`, { view: 'settings', section: 'projects' }],
     [`#/s/${SPACE}/settings/menu`, { view: 'settings', section: 'menu' }],
+    /* CodeBrain (SPEC §5.1/§5.2): bare form selects no run, `runId` is an
+       optional trailing segment shaped like `help/{plate}` — lossy-tolerant,
+       an id naming nothing still decodes and the screen renders its own
+       not-found line rather than refusing the route. */
+    [`#/s/${SPACE}/codebrain`, { view: 'codebrain', runId: null }],
+    [`#/s/${SPACE}/codebrain/${id(4)}`, { view: 'codebrain', runId: id(4) }],
   ];
 
   it.each(cases)('parses %s', (hash, target) => {
@@ -61,6 +67,18 @@ describe('grammar (WLT §2.2 verbatim)', () => {
     expect(dropped).toEqual([]);
     expect(route?.spaceId).toBe(SPACE);
     expect(route?.target).toEqual(target);
+  });
+
+  it('a bare trailing slash on codebrain decodes to runId: null, not an empty id', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/codebrain/`);
+    expect(dropped).toEqual([]);
+    expect(route?.target).toEqual({ view: 'codebrain', runId: null });
+  });
+
+  it('an id naming nothing survives as an opaque runId — parse never validates it', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/codebrain/not-a-real-entity`);
+    expect(dropped).toEqual([]);
+    expect(route?.target).toEqual({ view: 'codebrain', runId: 'not-a-real-entity' });
   });
 
   it('renders the space picker when no space is addressed', () => {

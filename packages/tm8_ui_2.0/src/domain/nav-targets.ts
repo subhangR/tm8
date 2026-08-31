@@ -172,6 +172,10 @@ export function navViewOfName(name: string): NavView | null {
     case 'settings':
       /* No section: a chord names the screen, not a section within it. */
       return { view: 'settings', section: null };
+    case 'codebrain':
+      /* No run: a chord names the screen, not a run within it — the same
+         posture `settings` takes with its section. */
+      return { view: 'codebrain', runId: null };
     default:
       return null;
   }
@@ -253,6 +257,11 @@ export function landingOfRoute(view: NavView): Landing | null {
       /* Board v2 — route-only for the same no-migration reason as newSession.
          `target: null`: no menu group owns it; the shell appends its tab
          client-side and highlights it off the route directly. */
+      return { target: null, openEntity: null };
+
+    case 'codebrain':
+      /* A real screen with no rail seat — the third of this shape, beside
+         newSession and boardV2. See `Landing.target`. */
       return { target: null, openEntity: null };
 
     case 'channels':
