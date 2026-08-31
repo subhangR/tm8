@@ -435,6 +435,10 @@
   flex-direction: column;
   flex: none;
   width: var(--hp-rail, 72px);
+  /* Named so the rows can ask how much room they actually have — the width is
+     a custom property the host solves, which no selector can read. */
+  container-type: inline-size;
+  container-name: hr-rail;
   min-height: 0;
   border-right: 1px solid var(--pn-line);
   /* Flat. The brand-tinted gradient was a colour that carried no fact. */
@@ -575,6 +579,34 @@
 .cv2-root .hr-rail__row > .hr-rail__metrics {
   flex: none;
   white-space: nowrap;
+}
+/* AND AT THIS WIDTH THE COUNT DOES NOT GET A SEAT AT ALL.
+   The rail is 72px. "Pull requests" alone does not fit in it, so putting a
+   number beside the word means the word is the thing that gives way — the
+   render gate measured exactly that on the deployed build, in both themes:
+   "Pull requests…" clipped beside 135, "Collections…" beside 6, "Teammates…"
+   beside 42. Every rule above is already correct; they decide WHO yields when
+   two things must share a line, and the answer they give is right. The defect
+   is that these two were asked to share a line that fits neither.
+
+   The owner's ruling is that the name of a thing always beats its count, and
+   the only way to keep it here is for the count not to be drawn. It is not
+   lost: the row's `aria-label` and `title` carry the full "Sessions · 577 ·
+   17 live" sentence, so a reader who wants the number hovers or is read it.
+   A number nobody can finish reading is not information.
+
+   A CONTAINER QUERY AND NOT A CLASS, because the rail has no class for its
+   width. It is 72px normally and 208px expanded, and both come from
+   `--hp-rail`, a custom property the host solves and writes — invisible to any
+   selector. `:not(.hr-rail--expanded)` was the first attempt and it was
+   wrong twice: no such class exists, so it matched always and would have
+   taken the metrics away at 208px too, where they fit perfectly well. Asking
+   the container how wide it actually is answers at both widths. */
+@container hr-rail (max-width: 150px) {
+  .cv2-root .hr-rail__row > .hr-rail__metrics,
+  .cv2-root .hr-rail__grouphead > .enav-metrics {
+    display: none;
+  }
 }
 /* The mark is drawn at 18 (I1): the CSS wins over the SVG's own 14px
    width/height attributes, so no component edit is needed. */
@@ -1080,6 +1112,15 @@
   gap: 3px;
   text-align: left;
   min-width: 0;
+  /* THE CARD IS FILLED, NOT PADDED OUT. The row is a fixed 96px so the grid can
+     cut on a boundary; the content has to occupy it, or a card with no pull
+     requests reads as a box with a hole in it — which is exactly what the
+     owner circled: four "Terminal" cards, two short lines each at the top of a
+     96px box. `flex: 1` gives the button the whole row and `space-between`
+     puts the facts on the floor of it, so a card with chips and a card without
+     end at the same place and neither has dead air in the middle. */
+  flex: 1 1 auto;
+  justify-content: space-between;
   padding: var(--pn-space-3);
   border: 0;
   border-radius: 0;
@@ -1096,6 +1137,7 @@
   gap: var(--pn-space-1);
   padding: 0 var(--pn-space-3) var(--pn-space-3);
   min-width: 0;
+  flex: none;
   /* ONE LINE. The count beside them says what did not fit, so a card can never
      grow a second chip row and break the uniform grid. */
   overflow: hidden;
@@ -1135,13 +1177,40 @@
 }
 /* THE NAME TAKES THE ROOM AND CLIPS INSIDE IT — a sliced number is a wrong
    number, but a clipped name is still the right name. */
+/* THE TITLE TAKES THE SLACK, up to two lines. It was one line with an
+   ellipsis, so a card with a long name and no chips wasted the room the name
+   needed WHILE clipping the name — the worst of both. Two is the ceiling
+   because a third line pushes the facts off a 96px row; past that the whole
+   name is in the card's `title` and one click away. */
 .cv2-root .hp-acard__title {
   font: 600 var(--pn-fs-sm)/1.3 var(--pn-ui);
   color: var(--pn-ink);
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  /* `flex: none` AND IT IS THE WHOLE FIX. This element carries
+     `overflow: hidden`, which by Flexbox §4.5 sets its automatic minimum size
+     to ZERO — so inside a fixed-height column it does not overflow the card,
+     it SHRINKS, and a two-line title came out as the bottom half of its first
+     line sliced through the middle of the glyphs. Measured on the deployed
+     build: three cards, all of them ones that also carry pull-request chips.
+     This is the third time this rule has bitten this package (the create box
+     at 2px, the chat pane at 2px). A box that clips its own content must never
+     also be allowed to give way. */
+  flex: none;
+}
+/* AND A CARD THAT SPENDS A LINE ON CHIPS CAN ONLY AFFORD ONE LINE OF NAME.
+   The arithmetic, in a 96px row: 16 padding + 12 kind + 14 facts + 6 gaps
+   leaves 48px. Two lines of 13/1.3 type is 34px and fits — until an 18px chip
+   band is added, at which point it does not, and something has to give.
+   Making that choice HERE means it is the line count that gives, on purpose,
+   rather than the glyphs, by accident. */
+.cv2-root .hp-acard:has(.hp-acard__prs) .hp-acard__title {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 .cv2-root .hp-acard__facts {
   display: flex;

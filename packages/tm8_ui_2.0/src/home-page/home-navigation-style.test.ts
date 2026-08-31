@@ -256,6 +256,46 @@ describe('a name is never truncated by its own count', () => {
     expect(pageTsx).toMatch(/row\.lens === 'chats' \? \[\]/);
   });
 
+  it('fills a card whether or not it has pull requests, and cannot be grown by one', () => {
+    /*
+     * THE OWNER'S QUESTION, 2026-08-31, circling four "Terminal" cards: "for
+     * sessions without those links, lot of space is wasted what if the number
+     * of links increase more for some sessions, if height of some cards
+     * increases, how other cards behave... make sure nothing impacts think all
+     * edge cases".
+     *
+     * The answer is that a card CANNOT change the height of anything. The row
+     * is a fixed track, the card clips, and the only variable — how many pull
+     * requests a session has — is capped in the page before it reaches the
+     * DOM. What is left is making sure a card with nothing to put in that band
+     * does not look punched-out, which is what these three rules do together.
+     */
+    const open = homeCss.match(/\.cv2-root \.hp-acard__open\s*\{([^}]*)\}/s)?.[1] ?? '';
+    // FILLS THE ROW. Without this the content sits at the top of a 96px box.
+    expect(open, 'a card with no chips will have a hole under its facts').toContain('flex: 1');
+    expect(open).toContain('justify-content: space-between');
+
+    // THE TITLE TAKES THE SLACK — two lines, never three (three pushes the
+    // facts off the row).
+    const title = homeCss.match(/\.cv2-root \.hp-acard__title\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(title).toMatch(/line-clamp:\s*2/);
+    expect(title).toContain('overflow: hidden');
+
+    // THE CHIP BAND IS ONE LINE AND NEVER PUSHES. `flex: none` stops it taking
+    // room from the button; `overflow: hidden` stops a wrap.
+    const prs = homeCss.match(/\.cv2-root \.hp-acard__prs\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(prs).toContain('flex: none');
+    expect(prs).toContain('overflow: hidden');
+
+    // AND THE CARD ITSELF CLIPS, so nothing inside it can reach a neighbour.
+    expect(homeCss).toMatch(/\.cv2-root \.hp-acard \{ overflow: hidden; \}/);
+
+    // THE CAP IS IN THE PAGE, not only in the stylesheet — a CSS-only cap
+    // would still hand the browser eight chips and hope.
+    expect(pageTsx).toContain('allPrs.slice(0, 3)');
+    expect(pageTsx, 'the hidden pull requests became unreachable').toContain('more:');
+  });
+
   it('draws no divider for a panel that is not there', () => {
     /* SUPERSEDED, AND REPLACED RATHER THAN DELETED — the 2026-08-30 Home
        restructure (two modes, never both). This case used to pin the pair of

@@ -119,8 +119,16 @@
    EQUALLY on both sides via `margin-inline: auto` — so Home/Work/Board/Craft
    sit centred between the identity block and the account controls, and stay
    centred as either side changes width. */
+/* THE SPACER PUSHES AGAIN. It was set to `flex: none` when the tabs were
+   centred with auto margins — the tabs took the free space themselves, so a
+   growing spacer would have fought them. Taking the tabs OUT OF FLOW removed
+   that conflict and, with it, the only thing holding the account controls at
+   the right edge: the palette and the profile menu collapsed leftward into the
+   space chip, which is how the first render of this change came out. The
+   spacer grows, the tabs float centred over it, and neither depends on the
+   other's width. */
 .cv2-root .shell-tabbar__spacer {
-  flex: none;
+  flex: 1 1 auto;
 }
 /* R1/R2 (2026-08-15): the top ROW hosts the identity block and the tabs.
    The tabs are the menu's groups — a segmented control. Kinetic (W3): the
@@ -387,6 +395,47 @@
    the four drifted into three heights in the first place. */
 .cv2-root .shell-tabbar__palette {
   transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+  /* A FIELD HAS A FIELD'S WIDTH. Sized so the sentence fits without wrapping
+     at this bar's normal width, and floored rather than fixed so a narrow
+     window can take it back — the words are a hint, not a destination, so
+     this is the one control in the cluster that MAY give way. */
+  min-width: 0;
+  flex: 0 1 268px;
+  justify-content: flex-start;
+  background: var(--pn-surface);
+}
+/* The magnifier and the words are quiet; the field's job is to be found, not
+   to be read. Full ink is for what a reader is here for. */
+.cv2-root .shell-tabbar__palette-mark { flex: none; color: var(--pn-ink-3); }
+.cv2-root .shell-tabbar__palette-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-3);
+  font-weight: 400;
+  text-align: left;
+}
+/* THE SHORTCUT WEARS THE PACKAGE'S KEY GRAMMAR, not the sentence's. It is the
+   one thing in here that is typed rather than read, and `--pn-mono` at
+   `--pn-fs-fine` is what every other key hint in this product is set in — the
+   old chip ran the whole label, slash and shortcut together in one face,
+   which is what made it sit unevenly beside the account trigger's word. */
+.cv2-root .shell-tabbar__palette-kbd {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  line-height: 1;
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+.cv2-root .shell-tabbar__palette:hover .shell-tabbar__palette-hint,
+.cv2-root .shell-tabbar__palette:hover .shell-tabbar__palette-mark {
+  color: var(--pn-ink-2);
 }
 .cv2-root .shell-tabbar__palette:hover {
   box-shadow: var(--pn-sh-sm);

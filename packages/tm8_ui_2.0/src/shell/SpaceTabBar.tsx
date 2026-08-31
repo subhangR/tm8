@@ -162,8 +162,39 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
           door in chrome. The catalog, its `/help/prompts` address and its tests
           remain; only this dedicated chip is gone. */}
 
-      <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
-        / palette · ⌘K
+      {/* A SEARCH FIELD, NOT A CHIP THAT SAYS "palette" (owner, 2026-08-31:
+          "for palette you can put search bar write inside in light colors
+          search entities whatever job it does as a search").
+          The control opens the same command palette it always did — what
+          changed is that it now looks like the thing it does. `/ palette · ⌘K`
+          named the MECHANISM and left the reader to infer the job; a magnifier
+          and the words in the field say the job and leave the mechanism to the
+          shortcut. It stays a button rather than becoming an `<input>`: typing
+          happens in the palette's own field once it opens, and a decorative
+          input that steals focus and then hands it somewhere else is worse
+          than an honest button. */}
+      <button
+        type="button"
+        className="shell-tabbar__palette"
+        aria-label="Search this space"
+        title="Search entities, docs and people (⌘K)"
+        onClick={props.onOpenPalette}
+      >
+        <svg
+          className="shell-tabbar__palette-mark"
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          aria-hidden="true"
+        >
+          <circle cx="7" cy="7" r="4.2" />
+          <path d="M10.2 10.2 14 14" strokeLinecap="round" />
+        </svg>
+        <span className="shell-tabbar__palette-hint">Search entities, docs, people…</span>
+        <kbd className="shell-tabbar__palette-kbd">⌘K</kbd>
       </button>
 
       {/* RETIRED 2026-08-20: Help now owns the final tab in the shipped menu.

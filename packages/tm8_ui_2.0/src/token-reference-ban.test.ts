@@ -136,6 +136,72 @@ describe('every token a stylesheet asks for is a token something defines', () =>
     ).toEqual([]);
   });
 
+  it('sets type from a token everywhere, so one face reaches every surface', () => {
+    /*
+     * Owner, 2026-08-31: "I need fonts same across tm8 everywhere including
+     * generated content in chats I mean everywhere in the platform."
+     *
+     * It is one face for everything a person reads and one for what is typed,
+     * and this is what keeps it that way. `styles/fonts.css` is exempt because
+     * it is where the faces are DECLARED — a `@font-face` block has to name a
+     * family, and a guard that forbade that would forbid having fonts.
+     *
+     * What this caught when it was written: `files-explorer.css` setting a raw
+     * `ui-monospace, SFMono-Regular, Menlo` stack, which is a DIFFERENT mono
+     * from `--pn-mono` on any machine that has JetBrains Mono — so one panel
+     * in the product quietly rendered its file sizes in the system font while
+     * every other number used the shipped one.
+     */
+    const offenders: string[] = [];
+    for (const file of CSS_FILES) {
+      const rel = file.slice(SRC.length + 1);
+      if (rel === 'styles/fonts.css') continue;
+      const css = stripComments(readFileSync(file, 'utf8'));
+      css.split('\n').forEach((line, i) => {
+        for (const m of line.matchAll(/font-family\s*:\s*([^;}]+)/g)) {
+          const value = (m[1] as string).trim();
+          if (value === 'inherit' || value.includes('var(--pn-')) continue;
+          offenders.push(`${rel}:${i + 1}  font-family: ${value}`);
+        }
+        for (const m of line.matchAll(/(?:^|[;{\s])font\s*:\s*([^;}]+)/g)) {
+          const value = (m[1] as string).trim();
+          if (value.includes('var(--pn-') || value.includes('inherit')) continue;
+          offenders.push(`${rel}:${i + 1}  font: ${value}`);
+        }
+      });
+    }
+    expect(
+      offenders,
+      'type must come from --pn-ui, --pn-prose or --pn-mono. A hand-written '
+        + 'stack renders a different face on any machine that has the shipped one, '
+        + 'which is exactly the drift the single-family rule exists to stop.',
+    ).toEqual([]);
+  });
+
+  it('declares only the faces the product actually renders', () => {
+    /* FOUR FAMILIES WERE DECLARED AND TWO WERE RENDERED. `Hanken Grotesk` and
+       `Newsreader` sat in `fonts.css` with zero rules referencing either —
+       they cost no bandwidth, since a browser fetches a face only when a rule
+       needs it, but they made a two-family system read as a four-family one,
+       and a dev gallery labelled its headings with faces it was not using.
+       A family may be declared here only once something asks for it. */
+    const fonts = stripComments(readFileSync(join(SRC, 'styles/fonts.css'), 'utf8'));
+    const declared = new Set(
+      [...fonts.matchAll(/font-family\s*:\s*['"]([^'"]+)['"]/g)].map((m) => m[1] as string),
+    );
+    const referenced = new Set<string>();
+    for (const file of CSS_FILES) {
+      const rel = file.slice(SRC.length + 1);
+      if (rel === 'styles/fonts.css') continue;
+      const css = stripComments(readFileSync(file, 'utf8'));
+      for (const family of declared) if (css.includes(`'${family}'`)) referenced.add(family);
+    }
+    expect(
+      [...declared].filter((f) => !referenced.has(f)),
+      'these faces are declared and nothing renders them',
+    ).toEqual([]);
+  });
+
   it('leaves every var() that carries its own fallback alone', () => {
     /* THE GUARD MUST NOT GROW TEETH IT WAS NOT GIVEN. `var(--x, 12px)` is a
        deliberate default and there are ~180 of them in this package. This

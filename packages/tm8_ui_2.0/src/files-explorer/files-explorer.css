@@ -350,7 +350,7 @@
   margin: 0;
   padding: 0.75rem 1rem;
   border: 1px solid var(--pn-line);
-  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: var(--pn-fs-mono)/1.5 var(--pn-mono);
   white-space: pre;
   tab-size: 2;
 }

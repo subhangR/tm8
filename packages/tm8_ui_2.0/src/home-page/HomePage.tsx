@@ -463,7 +463,22 @@ function ActiveStrip({
                   <div className="hp-acard__prs">
                     <LinkedPullRequestChips pullRequests={prs} placement="tile" />
                     {morePrs > 0 ? (
-                      <span className="hp-acard__prmore">+{morePrs}</span>
+                      /* THE COUNT NAMES WHAT IT IS HIDING. A bare "+5" says
+                         only that something was withheld; the tooltip lists
+                         the numbers, so the card can stay one line tall
+                         without the rest becoming unreachable knowledge. The
+                         card itself opens the session, where all of them are
+                         listed in full — this is a signpost, not the only
+                         road. */
+                      <span
+                        className="hp-acard__prmore"
+                        title={`${morePrs} more: ${allPrs
+                          .slice(3)
+                          .map((pr) => `#${pr.number}`)
+                          .join(' ')}`}
+                      >
+                        +{morePrs}
+                      </span>
                     ) : null}
                   </div>
                 ) : null}

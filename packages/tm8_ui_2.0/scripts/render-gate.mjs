@@ -82,11 +82,23 @@ function auditInPage() {
 
   // 1. THE CRUSH. A box that has real content and has been squeezed to nothing
   //    is the §4.5 failure and the divided-rows failure, both of which shipped.
+  //
+  //    MEASURED IN LAYOUT PIXELS, NOT COMPOSITED ONES, and the first version of
+  //    this rule got that wrong. `getBoundingClientRect()` returns the box AFTER
+  //    every ancestor transform, so anything inside a zoomed-out canvas reports
+  //    a fraction of its real size. It flagged eleven graph node labels at
+  //    "116x7" — their true layout box is 284x20, inside a canvas at
+  //    scale 0.372. The screen did have a real defect (it opened so far out that
+  //    10px type painted at 3.7px) but this rule was not the thing that found
+  //    it, and a rule that fires on every correct element in every scaled
+  //    subtree is a rule that gets muted. `offsetWidth`/`offsetHeight` are
+  //    layout values and ignore transforms entirely.
   for (const el of all) {
-    const r = el.getBoundingClientRect();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
     const text = (el.innerText || '').trim();
-    if (r.width > 24 && r.height > 0 && r.height < 8 && text.length > 12 && el.children.length > 0) {
-      out.push({ rule: 'crushed', el: name(el), detail: `${Math.round(r.width)}x${Math.round(r.height)} holding ${text.length} chars` });
+    if (w > 24 && h > 0 && h < 8 && text.length > 12 && el.children.length > 0) {
+      out.push({ rule: 'crushed', el: name(el), detail: `${w}x${h} layout px holding ${text.length} chars` });
     }
   }
 
@@ -146,8 +158,18 @@ function auditInPage() {
     const cs = getComputedStyle(el);
     if (cs.textOverflow !== 'ellipsis') continue;
     if (el.scrollWidth <= el.clientWidth + 1) continue;
+    /* A HIDDEN SIBLING IS NOT COMPETING FOR THE LINE. `textContent` reads
+       through `display: none`, so the first version of this rule kept
+       reporting the rail's "Pull requests" as clipped beside 135 AFTER the
+       container query had already stopped drawing 135. The count has to be
+       ON SCREEN to be the thing taking the room. */
     const sib = [...(el.parentElement?.children ?? [])].find(
-      (s) => s !== el && /^[\d\s·,.]+$/.test((s.textContent || '').trim()) && (s.textContent || '').trim(),
+      (s) =>
+        s !== el
+        && seen(s)
+        && s.getBoundingClientRect().width > 0
+        && /^[\d\s·,.]+$/.test((s.textContent || '').trim())
+        && (s.textContent || '').trim(),
     );
     if (sib) out.push({ rule: 'name-clipped-by-count', el: name(el), detail: `"${(el.textContent || '').slice(0, 28)}…" clipped beside "${(sib.textContent || '').trim()}"` });
   }
