@@ -217,23 +217,105 @@
   max-inline-size: 100%;
 }
 
-.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure {
+/* ═══ A LABELLED PROPERTY GRID, NOT A RUN-ON STRIP ═══════════════════════
+   Owner, 2026-08-31: "check controls it is shit looking fix it cleanly".
+
+   WHAT IT WAS: one word `CONTROLS` in a fixed left column, then six different
+   control shapes flowing after it on two lines — a select, a select, a text
+   box, TWO IDENTICAL `mm/dd/yyyy` fields, a run of plain text, and a
+   destructive button. Nothing said which date was the start and which was the
+   due, `Unassigned` and `In no collection` ran together into one broken
+   phrase, and Archive sat at the same visual weight as the fields it can
+   undo.
+
+   THE `CONTROLS` LABEL IS GONE. It spent 120px of a column to say that
+   controls are controls, and it was the only thing standing between the fields
+   and the room they needed. The band is a form; a form does not need a sign
+   saying so.
+
+   EVERY FIELD NAMES ITSELF INSTEAD. `EntityControls` already knew each name —
+   it used `control.label` for the `aria-label` and the placeholder and never
+   showed it — so the control now publishes it as `data-control-label` and the
+   grid draws it with `attr()`. Registry-driven: a kind that gains a control
+   gets a labelled cell with no edit here, and no field name is written in this
+   file.
+
+   THE COLUMNS ARE FLOORED AND FLUID: `auto-fit` with a `minmax(150px, 1fr)`
+   floor, so a wide panel lays the fields out three or four abreast and a
+   narrow one drops to one — the same discipline as every other grid in this
+   package, and never an unfloored track. */
+/* THE GRID GOES ON THE ELEMENT THAT ACTUALLY HOLDS THE FIELDS.
+   `.pn-controls__measure` has exactly ONE child — `.lp__rowdetail--chips` —
+   which is the flex row every control lives in. Putting the grid on the
+   measure laid out a single item and changed nothing; the labels appeared
+   only because the `::before` rule matches descendants. Measured on the live
+   build before this edit: `[...band.children]` returned one node whose text
+   was the whole strip. A layout rule aimed one level above its subjects does
+   nothing and looks like it did something. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips {
   display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: end;
   gap: var(--pn-space-3);
 }
 
-.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure::before {
-  content: 'Controls';
-  padding-inline: var(--pn-space-1);
+/* Each control becomes a labelled cell. The label sits ABOVE rather than
+   beside: beside costs a second column per field and re-creates the ragged
+   two-tier strip this replaces. */
+/* EVERY CELL IS FLOORED AND CARRIES ITS LABEL'S HEIGHT. A field without a
+   label would otherwise sit a label's height lower than its neighbours, which
+   is what broke the shared baseline: `open` had no label and hung below
+   `MEDIUM`. Reserving the line for every cell keeps the row true whether or
+   not a particular control publishes a name. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure > *,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips > * {
+  min-width: 0;
+}
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips > *:not([data-control-label])::before {
+  content: '';
+  display: block;
+  margin-bottom: 3px;
+  font-size: var(--pn-fs-fine);
+  line-height: 1.4;
+}
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls [data-control-label]::before,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__cell::before {
+  content: attr(data-control-label);
+  display: block;
+  margin-bottom: 3px;
   font-family: var(--pn-caps);
-  font-size: var(--pn-fs-micro);
+  font-size: var(--pn-fs-fine);
   font-weight: 700;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-ink-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A `<select>` and an `<input>` cannot carry generated content — the pseudo
+   element attaches to their WRAPPER, which is where the attribute has to be
+   for the label to draw. The controls publish it on themselves too, for the
+   cases where the wrapper is the control. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__statewrap,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__assignwrap {
+  display: block;
+}
+/* THE LABEL RIDES THE WRAPPER, NEVER THE CONTROL. `::before` does not render
+   on a replaced element — an `<input>` or a `<select>` has no content box to
+   attach one to — so the first version of this put the attribute on the field
+   itself and drew nothing at all. The wrapper is the element that can carry
+   it, which is why `EntityControls` publishes the name there. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__assignbtn,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowaction {
+  inline-size: 100%;
+  justify-content: flex-start;
+  block-size: 32px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  padding-inline: var(--pn-space-2);
 }
 
 /* ═══ A CONTROL STRIP WRAPS. IT NEVER SCROLLS SIDEWAYS. ═══════════════════
@@ -1089,4 +1171,69 @@
   .cv2-root .pn-panel[data-archetype='subtree'] :where(button, input, textarea, select, a):focus-visible {
     outline: 3px solid Highlight;
   }
+}
+
+/* ═══ THE BAND, MADE PROPERLY ═══════════════════════════════════════════════
+   Owner: "that can be more beautiful — use design principles".
+
+   Five principles, each doing one job, and each written down so the next
+   reader can tell craft from taste:
+
+   1. ONE RHYTHM. Six control shapes shared no height, no radius and no inset,
+      so nothing lined up with anything. Every field is now 32px — the bar's
+      own control height, already the rhythm everywhere else in this shell —
+      with one radius and one inset.
+
+   2. ALIGNMENT IS THE WHOLE OF TIDINESS. Labels sit above their fields and the
+      fields share a baseline (`align-items: end`), so the row reads as one
+      band rather than six objects that happen to be adjacent.
+
+   3. DESTRUCTIVE IS NOT A FIELD. Archive can undo the work every other control
+      does, and it sat at the same weight as them. It leaves the grid, sits at
+      the band's foot behind a hairline, and takes the block tone — findable,
+      never mistakable for a field.
+
+   4. AN EMPTY STATE IS NOT A VALUE. "Unassigned" and "In no collection" are
+      the ABSENCE of a fact, and they were rendered in the same ink as a real
+      one, run together into a single broken phrase. They are quieted, and each
+      gets its own cell, because two facts that share a line read as one.
+
+   5. RESTRAINT. Status and priority already carry their tone from the registry
+      pill; nothing else in the band is coloured. A form where every field
+      shouts has no hierarchy, and hierarchy is the thing being bought. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls :is(select, input, .lp__statesel) {
+  block-size: 32px;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding-inline: var(--pn-space-2);
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+}
+/* The two date fields were indistinguishable; equal width and a shared
+   baseline is what lets their LABELS do the distinguishing. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls input[type='date'] {
+  font-variant-numeric: tabular-nums;
+}
+/* Absence reads as absence. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .hon-hollow-inline,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls [data-empty='true'] {
+  color: var(--pn-ink-3);
+  font-style: italic;
+}
+/* Archive leaves the field grid: full row, hairline above, block tone, and
+   never stretched to a field's width — a destructive control that fills the
+   row it sits in is a destructive control somebody presses by aiming. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__archive,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls button[data-testid*='archive'] {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-block-start: var(--pn-space-2);
+  padding-block-start: var(--pn-space-2);
+  border-block-start: 1px solid var(--pn-line);
+  border-radius: 0;
+  background: none;
+  color: var(--pn-block);
+  font-weight: 600;
 }

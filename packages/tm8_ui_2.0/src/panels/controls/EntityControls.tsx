@@ -791,7 +791,8 @@ function RowEnumControl({
      are the same control in two states, and a hook that only existed on the
      enabled one would let a refusal go unasserted. */
   const currentPill = (
-    <span className={`lp__statesel kit-pill--${chosen?.tone ?? 'idle'}`} data-source={control.source}>
+    <span className={`lp__statesel kit-pill--${chosen?.tone ?? 'idle'}`} data-source={control.source}
+        data-control-label={control.label}>
       {chosen?.label ?? control.emptyLabel}
     </span>
   );
@@ -823,13 +824,14 @@ function RowEnumControl({
   }
 
   return (
-    <span className="lp__statewrap">
+    <span className="lp__statewrap" data-control-label={control.label}>
       <select
         id={selectId}
         className={`lp__statesel lp__statesel--live kit-pill--${chosen?.tone ?? 'idle'}`}
         aria-label={`Change ${control.label.toLowerCase()} for ${row.title}`}
         data-testid="row-value-select"
         data-source={control.source}
+        data-control-label={control.label}
         value={current}
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => {
@@ -929,7 +931,8 @@ function RowNumberControl({
   /* `data-source` on the refused pill as well as the live input — the same
      assertability rule the enum and date controls state. */
   const currentPill = (
-    <span className="lp__statesel kit-pill--idle" data-source={control.source}>
+    <span className="lp__statesel kit-pill--idle" data-source={control.source}
+        data-control-label={control.label}>
       {current === null ? control.emptyLabel : String(current)}
     </span>
   );
@@ -988,7 +991,7 @@ function RowNumberControl({
   };
 
   return (
-    <span className="lp__statewrap lp__statewrap--date">
+    <span className="lp__statewrap lp__statewrap--date" data-control-label={control.label}>
       <input
         id={inputId}
         type="number"
@@ -999,6 +1002,7 @@ function RowNumberControl({
         aria-label={`${verb} for ${row.title}`}
         data-testid="row-number-input"
         data-source={control.source}
+        data-control-label={control.label}
         /* The unset field is marked structurally (data-empty) and keeps the
            registry's full emptyLabel on hover. The PLACEHOLDER is the
            control's own one-word label ("points"), not the emptyLabel
@@ -1093,7 +1097,8 @@ function RowDateControl({
      two states, and a hook on only the enabled one lets a refusal go
      unasserted. */
   const currentPill = (
-    <span className="lp__statesel kit-pill--idle" data-source={control.source}>
+    <span className="lp__statesel kit-pill--idle" data-source={control.source}
+        data-control-label={control.label}>
       {current === '' ? control.emptyLabel : current}
     </span>
   );
@@ -1126,7 +1131,7 @@ function RowDateControl({
        becomes indistinguishable from the badge beside it; a date input keeps
        its own calendar indicator, so the caret would be a second, wrong glyph
        claiming it is a dropdown. */
-    <span className="lp__statewrap lp__statewrap--date">
+    <span className="lp__statewrap lp__statewrap--date" data-control-label={control.label}>
       <input
         id={inputId}
         type="date"
@@ -1134,6 +1139,7 @@ function RowDateControl({
         aria-label={`${verb} for ${row.title}`}
         data-testid="row-date-input"
         data-source={control.source}
+        data-control-label={control.label}
         /* The unset field is marked STRUCTURALLY rather than by a second face:
            the stylesheet dims the browser's own `dd/mm/yyyy` placeholder off
            it, and the word the registry chose reaches a screen reader through
@@ -1239,7 +1245,7 @@ function RowAxisControl({
 
   const known = axis.axisValues.includes(current);
   return (
-    <span className="lp__statewrap">
+    <span className="lp__statewrap" data-control-label={axis.name}>
       <select
         id={selectId}
         className="lp__statesel lp__statesel--live kit-pill--idle"
@@ -1410,7 +1416,12 @@ function RowAssignControl({
   }
 
   return (
-    <span className="lp__assignwrap" ref={boxRef}>
+    /* NAMED, because the owner could not tell what it was: "Assign, Assign
+       collection — make it meaningful". This control had no label anywhere on
+       screen; it rendered as the bare word "Unassigned" beside another bare
+       phrase, and a reader had no way to know either was a control at all,
+       let alone which one assigned a person and which one filed the task. */
+    <span className="lp__assignwrap" data-control-label="Assignee" ref={boxRef}>
       <button
         type="button"
         className="lp__assignbtn"
@@ -1580,7 +1591,11 @@ export function RowMembershipControl({
   }
 
   return (
-    <span className="lp__assignwrap" ref={boxRef}>
+    /* NAMED for the same reason as the assignee above: it rendered as the bare
+       phrase "In no collection", indistinguishable from a caption, next to
+       another bare phrase. Two unlabelled facts sharing a line read as one
+       broken sentence — which is exactly how the owner read it. */
+    <span className="lp__assignwrap" data-control-label="Collection" ref={boxRef}>
       <button
         type="button"
         className={icon ? 'lp__rowaction' : 'lp__assignbtn'}
@@ -1908,10 +1923,16 @@ export function RowStateControl({
 
   return (
     <>
-    {/* The wrapper exists ONLY to own the caret: see `.lp__statewrap::after`.
-        The select cannot draw its own, because the pill tone class it carries
-        sets the `background` shorthand and would reset any background-image. */}
-    <span className="lp__statewrap">
+    {/* The wrapper exists to own the caret — see `.lp__statewrap::after`; the
+        select cannot draw its own, because the pill tone class it carries sets
+        the `background` shorthand and would reset any background-image — and,
+        since 2026-08-31, to carry the field's NAME so the panel can label it.
+        This was the one control in the band with no label: measured on the
+        live build, its cell sat 17px below every neighbour, because a cell
+        with no label does not reserve the label's line and so hangs off the
+        shared baseline. The missing word and the broken alignment were one
+        defect, not two. */}
+    <span className="lp__statewrap" data-control-label={control.label}>
     <select
       id={selectId}
       className={`lp__statesel lp__statesel--live kit-pill--${toneFor(current)}`}
