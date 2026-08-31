@@ -525,6 +525,20 @@ hue must still get it. It carries a `title`/`aria-label` naming the tool.
 
 Today that marks exactly one phase: `5 REVIEW`, `gpt-5.6-sol` on `codex`.
 
+**ONE derivation, shared by both surfaces — not one rule spelled twice.** Added
+2026-08-31 after BUILD found the gap in its own first draft: the row glyph and
+the detail chip each carried their own `agentTool !== 'claude-code'` test, so
+mutating one left the other's test green. Two independent spellings of a rule
+are two places for it to drift and one place for a mutation to hide. Extracted
+as `isCrossVendor()` and used by both (`CodeBrainScreen.tsx:70`, `:75`, `:207`),
+after which the mutation fails all four vendor tests together — which is what a
+shared derivation is FOR.
+
+This paragraph named two surfaces and one rule and did not say they must share
+one implementation. That omission is the same shape as every other correction
+to this document: a sentence that described the requirement without saying
+where it stopped.
+
 ### 7.5 Empty state (AC4)
 
 Rendered when `runId` is null, **and** when `runId` names nothing.
