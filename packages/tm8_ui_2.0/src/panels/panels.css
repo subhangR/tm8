@@ -4591,33 +4591,76 @@
    columns, and anywhere narrower it drops to ONE whole column instead of
    overflowing or crushing both. The two-column reading of the facts is the
    intent; a column too narrow to read them is not a cheaper version of it. */
+/* A STRIP, NOT A GRID — owner, 2026-09-01: "we don't need that big box to
+   accommodate all of this".
+   MEASURED BEFORE THE CHANGE, on a live task: 792x195px holding THREE facts.
+   `auto-fit` seats as many 134px tracks as fit, so on a 1021px body it made
+   FIVE — two of them empty — while the parent-task title was squeezed into one
+   134px track and wrapped to four lines, and the ID took a full-width row of
+   its own via the `:last-child:nth-child(odd)` rule below. Three short facts,
+   195px of panel, and half the width unused.
+   `auto-fit` is right when the cell count is unknown and large. Here it is
+   three, and it is three because the body publishes three: parent, gate, id.
+   So the facts sit on ONE LINE EACH, label beside value rather than above,
+   and the box costs a row instead of a card. Flex-wrap, not a track count:
+   at a narrow panel the facts wrap to a second line by themselves, which is
+   the same answer `auto-fit` was giving and without the empty tracks. */
 .cv2-root .sb-body > .sb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(134px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
   gap: 0;
 }
 .cv2-root .sb-body .sb-grid__cell {
   display: flex;
-  align-items: flex-start;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  min-height: var(--pn-listrow-h);
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  /* Floored, never fixed: a cell shrinks to share the row but a long value
+     ellipsises rather than pushing its neighbours out. */
+  min-inline-size: 0;
   box-sizing: border-box;
-  padding: var(--pn-space-2);
+  padding: 9px var(--pn-space-3);
   border-right: 1px solid var(--pn-line);
-  border-bottom: 1px solid var(--pn-line);
+  border-bottom: 0;
+  /* Hold natural width by default: a value that is short should not be given
+     a share of the row it does not need, and an ID must never be abbreviated
+     — half a UUID is not a shorter UUID, it is a wrong one. */
+  flex: 0 1 auto;
 }
-.cv2-root .sb-body .sb-grid__cell:nth-child(even),
+/* THE ONE CELL THAT MAY BE ABBREVIATED is the navigational one — chosen by
+   what the cell CONTAINS, not by its position, because `SubtreeBody` decides
+   the order and a `:first-child` rule would silently move to a different fact
+   the day it changes.
+   IT IS FLOORED, and that floor is the correction to my first attempt.
+   `flex: 1 1 0` fit all three on one line and did it by starving this cell:
+   the ID takes 404px and the gate 185px at their natural widths, leaving ~175
+   for a cell whose label alone is ~100, so the parent task rendered as a
+   checkbox and two dots. One line is not worth an unreadable name — the
+   standing rule is that the name of a thing beats its count. With a 200px
+   floor the row fits on one line whenever there is room and wraps to two when
+   there is not, which is the honest trade and still less than a third of the
+   195px this box used to cost. */
+.cv2-root .sb-body .sb-grid__cell:has(.sb-grid__link) {
+  flex: 1 1 auto;
+  min-inline-size: 200px;
+}
+/* The value, on one line. An ellipsised box always has scrollWidth >
+   clientWidth — that inequality IS the ellipsis, so it is not a defect any
+   overflow probe should report here. The full text stays reachable: the
+   parent-task cell is a button whose accessible name is the whole title. */
+.cv2-root .sb-body .sb-grid__cell > *:not(.sb-grid__label) {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Only the LAST cell drops its separator. The even/odd rules below this were
+   grid-edge bookkeeping — which cell ended a row — and a flex strip has no
+   fixed row length to bookkeep. `grid-column: 1 / -1` on an odd last child is
+   what gave the ID its own full-width row; in a strip it simply sits next. */
 .cv2-root .sb-body .sb-grid__cell:last-child {
   border-right: 0;
-}
-.cv2-root .sb-body .sb-grid__cell:last-child,
-.cv2-root .sb-body .sb-grid__cell:nth-last-child(2):nth-child(odd) {
-  border-bottom: 0;
-}
-.cv2-root .sb-body .sb-grid__cell:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
 }
 .cv2-root .sb-body .sb-grid__label {
   flex: none;
