@@ -1,0 +1,125 @@
+/*
+ * CodeBrain — the pipeline spine.
+ *
+ * EVERY TOKEN HERE WAS CHECKED AGAINST ITS DEFINITION before it was written.
+ * A bare `var(--x)` naming a token nothing defines is invisible to the build
+ * (vite exits 0), invisible to the test gate (vitest runs `css: false`) and
+ * invisible to the CSS guards — it fails only in front of a person. The first
+ * draft of this file used seven such names (`--pn-text`, `--pn-border`,
+ * `--pn-radius-2`, `--pn-accent`, `--pn-success`, `--pn-danger`,
+ * `--pn-text-muted`), all invented by analogy from other design systems and
+ * all silently dead. They are replaced below by names this package defines in
+ * BOTH themes.
+ *
+ * Status colour comes from the semantic set (`--pn-run`, `--pn-idle`,
+ * `--pn-block`), which is already theme-paired. REPORTED deliberately uses ink
+ * strength rather than a colour of its own: there is no "done" token here, and
+ * inventing an eighth undefined name to get one is the exact mistake above.
+ */
+.codebrain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-6);
+  overflow-y: auto;
+  height: 100%;
+}
+
+.codebrain__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.codebrain__title {
+  font-size: var(--pn-fs-h2);
+  font-weight: 600;
+  margin: 0;
+  color: var(--pn-ink);
+}
+
+.codebrain__progress,
+.codebrain__note {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  max-width: var(--pn-read-measure);
+  line-height: var(--pn-lh-body);
+}
+
+.codebrain__error {
+  margin: 0;
+  color: var(--pn-block);
+  font-size: var(--pn-fs-sm);
+}
+
+.codebrain__spine {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.codebrain__phase {
+  display: grid;
+  /* The NAME column is the one that gives way. `minmax(0, 1fr)` is what allows
+     it to shrink below its content width — without the 0 floor a long phase
+     title would push the state pill out of the row instead of ellipsing. */
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+
+.codebrain__ordinal {
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  text-align: right;
+}
+
+.codebrain__name {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--pn-ink);
+  cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codebrain__name:disabled {
+  cursor: default;
+}
+
+.codebrain__state {
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-caps);
+  text-transform: uppercase;
+  color: var(--pn-idle);
+  white-space: nowrap;
+}
+
+/* State is carried by the ATTRIBUTE, not by a second class, so the DOM says
+   exactly what the model says and a test can assert the same fact the eye
+   reads. */
+.codebrain__phase[data-state='running'] {
+  border-color: var(--pn-run);
+}
+
+.codebrain__phase[data-state='running'] .codebrain__state {
+  color: var(--pn-run);
+}
+
+.codebrain__phase[data-state='reported'] .codebrain__state {
+  color: var(--pn-ink-2);
+}

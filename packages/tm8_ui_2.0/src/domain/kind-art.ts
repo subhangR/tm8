@@ -285,6 +285,17 @@ export const VIEW_ART = {
     'M9.4 4l2.6 2.6',
   ],
   /**
+   * A spine with a fan-out (CodeBrain, 2026-09-01): a run of phases in a line,
+   * one of them branching. Deliberately NOT a brain and NOT a chip — the shape
+   * carries what the screen shows, which is sequence plus parallel review, and
+   * a brain glyph would say "AI" about a view whose subject is a PIPELINE.
+   */
+  codebrain: [
+    'M2.6 8h10.8',
+    'M4.4 8a1.4 1.4 0 1 0 0-.1z',
+    'M13.4 4.6 10.4 8l3 3.4',
+  ],
+  /**
    * A question mark, hook and dot (Help, 2026-08-19). Deliberately NOT a
    * circled `?` and NOT a lifebuoy: `KIND_ART.commit` is a bare ring and the
    * artifact mark is a hexagon, so a ringed glyph at 16px would read as one of

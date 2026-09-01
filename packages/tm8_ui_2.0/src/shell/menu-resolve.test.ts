@@ -39,6 +39,10 @@ describe('the shipped default menu', () => {
       // studio joins between Board and Graph, railless like both.
       'Craft',
       'Graph',
+      // Revision 21 (2026-09-01, migration 173): CODEBRAIN, the delivery
+      // pipeline as one screen. After Graph and before the utility tabs
+      // because it is a working surface, not furniture.
+      'CodeBrain',
       'Settings',
       'Help',
     ]);
@@ -143,7 +147,7 @@ describe('the shipped default menu', () => {
     // blueprint studio, Craft P1), same posture again. `help` joined
     // 2026-08-19 and entered the shipped spine in revision 20.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['board', 'channels', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
+      ['board', 'channels', 'codebrain', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );
   });
 });

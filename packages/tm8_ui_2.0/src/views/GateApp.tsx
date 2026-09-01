@@ -42,6 +42,7 @@ import { isUnbuiltViewRef } from './view-ref-screens';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
+import { CodeBrainScreen } from '../codebrain';
 import { CraftScreen } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -2124,6 +2125,18 @@ export function GateApp(props: GateAppProps = {}) {
                   ttlMs: 6000,
                 })
               }
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'codebrain' ? (
+            /* ◈ CodeBrain (2026-09-01) — the delivery pipeline as one screen.
+               Full-bleed like Board and Craft: the phase spine IS the
+               navigation, so no menu rail is drawn beside it. */
+            <CodeBrainScreen
+              seam={data.seam}
+              spaceId={data.spaceId as SpaceId}
+              onOpenEntity={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'help' ? (
             /* ? Help (2026-08-19; STATIC since 2026-08-20) — the field guide.
