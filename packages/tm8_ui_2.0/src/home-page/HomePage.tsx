@@ -133,6 +133,22 @@ export interface HomePageProps {
   /** Absent keeps the map informative but non-interactive. */
   onOpenKind?(kind: string): void;
   onOpenEntity(id: string): void;
+  /**
+   * A CHAT ROW OPENS THE CONVERSATION, NOT THE ROOT MESSAGE.
+   *
+   * `chatRowOf` gives a chat row `id = thread.rootMessageId`, which IS an
+   * entity, so `onOpenEntity` accepted it and opened the generic message panel:
+   * tabs `Message / Connections / Discussion`, the root body, no transcript and
+   * NO COMPOSER. Measured on the live build against a thread whose card read
+   * "3 turns" — the panel showed one message and there was nothing to type
+   * into, so no chat could be continued from Home at all.
+   *
+   * Everything needed to do this correctly was already in place and connected:
+   * `HomeChatRegions.onThreadSelected`, `GateApp` forwarding it and
+   * `routeThreadId` to `ChatHomeSurface`, and `ChatHomeScreen` adopting the
+   * route. The single missing link was here — the card never called it.
+   */
+  onOpenChat?(rootMessageId: string): void;
   onOpenWorkspace(): void;
   /** Back to the new-conversation composer. Chat's own create. */
   onNewChat?: (() => void) | undefined;
@@ -655,6 +671,7 @@ const LENSES: readonly { id: ActiveLens; label: string }[] = [
  * alarm. Status still carries its WORD; the colour never stands alone (C8/L10).
  */
 function ActiveStrip({
+  onOpenChat,
   rows,
   lens,
   onLens,
@@ -667,6 +684,8 @@ function ActiveStrip({
   onLens(next: ActiveLens): void;
   liveLabel: string;
   onOpen(id: string): void;
+  /** Chat rows route here instead — see `HomePageProps.onOpenChat`. */
+  onOpenChat?(rootMessageId: string): void;
   linkedPullRequestsOf?: ((id: string) => readonly LinkedPullRequestFacts[]) | undefined;
 }) {
   /* THE READER'S OWN TREE STATE, and only the reader's: `expanded` holds the
@@ -839,7 +858,9 @@ function ActiveStrip({
                   type="button"
                   className="hp-acard__open k-press"
                   title={row.detail ?? row.title}
-                  onClick={() => onOpen(row.id)}
+                  onClick={() =>
+                    row.lens === 'chats' && onOpenChat ? onOpenChat(row.id) : onOpen(row.id)
+                  }
                 >
                   <span className="hp-acard__top">
                     <span className="hp-acard__kind">{row.lens.replace(/s$/, '')}</span>
@@ -1256,6 +1277,7 @@ export function HomePage(props: HomePageProps) {
         onLens={setLens}
         liveLabel={work.liveCountLabel}
         onOpen={props.onOpenEntity}
+        {...(props.onOpenChat ? { onOpenChat: props.onOpenChat } : {})}
         linkedPullRequestsOf={props.linkedPullRequestsOf}
       />
       {/* NEEDS YOUR ATTENTION follows the verbs: you start something, or you

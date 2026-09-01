@@ -1241,6 +1241,12 @@ export function HomeView(props: HomeViewProps) {
         navigationGroups={navigationGroups}
         activeKind={root === CHATS_ROOT ? null : root}
         onOpenKind={setRoot}
+        /* THE CHAT ROW'S OWN VERB. `regions.onThreadSelected` is the same one
+           the chat surface's own list uses: it writes the mirror AND the
+           address (`/home/chat/{id}`), so a conversation opened from a card is
+           linkable and walks back/forward like any other. Routing it through
+           `onOpenEntity` instead is what left the composer off the screen. */
+        onOpenChat={(id) => regions.onThreadSelected?.(id as EntityId)}
         rail={rail}
         splitter={splitter}
         splitAxis={splitAxis}

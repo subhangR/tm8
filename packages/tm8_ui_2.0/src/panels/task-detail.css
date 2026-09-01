@@ -290,19 +290,35 @@
    build before this edit: `[...band.children]` returned one node whose text
    was the whole strip. A layout rule aimed one level above its subjects does
    nothing and looks like it did something. */
-.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure,
+/* THE GRID GOES ON THE STRIP, AND ONLY THE STRIP — the correction to the
+   correction above. The first version put it on `.pn-controls__measure`, which
+   has one child, so it laid out a single item and did nothing. The fix added
+   the strip selector but LEFT the measure in the list, which is worse than
+   either: both became four-track grids, so the strip was a single item sitting
+   in track 1 of the outer grid (~288px at a normal pane width) and then laid
+   its own four 120px-floored tracks inside that one cell. Four floors of 120
+   cannot fit in 288, so half the fields were drawn outside the strip's own
+   border — measured on the owner's screenshot: STATE/PRIORITY/DUE DATE/TYPE
+   inside the bordered box, POINTS/START DATE/ASSIGNEE/COLLECTION outside it.
+   A nested grid is not a stronger grid; it is a smaller one. */
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
   align-items: end;
   gap: 12px 14px;
 }
+/* The measure stays a plain block: it is the band's WIDTH, not its layout. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure {
+  display: block;
+}
 /* The query needs a CONTAINER. The panel is the box whose width actually
    changes — the reader drags it — so it is the one that answers. Without this
    the query has no container to measure and never matches, which is the same
    class of mistake as a rule aimed one level above its subjects. */
 @container pn-panel (max-width: 900px) {
-  .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure,
+  /* The strip only, for the same reason as the base rule — this query carried
+     the identical double-target and would have re-nested the grid at exactly
+     the widths where there is least room to absorb it. */
   .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
@@ -355,11 +371,23 @@
    attach one to — so the first version of this put the attribute on the field
    itself and drew nothing at all. The wrapper is the element that can carry
    it, which is why `EntityControls` publishes the name there. */
+/* MIN-height, not height. `block-size: 32px` pinned the box while its LABEL
+   was free to wrap, so "CodeBrain 1 · DEFINE — Idea → Refine" took three lines
+   inside a one-line box and ran out through its own border. Ellipsising was the
+   other option and is the wrong one here: the owner's standing rule is that the
+   name of a thing beats its count, and an assignee whose name is cut at
+   "CodeBrain 1 ·" tells you nothing about which of several CodeBrain rows this
+   is. So the box grows to the name. The row's other three cells sit on
+   `align-items: end`, so a taller cell lengthens the row rather than knocking
+   anything out of line. */
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__assignbtn,
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowaction {
   inline-size: 100%;
   justify-content: flex-start;
-  block-size: 32px;
+  min-block-size: 32px;
+  block-size: auto;
+  padding-block: 5px;
+  text-align: start;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   background: var(--pn-card);
