@@ -37,6 +37,24 @@ export interface HomeRailProps {
    *  active then — chats live in the list header, not the rail). */
   activeKind: string | null;
   onSelect(kind: string): void;
+  /* `onHome` RETIRED 2026-08-31 (owner: "There are two homes make sure one home
+     is there"). It drew a Home row at the top of this rail, eight inches from
+     the top bar's own Home tab — two controls for one destination, which is the
+     one-control-per-verb rule this package keeps everywhere else.
+
+     IT WAS ADDED FOR A REAL DEFECT and the defect is gone, which is why the row
+     can be: selecting a kind here replaces the dashboard with that kind's list,
+     and the worry was that the top tab's Home would be a no-op because Home was
+     already the ACTIVE tab. VERIFIED ON THE DEPLOYED BUILD before removing it,
+     by driving the three steps rather than reading the source: land on
+     `/home` → click Tasks in this rail (`/home/k/tasks`, `.hp-listmain`
+     rendered) → click Home in the TOP TAB ROW → back to `/home` with
+     `.hp-home` rendered and `.hp-listmain` gone. The tab answers.
+
+     THE TWO THINGS THAT HAD TO SURVIVE, and do: the rail still shows WHICH kind
+     is current (`aria-current="page"` on its row), and the way back is a
+     permanently visible on-screen control rather than a keyboard-only escape —
+     which is the standing ruling here (2026-08-16), satisfied by the tab. */
   /** Owned by `HomeView` — see the docblock. */
   collapsed: boolean;
   onToggleCollapsed(): void;
@@ -46,6 +64,12 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
 
   return (
     <nav
+      /* The id is what the edge chevron's `aria-controls` points at. It used
+         to point at `home-view-list` — column A — which this screen no longer
+         draws; a control that names a missing region is worse than one that
+         names none, because a screen reader announces the relationship and
+         then finds nothing on the other end. */
+      id="home-rail"
       className={`hr-rail${collapsed ? ' hr-rail--collapsed' : ''}`}
       aria-label="Entity lists"
       data-testid="home-rail"
@@ -56,6 +80,10 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
           The owner, pointing at it (2026-08-30): "I DONT NEED THIS MAN".
           The rail's own rows already say what the rail is. */}
       <div className="hr-rail__scroll">
+        {/* THE HOME ROW IS GONE (2026-08-31) — see `onHome`'s note above. This
+          rail is a list of KINDS and a Home row was never one of them; the top
+          bar's Home tab is the single door to the dashboard, verified on the
+          deployed build before this came out. */}
         {groups.map((group) => (
           <div
             key={group.id}

@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { IdentityView } from '../data/seam';
+import { LOGIN } from './specimen';
 import {
   AUTH_FRAMES,
   AuthBoard,
@@ -251,13 +252,23 @@ describe('what IS real, is real', () => {
     expect(row.textContent).not.toMatch(/\b\d+\b/);
   });
 
-  it('1d switches between the password and token halves — both are drawn', () => {
+  /**
+   * THE TOKEN HALF IS GONE, BY RULING, and this test now guards its absence.
+   *
+   * It used to assert the switch between the password and token halves. The
+   * owner removed the token path from the sign-in page (2026-08-31) on the
+   * ground it never worked: no operation on this node redeems a pasted token,
+   * so the half existed only to refuse. Deleting the test with the feature
+   * would have left nothing watching, and a control this easy to re-add by
+   * accident deserves a guard — so the assertion is INVERTED rather than
+   * dropped. `SIGN_IN_TOKEN` itself stays in `reasons.ts`: the day a redeem
+   * operation lands, the reason and this test are what get revisited.
+   */
+  it('1d draws the password half only — the token half was ruled off the page', () => {
     render(<AuthFlow frame="1d" onDone={() => {}} />);
-    expect(screen.getByText('PASSWORD')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /use an access token instead/i }));
-    expect(screen.getByText('ACCESS TOKEN')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /use a password instead/i }));
-    expect(screen.getByText('PASSWORD')).toBeTruthy();
+    expect(screen.getByText(LOGIN.passwordLabel)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /use an access token instead/i })).toBeNull();
+    expect(screen.queryByText(/access token/i)).toBeNull();
   });
 
   it('1b derives the rail tile glyph from the typed name, live', () => {

@@ -756,6 +756,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                mismatched shape, which is the same blindness that let `rowsFor`
                ignore its filter for so long. The signatures line up on their
                own now. */
+            /* The kind's universe — bounds every lifecycle bucket (`bucketCountLabel`).
+             The aggregate the rail already draws; no new read. */
+          kindTotal={data.countsFor(leftKind)?.total}
             rowsFor={data.rowsFor(leftKind)}
             pageStateOf={data.pageStateOf(leftKind)}
             loadMore={data.loadMore(leftKind)}
@@ -900,6 +903,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           <EntityListPanel
             kind={rightKind}
               selectorSlot="host"
+            /* The kind's universe — bounds every lifecycle bucket (`bucketCountLabel`).
+             The aggregate the rail already draws; no new read. */
+          kindTotal={data.countsFor(rightKind)?.total}
             rowsFor={data.rowsFor(rightKind)}
             pageStateOf={data.pageStateOf(rightKind)}
             loadMore={data.loadMore(rightKind)}

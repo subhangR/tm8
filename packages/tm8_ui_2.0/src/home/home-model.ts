@@ -32,7 +32,13 @@
  * composes the same meaning from facts BOTH implementations honour. See
  * HANDOVER.md GAPS.
  */
-import type { ActorSummary, EntitySummary, NotificationItem } from '@tm8/contract';
+import type {
+  ActorSummary,
+  EntityBadges,
+  EntityCounters,
+  EntitySummary,
+  NotificationItem,
+} from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import { allKinds, getKind } from '../domain';
 import type { KindConfig, StatusSource } from '../domain/types';
@@ -143,6 +149,50 @@ export interface HomeRow {
    * in a way "60%" of an unknown whole is not.
    */
   turns?: number;
+  /**
+   * WHAT SPAWNED THIS — the summary's own `parentId`, passed through untouched.
+   *
+   * A session's parent is ANOTHER SESSION (agents spawn agents), and the
+   * lineage is real today: measured on the live space, `01a04f57-…` has one
+   * child, `01a04f5a-…`, which carries the parent id back. It is depth two and
+   * one child wide RIGHT NOW and it will get deeper, so nothing downstream may
+   * assume two levels.
+   *
+   * NO SECOND READ. This is a field the summary already carries in the SAME
+   * response the row is projected from — no per-card fetch, no graph query.
+   * If the parent is not in the result set the screen says so honestly rather
+   * than naming a title it cannot resolve (`HomePage.lineageOf`).
+   *
+   * Present for EVERY kind, not just sessions: a task can have a parent task
+   * and the projection has no business deciding which hierarchies are
+   * interesting. Absent when the summary says `null` — absence is not a claim.
+   */
+  parentId?: string;
+  /**
+   * WHAT THIS ENTITY CARRIES — the summary's own `counters`, passed through
+   * whole (owner, 2026-08-31, on the mobile task list: "ee links line add it,
+   * we can know the edges for each of the entity — gives more information at
+   * one glance").
+   *
+   * NOT A DERIVED SET. `turns` above is `counters.messages` picked out for the
+   * one card that wanted a number; this is the same object, unpicked, so the
+   * badge row can render EXACTLY what the entity list already renders from it
+   * (`panels/list/TileCountBadges`). Two surfaces reading one field cannot
+   * disagree about how many docs a task has.
+   *
+   * NO PORT WAS WIDENED. `homeRowOf` already reads `summary.counters` — the
+   * data has been in hand all along and only `messages` was being kept.
+   *
+   * THE TWO HONESTY RULES LIVE IN THE BADGE COMPONENT AND ARE NOT RE-STATED
+   * HERE: a ZERO renders nothing, and an ABSENT counter (a server that predates
+   * the column) renders nothing either, because "this server never counted" is
+   * not "there are none". Passing the object through unmodified is what keeps
+   * both of those decisions in the one place that makes them.
+   */
+  counters?: EntityCounters;
+  /** The badge facts beside the counters — `humanMessageAuthors` is what tells
+   *  the message tally a human wrote some of them. Same pass-through rule. */
+  badges?: EntityBadges;
 }
 
 export interface HomeRowOpts {
@@ -169,11 +219,20 @@ export interface HomeRowOpts {
  * something false about the session; a card that draws nothing states nothing.
  * The same rule the strips follow — absence is not a claim.
  */
-function factsOf(summary: EntitySummary): Pick<HomeRow, 'activityAt' | 'turns'> {
+function factsOf(
+  summary: EntitySummary,
+): Pick<HomeRow, 'activityAt' | 'turns' | 'parentId' | 'counters' | 'badges'> {
   const turns = summary.counters?.messages;
   return {
     ...(summary.activityAt ? { activityAt: summary.activityAt } : {}),
     ...(typeof turns === 'number' && turns > 0 ? { turns } : {}),
+    /* THE LINEAGE RIDES WITH THE FACTS, and here rather than in each arm of
+       `homeRowOf` for the same reason `activityAt` does: three arms return a
+       row, and a fact added to two of them is a fact that disappears when a
+       session's verdict changes. */
+    ...(summary.parentId ? { parentId: summary.parentId } : {}),
+    ...(summary.counters ? { counters: summary.counters } : {}),
+    ...(summary.badges ? { badges: summary.badges } : {}),
   };
 }
 
@@ -366,8 +425,21 @@ export function composeMyWork(input: ComposeInput): MyWork {
   // the same entities and open the same Z3 panel. Rows already surfaced above
   // are not repeated; one fact, one place on the screen.
   const shownAbove = new Set(needsYou.map((r) => r.id));
+  /* FINISHED WORK IS NOT CURRENT WORK.
+   *
+   * The first render of this strip put a task marked `done` above one marked
+   * `open`, under a heading the owner reads as "what I am working on". The
+   * filter is the entity's own `category` — the closed four, identical on
+   * every kind — and NOT a status word, which is per-kind and would make this
+   * line a second place that decides what "finished" means.
+   *
+   * A summary with NO category is KEPT. Absent is not `done`, and dropping a
+   * row because a field did not arrive hides work rather than tidying it —
+   * the same rule the strips follow about empty arrays.
+   */
   const tasks = input.myTasks
     .filter((row) => !shownAbove.has(row.id))
+    .filter((row) => row.category !== 'done' && row.category !== 'cancelled')
     .map((row) => homeRowOf(row, { compact }));
 
   const liveCount = live.filter((row) => row.dot === 'pulse' || row.dot === 'solid').length;

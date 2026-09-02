@@ -10,6 +10,7 @@
  * what makes the lie unbuildable.
  */
 import { useState, type ReactNode } from 'react';
+import { RibbonMark } from '../kit';
 import { useReasonDisclosure } from '../panels/honesty/useReasonDisclosure';
 import {
   AuthAction,
@@ -27,6 +28,7 @@ import {
   AuthStage,
   AuthTitle,
 } from './AuthCard';
+import { SignInPage } from './SignInPage';
 import { useAuthActions } from './gate-context';
 import { canUseLoopbackAutoOwner, readActiveServerId } from '../servers/server-key';
 import { failureCopy, signInFailureLead } from './failures';
@@ -42,6 +44,62 @@ import {
 import type { FrameProps } from './types';
 
 /**
+ * The sign-in's brand panel.
+ *
+ * Lives here, not in `AuthCard`, because it is COPY and copy belongs to the
+ * frame — `AuthCard` owns geometry and would otherwise start owning words.
+ *
+ * The 8 DOES NOT TURN. `RibbonMark` reserves motion for transient waits and
+ * says why: a mark that sits for the session burns a rAF forever and asks the
+ * eye to track something that never resolves. Measured worse than that here —
+ * a turning ribbon is caught edge-on every few seconds and reads as a broken
+ * sliver, which is not a thing a front door should do to a logo. The splash
+ * turns; this holds its rest pose.
+ *
+ * The kind chips wear their registry hues. The gate is the first screen anyone
+ * sees and it was the last one still rendering entirely in grey.
+ */
+const BRAND_KIND_INK = [
+  'var(--color-icon-teal)',
+  'var(--pn-run)',
+  'var(--color-icon-cyan)',
+  'var(--color-icon-purple)',
+] as const;
+
+function SignInBrand({ endpoint }: { endpoint: string | null }) {
+  return (
+    <>
+      <div className="auth-split__field" aria-hidden="true" />
+      <div className="auth-split__top">
+        <span className="auth-split__dot" aria-hidden="true" />
+        <span className="auth-split__topline">{SERVER.localTop}</span>
+      </div>
+      <div className="auth-split__hero">
+        <div className="auth-split__mark">
+          <span className="auth-split__letters">tm</span>
+          <RibbonMark className="auth-split__ribbon" layout="wordmark" animated={false} />
+        </div>
+        <p className="auth-split__lead">{LOGIN.brandLead}</p>
+        <div className="auth-split__kinds">
+          {LOGIN.brandKinds.map((kind, i) => (
+            <span className="auth-split__kind" key={kind} style={{ color: BRAND_KIND_INK[i] }}>
+              <i className="auth-split__kinddot" aria-hidden="true" />
+              {kind}
+            </span>
+          ))}
+        </div>
+      </div>
+      {/* THE HOST THIS BROWSER IS ACTUALLY POINTED AT. It read
+          `SERVER.localEndpoint` first, which is the words "account on this
+          server" — true, but it was already the tile's subtitle two panels
+          over, so the footer was repeating a line rather than adding a fact.
+          `location.host` is the one thing here nobody has to be told. */}
+      <div className="auth-split__foot">{endpoint ?? ''}</div>
+    </>
+  );
+}
+
+/**
  * 1d — Login. Oracle L100–L126.
  *
  * The oracle exposes password-vs-token as a canvas TWEAK (`authPrimary`, the
@@ -52,35 +110,28 @@ import type { FrameProps } from './types';
  * mirror at L119. So both halves ship and the link is the switch.
  */
 export function FrameLogin(_props: FrameProps) {
-  const [mode, setMode] = useState<'password' | 'token'>('password');
   const actions = useAuthActions();
   const [handle, setHandle] = useState(() => actions?.account?.handle ?? '');
   const [password, setPassword] = useState('');
-  const [show, setShow] = useState(false);
   const failure = actions?.failure;
 
-  const submit = () => void actions?.signIn(handle, password);
-
-  // The tile must name the server actually being signed into, not the
-  // oracle's specimen — the pass this mints is per server, and a viewer
-  // pointed at a named connection is authenticating THERE.
+  // The tile must name the server actually being signed into, not the oracle's
+  // specimen — the pass this mints is per server, and a viewer pointed at a
+  // named connection is authenticating THERE.
   const serverId = actions ? readActiveServerId() : null;
-  const mayCreateAccount = Boolean(actions && serverId && canUseLoopbackAutoOwner(
-    serverId,
-    globalThis.location?.hostname ?? '',
-  ));
+  const mayCreateAccount = Boolean(
+    actions && serverId && canUseLoopbackAutoOwner(serverId, globalThis.location?.hostname ?? ''),
+  );
 
   return (
-    <AuthStage meta={actions ? SERVER.localMeta : SERVER.secureMeta}>
-      <AuthCard>
-        <AuthServerTile
-          glyph={serverId ? serverId[0]!.toUpperCase() : SERVER.glyph}
-          name={serverId ?? SERVER.name}
-          meta={actions ? SERVER.localEndpoint : SERVER.endpoint}
-        />
-        <AuthTitle>{LOGIN.title}</AuthTitle>
-
-        {failure && mode === 'password' ? (
+    <SignInPage
+      serverName={serverId ?? (actions ? null : SERVER.name)}
+      serverMeta={actions ? SERVER.localMeta : SERVER.secureMeta}
+      handle={actions ? handle : LOGIN.handle}
+      password={actions ? password : ''}
+      busy={Boolean(actions?.busy)}
+      failure={
+        failure ? (
           <AuthFailureBanner>
             <b className="auth-alert__lead">{failureCopy(failure).lead}</b>
             {failure.kind === 'bad-credentials' ? (
@@ -93,102 +144,13 @@ export function FrameLogin(_props: FrameProps) {
               failureCopy(failure).body
             )}
           </AuthFailureBanner>
-        ) : null}
-
-        {mode === 'password' ? (
-          <div className="auth-stack">
-            {actions ? (
-              <>
-                <AuthField label="HANDLE" value={handle} onChange={setHandle} />
-                <AuthField
-                  label="PASSWORD"
-                  type={show ? 'text' : 'password'}
-                  value={password}
-                  onChange={setPassword}
-                  state={failure?.kind === 'bad-credentials' ? 'error' : 'idle'}
-                  trailing={
-                    <button
-                      type="button"
-                      className="auth-field__show"
-                      data-nav="reveal"
-                      onClick={() => setShow((v) => !v)}
-                    >
-                      {show ? 'hide' : 'show'}
-                    </button>
-                  }
-                />
-                <AuthAction onClick={submit}>
-                  {actions.busy ? LOGIN.busyAction : LOGIN.passwordAction}
-                </AuthAction>
-              </>
-            ) : (
-              <>
-                <AuthField label="HANDLE" value={LOGIN.handle} />
-                <AuthField
-                  label="PASSWORD"
-                  type="password"
-                  value={LOGIN.password}
-                  trailing={<span className="auth-field__show">show</span>}
-                />
-                <AuthAction reason={SIGN_IN_PASSWORD}>{LOGIN.passwordAction}</AuthAction>
-              </>
-            )}
-            <div className="auth-switch">
-              <button
-                type="button"
-                className="auth-link"
-                data-nav="mode"
-                onClick={() => setMode('token')}
-              >
-                {LOGIN.toToken}
-              </button>
-              {/* THE SECOND PATH, user-ordered, is truthful only where an
-                  unauthenticated signup can actually run: the local loopback
-                  auto-owner path. Remote and relayed nodes require operator
-                  provisioning, so advertising this there leads to a refusal
-                  the viewer cannot resolve. */}
-              {mayCreateAccount ? (
-                <>
-                  <span className="auth-switch__sep" aria-hidden>
-                    ·
-                  </span>
-                  <button
-                    type="button"
-                    className="auth-link"
-                    data-nav="frame"
-                    onClick={() => _props.onFrameChange?.('1a')}
-                  >
-                    {LOGIN.toCreateAnother}
-                  </button>
-                </>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <div className="auth-stack">
-            <AuthField label="ACCESS TOKEN" value={LOGIN.token} mono hint={LOGIN.tokenHint} />
-            <AuthAction reason={SIGN_IN_TOKEN}>{LOGIN.tokenAction}</AuthAction>
-            <div className="auth-switch">
-              <button
-                type="button"
-                className="auth-link"
-                data-nav="mode"
-                onClick={() => setMode('password')}
-              >
-                {LOGIN.toPassword}
-              </button>
-            </div>
-          </div>
-        )}
-
-        <AuthRule />
-        {/* Board keeps the oracle footer; the live gate must not: "forge" is a
-            specimen server name and "flow C" is reviewer vocabulary, and both
-            were being shown to real signed-out viewers. `gateFooter` says what
-            is true of THIS node instead. */}
-        <AuthFootnote>{actions ? LOGIN.gateFooter : LOGIN.footer}</AuthFootnote>
-      </AuthCard>
-    </AuthStage>
+        ) : null
+      }
+      onHandle={actions ? setHandle : null}
+      onPassword={actions ? setPassword : null}
+      onSubmit={actions ? () => void actions.signIn(handle, password) : null}
+      onCreateAccount={mayCreateAccount ? () => _props.onFrameChange?.('1a') : null}
+    />
   );
 }
 
@@ -215,7 +177,7 @@ export function FrameLoginFailed(_props: FrameProps) {
           exists to have produced them
         </AuthSpecimenNote>
 
-        <AuthField label="HANDLE" value={LOGIN.handle} />
+        <AuthField label={LOGIN.handleLabel} value={LOGIN.handle} />
         <AuthField
           label={LOGIN_FAILED.fieldLabel}
           type="password"

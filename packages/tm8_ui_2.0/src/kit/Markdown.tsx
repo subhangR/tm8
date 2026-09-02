@@ -2,6 +2,7 @@ import type { ComponentPropsWithoutRef, ComponentType } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Mermaid } from './Mermaid';
+import { VectorIcon } from './VectorIcon';
 // Imported HERE rather than by the app bootstrap so any surface that renders
 // markdown gets its vocabulary with it, and none can end up half-styled.
 import './markdown.css';
@@ -103,6 +104,155 @@ function fileRefIn(src: string): string | null {
 function urlTransform(url: string, key: string, node: { tagName?: string }): string | null {
   if (key === 'src' && node.tagName === 'img' && /^(tm8|data):/i.test(url.trim())) return url;
   return defaultUrlTransform(url);
+}
+
+/* ==========================================================================
+   CALLOUTS — the one structure real documents in this space were already
+   writing and the renderer had no word for.
+
+   THE MEASUREMENT THAT PRODUCED THIS (2026-08-31, 40 docs read out of the live
+   space): not one document used `> [!NOTE]`, and several were using a plain
+   blockquote to carry a warning that is not a quotation at all. `DESIGN 1 —
+   Harness registry` opens with
+
+       > **STATUS BANNER — added 22 Aug 2026 during the build of this task.**
+       > **Every count in §1 is stale.** … nothing below should be trusted
+
+   which rendered as grey ITALIC text behind a 2px hairline — visually
+   identical to someone being quoted, and set in the least legible face in the
+   sheet for the twelve lines it runs to. The author had no other vocabulary.
+   Zero alert usage is therefore evidence of a MISSING FEATURE, not of an
+   unwanted one: nobody writes syntax that renders as nothing.
+
+   GitHub's spelling is the one adopted rather than an invented one, because it
+   is the spelling every author here has already seen, and because a document
+   written for tm8 should not read as broken anywhere else. `remark-gfm` does
+   NOT implement alerts — they are a GitHub extension on top of GFM — so the
+   transform below is ours, and it is deliberately a REMARK plugin rather than
+   a component that sniffs its own children: at mdast the marker is one text
+   node we can delete, and after render it is a string spliced through
+   React children that cannot be edited without re-implementing the parser.
+
+   THE TONE IS THE MEANING. Five tones, each bound to the token the rest of the
+   package already uses for that state — info, run, brand, wait, block — so the
+   colour of a callout answers "what kind of callout is this" before a word is
+   read. There is no sixth tone and no author-chosen colour: colour that can be
+   picked is decoration, and decoration is what the ruling above bans.
+   ========================================================================== */
+
+/** The five GitHub alert kinds, in GitHub's own order of escalation. */
+const CALLOUT_TONES = ['note', 'tip', 'important', 'warning', 'caution'] as const;
+type CalloutTone = (typeof CALLOUT_TONES)[number];
+
+/** The word the callout wears. Capitalised prose, not a shouted token. */
+const CALLOUT_WORD: Record<CalloutTone, string> = {
+  note: 'Note',
+  tip: 'Tip',
+  important: 'Important',
+  warning: 'Warning',
+  caution: 'Caution',
+};
+
+/**
+ * The mark, as GEOMETRY on `VectorIcon`'s 16×16 grid — not a text character
+ * and not an emoji.
+ *
+ * This is the package's standing ruling applied ("a glyph must mean something")
+ * plus `VectorIcon`'s own argument: at 14px a run of pictographic characters
+ * lands on five different optical baselines and half of them resolve to the
+ * same blob. Each mark here carries exactly one fact — WHICH of the five kinds
+ * this callout is — which is the same fact the tone colour carries, said again
+ * for a reader who cannot separate the hues.
+ */
+const CALLOUT_ART: Record<CalloutTone, readonly string[]> = {
+  // an i in a circle
+  note: ['M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8Z', 'M8 7.4v3.6', 'M8 5h.01'],
+  // a lamp over its base
+  tip: ['M8 1.7a4.1 4.1 0 0 0-2.5 7.4c.4.3.6.8.6 1.3h3.8c0-.5.2-1 .6-1.3A4.1 4.1 0 0 0 8 1.7Z', 'M6.3 12.4h3.4', 'M6.9 14.2h2.2'],
+  // a bookmark — this is the part to keep
+  important: ['M4.2 2.2h7.6v11.6L8 11.1l-3.8 2.7V2.2Z'],
+  // a triangle with a bang
+  warning: ['M8 2.1 1.5 13.5h13L8 2.1Z', 'M8 6.3v3.3', 'M8 11.5h.01'],
+  // an octagon with a bang — the stop sign, not a second triangle
+  caution: ['M5.7 1.8h4.6L14.2 5.7v4.6L10.3 14.2H5.7L1.8 10.3V5.7L5.7 1.8Z', 'M8 5.1v3.5', 'M8 10.8h.01'],
+};
+
+/** `[!NOTE]` on the blockquote's first line, with the line ending it owns. */
+const CALLOUT_MARKER = /^\[!(note|tip|important|warning|caution)\][ \t]*(?:\r?\n|$)/i;
+
+/**
+ * The mdast shapes this transform touches. Declared locally rather than
+ * imported from `@types/mdast` because the plugin needs exactly four fields and
+ * a structural type keeps `kit` free of a types-only dependency it would
+ * otherwise carry into every consumer's build.
+ */
+interface MdNode {
+  type: string;
+  value?: string;
+  children?: MdNode[];
+  data?: { hName?: string; hProperties?: Record<string, unknown> };
+}
+
+/**
+ * THE TONE RIDES IN THE CLASS, NOT IN A `data-` ATTRIBUTE, and that is a
+ * correctness choice rather than a style one. `hProperties` is copied to hast
+ * verbatim, and how a `data-*` key survives the hast → JSX hop is an
+ * implementation detail of two libraries below us. `className` is the one
+ * property whose journey is specified end to end and typed on the component
+ * that receives it, so the override below can read the tone back without
+ * guessing. The `data-tone` the CSS actually keys on is written by us, in JSX,
+ * where it cannot be normalised away.
+ */
+function remarkCallouts() {
+  return (tree: MdNode) => {
+    visitBlockquotes(tree);
+  };
+}
+
+function visitBlockquotes(node: MdNode) {
+  const kids = node.children;
+  if (kids === undefined) return;
+  for (const kid of kids) {
+    if (kid.type === 'blockquote') markCallout(kid);
+    visitBlockquotes(kid);
+  }
+}
+
+function markCallout(quote: MdNode) {
+  const para = quote.children?.[0];
+  if (para === undefined || para.type !== 'paragraph') return;
+  const lead = para.children?.[0];
+  if (lead === undefined || lead.type !== 'text' || typeof lead.value !== 'string') return;
+  const match = CALLOUT_MARKER.exec(lead.value);
+  if (match === null) return;
+  const tone = match[1].toLowerCase();
+
+  /* The marker is REMOVED, not hidden. Leaving `[!NOTE]` in the rendered text
+     under a heading that already says "Note" is the placeholder problem in
+     miniature: the reader is shown the syntax and the thing it produced. */
+  lead.value = lead.value.slice(match[0].length);
+  if (lead.value === '' && para.children !== undefined) {
+    para.children.shift();
+    /* `> [!NOTE]␠␠` + a body line is a HARD break, which survives as its own
+       node; with the marker gone it would open the callout on a blank line. A
+       SOFT break needs nothing — mdast keeps it inside the text value, and the
+       regex above consumed it. */
+    if (para.children[0]?.type === 'break') para.children.shift();
+    if (para.children.length === 0) quote.children?.shift();
+  }
+
+  const before = quote.data?.hProperties ?? {};
+  quote.data = {
+    ...(quote.data ?? {}),
+    hProperties: { ...before, className: ['md-callout', `md-callout--${tone}`] },
+  };
+}
+
+function calloutToneIn(className: string | undefined): CalloutTone | null {
+  if (className === undefined) return null;
+  const classes = className.split(/\s+/);
+  if (!classes.includes('md-callout')) return null;
+  return CALLOUT_TONES.find((t) => classes.includes(`md-callout--${t}`)) ?? null;
 }
 
 /**
@@ -291,6 +441,36 @@ const COMPONENTS: Components = {
       </a>
     );
   },
+  /**
+   * A QUOTE OR A CALLOUT — the class the remark transform above left decides,
+   * and a blockquote it did not touch is still an ordinary blockquote. That
+   * fall-through is the whole reason the tone is required rather than defaulted:
+   * `> quoted text` must keep reading as a quotation, and a callout must never
+   * be something a reader gets by accident.
+   */
+  blockquote({ node: _node, className, children, ...rest }) {
+    const tone = calloutToneIn(className);
+    if (tone === null) {
+      return (
+        <blockquote className={className} {...rest}>
+          {children}
+        </blockquote>
+      );
+    }
+    return (
+      <blockquote className="md-callout" data-tone={tone} data-testid="markdown-callout" {...rest}>
+        {/* The word AND the mark, never the mark alone: a coloured triangle is
+            not a word, and a reader who cannot separate wait from block gets
+            nothing from the hue. The icon carries no accessible name for the
+            same reason — the word beside it already says it. */}
+        <p className="md-callout__title">
+          <VectorIcon paths={CALLOUT_ART[tone]} size={14} />
+          <span>{CALLOUT_WORD[tone]}</span>
+        </p>
+        {children}
+      </blockquote>
+    );
+  },
   table({ children, ...rest }) {
     // Wrapped so a wide table scrolls inside its own box rather than forcing
     // the whole reading column sideways.
@@ -332,7 +512,7 @@ export function Markdown({ source, className, testId = 'markdown', fileHref, com
   return (
     <div className={className ? `md-root ${className}` : 'md-root'} data-testid={testId}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkCallouts]}
         components={componentsFor(source, fileHref, components)}
         urlTransform={urlTransform}
       >

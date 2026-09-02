@@ -44,6 +44,9 @@ export const SERVER = {
      was implementation vocabulary shown to somebody about to type a password. */
   localMeta: 'sign in to this tm8 server',
   localEndpoint: 'account on this server',
+  /* GATE COPY — the brand panel's status line. A fact about WHERE this node
+     is, which is the one thing a sign-in screen can honestly boast about. */
+  localTop: 'running on this machine',
 } as const;
 
 /** 1a — the claim step. Oracle L39–L44. */
@@ -174,8 +177,55 @@ export const LOGIN = {
      signed-out viewer should be shown. The live gate says what is actually
      true of THIS node: sign-in mints a session (auth.login), and a new
      account here is a node-admin act, not self-serve. */
-  gateFooter:
-    'No self-serve signup here — a node admin creates accounts. Signing in starts a session on this node (auth.login).',
+  gateFooter: 'You can’t sign yourself up. An admin creates accounts on this server.',
+  /* GATE COPY — the field labels. The oracle says HANDLE because @amber is a
+     handle in its world; the owner's ruling is that the front door uses the
+     word people arrive with. `handle` survives everywhere inside the app,
+     where it is the thing that actually distinguishes an @mention. */
+  handleLabel: 'Username',
+  passwordLabel: 'Password',
+  handlePlaceholder: 'your username',
+  /* GATE COPY — the brand panel. Short and plain by ruling: the previous draft
+     read as marketing, and a sign-in screen is not the place to sell. Says what
+     the workspace holds and who works in it, nothing more. */
+  brandLead:
+    'Tasks, sessions, chats and docs in one place. Your people and your agents work on the same things.',
+  /* GATE COPY — the product panel, transcribed from the owner's design. The
+     module blurbs are the design's own words; only "Cross-model Multi-Agent"
+     keeps its NEW badge, because it is the one module the design badges. */
+  eyebrow: 'PEOPLE · AGENTS · MODELS · WORK',
+  headlineA: 'Work better,',
+  headlineB: 'together.',
+  blurb:
+    'Bring your team, tools and AI agents together in one intelligent workspace built for teams and individuals.',
+  modules: [
+    { key: 'task', title: 'Tasks', text: 'Plan, assign and track work with clear ownership.' },
+    { key: 'work_session', title: 'Sessions', text: 'Run focused sessions and capture every outcome.' },
+    { key: 'message', title: 'Chats', text: 'Keep people and agents aligned in real time.' },
+    { key: 'collab', title: 'Collab', text: 'Co-create across people, teams and shared projects.' },
+    {
+      key: 'multiAgent',
+      title: 'Cross-model Multi-Agent',
+      text: 'Orchestrate multiple AI models and agents together.',
+      badge: 'NEW',
+    },
+    { key: 'doc', title: 'Docs', text: 'Create, store and find durable knowledge.' },
+  ] as const,
+  audience: [
+    { key: 'team', title: 'Built for teams', text: 'Scale collaboration across your organization.' },
+    {
+      key: 'individual',
+      title: 'Built for individuals',
+      text: 'A powerful workspace that grows with you.',
+    },
+  ] as const,
+  subtitle: 'Use the same credentials you already use for tm8.',
+  passwordPlaceholder: 'your password',
+  forgot: 'Forgot password?',
+  newHere: 'New to tm8?',
+  orContinue: 'or continue with',
+  providers: ['GitHub', 'Git', 'Google'] as const,
+  brandKinds: ['Tasks', 'Sessions', 'Chats', 'Docs'] as const,
 } as const;
 
 /**

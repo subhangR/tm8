@@ -87,6 +87,38 @@ export const SIGN_IN_PASSWORD: UnavailableReason = {
   remedy: 'this surface renders outside the auth gate and has no executor — inside the gate this verb performs auth.login and stores the tm8s_ pass per server',
 };
 
+/**
+ * 1d — the third-party providers.
+ *
+ * MEASURED, NOT ASSUMED. The server publishes exactly ten auth operations:
+ * `auth.claim`, `auth.claim.reissue`, `auth.claim.status`, `auth.invite.resolve`,
+ * `auth.invite.signup`, `auth.login`, `auth.logout`, `auth.password.change`,
+ * `auth.session.get`, `auth.signup`. None of them is an OAuth exchange, and
+ * there is no redirect endpoint behind any provider. The supplied design ships
+ * these three live, pointed at `/api/auth/oauth/<provider>`, which on this node
+ * is a 404 — so they render, at full fidelity, refusing.
+ */
+export const SIGN_IN_OAUTH: UnavailableReason = {
+  cause: 'No third-party sign-in on this server',
+  remedy:
+    'this node publishes ten auth operations and none of them is an OAuth exchange — sign in with the username and password an admin issued you',
+};
+
+/**
+ * 1d — the forgot-password link.
+ *
+ * The absence here is DELIBERATE and documented upstream: the contract catalog
+ * says `auth.password.change` "demands the CURRENT password" and that a
+ * reset-without-the-old-password path is omitted on purpose, because it needs
+ * an out-of-band channel this node does not have. So the link is not missing
+ * pending work; it is refused, and the remedy names who can actually help.
+ */
+export const FORGOT_PASSWORD: UnavailableReason = {
+  cause: 'No self-serve password reset here',
+  remedy:
+    'the only password operation here is auth.password.change, which demands the current password — with no email channel on this node a reset goes through an admin, who can set a new one under Members',
+};
+
 /** 1d — sign in with an access token. */
 export const SIGN_IN_TOKEN: UnavailableReason = {
   cause: 'Token sign-in isn’t connected',
@@ -232,6 +264,8 @@ export const ALL_AUTH_REASONS: readonly UnavailableReason[] = [
   NAME_SERVER,
   CREATE_SPACE,
   SIGN_IN_PASSWORD,
+  SIGN_IN_OAUTH,
+  FORGOT_PASSWORD,
   SIGN_IN_TOKEN,
   SIGN_IN_RETRY,
   REAUTH,

@@ -20,7 +20,7 @@
  * `livenessOf`, which is THE verdict and is never recomputed here.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { EntitySummary, NotificationItem } from '@tm8/contract';
+import type { ChatThreadSummary, EntitySummary, NotificationItem } from '@tm8/contract';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { getKind } from '../domain';
 import { activityRowOf, appendActivity, type ActivityRow } from './home-activity';
@@ -33,7 +33,16 @@ import { assignableKinds, liveKinds } from './home-model';
  */
 export interface HomeScreenData {
   spaceId: string;
-  seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent'>;
+  /**
+   * `home` joins the narrow port so Home can read its own CHAT THREADS.
+   *
+   * It has to. The owner removed the middle column (2026-08-30) and that column
+   * was the ONLY way to pick a conversation — so the list that replaces it must
+   * carry chats, and a list cannot carry what the port cannot read. `GateData`
+   * already satisfies this structurally; nothing new is fetched that the chat
+   * surface was not already fetching.
+   */
+  seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent'> & Partial<Pick<Seam, 'home'>>;
   /** Verbatim from the seam snapshot — the ONLY source for a live count. */
   liveIds: readonly string[];
   /** THE verdict (R-UI-5). Never derived in this directory. */
@@ -63,6 +72,54 @@ export interface HomeData {
   myTasks: readonly EntitySummary[];
   /** assignee = me, in the registry's review status. */
   myReview: readonly EntitySummary[];
+  /** Conversations in this space. NULL = not answered yet; [] = none. */
+  chatThreads: readonly ChatThreadLite[] | null;
+}
+
+/**
+ * THE MINIMUM A CHAT ROW NEEDS, and nothing more.
+ *
+ * The seam's thread objects are wider than this. Naming only what the strip
+ * draws keeps Home from growing a dependency on fields it does not render —
+ * the same reason `ListRowFacts` is deliberately narrow next door.
+ */
+export interface ChatThreadLite {
+  id: string;
+  title?: string | null;
+  activityAt?: string | null;
+  messageCount?: number | null;
+}
+
+/**
+ * THE CONTRACT'S NAMES ARE NOT THIS SCREEN'S NAMES, AND THE TRANSLATION HAS TO
+ * BE WRITTEN DOWN.
+ *
+ * This was `snapshot as { chatThreads?: ChatThreadLite[] }` — a cast asserting
+ * that the contract's threads already had `id`, `activityAt` and
+ * `messageCount`. They have none of the three. `ChatThreadSummary` carries
+ * `rootMessageId`, `lastReplyAt`/`createdAt` and `replyCount`, so every chat
+ * row reached the strip with `id === undefined`, which:
+ *
+ *   - collapsed sixty threads onto ONE React key (`chats-undefined`), so the
+ *     top-ten split seated one chat and every other chat rode in on its key —
+ *     sixty-three cards where ten were asked for, and no tail at all;
+ *   - made `onOpen(row.id)` a no-op, so a chat card was never clickable;
+ *   - left every chat with no time, which the screen drew as a blank rather
+ *     than as the wrong field it was.
+ *
+ * A cast is an assertion the compiler is told not to check. This one was
+ * wrong in three fields at once and nothing said so — which is the argument
+ * for mapping explicitly rather than asserting.
+ */
+export function chatRowOf(thread: ChatThreadSummary): ChatThreadLite {
+  return {
+    id: thread.rootMessageId,
+    title: thread.title ?? null,
+    /* The thread's last sign of life, falling back to its birth — a thread
+       nobody has replied to is not a thread with no time. */
+    activityAt: thread.lastReplyAt ?? thread.createdAt,
+    messageCount: thread.replyCount ?? null,
+  };
 }
 
 /**
@@ -90,6 +147,10 @@ export function useHomeData(data: HomeScreenData): HomeData {
   const [notifications, setNotifications] = useState<readonly NotificationItem[] | null>(null);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [activityRows, setActivityRows] = useState<readonly ActivityRow[]>([]);
+  /** NULL until the read answers — distinct from `[]`, which means "answered,
+      and there are none". A list that cannot tell those apart draws "no chats"
+      at the moment it knows nothing. */
+  const [chatThreads, setChatThreads] = useState<readonly ChatThreadLite[] | null>(null);
 
   // -- identity -------------------------------------------------------------
   useEffect(() => {
@@ -110,6 +171,32 @@ export function useHomeData(data: HomeScreenData): HomeData {
       })
       .catch((error: unknown) => {
         if (!cancelled) setViewerError(messageOf(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [seam, spaceId]);
+
+  // -- chat threads ---------------------------------------------------------
+  // The same `spaces.home` read the chat surface makes. A failure leaves the
+  // list at NULL rather than empty: the strip then says nothing instead of
+  // claiming the space has no conversations.
+  useEffect(() => {
+    /* OPTIONAL ON THE PORT, ON PURPOSE. A host that does not serve `home` is
+       not broken — it is a host without conversations, and Home renders the
+       rest of itself rather than throwing. Widening the required port turned
+       four passing tests into `seam.home is not a function`, which is the
+       port telling the truth: not every caller has this. */
+    const read = seam.home;
+    if (typeof read !== 'function') { setChatThreads(null); return; }
+    let cancelled = false;
+    void read(spaceId)
+      .then((snapshot) => {
+        if (cancelled) return;
+        setChatThreads((snapshot.chatThreads ?? []).map(chatRowOf));
+      })
+      .catch(() => {
+        if (!cancelled) setChatThreads(null);
       });
     return () => {
       cancelled = true;
@@ -177,6 +264,7 @@ export function useHomeData(data: HomeScreenData): HomeData {
     sessionPool,
     myTasks,
     myReview,
+    chatThreads,
   };
 }
 

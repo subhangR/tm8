@@ -38,7 +38,14 @@
 }
 .cv2-root .shell-tabbar__mark {
   font-family: var(--pn-mono);
-  font-size: 11.5px;
+  /* 11.5px -> 17px (owner, 2026-08-31: "tm8 logo ... might be a bit bigger").
+     ONE NUMBER, because the ribbon that draws the 8 is sized in `em` off this
+     line — `kit-brandmark__eight` is `0.93em` tall with its width derived from
+     the design box — so the letters and the glyph cannot drift apart however
+     this changes. Set here rather than as a later override: a second rule for
+     the same property is how a mark ends up two sizes depending on which
+     stylesheet loaded last. */
+  font-size: 17px;
   font-weight: 600;
   color: var(--pn-brand);
   white-space: nowrap;
@@ -65,7 +72,7 @@
   cursor: pointer;
 }
 .cv2-root .shell-tabbar__mark--door:hover {
-  color: var(--pn-text);
+  color: var(--pn-ink);
 }
 /* The r10 server chip (`__server*`), its `__divider`, the space tablist
    (`__spaces`/`__dot`) and the `__add` control are GONE, rules and all —
@@ -105,8 +112,23 @@
   font-weight: 700;
   color: var(--pn-ink);
 }
+/* THE NAV SITS IN THE MIDDLE (owner, 2026-08-30: "home work craft all these
+   move into between for better visual").
+   The spacer used to take ALL the free space, which pinned the tabs hard left
+   against the space name. It now takes none, and the tabs take the free space
+   EQUALLY on both sides via `margin-inline: auto` — so Home/Work/Board/Craft
+   sit centred between the identity block and the account controls, and stay
+   centred as either side changes width. */
+/* THE SPACER PUSHES AGAIN. It was set to `flex: none` when the tabs were
+   centred with auto margins — the tabs took the free space themselves, so a
+   growing spacer would have fought them. Taking the tabs OUT OF FLOW removed
+   that conflict and, with it, the only thing holding the account controls at
+   the right edge: the palette and the profile menu collapsed leftward into the
+   space chip, which is how the first render of this change came out. The
+   spacer grows, the tabs float centred over it, and neither depends on the
+   other's width. */
 .cv2-root .shell-tabbar__spacer {
-  flex: 1;
+  flex: 1 1 auto;
 }
 /* R1/R2 (2026-08-15): the top ROW hosts the identity block and the tabs.
    The tabs are the menu's groups — a segmented control. Kinetic (W3): the
@@ -116,11 +138,26 @@
    elevation is data, and a resting tab is not elevated). W3 sweep: segments
    are 28px inside the 2px tray = the bar's 32px control rhythm, with a
    generous 12px reach per word. */
+/* CENTRED IN THE BAR, NOT BETWEEN ITS NEIGHBOURS (owner, 2026-08-31).
+   The previous attempt set `margin-inline: auto` and was silently undone
+   twelve lines later by `margin-left: 4px` on the SAME selector — later rule,
+   same specificity, so the left auto never applied and the tabs sat 4px after
+   the space chip. Even without the collision, `auto` margins centre a flex
+   item between its siblings, so a wide identity block on the left and a narrow
+   account block on the right would still have pushed the tabs off-centre.
+
+   Taking them out of flow is what makes "centred" mean centred in the BAR.
+   Below 1180px the bar cannot afford a centred island without the two sides
+   reaching under it, so the tabs go back into the flow and simply sit after
+   the identity block — off-centre and whole beats centred and overlapped. */
+.cv2-root .shell-tabbar { position: relative; }
 .cv2-root .shell-tabbar__tabs {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: 4px;
   padding: 2px;
   background: var(--pn-hover);
   border-radius: var(--pn-r-sm);
@@ -130,7 +167,43 @@
   padding: 2px 12px;
   border: 0;
   border-radius: var(--pn-r-sm);
+  /* THE MARK LEADS THE WORD, and gives way before it does. The glyph is
+     `flex: none` so a narrow bar clips the tray rather than squashing a 15px
+     icon into an unreadable smudge — the same ruling as the rail's: the NAME
+     of a destination beats its decoration. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
+.cv2-root .shell-tabbar__tabmark {
+  flex: none;
+  color: var(--pn-ink-3);
+  /* ONE OPTICAL WEIGHT ACROSS THE WHOLE ROW (owner, 2026-08-31: "I need that
+     icons sizing everything to be adopted from Home button page to help button
+     page"). The marks are drawn in one 16-unit box, but they are not drawn to
+     one DENSITY: `craft` is two concentric rings, `graph` is three nodes and
+     three edges, `help` is a ring around a glyph. At a shared 15px and a
+     shared stroke the busy ones read heavier than the house and the sparse
+     ones read lighter.
+
+     Pinning the box AND the stroke here is what makes them one set: every mark
+     gets the same square and the same line, so what differs between them is
+     only what the mark actually depicts. `vector-effect` keeps that stroke
+     true — without it a path scaled from a 16-unit box to 15px carries a
+     stroke scaled with it, so the same declared weight renders differently per
+     glyph. */
+  inline-size: 15px;
+  block-size: 15px;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+.cv2-root .shell-tabbar__tabmark * {
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+/* The selected tab's mark takes the accent with its word, so selection is one
+   statement rather than a coloured word beside a grey glyph. */
+.cv2-root .shell-tabbar__tab--active .shell-tabbar__tabmark { color: var(--pn-brand); }
 .cv2-root .shell-tabbar__tabs .shell-tabbar__tab--active {
   background: var(--pn-brand-soft);
 }
@@ -184,20 +257,24 @@
    continuously and there is no width at which the bar suddenly changes shape. */
 
 /* 1. A CONTROL'S NAME IS A NAME. It does not shrink and it does not break.
-      `.copy-link` and `.auth-accountmenu` are the wrappers a host mounts into
-      the bar's slots, so the rule goes on the wrapper — the bar cannot reach
-      inside them and has no business trying (same reasoning as the control
-      grammar below). */
+      `.auth-accountmenu` is the wrapper a host mounts into the bar's account
+      slot, so the rule goes on the wrapper — the bar cannot reach inside it
+      and has no business trying (same reasoning as the control grammar below).
+
+      2026-08-31: `.shell-tabbar__bell` and `.shell-tabbar .copy-link` left
+      this list with the controls themselves. Copy link is now a row INSIDE
+      the account menu, and the menu's popover is a descendant of this bar —
+      so `.shell-tabbar .copy-link` would still have matched it, at higher
+      specificity than `.auth-menu__row`, and dressed a menu row as a 32px
+      bar chip. A stale descendant selector is not inert once the element it
+      names moves underneath it. */
 .cv2-root .shell-tabbar__mark,
 .cv2-root .shell-tabbar__palette,
-.cv2-root .shell-tabbar__bell,
 .cv2-root .shell-tabbar__avatar,
-.cv2-root .shell-tabbar .copy-link,
 .cv2-root .shell-tabbar .auth-accountmenu {
   flex: none;
 }
 .cv2-root .shell-tabbar__palette,
-.cv2-root .shell-tabbar .copy-link__button,
 .cv2-root .shell-tabbar .auth-accountmenu__trigger {
   white-space: nowrap;
 }
@@ -354,6 +431,47 @@
    the four drifted into three heights in the first place. */
 .cv2-root .shell-tabbar__palette {
   transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+  /* A FIELD HAS A FIELD'S WIDTH. Sized so the sentence fits without wrapping
+     at this bar's normal width, and floored rather than fixed so a narrow
+     window can take it back — the words are a hint, not a destination, so
+     this is the one control in the cluster that MAY give way. */
+  min-width: 0;
+  flex: 0 1 268px;
+  justify-content: flex-start;
+  background: var(--pn-surface);
+}
+/* The magnifier and the words are quiet; the field's job is to be found, not
+   to be read. Full ink is for what a reader is here for. */
+.cv2-root .shell-tabbar__palette-mark { flex: none; color: var(--pn-ink-3); }
+.cv2-root .shell-tabbar__palette-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-3);
+  font-weight: 400;
+  text-align: left;
+}
+/* THE SHORTCUT WEARS THE PACKAGE'S KEY GRAMMAR, not the sentence's. It is the
+   one thing in here that is typed rather than read, and `--pn-mono` at
+   `--pn-fs-fine` is what every other key hint in this product is set in — the
+   old chip ran the whole label, slash and shortcut together in one face,
+   which is what made it sit unevenly beside the account trigger's word. */
+.cv2-root .shell-tabbar__palette-kbd {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  line-height: 1;
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+.cv2-root .shell-tabbar__palette:hover .shell-tabbar__palette-hint,
+.cv2-root .shell-tabbar__palette:hover .shell-tabbar__palette-mark {
+  color: var(--pn-ink-2);
 }
 .cv2-root .shell-tabbar__palette:hover {
   box-shadow: var(--pn-sh-sm);
@@ -403,22 +521,25 @@
    both of the owner's screenshots, wedged between two designed chips. That is
    not a colour choice anyone made; it is the absence of one.
 
-   The bar asserts the rhythm on WHATEVER A HOST MOUNTS IN ITS SLOTS, which is
-   the only place that can be done: `shareSlot` and `accountSlot` are opaque
-   `ReactNode`s by design (SpaceTabBar has no business knowing how a link is
-   built), so the bar cannot style them at the source and must not try to. It
-   is also the pattern this file already used for the account trigger directly
-   above. Descendant-scoped `.shell-tabbar` so nothing outside the bar moves:
-   the same CopyLinkControl mounted in a panel keeps its own clothes.
+   THE CLUSTER IS TWO CONTROLS NOW (2026-08-31), not four: the bell and the
+   copy link moved into the account menu, so the grammar below covers the
+   palette hint and the account trigger. The rule the sweep established is
+   unchanged and is what the two survivors still hold — one height, one border,
+   one radius. It stays stated for two controls because it is the thing that
+   makes any THIRD one that arrives here match, which is exactly how the four
+   objects above happened in the first place.
+
+   The bar asserts the rhythm on WHATEVER A HOST MOUNTS IN ITS SLOT, which is
+   the only place that can be done: `accountSlot` is an opaque `ReactNode` by
+   design, so the bar cannot style it at the source and must not try to.
+   Descendant-scoped `.shell-tabbar` so nothing outside the bar moves.
 
    The tabs tray, the switcher pill and the product mark are NOT in here. They
    are the bar's left half — identity and navigation — and they already read as
    one group. This is the utilities cluster only. */
 .cv2-root .shell-tabbar__palette,
-.cv2-root .shell-tabbar__bell,
-.cv2-root .shell-tabbar .copy-link__button,
 .cv2-root .shell-tabbar .auth-accountmenu__trigger {
-  /* The bar's one control height (W3 sweep), now actually held by all four. */
+  /* The bar's one control height (W3 sweep), held by both survivors. */
   height: 32px;
   box-sizing: border-box;
   display: inline-flex;
@@ -436,22 +557,13 @@
 }
 /* ONE hover for the cluster, matching the palette chip's existing lift. */
 .cv2-root .shell-tabbar__palette:hover,
-.cv2-root .shell-tabbar__bell:hover,
-.cv2-root .shell-tabbar .copy-link__button:hover,
 .cv2-root .shell-tabbar .auth-accountmenu__trigger:hover {
   background: var(--pn-hover);
   color: var(--pn-ink);
   border-color: var(--pn-line);
 }
-/* The bell is the cluster's one ICON-ONLY control, so it is square rather
-   than word-width. Kept a real 32x32 target (Fitts) — it does not shrink to
-   its 15px mark. */
-.cv2-root .shell-tabbar__bell {
-  width: 32px;
-  padding: 0;
-  justify-content: center;
-  color: var(--pn-ink-3);
-}
+/* RETIRED 2026-08-31: the bell's square icon-only override went with the bell.
+   The cluster has no icon-only member now — both survivors are word-width. */
 /* The account trigger leads with a 22px avatar, so its left inset is the
    avatar's own — the 10px word inset above would double it. Its open state
    still comes from auth.css and is untouched. */
@@ -469,7 +581,6 @@
 .cv2-root .shell-tabbar__mark--door:focus-visible,
 .cv2-root .shell-tabbar__tab:focus-visible,
 .cv2-root .shell-tabbar__palette:focus-visible,
-.cv2-root .shell-tabbar__bell:focus-visible,
 .cv2-root .shell-tabbar__avatar:focus-visible,
 .cv2-root .shell-switcher__trigger:focus-visible,
 .cv2-root .shell-empty__cta-btn:focus-visible,
@@ -1299,7 +1410,7 @@
 }
 .cv2-root .shell-welcome__title {
   margin: 0;
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-weight: 500;
   font-size: var(--pn-fs-h2);
   line-height: 1.18;
@@ -2044,27 +2155,39 @@
    is spacing (the accessible name rides the group's aria-label). */
 .cv2-root .shell-rail--expanded .shell-rail__group + .shell-rail__group { margin-top: 9px; }
 
-/* The inbox bell (revision 11) — Inbox's one chrome door after its rail row
-   retired. Same control idiom as the palette hint beside it.
+/* RETIRED 2026-08-31 — `.shell-tabbar__bell`. Inbox's door moved into the
+   account menu (`auth/AccountMenu`, the utility group), so the bell's own
+   rules — the hover lift and the aria-disabled treatment — went with it rather
+   than being left to match nothing.
 
    The former `.shell-tabbar__help` selector was retired with the `?` control
    on 2026-08-20: Help now owns the final shipped tab. */
-/* Its BOX comes from the right cluster's one grammar, exactly as the palette
-   chip's does — see "ONE CONTROL GRAMMAR" up by the account rules, which also
-   carries the square-and-centred override this control needs as the cluster's
-   only icon-only member. Only the hover lift is stated here. */
-.cv2-root .shell-tabbar__bell {
-  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
-}
-.cv2-root .shell-tabbar__bell:hover { box-shadow: var(--pn-sh-sm); }
-.cv2-root .shell-tabbar__bell[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
 
 /* Kinetic (W3) — the bar's hover-lift transitions, stilled for anyone who
    asked the OS for less motion. The lift itself (the shadow at :hover) still
    lands; only the tween is removed. */
 @media (prefers-reduced-motion: reduce) {
-  .cv2-root .shell-tabbar__palette,
-  .cv2-root .shell-tabbar__bell {
+  .cv2-root .shell-tabbar__palette {
     transition: none;
   }
+}
+
+
+@media (max-width: 1180px) {
+  .cv2-root .shell-tabbar__tabs {
+    position: static;
+    transform: none;
+    margin-left: var(--pn-space-2);
+  }
+}
+
+/* A BIGGER MARK, AND THE 8 TURNS (owner, 2026-08-31: "tm8 logo can be placed
+   better might be a bit bigger and 8 should have motion like we have in splash
+   screen"). The mark is sized by `font-size` alone — the ribbon follows it in
+   `em`, which is why there is one number here and not two. The motion is
+   `BrandMark`'s own `animated` prop, which the splash already passed and this
+   call site did not; `RibbonMark` reads `prefers-reduced-motion` itself, so the
+   turning stops for a reader who has asked it to. */
+.cv2-root .shell-tabbar__mark {
+  padding-inline: var(--pn-space-1);
 }

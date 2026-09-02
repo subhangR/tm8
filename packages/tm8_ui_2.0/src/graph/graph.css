@@ -131,7 +131,7 @@
     color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
-.gv-lens__opt:hover { color: var(--pn-ink-1); background: var(--pn-hover); }
+.gv-lens__opt:hover { color: var(--pn-ink); background: var(--pn-hover); }
 
 .gv-lens__opt--on,
 .gv-lens__opt--on:hover {
@@ -187,7 +187,7 @@
   text-decoration: underline dotted;
   text-underline-offset: 2px;
 }
-.gv-banner__act:hover { color: var(--pn-ink-1); }
+.gv-banner__act:hover { color: var(--pn-ink); }
 
 .gv-empty {
   flex: 1;
@@ -199,7 +199,7 @@
 }
 
 .gv-empty__title {
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: var(--pn-fs-h3);
   color: var(--pn-ink-3);
   margin: 0;
@@ -323,7 +323,17 @@
 }
 
 /* Ink freshness — recency as border weight, NEVER the only carrier (the
-   timestamp word rides the footer of every card). */
+   timestamp word rides the footer of every card).
+
+   SUPERSEDED 2026-08-31 by the RECENCY register at the foot of this file. These
+   three rules have been dead since the FLOW-CARD CANVAS block below started
+   restating `border: 1px solid var(--pn-line)` on `.gv-node` — equal
+   specificity (0,1,0), later in source, so the plain rule won and every card
+   drew the same edge whatever its `activityAt` said. Recency was computed on
+   every node and painted nowhere. They are kept here, inert, only so the
+   history is legible at the place the mistake was made; the live rules are
+   `.cv2-root .gv-node--warm` / `--fresh`, which tint the FAMILY STRIPE rather
+   than the border, because the border already belongs to hover and selection. */
 .gv-node--fresh { border-color: var(--pn-ink-3); }
 .gv-node--warm { border-color: var(--pn-line-2); }
 .gv-node--rest { border-color: var(--pn-line); }
@@ -581,6 +591,14 @@
   align-items: flex-end;
   gap: var(--pn-space-2);
   max-width: 44%;
+  /* THE OTHER HALF OF THE 42/52 SPLIT — see `.gv-legend`. This column is
+     bottom-anchored and grows upward, so without a ceiling a long BUILDING
+     list walks straight into the legend. `min-height: 0` is what lets the
+     children below actually shrink instead of the column overflowing its own
+     bound: an unfloored flex column ignores `max-height` at the child level,
+     which is the trap that has bitten this package repeatedly. */
+  max-height: 52%;
+  min-height: 0;
 }
 
 .gv-ticker {
@@ -992,7 +1010,25 @@
   background: var(--pn-card); border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md); box-shadow: none;
   padding: 4px; display: flex; flex-direction: column; gap: 2px;
-  max-height: calc(100% - 28px); overflow-y: auto;
+  /* 42%, NOT `calc(100% - 28px)`. THE CANVAS CHROME IS TWO ABSOLUTELY
+     POSITIONED COLUMNS ON ONE EDGE — this legend anchored top-right, and
+     `.gv-rail` (minimap + BUILDING) anchored bottom-right and growing UPWARD.
+     Both were allowed to be nearly the full height of the canvas, so their
+     collision was guaranteed by arithmetic rather than unlucky: the owner
+     screenshotted BUILDING sitting on top of the legend with the minimap
+     clipping its foot.
+
+     Absolute positioning is also why nothing caught it. The render gate's
+     overlapping-siblings rule deliberately skips absolutely positioned
+     subtrees — which is precisely where overlap happens — so this class of
+     defect had no detector at all. Noted for the gate.
+
+     42 + 52 = 94 < 100, so the two columns cannot meet whatever either
+     contains, and each scrolls inside its own bound rather than growing into
+     the other's. A panel that scrolls has hidden nothing; a panel painted over
+     has hidden everything. */
+  max-height: 42%;
+  overflow-y: auto;
 }
 .gv-legend:not([open]) > :not(summary) { display: none; }
 .gv-legend:not([open]) { overflow: hidden; }
@@ -1159,7 +1195,7 @@
   transition: color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
-.gv-band__head:hover { color: var(--pn-ink-1); }
+.gv-band__head:hover { color: var(--pn-ink); }
 
 .gv-band__caret {
   font-size: 9px;
@@ -1276,4 +1312,366 @@
 .gv-ticker__row:focus-visible {
   outline: 2px solid var(--pn-focus, var(--pn-brand-2));
   outline-offset: 1px;
+}
+
+/* ==========================================================================
+   GOD'S-EYE PASS (2026-08-31) — legibility, the recency/liveness registers,
+   the find grammar, and the Building rail.
+
+   Everything below is prefixed `.cv2-root` like its neighbours in panels.css.
+   That is not cosmetic here: the palette is scoped to `.cv2-root` rather than
+   `:root`, and the prefix also puts these rules one specificity step above the
+   FLOW-CARD block above them, which is what lets the recency register reach
+   the stripe without an `!important` anywhere.
+   ========================================================================== */
+
+/* -- SEMANTIC ZOOM ----------------------------------------------------------
+   THE 7px LABELS, AND WHY THE FIX IS NOT A HEIGHT.
+
+   The render gate measured `.gv-node__head` and `.gv-node__foot` at 116×7
+   holding 13–31 characters, eleven times, both themes. Probing the same live
+   page for LAYOUT size found `.gv-node` 178px tall with `__head` at 20.06px and
+   `__foot` at 16.5px: a healthy flex column, nothing crushed, no §4.5 minimum
+   zeroed anywhere. What the gate read was the COMPOSITED box — `.gv-canvas`
+   carried `scale(0.372)` from the opening fit, and 20.06 × 0.372 = 7.5.
+
+   Bumping a height would have been fixing the ruler. The screen was still
+   wrong: at 0.372 the card's 10px micro-type painted at under 4px, so the
+   god's-eye view opened on labels nobody could read. Two rules answer it —
+   `FIT_FLOOR` in GraphView stops the canvas CHOOSING a scale that small, and
+   this block handles the case where the reader chooses it deliberately.
+
+   Below the threshold a card sheds every register the scale cannot carry and
+   keeps the four that survive it: the family stripe (kind), the title, the
+   arrival/selection rings, and a liveness mark. The words those rows carried
+   move to the card's `title` — colour + word-in-title, which is exactly how
+   `Minimap` already resolves this same tension for a 4px rect. */
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__head,
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__body,
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__foot,
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__focus {
+  display: none;
+}
+
+/* With four registers gone the card is nothing but its name, so the name takes
+   the room. Three lines rather than two: there is space for them now, and a
+   truncated title is the one thing an overview cannot afford. */
+.cv2-root .gv-canvas[data-lod='far'] .gv-node {
+  justify-content: center;
+}
+
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__title {
+  font-size: var(--pn-fs-h3);
+  -webkit-line-clamp: 3;
+}
+
+/* LIVENESS SURVIVES THE ZOOM, because it is the one fact on a card that is
+   about right now. A dot rather than the pill: at this scale a pill is a smear,
+   and the word is in the card's title where it stays readable. Driven by
+   `data-live`, which carries the seam's VERDICT and never a status field. */
+.cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='live']::after,
+.cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='stale']::after {
+  content: '';
+  position: absolute;
+  top: var(--pn-space-3);
+  right: var(--pn-space-3);
+  width: 10px;
+  height: 10px;
+  border-radius: var(--pn-r-pill);
+}
+
+.cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='live']::after {
+  background: var(--pn-run);
+  animation: gv-livepulse 2s var(--pn-ease-standard) infinite;
+}
+
+/* Stale is a HOLLOW mark, never the live one in another colour: the difference
+   between "running" and "recorded as running and not answering" has to be
+   legible to someone who cannot resolve a hue at this size. */
+.cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='stale']::after {
+  background: none;
+  border: 2px solid var(--pn-wait);
+}
+
+@keyframes gv-livepulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* -- THE RECENCY REGISTER ---------------------------------------------------
+   Recency was computed on every node (`heatOf` over `activityAt`) and painted
+   nowhere: the three `.gv-node--fresh/warm/rest` border rules near the top of
+   this file are outranked by the FLOW-CARD block's plain `.gv-node` border, so
+   every card drew the same edge however old it was.
+
+   It lands on the family STRIPE rather than the border, deliberately. The
+   border is spoken for — hover, selection and the blocked path all claim it —
+   and stacking a fourth meaning on it is how a card ends up saying four things
+   with one line. The stripe already carries KIND as hue; carrying recency as
+   the same hue's SATURATION adds a dimension without adding an element, and it
+   is never the only carrier: the timestamp word rides the foot of every card
+   at any zoom that can read it.
+
+   Ordered rest → warm → fresh, all at the same specificity, so source order
+   decides and the newest claim wins. */
+.cv2-root .gv-node {
+  border-left-color: color-mix(in srgb, var(--gvf) 52%, var(--pn-line));
+}
+
+.cv2-root .gv-node--warm {
+  border-left-color: color-mix(in srgb, var(--gvf) 78%, var(--pn-line));
+}
+
+.cv2-root .gv-node--fresh {
+  border-left-color: var(--gvf);
+}
+
+/* A fresh card's timestamp is the sentence the stripe is only illustrating, so
+   it steps up out of the meta grey with it. */
+.cv2-root .gv-node--fresh .gv-node__meta {
+  color: var(--pn-ink-2);
+}
+
+/* -- FINDING, WITHOUT UNMAKING THE GRAPH ------------------------------------
+   A search miss recedes; it is never removed. 0.25 took the neighbourhood so
+   far down that a match arrived with no context around it — which is a card,
+   not a graph. 0.4 is the point where an edge and its far endpoint are still
+   readable as structure while the hits clearly own the canvas. */
+.cv2-root .gv-node--unmatched {
+  opacity: 0.4;
+}
+
+/* THE MATCH THE READOUT IS COUNTING. "3 / 12" is a lie unless one card on
+   screen is visibly the third; the other hits keep the softer 1px outline they
+   already had. Ring + a brand-soft ground, no glow — the ring is what carries
+   it, the ground only stops the ring reading as a selection. */
+.cv2-root .gv-node--match-current {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  background: var(--pn-brand-soft);
+}
+
+/* -- THE BUILDING RAIL ------------------------------------------------------
+   The right rail now stacks three things — Building, the overview, the scripted
+   ticker — so it needs a ceiling and its own scroll. Bottom-anchored, so it
+   grows upward and stops at the top edge of the viewport rather than at the
+   top edge of the document. */
+.cv2-root .gv-rail {
+  max-height: calc(100% - 96px);
+  z-index: 6;
+}
+
+/* The overview and the scripted ticker are fixed-size objects: an SVG that
+   shrinks is a distorted map, and two ticker rows are not a ticker. Building is
+   the one member with a scrollable interior, so it is the one that yields —
+   `flex: none` on the other two says which. */
+.cv2-root .gv-rail > .gv-minimap,
+.cv2-root .gv-rail > .gv-ticker {
+  flex: none;
+}
+
+.cv2-root .gv-rail > .gv-building {
+  flex: 0 1 auto;
+}
+
+.cv2-root .gv-building {
+  width: 300px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  /* The list scrolls inside the card so the CARD stays inside the rail's
+     bound. Without this the rail is bounded and its child simply overflows it,
+     which looks identical to having no bound at all. */
+  min-height: 0;
+  overflow: hidden;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+}
+
+.cv2-root .gv-building__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: none;
+}
+
+.cv2-root .gv-building__spacer {
+  flex: 1;
+}
+
+/* COLOUR AND WORD, both, for the count the whole panel is about. */
+.cv2-root .gv-building__live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-run);
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__quiet {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__pulse {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-run);
+  animation: gv-livepulse 2s var(--pn-ease-standard) infinite;
+}
+
+.cv2-root .gv-building__sub {
+  margin: 0;
+  flex: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  line-height: var(--pn-lh-snug);
+}
+
+/* THE LIST SCROLLS INSIDE ITSELF. A bounded panel whose rows are sized from
+   content, never rows divided across a definite height — hence flex-column with
+   `flex: none` rows and the overflow on the list, not on the panel. */
+.cv2-root .gv-building__list {
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: var(--pn-space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cv2-root .gv-building__list > li {
+  flex: none;
+  display: flex;
+  min-width: 0;
+}
+
+.cv2-root .gv-building__row {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-height: 26px;
+  padding: 2px var(--pn-space-2);
+  text-align: left;
+  background: none;
+  border: none;
+  /* The recency register again, in the one place a row can afford it: a 2px
+     rule on the leading edge, the same hue the card's stripe wears. */
+  border-left: 2px solid color-mix(in srgb, var(--gvf) 52%, var(--pn-line));
+  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.cv2-root .gv-building__row[data-heat='warm'] {
+  border-left-color: color-mix(in srgb, var(--gvf) 78%, var(--pn-line));
+}
+
+.cv2-root .gv-building__row[data-heat='fresh'] {
+  border-left-color: var(--gvf);
+}
+
+.cv2-root .gv-building__row:hover {
+  background: var(--pn-hover);
+}
+
+/* The row for the node the canvas is currently marking. The panel and the
+   canvas must agree about what "here" means, or clicking a row and looking up
+   is a guess. */
+.cv2-root .gv-building__row--marked {
+  background: var(--pn-brand-soft);
+}
+
+.cv2-root .gv-building__row:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -1px;
+}
+
+.cv2-root .gv-building__glyph {
+  flex: none;
+  display: inline-flex;
+  color: var(--gvf);
+}
+
+/* THE NAME IS THE INVARIANT — it is the only child allowed to consume the
+   width, and the only one allowed to truncate. Every trailing register beside
+   it is `flex: none`, so a long title never pushes the timestamp off the row
+   and the row never widens the rail. */
+.cv2-root .gv-building__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink);
+}
+
+.cv2-root .gv-building__new {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-brand-2);
+  border: 1px solid var(--pn-brand);
+  border-radius: var(--pn-r-pill);
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__rowlive {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-run);
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__when {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__more {
+  margin: 0;
+  flex: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .gv-building__pulse,
+  .cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='live']::after {
+    animation: none;
+  }
+  .cv2-root .gv-building__row {
+    transition: none;
+  }
 }

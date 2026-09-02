@@ -233,7 +233,7 @@
   gap: 10px;
 }
 .set-section__title {
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: 19px; /* L47 */
   font-weight: 500;
 }
@@ -443,7 +443,7 @@
   align-items: center;
   gap: 8px;
 }
-.set-panel__title { font-family: var(--pn-serif); font-size: 17px; font-weight: 500; } /* L95 */
+.set-panel__title { font-family: var(--pn-prose); font-size: 17px; font-weight: 500; } /* L95 */
 
 .set-invite-form {
   padding: 12px 16px; /* L99 */
@@ -519,7 +519,7 @@
   text-align: center;
 }
 .set-redeem__mark { font-family: var(--pn-mono); font-size: 13px; font-weight: 600; color: var(--pn-brand); }
-.set-redeem__title { font-family: var(--pn-serif); font-size: 22px; font-weight: 500; line-height: 1.2; }
+.set-redeem__title { font-family: var(--pn-prose); font-size: 22px; font-weight: 500; line-height: 1.2; }
 .set-redeem__sub { font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
 .set-redeem__field {
   width: 100%;
@@ -595,7 +595,7 @@
   align-items: center;
   gap: 8px;
 }
-.set-menu__title { font-family: var(--pn-serif); font-size: 16px; font-weight: 500; } /* L287 */
+.set-menu__title { font-family: var(--pn-prose); font-size: 16px; font-weight: 500; } /* L287 */
 .set-menu__version { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
 .set-menu__rows { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; }
 

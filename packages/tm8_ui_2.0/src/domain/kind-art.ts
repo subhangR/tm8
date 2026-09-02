@@ -202,6 +202,7 @@ export const KIND_ART = {
  * channel mark — which is the same defect one level up.
  */
 export const VIEW_ART = {
+
   /** A house. */
   dashboard: ['M2.8 7.2 8 2.8l5.2 4.4v5.4a1.2 1.2 0 0 1-1.2 1.2H4a1.2 1.2 0 0 1-1.2-1.2z', 'M6.4 13.4V9.2h3.2v4.2'],
   /** Broadcast arcs — a feed is a stream arriving. */
@@ -282,6 +283,17 @@ export const VIEW_ART = {
     'M3.9 5.9a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z',
     'M13.2 5.4 10.6 2.8 4.6 8.8v2.6h2.6z',
     'M9.4 4l2.6 2.6',
+  ],
+  /**
+   * A spine with a fan-out (CodeBrain, 2026-09-01): a run of phases in a line,
+   * one of them branching. Deliberately NOT a brain and NOT a chip — the shape
+   * carries what the screen shows, which is sequence plus parallel review, and
+   * a brain glyph would say "AI" about a view whose subject is a PIPELINE.
+   */
+  codebrain: [
+    'M2.6 8h10.8',
+    'M4.4 8a1.4 1.4 0 1 0 0-.1z',
+    'M13.4 4.6 10.4 8l3 3.4',
   ],
   /**
    * A question mark, hook and dot (Help, 2026-08-19). Deliberately NOT a

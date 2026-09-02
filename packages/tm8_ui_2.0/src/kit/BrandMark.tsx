@@ -34,7 +34,12 @@ export function BrandMark() {
       <span className="kit-brandmark__letters" aria-hidden="true">
         tm
       </span>
-      <RibbonMark className="kit-brandmark__eight" layout="wordmark" animated={false} />
+      {/* THE 8 TURNS, as it does on the splash (owner, 2026-08-31). `animated`
+          was already the knob — the splash passes it and this call site did
+          not, so the same mark was alive on the way in and static forever
+          after. RibbonMark checks `prefers-reduced-motion` itself and stops
+          turning, so this is not a motion the reader cannot refuse. */}
+      <RibbonMark className="kit-brandmark__eight" layout="wordmark" animated />
     </span>
   );
 }

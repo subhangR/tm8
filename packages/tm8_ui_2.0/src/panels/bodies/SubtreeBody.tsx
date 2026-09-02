@@ -464,8 +464,6 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
     cells.push({ key: 'dueDate', label: 'Due', value: <span className="sb-grid__mono">{state.dueDate}</span> });
   }
 
-  cells.push({ key: 'id', label: 'ID', value: <span className="sb-grid__mono">{detail.id}</span> });
-
   if (isRecord(state.axes)) {
     for (const [axis, value] of Object.entries(state.axes)) {
       const rendered = renderScalar(value);
@@ -488,6 +486,21 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
       cells.push({ key, label: humanizeKey(key), value: <span className="sb-grid__strong">{rendered}</span> });
     }
   }
+
+  /* THE RAW ID GOES LAST, and it used to go first-by-elimination.
+     It is pushed unconditionally while almost everything more useful is
+     SUPPRESSED when a live control owns it — the dates go to the strip, the
+     parent cell only exists when there is a parent, axes only when a kind
+     declares them. On a plain task that left `01a05668-afb1-77db-a337-…` as
+     the first and largest fact on the card, next to `COMPLETION GATE none`.
+     The owner, four times: this card looks bad.
+
+     It is not DELETED, and the reason is written two files away: the header's
+     `CBA8` chip is `detail.id.slice(-4)` and is `aria-hidden` precisely
+     because "the full id is content (the MetaGrid ID cell), not name". Remove
+     the cell and the id stops being reachable by a screen reader at all. So it
+     stays, last — provenance, where provenance belongs. */
+  cells.push({ key: 'id', label: 'ID', value: <span className="sb-grid__mono">{detail.id}</span> });
 
   if (cells.length === 0) return null;
   return (

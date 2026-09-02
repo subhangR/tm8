@@ -206,7 +206,12 @@ export function CollapsibleSection({
         className="pn-fold__head"
         id={headId}
         aria-expanded={open}
-        aria-controls={bodyId}
+        /* The body is rendered only while open, so a closed fold's
+           `aria-controls` names an element that is not in the document — a
+           relationship a screen reader announces and then cannot follow, and
+           the render gate's `controls-nothing`. `aria-expanded` is the whole of
+           what a closed disclosure has to say. */
+        aria-controls={open ? bodyId : undefined}
         onClick={toggle}
       >
         <span className={open ? 'pn-fold__caret pn-fold__caret--open' : 'pn-fold__caret'} aria-hidden>

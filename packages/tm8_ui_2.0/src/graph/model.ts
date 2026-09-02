@@ -661,13 +661,39 @@ export function focusSubgraph(
 /**
  * Ids whose title OR kind contains `query` (trimmed, case-insensitive
  * substring). An empty or whitespace-only query matches nothing.
+ *
+ * THREE REGISTERS, because those are the three ways a card names itself and a
+ * reader types back whichever one they can see:
+ *
+ *   · the TITLE — the obvious one;
+ *   · the card's mono REF (`id.slice(-4)`), which is drawn on every card. An
+ *     identifier a reader can read off the screen has to be one they can type
+ *     back in, or it is decoration;
+ *   · the KIND — matched through `labelOf` as well as against the raw enum, so
+ *     the word the reader can SEE is the word that searches. Without the
+ *     resolver a fixture harness still matches the enum, so this stays usable
+ *     from a pure test.
+ *
+ * No kind is named here (§15.2): `labelOf` is the domain registry's, supplied
+ * by the caller, and this function knows only that it returns some words.
  */
-export function searchMatches(nodes: readonly EntitySummary[], query: string): Set<string> {
+export function searchMatches(
+  nodes: readonly EntitySummary[],
+  query: string,
+  labelOf?: (kind: string) => readonly string[],
+): Set<string> {
   const q = query.trim().toLowerCase();
   const out = new Set<string>();
   if (q === '') return out;
   for (const n of nodes) {
-    if (n.title.toLowerCase().includes(q) || n.kind.toLowerCase().includes(q)) out.add(n.id);
+    if (
+      n.title.toLowerCase().includes(q) ||
+      n.id.slice(-4).toLowerCase().includes(q) ||
+      n.kind.toLowerCase().includes(q) ||
+      (labelOf?.(n.kind) ?? []).some((word) => word.toLowerCase().includes(q))
+    ) {
+      out.add(n.id);
+    }
   }
   return out;
 }

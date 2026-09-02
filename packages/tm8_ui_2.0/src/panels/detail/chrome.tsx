@@ -63,10 +63,28 @@ export type PanelTab = 'content' | 'connections' | 'discussion';
  *     from the labels that do answer something (see `TabStrip`) to say
  *     nothing.
  */
-export const PANEL_TABS: readonly { id: PanelTab; label: string }[] = [
-  { id: 'content', label: 'Content' },
-  { id: 'connections', label: 'Connections' },
-  { id: 'discussion', label: 'Discussion' },
+/**
+ * `ownsPanel` — DOES THIS TAB HAVE A `role="tabpanel"` ELEMENT TO NAME?
+ *
+ * Registry data rather than a condition in the render, because it is a fact
+ * about the panel's structure and only this table can state it once for both
+ * shells. Connections (`detail/tabs.tsx`) and Discussion (`EntityDetailPanel`)
+ * each render a `#tabpanel-{id}` frame; CONTENT does not and never has — its
+ * body is a per-archetype switch with six arms and no shared wrapper, and
+ * inventing one would put a new div in the middle of a flex chain that has
+ * produced a 2px pane twice.
+ *
+ * WHY IT MATTERS: `aria-controls` naming an element that is not in the document
+ * is a relationship a screen reader announces and then cannot follow. The
+ * render gate fails it (`controls-nothing`), and it did — on every entity route
+ * added to the gate on 2026-08-31, in both themes, for all three tabs at once:
+ * the two aux tabs because their panels render only while SELECTED, and Content
+ * because `#tabpanel-content` has never existed at all.
+ */
+export const PANEL_TABS: readonly { id: PanelTab; label: string; ownsPanel: boolean }[] = [
+  { id: 'content', label: 'Content', ownsPanel: false },
+  { id: 'connections', label: 'Connections', ownsPanel: true },
+  { id: 'discussion', label: 'Discussion', ownsPanel: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -894,7 +912,7 @@ export function TabStrip({
   return (
     <div className="pn-panelbar" data-testid="panel-toolbar">
       <div className="pn-tabs" role="tablist" aria-label="Panel sections" data-testid="panel-tabs">
-        {PANEL_TABS.map(({ id, label: defaultLabel }) => {
+        {PANEL_TABS.map(({ id, label: defaultLabel, ownsPanel }) => {
           const label = id === 'content' && contentLabel ? contentLabel : defaultLabel;
           const isActive = id === active;
           const count = counts?.[id];
@@ -905,7 +923,14 @@ export function TabStrip({
               role="tab"
               id={`tab-${id}`}
               aria-selected={isActive}
-              aria-controls={`tabpanel-${id}`}
+              /* ONLY WHEN THERE IS SOMETHING TO NAME. The panel is rendered for
+                 the SELECTED tab only, so an unselected tab's `aria-controls`
+                 points at nothing; and Content has no panel element in any
+                 state (`ownsPanel`). `aria-selected` already carries which tab
+                 is current, and the panels carry `aria-labelledby` back to
+                 their tab, so the relationship is stated in the direction that
+                 can always be true. */
+              aria-controls={isActive && ownsPanel ? `tabpanel-${id}` : undefined}
               tabIndex={isActive ? 0 : -1}
               className={isActive ? 'pn-tab pn-tab--active' : 'pn-tab'}
               onClick={() => onSelect?.(id)}

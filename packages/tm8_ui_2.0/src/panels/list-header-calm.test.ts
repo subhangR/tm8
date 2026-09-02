@@ -172,9 +172,39 @@ describe('the header says what the design says', () => {
      * arms, glyph or label-with-count, and nothing else. A third arm changes
      * this string and fails here.
      */
+    /*
+     * SUPERSEDED 2026-08-31 — THERE IS A THIRD ARM NOW, AND THIS TEST IS WHY IT
+     * IS WRITTEN DOWN RATHER THAN DISCOVERED.
+     *
+     * What was pinned here was the complete two-arm ternary, on the reasoning
+     * quoted above: "a third arm changes this string and fails here". It did
+     * exactly that, on the first run after the change, which is the whole value
+     * of pinning the expression instead of a substring of it.
+     *
+     * WHAT ADDED THE ARM: `bucketCountLabel` (domain/types.ts) can now answer
+     * `null` — "this bucket's count cannot be reconciled with the number of
+     * entities that exist". That is the repair for the owner's
+     * `To Do 898 · In Progress 0 · Done 0 · Cancelled 0` over a space holding
+     * 466 tasks, and it needs a rendering that is neither a number nor a
+     * placeholder.
+     *
+     * AND IT DOES NOT WEAKEN THE RULING THIS CASE EXISTS FOR. `0` is an ANSWER
+     * and is still drawn, at full ink, with no demotion — that is the design
+     * measured off TARGET.png and it is unchanged. `null` is the ABSENCE of an
+     * answer, and the two must not look alike: drawing a placeholder for it
+     * would be the manufactured-fact failure a second time, in the row people
+     * navigate by. The tab keeps its label, its seat and its click.
+     *
+     * Still pinned as the COMPLETE expression, for the original reason: a
+     * FOURTH arm changes this string and fails here.
+     */
     expect(TSX).toContain(
-      '{oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}',
+      '{oneSurface\n            ? <CategoryGlyph category={tab.id} />\n            : tabLabel(tab) === null ? tab.label : `${tab.label} ${tabLabel(tab)}`}',
     );
+    /* The zero is still a number and still undemoted — the half of this case
+       that did not change, asserted separately so a future edit cannot trade
+       one for the other. */
+    expect(TSX, 'a zero-count tab is being demoted again').not.toContain('lp__tab--empty');
     expect(CSS).not.toContain('lp__tab--empty');
   });
 

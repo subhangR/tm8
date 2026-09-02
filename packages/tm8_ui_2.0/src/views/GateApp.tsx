@@ -42,6 +42,7 @@ import { isUnbuiltViewRef } from './view-ref-screens';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
+import { CodeBrainScreen } from '../codebrain';
 import { CraftScreen } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -1844,7 +1845,6 @@ export function GateApp(props: GateAppProps = {}) {
              the conversation surface — the MARK does. Not an extra door: the
              tab it replaces was retired in the same change. */
           onGoHome={() => navigateTo(HOME_TARGET)}
-          onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
           // D1: theme's one home is the account menu. No tab-bar toggle.
@@ -1854,32 +1854,49 @@ export function GateApp(props: GateAppProps = {}) {
           // ACCOUNT. Undefined otherwise, so a GateApp rendered without an
           // AuthGate (every existing test) keeps the avatar fallback and its
           // behaviour is unchanged.
-          /* COPY LINK — the affordance that makes the routing usable by a
-             person. The app has been addressable since the router mounted and
-             offered its address to nobody; this is where a viewer gets it.
-
-             It names WHAT IS ON SCREEN: the active target, plus the entity open
-             on that screen if there is one, so a link to a task you are reading
-             reopens that task rather than the list it came from. `openOnScreen`
-             already existed for the reverse direction (drill in, address
-             updates) and is the same fact read the other way.
-
-             Rendered only with a Space, because a link with no Space addresses
-             nothing — `copyLinkUrl` would return null and the control would be
-             a button that cannot perform, which is the shape this codebase
-             refuses everywhere else. */
-          shareSlot={
-            data.spaceId ? (
-              <CopyLinkControl
-                spaceId={data.spaceId}
-                target={activeTarget ?? WORKSPACE_TARGET}
-                openEntity={openOnScreen}
-              />
-            ) : undefined
-          }
           accountSlot={
             authAccount && data.viewerActor ? (
-              <AccountMenu actor={data.viewerActor} theme={theme} onThemeChange={setTheme} />
+              <AccountMenu
+                actor={data.viewerActor}
+                theme={theme}
+                onThemeChange={setTheme}
+                /* INBOX, moved out of the bar 2026-08-31 by the owner's
+                   instruction. Same destination, same one door — only its
+                   address in the chrome changed. */
+                onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
+                /* COPY LINK — the affordance that makes the routing usable by
+                   a person. The app has been addressable since the router
+                   mounted and offered its address to nobody; this is where a
+                   viewer gets it.
+
+                   It names WHAT IS ON SCREEN: the active target, plus the
+                   entity open on that screen if there is one, so a link to a
+                   task you are reading reopens that task rather than the list
+                   it came from. `openOnScreen` already existed for the reverse
+                   direction (drill in, address updates) and is the same fact
+                   read the other way.
+
+                   Rendered only with a Space, because a link with no Space
+                   addresses nothing — `copyLinkUrl` would return null and the
+                   control would be a button that cannot perform, which is the
+                   shape this codebase refuses everywhere else.
+
+                   The row grammar (`auth-menu__row`) is passed from HERE
+                   rather than applied inside the menu: the host chose to hang
+                   this control in a menu, so the host says how it should sit
+                   there, and `CopyLinkControl` stays ignorant of auth's
+                   classes for its other mounts (the phone drawer). */
+                utilityRows={
+                  data.spaceId ? (
+                    <CopyLinkControl
+                      spaceId={data.spaceId}
+                      target={activeTarget ?? WORKSPACE_TARGET}
+                      openEntity={openOnScreen}
+                      className="auth-menu__row auth-menu__row--live"
+                    />
+                  ) : null
+                }
+              />
             ) : undefined
           }
         />
@@ -2109,6 +2126,18 @@ export function GateApp(props: GateAppProps = {}) {
                 })
               }
             />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'codebrain' ? (
+            /* ◈ CodeBrain (2026-09-01) — the delivery pipeline as one screen.
+               Full-bleed like Board and Craft: the phase spine IS the
+               navigation, so no menu rail is drawn beside it. */
+            <CodeBrainScreen
+              seam={data.seam}
+              spaceId={data.spaceId as SpaceId}
+              onOpenEntity={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
+            />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'help' ? (
             /* ? Help (2026-08-19; STATIC since 2026-08-20) — the field guide.
                Its 55 plates ship WITH the app as vendored artifact bundles, so
@@ -2270,6 +2299,19 @@ export function GateApp(props: GateAppProps = {}) {
                      a session is created by RUNNING a task, whose Run lives
                      on the hosted tile itself. */
                   renderRootList={regions.renderRootList}
+                  /* SOLO ON HOME, AND THE SCREEN HAS TO BE TOLD.
+                     Home's thread column was switched off by a stylesheet —
+                     `.hp-live .tch-sidebar { display: none }` — which hides the
+                     column but leaves the screen believing it still owns one.
+                     That belief is load-bearing: `soloConversation` is what
+                     makes a `null` from the host mean "the new-chat composer"
+                     rather than "the host has not chosen yet", so the New chat
+                     card clicked and NOTHING happened — measured on the live
+                     build, same heading, same placeholder, same fourteen turns.
+                     Declaring it instead of hiding it also stops the column
+                     being built at all, and retires three CSS overrides that
+                     existed only to undo it. */
+                  soloConversation
                   root={regions.root}
                   onRoot={regions.onRoot}
                   kindCell={regions.kindCell}

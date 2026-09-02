@@ -252,6 +252,62 @@ export function countLabel(shown: number, page?: ListPageState): string {
   return page?.hasMore ? `${shown}+` : String(shown);
 }
 
+/**
+ * A LIFECYCLE BUCKET'S NUMBER, BOUNDED BY ITS OWN UNIVERSE.
+ *
+ * THE DEFECT THIS EXISTS FOR (owner, 2026-08-31, reported on every entity kind):
+ * a task list header reading `To Do 898 · In Progress 0 · Done 0 · Cancelled 0`
+ * over a space holding 466 tasks. 898 out of 466 is not a rounding error, it is
+ * a category error, and it should have been impossible to render.
+ *
+ * WHICH READ PRODUCED IT. `countLabel` above answers with the SERVER's total
+ * when there is one — and with `shown` when there is not. `shown` is the length
+ * of the client's own row array for that filter: rows that arrived by page
+ * reads AND rows the event stream projected in (`useGateData.projectRows`,
+ * which files an upserted entity under every cached key whose filter it
+ * matches). Nothing in that path is bounded by how many entities exist. A tab
+ * whose server total has not landed therefore renders a number that can drift
+ * arbitrarily far from the universe — while its three neighbours, holding
+ * neither a total nor any cached rows, render a confident `0`.
+ *
+ * Three zeros and one impossible number is exactly that shape, and it is the
+ * shape reported. (It is NOT reproducible on the deployed build today, where
+ * the same header reads 204 · 142 · 113 · 7 and sums to 466 exactly — measured
+ * by intercepting the four category reads. So this is the mechanism, pinned
+ * here so it cannot come back, rather than a live repair.)
+ *
+ * THE RULE: a bucket count is a claim about a subset. A subset cannot be larger
+ * than its set. When the number on offer would break that, the honest answer is
+ * NO NUMBER — `null` — not a clamped one.
+ *
+ * WHY NOT CLAMP. A count clipped to fit is the rail's own forbidden move
+ * ("a count is never sliced, because a sliced number is a different and
+ * entirely plausible number"). `898` clamped to `466` still asserts that every
+ * task in the space is To Do, which is false and unfalsifiable by looking at
+ * it. Drawing nothing says "this is not known yet", which is true and is what
+ * the reader can act on. The tab keeps its label and stays clickable.
+ *
+ * `universe` ABSENT MEANS UNKNOWN, NOT UNBOUNDED — the caller has no total for
+ * this kind, so no bound can be checked and the hedged answer stands. Absence
+ * is not a claim, on this axis as on every other.
+ */
+export function bucketCountLabel(
+  shown: number,
+  page: ListPageState | undefined,
+  universe?: number,
+): string | null {
+  const exact = page?.total;
+  if (exact !== undefined) {
+    /* EVEN THE SERVER'S OWN TOTAL IS CHECKED. Two aggregates read at two
+       moments can disagree, and when they contradict each other arithmetically
+       one of them is stale — rendering either as fact picks a winner we have no
+       grounds to pick. */
+    return universe !== undefined && exact > universe ? null : String(exact);
+  }
+  if (universe !== undefined && shown > universe) return null;
+  return page?.hasMore ? `${shown}+` : String(shown);
+}
+
 // ---------------------------------------------------------------------------
 // Liveness presentation (never derivation — R-UI-5, §10.2.2)
 // ---------------------------------------------------------------------------

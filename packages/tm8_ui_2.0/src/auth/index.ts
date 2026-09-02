@@ -56,3 +56,4 @@ export type {
   AuthIdentity,
   AuthOutcome,
 } from './types';
+export { AuthSplash, useSplashCurtain, SPLASH_FLOOR_MS } from './AuthSplash';

@@ -237,7 +237,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
                 <span className="mdrawer__mark" aria-hidden>
                   <VectorIcon paths={PLUS_ART} size={20} strokeWidth={1.6} />
                 </span>
-                <span className="mdrawer__name">New conversation</span>
+                <span className="mdrawer__name">New chat</span>
               </button>
             </li>
             {props.threads.map((thread) => (

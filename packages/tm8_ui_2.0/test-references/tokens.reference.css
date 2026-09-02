@@ -68,7 +68,16 @@
   --cv2-status-idle-soft:    var(--pn-idle-soft);
 
   /* --- 4 · type ------------------------------------------------------------ */
-  --pn-serif: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* PROSE vs INTERFACE — the seam, named for what it does.
+     It was `--pn-serif`, and that name was a promise the value never kept:
+     both it and `--pn-ui` resolve to the same Figtree stack, so the "serif
+     body, sans headings" contrast twenty-five stylesheets are written for has
+     never once rendered. Deleting the token would have thrown away fifty-four
+     deliberate authoring decisions about which text is READ and which text is
+     OPERATED; renaming it keeps every one of them and stops the lie.
+     Giving prose a genuinely distinct face is now a one-line change here
+     rather than a fifty-four-file edit — which is the point of a seam. */
+  --pn-prose: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pn-ui:    'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pn-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
   /* Caps face: uppercase micro-labels (eyebrows, group labels, field caps).
@@ -88,10 +97,23 @@
   --pn-fs-fine: 10px;
   --pn-fs-tick: 9px;
   --pn-fs-mono: 12.5px;
+  /* READING SIZE — for continuous prose a person actually reads, as opposed to
+     interface body text they scan. A transcript, a doc body, a long note. It is
+     a size larger than `--pn-fs-body` on purpose: 14px is right for a label
+     beside a control and tiring for four paragraphs. */
+  --pn-fs-read: 15px;
 
   --pn-lh-tight: 1.18;
   --pn-lh-snug: 1.35;
   --pn-lh-body: 1.5;
+  --pn-lh-read: 1.62;
+
+  /* THE MEASURE. How wide a line of prose may get before it stops being
+     readable — the eye loses the return sweep somewhere past about 75
+     characters. A wide window should give a reader MARGIN, never longer lines,
+     and every surface that sets prose should reach for this rather than
+     inventing its own number. */
+  --pn-measure: 68ch;
 
   --pn-track-mega: 0.12em;
   --pn-track-label: 0.06em;
@@ -184,8 +206,8 @@
 }
 
 /* --- semantic type classes (scoped) ------------------------------------------ */
-.cv2-root .t-display { font-family: var(--pn-serif); font-weight: 700; font-size: var(--pn-fs-display); line-height: var(--pn-lh-tight); letter-spacing: -0.02em; color: var(--pn-ink); }
-.cv2-root .t-h1 { font-family: var(--pn-serif); font-weight: 700; font-size: var(--pn-fs-h1); line-height: var(--pn-lh-tight); letter-spacing: -0.015em; color: var(--pn-ink); }
+.cv2-root .t-display { font-family: var(--pn-prose); font-weight: 700; font-size: var(--pn-fs-display); line-height: var(--pn-lh-tight); letter-spacing: -0.02em; color: var(--pn-ink); }
+.cv2-root .t-h1 { font-family: var(--pn-prose); font-weight: 700; font-size: var(--pn-fs-h1); line-height: var(--pn-lh-tight); letter-spacing: -0.015em; color: var(--pn-ink); }
 .cv2-root .t-h2 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h2); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
 .cv2-root .t-h3 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h3); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
 .cv2-root .t-title { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-title); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
@@ -193,6 +215,6 @@
 .cv2-root .t-secondary { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-sm); line-height: var(--pn-lh-body); color: var(--pn-ink-3); }
 .cv2-root .t-label { font-family: var(--pn-ui); font-weight: 500; font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
 .cv2-root .t-eyebrow { font-family: var(--pn-caps); font-weight: 700; font-size: var(--pn-fs-micro); text-transform: uppercase; letter-spacing: var(--pn-track-mega); color: var(--pn-ink-3); }
-.cv2-root .t-quote { font-family: var(--pn-serif); font-style: italic; font-weight: 400; font-size: var(--pn-fs-h3); line-height: 1.45; color: var(--pn-ink-2); }
+.cv2-root .t-quote { font-family: var(--pn-prose); font-style: italic; font-weight: 400; font-size: var(--pn-fs-h3); line-height: 1.45; color: var(--pn-ink-2); }
 .cv2-root .t-mono { font-family: var(--pn-mono); font-weight: 400; font-size: var(--pn-fs-mono); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
 .cv2-root .t-code { font-family: var(--pn-mono); font-weight: 500; font-size: var(--pn-fs-mono); color: var(--pn-brand); }

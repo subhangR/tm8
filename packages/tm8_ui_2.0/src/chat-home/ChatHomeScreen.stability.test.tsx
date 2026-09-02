@@ -259,11 +259,11 @@ describe('Chat Home cross-thread and multiplayer safety', () => {
 
     // Switch to the new-thread composer while the post-send read is gated.
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/New chat — pick a mode/)).toBeTruthy());
     act(() => gated.release());
 
     // Thread A's snapshot must not overwrite the new-thread screen.
-    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/New chat — pick a mode/)).toBeTruthy());
     expect(view.queryByTestId('chat-usage-card')).toBeNull();
   });
 

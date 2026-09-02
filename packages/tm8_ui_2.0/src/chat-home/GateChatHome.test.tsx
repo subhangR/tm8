@@ -40,18 +40,28 @@ describe('dashboard route', () => {
     expect(view.queryByTestId('home-screen')).toBeNull();
     // Kinetic W4: the column BOOTS on Tasks now, so the thread list is one
     // root flip away — take it before counting sightings.
-    fireEvent.click(
-      within(view.getByRole('tablist', { name: 'Home roots' })).getByRole('tab', { name: 'Chats' }),
-    );
-    // TWO sightings, one conversation: the panel row (the inventory and the
-    // only selector) and the conversation's own head. It was three while the
-    // working-set tab strip existed; revision 14 removed the strip, and this
-    // count is how that stays removed.
+    /* THE CHATS-ROOT FLIP IS GONE WITH THE HEADER THAT HELD IT. The surface is
+       solo on the dashboard, so it builds no `Home roots` tablist — the rail is
+       the root switcher and the Chats root is where a bare /home already lands.
+       There is nothing to flip TO, which is why this is a deletion rather than
+       a re-targeting: re-pointing it at the rail would be testing the rail from
+       a file about the chat screen. */
+    /* ONE sighting, and it used to be two. The pair was the panel row plus the
+       conversation's own head; the panel row is the thread column, and the
+       dashboard mounts the surface SOLO, so the head is the only place a
+       conversation names itself. The count is still the point — it was three
+       while a working-set tab strip existed, and counting is how a duplicate
+       naming stays gone — the number simply follows the surface. */
     await waitFor(() =>
-      expect(view.getAllByText('Plan the launch sequence')).toHaveLength(2),
+      expect(view.getAllByText('Plan the launch sequence')).toHaveLength(1),
     );
-    fireEvent.click(view.getByRole('button', { name: /^New chat$/ }));
-    expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
+    /* NEW CHAT MOVED OUT OF THE SCREEN AND ONTO HOME. Solo means the surface
+       builds no root header, so its own ＋ is gone and Home's card is the one
+       control for the verb — which is the "one control per verb" ruling
+       arriving, not being broken. Matched on the label rather than the whole
+       accessible name because the card names the verb and then explains it. */
+    fireEvent.click(view.getByRole('button', { name: /New chat/ }));
+    expect(await view.findByText(/New chat — pick a mode/)).toBeTruthy();
   });
 
   it('leads with a Home tab that reads CURRENT while you stand on the surface', async () => {
@@ -104,10 +114,18 @@ describe('dashboard route', () => {
     await view.findByTestId('chat-home-screen');
     // Kinetic W4 boots the column on Tasks; the thread rows this case reads
     // live on the Chats root, one header-cell flip away.
-    fireEvent.click(
-      within(view.getByRole('tablist', { name: 'Home roots' })).getByRole('tab', { name: 'Chats' }),
+    /* THE CHATS-ROOT FLIP IS GONE WITH THE HEADER THAT HELD IT. The surface is
+       solo on the dashboard, so it builds no `Home roots` tablist — the rail is
+       the root switcher and the Chats root is where a bare /home already lands.
+       There is nothing to flip TO, which is why this is a deletion rather than
+       a re-targeting: re-pointing it at the rail would be testing the rail from
+       a file about the chat screen. */
+    /* `.tch-thread__title` IS A THREAD-COLUMN ROW, and the dashboard has no
+       thread column — the surface is solo. Waiting for the conversation's own
+       head instead: same readiness signal, a surface that still exists. */
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-conversation__head')).toBeTruthy(),
     );
-    await waitFor(() => expect(view.container.querySelector('.tch-thread__title')).toBeTruthy());
 
     // NO RAIL. The Chats group is railless, so the shell draws no third
     // column — the conversation LIST is the navigation and the screen owns it.
@@ -118,11 +136,26 @@ describe('dashboard route', () => {
     // column's OWN root header (task 01a00932 R5: [Chats +][Kind + ▾]) —
     // which lives in the panel and selects a POPULATION, not a conversation.
     expect(view.queryByRole('tablist', { name: 'Open conversations' })).toBeNull();
+    /*
+     * WAS `['Screens', 'Home roots']`, AND ONE PANE WENT RATHER THAN CAME.
+     * This block's rule is "exactly two panes, no third" — it is a ceiling, so
+     * dropping to one satisfies it more strictly, not less. The dashboard
+     * mounts the chat SOLO now (2026-08-30): the surface owns no thread column,
+     * so its own root header — the `Home roots` tablist, the [Chats +][Kind ▾]
+     * switcher — is not built at all. The rail is the root switcher, and Home's
+     * own New chat card is the create.
+     *
+     * Solo is DECLARED, not simulated with `display: none`. The stylesheet used
+     * to hide this column, which left the screen believing it still owned one —
+     * and that belief is what makes a null selection mean "the new-chat
+     * composer". Hidden-but-believed shipped a dead New chat button.
+     */
     expect(view.getAllByRole('tablist').map((n) => n.getAttribute('aria-label')))
-      .toEqual(['Screens', 'Home roots']);
-
-    // And the two panes are both really there.
-    expect(view.getByRole('complementary', { name: 'Tasks, chats and sessions' })).toBeTruthy();
+      .toEqual(['Screens']);
+    expect(
+      view.queryByRole('complementary', { name: 'Tasks, chats and sessions' }),
+      'the thread column is back — the screen is no longer solo and New chat will die again',
+    ).toBeNull();
     expect(view.getByRole('region', { name: 'Conversation' })).toBeTruthy();
   });
 });

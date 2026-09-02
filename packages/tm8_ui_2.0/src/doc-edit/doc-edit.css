@@ -402,7 +402,7 @@
 
 .cv2-root .de-preview__heading {
   margin: 0;
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: 17px;
   font-weight: 500;
   color: var(--pn-ink);
@@ -410,7 +410,7 @@
 
 .cv2-root .de-preview__prose {
   margin: 0;
-  font-family: var(--pn-serif);
+  font-family: var(--pn-prose);
   font-size: 13.5px;
   line-height: 1.7;
   color: var(--pn-x-prose-ink, var(--pn-ink));

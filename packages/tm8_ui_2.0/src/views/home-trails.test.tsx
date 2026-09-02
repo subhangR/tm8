@@ -48,8 +48,13 @@ beforeEach(() => {
  * fixture set gained `taskQueued` in the same change, so the To Do tab is no
  * longer empty — it simply does not hold THIS row.)
  */
+/* WHERE THE LIST LIVES (2026-08-30 Home restructure). It was `tch-hosted-list`
+   — the chat surface's middle column. A selected kind is the WHOLE working area
+   now (`hp-list-main`), and the chat surface is not mounted at all in that mode,
+   so the old handle cannot be waited for: it never appears. Same list, same
+   panel, same clicks; one container up. */
 async function openInProgressTask(view: { getByTestId: (id: string) => HTMLElement }) {
-  const list = await waitFor(() => view.getByTestId('tch-hosted-list'));
+  const list = await waitFor(() => view.getByTestId('hp-list-main'));
   fireEvent.click(within(list).getByRole('tab', { name: /^In Progress/ }));
   const row = await waitFor(() => within(list).getByText('Session tree guide lines'));
   fireEvent.click(row);
@@ -63,20 +68,28 @@ describe('Home trails live in the URL (D1)', () => {
 
     /* The rail is the switcher (R4): its Tasks row makes tasks the root… */
     fireEvent.click(within(view.getByTestId('home-rail')).getByRole('button', { name: /^Tasks/ }));
-    await waitFor(() => view.getByTestId('tch-hosted-list'));
+    await waitFor(() => view.getByTestId('hp-list-main'));
     /* …and the ADDRESS says so. */
     await waitFor(() => expect(target.getHash()).toContain(`/home/k/tasks`));
 
     /* A tile click ROOTS the centre (R6a): the entity takes region B and the
-       trail rides `p`. */
+       trail rides `p`.
+
+       REGION B MOVED WITH THE LIST. `tch-center-override` is the chat
+       surface's centre slot, and the chat surface is not mounted while a kind
+       is selected — so the entity opens BESIDE the list inside the working
+       area, under its own trail crumb. `hp-center-trail-host` is that same
+       node (`HomeView` builds it and hands it on); the ruling this pins —
+       a list click roots the centre and the trail rides the URL — is
+       unchanged, and the `p=` assertions below are its other half. */
     await openInProgressTask(view);
-    await waitFor(() => view.getByTestId('tch-center-override'));
+    await waitFor(() => view.getByTestId('hp-center-trail-host'));
     await waitFor(() => expect(target.getHash()).toContain('p='));
 
-    /* Esc walks the trail back out: B returns to the chat, `p` leaves the
+    /* Esc walks the trail back out: B returns to the list, `p` leaves the
        address (D14 generalized). */
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(view.queryByTestId('tch-center-override')).toBeNull());
+    await waitFor(() => expect(view.queryByTestId('hp-center-trail-host')).toBeNull());
     await waitFor(() => expect(target.getHash()).not.toContain('p='));
     view.unmount();
   });
@@ -95,8 +108,8 @@ describe('Home trails live in the URL (D1)', () => {
     /* A cold boot from that address lands on the same arrangement. */
     resetNav();
     const b = render(<GateApp routerTarget={createMemoryTarget(shared)} />);
-    await waitFor(() => b.getByTestId('tch-hosted-list'));
-    await waitFor(() => b.getByTestId('tch-center-override'));
+    await waitFor(() => b.getByTestId('hp-list-main'));
+    await waitFor(() => b.getByTestId('hp-center-trail-host'));
     b.unmount();
   });
 });

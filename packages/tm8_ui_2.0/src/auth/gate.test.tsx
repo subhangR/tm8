@@ -32,6 +32,11 @@ import {
   useAuthSession,
 } from './index';
 import { defaultSignedOutFrame } from './AuthGate';
+/* The field labels come from the copy source, not from a literal here. The
+   owner's USERNAME ruling broke seven of these at once precisely because the
+   string was duplicated into the test — a rename should fail the copy's own
+   guard, not six unrelated sign-in journeys. */
+import { LOGIN } from './specimen';
 import {
   AUTO_OWNER_CACHE_KEY,
   NODE_CLAIM_CACHE_KEY,
@@ -333,8 +338,8 @@ async function createAccountThroughTheUI(name = NAME, password = PASSWORD) {
 }
 
 async function signInThroughTheUI(handle = NAME, password = PASSWORD) {
-  fireEvent.change(screen.getByLabelText('HANDLE'), { target: { value: handle } });
-  fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: password } });
+  fireEvent.change(screen.getByLabelText(LOGIN.handleLabel), { target: { value: handle } });
+  fireEvent.change(screen.getByLabelText(LOGIN.passwordLabel), { target: { value: password } });
   fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 }
 
@@ -844,15 +849,40 @@ describe('THE HONESTY LAW, at the gate', () => {
     );
   });
 
-  it('keeps the token path refused — no operation redeems a pasted token', async () => {
+  /**
+   * THE REFUSALS ON THE LIVE GATE — which controls are drawn but cannot act.
+   *
+   * This replaces a test that clicked through to the token half and asserted
+   * its refusal. The token half was ruled off the page (2026-08-31) because no
+   * operation redeems a pasted token, so there is no longer a half to click to;
+   * what took its place is a provider row and a forgot-password link, drawn to
+   * the design and equally unbacked. The law is unchanged and so is its
+   * subject: every control on this card that cannot act says so.
+   */
+  it('draws the unbacked controls refusing, never enabled', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
     act(() => signOut());
     await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /use an access token instead/i }));
+
     const refusals = screen.getAllByTestId('disabled-with-reason');
-    expect(refusals.length).toBeGreaterThan(0);
-    expect(refusals.some((r) => /sign in with token/i.test(r.textContent ?? ''))).toBe(true);
+    const text = refusals.map((r) => r.textContent ?? '').join(' | ');
+
+    // Three providers and the forgot link. Named, not counted: a count would
+    // pass just as well if GitHub were refused three times.
+    for (const name of ['GitHub', 'Git', 'Google', 'Forgot password?']) {
+      expect(text, `${name} must be drawn and refused`).toContain(name);
+    }
+
+    // And none of them is a control anybody can fire. NOT `queryByRole('button')
+    // → null`: `DisabledAction` deliberately KEEPS `role="button"` and
+    // `tabIndex={0}` so the refusal stays reachable by keyboard, so the role
+    // query finds them and that first draft of this assertion was wrong about
+    // its own subject. What makes them refusals is `aria-disabled`.
+    for (const el of refusals) {
+      expect(el.getAttribute('aria-disabled')).toBe('true');
+      expect((el as HTMLElement).tagName).not.toBe('BUTTON');
+    }
   });
 
   /**
@@ -1144,6 +1174,101 @@ describe('the workspace account menu — name + logout, in the app', () => {
     await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
     expect(screen.getByRole('button', { name: /^sign in$/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /create another account/i })).toBeTruthy();
+  });
+
+  /**
+   * THE UTILITY GROUP — Inbox and Copy link, moved here from the top bar.
+   *
+   * User-ordered 2026-08-31: "palatte inbox copy link and Tarakesh profile
+   * section can you move inbox copy link to profile". These four assertions
+   * are where `shell/shell.test.tsx`'s two bell tests went: the claims about
+   * the control (it opens Inbox when wired; it keeps the D28 posture when it
+   * is not) are unchanged, and only their address moved, exactly like the
+   * control's did.
+   */
+  describe('the account menu’s utility group', () => {
+    const openMenu = async () => {
+      await createAccountThroughTheUI('amber', PASSWORD);
+      fireEvent.click(screen.getByTestId('account-menu-trigger'));
+      return screen.getByTestId('auth-account-menu');
+    };
+
+    it('the inbox row opens Inbox when a host wires it, and closes the menu', async () => {
+      const onOpenInbox = vi.fn();
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} onOpenInbox={onOpenInbox} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const row = within(menu).getByTestId('open-inbox');
+      expect(row.getAttribute('aria-disabled')).toBeNull();
+      fireEvent.click(row);
+      expect(onOpenInbox).toHaveBeenCalledOnce();
+      /* A navigation verb closes the popover behind it — leaving it open over
+         the screen it just navigated to is the same defect the row's
+         neighbours (Account & access tokens, Sign out) already avoid. */
+      expect(screen.queryByTestId('auth-account-menu')).toBeNull();
+    });
+
+    it('the inbox row keeps the D28 posture without a host: announced, reachable, refused', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const row = within(menu).getByTestId('open-inbox') as HTMLButtonElement;
+      expect(row.getAttribute('aria-disabled')).toBe('true'); // announced
+      expect(row.disabled).toBe(false); // inverted guard against the native attr
+      expect(row.getAttribute('title')).toMatch(/unavailable/i); // says why
+      row.focus(); // reachable
+      expect(document.activeElement).toBe(row);
+      // NAMED, and reachable by that name from inside the menu.
+      expect(within(menu).getByRole('button', { name: 'Inbox' })).toBe(row);
+    });
+
+    it('hosts the utility rows a host hands it, above Appearance', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu
+              actor={DISPLAY_ACTOR}
+              utilityRows={<button type="button">Copy link</button>}
+            />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const hosted = within(menu).getByRole('button', { name: 'Copy link' });
+      const inbox = within(menu).getByTestId('open-inbox');
+      // Same group as Inbox — one utility cluster, not two.
+      expect(hosted.closest('.auth-menu__group')).toBe(inbox.closest('.auth-menu__group'));
+      // ...and that group precedes the appearance group.
+      const appearance = within(menu).getByRole('group', { name: 'appearance' });
+      expect(
+        hosted.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('draws the utility group even with nothing hosted — Inbox is never hidden', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+      expect(within(menu).getByTestId('open-inbox')).toBeTruthy();
+    });
   });
 
   it('names the SERVER account the node vouched for — never "local"', async () => {

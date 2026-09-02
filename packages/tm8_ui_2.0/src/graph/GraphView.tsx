@@ -48,6 +48,7 @@ import {
   type GroupById,
 } from './grouping';
 import { GraphSearch } from './GraphSearch';
+import { Building } from './Building';
 import { Minimap } from './Minimap';
 
 /** Structurally identical to the fixture's step type — no fixtures import. */
@@ -94,6 +95,46 @@ export interface GraphViewProps {
 const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 1.75;
 const PAN_STEP = 80;
+
+/**
+ * THE LEGIBILITY FLOOR, and the 7px labels it exists to end.
+ *
+ * MEASURED 2026-08-31 on the live build, graph route, both themes: eleven
+ * `span.gv-node__foot` / `span.gv-node__head` reported at 116×7 holding 13–31
+ * characters. Nothing was crushed. Probing the same page for LAYOUT size found
+ * `.gv-node` at 178px tall with `__head` at 20.06px and `__foot` at 16.5px —
+ * a perfectly healthy flex column. What the browser reported was the COMPOSITED
+ * box: `.gv-canvas` carried `transform: matrix(0.372259, …)` from the opening
+ * fit, and 20.06 × 0.3723 = 7.5.
+ *
+ * So the geometry was right and the SCREEN was still wrong, which is the part
+ * worth fixing rather than explaining away. `fit()` solved for
+ * `min(w/W, h/H)`, and on a 1868×2116 layout in an 1100×806 viewport the
+ * height term wins at 0.37 — the canvas opened by fitting a two-thousand-pixel
+ * column into eight hundred, and every card's 10px micro-type painted at under
+ * 4px. A god's-eye view whose labels cannot be read is a picture of a graph,
+ * not a graph.
+ *
+ * FIT_FLOOR is therefore the smallest zoom the canvas will choose FOR the
+ * reader. It is derived, not taste: the shortest text-bearing row on a card is
+ * `__foot` at 16.5px, and 16.5 × 0.72 = 11.9px of box carrying 10px type — the
+ * point below which the row stops being readable at arm's length. The explicit
+ * ⤢ Fit button and the `0` key still go all the way down to ZOOM_MIN, because
+ * a reader who ASKS to see everything has asked for the overview and should
+ * get it.
+ */
+export const FIT_FLOOR = 0.72;
+
+/**
+ * SEMANTIC ZOOM. Below this the card stops pretending it can show four
+ * registers of micro-type and shows what survives the scale instead: the family
+ * stripe, the kind glyph, the title and — the one fact that is about right now
+ * — liveness. Everything else is one wheel notch away.
+ *
+ * Set below FIT_FLOOR on purpose, so the opening view is never in far mode; you
+ * only reach it by zooming out, which is a request for the overview.
+ */
+export const LOD_FAR_BELOW = 0.62;
 
 /**
  * ONE lens vocabulary (AUDIT 2). The filter dock, the honesty banner and every
@@ -278,7 +319,17 @@ export function GraphView(props: GraphViewProps) {
   const typesPresent = useMemo(() => [...new Set(allEdges.map((e) => e.type))], [allEdges]);
 
   // W2 search — matched ids for the current query (empty query → empty set).
-  const matches = useMemo(() => searchMatches(effectiveNodes, query), [effectiveNodes, query]);
+  // The kind resolver is the REGISTRY's, so typing the word a card actually
+  // shows ("pull request") finds the entity whose enum reads `pull_request`.
+  // No kind is named here or in the model (§15.2).
+  const kindWords = useCallback((kind: string) => {
+    const row = getKind(kind);
+    return [row.label, row.labelPlural];
+  }, []);
+  const matches = useMemo(
+    () => searchMatches(effectiveNodes, query, kindWords),
+    [effectiveNodes, query, kindWords],
+  );
 
   // W1 focus — the undirected 2-hop subgraph around the focused node; we filter
   // BEFORE the model so the subgraph lays out cleanly on its own.
@@ -472,24 +523,40 @@ export function GraphView(props: GraphViewProps) {
     };
   }, [vpSize]);
 
-  const fit = useCallback(() => {
-    if (model.width === 0) return;
-    const { w, h } = vpMetrics();
-    if (w === 0) return;
-    const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(w / model.width, h / model.height, 1)));
-    setTf({
-      x: (w - model.width * k) / 2,
-      y: Math.max(16, (h - model.height * k) / 2),
-      k,
-    });
-  }, [model.width, model.height, vpMetrics]);
+  /**
+   * Fit the layout into the viewport, never zooming below `floor`.
+   *
+   * The floor is a PARAMETER rather than a constant because the two callers
+   * want different things and conflating them is what produced the unreadable
+   * opening view: the canvas choosing a zoom for you owes you legibility
+   * (FIT_FLOOR), while a reader pressing ⤢ has asked to see the whole thing and
+   * is owed the whole thing (ZOOM_MIN).
+   */
+  const fitAt = useCallback(
+    (floor: number) => {
+      if (model.width === 0) return;
+      const { w, h } = vpMetrics();
+      if (w === 0) return;
+      const k = Math.min(ZOOM_MAX, Math.max(floor, Math.min(w / model.width, h / model.height, 1)));
+      setTf({
+        x: (w - model.width * k) / 2,
+        // Top-anchored the moment the layout is taller than the viewport, which
+        // is the normal case once the floor stops us shrinking to fit.
+        y: Math.max(16, (h - model.height * k) / 2),
+        k,
+      });
+    },
+    [model.width, model.height, vpMetrics],
+  );
+
+  const fit = useCallback(() => fitAt(ZOOM_MIN), [fitAt]);
 
   useEffect(() => {
     if (fittedRef.current) return;
     if (model.placed.length === 0) return;
     fittedRef.current = true;
-    fit();
-  }, [fit, model.placed.length]);
+    fitAt(FIT_FLOOR);
+  }, [fitAt, model.placed.length]);
 
   // Measure the viewport so the minimap can draw the visible-window frame in
   // canvas space. Re-attaches when the viewport (un)mounts with the empty state.
@@ -741,11 +808,99 @@ export function GraphView(props: GraphViewProps) {
   const nothingVisible = model.placed.length === 0 && model.shelf.length === 0;
 
   const searching = query.trim().length > 0;
-  // Enter pans to the FIRST placed match (an unplaced match can't be centered).
-  const onSearchSubmit = () => {
-    const first = model.placed.find((p) => matches.has(p.entity.id));
-    if (first) panTo(first.entity.id);
-  };
+  /* The level of detail the current scale can actually carry. Read by the cards
+     (through `data-lod` on the canvas) and by the node title above. */
+  const lod = tf.k < LOD_FAR_BELOW ? 'far' : 'near';
+
+  /* ---------------------------------------------------------------------
+     SEARCH THAT MOVES THE VIEW, RATHER THAN EMPTYING IT.
+     ---------------------------------------------------------------------
+     A list narrows to its hits. A graph must not: take a node's neighbours
+     away and what is left is not a smaller graph, it is a card. So every node
+     stays drawn — misses recede, hits are ringed — and the canvas TRAVELS to
+     the match. The steppers walk the rest.
+
+     Reading order, not model order. `model.placed` is emitted in layout order
+     (component, then rank), which is a fact about the algorithm; the reader's
+     "next" means the next one DOWN THE PAGE. Sorting by y then x makes the
+     stepper agree with the eye. */
+  const orderedMatches = useMemo(
+    () =>
+      model.placed
+        .filter((p) => matches.has(p.entity.id))
+        .slice()
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+        .map((p) => p.entity.id),
+    [model.placed, matches],
+  );
+  const [matchCursor, setMatchCursor] = useState(0);
+  const cursor =
+    orderedMatches.length === 0 ? 0 : Math.min(matchCursor, orderedMatches.length - 1);
+  const currentMatchId = orderedMatches[cursor] ?? null;
+  /* Matches the steppers cannot reach: folded onto a hub, on the shelf, or past
+     the render cap. Stated rather than swallowed — the alternative is a count
+     that disagrees with the canvas, which is the exact failure the truncation
+     banner already exists to prevent. */
+  const offCanvasMatches = Math.max(0, matches.size - orderedMatches.length);
+
+  const stepMatch = useCallback(
+    (delta: number) => {
+      const n = orderedMatches.length;
+      if (n === 0) return;
+      const next = (((cursor + delta) % n) + n) % n;
+      setMatchCursor(next);
+      panTo(orderedMatches[next]!);
+    },
+    [orderedMatches, cursor, panTo],
+  );
+
+  /* MOVING IS PART OF SEARCHING, so it happens on the keystroke and not only on
+     Enter. The guard is a compound key of the query AND the id it resolves to:
+     re-running this effect for any other reason (a pan, a new node arriving,
+     posById changing) must not yank the canvas back to the top of the list
+     while the reader is walking it with the steppers. */
+  const trimmedQuery = query.trim().toLowerCase();
+  const firstMatchId = orderedMatches[0] ?? null;
+  const lastAutoMove = useRef<string | null>(null);
+  useEffect(() => {
+    if (trimmedQuery === '') {
+      lastAutoMove.current = null;
+      setMatchCursor(0);
+      return;
+    }
+    if (firstMatchId === null) return;
+    const key = `${trimmedQuery} ${firstMatchId}`;
+    if (lastAutoMove.current === key) return;
+    lastAutoMove.current = key;
+    setMatchCursor(0);
+    panTo(firstMatchId);
+  }, [trimmedQuery, firstMatchId, panTo]);
+
+  /* `f` FOCUSES THE FIELD — the list panel's key (D36), so the one screen that
+     most needs to feel like the rest of the app uses the same finger. Scoped:
+     it fires only when nothing is already taking text and focus is inside this
+     graph (or nowhere in particular), so it can never eat an `f` typed into the
+     detail aside's composer sitting right beside the canvas. */
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'f' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable || /^(input|textarea|select)$/i.test(target.tagName))
+      ) return;
+      const active = document.activeElement;
+      const mine = active === null || active === document.body || rootRef.current?.contains(active);
+      if (!mine) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   const focusTitle = focus ? effectiveNodes.find((n) => n.id === focus.id)?.title ?? '' : '';
   const showMinimap = model.placed.length >= 8;
@@ -771,7 +926,7 @@ export function GraphView(props: GraphViewProps) {
       : null;
 
   return (
-    <div className="gv-root" data-testid="graph-view">
+    <div className="gv-root" data-testid="graph-view" ref={rootRef}>
       <div className="gv-toolbar">
         {/* THE LENS moved to the canvas's filter dock (bottom-left) — the bar
             keeps the window, the search and the counts. */}
@@ -844,8 +999,11 @@ export function GraphView(props: GraphViewProps) {
         <GraphSearch
           value={query}
           onChange={setQuery}
-          matchCount={searching ? matches.size : null}
-          onSubmit={onSearchSubmit}
+          onCanvas={orderedMatches.length}
+          position={orderedMatches.length === 0 ? 0 : cursor + 1}
+          offCanvas={offCanvasMatches}
+          onStep={stepMatch}
+          inputRef={searchInputRef}
         />
         {focus ? (
           <button
@@ -1062,6 +1220,11 @@ export function GraphView(props: GraphViewProps) {
         >
           <div
             className={panEase ? 'gv-canvas gv-canvas--ease' : 'gv-canvas'}
+            /* SEMANTIC ZOOM, declared as data so the whole rule lives in CSS.
+               `far` means the scale has fallen below the point where a card's
+               micro-type can be read at all; the card sheds those registers
+               there rather than painting 3px words. */
+            data-lod={lod}
             style={{
               width: model.width,
               height: model.height,
@@ -1187,6 +1350,9 @@ export function GraphView(props: GraphViewProps) {
                 dimmed ? 'gv-node--dim' : '',
                 unmatched ? 'gv-node--unmatched' : '',
                 matched ? 'gv-node--match' : '',
+                // The one the readout is counting ("3 / 9"). Distinct from the
+                // other hits, or the position means nothing on screen.
+                currentMatchId === p.entity.id ? 'gv-node--match-current' : '',
                 newIds.has(p.entity.id) ? 'gv-node--new' : '',
                 flashId === p.entity.id ? 'gv-node--flash' : '',
                 selected ? 'gv-node--selected' : '',
@@ -1205,6 +1371,22 @@ export function GraphView(props: GraphViewProps) {
                   className={cls}
                   aria-current={selected ? 'true' : undefined}
                   data-family={row.graphFamily ?? 'gray'}
+                  /* Liveness as an attribute so the far-zoom card can carry it
+                     as a mark when the pill it normally wears is too small to
+                     read. The VERDICT, never a status field (R-UI-5). */
+                  data-live={liveness}
+                  /* COLOUR + WORD-IN-TITLE, the Minimap's own resolution of this
+                     exact tension: at far zoom the card sheds its micro-type, so
+                     the facts those rows carried move into the title where they
+                     stay readable. At near zoom the card says them itself and a
+                     tooltip would only repeat what is on screen. */
+                  title={
+                    lod === 'far'
+                      ? `${row.label} · ${p.entity.title}${
+                          liveness === 'live' ? ' · live' : liveness === 'stale' ? ' · stale' : ''
+                        }`
+                      : undefined
+                  }
                   style={{ left: p.x, top: p.y, width: NODE_W, minHeight: NODE_H }}
                   onClick={() => onSelect(p.entity.id)}
                   onKeyDown={(event) => {
@@ -1456,8 +1638,22 @@ export function GraphView(props: GraphViewProps) {
           overview ABOVE the event ticker (both stay visible, column-gapped).
           Hidden below 8 nodes: an overview of nothing is noise. onJump gives
           CANVAS-space coords → jumpTo centers the transform at the current k. */}
-      {(showMinimap || ticker.length > 0) && (
+      {(showMinimap || ticker.length > 0 || model.placed.length > 0) && (
         <div className="gv-rail">
+          {/* HOW IT IS BUILDING. Fed by `activityAt` and the liveness verdict —
+              both real, both already on every node — so unlike the ticker below
+              it has something to say in the running app. It reads the PLACED
+              nodes, so every row it offers is a row the canvas can travel to. */}
+          {model.placed.length > 0 && (
+            <Building
+              placed={model.placed.map((p) => p.entity)}
+              now={now}
+              livenessOf={livenessOf}
+              arrivedIds={newIds}
+              onPick={panTo}
+              markedId={flashId ?? selectedId}
+            />
+          )}
           {showMinimap && (
             <Minimap
               width={model.width}

@@ -20,21 +20,56 @@
  * the ARIA window-splitter pattern; arrows step, Home/End go to the bounds, and
  * double-click resets to the screen's default. A pointer-only resizer is a
  * control half the people using it cannot reach.
+ *
+ * BOTH AXES LIVE HERE, AND THAT IS THE SAME ARGUMENT AGAIN (owner, 2026-08-31:
+ * Home's two panes must be able to sit side by side OR stacked, with the reader
+ * choosing). A second component for the up/down gesture would be exactly the
+ * drift this file's first paragraph exists to stop: two implementations of one
+ * gesture, and the clamping, the drag origin, the keyboard contract and the
+ * disabled-separator ARIA reading would then have to be got right twice. So
+ * `side` grew two more values rather than the module growing a twin:
+ *
+ *     left  · the panel is LEFT of the handle   — drag right to grow  (x axis)
+ *     right · the panel is RIGHT of the handle  — drag left to grow   (x axis)
+ *     top   · the panel is ABOVE the handle     — drag down to grow   (y axis)
+ *     bottom· the panel is BELOW the handle     — drag up to grow     (y axis)
+ *
+ * Everything the two axes share — the floor law, reset on double-click and on
+ * Backspace/Delete, the 8px hit target painting a 1px hairline, `aria-controls`
+ * naming the element that actually moves — is written once and reads the axis
+ * only where the axis genuinely differs: which coordinate the drag measures,
+ * which arrow keys step, and which way `aria-orientation` points.
  */
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
 
 /** Which side of the handle the panel it controls sits on. */
-export type ResizerSide = 'left' | 'right';
+export type ResizerSide = 'left' | 'right' | 'top' | 'bottom';
+
+/** The axis a handle MOVES ALONG. `left`/`right` slide horizontally and paint a
+ *  vertical hairline; `top`/`bottom` slide vertically and paint a horizontal
+ *  one. Note the inversion — a `separator` whose own orientation is horizontal
+ *  is the one that moves up and down, which is why `aria-orientation` below
+ *  reads the opposite word to the axis name. */
+export function resizerAxis(side: ResizerSide): 'x' | 'y' {
+  return side === 'left' || side === 'right' ? 'x' : 'y';
+}
 
 /** One arrow press. Matches the workspace grid's step so the two feel alike. */
 export const RESIZE_STEP = 16;
 
 export interface PanelResizerProps {
-  /** `left` ⇒ the panel is to the LEFT of this handle; dragging right widens it. */
+  /** `left` ⇒ the panel is to the LEFT of this handle; dragging right widens it.
+   *  `top` ⇒ the panel is ABOVE it; dragging down makes it taller. */
   side: ResizerSide;
   /** Names the panel in the accessible label — "Resize Tasks list panel". */
   label: string;
-  /** The panel's CURRENT applied width, in px. */
+  /**
+   * The panel's CURRENT applied extent ALONG THE AXIS THIS HANDLE MOVES — its
+   * width for `left`/`right`, its HEIGHT for `top`/`bottom`. The three numbers
+   * kept the `width` names when the y axis arrived: five mounts pass them, a
+   * rename to `size` would touch every one of those files and buy nothing this
+   * sentence does not already say, and `aria-valuenow` is axis-agnostic anyway.
+   */
   width: number;
   minWidth: number;
   /** Computed by the caller from a measurement — see the docblock. */
@@ -46,22 +81,77 @@ export interface PanelResizerProps {
   onResize(width: number): void;
   /** Double-click / Backspace — back to the screen's default width. */
   onReset?(): void;
+  /**
+   * A DRAG THAT ASKS FOR LESS THAN THE FLOOR — the collapse gesture, optional.
+   *
+   * WITHOUT THIS THE FLOOR LAW AND THE COLLAPSE GESTURE CONTRADICT EACH OTHER.
+   * `onResize` only ever sees CLAMPED values, by design: this component may not
+   * hand a screen a width below the floor it declared. So a caller that wants
+   * "keep dragging past the floor and the panel closes" — the standard splitter
+   * behaviour, and what Home's ACTIVE pane does at band 3 — has no way to tell
+   * a drag resting ON the floor from one straining well past it. The first
+   * attempt at Home was to lower `minWidth` and collapse inside `onResize`,
+   * which makes `aria-valuemin` announce a width the panel never actually
+   * takes: a lie in the one place a screen-reader user has to trust.
+   *
+   * So the RAW request is reported here instead, and only when it is
+   * meaningfully past the floor (`COLLAPSE_SLACK`) — a jittery pointer resting
+   * at the floor must not close a panel out from under a reader.
+   *
+   * ABSENT ⇒ NOTHING NEW HAPPENS. The four mounts that predate this pass none,
+   * and for them the floor still simply clamps, which is what their screens
+   * want: an entity detail column that vanished mid-drag would be a surprise,
+   * not a feature. A collapse needs a way back drawn on screen (ruling 3,
+   * 2026-08-16), and only a caller that has drawn one may ask for this.
+   */
+  onBeyondFloor?(): void;
 }
 
+/** How far past the floor a drag has to reach before it means "close it".
+ *  One arrow step and a half: further than a hand shake, nearer than a shove. */
+export const COLLAPSE_SLACK = 24;
+
 export function PanelResizer(props: PanelResizerProps) {
-  const { side, label, width, minWidth, maxWidth, controls, disabled = false, onResize, onReset } = props;
-  const drag = useRef<{ pointerId: number; x: number; width: number; maxWidth: number } | null>(null);
+  const {
+    side,
+    label,
+    width,
+    minWidth,
+    maxWidth,
+    controls,
+    disabled = false,
+    onResize,
+    onReset,
+    onBeyondFloor,
+  } = props;
+  const drag = useRef<{ pointerId: number; origin: number; width: number; maxWidth: number } | null>(null);
   const [resizing, setResizing] = useState(false);
   const interactive = !disabled;
+  const axis = resizerAxis(side);
+  /** The coordinate this handle travels along. One expression, so a drag can
+   *  never measure the axis it does not move on. */
+  const coordinate = (event: PointerEvent<HTMLDivElement>) =>
+    axis === 'x' ? event.clientX : event.clientY;
+  /** `left`/`top` grow when the pointer moves in the POSITIVE direction (right,
+   *  down); `right`/`bottom` grow when it moves the other way. */
+  const grows = side === 'left' || side === 'top';
 
   const clamp = (next: number, maximum = maxWidth) =>
     Math.min(Math.max(minWidth, next), Math.max(minWidth, maximum));
 
   /* A drag right is a WIDENING for a left panel and a NARROWING for a right
-     one. Folding the sign in here is what lets both mounts pass the same
-     numbers and get the gesture they expect. */
+     one — and a drag DOWN is a heightening for a top panel and a shortening for
+     a bottom one. Folding the sign in here is what lets all four mounts pass
+     the same numbers and get the gesture they expect. */
   const applyMovement = (movement: number, from: number, maximum: number) => {
-    onResize(clamp(from + (side === 'left' ? movement : -movement), maximum));
+    const requested = from + (grows ? movement : -movement);
+    /* The RAW request is read before the clamp, and only for the collapse
+       report — `onResize` still never sees an unfloored number. */
+    if (onBeyondFloor && requested < minWidth - COLLAPSE_SLACK) {
+      onBeyondFloor();
+      return;
+    }
+    onResize(clamp(requested, maximum));
   };
 
   const stopResize = (event: PointerEvent<HTMLDivElement>) => {
@@ -76,7 +166,12 @@ export function PanelResizer(props: PanelResizerProps) {
       className="kit-resizer"
       role="separator"
       aria-label={`Resize ${label} panel`}
-      aria-orientation="vertical"
+      /* THE WORD IS THE SEPARATOR'S OWN ORIENTATION, NOT THE DRAG'S. A handle
+         that slides left/right is a VERTICAL rule between two columns; one that
+         slides up/down is a HORIZONTAL rule between two rows. Reading it the
+         other way round is the single most common mistake in this pattern and
+         it announces every splitter as the wrong shape. */
+      aria-orientation={axis === 'x' ? 'vertical' : 'horizontal'}
       aria-controls={controls}
       /*
        * THE RANGE EXISTS ONLY WHILE THE SEPARATOR IS A CONTROL.
@@ -109,14 +204,14 @@ export function PanelResizer(props: PanelResizerProps) {
       onPointerDown={(event) => {
         if (!interactive || event.button !== 0) return;
         event.preventDefault();
-        drag.current = { pointerId: event.pointerId, x: event.clientX, width, maxWidth };
+        drag.current = { pointerId: event.pointerId, origin: coordinate(event), width, maxWidth };
         setResizing(true);
         event.currentTarget.setPointerCapture?.(event.pointerId);
       }}
       onPointerMove={(event) => {
         const start = drag.current;
         if (!start || start.pointerId !== event.pointerId) return;
-        applyMovement(event.clientX - start.x, start.width, start.maxWidth);
+        applyMovement(coordinate(event) - start.origin, start.width, start.maxWidth);
       }}
       onPointerUp={stopResize}
       onPointerCancel={stopResize}
@@ -138,9 +233,15 @@ export function PanelResizer(props: PanelResizerProps) {
           onReset();
           return;
         }
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        /* THE ARROWS FOLLOW THE AXIS. A handle that moves up and down and
+           answers to ArrowLeft is a keyboard path that contradicts the pointer
+           one; the ARIA splitter pattern binds the arrows of the axis the
+           separator travels, and nothing else. */
+        const back = axis === 'x' ? 'ArrowLeft' : 'ArrowUp';
+        const forward = axis === 'x' ? 'ArrowRight' : 'ArrowDown';
+        if (event.key !== back && event.key !== forward) return;
         event.preventDefault();
-        applyMovement(event.key === 'ArrowLeft' ? -RESIZE_STEP : RESIZE_STEP, width, maxWidth);
+        applyMovement(event.key === back ? -RESIZE_STEP : RESIZE_STEP, width, maxWidth);
       }}
     >
       <span className="kit-resizer__line" aria-hidden />
@@ -158,6 +259,19 @@ export function PanelResizer(props: PanelResizerProps) {
  * per space would ask the same question again in every space.
  */
 const WIDTH_PREFIX = 'tm8ui.panel-width.';
+/**
+ * THE HEIGHT IS A DIFFERENT NUMBER UNDER THE SAME NAME, so it gets its own
+ * prefix rather than sharing the width's.
+ *
+ * A splitter that can be flipped between side-by-side and stacked (Home,
+ * 2026-08-31) asks the same key — `home.side` — for two extents that have
+ * nothing to do with each other: 420px is a reasonable width for that pane and
+ * a preposterous height for it, and 200px is the reverse. One slot per key
+ * would hand the stacked arrangement the number the reader chose for the
+ * side-by-side one, and then OVERWRITE it on the first drag — the exact
+ * failure `useKeyedState` was written for, one axis over.
+ */
+const HEIGHT_PREFIX = 'tm8ui.panel-height.';
 const FLAG_PREFIX = 'tm8ui.panel-flag.';
 const CHOICE_PREFIX = 'tm8ui.panel-choice.';
 
@@ -186,6 +300,15 @@ export interface PanelWidth {
   /** The viewer's stored preference, floored — NOT clamped to the viewport. */
   width: number;
   setWidth(next: number): void;
+  reset(): void;
+}
+
+/** The y-axis twin. Same three members, named for the axis they hold, so a
+ *  caller cannot pass a height where a width is expected without saying so. */
+export interface PanelHeight {
+  /** The viewer's stored preference, floored — NOT clamped to the viewport. */
+  height: number;
+  setHeight(next: number): void;
   reset(): void;
 }
 
@@ -225,25 +348,30 @@ function useKeyedState<T>(storageKey: string, load: (key: string) => T): [T, (ne
  * The SCREEN clamps for paint (it is the one holding the measurement); this
  * hook holds what was asked for, so widening the window restores it.
  */
-export function usePanelWidth(key: string, fallback: number, minWidth: number): PanelWidth {
-  const storageKey = `${WIDTH_PREFIX}${key}`;
+function useStoredExtent(
+  prefix: string,
+  key: string,
+  fallback: number,
+  minimum: number,
+): { value: number; set(next: number): void; reset(): void } {
+  const storageKey = `${prefix}${key}`;
   const load = useCallback(
     (target: string) => {
       if (typeof window === 'undefined') return fallback;
       const stored = readNumber(target);
-      return stored === null ? fallback : Math.max(minWidth, stored);
+      return stored === null ? fallback : Math.max(minimum, stored);
     },
-    [fallback, minWidth],
+    [fallback, minimum],
   );
-  const [width, setState] = useKeyedState<number>(storageKey, load);
+  const [value, setState] = useKeyedState<number>(storageKey, load);
 
-  const setWidth = useCallback(
+  const set = useCallback(
     (next: number) => {
-      const floored = Math.max(minWidth, Math.round(next));
+      const floored = Math.max(minimum, Math.round(next));
       setState(floored);
       write(storageKey, String(floored));
     },
-    [storageKey, minWidth, setState],
+    [storageKey, minimum, setState],
   );
 
   const reset = useCallback(() => {
@@ -251,7 +379,27 @@ export function usePanelWidth(key: string, fallback: number, minWidth: number): 
     write(storageKey, String(fallback));
   }, [storageKey, fallback, setState]);
 
-  return { width, setWidth, reset };
+  return { value, set, reset };
+}
+
+export function usePanelWidth(key: string, fallback: number, minWidth: number): PanelWidth {
+  const { value, set, reset } = useStoredExtent(WIDTH_PREFIX, key, fallback, minWidth);
+  return { width: value, setWidth: set, reset };
+}
+
+/**
+ * THE HEIGHT EQUIVALENT — same storage, same key-awareness, its own slot.
+ *
+ * Every sentence of `usePanelWidth`'s docblock above applies here verbatim,
+ * which is why the body is shared rather than copied: the no-clamp-on-write
+ * law, the read-on-key-change adjustment, and the storage refusal that must
+ * never take a screen down are ONE implementation, and a defect fixed in it is
+ * fixed on both axes at once. The only difference between the two exports is
+ * which prefix they address and what they call the number.
+ */
+export function usePanelHeight(key: string, fallback: number, minHeight: number): PanelHeight {
+  const { value, set, reset } = useStoredExtent(HEIGHT_PREFIX, key, fallback, minHeight);
+  return { height: value, setHeight: set, reset };
 }
 
 /**
@@ -380,7 +528,22 @@ export function usePanelChoice(
  * measured something rather than guessing a first frame.
  */
 export function useElementWidth(ref: RefObject<HTMLElement | null>): number {
-  const [width, setWidth] = useState(0);
+  return useElementExtent(ref, 'width');
+}
+
+/**
+ * The element's content HEIGHT, observed — the y-axis twin, and needed for the
+ * same reason: a stacked splitter's ceiling is "what the row can spare once the
+ * lower pane's floor is paid", and only a measurement knows how tall the row
+ * actually is. A `vh` unit would answer for the WINDOW, which is not the same
+ * thing once a top bar, a trail strip and a gutter have been spent.
+ */
+export function useElementHeight(ref: RefObject<HTMLElement | null>): number {
+  return useElementExtent(ref, 'height');
+}
+
+function useElementExtent(ref: RefObject<HTMLElement | null>, axis: 'width' | 'height'): number {
+  const [extent, setExtent] = useState(0);
 
   useEffect(() => {
     const node = ref.current;
@@ -388,16 +551,16 @@ export function useElementWidth(ref: RefObject<HTMLElement | null>): number {
     // jsdom and older engines have no ResizeObserver; the fallback is one
     // measurement, which is honest — it just does not follow later resizes.
     if (typeof ResizeObserver === 'undefined') {
-      setWidth(node.getBoundingClientRect().width);
+      setExtent(node.getBoundingClientRect()[axis]);
       return;
     }
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (entry) setWidth(entry.contentRect.width);
+      if (entry) setExtent(entry.contentRect[axis]);
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [ref]);
+  }, [ref, axis]);
 
-  return width;
+  return extent;
 }

@@ -102,9 +102,9 @@ function ThemePane({ theme }: { theme: 'light' | 'dark' }) {
         </div>
 
         <Section title="Type scale" row={false}>
-          <span className="t-display">Display — Newsreader</span>
+          <span className="t-display">Display</span>
           <span className="t-h1">H1 — the editorial voice</span>
-          <span className="t-h2">H2 — Hanken Grotesk</span>
+          <span className="t-h2">H2 heading</span>
           <span className="t-h3">H3 heading</span>
           <span className="t-title">Title 15</span>
           <span className="t-body">Body 14 — a calm instrument, not a dashboard.</span>

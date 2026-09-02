@@ -366,6 +366,19 @@ describe('an outline entry goes to its heading', () => {
     expect([...items].map((li) => li.getAttribute('data-depth'))).toEqual(['0', '1', '1', '2', '1']);
   });
 
+  it('names itself on screen, not only to a screen reader', () => {
+    /* The `aria-label` above is what a screen reader hears; a sighted reader
+       got nineteen grey lines and no word saying they were navigation, which
+       is half of the 2026-08-31 report. The eyebrow is presentational — the
+       <nav> already carries the accessible name — so it is aria-hidden and the
+       label above must stay the single announced one. */
+    const { getAllByTestId } = renderMulti();
+    const outline = getAllByTestId('reader-outline')[0]!;
+    const head = outline.querySelector('.rd-toc__head');
+    expect(head?.textContent).toBe('Contents');
+    expect(head?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('is flat for a document that never uses its top level', () => {
     const { getAllByTestId } = renderReader({
       detail: docDetail(['## One', '', 'a', '', '## Two', '', 'b'].join('\n'), {
@@ -452,6 +465,17 @@ describe('the reading column', () => {
     expect(fence.textContent).toContain('const x = 1;');
     expect(md.textContent).not.toContain('not rendered');
     expect(md.textContent).not.toContain('**');
+  });
+
+  it('wears the DOCUMENT stance, so the reader and the editor preview read alike', () => {
+    /* `md-doc` is what carries the reading size, leading and measure
+       (`kit/markdown.css`). It cannot be asserted as pixels — this suite runs
+       with `css: false` and can see no stylesheet at all — so what is pinned
+       here is that the stance is REQUESTED. `DocPreview` requests the same one;
+       if either drops it, one of the two surfaces silently falls back to the
+       chat-bubble size and "what it will look like" stops being true. */
+    const { getAllByTestId } = renderReader();
+    expect(getAllByTestId('reader-markdown')[0]!.className.split(/\s+/)).toContain('md-doc');
   });
 
   it('renders the designed empty when the document has no content at all', () => {

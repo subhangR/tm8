@@ -575,7 +575,7 @@
   min-width: 0;
   max-width: 100%;
   cursor: grab;
-  transition: border-color var(--pn-dur-fast) var(--ease-standard), opacity var(--pn-dur-fast) var(--ease-standard);
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard), opacity var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
 .b2__card:hover {
@@ -721,8 +721,29 @@
   position: absolute;
   inset-block: 12px;
   inset-inline-end: 12px;
-  width: calc((100% - 24px - (var(--b2-cols, 1) - 1) * 12px) / var(--b2-cols, 1));
-  min-width: min(272px, calc(100% - 24px));
+  /* A DETAIL PANEL IS A READING SURFACE, NOT A BOARD COLUMN.
+     This was one column wide — `(100% - 24 - (n-1)*12) / n` — which on a
+     five-column board is about 280px. A task's whole detail was then squeezed
+     into a kanban column while a thousand pixels sat empty beside it: the
+     controls stacked into a narrow tower, the facts grid grew its own inner
+     scrollbar inside the panel's scrollbar, and the owner screenshotted it
+     with the words "you have so much space why cant you fit".
+
+     The derivation was internally consistent and answered the wrong question.
+     A column is sized by how many columns there are; a READING surface is
+     sized by how wide text should be, which this package already has a number
+     for — `--pn-measure`, the same 68ch the transcript and the doc body use.
+     So the panel is that measure plus its own chrome, floored so it never
+     becomes a sliver and ceilinged so it never swallows the board it is
+     covering.
+
+     Kept from the old rule: the 272px floor, and never wider than the stage
+     less its gutters. */
+  width: clamp(
+    min(272px, calc(100% - 24px)),
+    calc(var(--pn-measure) + 96px),
+    calc(100% - 24px)
+  );
   max-width: calc(100% - 24px);
   display: flex;
   flex-direction: column;

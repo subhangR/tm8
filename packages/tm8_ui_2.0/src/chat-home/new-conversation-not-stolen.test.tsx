@@ -103,7 +103,29 @@ function PhoneHost({ port }: { port: ChatHomePort }) {
   );
 }
 
-const GREETING = /New conversation — pick a mode/;
+/* THE WORD IS "CHAT" NOW, EVERYWHERE ON THIS SURFACE (2026-08-30 Home
+   restructure). The greeting used to read "New conversation — pick a mode…";
+   the screen calls the thing a chat in its verbs, its rail row and its empty
+   state, and one surface calling one object two names is the defect this
+   rename closes. The CLAIM is unchanged — the composer greets you where no
+   thread is open — only the string it is spelled with. */
+const GREETING = /New chat — pick a mode/;
+
+/* THE READINESS PROBES BELOW ARE EXACT-MATCH NOW, AND THE LOOSENESS WAS THE
+   ACCIDENT. They read `getByText(/Plan the launch sequence/)`, which also
+   matched the thread's FIRST TURN — "Plan the launch sequence and check what is
+   already blocked." — and passed only because a solo host drew the title
+   nowhere else. It draws it in `.tch-conversation__head` again (2026-08-30: the
+   head was suppressed for every solo host on the reasoning that Craft's picker
+   prints it, which is true of Craft and of neither of the other two), so the
+   substring matched twice and `getByText` refuses two.
+
+   The claim each of these makes is unchanged and is not about counting: "the
+   cold-start auto-open landed on the most recent conversation". The exact
+   string names the conversation's own head — the one place that STATES which
+   thread is open, rather than a turn that happens to quote it. The desktop
+   probe further down keeps the regex: there the thread column names it too, so
+   the head is not the sole namer and the case is not about solo at all. */
 
 describe('a new conversation the viewer opened survives the space being busy', () => {
   /**
@@ -117,7 +139,7 @@ describe('a new conversation the viewer opened survives the space being busy', (
     const view = render(<PhoneHost port={port} />);
 
     // Cold start does its job first: the most recent conversation opens itself.
-    await waitFor(() => expect(view.getByText(/Plan the launch sequence/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
 
     fireEvent.click(view.getByRole('button', { name: 'Host new conversation' }));
     await waitFor(() => expect(view.getByText(GREETING)).toBeTruthy());
@@ -136,7 +158,7 @@ describe('a new conversation the viewer opened survives the space being busy', (
   it('keeps the draft that was typed into it', async () => {
     const { port, speak } = portWithLateArrival();
     const view = render(<PhoneHost port={port} />);
-    await waitFor(() => expect(view.getByText(/Plan the launch sequence/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
 
     fireEvent.click(view.getByRole('button', { name: 'Host new conversation' }));
     await waitFor(() => expect(view.getByText(GREETING)).toBeTruthy());
@@ -178,7 +200,7 @@ describe('a new conversation the viewer opened survives the space being busy', (
   it('keeps the composer across a re-run of the cold-start read', async () => {
     const { port } = portWithLateArrival();
     const view = render(<PhoneHost port={port} />);
-    await waitFor(() => expect(view.getByText(/Plan the launch sequence/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
 
     fireEvent.click(view.getByRole('button', { name: 'Host new conversation' }));
     await waitFor(() => expect(view.getByText(GREETING)).toBeTruthy());
@@ -204,7 +226,7 @@ describe('the cold-start auto-open still opens the most recent conversation', ()
   it('opens it on a genuine cold start, with the host holding null', async () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<PhoneHost port={port} />);
-    await waitFor(() => expect(view.getByText(/Plan the launch sequence/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
     expect(view.queryByText(GREETING)).toBeNull();
   });
 

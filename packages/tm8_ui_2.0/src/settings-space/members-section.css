@@ -321,3 +321,45 @@
   text-wrap: pretty;
   margin: 0;
 }
+
+/* ═══ A ROLE IS A FACT, SO IT WEARS A COLOUR ═══
+   (owner, 2026-08-31: "this setting space more better colorful, each status
+   items roles").
+
+   Three roles rendered as three identical grey pills — owner, admin and member
+   indistinguishable in the one column the page exists to show. Authority is a
+   STANDING fact, the same class as a kind, so it takes the same treatment the
+   cards took: a wash of its own hue, its border from the same hue, and the
+   word left in full ink so the colour reinforces a word rather than replacing
+   it. Nobody has to learn a legend.
+
+   THE HUES ARE THE KIND FAMILIES, not new colour. `--color-icon-*` are defined
+   once in `styles/canvas-extra.css` and already carry the graph, the board,
+   the list tiles and the Home cards. Adding a fourth palette for roles would
+   be the drift the token sheet exists to prevent.
+
+   OWNER IS THE LOUDEST because it is the one role that cannot be handed over
+   casually and the one the R2/R3 rules protect. ADMIN is distinct but calm.
+   MEMBER is deliberately the quietest — it is the default, and a default that
+   shouts makes every ordinary row look like an exception. */
+.cv2-root .set-members__cell--role[data-role] .set-role {
+  --set-role-hue: var(--color-icon-gray);
+  border: 1px solid color-mix(in srgb, var(--set-role-hue) 40%, var(--pn-line));
+  border-radius: var(--pn-r-pill);
+  background: color-mix(in srgb, var(--set-role-hue) 12%, var(--pn-card));
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+.cv2-root .set-members__cell--role[data-role='owner']  .set-role { --set-role-hue: var(--color-icon-purple); }
+.cv2-root .set-members__cell--role[data-role='admin']  .set-role { --set-role-hue: var(--color-icon-blue); }
+.cv2-root .set-members__cell--role[data-role='member'] .set-role { --set-role-hue: var(--color-icon-gray); }
+
+/* THE HOLLOW HANDLE KEEPS ITS SPACE AND LOSES ITS DASH. Collapsing the element
+   entirely would let the name column reflow between rows that have a handle
+   and rows that do not, and a list whose baseline moves per row is harder to
+   read than one with a gap in it. Zero width, no glyph: the row stays aligned
+   and states nothing. */
+.cv2-root .set-members__handle--none {
+  display: inline-block;
+  width: 0;
+}

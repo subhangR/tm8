@@ -166,7 +166,7 @@
   border: none;
   font: inherit;
   font-weight: 600;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
   padding: 0;
   cursor: pointer;
   appearance: none;
@@ -274,7 +274,7 @@
   font: inherit;
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-sm);
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
   background: var(--pn-paper);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -329,7 +329,7 @@
   border-radius: 6px;
   padding: 6px 8px;
   font: inherit;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
   cursor: pointer;
 }
 
@@ -402,7 +402,7 @@
 }
 
 .crf-pop__scope:hover {
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 
 .crf-pop__scope:focus-visible {
@@ -471,7 +471,7 @@
 
 .crf-zoom__btn:hover:not(:disabled) {
   background: var(--pn-hover);
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 
 .crf-zoom__btn:focus-visible {

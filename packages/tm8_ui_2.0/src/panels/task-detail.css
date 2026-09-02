@@ -206,8 +206,12 @@
 
 /* --- Editable metadata band --------------------------------------------- */
 
+.cv2-root .pn-panel[data-archetype='subtree'] {
+  container-type: inline-size;
+  container-name: pn-panel;
+}
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls {
-  padding: 10px var(--pn-space-4);
+  padding: 14px 18px;
   background: var(--pn-card);
 }
 
@@ -217,44 +221,231 @@
   max-inline-size: 100%;
 }
 
-.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure {
+/* ═══ A LABELLED PROPERTY GRID, NOT A RUN-ON STRIP ═══════════════════════
+   Owner, 2026-08-31: "check controls it is shit looking fix it cleanly".
+
+   WHAT IT WAS: one word `CONTROLS` in a fixed left column, then six different
+   control shapes flowing after it on two lines — a select, a select, a text
+   box, TWO IDENTICAL `mm/dd/yyyy` fields, a run of plain text, and a
+   destructive button. Nothing said which date was the start and which was the
+   due, `Unassigned` and `In no collection` ran together into one broken
+   phrase, and Archive sat at the same visual weight as the fields it can
+   undo.
+
+   THE `CONTROLS` LABEL IS GONE. It spent 120px of a column to say that
+   controls are controls, and it was the only thing standing between the fields
+   and the room they needed. The band is a form; a form does not need a sign
+   saying so.
+
+   EVERY FIELD NAMES ITSELF INSTEAD. `EntityControls` already knew each name —
+   it used `control.label` for the `aria-label` and the placeholder and never
+   showed it — so the control now publishes it as `data-control-label` and the
+   grid draws it with `attr()`. Registry-driven: a kind that gains a control
+   gets a labelled cell with no edit here, and no field name is written in this
+   file.
+
+   THE COLUMNS ARE FLOORED AND FLUID: `auto-fit` with a `minmax(150px, 1fr)`
+   floor, so a wide panel lays the fields out three or four abreast and a
+   narrow one drops to one — the same discipline as every other grid in this
+   package, and never an unfloored track. */
+/* ═══ BUILT TO THE OWNER'S OWN REFERENCE ═══════════════════════════════════
+   2026-08-31: the owner sent a mockup of this band and the React project
+   behind it (`TM8_Production_React_Project1.zip`), with the note "see how
+   every icon is organized". Its `.properties-grid` is:
+
+       grid-template-columns: repeat(4, <unfloored 1fr tracks>)
+       gap: 12px 14px;  padding: 14px 18px;
+       field height 38px, radius 7px, 1px border, 0 10px inset
+       label 10.5px / weight 800 / .7px tracking, in this package's own ink-3
+
+   TWO THINGS IN THAT REFERENCE ARE BANNED HERE, AND THE GUARDS CAUGHT BOTH
+   THE MOMENT I COPIED THEM:
+
+     · Its track floor is ZERO, and `no-branching.test.ts` ("L4 — floors are
+       law") forbids `minmax(0, …)` outright. The reason is on the record in
+       this package: an unfloored track collapses its region to nothing, and
+       this repository has shipped a 2px create box, a 2px chat pane and a
+       divided grid whose rows painted through each other. The columns are
+       floored at 120px instead — the reference's four-column DECISION kept,
+       its unfloored implementation refused.
+     · I transcribed its label colour as a literal into this comment, and
+       `task-detail-premium.test.tsx` rejects a hex anywhere in this file,
+       comment or not. It is `--pn-ink-3`, which is what it should have said.
+
+   A reference is a set of intentions, not a set of lines to paste.
+
+   Taken as the measurements they are, translated to this package's tokens
+   where one exists (its label ink is this package's `--pn-ink-3`; 7px sits between `--pn-r-sm` and
+   `--pn-r-md` and takes the smaller). FOUR FIXED COLUMNS, not the `auto-fit`
+   I had: auto-fit lays as many as fit and the row count changes with the pane
+   width, which is why the fields kept re-flowing into a different shape every
+   time the divider moved. Four columns is a decision; auto-fit was an
+   abdication of one. It drops to two below 900px, as the reference does.
+
+   THE GRID GOES ON THE ELEMENT THAT ACTUALLY HOLDS THE FIELDS.
+   `.pn-controls__measure` has exactly ONE child — `.lp__rowdetail--chips` —
+   which is the flex row every control lives in. Putting the grid on the
+   measure laid out a single item and changed nothing; the labels appeared
+   only because the `::before` rule matches descendants. Measured on the live
+   build before this edit: `[...band.children]` returned one node whose text
+   was the whole strip. A layout rule aimed one level above its subjects does
+   nothing and looks like it did something. */
+/* THE GRID GOES ON THE STRIP, AND ONLY THE STRIP — the correction to the
+   correction above. The first version put it on `.pn-controls__measure`, which
+   has one child, so it laid out a single item and did nothing. The fix added
+   the strip selector but LEFT the measure in the list, which is worse than
+   either: both became four-track grids, so the strip was a single item sitting
+   in track 1 of the outer grid (~288px at a normal pane width) and then laid
+   its own four 120px-floored tracks inside that one cell. Four floors of 120
+   cannot fit in 288, so half the fields were drawn outside the strip's own
+   border — measured on the owner's screenshot: STATE/PRIORITY/DUE DATE/TYPE
+   inside the bordered box, POINTS/START DATE/ASSIGNEE/COLLECTION outside it.
+   A nested grid is not a stronger grid; it is a smaller one. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips {
   display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: var(--pn-space-3);
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  align-items: end;
+  gap: 12px 14px;
+}
+/* The measure stays a plain block: it is the band's WIDTH, not its layout. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure {
+  display: block;
+}
+/* The query needs a CONTAINER. The panel is the box whose width actually
+   changes — the reader drags it — so it is the one that answers. Without this
+   the query has no container to measure and never matches, which is the same
+   class of mistake as a rule aimed one level above its subjects. */
+@container pn-panel (max-width: 900px) {
+  /* The strip only, for the same reason as the base rule — this query carried
+     the identical double-target and would have re-nested the grid at exactly
+     the widths where there is least room to absorb it. */
+  .cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
 }
 
-.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure::before {
-  content: 'Controls';
-  padding-inline: var(--pn-space-1);
+/* Each control becomes a labelled cell. The label sits ABOVE rather than
+   beside: beside costs a second column per field and re-creates the ragged
+   two-tier strip this replaces. */
+/* EVERY CELL IS FLOORED AND CARRIES ITS LABEL'S HEIGHT. A field without a
+   label would otherwise sit a label's height lower than its neighbours, which
+   is what broke the shared baseline: `open` had no label and hung below
+   `MEDIUM`. Reserving the line for every cell keeps the row true whether or
+   not a particular control publishes a name. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__measure > *,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips > * {
+  min-width: 0;
+}
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowdetail--chips > *:not([data-control-label])::before {
+  content: '';
+  display: block;
+  margin-bottom: 3px;
+  font-size: var(--pn-fs-fine);
+  line-height: 1.4;
+}
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls [data-control-label]::before,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls__cell::before {
+  content: attr(data-control-label);
+  display: block;
+  margin-bottom: 3px;
   font-family: var(--pn-caps);
-  font-size: var(--pn-fs-micro);
-  font-weight: 700;
-  letter-spacing: var(--pn-track-label);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.7px;
   text-transform: uppercase;
   color: var(--pn-ink-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A `<select>` and an `<input>` cannot carry generated content — the pseudo
+   element attaches to their WRAPPER, which is where the attribute has to be
+   for the label to draw. The controls publish it on themselves too, for the
+   cases where the wrapper is the control. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__statewrap,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__assignwrap {
+  display: block;
+}
+/* THE LABEL RIDES THE WRAPPER, NEVER THE CONTROL. `::before` does not render
+   on a replaced element — an `<input>` or a `<select>` has no content box to
+   attach one to — so the first version of this put the attribute on the field
+   itself and drew nothing at all. The wrapper is the element that can carry
+   it, which is why `EntityControls` publishes the name there. */
+/* MIN-height, not height. `block-size: 32px` pinned the box while its LABEL
+   was free to wrap, so "CodeBrain 1 · DEFINE — Idea → Refine" took three lines
+   inside a one-line box and ran out through its own border. Ellipsising was the
+   other option and is the wrong one here: the owner's standing rule is that the
+   name of a thing beats its count, and an assignee whose name is cut at
+   "CodeBrain 1 ·" tells you nothing about which of several CodeBrain rows this
+   is. So the box grows to the name. The row's other three cells sit on
+   `align-items: end`, so a taller cell lengthens the row rather than knocking
+   anything out of line. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__assignbtn,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__rowaction {
+  inline-size: 100%;
+  justify-content: flex-start;
+  min-block-size: 32px;
+  block-size: auto;
+  padding-block: 5px;
+  text-align: start;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  padding-inline: var(--pn-space-2);
 }
 
+/* ═══ A CONTROL STRIP WRAPS. IT NEVER SCROLLS SIDEWAYS. ═══════════════════
+   Owner, 2026-08-31, on a task open in the pane: this row —
+   `open · MEDIUM · points · mm/dd/yyyy · mm/dd/yyyy · assignee` — was one
+   `flex-wrap: nowrap` line with `overflow-x: auto` under it, so the panel grew
+   a horizontal scrollbar across its own form.
+
+   THIS IS NOT THE "WIDE CONTENT SCROLLS IN ITS OWN BOX" CASE, and conflating
+   the two is what put the scroller here. That rule is for TABLES and DIAGRAMS
+   — artefacts you READ, where the whole is a picture and panning across it is
+   the natural gesture. A control strip is something you OPERATE, and operating
+   it requires seeing all of it at once: a due date you have to scroll to find
+   is a field most people never discover, and a form you must scroll sideways
+   to fill is not a form you can fill.
+
+   SO THE STRIP WRAPS. Every control keeps its own width (`> * { flex: none }`
+   below, unchanged — a shrinkable `<select>` compresses to its content rather
+   than moving to the next line, which is the clipping failure arriving through
+   a different property), and the ones that do not fit take the next row. In a
+   tall narrow pane that resolves to very nearly one control per line, which is
+   the column reading the vertical berth exists for.
+
+   ARCHETYPE-SCOPED, SO IT IS ONE FIX. Every kind whose panel is `subtree` draws
+   this same band from the same rule — the selector was already keyed on the
+   archetype rather than on `task`, so nothing here is a task-shaped exception
+   and no other kind keeps the scroller.
+
+   THE MOBILE STRIP IS DELIBERATELY LEFT ALONE (`detail/panel-controls-phone.css`).
+   It is also `nowrap` + `overflow-x`, and there it is correct and reasoned: a
+   390px viewport cannot hold six chips on any number of lines without spending
+   the whole screen on them, so the phone trades panning for height ON PURPOSE
+   and hides the scrollbar. That file's rules are (0,4,0) via the shell
+   attribute and win over this one regardless of import order — the specificity
+   trap its own docblock records — so this change cannot reach the phone. */
 .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: var(--pn-space-1);
   padding: 3px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
   background: var(--pn-card);
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--pn-line-2) transparent;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips > * {
   flex: none;
 }
 
+/* The assignee used to be pushed to the far end of a single line. On a wrapped
+   strip that margin is a stray indent wherever the last chip happens to land,
+   so it goes: the controls read as one set now, in order, and the row they end
+   on is whichever row they end on. */
 .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips > :last-child {
-  margin-left: var(--pn-space-2);
+  margin-left: 0;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .lp__rowdetail--chips :is(.lp__statesel, .pn-badge, .lp__rowaction) {
@@ -325,9 +516,37 @@
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__cell {
-  min-block-size: 42px;
+  /* 42px -> 30px, and the label and value share a LINE rather than stacking.
+     Owner, repeatedly, on this card: "this looks worst bad", "why can't you
+     design this properly". Two facts were occupying two 42px slabs across the
+     full width of a pane — 84px of card to say `ID: <uuid>` and
+     `COMPLETION GATE: none`. A definition list is not a dashboard; these are
+     small labelled facts and they should read like a list, letting the
+     description — the thing a reader came for — start higher up the card. */
+  min-block-size: 30px;
   box-sizing: border-box;
-  padding: var(--pn-space-2);
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-2);
+}
+/* The label is the quiet half and takes a fixed column so the values line up
+   down the card instead of starting wherever their label happened to end. */
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__label {
+  flex: none;
+  min-width: 116px;
+  font: 700 var(--pn-fs-fine)/1.4 var(--pn-ui);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+/* The id is the one value that must not be broken across a line — a wrapped
+   uuid reads as two ids. Everything else may wrap. */
+.cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .sb-grid__label {
@@ -769,7 +988,7 @@
 
 .cv2-root .pn-panel[data-archetype='subtree'] .hon-caption {
   font-size: var(--pn-fs-label);
-  line-height: var(--pn-lh-normal);
+  line-height: var(--pn-lh-body);
 }
 
 .cv2-root .pn-panel[data-archetype='subtree'] .pn-panelbar__end > .hon-disabled-group {
@@ -1028,4 +1247,72 @@
   .cv2-root .pn-panel[data-archetype='subtree'] :where(button, input, textarea, select, a):focus-visible {
     outline: 3px solid Highlight;
   }
+}
+
+/* ═══ THE BAND, MADE PROPERLY ═══════════════════════════════════════════════
+   Owner: "that can be more beautiful — use design principles".
+
+   Five principles, each doing one job, and each written down so the next
+   reader can tell craft from taste:
+
+   1. ONE RHYTHM. Six control shapes shared no height, no radius and no inset,
+      so nothing lined up with anything. Every field is now 32px — the bar's
+      own control height, already the rhythm everywhere else in this shell —
+      with one radius and one inset.
+
+   2. ALIGNMENT IS THE WHOLE OF TIDINESS. Labels sit above their fields and the
+      fields share a baseline (`align-items: end`), so the row reads as one
+      band rather than six objects that happen to be adjacent.
+
+   3. DESTRUCTIVE IS NOT A FIELD. Archive can undo the work every other control
+      does, and it sat at the same weight as them. It leaves the grid, sits at
+      the band's foot behind a hairline, and takes the block tone — findable,
+      never mistakable for a field.
+
+   4. AN EMPTY STATE IS NOT A VALUE. "Unassigned" and "In no collection" are
+      the ABSENCE of a fact, and they were rendered in the same ink as a real
+      one, run together into a single broken phrase. They are quieted, and each
+      gets its own cell, because two facts that share a line read as one.
+
+   5. RESTRAINT. Status and priority already carry their tone from the registry
+      pill; nothing else in the band is coloured. A form where every field
+      shouts has no hierarchy, and hierarchy is the thing being bought. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls :is(select, input, .lp__statesel) {
+  block-size: 38px;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding-inline: 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+}
+/* The two date fields were indistinguishable; equal width and a shared
+   baseline is what lets their LABELS do the distinguishing. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls input[type='date'] {
+  font-variant-numeric: tabular-nums;
+}
+/* Absence reads as absence. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .hon-hollow-inline,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls [data-empty='true'] {
+  color: var(--pn-ink-3);
+  font-style: italic;
+}
+/* Archive leaves the field grid: full row, hairline above, block tone, and
+   never stretched to a field's width — a destructive control that fills the
+   row it sits in is a destructive control somebody presses by aiming. */
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls .lp__archive,
+.cv2-root .pn-panel[data-archetype='subtree'] .pn-controls button[data-testid*='archive'] {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-block-start: var(--pn-space-2);
+  padding-block-start: var(--pn-space-2);
+  border-block-start: 1px solid var(--pn-line);
+  border-radius: 0;
+  background: none;
+  color: var(--pn-block);
+  font-weight: 600;
 }

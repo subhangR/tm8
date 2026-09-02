@@ -1,0 +1,455 @@
+/* THE PROJECT TIMELINE + THE SUMMARY STRIP.
+   A separate sheet from board.css because it is a separate view: the columns
+   keep their own rules, and a reader looking for why a bar is hatched finds
+   the whole answer in one file.
+
+   EVERY RULE IS PREFIXED `.cv2-root ` — the token scope (styles/tokens.css),
+   which is also the app root every board mounts inside. The prefix is what
+   stops these rules leaking into a host page and what keeps them able to
+   outrank an unqualified base rule of the same specificity.
+
+   NO RAW HEX ANYWHERE (§14). Colour resolves through `--pn-*` only; the four
+   status ramps are named once, in `[data-tone]`, and nowhere else.
+
+   THE ROWS ARE PINNED. `grid-auto-rows: var(--b2tl-row)` is load-bearing and
+   not tidiness: this grid lives inside a scroller with a DEFINITE height, and
+   implicit `auto` rows in that situation get divided across the height instead
+   of sized from content — which is how cards ended up painting on top of each
+   other last week. A fixed row height also means 200 rows cost 200 predictable
+   pixels each, so the scroll bar tells the truth about how much is below. */
+
+/* ------------------------------------------------------------------ strip */
+
+.cv2-root .b2sum {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1) var(--pn-space-3);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  /* The strip may wrap onto a second line under pressure; it may never make
+     the page scroll sideways. */
+  min-width: 0;
+}
+
+.cv2-root .b2sum__total {
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .b2sum__total b,
+.cv2-root .b2sum__stat b {
+  font-weight: 600;
+  color: var(--pn-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.cv2-root .b2sum__sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 14px;
+  background: var(--pn-line);
+}
+
+.cv2-root .b2sum__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pn-space-1);
+  white-space: nowrap;
+}
+
+/* The strip's dot is the SAME four-ramp mapping the bars use, so the legend
+   and the chart cannot drift. It is a dot beside a word, never a word's
+   replacement. */
+.cv2-root .b2sum__stat[data-tone]::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-ink-4);
+}
+
+.cv2-root .b2sum__stat[data-tone='run']::before { background: var(--pn-run); }
+.cv2-root .b2sum__stat[data-tone='wait']::before { background: var(--pn-wait); }
+.cv2-root .b2sum__stat[data-tone='info']::before { background: var(--pn-info); }
+.cv2-root .b2sum__stat[data-tone='block']::before { background: var(--pn-block); }
+.cv2-root .b2sum__stat[data-tone='none']::before { background: var(--pn-ink-4); }
+
+.cv2-root .b2sum__stat--live b { color: var(--pn-run); }
+
+/* The guessed-dates counts are typographically QUIETER than the real ones —
+   the dashboard's own version of the hatched bar. */
+.cv2-root .b2sum__stat--guess {
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .b2sum__stat--guess b {
+  color: var(--pn-ink-3);
+}
+
+/* --------------------------------------------------------------- timeline */
+
+.cv2-root .b2tl {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.cv2-root .b2tl__edge {
+  margin: 0;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+/* THE ONE SCROLLER. Wide content scrolls HERE and the page body never scrolls
+   sideways; `min-width: 0` is what lets a flex child actually shrink to the
+   viewport instead of pushing it wider. */
+.cv2-root .b2tl__scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior-x: contain;
+}
+
+.cv2-root .b2tl__scroll:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px;
+}
+
+.cv2-root .b2tl__grid {
+  --b2tl-label: 216px;
+  --b2tl-row: 30px;
+  display: grid;
+  /* The label track is FIXED, never `minmax(0, …)`: it is the only thing that
+     names a row, so it must not be allowed to collapse when the day track
+     wants the width. The day track is a repeat of fixed columns, so the grid's
+     intrinsic width is exactly the calendar's — which is what makes the
+     scroller's extent honest. */
+  grid-template-columns: var(--b2tl-label) repeat(var(--b2tl-days), var(--b2tl-col));
+  grid-auto-rows: var(--b2tl-row);
+  align-items: stretch;
+  width: max-content;
+  min-width: 100%;
+  font-family: var(--pn-ui);
+}
+
+/* ---- the dated axis ---- */
+
+.cv2-root .b2tl__corner,
+.cv2-root .b2tl__label,
+.cv2-root .b2tl__group {
+  /* The names stay put while the calendar scrolls under them; without this a
+     200-row timeline is unreadable two weeks to the right. */
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--pn-surface);
+}
+
+.cv2-root .b2tl__corner {
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--pn-space-2);
+  border-bottom: 1px solid var(--pn-line);
+  border-right: 1px solid var(--pn-line);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.cv2-root .b2tl__day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+  padding-bottom: 3px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  font-size: var(--pn-fs-tick);
+  color: var(--pn-ink-4);
+  font-variant-numeric: tabular-nums;
+  /* The month label is absolutely positioned inside this cell and must be
+     allowed to bleed across it — a 26px column cannot hold "Aug 2026". */
+  overflow: visible;
+}
+
+.cv2-root .b2tl__day[data-weekstart] {
+  border-left: 1px solid var(--pn-line);
+}
+
+.cv2-root .b2tl__day[data-weekend] {
+  background: var(--pn-hover);
+}
+
+.cv2-root .b2tl__day[data-today] {
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
+.cv2-root .b2tl__month {
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  white-space: nowrap;
+  font-size: var(--pn-fs-tick);
+  font-weight: 600;
+  color: var(--pn-ink-3);
+  pointer-events: none;
+}
+
+.cv2-root .b2tl__daynum {
+  line-height: 1;
+}
+
+/* TODAY, as a rule the whole height rather than a tick on the header. */
+.cv2-root .b2tl__todayrule {
+  background: var(--pn-info-soft);
+  border-left: 1px solid var(--pn-info);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---- groups ---- */
+
+.cv2-root .b2tl__group {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-2);
+  border-top: 1px solid var(--pn-line);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-2);
+  z-index: 3;
+}
+
+.cv2-root .b2tl__group::before {
+  content: '';
+  width: 3px;
+  align-self: stretch;
+  margin: 4px 0;
+  border-radius: 2px;
+  background: var(--pn-ink-4);
+}
+
+.cv2-root .b2tl__group[data-tone='run']::before { background: var(--pn-run); }
+.cv2-root .b2tl__group[data-tone='wait']::before { background: var(--pn-wait); }
+.cv2-root .b2tl__group[data-tone='info']::before { background: var(--pn-info); }
+.cv2-root .b2tl__group[data-tone='block']::before { background: var(--pn-block); }
+.cv2-root .b2tl__group[data-tone='none']::before { background: var(--pn-ink-4); }
+
+.cv2-root .b2tl__group-count {
+  color: var(--pn-ink-3);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.cv2-root .b2tl__empty {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--pn-space-3);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-4);
+}
+
+/* ---- row labels ---- */
+
+.cv2-root .b2tl__label {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-2);
+  border-right: 1px solid var(--pn-line);
+  border-bottom: 1px solid var(--pn-line);
+  min-width: 0;
+}
+
+.cv2-root .b2tl__label[data-focused] {
+  background: var(--pn-active);
+}
+
+.cv2-root .b2tl__title {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root .b2tl__title:hover {
+  color: var(--pn-brand);
+}
+
+.cv2-root .b2tl__title:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 2px;
+  border-radius: var(--pn-r-sm);
+}
+
+.cv2-root .b2tl__live {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+  font-size: var(--pn-fs-tick);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ---- the bars ---- */
+
+.cv2-root .b2tl__bar {
+  --b2tl-ink: var(--pn-ink-4);
+  --b2tl-fill: var(--pn-hover);
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  overflow: hidden;
+  box-sizing: border-box;
+  height: 20px;
+  margin: 0 1px;
+  padding: 0 6px;
+  border: 1px solid var(--b2tl-ink);
+  border-radius: var(--pn-r-sm);
+  background: var(--b2tl-fill);
+  color: var(--b2tl-ink);
+  font-size: var(--pn-fs-tick);
+  font-weight: 600;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+/* MULTICOLOUR, AND IT MEANS SOMETHING. Four categories, four ramps — the same
+   mapping `TIMELINE_TONES` declares in board-model.ts, which is where it is
+   tested. `none` deliberately has NO status colour: an entity the server sent
+   no category for is not "to do", and painting it as one would invent the
+   fact the four-category rule exists to protect. */
+.cv2-root .b2tl__bar[data-tone='run'] {
+  --b2tl-ink: var(--pn-run);
+  --b2tl-fill: var(--pn-run-soft);
+}
+
+.cv2-root .b2tl__bar[data-tone='wait'] {
+  --b2tl-ink: var(--pn-wait);
+  --b2tl-fill: var(--pn-wait-soft);
+}
+
+.cv2-root .b2tl__bar[data-tone='info'] {
+  --b2tl-ink: var(--pn-info);
+  --b2tl-fill: var(--pn-info-soft);
+}
+
+.cv2-root .b2tl__bar[data-tone='block'] {
+  --b2tl-ink: var(--pn-block);
+  --b2tl-fill: var(--pn-block-soft);
+}
+
+/* THE WHOLE POINT OF THIS FILE.
+   A bar whose range was DRAWN rather than READ must not be mistakable for one
+   whose range came off the record — at a glance, at a distance, and in a
+   screenshot. Three separate signals, because any one of them alone is a
+   signal somebody misses:
+
+     1. the outline goes DASHED — the universal "provisional" edge;
+     2. the fill goes HATCHED and the solid tint is dropped, so the bar reads
+        as texture rather than as a block of status colour;
+     3. the whole thing sits at reduced opacity, so in a wall of bars the
+        stated ones are the ones your eye lands on first.
+
+   The fourth signal is not here at all: `BoardTimeline` writes the reason into
+   the bar's `title` and `aria-label`, so the distinction survives for a reader
+   who sees none of the above. */
+.cv2-root .b2tl__bar[data-inferred] {
+  border-style: dashed;
+  opacity: 0.72;
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--b2tl-fill) 0,
+    var(--b2tl-fill) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+/* A record that contradicts itself is neither a guess nor a clean fact: it is
+   an error in the data, and it wears the error ramp's edge whatever its
+   category is. */
+.cv2-root .b2tl__bar[data-contradictory] {
+  border-color: var(--pn-block);
+  border-style: dotted;
+}
+
+/* Clipped edges are TORN, not rounded — a square-cut end says the bar
+   continues past the window, where a rounded one would claim it stops here. */
+.cv2-root .b2tl__bar[data-clipped-start] {
+  border-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.cv2-root .b2tl__bar[data-clipped-end] {
+  border-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.cv2-root .b2tl__word {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root .b2tl__guess {
+  font-weight: 500;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.cv2-root .b2tl__outside {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  font-size: var(--pn-fs-tick);
+  color: var(--pn-ink-4);
+}
+
+/* Nothing here animates, so there is nothing for reduced motion to stop — the
+   hatch is a static gradient and the today rule is a static fill. Stated
+   rather than left to inference, because the absence of a
+   `prefers-reduced-motion` block in a new stylesheet normally means somebody
+   forgot one. */

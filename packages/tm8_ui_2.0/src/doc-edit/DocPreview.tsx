@@ -12,10 +12,15 @@ import { Markdown, type MarkdownFileHref } from '../kit';
  * preview that renders differently from the reader is not a preview; it is a
  * second opinion. One renderer is what makes "what it will look like" true.
  *
- * The old diagram placeholder is gone with it. A `mermaid` fence now shows its
- * real source in a labelled code block, which claims nothing: no diagram
- * renderer ships, and the source says that more honestly than a hatched panel
- * captioned with a node count nobody measured (the previous GAP G2).
+ * The old diagram placeholder is gone with it. A `mermaid` fence is DRAWN, by
+ * `kit/Mermaid` — verified rendering on the deployed bundle 2026-08-31
+ * (`phase="ok"`, a real 588×333 SVG, on the one document in the space that
+ * contains a diagram). The sentence this replaces said no diagram renderer
+ * shipped; one does, and the claim was stale rather than wrong when written.
+ *
+ * IT ALSO WEARS THE SAME `md-doc` STANCE AS THE READER, for the same reason it
+ * shares the renderer: a preview set at a different size, leading or measure
+ * from the surface it previews is a second opinion, not a preview.
  *
  * `blocks.readDraft` survives for the WRITE stance, which still needs the fence
  * chips to offer per-block editors — parsing for a control is a different job
@@ -46,7 +51,7 @@ export function DocPreview({
 
   return (
     <div className="de-preview" data-testid={testId}>
-      <Markdown source={source} testId={`${testId}-markdown`} fileHref={fileHref} />
+      <Markdown source={source} className="md-doc" testId={`${testId}-markdown`} fileHref={fileHref} />
     </div>
   );
 }

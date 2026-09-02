@@ -11,18 +11,27 @@
   display: inline-flex;
   align-items: center;
   gap: var(--pn-space-1);
-  width: 200px;
+  /* Wider than 200 because the field now carries a POSITION, not just a count:
+     "3 / 12 · 2 off canvas" is the longest true thing it says, and a readout
+     that ellipsises is a readout nobody trusts. */
+  width: 268px;
   min-height: 28px;
   flex: none;
-  padding: 0 var(--pn-space-2);
+  padding: 0 var(--pn-space-1) 0 var(--pn-space-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
-  transition: border-color var(--pn-dur-fast) var(--pn-ease-out);
+  transition:
+    border-color var(--pn-dur-fast) var(--pn-ease-out),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-out);
 }
 
+/* THE LIST PANEL'S FOCUS TREATMENT, not a second one: `.lp__searchrow` rings in
+   --pn-focus and lays a 20%-alpha halo behind it. Same tokens, same alpha, same
+   duration — the two find boxes in this app should feel like one control. */
 .gv-search:focus-within {
-  border-color: var(--pn-brand);
+  border-color: var(--pn-focus, var(--pn-brand-2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-focus, var(--pn-brand-2)) 20%, transparent);
 }
 
 .gv-search__glyph {
@@ -61,8 +70,68 @@
   flex: none;
 }
 
+/* THE POSITION READOUT. Mono because it is data, and `tabular-nums` because it
+   changes once per keystroke: proportional digits make the whole field jitter
+   sideways while you type, which reads as the layout being unstable rather than
+   the number being new. */
+.gv-search__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-2);
+}
+
+/* The steppers. They appear only when there is more than one match — a "next"
+   over a single hit is a control that cannot do anything, and this package
+   would rather draw nothing than draw that. */
+.gv-search__steps {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+}
+
+.gv-search__step {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: 1;
+  color: var(--pn-ink-3);
+  background: none;
+  border: none;
+  border-radius: var(--pn-r-pill);
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.gv-search__step:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.gv-search__step:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+
+/* The list panel's key hint, same key and same quiet mono. It yields to the
+   readout rather than sitting beside it: once you are in the field the hint has
+   nothing left to teach, and the position does. */
+.gv-search__key {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-4);
+  padding-right: var(--pn-space-1);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .gv-search {
+  .gv-search,
+  .gv-search__step {
     transition: none;
   }
 }

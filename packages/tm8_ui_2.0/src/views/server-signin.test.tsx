@@ -19,6 +19,7 @@
  *     parked boot resumes into the workspace with no reload.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { LOGIN } from '../auth/specimen';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CollabError } from '@tm8/contract';
 import { AuthGate, PASSES_STORAGE_KEY } from '../auth';
@@ -275,8 +276,8 @@ describe('signing in to the active server from inside the workspace', () => {
     await mountAndSwitchToStaging(seam);
     await screen.findByTestId('auth-frame');
 
-    fireEvent.change(screen.getByLabelText('HANDLE'), { target: { value: 'amber' } });
-    fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: 'correct-horse' } });
+    fireEvent.change(screen.getByLabelText(LOGIN.handleLabel), { target: { value: 'amber' } });
+    fireEvent.change(screen.getByLabelText(LOGIN.passwordLabel), { target: { value: 'correct-horse' } });
     fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     // The frame goes; the parked boot read resumes and the workspace mounts.
