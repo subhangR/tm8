@@ -35,6 +35,36 @@ language sql immutable parallel safe as $$
   ]}'::jsonb
 $$;
 
+-- REGISTER THE REF BEFORE ANY PAYLOAD CARRIES IT. `w2_normalize_menu_payload`
+-- (071:101-112) rejects a view item whose ref is not a `menu_eligible` AND
+-- `implemented` row in `public.menu_view_registry`, and `w2_guard_menu_config`
+-- runs it on every write to `space_menu_configs`. Without this insert the update
+-- below raises 22023 'unknown or unavailable MenuConfig view ref'.
+--
+-- THIS WAS INVISIBLE TO CI. `migrations apply clean` builds a FRESH database,
+-- where no `space_menu_configs` row equals `payload_164`, so the guarded update
+-- below matches ZERO rows, the trigger never fires, and the missing registry row
+-- is never exercised. It fails only against a database that has real menu rows —
+-- i.e. only on a deployed node. Confirmed on prod 2026-09-02: the migration
+-- aborted mid-deploy and left the services stopped.
+--
+-- Every prior tab migration does this first — 045 (graph), 130 (board),
+-- 137 (craft), 160 (help). 173 was the one that skipped it.
+--
+-- `menu_eligible` true, `required` false: an operator MAY seat CodeBrain and no
+-- space is forced to carry it. `implemented` true because the view exists —
+-- `codebrain` is in the contract's `MenuViewRef` union and `menu-resolve.ts`
+-- resolves it with a label, icon and art.
+insert into public.menu_view_registry(
+  ref, route_template, menu_eligible, required, implemented
+)
+values ('codebrain', '#/s/{s}/codebrain', true, false, true)
+on conflict (ref) do update
+set route_template = excluded.route_template,
+    menu_eligible = excluded.menu_eligible,
+    required = excluded.required,
+    implemented = excluded.implemented;
+
 do $$
 declare
   payload_164 constant jsonb := '{"groups":[
