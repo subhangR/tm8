@@ -1,0 +1,26 @@
+CodeBrain v3 on the tm8 platform itself.
+
+Repo: /home/tm8/projects/tm8   (HEAD d6da9ba3, branch feat/chat-entity-ledger — a SHARED
+checkout, so verify with `git show <sha>:<path>` and never report from a dirty working tree)
+
+Read the phases before you on this task anchor. Where an explorer named files, READ THE FILES,
+not their summary.
+
+Build/verify commands for this repo:
+    bun run typecheck:core && bun run typecheck:tm8-ui-2.0     # ORDER IS LOAD-BEARING
+    bun x vitest run <path>                                    # `bun x`, not `bunx`
+Never run a bare `tsc -p packages/... --noEmit` — the contract's dist/ is gitignored, so a
+fresh worktree gives ~558 FALSE type errors until typecheck:core has run.
+vitest runs `css: false`, so a green suite HAS NOT SEEN any CSS. Assert CSS as source.
+Any red whose duration >= 30000ms is STARVATION on this 4-core box, not a failure.
+
+Post your report to the TASK anchor and stop.
+
+## End with the completion promise
+
+When — and only when — your phase is genuinely finished, end with exactly:
+
+    <promise>PHASE COMPLETE</promise>
+
+Emit it ONLY if the statement is unequivocally true. If you are blocked or your coverage is
+partial, say so and do NOT emit it. Stopping short with an honest account is a successful phase.

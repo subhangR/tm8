@@ -605,7 +605,7 @@ commit OID via `git rev-parse --verify <ref>^{commit}`.
 
 ```
 worktreeId   := generated uuid          -- generated HERE, before any DB write
-branch       := tm8/<short(worktreeId)> -- or a server-sanitized slug; never client-supplied raw
+branch       := tm8/<worktreeId>        -- the WHOLE id; a truncated one collides (see below)
 worktreeRoot := realpath(<dataDir>/worktrees)
 path         := <worktreeRoot>/<projectId>/<worktreeId>
 ```
