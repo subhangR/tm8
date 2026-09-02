@@ -16,11 +16,19 @@
 // 2026-09-02: `tm8-ui` is BUILT AND SERVED AGAIN, as the ALTERNATE UI behind
 // the version switch — at `/ui-1.0/`, from `dist-1.0`, on the same origin, and
 // only when an operator sets TM8_UI_1_0_DIR. It is still not the product UI and
-// this pointer does not move. Two claims in the note this replaces are now
-// stale and were measured rather than assumed: it typechecks clean under the
-// workspace's React 19 (the React 18 declaration in its package.json is
-// overridden and was never the blocker anyone thought it was), and it is in the
-// merge gate again — see tools/ci/check.sh.
+// this pointer does not move.
+//
+// THE REACT NOTE ABOVE WAS RIGHT, and an earlier cut of this change said it was
+// not. Measured on a dev box whose install happened to hoist only one copy of
+// `@types/react`, the snapshot typechecked clean, and that was mistaken for
+// proof the React 18 declaration never mattered. Under CI's frozen lockfile it
+// pulls `@types/react` 18 BESIDE the hoisted 19 and fails immediately — two
+// React type identities in one program. The claim was install-layout luck.
+//
+// What makes it gateable now is a real change, not a re-reading: the package
+// declares React 19 (matching the runtime the root `overrides` already forced
+// on it), and the six `RefObject<T>` props React 19 widened to
+// `RefObject<T | null>` are corrected. See tools/ci/check.sh.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";

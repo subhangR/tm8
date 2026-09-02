@@ -136,13 +136,19 @@ fi
 # packages/tm8_ui_2.0 (the Astryx redesign) is the product UI; packages/tm8-ui
 # is the 1.0 snapshot, now served beside it as the ALTERNATE UI at /ui-1.0/.
 #
-# THE 1.0 SNAPSHOT IS GATED AGAIN (2026-09-02), and the note that used to sit
-# here was wrong on the facts. It said gating would fail "on React-19 type/flush
-# semantics its code predates". That was never measured: the snapshot typechecks
-# CLEAN under the workspace's React 19 and builds clean. The React 18 line in its
-# package.json is overridden by the root `overrides` and always was.
+# THE 1.0 SNAPSHOT IS GATED AGAIN (2026-09-02). The note that used to sit here
+# said gating would fail because the snapshot declares React 18 against a
+# workspace pinned to 19. THAT NOTE WAS CORRECT — an earlier cut of this change
+# claimed otherwise, on the strength of a dev box whose install hoisted a single
+# `@types/react`. Under this job's frozen lockfile the snapshot pulls @types 18
+# beside the hoisted 19 and fails on the spot, exactly as the note predicted.
 #
-# What ungating it actually cost was real, though, and is the argument for this
+# It is gateable now because the condition was FIXED, not re-read: the package
+# declares React 19 to match the runtime the root `overrides` already forced on
+# it, and the six `RefObject<T>` props React 19 widened to `RefObject<T | null>`
+# are corrected.
+#
+# What ungating it cost in the meantime was real, and is the argument for this
 # stage: while nothing checked it, the contract gained a `codebrain` MenuViewRef
 # and four of the snapshot's exhaustive `Record<MenuViewRef, …>` tables silently
 # stopped compiling. Nothing reported it, because nothing looked. A UI a viewer
