@@ -51,6 +51,22 @@ $$;
 -- Every prior tab migration does this first — 045 (graph), 130 (board),
 -- 137 (craft), 160 (help). 173 was the one that skipped it.
 --
+-- THE CHECK CONSTRAINT FIRST, THEN THE ROW. `menu_view_registry.ref` carries an
+-- enumerated check constraint, so inserting an unlisted ref fails with
+-- `menu_view_registry_ref_check` before the trigger is ever reached. 160 (help),
+-- 137 (craft) and 130 (board) each drop and re-add it with their ref appended;
+-- this does the same. The list below is the contract's `MenuViewRef` union
+-- (`contract.ts:2433`) verbatim, plus the `v:`-prefixed operator-authored escape
+-- hatch the constraint has carried since 102.
+alter table public.menu_view_registry
+  drop constraint menu_view_registry_ref_check;
+
+alter table public.menu_view_registry
+  add constraint menu_view_registry_ref_check check (
+    ref in ('dashboard','feed','inbox','workspace','graph','channels','files','settings','git','messages','board','craft','help','codebrain')
+    or ref ~ '^v:[a-z0-9][a-z0-9_-]{0,48}$'
+  );
+
 -- `menu_eligible` true, `required` false: an operator MAY seat CodeBrain and no
 -- space is forced to carry it. `implemented` true because the view exists —
 -- `codebrain` is in the contract's `MenuViewRef` union and `menu-resolve.ts`
