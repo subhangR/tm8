@@ -356,6 +356,9 @@ function parseTarget(
     case 'craft':
       /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
       return { view: 'craft' };
+    case 'codebrain':
+      /* CodeBrain (2026-09-01) — same flat whole-centre posture. */
+      return { view: 'codebrain' };
     case 'help': {
       /* The Help shelf (2026-08-19), with an optional open plate (2026-08-20)
          in the `settings/{section}` shape. The slug is NOT checked against the
@@ -468,6 +471,8 @@ function pathOf(route: Route): string {
       return `${base}/board`;
     case 'craft':
       return `${base}/craft`;
+    case 'codebrain':
+      return `${base}/codebrain`;
     case 'help':
       return t.plate ? `${base}/help/${enc(t.plate)}` : `${base}/help`;
     case 'boardV2':

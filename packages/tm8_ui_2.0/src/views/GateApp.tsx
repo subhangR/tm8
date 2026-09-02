@@ -36,6 +36,7 @@ import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../rou
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
+import { UiVersionSwitch } from '../ui-version';
 import { useShellKind } from '../mobile';
 import { MobileShell } from './MobileShell';
 import { isUnbuiltViewRef } from './view-ref-screens';
@@ -1887,14 +1888,24 @@ export function GateApp(props: GateAppProps = {}) {
                    there, and `CopyLinkControl` stays ignorant of auth's
                    classes for its other mounts (the phone drawer). */
                 utilityRows={
-                  data.spaceId ? (
-                    <CopyLinkControl
-                      spaceId={data.spaceId}
-                      target={activeTarget ?? WORKSPACE_TARGET}
-                      openEntity={openOnScreen}
-                      className="auth-menu__row auth-menu__row--live"
-                    />
-                  ) : null
+                  <>
+                    {data.spaceId ? (
+                      <CopyLinkControl
+                        spaceId={data.spaceId}
+                        target={activeTarget ?? WORKSPACE_TARGET}
+                        openEntity={openOnScreen}
+                        className="auth-menu__row auth-menu__row--live"
+                      />
+                    ) : null}
+
+                    {/* THE UI VERSION SWITCH — the door to the frozen 1.0 UI.
+                        Unconditional, unlike Copy link: a Space is what makes
+                        a LINK addressable, and the other UI is addressable
+                        without one. It refuses with its own reason when the
+                        server serves no 1.0 bundle, so it needs no gate here.
+                     */}
+                    <UiVersionSwitch className="auth-menu__row auth-menu__row--live" />
+                  </>
                 }
               />
             ) : undefined

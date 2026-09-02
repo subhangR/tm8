@@ -1,0 +1,19 @@
+/* The version switch carries LAYOUT ONLY, exactly like `copy-link.css`.
+ *
+ * Colour, type and the row's box come from the `auth-menu__row` grammar the
+ * host dresses it in. A control that set its own appearance would look right
+ * in the account menu and wrong everywhere else it is ever hung — and it would
+ * be the one row in that menu whose hover state came from a different file. */
+
+.ui-version {
+  align-items: center;
+  display: inline-flex;
+  font: inherit;
+  gap: 0.4rem;
+}
+
+/* The glyph is decorative — the label beside it is the accessible name, so a
+ * screen reader must not read the arrows as a second word for the same door. */
+.ui-version__glyph {
+  flex: none;
+}

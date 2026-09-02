@@ -134,14 +134,46 @@ fi
 # cannot land on one side of the seam without the other.
 #
 # packages/tm8_ui_2.0 (the Astryx redesign) is the product UI; packages/tm8-ui
-# is the frozen 1.0 snapshot, kept for rollback and reference like packages/ui.
-# The snapshot declares React 18 while the workspace pins 19 via root overrides,
-# so gating it would fail on React-19 type/flush semantics its code predates —
-# it is deliberately NOT typechecked or tested here.
+# is the 1.0 snapshot, now served beside it as the ALTERNATE UI at /ui-1.0/.
+#
+# THE 1.0 SNAPSHOT IS GATED AGAIN (2026-09-02). The note that used to sit here
+# said gating would fail because the snapshot declares React 18 against a
+# workspace pinned to 19. THAT NOTE WAS CORRECT — an earlier cut of this change
+# claimed otherwise, on the strength of a dev box whose install hoisted a single
+# `@types/react`. Under this job's frozen lockfile the snapshot pulls @types 18
+# beside the hoisted 19 and fails on the spot, exactly as the note predicted.
+#
+# It is gateable now because the condition was FIXED, not re-read: the package
+# declares React 19 to match the runtime the root `overrides` already forced on
+# it, and the six `RefObject<T>` props React 19 widened to `RefObject<T | null>`
+# are corrected.
+#
+# What ungating it cost in the meantime was real, and is the argument for this
+# stage: while nothing checked it, the contract gained a `codebrain` MenuViewRef
+# and four of the snapshot's exhaustive `Record<MenuViewRef, …>` tables silently
+# stopped compiling. Nothing reported it, because nothing looked. A UI a viewer
+# can switch to has to be a UI something checks.
 if [ -f packages/tm8_ui_2.0/tsconfig.json ]; then
   run_stage "typecheck packages/tm8_ui_2.0" ./node_modules/.bin/tsc -p packages/tm8_ui_2.0/tsconfig.json --noEmit
 else
   skip "typecheck packages/tm8_ui_2.0" "production UI is absent"
+fi
+
+# TYPECHECK ONLY, and the omission of its test suite is deliberate rather than
+# an oversight. MEASURED 2026-09-02 on clean origin/main, before any of this
+# lane's edits: 9 failures across 5 files (board, craft, files-explorer,
+# transcript, router-mount) — React-19 act/flush timing in a suite written
+# against React 18, unrelated to anything the version switch touches. Gating
+# them today would make this stage red on arrival, and a stage that is red on
+# arrival is a stage people learn to ignore.
+#
+# The typecheck has no such baseline: it is clean, and it is the check that
+# would have caught the `codebrain` widening on the day it landed. Adding the
+# test suite is its own task, and it starts by fixing those 9.
+if [ -f packages/tm8-ui/tsconfig.json ]; then
+  run_stage "typecheck packages/tm8-ui (1.0)" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
+else
+  skip "typecheck packages/tm8-ui (1.0)" "the 1.0 snapshot is absent"
 fi
 
 # --- 3. tests ---------------------------------------------------------------

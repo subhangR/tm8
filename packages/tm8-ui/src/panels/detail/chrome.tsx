@@ -386,7 +386,11 @@ export function ActionBar({
    * The bar element, for a host that needs the TRIGGER and the expand inside
    * one dismissal boundary — see `flowSurface`.
    */
-  barRef?: React.RefObject<HTMLDivElement>;
+  /* React 19 widened `useRef<T>(null)` to `RefObject<T | null>`; a prop typed
+     `RefObject<T>` can no longer receive one. The null is real — the ref is
+     null before mount — so the type is corrected to admit it rather than
+     cast at the call sites, which would move a real case into a blind spot. */
+  barRef?: React.RefObject<HTMLDivElement | null>;
   /** The flow verb whose config is currently expanded, if any. */
   openFlow?: ActionRef | null;
   /** Toggles that expand. Absent ⇒ a flow verb falls back to `onAction`. */

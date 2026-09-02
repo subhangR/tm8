@@ -96,7 +96,12 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // Six groups from the shipped default plus route-only Board v2 in the
     // single Board seat. Files and legacy Board are absent; Help is last.
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
-    expect(labels).toEqual(['Home', 'Work', 'Board', 'Craft', 'Graph', 'Settings', 'Help']);
+    // 'CodeBrain' joined the spine 2026-09-01 (migration 173) — see
+    // domain/menu.ts. The tab row is derived from the shipped default, so it
+    // moves with the spine rather than being asserted independently of it.
+    expect(labels).toEqual([
+      'Home', 'Work', 'Board', 'Craft', 'Graph', 'CodeBrain', 'Settings', 'Help',
+    ]);
 
     // The rail is absent as a matter of design, so none of its furniture is
     // half-rendered either — a stray group or divider would mean a rail came

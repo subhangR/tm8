@@ -26,6 +26,14 @@ export interface ServerConfig {
    * Undefined in dev, where Vite serves the UI on 4611 (AM-1: no desktop shell).
    */
   readonly uiDir: string | undefined;
+  /**
+   * Directory holding the built 1.0 UI bundle, served under `/ui-1.0/`.
+   *
+   * Optional and off by default: unset, there is no second mount, `/ui-1.0/`
+   * 404s like any other unknown path, and the version switch in the product UI
+   * reports itself unavailable rather than offering a door to nothing.
+   */
+  readonly ui10Dir: string | undefined;
   /** Request body cap — over this the frame answers `payload_too_large` (413). */
   readonly maxBodyBytes: number;
   /**
@@ -445,6 +453,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     allowedOrigins,
     ...(preview ? { preview } : {}),
     uiDir: env.TM8_UI_DIR?.trim() || undefined,
+    ui10Dir: env.TM8_UI_1_0_DIR?.trim() || undefined,
     maxBodyBytes,
     databaseUrl: env.TM8_DATABASE_URL?.trim() || undefined,
     dataDir,

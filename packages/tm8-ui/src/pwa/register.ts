@@ -15,9 +15,21 @@
  * lesser of the two symptoms. We degrade silently rather than warn, because
  * every non-secure origin is a developer on purpose, and the app works fine
  * without a worker; it simply is not installable.
+ *
+ * A MOUNTED BUILD REGISTERS NOTHING, and this is a correctness guard rather
+ * than an optimisation. Since the UI version switch this package is built with
+ * `base: '/ui-1.0/'` and served beside the product UI on one origin, with no
+ * `pwaShell` — so it emits no `sw.js`. The line below asks for `/sw.js` at
+ * root scope, and at the root of that shared origin sits `tm8_ui_2.0`'s
+ * worker: without this guard the 1.0 app would successfully register the 2.0
+ * WORKER over the whole origin. It would then answer offline navigations —
+ * including navigations back to `/` — from a precache of a bundle this app
+ * never built, and nothing would report it, because the registration SUCCEEDS.
+ * The `.catch` below cannot help; there is no error.
  */
 export function registerServiceWorker(): void {
   if (!import.meta.env.PROD) return;
+  if (import.meta.env.BASE_URL !== '/') return;
   if (!('serviceWorker' in navigator)) return;
 
   // `load` matters: registration competes with the app's own boot requests for

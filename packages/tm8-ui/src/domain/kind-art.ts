@@ -283,6 +283,15 @@ export const VIEW_ART = {
     'M13.2 5.4 10.6 2.8 4.6 8.8v2.6h2.6z',
     'M9.4 4l2.6 2.6',
   ],
+  /* CodeBrain — a node on a wire into a closing angle bracket. Copied
+     verbatim from `tm8_ui_2.0`'s table so the two packages draw one view one
+     way; this snapshot has no CodeBrain SCREEN, but a ref the rail can be
+     asked to render still needs a mark. */
+  codebrain: [
+    'M2.6 8h10.8',
+    'M4.4 8a1.4 1.4 0 1 0 0-.1z',
+    'M13.4 4.6 10.4 8l3 3.4',
+  ],
   /**
    * A question mark, hook and dot (Help, 2026-08-19). Deliberately NOT a
    * circled `?` and NOT a lifebuoy: `KIND_ART.commit` is a bare ring and the

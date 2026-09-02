@@ -26,7 +26,11 @@ import { useDismissable } from '../useDismissable';
  */
 export function useReasonDisclosure(): {
   open: boolean;
-  ref: RefObject<HTMLSpanElement>;
+  /* React 19 widened `useRef<T>(null)` to `RefObject<T | null>`; a prop typed
+     `RefObject<T>` can no longer receive one. The null is real — the ref is
+     null before mount — so the type is corrected to admit it rather than
+     cast at the call sites, which would move a real case into a blind spot. */
+  ref: RefObject<HTMLSpanElement | null>;
   /** Spread onto the refused control. */
   triggerProps: {
     onClick: (e: { stopPropagation: () => void }) => void;
@@ -34,7 +38,7 @@ export function useReasonDisclosure(): {
     'aria-expanded': boolean;
   };
   /** Spread onto the wrapper that CSS keys the open state off. */
-  hostProps: { ref: RefObject<HTMLSpanElement>; 'data-reason-open': 'true' | undefined };
+  hostProps: { ref: RefObject<HTMLSpanElement | null>; 'data-reason-open': 'true' | undefined };
 } {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);

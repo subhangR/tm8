@@ -315,7 +315,11 @@ function TranscriptTop({
   paused,
   onResume,
 }: {
-  sentinelRef: RefObject<HTMLDivElement>;
+  /* React 19 widened `useRef<T>(null)` to `RefObject<T | null>`; a prop typed
+     `RefObject<T>` can no longer receive one. The null is real — the ref is
+     null before mount — so the type is corrected to admit it rather than
+     cast at the call sites, which would move a real case into a blind spot. */
+  sentinelRef: RefObject<HTMLDivElement | null>;
   hasOlder: boolean;
   older: OlderRead;
   onLoadOlder: () => void;

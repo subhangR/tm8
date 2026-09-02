@@ -60,7 +60,7 @@ import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './htt
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { autoOwnerResolver } from './http/security.js';
 import { announceNodeClaim } from './identity/node-claim-boot.js';
-import { createStaticHandler } from './http/static.js';
+import { createStaticHandler, UI_1_0_MOUNT_PATH } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
@@ -622,6 +622,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
+    // The 1.0 bundle, when an operator configured one. Mounted rather than
+    // rooted so both UIs share this origin — and therefore the session cookie,
+    // without which switching lands you on a sign-in wall.
+    ...(config.ui10Dir
+      ? {
+          staticMounts: [
+            createStaticHandler(config.ui10Dir, { mountPath: UI_1_0_MOUNT_PATH }),
+          ],
+        }
+      : {}),
   });
 
   const { url } = await server.listen();

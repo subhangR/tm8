@@ -29,7 +29,12 @@ export {
   BASE_SECURITY_HEADERS,
   type SecurityDecision,
 } from './security.js';
-export { createStaticHandler, type StaticHandler } from './static.js';
+export {
+  createStaticHandler,
+  UI_1_0_MOUNT_PATH,
+  type StaticHandler,
+  type StaticHandlerOptions,
+} from './static.js';
 export {
   createRemoteServerProxy,
   type RemoteServerProxy,

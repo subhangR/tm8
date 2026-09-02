@@ -194,7 +194,14 @@ describe('add', () => {
     // screen that NO shipped group places, so it is free in every draft by
     // construction. That is the point of it — its door is a bar control, and
     // an operator who wants it on the rail must be able to add it.
-    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels', 'craft', 'help']);
+    // …and 'codebrain' joined it 2026-09-01 (migration 173) in exactly the
+    // 'craft' shape: the rowed BASE predates the tab, so the editor offers the
+    // ref as an add. Nothing here was hardcoded into moving —
+    // `availableViewRefs` is VIEW_PRESENTATION minus what the draft places,
+    // which is why widening the union moved this list on its own.
+    expect(availableViewRefs(startDraft(BASE))).toEqual([
+      'feed', 'inbox', 'channels', 'craft', 'codebrain', 'help',
+    ]);
   });
 
   it('the revision-20 shipped default frees Files and legacy Board without deleting either', () => {
@@ -221,7 +228,7 @@ describe('add', () => {
     expect(draftConfig(d).groups.find((g) => g.id === 'graph')?.items.map((i) => i.ref))
       .toEqual(['graph', 'feed']);
     // And once used, it stops being on offer.
-    expect(availableViewRefs(d)).toEqual(['inbox', 'channels', 'craft', 'help']);
+    expect(availableViewRefs(d)).toEqual(['inbox', 'channels', 'craft', 'codebrain', 'help']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {

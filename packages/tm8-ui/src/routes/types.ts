@@ -184,6 +184,18 @@ export type NavView =
    */
   | { view: 'help'; plate: string | null }
   /*
+   * CODEBRAIN (2026-09-01): the delivery pipeline module. A FLAT segment with
+   * no state of its own — the run it shows is the one the roster reports, so
+   * there is nothing selection-like to carry. When a phase becomes linkable it
+   * takes a trailing segment the way `help` carries `plate`.
+   *
+   * This snapshot has no CodeBrain SCREEN (`view-ref-screens.ts` says so). The
+   * ROUTE still exists, because the route table is shared: a `MenuViewRef`
+   * that cannot round-trip through the codec breaks deep links and the back
+   * button for every view that shares it, not only its own.
+   */
+  | { view: 'codebrain' }
+  /*
    * BOARD V2 (2026-08-18, Kind/Status/Category/Workflow program): the
    * universal board — any entity kind, columns = the four status categories
    * (or one kind's workflow states). Whole-centre, flat segment.

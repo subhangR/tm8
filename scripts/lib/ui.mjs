@@ -10,10 +10,25 @@
 // it is THE pointer every launcher, doctor, and deploy path reads.
 //
 // 2026-08-29: the pointer moved from `packages/tm8-ui` to `packages/tm8_ui_2.0`
-// when the Astryx redesign (PRs #526/#531) became the product UI. `tm8-ui` is
-// kept as the pre-redesign snapshot for rollback and side-by-side reference; it
-// still declares React 18 while the workspace pins 19, so it is not built,
-// served, or gated. Prod's TM8_UI_DIR must point at `packages/tm8_ui_2.0/dist`.
+// when the Astryx redesign (PRs #526/#531) became the product UI. Prod's
+// TM8_UI_DIR must point at `packages/tm8_ui_2.0/dist`.
+//
+// 2026-09-02: `tm8-ui` is BUILT AND SERVED AGAIN, as the ALTERNATE UI behind
+// the version switch — at `/ui-1.0/`, from `dist-1.0`, on the same origin, and
+// only when an operator sets TM8_UI_1_0_DIR. It is still not the product UI and
+// this pointer does not move.
+//
+// THE REACT NOTE ABOVE WAS RIGHT, and an earlier cut of this change said it was
+// not. Measured on a dev box whose install happened to hoist only one copy of
+// `@types/react`, the snapshot typechecked clean, and that was mistaken for
+// proof the React 18 declaration never mattered. Under CI's frozen lockfile it
+// pulls `@types/react` 18 BESIDE the hoisted 19 and fails immediately — two
+// React type identities in one program. The claim was install-layout luck.
+//
+// What makes it gateable now is a real change, not a re-reading: the package
+// declares React 19 (matching the runtime the root `overrides` already forced
+// on it), and the six `RefObject<T>` props React 19 widened to
+// `RefObject<T | null>` are corrected. See tools/ci/check.sh.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,8 +40,19 @@ export const UI_DIR = join(REPO_ROOT, "packages", "tm8_ui_2.0");
 /** The legacy collab-v2 oracle. Not served, not built, not started. */
 export const LEGACY_UI_DIR = join(REPO_ROOT, "packages", "ui");
 
-/** The frozen pre-Astryx 1.0 snapshot. Not served, not built, not gated. */
+/**
+ * The pre-Astryx 1.0 snapshot — the ALTERNATE UI, not the product one.
+ *
+ * Built to `dist-1.0` (never `dist`; the reason is a production interlock
+ * documented in its vite.config.ts) and served under `/ui-1.0/` when
+ * TM8_UI_1_0_DIR names that directory.
+ */
 export const UI_1_0_DIR = join(REPO_ROOT, "packages", "tm8-ui");
+
+/** Where the 1.0 bundle is emitted, and what TM8_UI_1_0_DIR should name. */
+export function ui10BundleDir() {
+  return join(UI_1_0_DIR, "dist-1.0");
+}
 
 /**
  * Can we start a Vite dev server for the product UI?
