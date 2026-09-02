@@ -48,6 +48,22 @@ export const LAUNCH_MODEL_CATALOG = [
     seedName: 'Fable 5 1M Teammate',
   },
   {
+    model: 'claude-fable-5-1',
+    label: 'Claude Fable 5.1',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    note: 'Anthropic model via Claude Code — needs Claude Code 2.1.251 or newer',
+    seedName: 'Fable 5.1 Teammate',
+  },
+  {
+    model: 'claude-fable-5-1[1m]',
+    label: 'Claude Fable 5.1 (1M)',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    note: '1M-context variant via Claude Code — needs Claude Code 2.1.251 or newer',
+    seedName: 'Fable 5.1 1M Teammate',
+  },
+  {
     model: 'gpt-5.6-sol',
     label: 'OpenAI GPT 5.6',
     provider: 'openai',
