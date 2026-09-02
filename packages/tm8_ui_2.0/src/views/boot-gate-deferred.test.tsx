@@ -280,7 +280,13 @@ describe('boot: the non-gating reads are off the gate', () => {
        whole pool slot per boot on a node whose pool is the scarce thing. */
     expect(h.menuReads()).toBe(0);
     expect(result.current.menu.origin).toEqual({ source: 'server', revision: 7 });
-    expect(result.current.menu.config).toEqual(SERVER_MENU);
+    /* Equality up to the bridge seat: `withCodeBrainSeat` amends every server
+       menu that lacks a codebrain row (see menu-resolve). What THIS test pins
+       is unchanged — the config came from spaces.settings, not menu.get. */
+    const groups = result.current.menu.config.groups.filter(
+      (g: { id: string }) => g.id !== 'codebrain-bridge',
+    );
+    expect({ ...result.current.menu.config, groups }).toEqual(SERVER_MENU);
   });
 
   it('still lands on the shipped default when settings carries no usable menu', async () => {

@@ -155,7 +155,50 @@ export function resolveMenu(raw: MenuConfig | null | undefined, error?: unknown)
     };
   }
 
-  return { config: raw, origin: { source: 'server', revision: raw.revision } };
+  return { config: withCodeBrainSeat(raw), origin: { source: 'server', revision: raw.revision } };
+}
+
+/**
+ * THE CODEBRAIN BRIDGE SEAT — additive, presentation-layer, and temporary by
+ * design.
+ *
+ * The stored menu is operator data and this module's law is that it is never
+ * overwritten. CodeBrain should have arrived there the honest way: the
+ * operator placing a row in Settings → Menu. That door is closed today by the
+ * DEPLOYED server, whose contract predates the `codebrain` MenuViewRef —
+ * `spaces.menu.update` rejects the enum value (measured 2026-09-02:
+ * "Invalid enum value. Expected 'dashboard' | … | 'help'"), and teaching it
+ * the value needs a server rebuild + restart, which this node's operating
+ * rules forbid an agent to do (KillMode=control-group takes every live agent
+ * PTY with it).
+ *
+ * So the seat rides the RESOLVED menu, where presentation already has
+ * jurisdiction (VIEW_PRESENTATION, RAILLESS_VIEW_REFS live here too). It is
+ * strictly additive: if any group anywhere in the stored config names the
+ * `codebrain` view — the operator has authored a real seat — this returns the
+ * config untouched, so the bridge retires itself the day the server can
+ * accept the row. Owner's standing instruction (2026-09-02): CodeBrain must
+ * be reachable in the web app.
+ */
+function withCodeBrainSeat(config: MenuConfig): MenuConfig {
+  const has = config.groups.some((g) =>
+    g.items.some(
+      (i) =>
+        (i.type === 'view' && i.ref === 'codebrain') ||
+        (i.type === 'view' ? (i.children ?? []) : []).some(
+          (c) => c.type === 'view' && c.ref === 'codebrain',
+        ),
+    ),
+  );
+  if (has) return config;
+  const idx = config.groups.findIndex((g) => g.items[0]?.type === 'view' && g.items[0]?.ref === 'craft');
+  const groups = [...config.groups];
+  groups.splice(idx >= 0 ? idx + 1 : groups.length, 0, {
+    id: 'codebrain-bridge',
+    label: 'CodeBrain',
+    items: [{ type: 'view', ref: 'codebrain' }],
+  });
+  return { ...config, groups };
 }
 
 // ---------------------------------------------------------------------------

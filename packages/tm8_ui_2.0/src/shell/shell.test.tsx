@@ -492,7 +492,12 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
     const { container, getByText, queryByText } = renderResolved(custom);
     // Group labels are accessible names now, not printed eyebrows.
     const groups = [...container.querySelectorAll('.shell-rail__group')];
-    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Ops', 'Admin']);
+    /* 'CodeBrain' rides along by the bridge seat (menu-resolve's
+       `withCodeBrainSeat`): the deployed server's contract cannot yet store the
+       row, so presentation adds it to every server menu that lacks one.
+       "Faithfully" still means every AUTHORED group unchanged and in order —
+       the seat is additive, and the stand-down case has its own test. */
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Ops', 'Admin', 'CodeBrain']);
     getByText('Tasks');
     // The shipped default's groups are NOT merged in.
     expect(queryByText('Home')).toBeNull();

@@ -159,10 +159,35 @@ describe('resolveMenu — fail-closed (LLD §4.1)', () => {
     groups: [{ id: 'only', label: 'Only', items: [{ type: 'view', ref: 'settings' }] }],
   };
 
-  it('uses a valid server config as-is', () => {
+  it('uses a valid server config, amended only by the CodeBrain bridge seat', () => {
+    /* `toBe(valid)` until 2026-09-02. The bridge seat (see `withCodeBrainSeat`)
+       is the one sanctioned amendment: the deployed server's contract predates
+       the `codebrain` enum and rejects the row through `spaces.menu.update`,
+       so presentation seats it. Every stored group must pass through UNTOUCHED
+       and in order — the seat is additive or it is overreach. */
     const resolved = resolveMenu(valid);
-    expect(resolved.config).toBe(valid);
+    const others = resolved.config.groups.filter((g) => g.id !== 'codebrain-bridge');
+    expect(others).toEqual(valid.groups);
+    const bridge = resolved.config.groups.find((g) => g.id === 'codebrain-bridge');
+    expect(bridge?.items).toEqual([{ type: 'view', ref: 'codebrain' }]);
     expect(resolved.origin).toEqual({ source: 'server', revision: 7 });
+  });
+
+  it('stands down the bridge when the operator has authored a real CodeBrain row', () => {
+    const authored: MenuConfig = {
+      schemaVersion: 1,
+      revision: 8,
+      groups: [
+        /* `settings` present because fail-closed requires it of EVERY renderable
+           menu — the first draft of this fixture omitted it and was testing the
+           malformed fallback, not the stand-down. */
+        { id: 'mine', label: 'Mine', items: [{ type: 'view', ref: 'codebrain' }] },
+        { id: 'admin', label: 'Admin', items: [{ type: 'view', ref: 'settings' }] },
+      ],
+    };
+    const resolved = resolveMenu(authored);
+    // Identity, not equality: an authored seat means NO amendment at all.
+    expect(resolved.config).toBe(authored);
   });
 
   it('falls back when menu() resolves null — C-4 covers BOTH 501 and a missing row', () => {
