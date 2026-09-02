@@ -39,6 +39,12 @@ describe('the shipped default menu', () => {
       // studio joins between Board and Graph, railless like both.
       'Craft',
       'Graph',
+      // CodeBrain (2026-09-01, migration 173) — the first spine widening this
+      // snapshot took after it was frozen. It is here because the shipped
+      // default is pinned to the contract's DEFAULT_MENU_GROUP_SPINE, which
+      // the server seeder answers to as well; a client default that omitted
+      // the group would disagree with every seeded space.
+      'CodeBrain',
       'Settings',
       'Help',
     ]);
@@ -141,9 +147,13 @@ describe('the shipped default menu', () => {
     // same additive R4 widening as the two above. `board` joined 2026-08-16
     // (the task kanban tab), same posture; `craft` the same day (the
     // blueprint studio, Craft P1), same posture again. `help` joined
-    // 2026-08-19 and entered the shipped spine in revision 20.
+    // 2026-08-19 and entered the shipped spine in revision 20. `codebrain`
+    // joined 2026-09-01 (migration 173) — the first widening this snapshot took
+    // AFTER it was frozen as the 1.0 UI, and the one that proves the point of
+    // gating it again: the union widened, four exhaustive tables here stopped
+    // compiling, and nothing said so for three days because nothing looked.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['board', 'channels', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
+      ['board', 'channels', 'codebrain', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );
   });
 });

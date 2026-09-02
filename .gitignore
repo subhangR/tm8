@@ -11,3 +11,8 @@ test-results/
 playwright-report/
 dist-base/
 dist-mine/
+# The alternate 1.0 UI bundle. `dist/` above does not cover it: that bundle is
+# built to `dist-1.0` on purpose, because emitting a real `dist/` under
+# packages/tm8-ui would replace the symlink production currently serves through
+# (packages/tm8-ui/vite.config.ts says why at length).
+dist-1.0/

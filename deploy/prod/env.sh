@@ -78,6 +78,18 @@ export TM8_PREVIEW_FRAME_ANCESTORS="http://127.0.0.1:${TM8_UI_PORT} http://local
 # Serve the same bundle 7777 serves, so :7778 is a same-origin fallback.
 export TM8_UI_DIR="$TM8_PROD_ROOT/packages/tm8_ui_2.0/dist"
 
+# THE ALTERNATE 1.0 UI, mounted at /ui-1.0/ on the same origin (see
+# packages/server/src/http/static.ts). Same origin is the point: both UIs then
+# share the session cookie, so switching does not land on a sign-in wall.
+#
+# Unset it to withdraw the alternate UI — nothing 404s except /ui-1.0/ itself,
+# and the switch control in the product UI reports itself unavailable rather
+# than offering a door onto nothing.
+#
+# `dist-1.0`, not `dist`. That is a safety interlock; the reason is in
+# packages/tm8-ui/vite.config.ts and it is about not repointing production.
+export TM8_UI_1_0_DIR="$TM8_PROD_ROOT/packages/tm8-ui/dist-1.0"
+
 # The vite preview proxy target (packages/tm8_ui_2.0/vite.preview.config.ts reads it).
 export TM8_SERVER_ORIGIN="http://127.0.0.1:7778"
 

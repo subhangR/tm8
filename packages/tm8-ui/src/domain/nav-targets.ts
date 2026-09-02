@@ -117,6 +117,13 @@ export const VIEW_REF_ROUTE = {
   board: 'board',
   /* The Craft studio (2026-08-16) — same flat-segment posture. */
   craft: 'craft',
+  /* CodeBrain arrived in the contract AFTER this package was frozen as the 1.0
+     snapshot (2026-08-29), and these records are total over `MenuViewRef` — so
+     its absence was a type error the whole time this package was ungated. It
+     gets a route because a `MenuViewRef` with none cannot be addressed at all;
+     the SCREEN is deliberately absent (see `view-ref-screens.ts`), which is the
+     honest state for a view this snapshot predates. */
+  codebrain: 'codebrain',
   /* The Help shelf (2026-08-19) — same flat-segment posture. Help has a route
      of its own even though it is not in the default spine: its door is a bar
      control, and a reference screen with no address could not be linked to. */
@@ -167,6 +174,7 @@ export function navViewOfName(name: string): NavView | null {
     case 'git':
     case 'messages':
     case 'board':
+    case 'codebrain':
     case 'channels':
       return { view: name };
     case 'settings':
@@ -233,6 +241,11 @@ export function landingOfRoute(view: NavView): Landing | null {
     case 'messages':
     case 'board':
     case 'craft':
+    /* CodeBrain: routable here even though this snapshot has no screen for it
+       (`view-ref-screens.ts` marks it unbuilt). A ref that cannot round-trip
+       through the codec is worse than one with no screen — it breaks the back
+       button and deep links for everything that shares the route table. */
+    case 'codebrain':
     case 'help':
       return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
 
@@ -362,6 +375,7 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
         case 'messages':
         case 'board':
         case 'craft':
+        case 'codebrain':
           return { view };
         case 'help':
           /* The rail seat opens the LIBRARY, never a particular plate — same

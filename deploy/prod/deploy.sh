@@ -437,6 +437,23 @@ info "ui (vite build — this is a SEPARATE build; \`bun run build\` is tsc only
   || die "vite build failed — prod is untouched and still serving the previous build"
 ok "vite build"
 
+# The ALTERNATE 1.0 UI, served at /ui-1.0/ for the version switch. It emits to
+# `dist-1.0`, NEVER `dist`: `/opt/tm8/prod/packages/tm8-ui/dist` is a symlink to
+# ../tm8_ui_2.0/dist bridging a stale root-owned /etc/tm8/prod.env, and a real
+# `dist/` here would replace it and silently repoint prod at the 1.0 bundle.
+# See packages/tm8-ui/vite.config.ts.
+#
+# NOT `die` ON FAILURE, unlike the product UI: this bundle is optional. A deploy
+# that cannot build the alternate UI must still ship the product one — failing
+# the whole rollout over a rollback affordance would make the affordance more
+# dangerous than the thing it exists to protect against.
+info "ui 1.0 (the alternate UI at /ui-1.0/) …"
+if (cd packages/tm8-ui && node_modules/.bin/vite build); then
+  ok "vite build (1.0)"
+else
+  warn "1.0 UI build failed — shipping without it; the version switch will report it unavailable"
+fi
+
 [[ -f "$NEXT/packages/server/dist/index.js"    ]] || die "build produced no packages/server/dist/index.js"
 [[ -f "$NEXT/packages/tm8_ui_2.0/dist/index.html"  ]] || die "build produced no packages/tm8_ui_2.0/dist/index.html"
 ok "artifacts present: server/dist/index.js, tm8_ui_2.0/dist/index.html"

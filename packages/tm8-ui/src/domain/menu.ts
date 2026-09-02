@@ -166,6 +166,18 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // childless view item — the chat and the canvas are the navigation.
     { id: 'craft', label: 'Craft', items: [{ type: 'view', ref: 'craft' }] },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
+    // CodeBrain (2026-09-01, migration 173): the delivery pipeline's own tab.
+    // Present here because this default is PINNED to the contract's
+    // DEFAULT_MENU_GROUP_SPINE — the one truth the client default and the
+    // server seeder (migration 140) both answer to — and the spine gained the
+    // group. A default that quietly omitted it would disagree with the menu
+    // every real space is seeded with, which is the class of drift the spine
+    // exists to prevent.
+    //
+    // This snapshot has no CodeBrain SCREEN. That is stated once, in
+    // `view-ref-screens.ts`, and the tab says so honestly rather than being
+    // omitted here and disagreeing with the server.
+    { id: 'codebrain', label: 'CodeBrain', items: [{ type: 'view', ref: 'codebrain' }] },
     // RETIRED FROM THE SHIPPED TAB SPINE (revision 20). The Files explorer,
     // route, palette row and menu-editor eligibility remain intact.
     // { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },

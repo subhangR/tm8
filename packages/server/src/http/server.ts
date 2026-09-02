@@ -81,6 +81,17 @@ export interface FacadeServerOptions {
   readonly identityResolver?: IdentityResolver;
   readonly upgrades?: UpgradeTarget;
   readonly staticHandler?: StaticHandler;
+  /**
+   * Additional bundles served under their own URL prefixes, tried BEFORE
+   * `staticHandler`. Today that is the frozen 1.0 UI at `/ui-1.0/`.
+   *
+   * The order is load-bearing, not stylistic: `staticHandler` serves the
+   * product UI at the root and answers extension-less paths with its own
+   * index.html, so consulting it first would make `/ui-1.0/` render the 2.0
+   * shell with a 200 — the switch would silently do nothing, which is worse
+   * than a 404 because it looks like it worked.
+   */
+  readonly staticMounts?: readonly StaticHandler[];
   /** Non-catalog support transport: FileUploadGrant raw-byte PUT. */
   readonly fileUploadRoute?: W2FileUploadRoute;
   /**
@@ -157,6 +168,7 @@ export interface FacadeServer {
 
 export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
   const { config, registry, staticHandler, upgrades } = opts;
+  const staticMounts = opts.staticMounts ?? [];
   const router = opts.router ?? new Router();
   const resolveIdentity = opts.identityResolver ?? autoOwnerResolver;
   // `undefined` means "build the default"; `null` means "explicitly none".
@@ -312,8 +324,13 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
 
       // Static assets never get a chance to shadow the API surface: an unknown
       // `/v2/...` path is an honest `not_found`, never an index.html with a 200.
-      if (!isApiPath && staticHandler && method === 'GET') {
-        if (await staticHandler.serve(pathname, res)) return;
+      if (!isApiPath && method === 'GET') {
+        // Mounted bundles first — each claims only its own prefix and falls
+        // through otherwise, so this cannot take a path the product UI owns.
+        for (const mount of staticMounts) {
+          if (await mount.serve(pathname, res)) return;
+        }
+        if (staticHandler && (await staticHandler.serve(pathname, res))) return;
       }
 
       if (method === 'PUT' && FILE_UPLOAD_SUPPORT_PATH.test(pathname) && opts.fileUploadRoute) {

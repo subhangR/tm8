@@ -233,6 +233,12 @@ const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>([
   // 2026-08-19 (Help): the shelf carries its OWN contents column, so a menu
   // rail beside it would be a second list of the same pages.
   'help',
+  // 2026-09-01 (CodeBrain): the module draws its OWN phase spine, so a menu
+  // rail beside it would be a second list of the same phases. Listed even
+  // though this snapshot has no CodeBrain screen — the group is in the shipped
+  // spine, and a spine group that is not railless draws an empty rail column
+  // beside an unbuilt notice, which is two wrongs where one is enough.
+  'codebrain',
 ]);
 
 /**
@@ -317,6 +323,11 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   // Craft P1 (2026-08-16): the blueprint studio. Label "Craft" — it names the
   // ACTIVITY (sketching a flow with a teammate), not the graph kind it edits.
   craft: { label: 'Craft', icon: '✎', art: VIEW_ART.craft },
+  /* CodeBrain entered the contract after this snapshot was frozen. It is
+     listed so the record stays total over `MenuViewRef` and so an operator can
+     PLACE it in a menu; `view-ref-screens.ts` marks it unbuilt here, which is
+     what makes the row say so instead of rendering an empty screen. */
+  codebrain: { label: 'CodeBrain', icon: '◈', art: VIEW_ART.codebrain },
   // Help (2026-08-19): the curated shelf of Help pages. Label "Help" — the
   // word a reader looks for; "Docs" would promise API reference this is not.
   // Present here so an operator can PLACE Help in their own menu even though

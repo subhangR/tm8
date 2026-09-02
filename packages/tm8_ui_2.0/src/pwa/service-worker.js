@@ -115,6 +115,21 @@ function isApiRequest(url) {
     || url.pathname === '/health';
 }
 
+/**
+ * The OTHER UI's mount — this worker's root scope covers it, and must not.
+ *
+ * `/ui-1.0/` is a whole second application bundle, not a route of this one.
+ * Two failures follow from touching it, and the navigation one is the reason
+ * this exists: `networkFirst` falls back to THIS app's cached `/index.html`
+ * when the network fails, so an offline navigation to `/ui-1.0/` would boot
+ * the 2.0 shell at the 1.0 address — the switch would appear to do nothing.
+ * Its assets would also be cached under this worker's key while its own build
+ * hashes are unknown here, so a 1.0 redeploy could not evict them.
+ */
+function isOtherUi(url) {
+  return url.pathname === '/ui-1.0' || url.pathname.startsWith('/ui-1.0/');
+}
+
 function isStatic(url) {
   return STATIC_PREFIXES.some((p) => url.pathname.startsWith(p))
     || STATIC_FILES.includes(url.pathname);
@@ -189,6 +204,11 @@ self.addEventListener('fetch', (event) => {
   // to render honestly.
   if (isApiRequest(url)) return;
   // -----------------------------------------------------------------------
+
+  // The 1.0 UI is a separate bundle under this worker's scope. It leaves
+  // untouched for the same reason the API does: this worker cannot speak for
+  // something it did not build.
+  if (isOtherUi(url)) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request));
