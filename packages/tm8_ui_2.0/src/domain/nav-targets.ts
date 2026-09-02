@@ -117,6 +117,8 @@ export const VIEW_REF_ROUTE = {
   board: 'board',
   /* The Craft studio (2026-08-16) — same flat-segment posture. */
   craft: 'craft',
+  /* CodeBrain (2026-09-01) — same flat-segment posture. */
+  codebrain: 'codebrain',
   /* The Help shelf (2026-08-19) — same flat-segment posture. Help has a route
      of its own even though it is not in the default spine: its door is a bar
      control, and a reference screen with no address could not be linked to. */
@@ -233,6 +235,7 @@ export function landingOfRoute(view: NavView): Landing | null {
     case 'messages':
     case 'board':
     case 'craft':
+    case 'codebrain':
     case 'help':
       return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
 
@@ -362,6 +365,7 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
         case 'messages':
         case 'board':
         case 'craft':
+        case 'codebrain':
           return { view };
         case 'help':
           /* The rail seat opens the LIBRARY, never a particular plate — same

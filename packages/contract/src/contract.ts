@@ -2430,7 +2430,7 @@ export type InvitePreview =
  * so its default door is a control on the tab bar (the `inbox` precedent). The
  * registry row exists all the same, because an operator who places Help in
  * their own menu must not be refused by the server validator. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft' | 'help';
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft' | 'help' | 'codebrain';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -2676,6 +2676,11 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // edit here if the pending position ruling says otherwise.
   { serverId: 'craft', clientId: 'craft' },
   { serverId: 'graph', clientId: 'graph' },
+  // 2026-09-01 (CodeBrain, migration 173): the delivery pipeline's own tab,
+  // seated after Graph and before the utility tabs. This constant is the ONE
+  // place both parity tests read, so the group cannot land on one side alone
+  // — the 059 lesson this spine exists to encode.
+  { serverId: 'codebrain', clientId: 'codebrain' },
   // Files is no longer a shipped tab, but remains a legal customized-menu ref.
   // { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },

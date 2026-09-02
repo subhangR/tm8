@@ -477,7 +477,7 @@ describe('the help route', () => {
     const tablist = view.getByRole('tablist', { name: 'Screens' });
     const tabs = [...tablist.querySelectorAll<HTMLElement>('[role="tab"]')];
     expect(tabs.map((tab) => tab.textContent)).toEqual([
-      'Home', 'Work', 'Board', 'Craft', 'Graph', 'Settings', 'Help',
+      'Home', 'Work', 'Board', 'Craft', 'Graph', 'CodeBrain', 'Settings', 'Help',
     ]);
     expect(view.queryByTestId('open-help')).toBeNull();
 

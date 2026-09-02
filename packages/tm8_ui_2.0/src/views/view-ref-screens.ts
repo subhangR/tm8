@@ -38,6 +38,11 @@ export const VIEW_REF_SCREENS = {
   board: 'mounted',
   /* The Craft studio (2026-08-16): the blueprint split pane, mounted below. */
   craft: 'mounted',
+  /* CodeBrain (2026-09-01): the pipeline module, mounted below. This table is
+     `satisfies Record<MenuViewRef, ...>`, so widening the contract enum without
+     declaring a state here is a TYPE ERROR rather than a view that silently
+     renders nothing. */
+  codebrain: 'mounted',
   /* Help (2026-08-19): the shelf and reader, mounted below AND on the phone —
      it is one of the few screens with a stacked arrangement, so it never
      reaches the refusal card. */

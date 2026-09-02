@@ -2209,7 +2209,7 @@ export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.o
 // `board` widened 2026-08-16 in the same lockstep (the task kanban tab).
 // `help` widened 2026-08-19 in the same lockstep (the Help shelf). Menu-eligible
 // but not in the shipped default spine — see the type for why.
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board', 'craft', 'help']);
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board', 'craft', 'help', 'codebrain']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection

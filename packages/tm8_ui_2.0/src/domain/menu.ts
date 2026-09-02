@@ -166,6 +166,12 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // childless view item — the chat and the canvas are the navigation.
     { id: 'craft', label: 'Craft', items: [{ type: 'view', ref: 'craft' }] },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
+    // CodeBrain (2026-09-01, migration 173): the delivery pipeline's own tab.
+    // After Graph and before the utility tabs because it is a WORKING surface.
+    // A VIEW, not a rail kind: a run spans team_member, task and work_session
+    // at once, and R4 keeps the rail entities-only — the same reason `graph`
+    // and `craft` are views. A kind literal here would fail the §15.2 guard.
+    { id: 'codebrain', label: 'CodeBrain', items: [{ type: 'view', ref: 'codebrain' }] },
     // RETIRED FROM THE SHIPPED TAB SPINE (revision 20). The Files explorer,
     // route, palette row and menu-editor eligibility remain intact.
     // { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
