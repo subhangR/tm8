@@ -29,13 +29,45 @@ function sendError(res: ServerResponse, code: CommandErrorCode, message: string,
   res.end(JSON.stringify(body));
 }
 
-/** Compile catalog paths (`/v2/entities/:id`) into matchers. */
+/**
+ * Compile catalog paths (`/v2/entities/:id`) into matchers.
+ *
+ * THIS MUST HONOUR THE SAME GRAMMAR AS THE REAL ROUTER, because this stub is
+ * the oracle for "every catalog binding is route-reachable, never 404". A
+ * grammar the stub cannot express becomes a 404 here and reads as a defect in
+ * the operation rather than in the oracle.
+ *
+ * That is not hypothetical: `containers.proxy` ends in `*`, and the previous
+ * one-line matcher replaced only `:param`, leaving the asterisk as a REGEX
+ * QUANTIFIER on the preceding `/` — so `.../ports/:port/*` compiled to
+ * "zero or more slashes" and matched neither the probe nor any real request.
+ * The real router had the mirror-image bug (it escaped `*` into a literal);
+ * both are now the same rule, stated in both places.
+ *
+ * Segments are escaped as literals, `:param` matches one segment, and a
+ * TRAILING `*` matches the remainder including slashes.
+ */
+function compileStubPath(path: string): RegExp {
+  const segments = path.split('/');
+  const pattern = segments
+    .map((segment, index) => {
+      if (segment === '') return '';
+      if (segment.startsWith(':')) return '[^/]+';
+      if (segment === '*') {
+        if (index !== segments.length - 1) {
+          throw new Error(`catalog path ${path} has a wildcard segment that is not last`);
+        }
+        return '.*';
+      }
+      return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    })
+    .join('/');
+  return new RegExp(`^${pattern}$`);
+}
+
 const ROUTES = OPERATIONS
   .filter((op) => op.method !== 'WS')
-  .map((op) => ({
-    op,
-    re: new RegExp(`^${op.path.replace(/:[A-Za-z]+/g, '[^/]+')}$`),
-  }));
+  .map((op) => ({ op, re: compileStubPath(op.path) }));
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];

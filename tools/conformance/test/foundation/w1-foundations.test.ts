@@ -58,25 +58,43 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) +
       // .upsert (POST command) + .delete (DELETE command). READ OUT OF THE
       // REGENERATED MANIFEST, never delta-arithmetic.
-      total: 172,
-      v1: 170,
+      // 172 -> 197 (177): the 25 containers.* rows. READ OUT OF THE
+      // REGENERATED MANIFEST, never delta-arithmetic.
+      //
+      // `http`/`ws` are MOUNT counts and `uniqueBindings` is over the mounted
+      // set, which is why they land on 195/1/196 rather than 196/2/197:
+      // `containers.stream` re-declares `events.subscribe`'s socket so the
+      // family is discoverable under its own name, and mounts nothing.
+      total: 197,
+      v1: 195,
       reserved: 2,
-      http: 171,
+      http: 195,
       ws: 1,
-      registerableV1Http: 169,
-      methods: { GET: 61, POST: 80, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 },
-      kinds: { read: 65, command: 106, stream: 1 },
-      uniqueNames: 172,
-      uniqueBindings: 172,
+      registerableV1Http: 193,
+      methods: { GET: 65, POST: 98, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
+      kinds: { read: 69, command: 126, stream: 2 },
+      uniqueNames: 197,
+      uniqueBindings: 196,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(171); // +3 141, +3 148
+    expect(manifest.routes.http).toHaveLength(195); // +24 (177): the container HTTP rows
+    // BOTH WS rows are LISTED here even though only one is MOUNTED. `routes`
+    // is what a discovering client reads to learn an operation's transport,
+    // and `containers.stream` has one — the same socket, dispatched on the
+    // grant. Omitting it would leave a v1 row discovery can name but cannot
+    // tell you how to reach. The mount count is `catalog.ws` above.
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
+      method: 'WS',
+      path: '/v2/ws',
+      status: 'skeleton',
+      durabilityClaim: false,
+    }, {
+      operation: 'containers.stream',
       method: 'WS',
       path: '/v2/ws',
       status: 'skeleton',
@@ -107,7 +125,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // 138 -> 141 (148). This axis measures distance from the FROZEN W1
     // boundary, so it rises with every amendment EVEN THOUGH these three ops
     // are mounted — W2.C01's live inventory below is where that shows up.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(141);
+    // 141 -> 165 (177): registerableV1Http 193 minus the frozen 28.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(165);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -135,7 +154,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
       // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
       // 130 -> 132 upstream (unledgered); 132 -> 135 (W4/132).
-      unimplementedV1Http: 141, // +3 (148): registerableV1Http 169 minus the frozen 28
+      unimplementedV1Http: 165, // +24 (177): registerableV1Http 193 minus the frozen 28
     });
   });
 
@@ -187,7 +206,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(172); // +3 141, +3 148
+    expect(manifest.help.operations).toHaveLength(197); // +25 (177) containers
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -402,7 +421,10 @@ describe('W2.C01 current mounted registry inventory', () => {
     // three spaces.taskWorkflows handlers join the w2 identity-spaces module.
     // 153 -> 156 (148): the three spaces.workflows handlers join the SAME w2
     // identity-spaces module the taskWorkflows three live in.
-    expect(handlers.facade).toHaveLength(156);
+    // 156 -> 180 (177): the 24 container HTTP handlers join the same w2 seam,
+    // registered whatever the feature gate says — an unregistered v1 row
+    // answers 404, and 404 claims the operation does not exist.
+    expect(handlers.facade).toHaveLength(180);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -424,7 +446,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* facade
     // handlers (facade/services/execution-git.ts).
     // 158 -> 160 upstream (unledgered); 160 -> 163 (W4/132).
-    expect(handlers.all).toHaveLength(169); // +3 141, +3 148
+    expect(handlers.all).toHaveLength(193); // +24 (177): the container handlers
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -436,11 +458,11 @@ describe('W2.C01 current mounted registry inventory', () => {
       // Re-measured 148: the three spaces.workflows handlers join. Read out of
       // the FAILING RUN's Received line, which is the same thing as calling the
       // inventory and the only version of it that cannot be typed from memory.
-      // Re-measured 176 (Chat as an Entity): the COUNT is unchanged — the
-      // handler `chat.threads.start` became `chat.start`, one name in, one out
-      // — and the digest moves because it hashes the sorted NAME list. Read out
-      // of the failing run's Received line, as above.
-      .toBe('d5ef7a0412cf35d922cde545ba45bf63fcd6c688c9efbac44bf1a80f6a40cd04');
+      // Re-measured on the MERGED tree: 176's chat handler rename AND the 24
+      // container handlers. It hashes the sorted NAME list, so neither
+      // branch's value survives — each hashed a list missing the other's
+      // handlers. Read out of the FAILING RUN's Received line.
+      .toBe('PENDING_RECOMPUTE');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -458,7 +480,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert;
     // RequiredCommandContextSchema binds .delete. `.list` is a READ and binds
     // nothing, which is why three ops move this by two.
-    expect(inputSchemas.bound).toHaveLength(99);
+    expect(inputSchemas.bound).toHaveLength(118) // +19 (177): the container command bodies that bind;
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -472,6 +494,11 @@ describe('W2.C01 current mounted registry inventory', () => {
       // 141: auth.claim.reissue is genuinely body-less (no input, auth.* so no
       // CommandContext), enumerated in UNBOUND_COMMAND_OPERATIONS as such.
       'auth.claim.reissue',
+      // 177: containers.files.put carries a TAR OCTET-STREAM, not JSON, so a
+      // strict object schema would refuse every legitimate upload. Genuinely
+      // body-less in the zod sense — the first clause of that constant's rule,
+      // not a gap. The family's other nineteen commands all bind.
+      'containers.files.put',
     ]);
 
     const mounted = new Set(handlers.all);
