@@ -38,6 +38,7 @@ import {
   EntityDetailPanel,
   EntityListPanel,
   EmptyBody,
+  NewContainerSheet,
   countConnections,
   panelActionContext,
   panelMenuItems,
@@ -77,6 +78,7 @@ import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './Lau
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
+import { useNewContainerSheet } from './useNewContainerSheet';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useMembershipSurface } from './membershipSurface';
 import type { ContentSurface } from '../routes';
@@ -597,9 +599,36 @@ export function EntityView(props: EntityViewProps) {
    * neither list keeps its honest refusal rather than lighting up inert.
    */
   const chatAbout = useChatAbout({ open: props.onChatAbout });
+  /**
+   * THE CONTAINER BIRTH SHEET (Design §13.3). Same space-scoped shape as
+   * `sessionStart` above, and a MODAL besides — see `useNewContainerSheet` for
+   * the two obligations it honours and for why the orphan rule takes a
+   * space-shaped form here rather than an entity-shaped one.
+   *
+   * `selectFromList` as `onOpen`, exactly as the terminal above: a container
+   * the member just created should land the way a row they clicked does.
+   */
+  const newContainer = useNewContainerSheet({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onOpen: selectFromList,
+    onError: (_verb, error) => props.onNotice({
+      id: 'container-create-failed',
+      tone: 'error',
+      title: 'Container could not be created',
+      body: String((error as { message?: string })?.message ?? error),
+      ttlMs: 6_000,
+    }),
+  });
+
+  /* ONE `onAction` reaches the list panel, and two hooks perform verbs for it.
+     Passing either alone would drop the other's verb back to
+     disabled-with-reason — the defect both hooks were extracted to fix. */
   const listActions = composeListActions([
     { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
     { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+    { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
   ]);
 
   /**
@@ -933,6 +962,48 @@ export function EntityView(props: EntityViewProps) {
           onLaunch={(config) => props.onLaunchSubmit?.(config)}
           onDispatch={props.onLaunchDispatch}
         />
+      )}
+      {/*
+        THE CONTAINER BIRTH SHEET, in the same overlay slot the launch sheet
+        uses and for the same reason: fixed over a scrim, so it belongs at the
+        VIEW ROOT and not inside the panel's overflow context.
+
+        Mounted only while open, so the form's draft state is discarded on
+        dismiss rather than persisting invisibly into the next open — a sheet
+        that reopens holding a profile someone chose ten minutes ago is
+        offering a configuration nobody is looking at.
+      */}
+      {newContainer.isOpen && (
+        <div className="pn-ncs-scrim" role="presentation" onClick={newContainer.close}>
+          <div
+            className="pn-ncs-host"
+            role="dialog"
+            aria-modal="true"
+            aria-label="New container"
+            /* The scrim dismisses; the sheet must not. Without this a click on
+               any control inside bubbles to the scrim and closes the form
+               under the viewer's own cursor. */
+            onClick={(event) => event.stopPropagation()}
+          >
+            <NewContainerSheet
+              spaceId={data.spaceId}
+              /* `name`, not `title` — `LaunchProject` is the launch vocabulary
+                 and the scratch entry has no entity behind it. Filtered to
+                 real projects: a container mounts a working directory, and the
+                 scratch row names a server-owned temp dir there is nothing to
+                 mount. */
+              projects={data.launch.projects
+                .filter((project) => !project.scratch)
+                .map((project) => ({
+                  id: project.id as EntityId,
+                  title: project.name,
+                  trusted: project.trusted,
+                }))}
+              onCreate={newContainer.create}
+              onCancel={newContainer.close}
+            />
+          </div>
+        </div>
       )}
       {/* Same reason as the dialog above: fixed over a scrim, so it belongs at
           the view root and not inside the panel's overflow context. */}

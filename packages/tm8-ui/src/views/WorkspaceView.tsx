@@ -19,6 +19,7 @@ import {
   EntityDetailPanel,
   EntityListPanel,
   ListRootHeader,
+  NewContainerSheet,
   rootBirthAction,
   type DetailReasons,
 } from '../panels';
@@ -49,6 +50,7 @@ import { mergePrPortFor } from './mergePrPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
+import { useNewContainerSheet } from './useNewContainerSheet';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
@@ -397,9 +399,31 @@ export function WorkspaceView(props: WorkspaceViewProps) {
    * neither list keeps its honest refusal rather than lighting up inert.
    */
   const chatAbout = useChatAbout({ open: props.onChatAbout });
+  /* The container birth sheet — same space-scoped shape as `sessionStart`
+     above, plus the modal obligations. See `useNewContainerSheet`. */
+  const newContainer = useNewContainerSheet({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    /* The view's OWN opener, the one `sessionStart` uses — a container the
+       member just created lands where a row they clicked would. */
+    onOpen: openEntity,
+    onError: (_verb: ActionRef, error: unknown) => props.onNotice({
+      id: 'container-create-failed',
+      tone: 'error',
+      title: 'Container could not be created',
+      body: String((error as { message?: string })?.message ?? error),
+      ttlMs: 6_000,
+    }),
+  });
+
+  /* ONE `onAction` reaches each list panel and two hooks perform verbs for it.
+     This view mounts the panel TWICE, so composing once here is also what stops
+     the two sides drifting into different verb sets. */
   const listActions = composeListActions([
     { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
     { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+    { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
   ]);
 
   const renderPanel = useCallback(
@@ -898,6 +922,35 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                  button's comment for why dispatch cannot carry a config. */
               onDispatch={props.onLaunchDispatch}
             />
+          )}
+          {/* THE CONTAINER BIRTH SHEET — same overlay slot and same reason as
+              the launch sheet above: it overlays the stack region rather than
+              entering it as a column, so it never touches V/cMin. */}
+          {newContainer.isOpen && (
+            <div className="pn-ncs-scrim" role="presentation" onClick={newContainer.close}>
+              <div
+                className="pn-ncs-host"
+                role="dialog"
+                aria-modal="true"
+                aria-label="New container"
+                /* The scrim dismisses; the sheet must not — otherwise a click
+                   on any control inside closes the form under the cursor. */
+                onClick={(event) => event.stopPropagation()}
+              >
+                <NewContainerSheet
+                  spaceId={data.spaceId}
+                  projects={data.launch.projects
+                    .filter((project) => !project.scratch)
+                    .map((project) => ({
+                      id: project.id as EntityId,
+                      title: project.name,
+                      trusted: project.trusted,
+                    }))}
+                  onCreate={newContainer.create}
+                  onCancel={newContainer.close}
+                />
+              </div>
+            </div>
           )}
           {centreIsEmpty ? (
             <EmptyCenter

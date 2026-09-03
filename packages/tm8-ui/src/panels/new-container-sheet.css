@@ -105,3 +105,44 @@
 }
 
 .cv2-root .pn-ncs__create:disabled { opacity: .6; cursor: default; }
+
+/* --- the overlay host ----------------------------------------------------
+   THE SHEET ITSELF STILL OWNS NO POSITION — these two rules are the HOST, and
+   they are here rather than in a view's stylesheet because every host that
+   mounts the sheet needs the identical arrangement, and three copies is how
+   three screens end up disagreeing about where a modal sits.
+
+   `position: absolute` against the VIEW ROOT, matching `.ls` (the launch
+   sheet), so the sheet overlays the screen without reshaping the panel grid.
+   A `fixed` scrim would escape the view root and cover the shell chrome too,
+   which is a different arrangement than the one the launch sheet established.
+   -------------------------------------------------------------------------- */
+
+.cv2-root .pn-ncs-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px 16px;
+  /* A TINT, NOT A BLACKOUT. The workspace behind stays legible — the launch
+     sheet's rule that a configuration never loses the context it is being
+     configured against. */
+  background: color-mix(in srgb, var(--pn-ink) 18%, transparent);
+}
+
+.cv2-root .pn-ncs-host {
+  width: 420px;
+  max-width: 100%;
+  /* Never taller than the viewport it sits in: a sheet whose actions row is
+     below the fold is a sheet you cannot commit or cancel. */
+  max-height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+}
