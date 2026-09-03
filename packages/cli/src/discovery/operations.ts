@@ -2138,7 +2138,10 @@ export const CATALOG_DIGEST =
   // hand-derived.
   // Re-measured 148 (+ the three spaces.workflows rows) — read from the
   // regenerated conformance manifest, never hand-derived.
-  'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417';
+  // Re-measured 176 (Chat as an Entity): `chat.threads.start` became
+  // `chat.start`, one row in and one out, so the catalog COUNT is unchanged and
+  // only the digest moves — read from the regenerated conformance manifest.
+  'sha256:10f0bc777952cceb5191a18476e2e4423a60246be2f5f9424b248e0be50e99b3';
 
 export const GRAMMAR_VERSION = '2';
 
