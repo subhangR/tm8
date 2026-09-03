@@ -190,10 +190,24 @@ export interface ServerConfig {
    *
    * OFF IS AN HONEST ANSWER, NOT A HIDDEN FEATURE. With the gate off every
    * container RUNTIME operation answers `501 not_implemented` — never 404,
-   * never a silent success — and the birth verb is hidden. Graph-only reads
-   * keep working, because a container that already exists is still an entity
-   * and a node that has stopped serving runtimes has not stopped being able
-   * to describe them.
+   * never a silent success. Graph-only reads keep working, because a
+   * container that already exists is still an entity and a node that has
+   * stopped serving runtimes has not stopped being able to describe them.
+   *
+   * THE BIRTH VERB IS NOT HIDDEN, AND NOTHING HERE HIDES IT. This docblock
+   * claimed it was; that was false when written. The gate has exactly ONE
+   * production reader — the 501 site in `handlers/w2/containers.ts` — and it
+   * structurally cannot reach an advertisement path: `capabilitiesOf(row)`
+   * takes a row, `entity-read.ts` never imports `ServerConfig`, and the kind
+   * registry receives no config. So `containers.create` is still advertised
+   * with the gate off; calling it answers 501.
+   *
+   * Whether to implement the hiding (thread config to an advertisement path),
+   * let the client hide it from something already served, or drop the claim
+   * from P0's criterion is an open design call, NOT an oversight to patch
+   * here. It is the second thing this signature has silently swallowed — see
+   * `canControl` in `entity-read.ts`, where the same shape absorbed the
+   * actor term.
    */
   readonly containers?: ContainersConfig;
 }

@@ -86,7 +86,7 @@ that is neither is refused at boot rather than silently treated as off.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `TM8_CONTAINERS` | `off` | `on` \| `off`. The feature gate. With it off, **every container runtime operation answers `501 not_implemented`** — never `404`, never a silent success — and the birth verb is hidden. Graph-only reads keep working: a container that already exists is still an entity, and a node that has stopped serving runtimes has not stopped being able to describe what it has. |
+| `TM8_CONTAINERS` | `off` | `on` \| `off`. The feature gate. With it off, **every container runtime operation answers `501 not_implemented`** — never `404`, never a silent success. **The birth verb is NOT hidden:** `containers.create` is still advertised with the gate off and answers 501 when called. (An earlier version of this row claimed it was hidden. Nothing implements that — the gate has one reader, the 501 site.) Graph-only reads keep working: a container that already exists is still an entity, and a node that has stopped serving runtimes has not stopped being able to describe what it has. |
 | `TM8_CONTAINER_PROVIDERS` | `docker,gvisor,android-emulator` | Comma list of providers to enable, **in preference order** — the first that can serve a profile at an acceptable isolation class wins. `fake` is the in-memory test provider. |
 | `TM8_CONTAINER_CAP` | `4` | Live containers per node. Enforced **inside** the create door, not by the service: two server processes on one node would otherwise both read a free slot and both create. |
 | `TM8_CONTAINER_EXEC_CAP` | `8` | Exec terminals per node. Disjoint from the agent-session cap — an exec terminal never burns an agent slot. |
