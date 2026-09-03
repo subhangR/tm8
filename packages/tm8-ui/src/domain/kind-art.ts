@@ -42,6 +42,8 @@
  * §15.2 permits them in, and this is the file that defines them.
  */
 
+import type { ContentSurface } from '../routes/types';
+
 /** SVG path `d` strings on the 16×16 grid. Stroked, never filled. */
 export type KindArt = readonly string[];
 
@@ -194,6 +196,28 @@ export const KIND_ART = {
   worktree: [
     'M6.2 5.8h5.6a1.4 1.4 0 0 1 1.4 1.4v5.6a1.4 1.4 0 0 1-1.4 1.4H6.2a1.4 1.4 0 0 1-1.4-1.4V7.2a1.4 1.4 0 0 1 1.4-1.4z',
     'M10.4 5.8V4.2a1.4 1.4 0 0 0-1.4-1.4H4.2a1.4 1.4 0 0 0-1.4 1.4V9a1.4 1.4 0 0 0 1.4 1.4h.6',
+  ],
+
+  /**
+   * A RACK — two stacked bays with a status lamp in each. A container is a
+   * machine, and this is how the world draws one.
+   *
+   * DELIBERATELY NOT A PLAIN BOX, and not the `▣` the design named in §13.1:
+   * that glyph is already `file`'s, and the whole point of this set is that no
+   * two kinds share a silhouette (`registry.test.ts` fails on duplicate
+   * artwork). The lamps are what make it a MACHINE at 13px rather than another
+   * quadrilateral — the exact failure mode this module's header describes,
+   * where thirteen of twenty marks collapsed into one lozenge.
+   *
+   * Read against its nearest neighbours: `worktree` is two offset sheets,
+   * `file` a paperclip, `artifact` a sealed package, `task` a checked box.
+   * None of them is a divided box with dots.
+   */
+  container: [
+    'M3.8 2.8h8.4a1.4 1.4 0 0 1 1.4 1.4v7.6a1.4 1.4 0 0 1-1.4 1.4H3.8a1.4 1.4 0 0 1-1.4-1.4V4.2a1.4 1.4 0 0 1 1.4-1.4z',
+    'M2.4 8h11.2',
+    'M5.4 6.1a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
+    'M5.4 11.3a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
   ],
 
   /**
@@ -388,4 +412,48 @@ export const SURFACE_ART = {
    * for the same question would be a distinction the reader has to invent.
    */
   graph: VIEW_ART.graph,
+
+  /**
+   * A DISPLAY ON A STAND — the container's `screen` surface (§6.2), the RFB /
+   * frame view onto a machine's desktop.
+   *
+   * Deliberately NOT `KIND_ART.container`, which is a RACK: that mark means the
+   * machine itself and sits in the panel header a few pixels away. This one
+   * means "the picture the machine is painting", which is one of its surfaces —
+   * the same thing/part distinction `terminal` draws against
+   * `KIND_ART.work_session` at the top of this table.
+   */
+  screen: ['M2.6 3.6h10.8v6.6H2.6z', 'M6.4 12.6h3.2', 'M8 10.2v2.4'],
+
+  /**
+   * THE CONTAINER'S LOG STREAM. Lines of unequal length with no leading ticks
+   * — deliberately close to `debug` above without being it, because the two ARE
+   * nearly the same idea seen from opposite ends: `debug` is the agent's own
+   * journal (its calls, hence the ticks), this is stdout/stderr coming off a
+   * machine that knows nothing about agents. Ragged right is what says "a
+   * stream someone else is writing".
+   */
+  logs: ['M3 4.4h9.4', 'M3 7.2h6.6', 'M3 10h8.2', 'M3 12.8h4.8'],
 } as const satisfies Record<string, KindArt>;
+
+/**
+ * THE WORD FOR EACH SURFACE — the label half of `SURFACE_ART` above.
+ *
+ * LIFTED HERE FROM `WorkSessionContent` when the container's surfaces joined
+ * `ContentSurface` (migration 177). It was a module-private constant while
+ * exactly one body drew a surface switcher; now two do, and a second private
+ * copy is how the same surface ends up called two things in two panels — the
+ * `SURFACE_ART`/`VIEW_ART` sharing note above, one table over.
+ *
+ * TOTAL over `ContentSurface`, so a surface added to that union without a word
+ * for it fails the build here rather than rendering a blank tab.
+ */
+export const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
+  terminal: 'Terminal',
+  transcript: 'Transcript',
+  git: 'Git',
+  debug: 'Debug',
+  graph: 'Graph',
+  screen: 'Screen',
+  logs: 'Logs',
+};

@@ -2,21 +2,13 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type Keyboard
 import { createPortal } from 'react-dom';
 import type { WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import { CONTENT_SURFACES, type ContentSurface } from '../../routes';
-import { SURFACE_ART } from '../../domain';
+import { SURFACE_ART, SURFACE_LABEL } from '../../domain';
 import { VectorIcon } from '../../kit';
 import { useMobileSurface } from '../../mobile';
 import { DisabledIconControl } from '../honesty/DisabledWithReason';
 import './work-session-content-phone.css';
 
 const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
-
-const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
-  terminal: 'Terminal',
-  transcript: 'Transcript',
-  git: 'Git',
-  debug: 'Debug',
-  graph: 'Graph',
-};
 
 /**
  * WHAT A PHONE OFFERS, AND — SEPARATELY — WHAT IT REFUSES.

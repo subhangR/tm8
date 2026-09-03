@@ -82,7 +82,9 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // door it replaces led the tab row too. Before this it was in no group at
     // all, so it rendered under "More": a real row, but filed as an
     // afterthought beside custom kinds.
-    kinds: ['chat', 'task', 'work_session', 'doc', 'project', 'pull_request', 'worktree', 'commit'],
+    // `container` sits after `work_session` (Design §13.1): a machine is a
+    // place work runs, so it belongs beside the runs and not in the library.
+    kinds: ['chat', 'task', 'work_session', 'container', 'doc', 'project', 'pull_request', 'worktree', 'commit'],
   },
   {
     id: 'library',

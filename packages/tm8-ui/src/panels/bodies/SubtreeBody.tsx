@@ -1071,6 +1071,8 @@ function LinkedSection({
 const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
   status: 'status',
   sessionStatus: 'status',
+  // A container's nine-value lifecycle also lands on `EntityState.status`.
+  containerStatus: 'status',
   prState: 'state',
   profileStatus: 'status',
   memberRole: 'role',
