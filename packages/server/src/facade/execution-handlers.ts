@@ -93,7 +93,7 @@ import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
-import { isChatRuntimeBearer, requireOwnChat } from '../chat/scope.js';
+import { resolveSpawnParentId } from '../chat/scope.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
@@ -2574,33 +2574,20 @@ function registerHandlers(
     // through a chat's credential may legitimately parent the worker elsewhere,
     // and silently overriding a stated parent with an ambient one would make the
     // argument a lie.
-    const runtimeChatId = ctx.identity.kind === 'bearer'
-      ? ctx.identity.runtimeChatId ?? null
-      : null;
     /**
-     * B10 — a chat runtime may only parent what it spawns on ITSELF.
-     *
-     * The paragraph above is still true for a HUMAN credential: an explicit
-     * `parentSessionId` wins, because a person driving spawn may legitimately
-     * parent a worker elsewhere. It must not be true for an `agent_runtime`
-     * bearer, which is the one principal whose parent is already known and
-     * whose token is the one the design doc flags as unscoped.
-     *
-     * The guard is deliberately BLIND TO KIND, and the kind-aware version is
-     * the trap: reading the named entity and allowing it when it turns out to
-     * be a work session would hand a leaked per-chat token exactly the power
-     * B10 warns about — hanging a worker, and therefore that worker's
-     * `<coordination>` return address, off any session tree in the Space. There
-     * is no legitimate call it blocks: a chat OMITS the field and gets itself,
-     * and passing its own id explicitly still passes.
+     * B10 — and the paragraph above is still exactly true for a HUMAN
+     * credential. `resolveSpawnParentId` is where the whole decision now lives,
+     * including its one new rule: a chat runtime may only parent what it spawns
+     * on ITSELF. That file carries the reasoning and the enumeration of what
+     * else the credential can reach; this is deliberately one call, because a
+     * default expression here plus a guard beside it is two statements about
+     * one question that can disagree.
      */
-    if (runtimeChatId !== null || isChatRuntimeBearer(ctx)) {
-      if (input.parentSessionId) requireOwnChat(ctx, input.parentSessionId);
-    }
+    const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId);
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
-      parentSessionId: input.parentSessionId ?? runtimeChatId ?? null,
+      parentSessionId,
       ...(taskIds ? { taskIds } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),

@@ -137,3 +137,47 @@ export function requireOwnChat(
     );
   }
 }
+
+/**
+ * WHICH SESSION OR CHAT PARENTS WHAT `execution.spawn` CREATES.
+ *
+ * One function rather than a default expression in the handler plus a guard
+ * beside it. Splitting the decision was how it was first written and it is the
+ * shape that goes wrong: the default and the guard are two statements about the
+ * same question, they can disagree, and only one of them is reachable from a
+ * test. Here the whole answer is in one place, and the place has a name.
+ *
+ * The rule, for the three principals that reach this operation:
+ *
+ *  - A HUMAN (browser or cli) gets exactly what they asked for, including
+ *    nothing. A person driving spawn may legitimately parent a worker anywhere
+ *    they can read, and RLS — not this function — decides where that is.
+ *    Silently overriding a stated parent would make the argument a lie.
+ *  - A WORKER SESSION is unchanged: it carries no `runtimeChatId`, so it falls
+ *    through to the same branch as a human. Its own parenting is `SpawnRequest`'s
+ *    business, not this file's.
+ *  - A CHAT RUNTIME gets ITSELF when it names nothing — which is the fix 176
+ *    shipped, and the reason a chat's workers stopped being born orphans — and
+ *    is REFUSED if it names anything else.
+ *
+ * That refusal is deliberately BLIND TO KIND. Reading the named entity and
+ * allowing it when it turns out to be a work session would hand a leaked
+ * per-chat token exactly the power B10 warns about: hanging a worker, and
+ * therefore that worker's `<coordination>` return address, off any session tree
+ * in the Space. It blocks no legitimate call — a chat omits the field and gets
+ * itself, and passing its own id explicitly still passes.
+ */
+export function resolveSpawnParentId(
+  ctx: RequestContext,
+  explicitParentId: string | null | undefined,
+): string | null {
+  const runtimeChatId = ctx.identity.kind === 'bearer'
+    ? ctx.identity.runtimeChatId ?? null
+    : null;
+  if (!isChatRuntimeBearer(ctx)) return explicitParentId ?? null;
+  if (explicitParentId) {
+    requireOwnChat(ctx, explicitParentId);
+    return explicitParentId;
+  }
+  return runtimeChatId;
+}

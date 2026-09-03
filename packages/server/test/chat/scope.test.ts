@@ -17,6 +17,7 @@ import {
   isChatRuntimeBearer,
   refuseChatRuntimeBearer,
   requireOwnChat,
+  resolveSpawnParentId,
   runtimeChatIdOf,
 } from '../../src/chat/scope.js';
 import type { RequestContext } from '../../src/http/types.js';
@@ -143,5 +144,52 @@ describe('B10 — a named chat must be the runtime\'s own', () => {
     expect(() => requireOwnChat(ctx(cliHuman), OTHER_CHAT)).not.toThrow();
     expect(() => requireOwnChat(ctx(browserHuman), OTHER_CHAT)).not.toThrow();
     expect(() => requireOwnChat(ctx(workerSession), OTHER_CHAT)).not.toThrow();
+  });
+});
+
+/**
+ * `execution.spawn`'s parent, for every principal that reaches it.
+ *
+ * These exist because a negative control found the hole: disabling the guard at
+ * its CALL SITE left every test green. `requireOwnChat` was covered; the
+ * decision that uses it was not, and a guard nothing calls is not a guard.
+ */
+describe('B10 — execution.spawn\'s parent', () => {
+  const SOME_SESSION = '019f0000-0000-7000-8000-0000000005c1';
+
+  it('gives a chat runtime ITSELF when it names nothing', () => {
+    // The fix 176 shipped, and the reason a chat's workers stopped being born
+    // orphans with a `<reply_address>` pointing at nothing.
+    expect(resolveSpawnParentId(ctx(chatRuntime()), null)).toBe(OWN_CHAT);
+    expect(resolveSpawnParentId(ctx(chatRuntime()), undefined)).toBe(OWN_CHAT);
+  });
+
+  it('lets a chat runtime name its own chat, and refuses every other id', () => {
+    expect(resolveSpawnParentId(ctx(chatRuntime()), OWN_CHAT)).toBe(OWN_CHAT);
+    expect(() => resolveSpawnParentId(ctx(chatRuntime()), OTHER_CHAT)).toThrowError(/may only name/);
+    // BLIND TO KIND. A work session is refused too — and that is the point:
+    // allowing it because it "is not a chat" is precisely how a leaked token
+    // reaches any session tree in the Space.
+    expect(() => resolveSpawnParentId(ctx(chatRuntime()), SOME_SESSION)).toThrowError(/may only name/);
+  });
+
+  it('leaves a human and a worker session exactly as they asked', () => {
+    for (const identity of [cliHuman, browserHuman, workerSession]) {
+      expect(resolveSpawnParentId(ctx(identity), OTHER_CHAT)).toBe(OTHER_CHAT);
+      expect(resolveSpawnParentId(ctx(identity), SOME_SESSION)).toBe(SOME_SESSION);
+      // Nothing asked for, nothing invented. A worker session carries no
+      // runtimeChatId, so it must not pick one up here.
+      expect(resolveSpawnParentId(ctx(identity), null)).toBeNull();
+      expect(resolveSpawnParentId(ctx(identity), undefined)).toBeNull();
+    }
+  });
+
+  it('refuses an unbound chat runtime rather than spawning a parentless worker', () => {
+    // A pre-176 credential naming nothing gets null — there is no chat to
+    // parent on and inventing one would be a lie. Naming something is refused,
+    // because an unbound token is not a MORE trusted token.
+    expect(resolveSpawnParentId(ctx(chatRuntime(null)), null)).toBeNull();
+    expect(() => resolveSpawnParentId(ctx(chatRuntime(null)), OWN_CHAT))
+      .toThrowError(/not bound to one/);
   });
 });
