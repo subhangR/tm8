@@ -191,11 +191,11 @@ describe('the CLI command projection', () => {
     // oblige four command implementations in the same change.
     expect(commandless.sort()).toEqual([
       'bridge.fetchBlob',
-      // chat.start is browser-composer-only by design (D1/D2): a chat turn is a
-      // UI conversation, and the CLI already has message send — which since 176
-      // reaches a chat directly, because a chat is the anchor of its own
-      // transcript. Wave 2's CLI lane adds the `chat` noun.
-      'chat.start',
+      // `chat.start` LEFT this set in Wave 2's CLI lane: it is `tm8 chat start`
+      // now. It was here because chat v1 exposed the composer only, and the
+      // note said the CLI lane would add the noun — this is that lane, so the
+      // row is asserted by its ABSENCE from this set rather than by a comment
+      // promising a future one.
       'credentials.delete',
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
@@ -242,8 +242,12 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the 25 commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 25);
+    // Minus the 24 commandless rows named exactly in the test above.
+    // 25 -> 24 (176/Wave 2 L2-cli): `chat.start` gained `tm8 chat start`.
+    // Derived from that SET, never maintained beside it — a literal here that
+    // disagreed with the set above would make one of the two tests pass for
+    // the wrong reason.
+    expect(counted).toBe(EXPECTED_ROWS - 24);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

@@ -230,7 +230,11 @@ function nounForOperation(operation: OperationName): string {
     // whether the noun has any invocable command today, and that is the right
     // shape: the operations are discoverable rather than hidden.
     case 'credentials': return 'credential';
-    case 'chat': return 'chat-thread';
+    // `chat`, not `chat-thread`: 176 made a chat an entity kind whose slug
+    // is `chat`, and the CLI projection's NOUN_BY_FAMILY moved with it. The
+    // two maps must agree or the cross-check in
+    // `packages/cli/test/discovery-operations.test.ts` reds.
+    case 'chat': return 'chat';
     default: throw new Error(`operation ${operation} has no noun/help disposition`);
   }
 }

@@ -49,6 +49,7 @@ import { PRESENCE_COMMANDS } from './presence.js';
 import { PROJECT_COMMANDS } from './project.js';
 import { FILE_COMMANDS } from './file.js';
 import { MESSAGE_COMMANDS } from './message.js';
+import { CHAT_COMMANDS } from './chat.js';
 import { HANDOFF_COMMANDS } from './handoff.js';
 import { SESSION_COMMANDS } from './session.js';
 import { SESSION_GIT_COMMANDS } from './session-git.js';
@@ -123,6 +124,7 @@ export const COMMANDS: CommandModule[] = [
   ...PROJECT_COMMANDS,
   ...FILE_COMMANDS,
   ...MESSAGE_COMMANDS,
+  ...CHAT_COMMANDS,
   ...HANDOFF_COMMANDS,
   ...SESSION_COMMANDS,
   ...SESSION_GIT_COMMANDS,

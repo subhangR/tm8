@@ -969,18 +969,24 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
   'chat.start': {
-    cmd: null,
+    cmd: ['chat', 'start'],
+    syn: 'tm8 chat start --teammate <team-member-id> --model <model> --mode ask|explain|plan|build|orchestrate|craft --workdir project|scratch [--project <project-id>] [--about <entity-id>] [--title <text>] [<body>|-] [--body <text-source>] [--attach <file-entity-id>...] [--mutation-id <id>]',
     sum: 'Create a chat entity with a teammate and post its opening turn',
     authz: 'space',
     input: 'bound',
-    reason: 'browser_chat_composer_only',
-    tags: ['chat', 'agent', 'teammate', 'model'],
+    tags: ['chat', 'agent', 'teammate', 'model', 'conversation', 'talk'],
     notes: [
       'creates the chat AND its first message in one transaction; there is no separate root to post first',
-      'a chat is the anchor of its own transcript: every later turn is `message send --to <chatId>`, from a human, a work session, or another chat',
-      'workdirMode picks where the chat works: `project` (requires projectId, and the server resolves the path from the project itself) or `scratch` (a server-owned empty directory). Like every other part of the configuration it is pinned for the chat\'s life',
-      'aboutId records what the chat is about as an `about` edge — the Craft blueprint, the task, the pull request it was opened from',
-      'v1 exposes this through the browser composer; exact-operation help remains available to CLI users',
+      'a chat is the anchor of its own transcript: every later turn is `chat send <chat-id>` — the same door as `message send --to <chat-id>` — from a human, a work session, or another chat',
+      '--teammate, --model, --mode and --workdir are all REQUIRED and have no CLI default: every one of them is pinned for the chat\'s life, so an invented default would be a chat nobody chose',
+      '--workdir picks where the chat works: `project` (requires --project, and the Server resolves the path from the project itself) or `scratch` (a server-owned empty directory)',
+      '--about records what the chat is about as an `about` edge — the Craft blueprint, the task, the pull request it was opened from',
+      'chat v1 runs claude-code models only; a model that launches via another agent tool is refused at start rather than on turn one',
+      'human-authenticated only: an agent runtime credential is refused, exactly as the browser composer is the human surface',
+    ],
+    examples: [
+      "tm8 chat start --teammate <team-member-id> --model <model> --mode build --workdir scratch 'open with this'",
+      'tm8 chat start --teammate <team-member-id> --model <model> --mode ask --workdir project --project <project-id> --about <entity-id> -',
     ],
   },
 
@@ -2076,7 +2082,13 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   teamMembers: 'teammate',
   voice: 'voice',
   artifacts: 'artifact',
-  chat: 'chat-thread',
+  // `chat`, not `chat-thread`. The old noun named the shape a chat used to
+  // have — a message THREAD bound to its root — and 176 replaced that with an
+  // entity kind whose slug is `chat`. Keeping both would put one thing under
+  // two nouns in `tm8 help`, one of which no longer names anything: there is
+  // no `chat_threads` table to describe. `tools/conformance`'s generator holds
+  // the same map and moves with it.
+  chat: 'chat',
   // Required even though all four `credentials.*` rows are `cmd: null`: the
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
@@ -2459,6 +2471,58 @@ const COMMAND_ALIASES = new Map<string, {
   // and a restart, and a command that could flip it over the wire would be
   // lying about where the switch is. No new operation could honestly do that, so
   // none is minted.
+  // The four read-and-write chat verbs are ALIASES for the reason `worktree
+  // list|status` are: every one of them is an operation that already exists.
+  // A chat became an ENTITY in 176, and the whole point of that change is that
+  // the ordinary entity and message doors now reach it — so a `chats.list` or
+  // a `chats.postTurn` row would be a second way to ask a question
+  // `collections.query` and `messages.post` already answer, on an entity kind
+  // whose entire design is that it needs no special door except its birth.
+  ['chat list', {
+    path: ['chat', 'list'],
+    syntax: 'tm8 chat list [--space <space-id>] [--limit <count>] [--cursor <cursor>]',
+    summary: 'The chats in this Space, with each one’s runtime and turn state',
+    notes: [
+      'sugar over collections.query with kinds:[chat] — it adds no catalog operation',
+      'runtime state and turn state are DIFFERENT facts and both are shown: a cold chat with a queued turn is "the node restarted, your message is still coming"',
+    ],
+    examples: ['tm8 chat list --space <space-id> --limit <count>'],
+  }],
+  ['chat show', {
+    path: ['chat', 'show'],
+    syntax: 'tm8 chat show <chat-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>]',
+    summary: 'One chat in bounded context — configuration, recent transcript, and what it is about',
+    notes: [
+      'sugar over entities.context; bounded by design, so a long transcript is excerpted rather than paged here',
+      'the `about` relation appears under connections — it is the entity the chat was opened about, not a hidden binding column',
+      'page the full transcript with `tm8 chat turns <chat-id>`, and read every field with `tm8 entity get <chat-id>`',
+    ],
+    examples: ['tm8 chat show <chat-id> --sections summary,messages'],
+  }],
+  ['chat send', {
+    path: ['chat', 'send'],
+    syntax: 'tm8 chat send <chat-id> [<body>|-] [--body <text-source>] [--reply-to <parent-message-id>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    summary: 'Post a turn to a chat — one anchor’s spelling of `message send`',
+    notes: [
+      'sugar over messages.post with a single --to; `tm8 message send --to <chat-id>` is the identical call',
+      'a chat anchors its own transcript, so this is how a human, a work session, or another chat reaches one',
+      'the caller’s work-session id is forwarded, which is what records `authored_from` and keys the chat’s self-delivery guard',
+      '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
+    ],
+    examples: ["tm8 chat send <chat-id> '<body>' --mutation-id <uuid>"],
+  }],
+  ['chat turns', {
+    path: ['chat', 'turns'],
+    syntax: 'tm8 chat turns (<chat-id> [--limit <count>] [--cursor <cursor>] | --message <message-id>)',
+    summary: 'What a chat is doing now and the turns it has, or the exact turn one message queued',
+    notes: [
+      'sugar over entities.get + messages.list, and over messages.delivery.get for --message',
+      'the chat’s own state carries the FOLDED verdict (idle/queued/running, a count, a stamp); the per-turn row with its own queued/running/completed/error state is reachable only through the message that queued it',
+      '--message is the drilldown and is a flag on purpose: listing per-turn state for a whole page would be one delivery read per message',
+      'an absent chat-turn arm means the node cannot tell you — a node predating the chat entity omits it — never that no turn was queued',
+    ],
+    examples: ['tm8 chat turns <chat-id> --limit <count>', 'tm8 chat turns --message <message-id>'],
+  }],
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
@@ -2500,6 +2564,24 @@ COMMAND_ORDER.splice(
   taskLinkCommitIndex < 0 ? COMMAND_ORDER.length : taskLinkCommitIndex + 1,
   0,
   'task import-issue',
+);
+// The chat verbs sit immediately after `chat start`, so the noun reads
+// birth-then-life rather than alphabetically. `chat send`'s ops are
+// `messages.post` alone — the same single row `message send` projects.
+// `chat turns` names all three reads it can make, because availability is the
+// weakest stage and `--message` is one of its two branches.
+COMMAND_OPS.set('chat list', ['collections.query']);
+COMMAND_OPS.set('chat show', ['entities.context']);
+COMMAND_OPS.set('chat send', ['messages.post']);
+COMMAND_OPS.set('chat turns', ['entities.get', 'messages.list', 'messages.delivery.get']);
+const chatStartIndex = COMMAND_ORDER.indexOf('chat start');
+COMMAND_ORDER.splice(
+  chatStartIndex < 0 ? COMMAND_ORDER.length : chatStartIndex + 1,
+  0,
+  'chat list',
+  'chat show',
+  'chat send',
+  'chat turns',
 );
 COMMAND_OPS.set('worktree list', ['collections.query']);
 COMMAND_OPS.set('worktree status', ['entities.get']);
@@ -2597,6 +2679,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
   collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
+  chat: 'Chats with a teammate: start one, list them, read one, post a turn, and see its turn state',
   message: 'Durable messages — the only public communication action for text',
   'read-mark': 'Per-anchor read cursors (invoked as `message mark-read`)',
   graph: 'Graph traversal outward from a focus entity',

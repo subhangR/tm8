@@ -150,7 +150,16 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // catalog rows, the same sugar posture as `worktree status` over entities.get.
     // 156 -> 159 (148): space workflow list|set|delete over the three
     // spaces.workflows rows.
-    expect(COMMAND_PATHS).toHaveLength(159);
+    // 159 -> 164 (176/Wave 2 L2-cli): the `chat` noun. ONE of the five is a
+    // catalog row that already existed and merely gained a command
+    // (`chat.start`, commandless until now); the other four — `chat list|show
+    // |send|turns` — are ALIASES over collections.query, entities.context,
+    // messages.post and entities.get + messages.list, so the count of command
+    // PATHS grows by five while the CATALOG does not move at all. That is the
+    // distinction this pin exists to keep visible, and it is why a chat needed
+    // no new door: 176 made it an entity, and the entity and message doors
+    // reach it already. MEASURED on this tree, not computed.
+    expect(COMMAND_PATHS).toHaveLength(164);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);
