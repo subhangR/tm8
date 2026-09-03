@@ -63,7 +63,9 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
   {
     id: 'work',
     label: 'Work',
-    kinds: ['task', 'work_session', 'doc', 'project', 'pull_request', 'worktree', 'commit'],
+    // `container` sits after `work_session` (Design §13.1): a machine is a
+    // place work runs, so it belongs beside the runs and not in the library.
+    kinds: ['task', 'work_session', 'container', 'doc', 'project', 'pull_request', 'worktree', 'commit'],
   },
   {
     id: 'library',

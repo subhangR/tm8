@@ -109,6 +109,25 @@ const PR_STATE_TONE: Record<string, PillTone> = {
   closed: 'idle',
 };
 
+/**
+ * The container's nine statuses (§11.1). THE SAME MAP the registry row's chip
+ * and status pill declare — `registry.test.ts` asserts the three agree rather
+ * than trusting three hand-kept copies, because a missing arm renders the
+ * neutral tone SILENTLY and no vitest can see a colour (jsdom loads no
+ * stylesheets).
+ */
+const CONTAINER_STATUS_TONE: Record<string, PillTone> = {
+  requested: 'wait',
+  provisioning: 'wait',
+  running: 'run',
+  paused: 'info',
+  stopping: 'wait',
+  stopped: 'idle',
+  destroying: 'wait',
+  destroyed: 'idle',
+  failed: 'block',
+};
+
 const PRIORITY_TONE: Record<string, PillTone> = {
   urgent: 'block',
   high: 'block',
@@ -179,6 +198,28 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
         word: v,
         tone: v === 'active' ? 'run' : v === 'draft' ? 'wait' : 'idle',
         dot: v === 'active' ? 'solid' : 'hollow',
+      };
+    }
+    /*
+     * CONTAINER (migration 177). The dot is SOLID only while the machine is
+     * actually up: `running` and `paused` are the two statuses with a live
+     * runtime behind them. Every other status — including `provisioning`,
+     * which is on its way up but is not up — draws hollow, so the tile never
+     * claims a machine exists before the node says it does.
+     *
+     * THIS IS NOT LIVENESS AND MUST NOT BE READ AS IT (R-UI-5). This dot is a
+     * fold of the ENTITY'S recorded status; the LIVE dot comes from
+     * `seam.liveness.statusOf`. A row is `running` in the graph for as long as
+     * nobody has told the graph otherwise, which is exactly the ghost case.
+     */
+    case 'containerStatus': {
+      const v = str(field(row, 'status'));
+      if (!v) return null;
+      return {
+        slot: 'status',
+        word: v,
+        tone: CONTAINER_STATUS_TONE[v] ?? 'idle',
+        dot: v === 'running' || v === 'paused' ? 'solid' : 'hollow',
       };
     }
 
@@ -324,6 +365,14 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       const active = num(field(row, 'activeVersion'));
       return active ? meta(`v${active}`) : null;
     }
+    /* The three spec facts a reader tells containers apart by, as mono meta on
+       line 2 — what it runs, who runs it, and how hard the walls are. */
+    case 'profile':
+      return meta(str(field(row, 'profile')));
+    case 'provider':
+      return meta(str(field(row, 'provider')));
+    case 'isolation':
+      return meta(str(field(row, 'isolation')));
     case 'customFields': {
       const f = field(row, 'fields');
       const n = f && typeof f === 'object' ? Object.keys(f as object).length : 0;
@@ -349,4 +398,7 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   'memberRole', 'score', 'taskDoneCount', 'repository', 'sha',
   'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',
   'projectVersion', 'profileVersions', 'customFields',
+  // container (migration 177) — a source listed here and nowhere else would
+  // still be dead data; each of these four has a `renderBadge` arm above.
+  'containerStatus', 'profile', 'provider', 'isolation',
 ]);

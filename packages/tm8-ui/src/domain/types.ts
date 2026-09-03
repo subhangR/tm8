@@ -111,6 +111,16 @@ export type TileBadgeSource =
   | 'profileVersions'
   | 'messageAuthor'
   | 'customFields'
+  // container (Containers P0, Design §13.1). FOUR NEW SOURCES, and each needs
+  // three edits, not one: a member here, a `renderBadge` arm in
+  // `panels/list/tile-badges.ts`, and a `HANDLED_SOURCES` entry beside it.
+  // A source with only the first ships as DEAD DATA — the registry row reads
+  // correct and the tile draws nothing — which is the defect `HANDLED_SOURCES`
+  // and its coverage test exist to make loud.
+  | 'containerStatus'
+  | 'profile'
+  | 'provider'
+  | 'isolation'
   // counters, present on every summary
   | 'points'
   | 'messages';
@@ -139,6 +149,8 @@ export interface PulseBinding {
 export type StatusSource =
   | 'status'
   | 'sessionStatus'
+  /** A container's nine-value lifecycle (§11.1). Reads `EntityState.status`. */
+  | 'containerStatus'
   | 'prState'
   | 'profileStatus'
   | 'memberRole'
@@ -390,7 +402,29 @@ export type ActionRef =
   | 'unlink'
   | 'set-as-default'
   | 'mark-read'
-  | 'quote';
+  | 'quote'
+  /*
+   * CONTAINER LIFECYCLE (Containers P0, Design §13.1). Five panel primaries
+   * and one birth verb.
+   *
+   * NAMESPACED `container-*` RATHER THAN REUSING `run` / `terminate`, and the
+   * reason is not tidiness. Those two verbs already mean something exact —
+   * `run` opens the launch config and spawns an AGENT SESSION, `terminate`
+   * ends one — and a container is the HOST a session runs inside, with its own
+   * nine-value lifecycle. Reusing them would put one word on two acts, which is
+   * the failure `coordinate`-vs-`run` was split to fix (see `launchMode`).
+   *
+   * `container-screen` is DEFERRED in P0 and says so through its own
+   * availability, not through absence: the screen surface is a later phase, so
+   * the verb renders disabled-with-reason (R7) rather than being hidden. A
+   * verb that is coming must be visible and refused, never missing.
+   */
+  | 'container-start'
+  | 'container-stop'
+  | 'container-destroy'
+  | 'container-terminal'
+  | 'container-screen'
+  | 'new-container';
 
 export type ActionAvailability = { kind: 'available' } | { kind: 'disabled'; reason: string };
 
@@ -924,7 +958,21 @@ export type BodyArchetype =
   // Surface wave (kind-bodies-2): project's governed body and
   // interaction_profile's restricted body.
   | 'governed'
-  | 'restricted';
+  | 'restricted'
+  /**
+   * The MACHINE archetype (Containers P0, Design §13.2) — a container's panel.
+   *
+   * A NEW ARCHETYPE AND NOT A SPECIAL CASE OF `terminal`, which is the reading
+   * that would seem cheapest and is wrong. The terminal archetype is a session:
+   * one live PTY canvas, with the transcript/git/debug/graph surfaces beside it
+   * and `WorkSessionContent` owning the switch. A machine is a HOST that a
+   * session may run inside — its surfaces are a screen, an exec terminal and a
+   * log stream, it has a nine-value lifecycle a session does not have, and it
+   * outlives every session bound to it. Folding it into `terminal` would put a
+   * `kind === 'container'` branch inside `WorkSessionContent`, which is exactly
+   * the per-kind switch §15.2 keeps out of components.
+   */
+  | 'machine';
 
 export type ContentBlockKind =
   | 'fields'

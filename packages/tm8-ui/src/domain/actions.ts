@@ -78,6 +78,18 @@ export const REASONS = {
   searchResultsDeferred: 'A full search results view isn’t available yet — the palette is the search surface.',
   activityScreenDeferred: 'The activity screen isn’t available yet.',
   addServerDeferred: 'Remote servers arrive in Phase 2 — this node is the only one wired.',
+  /*
+   * CONTAINER LIFECYCLE (Design §13.1's `capabilityReasons`, stated once).
+   *
+   * `registry.ts` imports `CONTAINER_CAPABILITY_REASONS` below and uses these
+   * SAME strings for `panel.capabilityReasons`, so the sentence a verb refuses
+   * with and the sentence the body prints cannot drift into two wordings of
+   * one rule.
+   */
+  containerCapabilitiesUnknown:
+    'Waiting for this container to load — the node has not said what may be done to it yet.',
+  containerScreenDeferred:
+    'The screen surface isn’t built yet. The container is real and running; what is missing is the viewer, so this verb is refused rather than hidden.',
   // T0-4 kind primaries (Surface Audit): drawn, ledgered, not yet executable.
   equipDeferred: 'Equipping isn’t wired yet — the verb exists; its executor does not.',
   refreshDeferred: 'Refreshing from the source isn’t wired yet.',
@@ -103,6 +115,69 @@ function capabilityGate(
   if (!ctx.entityId) return disabled(REASONS.noEntity);
   if (ctx.capabilities == null) return disabled(REASONS.unknownCapabilities);
   return ctx.capabilities[flag] ? null : disabled(reason);
+}
+
+/**
+ * THE CONTAINER CAPABILITY SENTENCES — one copy, two consumers.
+ *
+ * Exported because `domain/registry.ts` seats them in the container row's
+ * `panel.capabilityReasons`. Two hand-kept copies of a refusal is how one
+ * surface ends up explaining a rule the other contradicts.
+ */
+export const CONTAINER_CAPABILITY_REASONS = {
+  canStart: 'only a stopped container can start',
+  canStop: 'only a running or paused container can be stopped',
+  canDestroy: 'this container is already being destroyed',
+  canAttach: 'the screen is live only while the container runs',
+  canExec: 'a terminal needs a running container',
+} as const;
+
+/**
+ * THE CONTAINER CAPABILITY GATE — and it exists because these six booleans are
+ * OPTIONAL, which `capabilityGate` above cannot express.
+ *
+ * `EntityCapabilities` is a FLAT interface: eight required booleans that every
+ * kind carries, plus `allowedTransitions?` and — since migration 177 — six
+ * optional container ones. They had to be optional; making them required would
+ * have stopped every literal in this repo that constructs an
+ * `EntityCapabilities` from compiling, `isAlwaysDisabled` below included.
+ *
+ * THREE STATES, AND THE THIRD IS THE ONE THAT MATTERS:
+ *
+ *   true       → the node permits it.
+ *   false      → the node refuses it; say WHICH rule, from the table above.
+ *   undefined  → NOT PERMITTED. Never `true`.
+ *
+ * DO NOT REACH FOR `allowedTransitions?` AS THE PRECEDENT FOR THE THIRD LINE.
+ * It is the same shape in the same interface with the OPPOSITE default: absent
+ * there means "no matrix — fall back to the registry vocabulary", i.e. MORE
+ * permissive, because it NARROWS a permission that already exists. These GRANT
+ * one that otherwise does not. A reader who carries the semantics across with
+ * the shape turns every unanswered capability into a live button.
+ *
+ * So this must not be "simplified" to `ctx.capabilities?.[flag] ?? true`, and
+ * the `undefined` arm must not be deleted as dead code because the server we
+ * have today always populates it: absence is legal in the contract, and an
+ * older node is a legal peer.
+ */
+function containerCapabilityGate(
+  ctx: ActionContext,
+  flag: 'canStart' | 'canStop' | 'canDestroy' | 'canAttach' | 'canControl' | 'canExec',
+  reason: string,
+): ActionAvailability | null {
+  if (!ctx.entityId) return disabled(REASONS.noEntity);
+  if (ctx.capabilities == null) return disabled(REASONS.unknownCapabilities);
+  /* Through `unknown`: `EntityCapabilities` has no index signature, and a
+     direct cast is refused. Reading by a typed key would lose the third state
+     — `undefined` — which is the whole point of this gate. */
+  const permitted = (ctx.capabilities as unknown as Record<string, unknown>)[flag];
+  if (permitted === true) return null;
+  // ABSENT is not REFUSED, and the two get different words: a container whose
+  // node has not answered is not the same as one whose status forbids the
+  // verb, and telling a viewer "only a stopped container can start" about a
+  // container we have no capability read for would be inventing a cause.
+  if (permitted === undefined) return disabled(REASONS.containerCapabilitiesUnknown);
+  return disabled(reason);
 }
 
 /**
@@ -580,6 +655,104 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'set-as-default': deferred('set-as-default', 'Set as default', '◎', REASONS.setAsDefaultDeferred),
   'mark-read': deferred('mark-read', 'Mark read', '✓', REASONS.markReadDeferred),
   quote: deferred('quote', 'Quote', '❝', REASONS.quoteDeferred),
+
+  /*
+   * CONTAINER LIFECYCLE (Design §13.1). Each gates on its OWN catalog
+   * operation and its OWN capability boolean — never on a shared one.
+   *
+   * WHY EACH VERB NAMES ITS OWN OP. `TM8_CONTAINERS=off` answers 501
+   * `not_implemented` for every runtime op, and the shell caches that verdict
+   * per operation in `ctx.opUnavailable`. Gating all five on, say,
+   * `containers.start` would light four buttons a node has refused, and hide
+   * one it has not.
+   */
+  'container-start': define(
+    'container-start',
+    'Start',
+    '▶',
+    (ctx) =>
+      opGate(ctx, 'containers.start')
+      ?? containerCapabilityGate(ctx, 'canStart', CONTAINER_CAPABILITY_REASONS.canStart)
+      ?? AVAILABLE,
+  ),
+
+  'container-stop': define(
+    'container-stop',
+    'Stop',
+    '⏸',
+    (ctx) =>
+      opGate(ctx, 'containers.stop')
+      ?? containerCapabilityGate(ctx, 'canStop', CONTAINER_CAPABILITY_REASONS.canStop)
+      ?? AVAILABLE,
+  ),
+
+  /*
+   * DESTROY IS THE IRREVERSIBLE DIRECTION, unlike `terminate` next door — a
+   * terminated session resumes, a destroyed container does not: the runtime is
+   * gone and the row is soft-deleted for history (§11.1, `destroyed` is
+   * terminal). The confirm is the DISPATCHER's, not this verb's: `ActionDef`
+   * offers `flow` for a configuration or a confirmation surface, and a destroy
+   * needs neither a config nor facts this context does not carry — it needs a
+   * yes. `usePanelPrimaries` asks for it.
+   */
+  'container-destroy': define(
+    'container-destroy',
+    'Destroy',
+    '⏻',
+    (ctx) =>
+      opGate(ctx, 'containers.destroy')
+      ?? containerCapabilityGate(ctx, 'canDestroy', CONTAINER_CAPABILITY_REASONS.canDestroy)
+      ?? AVAILABLE,
+  ),
+
+  /*
+   * Opens an exec PTY IN the container — `containers.terminal.start`, which is
+   * live in P0 and mints a `work_session(session_kind='container_exec')`. The
+   * session it returns is an ordinary work_session with the terminal panel the
+   * app already has, so this verb builds no terminal of its own; it creates
+   * the session and the host opens it.
+   *
+   * Gated on `canExec` (status `running`), NOT on `canAttach`: attaching is
+   * about a non-terminal SURFACE, and the two are separate booleans precisely
+   * because a container can exec without having a screen.
+   */
+  'container-terminal': define(
+    'container-terminal',
+    'Terminal',
+    '▮',
+    (ctx) =>
+      opGate(ctx, 'containers.terminal.start')
+      ?? containerCapabilityGate(ctx, 'canExec', CONTAINER_CAPABILITY_REASONS.canExec)
+      ?? AVAILABLE,
+  ),
+
+  /*
+   * THE SCREEN SURFACE IS NOT BUILT IN P0, and this says so out loud rather
+   * than by being missing (R7, and the DEF-003 lesson: "a surface removed
+   * without a word is a surface nobody can report missing").
+   *
+   * `deferred`, so it refuses in EVERY context — which is also what keeps
+   * `panel-primaries-wired.test.tsx`'s `refusedByNarrowing` empty without a
+   * dispatcher entry: a verb with no executor is safe only when its own
+   * availability refuses, never when it relies on `wiredActions` narrowing.
+   * The day the viewer lands, this becomes a `define(...)` gated on
+   * `containers.attach` + `canAttach`, and no consumer changes.
+   */
+  'container-screen': deferred('container-screen', 'Screen', '▭', REASONS.containerScreenDeferred),
+
+  /*
+   * THE BIRTH VERB. It opens `NewContainerSheet` and commits
+   * `containers.create` — NEVER `entities.create`, which the node refuses for
+   * this kind ("owned by the container lifecycle") exactly as it does for
+   * work_session.
+   *
+   * Gated on `containers.create` and nothing else: a create has no entity to
+   * hold capabilities, so `capabilityGate` has no subject. The sheet owns the
+   * refusals that depend on facts this context does not carry (no provider
+   * satisfies the profile, the node is at its cap) — the same division
+   * `merge-pr` draws between its verb and its confirm.
+   */
+  'new-container': define('new-container', 'New container', '＋', (ctx) => opGate(ctx, 'containers.create') ?? AVAILABLE),
 };
 
 /** Resolve a ref to its definition. Total over `ActionRef` — never throws. */

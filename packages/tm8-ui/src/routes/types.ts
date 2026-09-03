@@ -24,13 +24,29 @@ export const PANEL_TABS: readonly PanelTab[] = ['content', 'connections', 'discu
  * Per-panel content surface, meaningful only for work_session panels. NEVER
  * expands the `t` vocabulary. Phase 1 preserves-and-clamps (D12).
  */
-export type ContentSurface = 'terminal' | 'transcript' | 'git' | 'debug' | 'graph';
+/*
+ * Per-panel content surface. Named for work_session's five, and since
+ * migration 177 it also carries the container's — `terminal` is SHARED (a
+ * session's PTY and a container's exec PTY are the same surface word), and
+ * `screen` and `logs` are the machine's own.
+ *
+ * ONE UNION RATHER THAN TWO, deliberately: the codec parses this slot
+ * generically off `CONTENT_SURFACES` and clamps anything it does not know, so
+ * a second per-kind vocabulary would need a second parse path and a second
+ * clamp — and the panel that reads it is one component either way.
+ */
+export type ContentSurface =
+  | 'terminal' | 'transcript' | 'git' | 'debug' | 'graph'
+  | 'screen' | 'logs';
 export const CONTENT_SURFACES: readonly ContentSurface[] = [
   'terminal',
   'transcript',
   'git',
   'debug',
   'graph',
+  // container (Design §13.1: content surfaces `screen | terminal | logs`)
+  'screen',
+  'logs',
 ];
 
 /**
