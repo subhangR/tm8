@@ -1749,6 +1749,128 @@ begin
 end
 $$;
 
+-- -----------------------------------------------------------------------------
+-- 22b. The status -> CATEGORY projection (the universal tabs).
+--
+--     WHY THIS EXISTS. The category tabs — To Do · In Progress · Done ·
+--     Cancelled — are UNIVERSAL: every kind draws them. Without this section a
+--     container is seeded into the space's default workflow by
+--     `internal.seed_entity_initial_status` (152:243) and NEVER MOVES AGAIN.
+--     Measured on a full chain before this was written: `status_category` read
+--     `to_do` at `requested` and still read `to_do` at `destroyed`, with
+--     `status_id` pinned to the "To Do" state the whole way. Every machine —
+--     running, stopped, destroyed — files under To Do, and In Progress and Done
+--     are permanently empty.
+--
+--     That is not a hypothetical. It is the defect `work_session` shipped, which
+--     migration 155 exists to have fixed, and whose field report its registry
+--     row still carries: "477 sessions on the launch node, To Do 0 / In Progress
+--     6 / Done 471 … Landing there is landing on an empty screen."
+--
+--     WHY THIS IS NOT 155's THREE-PIECE BRIDGE. 155 resolves the category to a
+--     workflow STATE and writes `entities.status_id`, letting
+--     `entities_status_from_state` (149:498) derive the category from it. That
+--     works for sessions and CANNOT work for containers, and the reason is
+--     measured rather than aesthetic:
+--
+--       `internal.category_transition_allowed` (149) refuses `done ->
+--       in_progress`. Under the ruled mapping `stopped` is `done` and `running`
+--       is `in_progress`, so `containers.start` on a stopped machine —
+--       `stopped -> running`, a LEGAL container transition — would resolve to a
+--       forbidden category edge and raise 23514 from
+--       `internal.validate_status_transition`. That raise happens INSIDE
+--       `public.set_container_status`, so it does not mis-file a row: IT ABORTS
+--       THE DOOR. Three of this kind's twenty-three legal transitions are
+--       affected (`stopped -> running`, `stopped -> destroying`,
+--       `failed -> destroying`), two of them P0 acceptance steps.
+--
+--     Brute-forcing all 4^9 assignments against the container transition table
+--     shows no way out by relabelling: holding the semantically fixed cells,
+--     every consistent assignment requires `stopped = in_progress`, which
+--     contradicts the ruled mapping. The conflict is structural — the category
+--     algebra assumes a mostly-forward lifecycle, while a machine CYCLES
+--     (`stopped -> running`) and tears down FROM EVERY BUCKET (`any ->
+--     destroying`).
+--
+--     SO: this bridge writes the CATEGORY DIRECTLY and clears `status_id`.
+--     `entities_status_from_state` is `before update of status_id` and returns
+--     early when the new value is null (149:11, "Clearing a status is not a
+--     transition… refusing it would make this trigger the thing standing
+--     between an operator and a fix"), so the category written in the same
+--     statement survives — verified on a live chain, both in one UPDATE and on
+--     every later category-only write.
+--
+--     A container therefore has NO workflow state, and that is the honest
+--     statement rather than a workaround: a machine's lifecycle is node-owned
+--     and single-writer, not a workflow anyone authored. 152 seeded containers
+--     into a default workflow they never asked for. Nothing downstream reads
+--     `status_id` — `internal.is_resolved` (152:329) reads `status_category`,
+--     151's completion gate is scoped `kind = 'task'`, and `packages/server/src`
+--     contains no `status_id` reference at all.
+-- -----------------------------------------------------------------------------
+create or replace function internal.container_status_category(p_status text)
+returns text language sql immutable set search_path = public, internal, pg_temp as $$
+  select case p_status
+    when 'requested'    then 'to_do'
+    when 'provisioning' then 'to_do'
+    when 'running'      then 'in_progress'
+    when 'paused'       then 'in_progress'
+    when 'stopping'     then 'in_progress'
+    -- `destroying` is IN PROGRESS, not done: a provider call is still in
+    -- flight, and filing it under Done shows a machine as gone while it is
+    -- still being torn down. Same reasoning that routes every teardown
+    -- through `destroying` in the first place.
+    when 'destroying'   then 'in_progress'
+    when 'stopped'      then 'done'
+    when 'destroyed'    then 'done'
+    -- `failed` is DONE, not cancelled, and it is 155's existing ruling rather
+    -- than a new one: `cancelled` is for a thing a human decided to stop; a
+    -- machine that fell over decided nothing. The failure is a badge and an
+    -- `error` string, not a category, and two lifecycles of the same shape
+    -- answering the universal tabs differently would be its own defect.
+    when 'failed'       then 'done'
+  end
+$$;
+
+comment on function internal.container_status_category(text) is
+  'The RULED containers.status -> status_category mapping. Returns NULL for an '
+  'unknown status rather than guessing, so a tenth status added later files '
+  'nothing (visible as a missing arm) instead of filing wrongly.';
+
+create or replace function internal.bridge_container_status_to_category() returns trigger
+language plpgsql set search_path = public, internal, pg_temp as $$
+declare category text := internal.container_status_category(new.status);
+begin
+  -- No bucket for this status: leave the column alone rather than file the row
+  -- under one nobody chose. 155's property, kept deliberately.
+  if category is null then
+    return new;
+  end if;
+  update public.entities
+     set status_category = category,
+         status_id       = null
+   where id = new.entity_id
+     -- The distinct-guard: without it every heartbeat-adjacent status write
+     -- would emit an `entity.upsert` for a value that did not change.
+     and (status_category is distinct from category or status_id is not null);
+  return new;
+end
+$$;
+
+-- INSERT as well as UPDATE. At birth the seeded state's category already agrees
+-- with `requested`, so the category itself does not move — but `status_id`
+-- still points at a workflow state this kind does not use, and leaving it there
+-- until the first transition would make containers disagree with each other
+-- about whether they have one. The cost is honest and worth stating: creation
+-- emits a second `entity.upsert` (150's one-event law), which is acceptable
+-- here and not for `create_task` because that law protects against
+-- HIGH-FREQUENCY writes starving live renames, and a machine is created a
+-- handful of times in its life. Heartbeats — the actual high-frequency write —
+-- stay off the entity entirely (§4, §17).
+create trigger containers_category_bridge
+after insert or update of status on public.containers
+for each row execute function internal.bridge_container_status_to_category();
+
 -- =============================================================================
 -- 23. GRANTS — full argument signatures, every one.
 --
@@ -1937,7 +2059,28 @@ begin
     raise exception '177: container_runtime_state must NOT snapshot entity versions (165)';
   end if;
 
-  -- 9. `stream_grants` names exactly one subject per row.
+  -- 9. The category projection exists and is armed. Without the trigger the
+  --    mapping function is dead code and every container files under To Do
+  --    forever — the defect §22b exists to prevent, which is invisible to every
+  --    other assertion in this block.
+  if internal.container_status_category('destroyed') is distinct from 'done'
+     or internal.container_status_category('running') is distinct from 'in_progress'
+     or internal.container_status_category('requested') is distinct from 'to_do' then
+    raise exception '177: internal.container_status_category does not match the ruled mapping';
+  end if;
+  if internal.container_status_category('not-a-status') is not null then
+    raise exception '177: container_status_category must return NULL for an unknown status';
+  end if;
+  if not exists (
+    select 1 from pg_trigger t
+      join pg_class c on c.oid = t.tgrelid
+     where c.relname = 'containers'
+       and t.tgname = 'containers_category_bridge'
+       and t.tgenabled <> 'D') then
+    raise exception '177: containers_category_bridge must exist and be enabled';
+  end if;
+
+  -- 10. `stream_grants` names exactly one subject per row.
   if not exists (
     select 1 from pg_constraint
      where conname = 'stream_grants_subject_check') then

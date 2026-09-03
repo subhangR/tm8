@@ -519,6 +519,119 @@ describe('the status machine', () => {
   });
 });
 
+describe('the universal category tabs (§22b)', () => {
+  /**
+   * THE ASSERTION WHOSE ABSENCE LET THE work_session VERSION SHIP.
+   *
+   * Not "the mapping function returns the right string" — that would pass with
+   * the bridge trigger missing entirely, which is the whole defect. This walks a
+   * real container through every status via the real door and reads the
+   * envelope after each step.
+   *
+   * Both columns are asserted at every step, deliberately. Checking only
+   * `status_category` would pass while `status_id` stayed pinned at the seeded
+   * "To Do" state — the half of the original defect that made the two disagree,
+   * so that a destroyed machine would file under Done while its pill still read
+   * "To Do".
+   */
+  const WALK: ReadonlyArray<readonly [string, string]> = [
+    ['requested', 'to_do'],
+    ['provisioning', 'to_do'],
+    ['running', 'in_progress'],
+    ['paused', 'in_progress'],
+    ['running', 'in_progress'],
+    ['stopping', 'in_progress'],
+    ['stopped', 'done'],
+    // `containers.start` on a stopped machine. Under a status_id bridge this
+    // edge is `done -> in_progress`, which `internal.category_transition_allowed`
+    // refuses — it would raise 23514 from inside set_container_status and ABORT
+    // THE DOOR. It must simply work.
+    ['running', 'in_progress'],
+    ['stopping', 'in_progress'],
+    ['stopped', 'done'],
+    ['destroying', 'in_progress'],
+    ['destroyed', 'done'],
+  ];
+
+  it('moves status_category through every status and never lies with a status_id', async () => {
+    const id = await createContainer({ title: 'Category walk' });
+
+    const seen: string[] = [];
+    for (const [status, expected] of WALK) {
+      if (status !== 'requested') await setStatus(id, status);
+      const row = (await database.query<{ status_category: string | null; status_id: string | null }>(
+        `select status_category, status_id from public.entities where id = $1`,
+        [id],
+      ))[0]!;
+      seen.push(`${status}=${row.status_category}`);
+      expect(row.status_category, `at ${status}`).toBe(expected);
+      // A container uses no workflow state, so there is nothing to disagree.
+      expect(row.status_id, `status_id at ${status} must be null`).toBeNull();
+    }
+
+    // The regression this whole section exists for: the category must not be
+    // the same value at the start and the end.
+    expect(seen[0]).toBe('requested=to_do');
+    expect(seen.at(-1)).toBe('destroyed=done');
+    expect(new Set(seen.map((s) => s.split('=')[1])).size).toBeGreaterThan(1);
+  });
+
+  it('starts a stopped machine — the edge a status_id bridge would refuse', async () => {
+    const id = await createContainer({ title: 'Restartable' });
+    for (const next of ['provisioning', 'running', 'stopping', 'stopped']) await setStatus(id, next);
+    expect(await statusOf(id)).toBe('stopped');
+
+    // Would be `done -> in_progress` = 23514 under 155's three-piece bridge.
+    await expect(setStatus(id, 'running')).resolves.toBeUndefined();
+    expect(await statusOf(id)).toBe('running');
+    const row = (await database.query<{ status_category: string }>(
+      `select status_category from public.entities where id = $1`, [id]))[0]!;
+    expect(row.status_category).toBe('in_progress');
+  });
+
+  it('destroys a failed machine — the other edge that would be refused', async () => {
+    const id = await createContainer({ title: 'Failed then torn down' });
+    await setStatus(id, 'provisioning');
+    await setStatus(id, 'failed', { error: 'boom' });
+    expect((await database.query<{ status_category: string }>(
+      `select status_category from public.entities where id = $1`, [id]))[0]!.status_category).toBe('done');
+
+    await expect(setStatus(id, 'destroying')).resolves.toBeUndefined();
+    expect(await statusOf(id)).toBe('destroying');
+  });
+
+  it('clears the seeded workflow state at birth rather than leaving a pill that will lie', async () => {
+    const id = await createContainer({ title: 'Born stateless' });
+    const row = (await database.query<{ status_category: string | null; status_id: string | null }>(
+      `select status_category, status_id from public.entities where id = $1`, [id]))[0]!;
+    expect(row.status_id).toBeNull();
+    expect(row.status_category).toBe('to_do');
+  });
+
+  it('files a container as resolved once it is over, and not before', async () => {
+    // internal.is_resolved reads status_category, so the bridge is what makes
+    // this answer at all — before §22b every container was permanently unresolved.
+    const id = await createContainer({ title: 'Resolution' });
+    const resolved = async (): Promise<boolean> =>
+      (await database.query<{ r: boolean }>(`select internal.is_resolved($1) r`, [id]))[0]!.r;
+
+    expect(await resolved()).toBe(false);
+    await setStatus(id, 'provisioning');
+    await setStatus(id, 'running');
+    expect(await resolved()).toBe(false);
+    await setStatus(id, 'stopping');
+    await setStatus(id, 'stopped');
+    expect(await resolved()).toBe(true);
+  });
+
+  it('leaves the column alone for a status it has no bucket for', async () => {
+    const unknown = await database.query<{ c: string | null }>(
+      `select internal.container_status_category('not-a-status') c`,
+    );
+    expect(unknown[0]!.c).toBeNull();
+  });
+});
+
 describe('idempotency', () => {
   it('returns the same row when a create is replayed with the same mutation id', async () => {
     const key = cmid('replay');
