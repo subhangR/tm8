@@ -66,9 +66,9 @@ function parseOrder(raw: string | undefined): string | undefined {
 }
 
 const WAIT_MODES = ['stored', 'settled'] as const;
-type WaitMode = (typeof WAIT_MODES)[number];
+export type WaitMode = (typeof WAIT_MODES)[number];
 
-function parseWait(raw: string | undefined): WaitMode {
+export function parseWait(raw: string | undefined): WaitMode {
   if (raw === undefined) return 'stored';
   const found = WAIT_MODES.find((m) => m === raw);
   if (!found) {
@@ -114,7 +114,7 @@ function requireConfirmation(cmd: CommandContext, syntax: string, consequence: s
  * identity hashes the EXACT body bytes, so normalising them here would change
  * the mutation identity of a retry.
  */
-async function resolveBody(
+export async function resolveBody(
   positional: string | undefined,
   flag: string | undefined,
   syntax: string,
@@ -143,7 +143,7 @@ async function resolveBody(
 }
 
 /** Repeatable id flags collapse duplicates, PRESERVING first-occurrence order. */
-function uniqueInOrder(values: readonly string[]): string[] {
+export function uniqueInOrder(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
@@ -383,7 +383,7 @@ async function messageReply(cmd: CommandContext): Promise<ExitCode> {
   return postMessage(cmd, request, wait);
 }
 
-async function postMessage(
+export async function postMessage(
   cmd: CommandContext,
   request: Record<string, unknown>,
   wait: WaitMode,
@@ -552,7 +552,7 @@ function bodyExcerpt(value: unknown): string {
   return plainExcerpt(body, 72);
 }
 
-function renderMessagePage(dto: unknown): string {
+export function renderMessagePage(dto: unknown): string {
   const items = (dto as { items?: unknown })?.items;
   const rows = Array.isArray(items) ? items : [];
   if (rows.length === 0) return 'no messages';
@@ -608,7 +608,7 @@ function renderBatch(dto: unknown): string {
   return lines.join('\n');
 }
 
-function renderDelivery(dto: unknown): string {
+export function renderDelivery(dto: unknown): string {
   const message = (dto as { message?: unknown })?.message;
   const deliveries = (dto as { deliveries?: unknown })?.deliveries;
   const rows = Array.isArray(deliveries) ? (deliveries as DeliveryRecord[]) : [];

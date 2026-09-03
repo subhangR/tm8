@@ -2860,7 +2860,7 @@
       },
       {
         "operation": "chat.start",
-        "noun": "chat-thread",
+        "noun": "chat",
         "exposure": "public",
         "helpRef": "tm8://help/operation/chat.start",
         "intentTags": [
