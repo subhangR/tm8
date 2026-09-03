@@ -61,7 +61,7 @@ export const ADDITIVE_OPERATION_NAMES = [
 /** Catalog rows added after the A01-A21 dossier closed. */
 export const POST_DOSSIER_OPERATION_NAMES = [
   'execution.dispatch',
-  'chat.threads.start',
+  'chat.start',
 ] as const satisfies readonly OperationName[];
 
 export const FROZEN_SCHEMA_OPERATION_NAMES = [

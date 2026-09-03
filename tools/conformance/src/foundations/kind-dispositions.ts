@@ -52,6 +52,7 @@ export type MigrationStrategy =
   | 'artifact-detail'
   | 'loop-detail'
   | 'graph-detail'
+  | 'chat-detail'
   | 'custom-registry'
   | 'none';
 
@@ -378,6 +379,15 @@ export const CORE_KIND_DISPOSITIONS = {
   graph: core('graph', 'graphs', {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'graph-detail' },
+  }),
+  // Chat as an Entity (migration 176). Its lifecycle is `work_session`'s, not
+  // `graph`'s: born from its own door (`chat.start`), never from
+  // entities.create, and so NOT in `CreatableEntityKind`. Menu strategy is
+  // `registered-not-default` because Wave 1 deliberately leaves the default
+  // menu alone — the Chats tab lands with the surface it points at.
+  chat: core('chat', 'chats', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'chat-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

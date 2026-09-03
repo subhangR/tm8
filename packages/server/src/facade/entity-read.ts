@@ -30,6 +30,8 @@ import type {
   WorkSessionKind,
   AcceptanceCriterion,
   ActorSummary,
+  ChatMode,
+  ChatWorkdirMode,
   EntityBadges,
   EntityCapabilities,
   EntityContent,
@@ -132,6 +134,12 @@ export const ENTITY_COLUMNS = `
   lp.prompt as loop_prompt, lp.config as loop_config,
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
+  cht.title as chat_title, cht.teammate_id as chat_teammate_id,
+  cht.model as chat_model, cht.provider as chat_provider, cht.agent_tool as chat_agent_tool,
+  cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
+  cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
+  chq.turn_state as chat_turn_state, chq.turn_count as chat_turn_count,
+  chq.last_turn_at as chat_last_turn_at,
   gr.title as graph_title, gr.graph_type as graph_type,
   gr.nodes as graph_nodes, gr.edges as graph_edges,
   gr.layout as graph_layout, gr.source as graph_source,
@@ -184,6 +192,23 @@ export const ENTITY_FROM = `
   left join public.memories memo         on memo.entity_id = e.id
   left join public.worktrees wt          on wt.entity_id = e.id
   left join public.loops lp              on lp.entity_id = e.id
+  left join public.chats cht             on cht.entity_id = e.id
+  -- The turn QUEUE, folded to one row. A chat's list tile has to say "busy"
+  -- without a second read, and the busy fact is not on the chats row:
+  -- runtime_state is about the headless child, not about whether anything is
+  -- waiting for it. A lateral aggregate keeps this one query, not an N+1.
+  left join lateral (
+    select
+      case
+        when count(*) filter (where t.state = 'running') > 0 then 'running'
+        when count(*) filter (where t.state = 'queued') > 0 then 'queued'
+        else 'idle'
+      end as turn_state,
+      count(*)::int as turn_count,
+      max(t.queued_at) as last_turn_at
+      from public.chat_turns t
+     where t.chat_id = cht.entity_id
+  ) chq on cht.entity_id is not null
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
@@ -301,6 +326,18 @@ export interface EntityRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  chat_title: string | null;
+  chat_teammate_id: string | null;
+  chat_model: string | null;
+  chat_provider: string | null;
+  chat_agent_tool: string | null;
+  chat_mode: string | null;
+  chat_workdir_mode: string | null;
+  chat_project_id: string | null;
+  chat_runtime_state: 'cold' | 'live' | 'stopped' | null;
+  chat_turn_state: 'idle' | 'queued' | 'running' | null;
+  chat_turn_count: number | null;
+  chat_last_turn_at: Date | string | null;
   graph_title: string | null;
   graph_type: string | null;
   graph_nodes: unknown[] | null;
@@ -1169,6 +1206,11 @@ export function titleOf(row: EntityRow): string {
     case 'graph':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.graph_title ?? 'Graph';
+    case 'chat':
+      // The chat's own title, which `start_chat` seeds from the opening message.
+      // An empty one is legal (the column defaults to '') and must still render
+      // as something a human can read, never as an id (L3).
+      return row.chat_title && row.chat_title.length > 0 ? row.chat_title : 'Chat';
     case 'worktree':
       // The branch IS the human name of a worktree; paths are server-computed
       // noise and ids are forbidden as titles (L3).
@@ -1469,6 +1511,24 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         graphType: row.graph_type ?? 'entity',
         nodeCount: Array.isArray(row.graph_nodes) ? row.graph_nodes.length : 0,
         edgeCount: Array.isArray(row.graph_edges) ? row.graph_edges.length : 0,
+      };
+    case 'chat':
+      // Who it is with, what it is running, and whether it is busy. The two
+      // state axes are independent and both are projected: `runtimeState` is the
+      // durable claim about the headless child, `turnState` is the queue.
+      return {
+        kind: 'chat',
+        teammateId: row.chat_teammate_id ?? '',
+        model: row.chat_model ?? '',
+        provider: row.chat_provider ?? '',
+        agentTool: row.chat_agent_tool ?? '',
+        mode: (row.chat_mode ?? 'ask') as ChatMode,
+        workdirMode: (row.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
+        projectId: row.chat_project_id,
+        runtimeState: row.chat_runtime_state ?? 'cold',
+        turnState: row.chat_turn_state ?? 'idle',
+        turnCount: Number(row.chat_turn_count ?? 0),
+        lastTurnAt: isoOrNull(row.chat_last_turn_at),
       };
     case 'worktree':
       // SEMANTIC lifecycle only. Operational disk health lives in
@@ -1982,6 +2042,11 @@ export function contentOf(row: EntityRow): EntityContent {
         lastRunAt: isoOrNull(row.loop_last_run_at),
         lastError: row.loop_last_error,
       };
+    case 'chat':
+      // R5: a chat's working directory and native runtime session id are
+      // server-side, and nothing else on the row is content rather than state.
+      // The arm exists so the discriminated union is total, and says so.
+      return { kind: 'chat' };
     case 'graph':
       // The whole row IS the graph (R1): one read hands a renderer or an
       // orchestrating agent everything. Lean fallbacks keep a hypothetical

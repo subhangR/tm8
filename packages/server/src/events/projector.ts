@@ -31,6 +31,8 @@ import {
   EntityKindSchema,
   plainExcerpt,
   type ActorSummary,
+  type ChatMode,
+  type ChatWorkdirMode,
   type CustomEntityKind,
   type EntityCounters,
   type EntityAttentionSummary,
@@ -286,6 +288,18 @@ interface SummaryRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  chat_title: string | null;
+  chat_teammate_id: string | null;
+  chat_model: string | null;
+  chat_provider: string | null;
+  chat_agent_tool: string | null;
+  chat_mode: string | null;
+  chat_workdir_mode: string | null;
+  chat_project_id: string | null;
+  chat_runtime_state: 'cold' | 'live' | 'stopped' | null;
+  chat_turn_state: 'idle' | 'queued' | 'running' | null;
+  chat_turn_count: number | null;
+  chat_last_turn_at: Date | string | null;
   graph_title: string | null;
   graph_type: string | null;
   graph_node_count: number | null;
@@ -411,6 +425,18 @@ select
   lp.next_run_at     as loop_next_run_at,
   lp.last_run_at     as loop_last_run_at,
   lp.last_error      as loop_last_error,
+  cht.title          as chat_title,
+  cht.teammate_id    as chat_teammate_id,
+  cht.model          as chat_model,
+  cht.provider       as chat_provider,
+  cht.agent_tool     as chat_agent_tool,
+  cht.chat_mode      as chat_mode,
+  cht.workdir_mode   as chat_workdir_mode,
+  cht.project_id     as chat_project_id,
+  cht.runtime_state  as chat_runtime_state,
+  chq.turn_state     as chat_turn_state,
+  chq.turn_count     as chat_turn_count,
+  chq.last_turn_at   as chat_last_turn_at,
   gr.title           as graph_title,
   gr.graph_type      as graph_type,
   coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
@@ -459,6 +485,19 @@ left join public.interaction_profile_versions profile_version
 left join public.memories memo       on memo.entity_id = e.id
 left join public.worktrees wt        on wt.entity_id = e.id
 left join public.loops lp            on lp.entity_id = e.id
+left join public.chats cht           on cht.entity_id = e.id
+left join lateral (
+  select
+    case
+      when count(*) filter (where t.state = 'running') > 0 then 'running'
+      when count(*) filter (where t.state = 'queued') > 0 then 'queued'
+      else 'idle'
+    end as turn_state,
+    count(*)::int as turn_count,
+    max(t.queued_at) as last_turn_at
+    from public.chat_turns t
+   where t.chat_id = cht.entity_id
+) chq on cht.entity_id is not null
 left join public.graphs gr           on gr.entity_id = e.id
 left join public.artifacts art       on art.entity_id = e.id
 left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
@@ -935,6 +974,10 @@ export class PgEntityProjector implements EntityProjector {
       case 'graph':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.graph_title ?? 'Graph';
+      case 'chat':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf, including
+        // the empty-string fallback (the column defaults to '').
+        return r.chat_title && r.chat_title.length > 0 ? r.chat_title : 'Chat';
       case 'worktree':
         // The branch is the human name — MIRRORS entity-read.ts titleOf.
         return r.wt_branch ?? 'Worktree';
@@ -1237,6 +1280,25 @@ export class PgEntityProjector implements EntityProjector {
           graphType: r.graph_type ?? 'entity',
           nodeCount: r.graph_node_count ?? 0,
           edgeCount: r.graph_edge_count ?? 0,
+        };
+      case 'chat':
+        // MIRRORS entity-read.ts stateOf field for field. Parity is the point:
+        // a chat tile hydrated from the event feed and one fetched over
+        // entities.get must carry the same facts under the same names, or the
+        // tile changes shape depending on which door answered.
+        return {
+          kind: 'chat',
+          teammateId: r.chat_teammate_id ?? '',
+          model: r.chat_model ?? '',
+          provider: r.chat_provider ?? '',
+          agentTool: r.chat_agent_tool ?? '',
+          mode: (r.chat_mode ?? 'ask') as ChatMode,
+          workdirMode: (r.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
+          projectId: r.chat_project_id,
+          runtimeState: r.chat_runtime_state ?? 'cold',
+          turnState: r.chat_turn_state ?? 'idle',
+          turnCount: Number(r.chat_turn_count ?? 0),
+          lastTurnAt: iso(r.chat_last_turn_at),
         };
       case 'worktree':
         // Semantic lifecycle only — allocation (disk) state is deliberately

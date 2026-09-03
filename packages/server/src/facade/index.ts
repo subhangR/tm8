@@ -116,6 +116,8 @@ export interface RegisterFacadeHandlersDeps {
    * against the pinned one.
    */
   readonly resolveAuthoredFromWorkSessionId?: W2MessagesHandoffsServiceOptions['resolveAuthoredFromWorkSessionId'];
+  /** 176's chat twin. Defaults below to the bearer's own `runtime_chat_id`. */
+  readonly resolveAuthoredFromChatId?: W2MessagesHandoffsServiceOptions['resolveAuthoredFromChatId'];
   /**
    * Tier B per-member credentials (sub-doc 11 §D).
    *
@@ -211,6 +213,11 @@ export function registerFacadeHandlers(
     ...(deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {}),
     resolveAuthoredFromWorkSessionId: deps.resolveAuthoredFromWorkSessionId
       ?? (async (ctx) => (ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null)),
+    // NO envelope arm, unlike the session resolver above. A chat id is never
+    // accepted from request input — only from the bearer's own session row —
+    // so there is nothing to reconcile and nothing a caller can assert.
+    resolveAuthoredFromChatId: deps.resolveAuthoredFromChatId
+      ?? (async (ctx) => (ctx.identity.kind === 'bearer' ? ctx.identity.runtimeChatId ?? null : null)),
     ...(deps.chat ? {
       onMessagesCommitted: (identityId, messages) => {
         void deps.chat!.orchestrator.wakeForMessages(identityId, messages);

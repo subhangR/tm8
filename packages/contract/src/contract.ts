@@ -43,7 +43,15 @@ export type CoreEntityKind =
   // between them lives inside the row. Content-discriminated `graphType`
   // ('entity' = orchestratable blueprint, 'mermaid' = durable diagram source,
   // more later). It never writes real public.edges while being crafted.
-  | 'graph';
+  | 'graph'
+  // Chat as an Entity (2026-09-03, migration 176). A conversation with a
+  // teammate is the ANCHOR of its own transcript, a spawn parent, and an
+  // `authored_from` destination — everything a work session already was, which
+  // is the whole point (ruling R-B). It is deliberately NOT creatable through
+  // `entities.create`: `chat.start` is the only door, because a chat is born
+  // with a runtime binding (teammate, model, working directory) that a generic
+  // create could not supply.
+  | 'chat';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -418,7 +426,24 @@ export type CoreEntityState =
    * vertices and edges themselves are content, not state: a summary never
    * needs them and they can be large.
    */
-  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number };
+  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number }
+  /**
+   * A chat's row facts (176). Everything here answers a question a list row
+   * asks — who is it with, what is it running, is it busy — without a second
+   * read, which is the same rule `capabilities` and `category` ride on.
+   *
+   * `runtimeState` is the DURABLE claim about the headless child: 'cold' means
+   * one has never started, 'live' that a node holds it, 'stopped' that the next
+   * turn takes the lazy-resume path. `turnState` is the QUEUE, which is a
+   * different fact: a chat can be 'stopped' with a queued turn waiting, and
+   * that pair is exactly what "the node restarted, your message is still
+   * coming" looks like. Neither is derivable from the other.
+   */
+  | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
+      mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
+      runtimeState: 'cold' | 'live' | 'stopped';
+      turnState: 'idle' | 'queued' | 'running';
+      turnCount: number; lastTurnAt: string | null };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -693,6 +718,13 @@ export type CoreEntityContent =
    * types choose their own members. All four carry on every read — an arm a
    * type does not use is simply empty. `layout` is presentation only.
    */
+  /**
+   * A chat has NO content beyond its summary (R5). The working directory and
+   * the native runtime session id are the two facts a client could want here
+   * and the two that stay server-side, so the arm exists to satisfy the
+   * discriminated union and says so rather than inventing a payload.
+   */
+  | { kind: 'chat' }
   | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
       layout: Record<string, { x: number; y: number }>; source: string | null };
 
@@ -1005,49 +1037,52 @@ export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'c
  */
 export type ChatWorkdirMode = 'project' | 'scratch';
 
-export interface ChatThreadSummary {
-  rootMessageId: EntityId;
-  anchorId: EntityId;
+/**
+ * `chat.start` — the ONE door a chat is born from (176).
+ *
+ * It replaced `chat.threads.start`, which configured an ALREADY-POSTED root
+ * message: the caller posted, then bound a thread to what it had posted, and
+ * the chat was that message for the rest of its life. Here the chat entity is
+ * created and its opening message is posted in one transaction, so there is no
+ * window in which a chat exists without its first turn, and no id that means
+ * "the message this conversation started from" rather than "the conversation".
+ *
+ * `aboutId` replaces the anchor the composer used to have to supply. A chat
+ * anchors its own transcript now, so the entity a chat was opened ABOUT — the
+ * Craft blueprint, the task, the pull request — is a relation (`about`), which
+ * a human can see and correct, rather than a hidden binding column.
+ */
+export interface StartChatInput {
+  spaceId: SpaceId;
   teammateId: EntityId;
   model: string;
   mode: ChatMode;
-  createdAt: string;
-  lastReplyAt: string | null;
-  /** The project this thread works in; null exactly when `workdirMode` is `scratch`. */
-  projectId: EntityId | null;
   workdirMode: ChatWorkdirMode;
-  /**
-   * Root message body excerpt (PR188 review F4): without it every list row
-   * reads "Conversation" and threads are indistinguishable. Optional so the
-   * write path's minted summary (start_chat_thread) stays valid.
-   */
-  title?: string | null;
-  /** Reply count for the thread footer; optional for the same reason. */
-  replyCount?: number;
-}
-
-export interface StartChatThreadInput {
-  rootMessageId: EntityId;
-  teammateId: EntityId;
-  model: string;
-  mode: ChatMode;
-  clientMutationId: string;
   /**
    * Required when `workdirMode` is `project`, refused otherwise. The server
    * resolves the actual path from `projects.working_dir` — a caller never names
-   * a directory for a project thread, so the id and the path cannot disagree.
+   * a directory for a project chat, so the id and the path cannot disagree.
    */
   projectId?: EntityId | null;
-  workdirMode: ChatWorkdirMode;
+  /** Defaults to the opening body, trimmed to 240 characters. */
+  title?: string | null;
+  /** The opening turn. A chat is never created empty. */
+  body: string;
+  attachmentIds?: EntityId[];
+  /** The entity this chat is about; written as an `about` edge. */
+  aboutId?: EntityId | null;
+  clientMutationId: string;
 }
 
-export interface StartChatThreadResult {
-  thread: ChatThreadSummary;
+export interface StartChatResult {
+  chat: EntitySummary;
+  /** The opening message, already queued as turn one. */
+  messageId: EntityId;
 }
 
 export interface ChatTurnDeltaFrame {
   type: 'chat.turn.delta';
-  threadRootId: EntityId;
+  chatId: EntityId;
   messageId: EntityId;
   seq: number;
   part: MessagePart;
@@ -1055,7 +1090,7 @@ export interface ChatTurnDeltaFrame {
 
 export interface ChatTurnDoneFrame {
   type: 'chat.turn.done';
-  threadRootId: EntityId;
+  chatId: EntityId;
   messageId: EntityId;
   usage: ChatTurnUsage | null;
 }
@@ -1525,8 +1560,10 @@ export interface AuthSessionView {
   actingAsTeamMemberId: string | null;
   /** Present only for a chat runtime: the requesting human member. */
   runtimeMemberId?: string | null;
-  /** Present only for a chat runtime: the root message whose process owns it. */
+  /** Pre-176 chat runtimes only: the root message whose process owned it. */
   runtimeThreadRootId?: string | null;
+  /** Present only for a chat runtime: the chat entity whose process owns it. */
+  runtimeChatId?: string | null;
   label: string | null;
   /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
   createdAt?: string;
@@ -1974,6 +2011,9 @@ export interface PatchTaskInput extends CommandContext {
 export type CreatableEntityKind = Exclude<
   EntityKind,
   'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'
+  // `chat` joins that list for the same reason `work_session` is on it: it is
+  // born only from its own door (`chat.start`), never from a generic create.
+  | 'chat'
 >;
 
 export interface CreateEntityInput extends CommandContext {
@@ -2779,14 +2819,19 @@ export interface KindCounts { total: number; unseen: number }
  */
 export type SpaceKindCounts = Partial<Record<EntityKind, KindCounts>>;
 
-/** Home — chat threads plus the legacy My Work snapshot during migration. */
+/**
+ * Home — the My Work snapshot.
+ *
+ * `chatThreads` is GONE (176). It was a bespoke projection over `chat_threads`
+ * that existed only because a chat had no kind to list by; a chat is an entity
+ * now, so the list is `entities.list kind=chat` like every other list in the
+ * product, with the same paging, filtering and permissions.
+ */
 export interface HomeSnapshot {
   readyToPull: CollectionResult;
   inFlight: CollectionResult;
   needsMe: CollectionResult;
   activity: Page<ActivityItem>;
-  /** Additive: every configured chat root readable by this viewer. */
-  chatThreads?: ChatThreadSummary[];
 }
 
 /** GET /v2/spaces/:spaceId/task-axes */
@@ -4464,9 +4509,30 @@ export interface MessageDeliveryRecord {
   updatedAt: string;
 }
 
+/**
+ * One chat turn this message queued (176).
+ *
+ * A chat's delivery ledger is `chat_turns`, not `session_message_deliveries`:
+ * the latter's target column FKs `work_sessions` and a chat delivery cannot be
+ * a row in it (blocker B3). Without this arm, `messages.delivery.get` — and
+ * therefore `tm8 message send --wait settled` — would report "no deliveries"
+ * for a message that DID wake a chat, which is a worse answer than none.
+ */
+export interface MessageChatTurnRecord {
+  chatId: EntityId;
+  turnId: string;
+  state: 'queued' | 'running' | 'completed' | 'error';
+}
+
 export interface MessageDeliveryView {
   message: MessageView;
   deliveries: MessageDeliveryRecord[];
+  /**
+   * ADDITIVE and OPTIONAL, under the rolling-node rule every additive field
+   * here carries: a node that predates 176 omits the key, and its absence means
+   * "this node cannot tell you", never "this message woke no chat".
+   */
+  chatTurns?: MessageChatTurnRecord[];
 }
 
 export type HandoffDeliveryStatus = 'prepared' | 'dispatching' | 'delivered' | 'refused' | 'unknown';

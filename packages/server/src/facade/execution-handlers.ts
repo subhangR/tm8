@@ -2535,10 +2535,25 @@ function registerHandlers(
         )
       : undefined;
 
+    // 176 — A CHAT IS THE PARENT OF WHAT IT SPAWNS.
+    //
+    // `tm8_delegate` reaches here on an `agent_runtime` bearer and has never
+    // been able to name a parent: a chat had no entity id to name, so every
+    // worker a chat dispatched was born an orphan and its `<reply_address>`
+    // pointed at nothing. The bearer's own `runtime_chat_id` is that id, and it
+    // is a server fact off the session row, so it is safe to use as provenance.
+    //
+    // An EXPLICIT `parentSessionId` still wins. A human driving `execution.spawn`
+    // through a chat's credential may legitimately parent the worker elsewhere,
+    // and silently overriding a stated parent with an ambient one would make the
+    // argument a lie.
+    const runtimeChatId = ctx.identity.kind === 'bearer'
+      ? ctx.identity.runtimeChatId ?? null
+      : null;
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
-      parentSessionId: input.parentSessionId ?? null,
+      parentSessionId: input.parentSessionId ?? runtimeChatId ?? null,
       ...(taskIds ? { taskIds } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),
