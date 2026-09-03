@@ -230,15 +230,18 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
     inputSchema: objectSchema({
       containerId: stringProp('Container entity id.'),
       action: { type: 'string', enum: [...COMPUTER_ACTIONS], description: 'One action from the shared computer-use / Playwright / adb vocabulary.' },
-      x: integerProp('Target X in SCREENSHOT pixels at the last reported scale.', 0, 100_000),
-      y: integerProp('Target Y in SCREENSHOT pixels at the last reported scale.', 0, 100_000),
-      to: objectSchema({ x: integerProp('Destination X.', 0, 100_000), y: integerProp('Destination Y.', 0, 100_000) }, ['x', 'y']),
-      text: stringProp('Text to type.'),
-      keys: stringProp('Key chord, e.g. "ctrl+l".'),
-      dx: integerProp('Horizontal scroll delta.', -100_000, 100_000),
-      dy: integerProp('Vertical scroll delta.', -100_000, 100_000),
-      ms: integerProp('Milliseconds to wait.', 0, 600_000),
-      url: stringProp('URL for the browser-only goto action.'),
+      // Coordinates are bare `z.number()` in schemas.ts — unbounded and
+      // float-permitting. Declaring a min/max here would advertise a
+      // constraint the server does not have.
+      x: { type: 'number', description: 'Target X in SCREENSHOT pixels at the last reported scale.' },
+      y: { type: 'number', description: 'Target Y in SCREENSHOT pixels at the last reported scale.' },
+      to: objectSchema({ x: { type: 'number', description: 'Destination X.' }, y: { type: 'number', description: 'Destination Y.' } }, ['x', 'y']),
+      text: { ...stringProp('Text to type.'), maxLength: 65536 },
+      keys: { ...stringProp('Key chord, e.g. "ctrl+l".'), maxLength: 256 },
+      dx: { type: 'number', description: 'Horizontal scroll delta.' },
+      dy: { type: 'number', description: 'Vertical scroll delta.' },
+      ms: integerProp('Milliseconds to wait.', 0, 60_000),
+      url: { ...stringProp('URL for the browser-only goto action.'), maxLength: 4096 },
       screenshot: { type: 'boolean', description: 'Return a screenshot. Default true.' },
       keep: { type: 'boolean', description: 'Also store the screenshot as an artifact revision on the container.' },
       scale: { type: 'number', minimum: 0.25, maximum: 1, description: 'Screenshot scale. Default is node-chosen so the long edge is at most 1568 px.' },
@@ -250,8 +253,8 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
     description: 'Run one command inside a container and return its typed exit code, stdout and stderr.',
     inputSchema: objectSchema({
       containerId: stringProp('Container entity id.'),
-      argv: { type: 'array', minItems: 1, maxItems: 128, items: { type: 'string' }, description: 'Command and arguments. Not a shell string — no quoting or globbing is applied.' },
-      cwd: stringProp('Working directory inside the container.'),
+      argv: { type: 'array', minItems: 1, maxItems: 256, items: { type: 'string' }, description: 'Command and arguments. Not a shell string — no quoting or globbing is applied.' },
+      cwd: { ...stringProp('Working directory inside the container.'), maxLength: 4096 },
       timeoutMs: integerProp('Provider budget in milliseconds.', 1000, 600_000),
     }, ['containerId', 'argv']),
     annotations: annotations(false, true),
@@ -268,6 +271,47 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   },
 ] as const;
 
+
+/**
+ * A string bounded the way zod bounds one: `.max(n)` counts UTF-16 code units
+ * (`String.length`), NOT bytes. `boundedString` above is a BYTE cap for payload
+ * limits, and using it here would refuse multibyte input the server accepts —
+ * a false refusal that would look like a server bug from the caller's side.
+ *
+ * Every bound applied through this helper is restated from
+ * `packages/contract/src/schemas.ts`, the schemas themselves. Design §4.2's
+ * table is a summary: it lists the numeric ranges and omits the string
+ * lengths, and copying it is how the CLI noun shipped 1 of 16 string bounds.
+ */
+function schemaString(raw: unknown, field: string, min: number, max: number): string {
+  const value = requiredString(raw, field, min === 0);
+  if (value.length < min) throw new DirectToolError('invalid_input', `${field} must be at least ${min} characters`);
+  if (value.length > max) {
+    // The LENGTH, never the value.
+    throw new DirectToolError('invalid_input', `${field} must be at most ${max} characters, got ${value.length}`);
+  }
+  return value;
+}
+
+function optionalSchemaString(raw: unknown, field: string, min: number, max: number): string | undefined {
+  return raw === undefined ? undefined : schemaString(raw, field, min, max);
+}
+
+/**
+ * A finite number, with NO invented range. `ContainersComputerInput`'s
+ * `x`/`y`/`dx`/`dy` are bare `z.number()` — unbounded, and float-permitting.
+ * The first version of this file refused non-integers and anything past
+ * 100_000, which are refusals the SERVER does not make: a legal call rejected
+ * by the client is as wrong as an illegal one let through, and harder to
+ * diagnose because the server never sees it.
+ */
+function finiteNumber(raw: unknown, field: string): number | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    throw new DirectToolError('invalid_input', `${field} must be a finite number`);
+  }
+  return raw;
+}
 
 export interface DirectToolContext {
   transport: CatalogTransport;
@@ -341,9 +385,11 @@ export async function callDirectTool(
 async function containerRun(args: Record<string, unknown>, context: DirectToolContext) {
   const containerId = requiredString(args.containerId, 'containerId');
   await confinedEntity(context, containerId, 'container');
-  const argv = boundedArray(args.argv, 'argv', 1, 128).map((v, i) => requiredString(v, `argv[${i}]`));
+  // schemas.ts: argv is `z.array(z.string()).min(1).max(256)` — 256, not 128.
+  // The old 128 was a false refusal: a legal 200-element argv never reached the node.
+  const argv = boundedArray(args.argv, 'argv', 1, 256).map((v, i) => requiredString(v, `argv[${i}]`));
   const body: Record<string, unknown> = { clientMutationId: randomUUID(), argv };
-  const cwd = optionalString(args.cwd, 'cwd');
+  const cwd = optionalSchemaString(args.cwd, 'cwd', 1, 4096);
   if (cwd !== undefined) body.cwd = cwd;
   const timeoutMs = integer(args.timeoutMs, 'timeoutMs', 1000, 600_000);
   if (timeoutMs !== undefined) body.timeoutMs = timeoutMs;
@@ -383,28 +429,32 @@ async function containerComputer(
     throw new DirectToolError('invalid_input', `action must be one of ${COMPUTER_ACTIONS.join(', ')}`);
   }
   const body: Record<string, unknown> = { clientMutationId: randomUUID(), action };
-  const x = integer(args.x, 'x', 0, 100_000);
+  const x = finiteNumber(args.x, 'x');
   if (x !== undefined) body.x = x;
-  const y = integer(args.y, 'y', 0, 100_000);
+  const y = finiteNumber(args.y, 'y');
   if (y !== undefined) body.y = y;
   if (args.to !== undefined) {
     const to = requiredObject(args.to, 'to');
-    body.to = {
-      x: requiredInteger(to.x, 'to.x', 0, 100_000),
-      y: requiredInteger(to.y, 'to.y', 0, 100_000),
-    };
+    const tx = finiteNumber(to.x, 'to.x');
+    const ty = finiteNumber(to.y, 'to.y');
+    if (tx === undefined || ty === undefined) {
+      throw new DirectToolError('invalid_input', 'to requires both x and y');
+    }
+    body.to = { x: tx, y: ty };
   }
-  const text = optionalString(args.text, 'text');
+  const text = optionalSchemaString(args.text, 'text', 0, 65536);
   if (text !== undefined) body.text = text;
-  const keys = optionalString(args.keys, 'keys');
+  const keys = optionalSchemaString(args.keys, 'keys', 0, 256);
   if (keys !== undefined) body.keys = keys;
-  const dx = integer(args.dx, 'dx', -100_000, 100_000);
+  const dx = finiteNumber(args.dx, 'dx');
   if (dx !== undefined) body.dx = dx;
-  const dy = integer(args.dy, 'dy', -100_000, 100_000);
+  const dy = finiteNumber(args.dy, 'dy');
   if (dy !== undefined) body.dy = dy;
-  const ms = integer(args.ms, 'ms', 0, 600_000);
+  // schemas.ts: ms is `.min(0).max(60000)` — 60 s, not the 600 s I had. The
+  // old bound let a value through that the server refuses.
+  const ms = integer(args.ms, 'ms', 0, 60_000);
   if (ms !== undefined) body.ms = ms;
-  const url = optionalString(args.url, 'url');
+  const url = optionalSchemaString(args.url, 'url', 1, 4096);
   if (url !== undefined) body.url = url;
   const screenshot = boolean(args.screenshot, 'screenshot');
   if (screenshot !== undefined) body.screenshot = screenshot;
