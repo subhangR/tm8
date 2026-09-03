@@ -123,6 +123,58 @@ describe('secret-looking env keys are refused, by name, at the contract', () => 
   });
 });
 
+describe('the secret-key predicate is at least as broad as 177\'s door', () => {
+  // WHY THIS EXISTS. The docblock promises a caller a 400 that NAMES the key
+  // rather than a raw plpgsql error. That promise holds only while this
+  // predicate is at least as broad as the door's `~*` at 177:866 — and it was
+  // not: the door matches SUBSTRINGS, this matched `_`-delimited SEGMENTS, so
+  // `AUTHOR` (which contains `auth`) passed here and was refused there with an
+  // unhandled 22023.
+  //
+  // Conserved-size corpus, three groups, asserted by NAME so a regression says
+  // which key moved rather than that a number changed.
+  const REFUSED_BY_THE_DOOR_SUBSTRING = [
+    'AUTHOR', 'TOKENIZER', 'AUTHENTICATION', 'AUTHORIZED_KEYS',
+    'OAUTH', 'ACCESSKEY', 'MYTOKENVALUE',
+  ];
+  const REAL_SECRETS = [
+    'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN',
+    'TM8_AGENT_TOKEN', 'MY_SECRET', 'API_KEY', 'AUTH_TOKEN',
+  ];
+  const ORDINARY = ['PATH', 'HOME', 'LANG', 'NODE_ENV', 'TERM', 'TZ'];
+
+  it('refuses every key the door would refuse by substring — the seven that used to slip', () => {
+    for (const key of REFUSED_BY_THE_DOOR_SUBSTRING) {
+      expect(isSecretLookingEnvKey(key), `${key} must be refused HERE, not by a raw 22023`)
+        .toBe(true);
+    }
+  });
+
+  it('still refuses real secrets, and still accepts ordinary vars', () => {
+    // The disproof for the widening: a predicate that simply answered `true`
+    // would pass the test above. This is what makes that one evidence.
+    for (const key of REAL_SECRETS) {
+      expect(isSecretLookingEnvKey(key), `${key} must stay refused`).toBe(true);
+    }
+    for (const key of ORDINARY) {
+      expect(isSecretLookingEnvKey(key), `${key} must stay ACCEPTED`).toBe(false);
+    }
+  });
+
+  it('the corpus is conserved and its groups are disjoint', () => {
+    // Guards the comparison itself: a corpus that silently shrank, or a key
+    // appearing in two groups, would let the assertions above pass vacuously.
+    const all = [...REFUSED_BY_THE_DOOR_SUBSTRING, ...REAL_SECRETS, ...ORDINARY];
+    expect(all).toHaveLength(21);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('is case-insensitive over the widened terms too', () => {
+    expect(isSecretLookingEnvKey('author')).toBe(true);
+    expect(isSecretLookingEnvKey('oauth')).toBe(true);
+  });
+});
+
 describe('spec bounds', () => {
   const spec = (over: Record<string, unknown>) => ContainerSpecInputSchema.safeParse(over).success;
 

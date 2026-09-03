@@ -3771,38 +3771,56 @@ export const ContainerPortShareSchema = z.enum(['none', 'space', 'link']);
  * Secrets reach a machine through the credential path (§12.3), never through
  * `spec.env` — an env var is stored on the container row, returned by every
  * read of it, and visible to anything that can see the entity. The refusal is
- * here rather than in the door because a caller deserves a 400 that names the
- * key rather than a raw plpgsql error.
+ * here rather than in the door so a caller gets a 400 that NAMES the key
+ * instead of a raw plpgsql error.
  *
- * IT IS NOT EQUIVALENT TO THE DATABASE'S PREDICATE, AND NOTHING PINS THEM
- * TOGETHER. An earlier version of this comment claimed a caller is refused
- * before a request is ever sent; that is false for a non-empty set of keys.
- * 177's door (`177_container_kind.sql:866`) matches SUBSTRINGS:
+ * THAT PROMISE ONLY HOLDS IF THIS IS AT LEAST AS BROAD AS THE DOOR, so it is,
+ * BY CONSTRUCTION: `DOOR_SECRET_TERMS` carries 177's alternatives verbatim
+ * (`177_container_kind.sql:866`) and matches them as SUBSTRINGS, exactly as
+ * `~*` does.
  *
- *     env_key ~* '(secret|token|password|passwd|api[_-]?key|credential
- *                  |private[_-]?key|access[_-]?key|auth)'
+ * It did not, and the gap was not academic: `AUTHOR` contains `auth`, so the
+ * door refused it with an unhandled `22023` AFTER this schema had accepted it
+ * — the precise experience the named-key 400 exists to prevent. Also
+ * `TOKENIZER`, `AUTHENTICATION`, `AUTHORIZED_KEYS`, `OAUTH`, `ACCESSKEY`,
+ * `MYTOKENVALUE`. They are refused HERE now, by name. Nothing became
+ * creatable that was not creatable before, and nothing that was refused is
+ * now accepted: the change is WHERE and HOW the refusal happens.
  *
- * while the regex below matches `_`-delimited SEGMENTS. So the DB is the
- * STRICTER side, and these pass here and are refused there:
+ * `EXTRA_SECRET_TERMS` are stricter than the door and stay segment-delimited,
+ * because a substring `PWD` would refuse any key containing those three
+ * letters. Being stricter than the door is safe — it refuses at the contract,
+ * with a name — while being LOOSER is what produced the raw 22023.
  *
- *     AUTHOR, TOKENIZER, AUTHENTICATION, AUTHORIZED_KEYS, OAUTH,
- *     ACCESSKEY, MYTOKENVALUE
+ * PINNED BY `test/containers.test.ts` ("is at least as broad as 177's door
+ * predicate"), which asserts the seven keys above are refused, that real
+ * secrets stay refused and ordinary vars stay accepted, and that the corpus
+ * size is conserved.
  *
- * `AUTHOR` is the worked example: an ordinary env var that this schema
- * accepts and the door rejects with a raw 22023, which is exactly the
- * experience the named-key 400 exists to prevent.
+ * THE RELATIONSHIP ITSELF IS PINNED, not merely described:
+ * `packages/server/test/w2/containers-secret-env-parity.test.ts` EXTRACTS
+ * 177's predicate from the migration text and asserts the
+ * door-refuses-contract-accepts set is EMPTY over a conserved 45-key corpus.
+ * It lives in the server package because it must read the migration and this
+ * package reads no files by design. If 177's predicate gains a term, that
+ * test reds.
  *
- * THIS PR DOES NOT INTRODUCE THE DIVERGENCE — 177 is already on main — it
- * introduced the CLAIM OF EQUIVALENCE, which is what is corrected here.
- * Reconciling them means LOOSENING the door, which is a migration in
- * another lane; it is on the P0 follow-up register. Tightening this regex
- * to match would reject more, not fix `AUTHOR`.
+ * The contract being STRICTER than the door is allowed and is asserted to be
+ * non-empty there (`PWD`, `SESSION_KEY`) — that direction refuses at the
+ * contract, by name, and never reaches the database.
+ *
+ * THE DOOR REMAINS THE AUTHORITY. Making `AUTHOR` creatable AT ALL means
+ * LOOSENING the door, which is a migration and is on the P0 follow-up
+ * register; this change only moves its refusal to where it can be named.
  *
  * It is a NAME heuristic and it is deliberately broad: false positives cost a
  * caller one rename, a false negative writes a credential into the graph.
  */
-const SECRET_ENV_KEY_RE =
-  /(^|_)(SECRET|SECRETS|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIAL|CREDENTIALS|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY|SESSION_KEY|AUTH|BEARER)(_|$)/;
+/** 177:866's alternatives, verbatim, matched as SUBSTRINGS as `~*` does. */
+const DOOR_SECRET_TERMS =
+  /(SECRET|TOKEN|PASSWORD|PASSWD|API[_-]?KEY|CREDENTIAL|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH)/;
+/** Terms the door does NOT carry. Segment-delimited: `PWD` as a substring is absurd. */
+const EXTRA_SECRET_TERMS = /(^|_)(PWD|SESSION_KEY|BEARER)(_|$)/;
 const SECRET_ENV_KEY_EXACT = new Set([
   'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN', 'TM8_AGENT_TOKEN',
 ]);
@@ -3810,7 +3828,9 @@ const SECRET_ENV_KEY_EXACT = new Set([
 /** True when this env var NAME looks like a secret. Exported for the tests. */
 export function isSecretLookingEnvKey(key: string): boolean {
   const upper = key.toUpperCase();
-  return SECRET_ENV_KEY_EXACT.has(upper) || SECRET_ENV_KEY_RE.test(upper);
+  return SECRET_ENV_KEY_EXACT.has(upper)
+    || DOOR_SECRET_TERMS.test(upper)
+    || EXTRA_SECRET_TERMS.test(upper);
 }
 
 const ContainerEnvSchema = z.record(z.string(), z.string().max(32768))

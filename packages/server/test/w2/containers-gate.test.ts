@@ -92,7 +92,9 @@ describe('TM8_CONTAINERS=off answers 501 for every runtime operation', () => {
     //   gate OFF -> every op cites TM8_CONTAINERS=off
     //   gate ON  -> no op cites it (it 501s for a different, honest reason)
     //
-    // Delete the gate and the off-arm fails for all 24 operations at once.
+    // Delete the gate and the off-arm fails on the FIRST operation in the
+    // loop — one reported failure, not 24. The loop's value is that no
+    // operation can quietly opt out, not that they all report.
     const off = registryWith(false);
     const on = registryWith(true);
     for (const name of CONTAINER_RUNTIME_OPERATIONS) {
