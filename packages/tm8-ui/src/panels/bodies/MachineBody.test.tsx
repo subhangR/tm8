@@ -217,6 +217,84 @@ describe('each status offers exactly the primaries its capabilities permit', () 
   });
 });
 
+describe('the fixture agrees with the SERVER, not with the message that announced it', () => {
+  /**
+   * `containerCapsFor` restates `capabilitiesOf`'s container arm
+   * (`packages/server/src/facade/entity-read.ts`). It was first copied from
+   * lane B's freeze MESSAGE and four members diverged — one PERMISSIVELY.
+   *
+   * A FIXTURE THAT RESTATES A SERVER RULE IS A COPY. Nothing in this package
+   * can check it: the type system cannot compare a fixture to a server it does
+   * not import, so only a cross-tree diff finds the drift. These assertions are
+   * the next best thing — they pin the values a human diffed, so a later edit
+   * that quietly re-widens one fails here.
+   */
+  it('NEVER offers Archive: canDelete is false on every status', () => {
+    /*
+     * THE ONE THAT WAS WRONG, AND WRONG PERMISSIVELY. `containerCapsFor`
+     * spread `CAPS_FULL` and overrode six members, not this one — so every
+     * container fixture asserted a container is archivable.
+     *
+     * `archive` gates exactly on `canDelete`, so the fixture sat on the WRONG
+     * SIDE of the bug: a UI that wrongly offered Archive would have been
+     * green in this package forever.
+     *
+     * The server is a hard `false` with a reason: a container is not deleted,
+     * it is DESTROYED, and `entities.delete` refuses the kind. Offering a
+     * delete control the only door refuses would be a lie.
+     */
+    for (const status of STATUSES) {
+      expect(containerCapsFor(status).canDelete, `${status} claims canDelete`).toBe(false);
+      const verdict = resolveAction('archive').availability({
+        ...ctx, entityId: `ent-ctr-${status}`, capabilities: containerCapsFor(status),
+      });
+      expect(verdict.kind, `${status} offers Archive`).toBe('disabled');
+    }
+    // POSITIVE CONTROL: the same gate DOES permit archive when canDelete is
+    // true, so this cannot pass by `archive` being universally refused.
+    expect(resolveAction('archive').availability({
+      ...ctx, entityId: 'x', capabilities: { ...containerCapsFor('running'), canDelete: true },
+    }).kind).toBe('available');
+  });
+
+  it('canControl is canAttach AND share_mode === space — the ruled design', () => {
+    /*
+     * Design v21 §12.4: `canControl` stays ROW-SCOPED and conservative.
+     * `'space'` is the only value the row can settle — `capabilitiesOf(row)`
+     * takes no viewer, so `'none'` (creator) and `'explicit'` (a named list)
+     * are unanswerable and answer false. The viewer-specific answer belongs to
+     * the DOOR: P2's ScreenBody asks for a `drive` grant and falls back to
+     * `view` on `forbidden`, exactly as `mintPtyAttachGrant` already does.
+     *
+     * So a false negative here hides a control someone could have used; a
+     * false positive would hand them a button that 403s at
+     * `grant_surface_attach`. Deny is the direction to be wrong in.
+     */
+    const attachable = { nonTerminalSurface: true } as const;
+    expect(containerCapsFor('running', { ...attachable, shareMode: 'space' }).canControl).toBe(true);
+    expect(containerCapsFor('running', { ...attachable, shareMode: 'explicit' }).canControl).toBe(false);
+    expect(containerCapsFor('running', { ...attachable, shareMode: 'none' }).canControl).toBe(false);
+    // …and it never exceeds canAttach, whatever the share mode.
+    for (const shareMode of ['space', 'explicit', 'none'] as const) {
+      const caps = containerCapsFor('stopped', { ...attachable, shareMode });
+      expect(caps.canControl && !caps.canAttach).toBe(false);
+    }
+  });
+
+  it('a soft-deleted container can neither be edited nor destroyed', () => {
+    // The server ANDs `live` (`row.deleted_at === null`) into both. §11.1
+    // soft-deletes the envelope once destroy succeeds, so this is the state a
+    // destroyed container actually reaches.
+    const dead = containerCapsFor('running', { live: false });
+    expect(dead.canEdit).toBe(false);
+    expect(dead.canDestroy).toBe(false);
+    // Guard the guard: alive, both are true, so `live` is doing the work.
+    const alive = containerCapsFor('running', { live: true });
+    expect(alive.canEdit).toBe(true);
+    expect(alive.canDestroy).toBe(true);
+  });
+});
+
 describe('the tone map — asserted as DATA, because jsdom sees no colour', () => {
   it('keys all NINE statuses on both the chip and the pill', () => {
     const row = getKind('container');

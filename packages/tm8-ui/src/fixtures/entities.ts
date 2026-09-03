@@ -1,5 +1,6 @@
 import type {
   ActorSummary,
+  ContainerShareMode,
   ContainerStatus,
   EntityCapabilities,
   EntityCounters,
@@ -1161,17 +1162,77 @@ export const chatStoppedWithWork = summary({
  */
 export function containerCapsFor(
   status: ContainerStatus,
-  opts: { nonTerminalSurface?: boolean; mayDrive?: boolean } = {},
+  opts: { nonTerminalSurface?: boolean; live?: boolean; shareMode?: ContainerShareMode } = {},
 ): EntityCapabilities {
-  const canAttach = status === 'running' && opts.nonTerminalSurface === true;
+  /*
+   * TRANSCRIBED FROM THE IMPLEMENTATION, not from the freeze message that
+   * announced it: `capabilitiesOf`'s container arm in
+   * `packages/server/src/facade/entity-read.ts` (lane B, head `d0ef9969`).
+   *
+   * IT WAS COPIED FROM THE MESSAGE FIRST, AND FOUR MEMBERS DIVERGED — one of
+   * them permissively, which is the direction that matters:
+   *
+   *   canDelete   server hard `false`; this inherited `true` from CAPS_FULL.
+   *               `archive` gates exactly on it, so EVERY container fixture
+   *               asserted a container is archivable and no test in this
+   *               package could catch a UI that wrongly offered Archive. The
+   *               fixture was on the wrong side of the bug.
+   *   canControl  had `&& mayDrive === true`, an ACTOR term the server's
+   *               signature cannot express — `capabilitiesOf(row)` takes no
+   *               viewer. See the note at `mayDrive` below: the published
+   *               server omits the term entirely and lane B has an unpushed
+   *               fix narrowing it to `share_mode === 'space'`.
+   *   canDestroy  server ANDs `live`; this omitted it.
+   *   canEdit     server is `live`; this inherited unconditional `true`.
+   *
+   * `live` is `row.deleted_at === null` (entity-read.ts:1954), and `attachable`
+   * is `surfaces.some(k => k !== 'terminal')` — the exec PTY is reached through
+   * `containers.terminal.start`, not a surface grant, so it does not make a
+   * container attachable.
+   *
+   * A FIXTURE THAT RESTATES A SERVER RULE IS A COPY and needs the same audit as
+   * any other copy. Nothing in this package could have caught the drift: the
+   * type system cannot check a fixture against a server it does not import,
+   * so only a cross-tree diff finds it.
+   */
+  const live = opts.live !== false;
+  const attachable = opts.nonTerminalSurface === true;
+  const running = status === 'running';
+  const canAttach = running && attachable;
+  /*
+   * `canControl` — AND THE PUBLISHED AUTHORITY AND THE INTENDED ONE DISAGREE,
+   * so this encodes the stricter of the two deliberately.
+   *
+   *   published (`origin/tm8/01a0652a` @ d0ef9969):  running && attachable
+   *   lane B's stated fix, NOT YET PUSHED:           … && share_mode === 'space'
+   *
+   * I verified the published half by reading the file; the second half is
+   * lane B's word, and I could not check it because the commit is local to
+   * its tree. Recorded as unverified rather than folded in silently.
+   *
+   * ENCODING THE STRICTER ONE IS SAFE UNDER BOTH. Every container fixture here
+   * carries `shareMode: 'space'`, where the two predicates agree exactly — so
+   * this changes no fixture today. If the fix does not land and someone adds a
+   * non-`space` fixture, this is stricter than the server, which is a FALSE
+   * NEGATIVE: a hidden control someone could have used, rather than a button
+   * that 403s at `grant_surface_attach`. That is the direction this program
+   * has chosen everywhere else, so it is the one to be wrong in.
+   *
+   * `'space'` is the only value the ROW can settle: `capabilitiesOf(row)` takes
+   * no viewer identity, so `'none'` (creator) and `'explicit'` (a named list)
+   * are unanswerable from the row alone.
+   */
+  const mayDrive = (opts.shareMode ?? 'space') === 'space';
   return {
     ...CAPS_FULL,
+    canEdit: live,
+    canDelete: false,
     canStart: status === 'stopped',
-    canStop: status === 'running' || status === 'paused',
-    canDestroy: status !== 'destroying' && status !== 'destroyed',
+    canStop: running || status === 'paused',
+    canDestroy: live && status !== 'destroying' && status !== 'destroyed',
     canAttach,
-    canControl: canAttach && opts.mayDrive === true,
-    canExec: status === 'running',
+    canControl: canAttach && mayDrive,
+    canExec: running,
   };
 }
 
