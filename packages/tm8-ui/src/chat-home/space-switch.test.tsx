@@ -170,7 +170,7 @@ function rowTitles(container: HTMLElement): string[] {
 function deltaFor(rootId: string): ChatTurnFrame {
   return {
     type: 'chat.turn.delta',
-    threadRootId: rootId as EntityId,
+    chatId: rootId as EntityId,
     messageId: '019f0000-0000-7000-8000-0000000000f1' as EntityId,
     seq: 0,
     part: { kind: 'text', text: 'working' },

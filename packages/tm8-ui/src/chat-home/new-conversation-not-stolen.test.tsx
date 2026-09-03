@@ -66,7 +66,7 @@ function portWithLateArrival() {
       await act(async () => {
         controls.emit({
           type: 'chat.turn.delta',
-          threadRootId: OTHER_ROOT,
+          chatId: OTHER_ROOT,
           messageId: '019f0000-0000-7000-8000-0000000000ab' as EntityId,
           seq: 1,
           text: 'Somebody else is talking.',

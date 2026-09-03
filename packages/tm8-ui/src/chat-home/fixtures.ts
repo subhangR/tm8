@@ -270,10 +270,10 @@ export function createChatHomeFixturePort(
       };
       return { messageId };
     },
-    async interrupt(threadRootId) {
-      interrupts.push(threadRootId);
-      const detail = details.get(threadRootId);
-      if (!detail) throw new Error(`Fixture thread ${threadRootId} does not exist.`);
+    async interrupt(chatId) {
+      interrupts.push(chatId);
+      const detail = details.get(chatId);
+      if (!detail) throw new Error(`Fixture chat ${chatId} does not exist.`);
       serial += 1;
       const messageId = `019f0000-0000-7000-8002-${String(serial).padStart(12, '0')}` as EntityId;
       detail.turns.push({

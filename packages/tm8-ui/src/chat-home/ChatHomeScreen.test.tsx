@@ -137,7 +137,7 @@ describe('Chat Home', () => {
     expect(view.queryByText('pinned for this thread')).toBeNull();
   });
 
-  it('posts the first prompt as the root before configuring the thread', async () => {
+  it('creates the chat and its opening turn in ONE call', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(
       <ChatHomeScreen
@@ -167,24 +167,26 @@ describe('Chat Home', () => {
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
-    await waitFor(() => expect(controls.configs).toHaveLength(1));
+    // ONE call, carrying the body AND the configuration. Before 176 this was
+    // two — a message, then a binding row keyed to it — and the composer's
+    // `configuring` phase named the window in between, in which a message
+    // existed that was not yet a chat. There is no such window now, and no
+    // `anchorId`: a chat anchors its own transcript, so bare Home names no
+    // subject rather than borrowing the seeded default channel's identity.
+    await waitFor(() => expect(controls.roots).toHaveLength(1));
     expect(controls.roots[0]).toMatchObject({
       spaceId: SPACE_ID,
-      anchorId: SPACE_ID,
       body: 'Audit the release blockers.',
-      clientMutationId: 'chat-root:test',
-    });
-    expect(controls.configs[0]).toMatchObject({
       model: 'gpt-5.6-sol',
       mode: 'build',
-      clientMutationId: 'chat-config:test',
+      clientMutationId: 'chat-start:test',
     });
-    expect(controls.configs[0]?.rootMessageId).toMatch(/^019f/);
+    expect(controls.roots[0]).not.toHaveProperty('aboutId');
     expect(controls.posts).toHaveLength(0);
     expect(view.getByTestId('tch-send-working')).toBeTruthy();
   });
 
-  it('offers Explain and persists it in the write-once thread configuration', async () => {
+  it('offers Explain and persists it in the write-once chat configuration', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(
       <ChatHomeScreen
@@ -206,8 +208,8 @@ describe('Chat Home', () => {
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
-    await waitFor(() => expect(controls.configs).toHaveLength(1));
-    expect(controls.configs[0]).toMatchObject({ mode: 'explain' });
+    await waitFor(() => expect(controls.roots).toHaveLength(1));
+    expect(controls.roots[0]).toMatchObject({ mode: 'explain' });
     await waitFor(() => {
       expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
     });
@@ -225,7 +227,7 @@ describe('Chat Home', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: rootId as EntityId,
+        chatId: rootId as EntityId,
         messageId,
         seq: 0,
         part: { kind: 'text', text: 'Live result arrived.' },
@@ -237,7 +239,7 @@ describe('Chat Home', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.done',
-        threadRootId: rootId as EntityId,
+        chatId: rootId as EntityId,
         messageId,
         usage: {},
       });
@@ -298,7 +300,7 @@ describe('Chat Home', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.done',
-        threadRootId: stopped.summary.rootId,
+        chatId: stopped.summary.rootId,
         messageId: interruptedTurn.messageId,
         usage: {},
       });
@@ -311,7 +313,7 @@ describe('Chat Home', () => {
     fireEvent.click(view.getByRole('button', { name: /send/i }));
     await waitFor(() => expect(controls.posts).toHaveLength(2));
     expect(controls.posts[1]).toMatchObject({
-      threadRootId: stopped.summary.rootId,
+      chatId: stopped.summary.rootId,
       body: 'Continue from the persisted result.',
     });
     expect(view.getByTestId('tch-send-working')).toBeTruthy();

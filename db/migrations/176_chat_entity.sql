@@ -142,8 +142,27 @@ grant select on public.chats to tm8_app;
 -- -----------------------------------------------------------------------------
 -- 3. Content hydration. SHARED-OBJECT NOTICE, same as 053/055/056/057/091/135:
 --    this REPLACES `internal.entity_content`. The body below is 135's verbatim
---    (the latest definition) plus one `chat` arm. Omitting an arm is SILENT —
---    content resolves to '{}'::jsonb forever.
+--    (the latest definition at write time) plus one `chat` arm. Omitting an arm
+--    is SILENT — content resolves to '{}'::jsonb forever.
+--
+--    ⚠ A CONCURRENT LANE REPLACES THIS SAME FUNCTION. `177_container_kind.sql`
+--    (Containers program, lane A) is 135's body plus a `container` arm. Both are
+--    `create or replace` in different files, so there is NO git conflict, NO
+--    error and NO red test: whichever migration APPLIES SECOND silently wins and
+--    the other kind's content resolves to '{}' forever. This is the shared-body
+--    hazard 135's own header warns about, in its worst form — two lanes, same
+--    object, no signal.
+--
+--    THE RULE, agreed with lane A on 2026-09-03 and symmetric: THE SECOND ONE
+--    TO MERGE COPIES THE BODY FROM `origin/main` AT MERGE TIME, not from 135.
+--    If 177 lands first, this file's body is re-copied from 177 (135 + the
+--    container arm) with the chat arm appended; if this lands first, 177 copies
+--    from here. Re-check `origin/main` for a newer body immediately before
+--    merging either way — a third lane could join.
+--
+--    The guard that would have caught it: resolve `internal.entity_content` for
+--    one entity of EVERY core kind and assert none answers '{}'. Cheap, and it
+--    fails loudly for whichever arm was dropped.
 --
 --    THE CHAT ARM SUBTRACTS THREE COLUMNS. Every other arm returns its whole
 --    detail row, but `internal.command_entity` (007:36) puts this object in the

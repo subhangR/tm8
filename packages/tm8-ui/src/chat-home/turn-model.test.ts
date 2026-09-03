@@ -24,7 +24,7 @@ describe('rich turn projection', () => {
   it('deduplicates a replayed delta by durable sequence', () => {
     const frame = {
       type: 'chat.turn.delta' as const,
-      threadRootId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
+      chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
       messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
       seq: 7,
       part: { kind: 'text' as const, text: 'streamed once' },
@@ -38,7 +38,7 @@ describe('rich turn projection', () => {
     expect(hasUsage({})).toBe(false);
     const next = mergeChatTurnFrame(CHAT_HOME_FIXTURE_THREAD, {
       type: 'chat.turn.done',
-      threadRootId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
+      chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
       messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
       usage: {},
     });

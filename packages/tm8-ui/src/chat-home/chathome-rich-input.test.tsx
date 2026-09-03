@@ -22,7 +22,6 @@ import { createChatHomeFixturePort } from './fixtures';
 import type { ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
-const CHANNEL_ID = '019f0000-0000-7000-8000-0000000000c1' as EntityId;
 const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
 ];
@@ -55,7 +54,7 @@ function clipboard(files: File[]) {
 const pdf = () => new File(['x'], 'report.pdf', { type: 'application/pdf' });
 
 describe('a pasted file rides the chat prompt', () => {
-  it('uploads against the ANCHOR immediately and sends its id with the root message', async () => {
+  it('uploads with NO anchor immediately and sends its id with the opening turn', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const { task, resolve } = stubTask();
     const attach = vi.fn(() => task);
@@ -63,7 +62,6 @@ describe('a pasted file rides the chat prompt', () => {
       <ChatHomeScreen
         port={port}
         spaceId={SPACE_ID}
-        anchorId={CHANNEL_ID}
         models={MODELS}
         attach={attach}
         newMutationId={(prefix) => `${prefix}:test`}
@@ -76,10 +74,14 @@ describe('a pasted file rides the chat prompt', () => {
     const field = view.getByLabelText('Message the chat agent');
     fireEvent.paste(field, clipboard([pdf()]));
 
-    // Immediately: no thread exists yet, and the upload is already running
-    // against the anchor the host named.
+    // Immediately: no chat exists yet, and the upload is already running. 176
+    // changed WHAT it runs against — there is no anchor, because the chat this
+    // file belongs to has not been created. The file lands in the space library
+    // and `chat.start` attaches it to the opening message via `attachmentIds`.
+    // Before this, every staged file was attached to the seeded default
+    // channel, which is an entity the conversation had nothing to do with.
     expect(attach).toHaveBeenCalledTimes(1);
-    expect(attach.mock.calls[0]![1]).toBe(CHANNEL_ID);
+    expect(attach.mock.calls[0]![1]).toBeUndefined();
     expect(view.getByText('report.pdf')).toBeTruthy();
 
     // Send is withheld until it lands — the file must not be dropped from the
@@ -92,7 +94,6 @@ describe('a pasted file rides the chat prompt', () => {
 
     await waitFor(() => expect(controls.roots).toHaveLength(1));
     expect(controls.roots[0]).toMatchObject({
-      anchorId: CHANNEL_ID,
       body: 'read this',
       attachmentIds: ['file-42'],
     });
@@ -105,7 +106,6 @@ describe('a pasted file rides the chat prompt', () => {
       <ChatHomeScreen
         port={port}
         spaceId={SPACE_ID}
-        anchorId={CHANNEL_ID}
         models={MODELS}
         attach={() => task}
       />,
