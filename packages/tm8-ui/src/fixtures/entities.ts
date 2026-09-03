@@ -1027,6 +1027,67 @@ export const artifactPulseBoard = summary({
 
 // ---------------------------------------------------------------------------
 // roster
+/**
+ * chat — a conversation with a teammate, as an entity (migration 176).
+ *
+ * TWO ROWS, because the chat state carries TWO INDEPENDENT AXES and one row
+ * cannot show that they are independent. `runtimeState` is the durable claim
+ * about the headless child; `turnState` is the queue. The pair that matters is
+ * the second one: a chat whose node restarted with work still waiting is
+ * `stopped` AND `queued`, and a surface that folded them would have no way to
+ * say "your message is still coming" — it would draw that chat as idle.
+ *
+ * `turnCount` is TURNS, not replies. A chat is flat: every message is anchored
+ * on the chat with no thread root, and the user->agent pairing lives in
+ * `chat_turns`. There is no reply count to project.
+ */
+export const chatLaunchPlan = summary({
+  id: 'ent-chat-launch',
+  kind: 'chat',
+  title: 'Plan the launch sequence',
+  excerpt: 'Walk me through what still has to land before we ship.',
+  createdBy: ada,
+  state: {
+    kind: 'chat',
+    teammateId: teamMemberForge.id,
+    model: 'claude-opus-5',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    mode: 'plan',
+    workdirMode: 'scratch',
+    projectId: null,
+    runtimeState: 'live',
+    turnState: 'running',
+    turnCount: 6,
+    lastTurnAt: T.morning,
+  },
+});
+
+export const chatStoppedWithWork = summary({
+  id: 'ent-chat-stopped',
+  kind: 'chat',
+  title: 'Audit the release blockers',
+  excerpt: 'Which of the open PRs actually block the cut?',
+  createdBy: ada,
+  state: {
+    kind: 'chat',
+    teammateId: teamMemberForge.id,
+    model: 'claude-opus-5',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    mode: 'ask',
+    workdirMode: 'project',
+    projectId: 'proj-tm8-ui',
+    // THE PAIR THAT PROVES THE AXES ARE INDEPENDENT: no hot child survives a
+    // node restart, so the runtime is honestly 'stopped' — and a turn is still
+    // queued behind it. Neither field can say this alone.
+    runtimeState: 'stopped',
+    turnState: 'queued',
+    turnCount: 2,
+    lastTurnAt: T.old,
+  },
+});
+
 // ---------------------------------------------------------------------------
 
 export const fixtureSummaries: EntitySummary[] = [
@@ -1040,6 +1101,7 @@ export const fixtureSummaries: EntitySummary[] = [
   teamMemberScout,
   memoryTokens, memoryDisputed, memorySuperseded,
   loopDreamer, loopFailing,
+  chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual, artifactPulseBoard,
@@ -1198,6 +1260,68 @@ export const fixtureDetails: Record<string, EntityDetail> = {
             edge('edge-remembers-2', 'remembers', teamMemberForge, memoryDisputed, forge),
             edge('edge-remembers-3', 'remembers', teamMemberForge, memorySuperseded, forge),
           ],
+        },
+      ],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  /**
+   * A chat's CONTENT is empty by ruling (R5): the working directory and the
+   * native runtime session id are the two facts a client might want here, and
+   * both stay server-side. The arm exists so the discriminated union is total,
+   * and the fixture says so rather than inventing a payload to look fuller.
+   */
+  [chatLaunchPlan.id]: detail(chatLaunchPlan, {
+    content: { kind: 'chat' },
+    /**
+     * WRITTEN OUT, NOT SPREAD FROM `CAPS_FULL` — and the first draft of this
+     * fixture got it wrong, which is the argument.
+     *
+     * `detail()` defaults to `CAPS_FULL`, so a kind that says nothing here
+     * asserts all eight verbs are permitted. For `chat` FIVE of the eight are
+     * false on the server, and the fixture claimed them anyway: a spread with
+     * no override list fails OPEN by construction, so a member you do not think
+     * about does not read as missing, it reads as `true`.
+     *
+     * Each value below is read off `facade/entity-read.ts` `capabilitiesOf`,
+     * not guessed:
+     *   canEdit        false — `chat` is not in the `editable` set; there is no
+     *                          patch door for a chat in Wave 1.
+     *   canAddChild    false — not in `hierarchical`.
+     *   canPull        false — not in `pullable`.
+     *   canGrantPoints false — member / team_member only.
+     *   canComplete    false — keyed on the completion SURFACE (a work status),
+     *                          which a chat does not have.
+     *   canDelete/canLink/canReact  true — the live-only rules.
+     */
+    capabilities: {
+      canEdit: false,
+      canDelete: true,
+      canAddChild: false,
+      canLink: true,
+      canPull: false,
+      canReact: true,
+      canGrantPoints: false,
+      canComplete: false,
+    },
+    connections: {
+      // The two edges a chat is born with (176 §7): its teammate binding, and
+      // the entity it was opened ABOUT — which replaced anchoring the whole
+      // transcript on somebody else's row.
+      incoming: [],
+      outgoing: [
+        {
+          type: 'relates_to',
+          direction: 'outgoing',
+          label: 'teammate',
+          edges: [edge('edge-chat-teammate', 'relates_to', chatLaunchPlan, teamMemberForge, ada)],
+        },
+        {
+          type: 'about',
+          direction: 'outgoing',
+          label: 'about',
+          edges: [edge('edge-chat-about', 'about', chatLaunchPlan, taskQueued, ada)],
         },
       ],
       unresolvedHardDependencyCount: 0,
