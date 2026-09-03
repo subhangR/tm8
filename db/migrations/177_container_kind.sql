@@ -436,11 +436,23 @@ on conflict (type) do nothing;
 -- -----------------------------------------------------------------------------
 -- 7. Content hydration. SEE THE SHARED-OBJECT NOTICE AT THE TOP OF THIS FILE.
 --
---    THE BODY BELOW IS `135_graph_kind.sql`'s, COPIED FROM `origin/main` ON
---    2026-09-03, NOT AN OLDER ONE — the 083:697 idiom, and it is load-bearing.
---    On main the chain of definitions is
---    001 → 005 → 011 → 015 → 017 → 053 → 055 → 056 → 057 → 091 → 135, and 135
---    is the newest. The `container` arm is the ONLY addition.
+--    THE BODY BELOW IS `176_chat_entity.sql`'s, RE-COPIED FROM `origin/main`
+--    ON 2026-09-03 AFTER #575 MERGED — the 083:697 idiom, and it is
+--    load-bearing. It was 135's until that merge; 176 then became the newest
+--    writer, so the body was re-copied rather than rebased forward. The chain of
+--    definitions is now 001 → 005 → 011 → 015 → 017 → 053 → 055 → 056 → 057 →
+--    091 → 135 → 176, and this file is 177. The `container` arm is the ONLY
+--    addition: verified by diffing this body against 176's, which shows exactly
+--    two added lines and nothing else, and by confirming the `chat` arm — with
+--    its `cwd` / `native_session_id` / `client_mutation_id` R5 subtractions —
+--    is byte-identical to 176's.
+--
+--    WHY A RE-COPY AND NOT A MERGE: apply order is a plain filename sort
+--    (`db/migrate.mjs:142`), so on every fresh database 176 applies and then 177
+--    applies, and THIS body is the one that survives. Merge order is irrelevant;
+--    the HIGHER-NUMBERED file must carry every arm. A rebase does not do this
+--    for you — the two files never conflict in git — which is why it is done by
+--    hand and proved by diff.
 --
 --    OMITTING AN ARM IS SILENT. Content resolves to '{}'::jsonb forever: no
 --    error, no failed migration, no red test unless something asserts that
@@ -449,8 +461,8 @@ on conflict (type) do nothing;
 --    content for EVERY core kind rather than for `container` alone.
 --
 --    ⚠ IF YOU REBASE THIS FILE, RE-COPY THIS BODY FROM `origin/main` AT THAT
---    MOMENT. `176_chat_entity.sql` (origin/tm8/01a064ed) re-creates this same
---    function with a `chat` arm. The two do not conflict in git and neither
+--    MOMENT, and diff to prove your arm is the only delta. 176 is on main now;
+--    the next file to re-create this function inherits the same obligation. The two do not conflict in git and neither
 --    errors; whichever lands SECOND wins wholesale and silently drops the
 --    other's arm. The agreed rule, binding on both lanes: WHICHEVER MERGES
 --    SECOND COPIES THIS BODY FROM `origin/main` AT MERGE TIME AND ADDS ITS OWN
@@ -487,6 +499,8 @@ begin
       when 'worktree' then select to_jsonb(w) - 'entity_id' into content from public.worktrees w where w.entity_id = target;
       when 'loop' then select to_jsonb(l) - 'entity_id' into content from public.loops l where l.entity_id = target;
       when 'graph' then select to_jsonb(g) - 'entity_id' into content from public.graphs g where g.entity_id = target;
+      when 'chat' then select to_jsonb(c) - 'entity_id' - 'cwd' - 'native_session_id' - 'client_mutation_id'
+                       into content from public.chats c where c.entity_id = target;
       when 'file' then select to_jsonb(f) - 'entity_id' into content from public.files f where f.entity_id = target;
       when 'message' then select to_jsonb(m) - 'entity_id' into content from public.messages m where m.entity_id = target;
       when 'work_session' then select to_jsonb(ws) - 'entity_id' into content from public.work_sessions ws where ws.entity_id = target;
