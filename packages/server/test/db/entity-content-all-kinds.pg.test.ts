@@ -25,6 +25,15 @@
  * container one. Do not "simplify" it down to the kind whose migration shipped
  * it — that would restore exactly the blind spot it exists to remove.
  *
+ * ⚠ IF YOU EVER PORT THIS INTO A SLICED / POSITION-PINNED SUITE, STOP. This
+ * file's correctness depends on running the COMPLETE chain: it compares the
+ * arms of the installed `internal.entity_content` against the kinds registered
+ * in the SAME database. On a sliced chain both sides are legitimately smaller
+ * and the comparison still passes, so it would report success while checking a
+ * world that never ships. Related: `assignment-provenance.pg.test.ts` re-applies
+ * `177_container_kind.sql` out of band onto a chain WITHOUT 176, so
+ * `public.chats` does not exist there — see the comment at that line.
+ *
  * FULL-CHAIN, not position-pinned. An all-kinds assertion is chain-wide by
  * construction, which is why it cannot live in `containers.pg.test.ts` (that
  * suite slices the chain) for the same reason a migration's VERIFY block may not
@@ -144,7 +153,14 @@ describe('internal.entity_content resolves every core kind', () => {
   /** The arms this suite can actually resolve: kind, alias, table. */
   function resolvableArms(source: string): { kind: string; alias: string; table: string }[] {
     return [...source.matchAll(
-      /when '([a-z_]+)' then\s+select to_jsonb\((\w+)\)[\s\S]*?from public\.(\w+)/g,
+      // `\2` anchors the table to the SAME alias the arm selected. Reviewer
+      // hardening: without it, an arm containing an inner subquery whose
+      // `from public.X` comes first would resolution-check the WRONG table
+      // while still matching, and the derived pin would pass at the right
+      // count — green while checking the wrong thing, the exact class this
+      // guard exists to refuse. No arm has that shape today; this keeps it
+      // failing CLOSED if one ever does.
+      /when '([a-z_]+)' then\s+select to_jsonb\((\w+)\)[\s\S]*?from public\.(\w+) \2\b/g,
     )].map((m) => ({ kind: m[1]!, alias: m[2]!, table: m[3]! }));
   }
 
