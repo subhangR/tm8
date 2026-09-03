@@ -283,11 +283,13 @@ describe('reads refuse --mutation-id', () => {
     expect(seen).toEqual([]);
   });
 
-  it('…and ACCEPTS it copying IN, because that direction is a command', async () => {
+  it('…and does NOT refuse it copying IN, because that direction is a command', async () => {
+    // The read-direction refusal must be about the DIRECTION, not about `cp`.
+    // Copying in reaches the tar refusal below (exit 8) rather than the
+    // mutation-id refusal (exit 2), which is how we know the two are distinct.
     const ran = await drive(['container', 'cp', CTR, './app.tar', 'ctr:/srv', '--mutation-id', 'mut-1']);
-    expect(ran.code, ran.stderr).toBe(0);
-    expect(only().method).toBe('PUT');
-    expect(body().clientMutationId).toBe('mut-1');
+    expect(ran.code).toBe(8);
+    expect(ran.stderr).not.toMatch(/is a read/);
   });
 
   it('the two mutating reads are the ONLY family reads — logs and providers', async () => {
@@ -726,11 +728,24 @@ describe('the remaining verbs bind their own shapes', () => {
     }
   });
 
-  it('cp OUT is a GET carrying the path as a query', async () => {
-    const ran = await drive(['container', 'cp', CTR, 'ctr:/etc/hosts', './hosts']);
-    expect(ran.code, ran.stderr).toBe(0);
-    expect(only().method).toBe('GET');
-    expect(only().query).toContain('path=');
+  it('cp validates fully and then REFUSES with exit 8, sending nothing', async () => {
+    // Both containers.files.* rows carry a tar octet-stream, which this CLI has
+    // no transport for. It refuses with the DEV-13 code rather than putting a
+    // JSON body naming a LOCAL path on the wire — the node cannot open a path
+    // on the caller's disk, so such a request would be a lie shaped like a
+    // success. Asserting `seen` is EMPTY is the half that matters.
+    for (const argv of [
+      ['container', 'cp', CTR, 'ctr:/etc/hosts', './hosts'],
+      ['container', 'cp', CTR, './app.tar', 'ctr:/srv'],
+    ]) {
+      seen = [];
+      const ran = await drive(argv);
+      expect(ran.code, argv.join(' ')).toBe(8);
+      expect(ran.stderr).toMatch(/tar|not built|no tar transport/i);
+      // It names the OPERATION, so the caller knows the row is real.
+      expect(ran.stderr).toMatch(/containers\.files\.(put|get)/);
+      expect(seen, argv.join(' ')).toEqual([]);
+    }
   });
 
   it('logs passes its window as query, never as a body', async () => {
