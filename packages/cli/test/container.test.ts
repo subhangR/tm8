@@ -831,13 +831,27 @@ describe('string lengths are bounded locally, from schemas.ts not §4.2', () => 
     for (const argv of [
       ['container', 'run', CTR, '--user', long(256), '--', 'ls'],
       ['container', 'run', CTR, '--cwd', long(4097), '--', 'ls'],
-      ['container', 'run', CTR, '--', long(257)],
     ]) {
       seen = [];
       const ran = await drive(argv);
       expect(ran.code, argv.slice(0, 4).join(' ')).toBe(EXIT_USAGE);
       expect(seen).toEqual([]);
     }
+  });
+
+  it('argv bounds the COUNT, not the entry length — the schema caps the array', async () => {
+    // `z.array(z.string()).min(1).max(256)`: 256 elements, each unbounded.
+    // A long single argument is LEGAL and must reach the wire — this asserts
+    // the false refusal an earlier inverted reading produced is gone.
+    const ran = await drive(['container', 'run', CTR, '--', 'node', '-e', long(5000)]);
+    expect(ran.code, ran.stderr).toBe(0);
+    expect((body().argv as string[])[2]).toHaveLength(5000);
+
+    seen = [];
+    const many = await drive(['container', 'run', CTR, '--', ...Array.from({ length: 257 }, () => 'x')]);
+    expect(many.code).toBe(EXIT_USAGE);
+    expect(many.stderr).toMatch(/at most 256 argv entries/);
+    expect(seen).toEqual([]);
   });
 
   it('POSITIVE CONTROL — values AT the bound are accepted, so the checks are not refusing everything', async () => {
