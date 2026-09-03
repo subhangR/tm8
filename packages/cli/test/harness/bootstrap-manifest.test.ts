@@ -303,3 +303,53 @@ describe('round trip', () => {
     expect(parseBootstrapManifest('nope')).toBeNull();
   });
 });
+
+/**
+ * 176 — the coordinator's KIND on a v2 manifest.
+ *
+ * Optional and paired: a kind without an id describes a return address that
+ * does not exist, and an id without a kind is a manifest from a node that
+ * predates 176 — which every reader must be free to fold to `work_session`
+ * rather than treat as malformed.
+ */
+describe('the coordinator kind (176)', () => {
+  it('carries a chat coordinator onto the session block', () => {
+    const manifest = composeBootstrapManifest({
+      ...INPUT,
+      session: { ...INPUT.session, coordinatorKind: 'chat' },
+    });
+    expect(manifest.session.coordinatorKind).toBe('chat');
+    expect(manifest.session.coordinatorSessionId).toBe('ses_coord');
+  });
+
+  it('omits the field entirely on a pre-176 manifest rather than defaulting it on disk', () => {
+    // The FOLD to work_session belongs to the reader. Writing a default here
+    // would make every stored manifest claim a fact its node never resolved.
+    const manifest = composeBootstrapManifest(INPUT);
+    expect(manifest.session).not.toHaveProperty('coordinatorKind');
+    expect(serializeBootstrapManifest(manifest)).not.toContain('coordinatorKind');
+  });
+
+  it('drops a kind that names no coordinator, and refuses one that is not a kind', () => {
+    const orphan = composeBootstrapManifest({
+      ...INPUT,
+      session: { ...INPUT.session, coordinatorSessionId: null, coordinatorKind: 'chat' },
+    });
+    expect(orphan.session).not.toHaveProperty('coordinatorKind');
+    expect(orphan.session).not.toHaveProperty('coordinatorSessionId');
+
+    expect(() => composeBootstrapManifest({
+      ...INPUT,
+      session: { ...INPUT.session, coordinatorKind: 'channel' },
+    })).toThrow(InvalidBootstrapManifestError);
+  });
+
+  it('survives the write/read round trip a booting agent actually performs', () => {
+    const manifest = composeBootstrapManifest({
+      ...INPUT,
+      session: { ...INPUT.session, coordinatorKind: 'chat' },
+    });
+    const parsed = parseBootstrapManifest(JSON.parse(serializeBootstrapManifest(manifest)));
+    expect(parsed?.session.coordinatorKind).toBe('chat');
+  });
+});

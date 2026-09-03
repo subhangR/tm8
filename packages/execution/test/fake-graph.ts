@@ -37,6 +37,8 @@ export interface FakeGraphOptions {
   sessionId?: string;
   model?: string | null;
   permissionMode?: string | null;
+  /** What `parentSessionId` points at (176). Defaults to "not resolved". */
+  parentKind?: SpawnContext['parentKind'];
 }
 
 export class FakeGraph implements GraphPort {
@@ -64,10 +66,18 @@ export class FakeGraph implements GraphPort {
 
   constructor(private readonly options: FakeGraphOptions) {}
 
+  /** Every `LoadSpawnContextInput` this fake was handed, in order. */
+  readonly spawnContextInputs: LoadSpawnContextInput[] = [];
+
   async loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext> {
     this.authSeen.push(auth);
+    this.spawnContextInputs.push(input);
     return {
       spaceId: input.spaceId,
+      // 176: the real loader reads the parent's kind from the graph. The fake
+      // answers from a fixture option so a chat-parented spawn can be composed
+      // without a database.
+      parentKind: this.options.parentKind ?? null,
       project:
         this.options.withProject === false
           ? null

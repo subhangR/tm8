@@ -14,6 +14,10 @@
 //      capture trigger and the F1/F2 guards; keeping SQL out of this package
 //      makes that mistake impossible to make here.
 
+import type { CoordinatorKind } from '@tm8/prompt';
+
+export type { CoordinatorKind };
+
 /** Agent execution mode — mirrors work_sessions.mode's CHECK constraint. */
 export type AgentMode =
   | 'worker'
@@ -164,6 +168,12 @@ export interface LoadSpawnContextInput {
   projectId?: string | null;
   taskIds?: string[];
   /**
+   * The spawning parent, when there is one, so the loader can resolve its KIND
+   * for the manifest's coordinator block (176). Absent ⇒ a root spawn, and the
+   * loader reads nothing extra.
+   */
+  parentSessionId?: string | null;
+  /**
    * Memory entities explicitly named by the spawn request (D3a). The graph
    * validates them (same space, kind `memory`, live) and folds them into the
    * teammate's injected memory set for this session only.
@@ -270,6 +280,20 @@ export interface SpawnContext {
   project: ProjectContext | null;
   teamMember: TeamMemberContext;
   tasks: TaskContext[];
+  /**
+   * What `SpawnRequest.parentSessionId` actually points at (176).
+   *
+   * Since a chat became an entity it may parent a work session, so a
+   * coordinated worker's return address is no longer always a work_session.
+   * The kind is READ FROM THE GRAPH beside the persona rather than asserted by
+   * the caller — a spawn's parent is graph state, and a client-supplied kind
+   * would be a claim about someone else's row.
+   *
+   * `null` means "no parent, or a parent this reader could not resolve", and
+   * every consumer folds that to `work_session`: the pre-176 meaning, and what
+   * a manifest written by an older node says by omission.
+   */
+  parentKind?: CoordinatorKind | null;
   /**
    * Skills resolved across the team member's ancestor chain, nearest-first, and
    * already de-duplicated — see `resolveSkills` in ./skills.ts. Optional only so
@@ -792,8 +816,12 @@ export interface Tm8Manifest {
    *  omitted so the CLI's shape stays stable. */
   skills: Array<{ name: string; body: string }>;
 
-  /** Present for coordinated modes — the concrete work-session return path. */
-  coordinator: { sessionId: string; displayName?: string } | null;
+  /**
+   * Present for coordinated modes — the concrete return path, and since 176
+   * WHAT it is. `kind` is always written (never inferred from presence), so a
+   * reader can tell "a work session" from "a manifest that predates the field".
+   */
+  coordinator: { sessionId: string; kind: CoordinatorKind; displayName?: string } | null;
 
   /** Coordinator directive delivery is post-G1A; always null in this wave. */
   directive: { subject: string; message: string; fromSessionId: string } | null;

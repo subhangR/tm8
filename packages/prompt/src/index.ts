@@ -32,10 +32,12 @@ import { untrustedData } from './escape.js';
 import { composeKernel } from './kernel.js';
 import {
   coordinatorBootstrapControl,
+  coordinatorKindOf,
   dispatcherBootstrapControl,
   taskAssignmentInjection,
   workerBootstrapControl,
   type BootstrapControlFacts,
+  type CoordinatorKind,
 } from './templates.js';
 
 /**
@@ -124,7 +126,15 @@ export interface PromptManifest {
         threadChannelId?: string | null | undefined;
       }>
     | undefined;
-  coordinator?: { sessionId?: string; displayName?: string } | null | undefined;
+  coordinator?:
+    | {
+        sessionId?: string;
+        /** `work_session | chat` (176). Absent means work_session. */
+        kind?: string | null | undefined;
+        displayName?: string;
+      }
+    | null
+    | undefined;
   directive?:
     | { subject?: string; message?: string; fromSessionId?: string }
     | null
@@ -375,6 +385,28 @@ export const COORDINATION_INSTRUCTION =
   'exact `coordinator_session_id` above, the moment you complete or block. Never send ' +
   'that completion report to the assignment or task anchor, and do not simply go idle.';
 
+/**
+ * The same instruction when the coordinator is a CHAT (176).
+ *
+ * Written as its own constant rather than a suffix because the first sentence
+ * of the original is now false in this case — the thing waiting is not a
+ * coordinator session, and a worker told to look for one will not find it. The
+ * COMMAND is deliberately identical: a chat is an anchor like any other, and
+ * suggesting otherwise would invent a second protocol that does not exist.
+ */
+export const COORDINATION_INSTRUCTION_CHAT =
+  'A CHAT spawned you and is waiting on a durable answer. Its id above is a chat ' +
+  'entity, not a work session, and `tm8 message send --to <coordinator-session-id> ' +
+  '"<body>"` reaches it exactly as it reaches a session: the message lands in the ' +
+  'chat transcript, runs the chat\'s next turn, and the human reading that chat sees ' +
+  'it. Send it the moment you complete or block. Never send that completion report ' +
+  'to the assignment or task anchor, and do not simply go idle.';
+
+/** The §14 instruction for a coordinator of the given kind. */
+export function coordinationInstructionFor(kind: CoordinatorKind): string {
+  return kind === 'chat' ? COORDINATION_INSTRUCTION_CHAT : COORDINATION_INSTRUCTION;
+}
+
 export const COMMAND_SURFACE_INSTRUCTION =
   'These are real HTTP calls against your tm8 server, and they ' +
   'are how your work becomes visible; nothing else in this environment writes to ' +
@@ -562,6 +594,8 @@ interface BootstrapView {
     launchProjectId?: string | null;
     trust: string;
     coordinatorSessionId?: string | null;
+    /** `work_session | chat` (176). Absent means work_session. */
+    coordinatorKind?: string | null;
   };
   interactionProfile: {
     entityId: string;
@@ -623,6 +657,7 @@ function composeBootstrapSystem(view: BootstrapView, manifestPath: string): stri
     launchProjectId: view.session.launchProjectId ?? null,
     primaryTaskId: view.assignment?.primaryTaskId ?? null,
     coordinatorSessionId: view.session.coordinatorSessionId ?? null,
+    coordinatorKind: coordinatorKindOf(view.session.coordinatorKind),
     interactionProfileId: profile.entityId,
     interactionProfileVersion: profile.version,
     resolvedProfileHash: profile.resolvedHash,
@@ -643,6 +678,7 @@ function composeBootstrapSystem(view: BootstrapView, manifestPath: string): stri
     resolvedProfileHash: profile.resolvedHash,
     taskId: view.assignment?.primaryTaskId ?? null,
     coordinatorSessionId: view.session.coordinatorSessionId ?? null,
+    coordinatorKind: coordinatorKindOf(view.session.coordinatorKind),
   };
   const control =
     view.identity.mode === 'dispatcher'
@@ -713,6 +749,7 @@ export function composePrompt(
   const tasks = manifest.tasks ?? [];
   const commands = commandSurface(sessionId !== null);
   const coordinatorSessionId = manifest.coordinator?.sessionId?.trim() || null;
+  const coordinatorKind = coordinatorKindOf(manifest.coordinator?.kind);
 
   // A `manifestVersion: "2"` bootstrap manifest takes the harness path: the
   // §5.2 kernel and one §14 control block, with no persona/skill/memory frame
@@ -820,9 +857,13 @@ export function composePrompt(
   if (coordinatorSessionId) {
     s.push('  <coordination>');
     s.push(`    <coordinator_session_id>${esc(coordinatorSessionId)}</coordinator_session_id>`);
+    // WHAT that id names. Emitted unconditionally, including the `work_session`
+    // case: a kind that appears only for chats would make its absence ambiguous
+    // between "a session" and "a manifest too old to say".
+    s.push(`    <coordinator_kind>${esc(coordinatorKind)}</coordinator_kind>`);
     if (coordinator?.displayName)
       s.push(`    <coordinator>${esc(coordinator.displayName)}</coordinator>`);
-    s.push(`    <instruction>${COORDINATION_INSTRUCTION}</instruction>`);
+    s.push(`    <instruction>${coordinationInstructionFor(coordinatorKind)}</instruction>`);
     s.push('  </coordination>');
   }
 

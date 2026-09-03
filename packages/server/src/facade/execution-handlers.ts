@@ -330,6 +330,31 @@ export class DbGraphPort implements GraphPort {
       }
       const injectedMemories = renderMemories(memoryRows, requestedIds);
 
+      // 176 — WHAT THE PARENT IS, not merely that there is one.
+      //
+      // A chat may parent a work session since 176, so `parentSessionId` no
+      // longer implies a work_session and the manifest's `coordinator.kind`
+      // cannot be inferred from its presence. The kind is read HERE, in the
+      // same transaction as the persona, for the reason this transaction
+      // exists: the manifest must describe one instant.
+      //
+      // Read from `public.entities` under the caller's RLS and never from the
+      // request. An unreadable or deleted parent yields `null`, which every
+      // consumer folds to `work_session` — a launch is not refused over a
+      // return-address LABEL, only over a missing return address, and that
+      // guard is `resolveCoordinatorSessionId`'s.
+      let parentKind: SpawnContext['parentKind'] = null;
+      if (input.parentSessionId) {
+        const parentRows = await q.query<{ kind: string }>(
+          `select e.kind
+             from public.entities e
+            where e.id = $1 and e.space_id = $2 and e.deleted_at is null`,
+          [input.parentSessionId, input.spaceId],
+        );
+        const kind = parentRows[0]?.kind;
+        parentKind = kind === 'chat' ? 'chat' : kind === 'work_session' ? 'work_session' : null;
+      }
+
       let project: SpawnContext['project'] = null;
       if (input.projectId) {
         const rows = await q.query<ProjectRow>(
@@ -448,6 +473,7 @@ export class DbGraphPort implements GraphPort {
 
       return {
         spaceId: input.spaceId,
+        parentKind,
         project,
         teamMember: {
           id: member.entity_id,

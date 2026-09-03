@@ -798,6 +798,12 @@ export class SpawnService {
       teamMemberId: request.teamMemberId,
       projectId: request.projectId ?? null,
       taskIds,
+      // 176: the loader resolves the parent's KIND for the manifest's
+      // coordinator block. Passed even for non-coordinated modes because the
+      // launch config that decides coordination has not been resolved yet, and
+      // re-reading the graph after it would be a second round trip describing
+      // a later instant than the persona it is composed beside.
+      parentSessionId: request.parentSessionId ?? null,
       ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
     });
 
