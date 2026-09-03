@@ -51,7 +51,7 @@ export type CoreEntityKind =
   // `entities.create`: `chat.start` is the only door, because a chat is born
   // with a runtime binding (teammate, model, working directory) that a generic
   // create could not supply.
-  | 'chat';
+  | 'chat'
   // Containers (TM8-CONTAINERS-DESIGN §3.1, migration 177): a machine an
   // agent runs IN or drives. It is an entity so hierarchy, edges, messages
   // and attention all work on it for free; the RUNTIME behind it is not.
@@ -447,7 +447,8 @@ export type CoreEntityState =
       mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
       runtimeState: 'cold' | 'live' | 'stopped';
       turnState: 'idle' | 'queued' | 'running';
-      turnCount: number; lastTurnAt: string | null };
+      turnCount: number; lastTurnAt: string | null }
+  /**
    * Containers (§4.2). Hot and small — this arrives on EVERY list row, so it
    * carries the surface KINDS that are live and not their detail; the panel
    * hydrates `surfaceDetail` from content.

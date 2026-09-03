@@ -2505,7 +2505,7 @@ export const CATALOG_DIGEST =
   // containers.* rows). RECOMPUTED from JSON.stringify(OPERATIONS), never
   // adjusted from either side of the merge — neither branch's value is
   // correct once both landed.
-  'PENDING_RECOMPUTE';
+  'sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa';
 
 export const GRAMMAR_VERSION = '2';
 

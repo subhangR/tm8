@@ -430,6 +430,7 @@ export const CORE_KIND_DISPOSITIONS = {
   chat: core('chat', 'chats', {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'chat-detail' },
+  }),
   // Containers (TM8-CONTAINERS-DESIGN, migration 177). A machine an agent runs
   // IN or drives. Not client-creatable and not menu-addressable: like a
   // worktree and a work_session, the entity is born only from a server-side
