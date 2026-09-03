@@ -2090,7 +2090,24 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
       ...base,
       canEdit: live,
       canDelete: false,
-      canStart: status === 'stopped',
+      /*
+       * ONE BOOLEAN GATING TWO DOORS, disambiguated by status: Start when
+       * `stopped`, Resume when `paused`. 177's transition table admits BOTH
+       * `stopped -> running` and `paused -> running`, and `canStart <=> stopped`
+       * alone left a paused container with `canStop` true and nothing to bring
+       * it back — a UI dead end for a legal transition.
+       *
+       * It was invisible because the six were derived from the VERB LIST
+       * (start/stop/destroy/attach/control/exec); `pause`/`resume` live in the
+       * state machine and not in that list, and P0 never exercises pause. A
+       * capability set derived from the verbs cannot see a transition the verbs
+       * do not name — the authority is the transition table in 177.
+       *
+       * A seventh `canResume` was the alternative and was rejected: every
+       * member costs two edits (interface and the `.strict()` schema) and moves
+       * every consumer.
+       */
+      canStart: status === 'stopped' || status === 'paused',
       canStop: running || status === 'paused',
       canDestroy: live && status !== 'destroying' && status !== 'destroyed',
       canAttach: running && attachable,

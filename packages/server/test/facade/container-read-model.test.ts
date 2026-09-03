@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { EntityContentSchema, EntityStateSchema } from '@tm8/contract';
+import { CONTAINER_STATUSES, EntityCapabilitiesSchema, EntityContentSchema, EntityStateSchema } from '@tm8/contract';
 import { Router } from '../../src/http/router.js';
 import {
   ENTITY_COLUMNS,
@@ -210,6 +210,44 @@ describe('the content arm', () => {
   });
 });
 
+describe('the capabilities the server computes SURVIVE the contract schema', () => {
+  // THE ROUND TRIP, and it is the whole point: server output -> strict schema.
+  //
+  // `EntityCapabilitiesSchema` is `.strict()`, so a member the server emits and
+  // the schema omits is `unrecognized_keys` — and every container detail then
+  // fails `EntityDetailSchema`. That is exactly what happened: the six verbs
+  // were added to the `EntityCapabilities` INTERFACE and not to the schema.
+  //
+  // `tsc` cannot see it. `z.ZodType<T>` only requires the schema to PRODUCE a
+  // valid `T`, and a schema missing an OPTIONAL member still does — so the
+  // annotation type-checks while the runtime schema is incomplete. Asserting
+  // the shapes match is not enough; the emitted object has to be parsed.
+  it('parses a container capability object through the strict schema', () => {
+    const emitted = entityCapabilities(containerRow());
+    const parsed = EntityCapabilitiesSchema.safeParse(emitted);
+    expect(
+      parsed.success,
+      parsed.success ? '' : JSON.stringify(parsed.error.issues),
+    ).toBe(true);
+  });
+
+  it('parses across every status, so no arm emits a member the schema refuses', () => {
+    for (const status of CONTAINER_STATUSES) {
+      const emitted = entityCapabilities(containerRow({ ctr_status: status }));
+      const parsed = EntityCapabilitiesSchema.safeParse(emitted);
+      expect(parsed.success, `${status}: ${parsed.success ? '' : JSON.stringify(parsed.error.issues)}`)
+        .toBe(true);
+    }
+  });
+
+  it('POSITIVE CONTROL — the strict schema DOES reject an unknown capability', () => {
+    // Without this, the two assertions above would pass just as happily against
+    // a non-strict schema, and would prove nothing about the defect they guard.
+    const bogus = { ...entityCapabilities(containerRow()), canTeleport: true };
+    expect(EntityCapabilitiesSchema.safeParse(bogus).success).toBe(false);
+  });
+});
+
 describe('the derived expose URL actually routes', () => {
   // THE TWO HALVES ARE ONE CHANGE, and this is the assertion that says so.
   //
@@ -277,8 +315,13 @@ describe('titleOf', () => {
 describe('capabilities (§15)', () => {
   const caps = (over: Partial<EntityRow> = {}) => entityCapabilities(containerRow(over));
 
-  it('gates start on stopped and stop on running', () => {
+  it('gates start on stopped OR PAUSED, and stop on running or paused', () => {
     expect(caps({ ctr_status: 'stopped' }).canStart).toBe(true);
+    // 177's transition table admits BOTH `stopped -> running` and
+    // `paused -> running`. With `canStart <=> stopped` alone a paused container
+    // had `canStop` true and nothing to bring it back — a UI dead end for a
+    // legal transition. One boolean gates both doors; the UI labels by status.
+    expect(caps({ ctr_status: 'paused' }).canStart).toBe(true);
     expect(caps({ ctr_status: 'running' }).canStart).toBe(false);
     expect(caps({ ctr_status: 'running' }).canStop).toBe(true);
     expect(caps({ ctr_status: 'paused' }).canStop).toBe(true);
