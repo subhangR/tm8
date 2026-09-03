@@ -185,15 +185,16 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
   });
 });
 
-describe('the CLI command projection', () => {
-  it('the rows with no CLI command are named exactly, never counted', () => {
-    const commandless = DISCOVERY.filter((d) => d.command === null).map((d) => d.operation);
-    // Asserted as a SET rather than a count, so a row that loses its command by
-    // accident is named rather than absorbed into a number. The four
-    // `credentials.*` rows are deliberate and their reason is recorded beside
-    // each: they are settings-screen operations, and adding CLI commands would
-    // oblige four command implementations in the same change.
-    expect(commandless.sort()).toEqual([
+/**
+ * The rows that deliberately have no CLI command, named exactly.
+ *
+ * Hoisted so the depth test can DERIVE its count from this list instead of
+ * carrying a literal beside it. A rebase previously left `EXPECTED_ROWS - 24`
+ * (main's) and `EXPECTED_ROWS - 27` (this branch's) as two contradictory
+ * assertions in the same test, and both were stale against the list itself.
+ * With the count derived, that whole class of drift cannot recur.
+ */
+const COMMANDLESS_OPERATIONS = [
       'bridge.fetchBlob',
       // `chat.start` LEFT this set in Wave 2's CLI lane: it is `tm8 chat start`
       // now. It was here because chat v1 exposed the composer only, and the
@@ -213,7 +214,7 @@ describe('the CLI command projection', () => {
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
       'credentials.status',
-      // The six execution.git* rows are deliberately commandless (see the
+      // The nine execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
       // `tm8 session git-*`, and one action must not have two names.
       'execution.gitBranch',
@@ -236,7 +237,17 @@ describe('the CLI command projection', () => {
       'projects.folderUploads.abort',
       'projects.folderUploads.complete',
       'projects.folderUploads.init',
-    ]);
+];
+
+describe('the CLI command projection', () => {
+  it('the rows with no CLI command are named exactly, never counted', () => {
+    const commandless = DISCOVERY.filter((d) => d.command === null).map((d) => d.operation);
+    // Asserted as a SET rather than a count, so a row that loses its command by
+    // accident is named rather than absorbed into a number. The four
+    // `credentials.*` rows are deliberate and their reason is recorded beside
+    // each: they are settings-screen operations, and adding CLI commands would
+    // oblige four command implementations in the same change.
+    expect(commandless.sort()).toEqual(COMMANDLESS_OPERATIONS);
   });
 
   it('ASYMMETRIC RESERVED HANDLING: search.query has a command, bridge.fetchBlob has none', () => {
@@ -255,14 +266,11 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the 24 commandless rows named exactly in the test above.
-    // 25 -> 24 (176/Wave 2 L2-cli): `chat.start` gained `tm8 chat start`.
-    // Derived from that SET, never maintained beside it — a literal here that
-    // disagreed with the set above would make one of the two tests pass for
-    // the wrong reason.
-    expect(counted).toBe(EXPECTED_ROWS - 24);
-    // Minus the 27 commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 27);
+    // Minus the commandless rows named exactly in the test above. DERIVED from
+    // that SET, never maintained beside it — a literal here that disagreed with
+    // the set would make one of the two tests pass for the wrong reason, and a
+    // rebase demonstrated it by leaving 24 and 27 asserted in the same test.
+    expect(counted).toBe(EXPECTED_ROWS - COMMANDLESS_OPERATIONS.length);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {
