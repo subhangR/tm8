@@ -232,6 +232,9 @@ function nounForOperation(operation: OperationName): string {
     // shape: the operations are discoverable rather than hidden.
     case 'credentials': return 'credential';
     case 'chat': return 'chat-thread';
+    // 177: the CLI noun is `container` (`NOUN_BY_FAMILY.containers`), singular
+    // like every other row here.
+    case 'containers': return 'container';
     default: throw new Error(`operation ${operation} has no noun/help disposition`);
   }
 }
