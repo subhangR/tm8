@@ -334,7 +334,7 @@ export const ENTITY_FROM = `
   left join public.containers ctr        on ctr.entity_id = e.id
   -- Usage is folded in AT READ TIME from the operational side table, which has
   -- no capture_event and no version bump. Heartbeats must never touch the
-  -- entity: a 10s periodic UPDATE on the detail row would emit entity.upsert
+  -- entity: a 10s periodic write to the detail row would emit entity.upsert
   -- per container and starve live renames (the migration-165 lesson, §15).
   left join public.container_runtime_state crs on crs.entity_id = e.id
 `;
