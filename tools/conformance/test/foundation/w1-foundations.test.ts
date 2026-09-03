@@ -212,13 +212,13 @@ describe('W1.C generated catalog and reachability foundations', () => {
     }
   });
 
-  it('is total over 22 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
+  it('is total over 23 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
     // 19 -> 20 (2026-08-09): `loop`; 20 -> 21 (2026-08-16): `graph` (Craft P1);
     // 21 -> 23 (2026-09-03): `chat` (migration 176, Chat as an Entity) and
     // `container` (TM8-CONTAINERS-DESIGN, migration 177). Both landed the
     // same day; the number is MEASURED on the merged tree, not summed from
     // two branches that each saw only its own kind.
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(22);
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(23);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',
@@ -462,7 +462,7 @@ describe('W2.C01 current mounted registry inventory', () => {
       // container handlers. It hashes the sorted NAME list, so neither
       // branch's value survives — each hashed a list missing the other's
       // handlers. Read out of the FAILING RUN's Received line.
-      .toBe('PENDING_RECOMPUTE');
+      .toBe('e8e04b4f42f0732521f97bbd38ce1f42ef7b4db9bc8dd674ad8a6a273c5468c4');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
