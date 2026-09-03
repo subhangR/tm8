@@ -6,6 +6,8 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import { EntityChip, resetChatEntityResolutionCache, type ChatEntityResolver } from './EntityChip';
 import { extractEntityRefs, truncateEntityId } from './entity-refs';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
+import { getKind } from '../domain/registry';
+import { CUSTOM_KIND_FALLBACK } from '../domain/types';
 import type { ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
@@ -14,6 +16,7 @@ const MODELS: ChatModelOption[] = [
 ];
 
 const TASK_ID = '019f0000-0000-7000-8000-000000000021';
+const CHAT_ID = '019f0000-0000-7000-8000-0000000000c1' as EntityId;
 const BARE_ID = '019f0000-0000-7000-8000-000000000022';
 
 beforeEach(() => resetChatEntityResolutionCache());
@@ -63,6 +66,31 @@ describe('EntityChip', () => {
     expect(within(chip).getByText(/task/i)).toBeTruthy();
     fireEvent.click(chip);
     expect(onOpenEntity).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it('resolves a CHAT with the chat kind\'s own word and mark', async () => {
+    /*
+     * A chat became a kind in migration 176, and chips are how it appears
+     * wherever it is referenced — the `about` subject on a conversation
+     * header, and the SOURCE of a third-party turn, which is the one place a
+     * chat-to-chat message is legible as one.
+     *
+     * The MARK matters as much as the word here. Every kind in this registry
+     * has a unique drawn path (`registry.test.ts` pins the uniqueness), and a
+     * kind added without one falls back to the generic `c:*` row — which
+     * renders, and reads at a glance exactly like a correct chip.
+     */
+    const view = render(
+      <EntityChip refInfo={{ id: CHAT_ID, kind: 'chat', title: 'Plan the launch sequence' }} />,
+    );
+    const chip = view.getByTestId('chat-entity-chip');
+    expect(within(chip).getByText('Plan the launch sequence')).toBeTruthy();
+    expect(within(chip).getByText(/chat/i)).toBeTruthy();
+    // Its OWN artwork, not the fallback row's.
+    const paths = [...chip.querySelectorAll('path')].map((p) => p.getAttribute('d'));
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths).toEqual(getKind('chat').iconArt.map((d) => d));
+    expect(paths).not.toEqual(getKind(CUSTOM_KIND_FALLBACK).iconArt.map((d) => d));
   });
 
   it('shows a truncated id while resolving, then the resolved title', async () => {

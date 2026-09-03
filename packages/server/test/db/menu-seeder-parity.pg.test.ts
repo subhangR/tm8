@@ -142,7 +142,19 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
           where child->>'type' = 'kind'
        ) t`,
     );
-    expect(kinds[0]?.refs).toEqual([]);
+    /*
+     * ONE KIND REF SINCE 180: `chat` — and the exact equality is what keeps
+     * 134's rule intact rather than relaxed. What 134 retired was a RAIL OF
+     * KIND ROWS, every one a second door to a list Home's root column already
+     * owned. The Chats tab is not that: Home's chats root is the two-pane
+     * CONVERSATION surface, and this tab is the entity LIST — tiles, the four
+     * lifecycle tabs, sort, the row action cluster — over the same rows. The
+     * same two-doors posture the Board tab takes toward `task`.
+     *
+     * A SECOND ref appearing here is still the defect 134 named, which is why
+     * this stays `toEqual` rather than becoming a subset check.
+     */
+    expect(kinds[0]?.refs).toEqual(['chat']);
   });
 
   it('serves Work, Craft, Graph, Settings and Help as single-view menu groups (164 posture)', async () => {
@@ -174,7 +186,29 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups')
               with ordinality as t(g, ord)`,
     );
-    expect(rows[0]?.ids).toEqual(['chats', 'work', 'craft', 'graph', 'settings', 'help']);
+    /*
+     * TWO GROUPS JOINED SINCE THIS LITERAL WAS WRITTEN, and only one of them
+     * belongs to this change:
+     *
+     *   · `codebrain` — 2026-09-01, migration 173. It landed in the seeder and
+     *     in the contract spine and NOT here, so this assertion has been RED
+     *     on main ever since. It is red only when the suite HAS a database
+     *     (`TM8_DATABASE_URL`); without one the whole file skips, which is how
+     *     it survived. Fixed in passing, and named so the next reader does not
+     *     read it as part of the chat wave.
+     *   · `conversations` — 2026-09-03, migration 180: the Chats tab.
+     *
+     * The first test in this block pins the same list against
+     * `DEFAULT_MENU_GROUP_SPINE`, so it moves on its own. This literal is
+     * hand-written ON PURPOSE — it is the second, INDEPENDENT witness that the
+     * spine and the seeder agree, and a witness that derives itself from the
+     * first is not a second witness. (The upgrade block further down keeps its
+     * own 164-era literal: that test applies the chain only as far as 164, so
+     * its list is a different claim about a different position.)
+     */
+    expect(rows[0]?.ids).toEqual([
+      'chats', 'conversations', 'work', 'craft', 'graph', 'codebrain', 'settings', 'help',
+    ]);
     expect(rows[0]?.ids).not.toContain('board');
     expect(rows[0]?.ids).not.toContain('files');
   });
