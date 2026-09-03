@@ -167,10 +167,24 @@ export function NewContainerSheet(props: NewContainerSheetProps) {
     () => props.projects?.find((p) => p.id === draft.projectId) ?? null,
     [props.projects, draft.projectId],
   );
-  /* The same gate a spawn applies: an untrusted working dir needs an explicit
-     confirm, and the server refuses without it. Asked here so the refusal
-     never arrives as a surprise after the button. */
-  const needsConfirm = project !== null && project.trusted === false;
+  /*
+   * The same gate a spawn applies: an untrusted working dir needs an explicit
+   * confirm, and the server refuses without it. Asked here so the refusal
+   * never arrives as a surprise after the button.
+   *
+   * `!== true`, NOT `=== false`, AND THE DIFFERENCE IS THE WHOLE POINT.
+   * `trusted` is optional on the prop, so it has three states, and `=== false`
+   * silently sorts the third one — ABSENT — into "trusted": a host that does
+   * not know a project's trust level would skip the confirm entirely and send
+   * a create the node then refuses, for a reason the viewer was never shown.
+   *
+   * This is the SAME inverse-default this lane argues against one file over,
+   * for the container capability booleans: absent is not permission. A trust
+   * level nobody answered for must read as untrusted, because the cost of the
+   * two mistakes is not symmetric — an unnecessary confirm is a checkbox, and
+   * a skipped one runs someone else's code inside the machine.
+   */
+  const needsConfirm = project !== null && project.trusted !== true;
   const blocked = needsConfirm && !draft.confirmUntrusted;
 
   const submit = useCallback(() => {
