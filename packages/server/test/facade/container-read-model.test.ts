@@ -305,6 +305,33 @@ describe('capabilities (§15)', () => {
     expect(caps({ ctr_status: 'stopped', ctr_surfaces: ['screen'] }).canAttach).toBe(false);
   });
 
+  it('grants canControl ONLY when the row alone settles it', () => {
+    // `capabilitiesOf` receives an EntityRow and no viewer, so no capability
+    // here can be actor-dependent. `share_mode = 'space'` is the one value the
+    // ROW can settle: every reader may drive, and RLS has already established
+    // this viewer is a reader.
+    const attachable: Partial<EntityRow> = { ctr_surfaces: ['terminal', 'screen'] };
+    expect(caps({ ...attachable, ctr_share_mode: 'space' }).canControl).toBe(true);
+    // A deliberate FALSE NEGATIVE: the row cannot tell whether THIS viewer is
+    // the creator or on the explicit list, so it refuses rather than hand a
+    // view-only viewer a control that `grant_surface_attach` answers with
+    // `42501 attach refused`.
+    expect(caps({ ...attachable, ctr_share_mode: 'none' }).canControl).toBe(false);
+    expect(caps({ ...attachable, ctr_share_mode: 'explicit' }).canControl).toBe(false);
+  });
+
+  it('keeps canAttach permissive where canControl is not — view is not drive', () => {
+    // The pair is the point: VIEW is justified by a live surface, DRIVE is an
+    // authorization the row cannot answer. If these two ever collapse into one
+    // value, the drive/view split that `grant_surface_attach`'s `p_mode`
+    // decides has been thrown away here instead.
+    const row: Partial<EntityRow> = {
+      ctr_surfaces: ['terminal', 'screen'], ctr_share_mode: 'none',
+    };
+    expect(caps(row).canAttach).toBe(true);
+    expect(caps(row).canControl).toBe(false);
+  });
+
   it('keeps canDelete FALSE — a container is destroyed, not deleted', () => {
     // `entities.delete` refuses the kind, so offering the control would be a
     // lie whose only outcome is a 403.
