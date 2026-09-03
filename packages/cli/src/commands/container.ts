@@ -20,12 +20,20 @@
  * the request, so a caller learns about a typo from the CLI and about the
  * missing runtime from the node — never one disguised as the other.
  *
- * THE BOUNDS IN THIS FILE ARE THE SERVER'S OWN, RESTATED (§4.2 zod table).
- * `--cpus 64` is refused here rather than sent, and the refusal names the
- * range. That is not the CLI second-guessing the Server: the numbers come from
- * the same frozen table the `.strict()` schemas are built from, and a caller
- * who gets `invalid_spec` back after a round trip has learned the same thing
- * more slowly. Where a question is genuinely the SERVER'S — whether a provider
+ * THE BOUNDS IN THIS FILE ARE RESTATED FROM `packages/contract/src/schemas.ts`
+ * — THE SCHEMAS THEMSELVES, NOT §4.2's TABLE. That distinction is not
+ * pedantry; getting it wrong is how this file was incomplete for a day.
+ * Design §4.2 tabulates the bounds a reader most needs, and it is a SUMMARY:
+ * it lists every numeric range and every collection cap, and it omits the
+ * string lengths. Restating the table and documenting it as the authority
+ * produced a file that bounded `--cpus` and `--ttl` and let a 100 KB
+ * `--label` value through — and, worse, an auditor checking this file against
+ * the table confirmed it as complete every time.
+ *
+ * So: when a bound is added or changed, read `schemas.ts`. `--cpus 64` is
+ * refused here rather than sent, and the refusal names the range; a caller who
+ * gets `invalid_spec` back after a round trip has learned the same thing more
+ * slowly. Where a question is genuinely the SERVER'S — whether a provider
  * satisfies the isolation policy, whether this actor may drive the surface,
  * whether the node has budget — nothing is pre-judged here.
  *
@@ -178,6 +186,39 @@ function boundedNumber(
 }
 
 /**
+ * A bounded string, restated from the schema. Both ends matter: the schemas
+ * carry `.min(1)` on almost every optional string, so `--title ""` is refused
+ * by the server too — an empty value is a caller who meant to omit the flag.
+ */
+function boundedText(raw: string, label: string, min: number, max: number): string {
+  if (raw.length < min) {
+    throw new CliError(
+      min === 1
+        ? `${label} cannot be empty; omit the flag instead`
+        : `${label} must be at least ${min} characters`,
+      EXIT_USAGE,
+    );
+  }
+  if (raw.length > max) {
+    // The LENGTH, never the value: a bound refusal on a label or an env value
+    // must not echo what it just refused into a terminal or a journal.
+    throw new CliError(`${label} must be at most ${max} characters, got ${raw.length}`, EXIT_USAGE);
+  }
+  return raw;
+}
+
+/** The option flavour of `boundedText`. Absent stays absent. */
+function boundedOption(
+  cmd: CommandContext,
+  flag: string,
+  min: number,
+  max: number,
+): string | undefined {
+  const raw = cmd.options.value(flag);
+  return raw === undefined ? undefined : boundedText(raw, `--${flag}`, min, max);
+}
+
+/**
  * §12.3's secret-env refusal, restated key-for-key from the frozen table.
  *
  * THE VALUE IS NEVER IN THE MESSAGE. A diagnostic that printed the secret to
@@ -222,7 +263,7 @@ function parseEnv(values: readonly string[]): Record<string, string> | undefined
         },
       );
     }
-    env[key] = pair.slice(eq + 1);
+    env[key] = boundedText(pair.slice(eq + 1), `--env ${key} value`, 0, 32768);
   }
   const count = Object.keys(env).length;
   if (count > 256) {
@@ -242,7 +283,7 @@ function parseLabels(values: readonly string[]): Record<string, string> | undefi
     if (eq <= 0) {
       throw new CliError(`--label expects K=V, got ${JSON.stringify(pair)}`, EXIT_USAGE);
     }
-    labels[pair.slice(0, eq)] = pair.slice(eq + 1);
+    labels[pair.slice(0, eq)] = boundedText(pair.slice(eq + 1), `--label ${pair.slice(0, eq)} value`, 0, 1024);
   }
   return labels;
 }
@@ -284,7 +325,11 @@ function parseMounts(values: readonly string[]): Array<Record<string, unknown>> 
         EXIT_USAGE,
       );
     }
-    return { host, guest, ro: flag === 'ro' };
+    return {
+      host: boundedText(host, '--mount host', 1, 4096),
+      guest: boundedText(guest, '--mount guest', 1, 4096),
+      ro: flag === 'ro',
+    };
   });
 }
 
@@ -315,12 +360,7 @@ function parseAllow(values: readonly string[]): string[] {
   if (values.length > 256) {
     throw new CliError(`--allow accepts at most 256 entries, got ${values.length}`, EXIT_USAGE);
   }
-  for (const host of values) {
-    if (host.length > 253) {
-      throw new CliError(`--allow entries must be at most 253 characters, got ${host.length}`, EXIT_USAGE);
-    }
-  }
-  return [...values];
+  return values.map((host) => boundedText(host, '--allow entry', 1, 253));
 }
 
 // ── shared argument shapes ─────────────────────────────────────────────────
@@ -565,7 +605,7 @@ async function containerCreate(cmd: CommandContext): Promise<ExitCode> {
   const profile = closedArg('container create', '<profile>', cmd.args[0], PROFILES);
 
   const spec: Record<string, unknown> = {};
-  const image = cmd.options.value('image');
+  const image = boundedOption(cmd, 'image', 1, 1024);
   if (image !== undefined) spec.image = image;
   const cpus = boundedNumber(cmd, 'cpus', 0.25, 16);
   if (cpus !== undefined) spec.cpus = cpus;
@@ -601,11 +641,11 @@ async function containerCreate(cmd: CommandContext): Promise<ExitCode> {
     spaceId: requireSpace(cmd.ctx),
     profile,
   };
-  const title = cmd.options.value('title');
+  const title = boundedOption(cmd, 'title', 1, 512);
   if (title !== undefined) body.title = title;
-  const provider = cmd.options.value('provider');
+  const provider = boundedOption(cmd, 'provider', 1, 64);
   if (provider !== undefined) body.provider = provider;
-  const node = cmd.options.value('node');
+  const node = boundedOption(cmd, 'node', 1, 255);
   if (node !== undefined) body.nodeId = node;
   // The image is BOTH a spec member and a top-level override in the frozen
   // input; sending the one the caller typed at the top level keeps a `custom`
@@ -724,7 +764,7 @@ async function containerUpdate(cmd: CommandContext): Promise<ExitCode> {
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
     expectedVersion: requireExpectVersion('container update', cmd),
   };
-  const title = cmd.options.value('title');
+  const title = boundedOption(cmd, 'title', 1, 512);
   if (title !== undefined) body.title = title;
   const lifecycle = lifecycleFrom(cmd);
   if (lifecycle !== undefined) body.lifecycle = lifecycle;
@@ -785,7 +825,7 @@ async function containerPolicy(cmd: CommandContext): Promise<ExitCode> {
 async function containerRun(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['cwd', 'env', 'timeout-ms', 'stdin', 'user', 'mutation-id']);
   const containerId = requireContainerId('container run', cmd.args[0]);
-  const argv = [...cmd.passthrough];
+  const argv = cmd.passthrough.map((a, i) => boundedText(a, `argv[${i}]`, 1, 256));
   if (argv.length === 0) {
     throw new CliError('tm8 container run requires an argv after `--`', EXIT_USAGE, {
       hint: 'example: tm8 container run <container-id> -- ls -la /workspace',
@@ -796,16 +836,16 @@ async function containerRun(cmd: CommandContext): Promise<ExitCode> {
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
     argv,
   };
-  const cwd = cmd.options.value('cwd');
+  const cwd = boundedOption(cmd, 'cwd', 1, 4096);
   if (cwd !== undefined) body.cwd = cwd;
   const env = parseEnv(cmd.options.values('env'));
   if (env !== undefined) body.env = env;
   const timeoutMs = boundedInt(cmd, 'timeout-ms', 1000, 600000);
   if (timeoutMs !== undefined) body.timeoutMs = timeoutMs;
-  const user = cmd.options.value('user');
+  const user = boundedOption(cmd, 'user', 1, 255);
   if (user !== undefined) body.user = user;
   const stdin = cmd.options.value('stdin');
-  if (stdin !== undefined) body.stdin = await readTextSource(stdin);
+  if (stdin !== undefined) body.stdin = boundedText(await readTextSource(stdin), '--stdin content', 0, 1048576);
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'containers.run', {
     params: { containerId },
@@ -862,9 +902,9 @@ async function containerTerminal(cmd: CommandContext): Promise<ExitCode> {
   const body: Record<string, unknown> = {
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
   };
-  const title = cmd.options.value('title');
+  const title = boundedOption(cmd, 'title', 1, 512);
   if (title !== undefined) body.title = title;
-  const cwd = cmd.options.value('cwd');
+  const cwd = boundedOption(cmd, 'cwd', 1, 4096);
   if (cwd !== undefined) body.cwd = cwd;
   const cols = boundedInt(cmd, 'cols', 1, 1000);
   if (cols !== undefined) body.cols = cols;
@@ -1004,9 +1044,9 @@ async function containerComputer(cmd: CommandContext): Promise<ExitCode> {
     }
     extra.to = { x: Number(match[1]), y: Number(match[2]) };
   }
-  const text = cmd.options.value('text');
+  const text = boundedOption(cmd, 'text', 0, 65536);
   if (text !== undefined) extra.text = text;
-  const keys = cmd.options.value('keys');
+  const keys = boundedOption(cmd, 'keys', 0, 256);
   if (keys !== undefined) extra.keys = keys;
   const dx = cmd.options.integer('dx');
   if (dx !== undefined) extra.dx = dx;
@@ -1014,7 +1054,7 @@ async function containerComputer(cmd: CommandContext): Promise<ExitCode> {
   if (dy !== undefined) extra.dy = dy;
   const ms = cmd.options.integer('ms');
   if (ms !== undefined) extra.ms = ms;
-  const url = cmd.options.value('url');
+  const url = boundedOption(cmd, 'url', 1, 4096);
   if (url !== undefined) extra.url = url;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'containers.computer', {
@@ -1259,7 +1299,7 @@ async function containerSnapshot(cmd: CommandContext): Promise<ExitCode> {
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
     expectedVersion: requireExpectVersion('container snapshot', cmd),
   };
-  const name = cmd.options.value('name');
+  const name = boundedOption(cmd, 'name', 1, 255);
   if (name !== undefined) body.name = name;
   // `--make-template`, not `--template`: `container create --template <id>`
   // already spells a VALUE flag of that name, and one name cannot be both a
@@ -1287,7 +1327,7 @@ async function containerFork(cmd: CommandContext): Promise<ExitCode> {
   const body: Record<string, unknown> = {
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
   };
-  const title = cmd.options.value('title');
+  const title = boundedOption(cmd, 'title', 1, 512);
   if (title !== undefined) body.title = title;
   const lifecycle = lifecycleFrom(cmd);
   if (lifecycle !== undefined) body.lifecycle = lifecycle;
@@ -1324,7 +1364,7 @@ async function containerAttention(cmd: CommandContext): Promise<ExitCode> {
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
     reason,
   };
-  const detail = cmd.options.value('detail');
+  const detail = boundedOption(cmd, 'detail', 0, 4096);
   if (detail !== undefined) body.detail = detail;
   const points = boundedInt(cmd, 'points', 1, 100);
   if (points !== undefined) body.points = points;
