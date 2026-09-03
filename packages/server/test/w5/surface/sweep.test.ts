@@ -305,9 +305,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(169);
-    expect(rows).toHaveLength(169);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(169);
+    // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
+    expect(SURFACE).toHaveLength(193);
+    expect(rows).toHaveLength(193);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(193);
   });
 
   /**
@@ -1116,10 +1117,45 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
  * range and never to a live-computed value.
  */
 const EXPECTED_HANDLER_501: readonly string[] = [
+  // SORTED, because the assertion compares against a sorted observation.
+  // 177: the container rows this node registers and does not yet
+  // implement, plus the ten P0 rows when the gate is off — every one a refusal
+  // AUTHORED BY THE HANDLER on configuration grounds, exactly like
+  // `voice.token.create` above, and not a stub.
+  //
+  // Being on this list is what makes them honest rather than invisible: the
+  // alternative to registering them is 404, which tells a caller the operation
+  // does not exist when it is in the contract and this node simply cannot
+  // serve it (DEV-13). This is where that trade is written down, by name.
+  'containers.attach',
+  'containers.attention',
+  'containers.browser.endpoint',
+  'containers.computer',
+  'containers.create',
+  'containers.destroy',
+  'containers.expose',
+  'containers.files.get',
+  'containers.files.put',
+  'containers.fork',
+  'containers.logs',
+  'containers.pause',
+  'containers.policy.set',
+  'containers.pools.set',
+  'containers.providers.list',
+  'containers.proxy',
+  'containers.resume',
+  'containers.run',
+  'containers.snapshot',
+  'containers.start',
+  'containers.stop',
+  'containers.terminal.start',
+  'containers.unexpose',
+  'containers.update',
   // 2026-07-31: voice.token.create is MOUNTED and REACHED, and on a node with
   // no TM8_LIVEKIT_* configured its handler answers an honest not_implemented
   // naming the env vars to set (services/voice.ts). A refusal authored by the
-  // handler on real configuration grounds, not a stub.
+  // handler on real configuration grounds, not a stub — the same class as the
+  // container rows above.
   'voice.token.create',
 ];
 
