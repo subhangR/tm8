@@ -526,6 +526,71 @@ describe('the unified Home root and the right trail (task 01a00932)', () => {
   });
 });
 
+describe('the chat subject param `?about=`', () => {
+  /* "Chat about this" is a NAVIGATION, not a command: `chat.start` needs a
+     teammate, a model and a mode, and a row's action cluster has nowhere to
+     ask for them. So the verb binds the subject into the address and the
+     composer commits it — which is why the subject has to survive a reload
+     and a paste, and therefore has to be a route token rather than state. */
+
+  it('parses a subject on the bare composer address', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/home/chat?about=${id(9)}`);
+    expect(dropped).toEqual([]);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: null, aboutId: id(9) },
+    });
+  });
+
+  it('round-trips through build, and keeps the `/chat` segment to carry it', () => {
+    const route = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null, aboutId: id(9) } },
+    });
+    const { hash, dropped } = build(normalize(route));
+    expect(dropped).toEqual([]);
+    /* Bare `/home` reads NEITHER `stage` nor `about`, so collapsing a subject-
+       bearing root to it would silently drop the subject — the same reason the
+       stage keeps the segment. `normalize` has to agree, or the canonical form
+       and the parsed form disagree about what the link said. */
+    expect(hash).toContain('/home/chat');
+    expect(hash).toContain(`about=${id(9)}`);
+    expect(parse(hash).route?.target).toEqual(route.target);
+  });
+
+  it('survives normalization: a subject-bearing root is NOT the bare Home form', () => {
+    const route = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null, aboutId: id(9) } },
+    });
+    expect(normalize(route).target).toEqual(route.target);
+    // …while a root with neither a thread, a stage nor a subject still is.
+    const bare = routeOf({ target: { view: 'home', root: { type: 'chats', threadId: null } } });
+    expect(normalize(bare).target).toEqual({ view: 'home' });
+  });
+
+  it('LOSSY-TOLERANT: a value that is not plausibly an id is silently ignored', () => {
+    /* A SHAPE GATE, not a validation — the route layer cannot know whether an
+       entity exists. It exists so a pasted `?about=hello` does not travel into
+       a composer as a subject; a subject that no longer exists is the screen's
+       to render honestly. */
+    for (const raw of ['about=hello', 'about=', 'about=%ZZ', 'about=../etc']) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat?${raw}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({ view: 'home', root: { type: 'chats', threadId: null } });
+    }
+  });
+
+  it('rides alongside a thread and a stage without displacing either', () => {
+    // Parse KEEPS it on a thread address (round-trip fidelity, the preserve
+    // rule); the Home screen is what ignores it once a thread is selected,
+    // because an open conversation's subject is already decided.
+    const { route } = parse(`#/s/${SPACE}/home/chat/${id(1)}?stage=fleet&about=${id(9)}`);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: id(1), stage: 'fleet', aboutId: id(9) },
+    });
+  });
+});
+
 describe('the Cockpit stage param `?stage=`', () => {
   /* REPLACES `?graph=full` and `?gf=`. The Cockpit ruling retires the
      fullscreen graph dialog and the facet rail that edited `gf`, and both

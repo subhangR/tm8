@@ -8,7 +8,11 @@ import type {
   CommandResult,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
-import { createChatHomeFixturePort } from './fixtures';
+import {
+  CHAT_HOME_FIXTURE_THREAD,
+  ENTITY_CHAT_THREADS,
+  createChatHomeFixturePort,
+} from './fixtures';
 import { turnPartFromMessagePart } from './wire';
 import type {
   ChatCreateInput,
@@ -78,7 +82,20 @@ export function createChatHomePortFromSeam(
   seam: Seam,
   bridge: ChatHomeL2Bridge = {},
 ): ChatHomePort {
-  if ('fixtureControls' in seam) return createChatHomeFixturePort().port;
+  /*
+   * THE FIXTURE APP'S CHATS. The demo thread plus the conversations behind the
+   * entity fixtures' chat ROWS — without those, opening `ent-chat-launch` from
+   * the Chats list or from a chip renders "This chat is not present in the
+   * latest space-wide read", because the list and the transcript are served by
+   * two different fixture datasets that did not know about each other.
+   *
+   * Supplied HERE rather than as the port factory's default: ~40 focused tests
+   * construct that port with no arguments and depend on the cold-start
+   * auto-open landing on the single demo thread.
+   */
+  if ('fixtureControls' in seam) {
+    return createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD, ...ENTITY_CHAT_THREADS]).port;
+  }
 
   const listCache = new Map<EntityId, ChatListItem>();
   const listSpaceCache = new Map<EntityId, SpaceId | string>();

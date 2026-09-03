@@ -106,26 +106,44 @@ describe('a turn authored from somewhere else', () => {
     expect(within(source).getByTestId('chat-entity-chip')).toBeTruthy();
   });
 
-  it('takes NEITHER side — the two sides mean "you" and "the other party"', async () => {
-    const view = await renderThread();
-    const marked = view.container.querySelector<HTMLElement>('.tch-turn[data-third-party="true"]')!;
+  it('takes NEITHER side, EVEN WITH NO VIEWER — where the role heuristic is wrong', async () => {
     /*
-     * THE OVERRIDE IS THE POINT. This turn is `role: 'user'` and its author is
-     * not the viewer, so the ordinary sidedness rule would put it on the LEFT
-     * with the agent — and with no `viewerId` at all the role heuristic would
-     * put it on the viewer's OWN side, drawing a worker's report as something
-     * you said. Neither is right, so it opts out of sidedness entirely.
+     * THIS IS THE CASE THE OVERRIDE EXISTS FOR, and it is the only one that
+     * can prove the override is doing anything.
+     *
+     * With a `viewerId` supplied, sidedness compares author ids and a worker's
+     * report lands left anyway — so asserting `data-self === 'false'` there
+     * passes with the override REMOVED. (Measured: mutating it away reds zero
+     * tests when the viewer is known.) With no viewerId the screen degrades to
+     * the ROLE heuristic, and this turn is `role: 'user'` — so without the
+     * override it lands on the viewer's OWN side, drawing a session's report
+     * as something you said.
      */
+    const { port } = createChatHomeFixturePort([threadWithReport()]);
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={vi.fn()} />,
+    );
+    await waitFor(() =>
+      expect(view.container.querySelectorAll('.tch-turn').length).toBeGreaterThanOrEqual(3),
+    );
+    const marked = view.container.querySelector<HTMLElement>('.tch-turn[data-third-party="true"]')!;
     expect(marked.getAttribute('data-self')).toBe('false');
 
-    // …and the ordinary turns are unaffected: the viewer's own is still self.
+    // …and the heuristic is otherwise untouched: an ORDINARY `role: 'user'`
+    // turn still reads as the viewer's own with no viewerId to compare.
     const ordinary = [...view.container.querySelectorAll<HTMLElement>('.tch-turn')]
-      .filter((turn) => turn.getAttribute('data-third-party') === null);
-    expect(ordinary.some((turn) => turn.getAttribute('data-self') === 'true')).toBe(true);
+      .filter((turn) => turn.getAttribute('data-third-party') === null
+        && turn.getAttribute('data-role') === 'user');
+    expect(ordinary.length).toBeGreaterThan(0);
+    expect(ordinary.every((turn) => turn.getAttribute('data-self') === 'true')).toBe(true);
   });
 
   it('leaves a first-party thread completely unmarked', async () => {
-    const { port } = createChatHomeFixturePort();
+    /* THE DEMO THREAD, NAMED. The fixture APP's list also carries the threads
+       behind the entity fixtures' chat rows, and one of those has a
+       third-party turn on purpose — so "nothing is marked" has to say which
+       thread it means rather than lean on a default. */
+    const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} viewerId={VIEWER.id} />,
     );

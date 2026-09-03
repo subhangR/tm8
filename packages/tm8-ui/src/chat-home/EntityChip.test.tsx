@@ -5,7 +5,7 @@ import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { EntityChip, resetChatEntityResolutionCache, type ChatEntityResolver } from './EntityChip';
 import { extractEntityRefs, truncateEntityId } from './entity-refs';
-import { createChatHomeFixturePort } from './fixtures';
+import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
@@ -111,7 +111,10 @@ describe('EntityChip', () => {
        
        Both are the payload, not a summary of it. The header's is asserted
        below, so this file pins the whole census rather than one half of it. */
-    const { port } = createChatHomeFixturePort();
+    /* The DEMO thread, named rather than defaulted: this case is about the
+       transcript's own chip census, and it must not silently change meaning if
+       the port's default list ever widens again. */
+    const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={vi.fn()} />,
     );
@@ -125,7 +128,10 @@ describe('EntityChip', () => {
     /* The fixture thread carries `aboutId` (the fixture channel), which is
        what makes this observable at all — a fixture with no subject would let
        a header that never draws the relation look correct. */
-    const { port } = createChatHomeFixturePort();
+    /* The DEMO thread, named rather than defaulted: this case is about the
+       transcript's own chip census, and it must not silently change meaning if
+       the port's default list ever widens again. */
+    const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={vi.fn()} />,
     );
