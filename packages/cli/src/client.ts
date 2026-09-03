@@ -53,6 +53,25 @@ const BYTES_OPERATIONS: ReadonlySet<string> = new Set<OperationName>([
   // envelope. It joins the closed bytes set so `artifact export` reads it
   // through `download()` and never utf8-decodes a blob.
   'artifacts.export',
+  // Containers (TM8-CONTAINERS-DESIGN §4.1). Two rows answer RAW BYTES and
+  // neither could be left to the `envelope` default:
+  //
+  //   `containers.files.get` returns a TAR ARCHIVE ("tar stream out"), and
+  //   `containers.proxy` returns whatever the exposed port served — HTML, an
+  //   image, a JS bundle.
+  //
+  // Defaulting either to `envelope` is not a missing feature, it is a WRONG
+  // ANSWER: `invokeDetailed` would utf8-decode the bytes, fail to parse them,
+  // and raise a ProtocolError blaming the SERVER for not sending an envelope
+  // it was never supposed to send. In `bytes` mode the client refuses early
+  // and names the download path instead.
+  //
+  // Note `containers.files.put` is deliberately ABSENT: its REQUEST carries a
+  // tar, but its RESPONSE is `{ ok: true }`, and this set classifies responses.
+  // The request side has no classifier at all — see `commands/container.ts`,
+  // where `container cp` refuses rather than sending a tar it cannot build.
+  'containers.files.get',
+  'containers.proxy',
 ]);
 
 export function responseMode(name: OperationName): ResponseMode {
