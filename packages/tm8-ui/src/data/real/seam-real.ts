@@ -468,6 +468,11 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       gitBranch: (id, input) => ops.gitBranch(id, input),
       gitStash: (id, input) => ops.gitStash(id, input),
       mergePullRequest: (id, input) => ops.mergePullRequest(id, input),
+      createContainer: (input) => ops.createContainer(input),
+      containerLifecycle: (id, verb, input) => ops.containerLifecycle(id, verb, input),
+      destroyContainer: (id, input) => ops.destroyContainer(id, input),
+      startContainerTerminal: (id, input) => ops.startContainerTerminal(id, input),
+      containerProviders: () => ops.containerProviders(),
     },
 
     // -- credentials ---------------------------------------------------------

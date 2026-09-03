@@ -136,6 +136,12 @@ import type {
   ExecutionDispatchResult,
   ExecutionSpawnInput,
   ExecutionTerminalStartInput,
+  ContainersCreateInput,
+  ContainersDestroyInput,
+  ContainersLifecycleInput,
+  ContainersProvidersListResult,
+  ContainersTerminalStartInput,
+  ContainersTerminalStartResult,
   ExecutionResumeInput,
   ExecutionTerminateInput,
   FileUploadAbortInput,
@@ -988,6 +994,57 @@ export interface Seam {
      * refuses any field the contract does not name.
      */
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult>;
+    /*
+     * CONTAINERS (migration 177, catalog rows 1–8, 10, 24). Typed with the
+     * contract's inputs VERBATIM — no seam-local shapes, so a zod refusal the
+     * server raises is a refusal this signature already made impossible.
+     *
+     * The five that ship in P0 do real work. The rest of the 25 rows are
+     * registered server-side and answer an honest 501; they get seam members
+     * when a lane has a surface for them, not before — a seam method with no
+     * caller is the thing `data/real/ops.ts`'s header forbids.
+     *
+     * `createContainer` is the BIRTH DOOR and the only one. `entities.create`
+     * refuses this kind outright ("owned by the container lifecycle"), exactly
+     * as it does for work_session, so there is no second path to try.
+     */
+    createContainer(input: ContainersCreateInput): Promise<CommandResult>;
+    /*
+     * ONE METHOD FOR start/stop/pause/resume RATHER THAN FOUR, because the
+     * four share ONE contract DTO (`ContainersLifecycleInput`) and one route
+     * shape. Four methods would be four places for the same
+     * `expectedVersion` handling to drift, and `verb` is what the catalog row
+     * already discriminates on.
+     *
+     * `expectedVersion` is MANDATORY on every one of them (freeze part 4/4,
+     * rows 2–5) and the DTO says so, so a caller cannot forget it.
+     */
+    containerLifecycle(
+      id: EntityId,
+      verb: 'start' | 'stop' | 'pause' | 'resume',
+      input: ContainersLifecycleInput,
+    ): Promise<CommandResult>;
+    /** Its own method: `force`/`keepSnapshot` are destroy's alone. */
+    destroyContainer(id: EntityId, input: ContainersDestroyInput): Promise<CommandResult>;
+    /**
+     * `containers.terminal.start` — mints a `work_session` with
+     * `session_kind='container_exec'` INSIDE the container and returns its id.
+     *
+     * NOTE THE RESULT TYPE. It is not a `CommandResult`: the door answers
+     * `{ workSessionId, containerId }`, so there are no patches to reconcile
+     * and a caller that treats it like a spawn will wait for a store update
+     * that never arrives. The session it names is an ordinary work_session and
+     * is opened the ordinary way.
+     *
+     * NO `argv` FIELD, deliberately — the shell is the image's login shell,
+     * the same RCE boundary as `execution.terminal.start`. Do not add one.
+     */
+    startContainerTerminal(
+      id: EntityId,
+      input: ContainersTerminalStartInput,
+    ): Promise<ContainersTerminalStartResult>;
+    /** `containers.providers.list` — what this node can actually build. */
+    containerProviders(): Promise<ContainersProvidersListResult>;
     /**
      * The session git rail's four verbs (Git UI wave) — checkpoint, rollback,
      * commit, and merge-the-base-FORWARD. The other merge direction (session

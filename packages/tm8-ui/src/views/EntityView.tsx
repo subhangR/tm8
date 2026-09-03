@@ -404,6 +404,8 @@ export function EntityView(props: EntityViewProps) {
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     onError: notifyTerminateFailed,
+     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
 
   /* D67 — the expanded row's state dropdown and archive control. Same executor

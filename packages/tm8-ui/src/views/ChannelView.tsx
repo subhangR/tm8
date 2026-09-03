@@ -120,6 +120,8 @@ export function ChannelView({
             }),
         }
       : {}),
+    /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
   /*
    * Per-CHANNEL stack (user ruling 2026-07-31): each channel keeps its own

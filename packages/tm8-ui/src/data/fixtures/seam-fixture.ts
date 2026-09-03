@@ -23,6 +23,7 @@
  * 1-second tick from FIXTURE_NOW per mutation; ids and seqs are counters.
  */
 import {
+  type ContainerProfile,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -664,11 +665,71 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         kind: 'graph', graphType: state.graphType,
         nodes: [], edges: [], layout: {}, source: null,
       };
+    case 'container':
+      /*
+       * CLOSED like loop's and graph's — produce a whole one.
+       *
+       * `surfaceDetail` is a `Partial<Record<…>>` and every key may be absent;
+       * the fixture leaves the non-terminal ones out deliberately, so a body
+       * that reads `surfaceDetail.screen` without guarding fails HERE, in a
+       * jsdom test, rather than on a real container that simply has no screen.
+       *
+       * NO `runtimeRef`, AND THERE IS NOWHERE TO PUT ONE. Design ruling R5:
+       * `internal.command_entity` embeds `entity_content` in the command
+       * result a client receives, so a native runtime id in this arm would
+       * reach every client. `ContainerSpec.mounts` is the READ flavour for the
+       * same reason — `{ guest, ro }`, no host path. A mount cannot be
+       * round-tripped, so no fixture may pretend one can.
+       */
+      return {
+        kind: 'container',
+        image: FIXTURE_CONTAINER_IMAGE[state.profile],
+        spec: {
+          profile: state.profile,
+          image: FIXTURE_CONTAINER_IMAGE[state.profile],
+          cpus: 2,
+          memMiB: 4096,
+          diskMiB: 20480,
+          mounts: [{ guest: '/workspace', ro: false }],
+          env: { TM8_SPACE: 'fixture' },
+          ports: [],
+          network: { preset: 'balanced', allow: ['github.com'] },
+          surfaces: { terminal: { enabled: true } },
+          // Always carries tm8.container and tm8.space (§4.1's ContainerSpec).
+          labels: { 'tm8.container': 'ctr-fixture', 'tm8.space': 'space-fixture' },
+        },
+        lifecycle: {
+          ephemeral: state.ephemeral,
+          ttlSeconds: null,
+          idleHibernateSeconds: null,
+          graceSeconds: 600,
+          snapshotOnStop: false,
+        },
+        surfaceDetail: { terminal: { live: state.status === 'running' } },
+        error: state.status === 'failed' ? 'the provider refused: no image for profile' : null,
+        usage: state.status === 'running' ? { cpuPct: 12, memMiB: 812, diskMiB: 2048 } : null,
+        exposed: [],
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
   }
 }
+
+/**
+ * The default image per profile (§9). Total over `ContainerProfile`, so a
+ * profile added to the contract without a fixture image fails the build here
+ * rather than rendering `undefined` in the panel's spec summary.
+ */
+const FIXTURE_CONTAINER_IMAGE: Readonly<Record<ContainerProfile, string>> = {
+  shell: 'ghcr.io/tm8/shell:1',
+  desktop: 'ghcr.io/tm8/desktop:1',
+  browser: 'ghcr.io/tm8/browser:1',
+  android: 'ghcr.io/tm8/android:1',
+  ios: 'ghcr.io/tm8/ios:1',
+  dind: 'ghcr.io/tm8/dind:1',
+  custom: 'ghcr.io/tm8/shell:1',
+};
 
 /** Minimal HTML escaping for fixture titles landing inside the demo page. */
 function escapeHtml(text: string): string {
@@ -1332,6 +1393,44 @@ export function createFixtureSeam(): FixtureSeam {
     const s = summaries.get(id);
     if (!s) throw new CollabError('not_found', `entity ${id} not found`);
     return s;
+  }
+
+  /*
+   * CONTAINER FIXTURE HELPERS (migration 177).
+   *
+   * `containerSeq` gives a created container a stable, ascending id so a test
+   * can assert WHICH container a create produced. Module-scope counters would
+   * leak between tests; this rides the closure the rest of the fixture uses.
+   */
+  let containerSeq = 0;
+
+  /** ISO instant for the provider probe — fixed, so a snapshot cannot drift. */
+  const T_FIXTURE_PROBE = '2026-07-28T09:00:00.000Z';
+
+  function containerSummaryFor(id: EntityId, title: string, profile: ContainerProfile): EntitySummary {
+    const seed = requireSummary('ent-ctr-requested');
+    return {
+      ...clone(seed),
+      id,
+      title,
+      version: 1,
+      state: { ...(clone(seed.state) as Record<string, unknown>), profile } as EntitySummary['state'],
+    };
+  }
+
+  /**
+   * Move a container to `next`, bumping the version the way a real command
+   * does — so a second call with the ORIGINAL `expectedVersion` is a
+   * `version_conflict`, which is what makes a double-submit test meaningful.
+   */
+  function advanceContainer(row: EntitySummary, next: string): EntitySummary {
+    const moved: EntitySummary = {
+      ...clone(row),
+      version: row.version + 1,
+      state: { ...(clone(row.state) as Record<string, unknown>), status: next } as EntitySummary['state'],
+    };
+    summaries.set(row.id, moved);
+    return moved;
   }
 
   function requireVersion(s: EntitySummary, expectedVersion: number): void {
@@ -4279,6 +4378,103 @@ export function createFixtureSeam(): FixtureSeam {
           // the caller pinned, so a test can prove the panel sent the sha the
           // human was SHOWN rather than an unpinned merge.
           mergeSha: `${(input.headSha ?? fxOid(0xc3)).slice(0, 8)}${fxOid(0xd4).slice(8)}`,
+        });
+      },
+
+      /*
+       * CONTAINERS (migration 177).
+       *
+       * THE FIXTURE ENFORCES THE STATUS MACHINE, it does not just echo. §11.1
+       * is a guard trigger server-side (`23514` on a bad edge), so a fixture
+       * that accepted every verb in every state would let the panel ship a
+       * button the node refuses — and jsdom would call it green. Each verb
+       * below refuses from the SAME rule the capability booleans are derived
+       * from, so a UI bug shows up here as a thrown `CollabError` rather than
+       * as a silent success.
+       */
+      async createContainer(input) {
+        /*
+         * The birth door mints `requested`, never `running` — §11.1's first
+         * edge. A fixture that returned a running machine would let a panel
+         * that cannot render `requested`/`provisioning` look complete.
+         */
+        const id = `ent-ctr-new-${String(containerSeq += 1)}`;
+        const row = containerSummaryFor(id, input.title ?? 'new container', input.profile);
+        summaries.set(id, row);
+        return clone({ patches: [row] });
+      },
+
+      async containerLifecycle(id, verb, input) {
+        const row = requireSummary(id);
+        const status = (row.state as unknown as { status: string }).status;
+        const permitted =
+          verb === 'start' ? status === 'stopped'
+          : verb === 'stop' ? status === 'running' || status === 'paused'
+          : verb === 'pause' ? status === 'running'
+          : /* resume */ status === 'paused';
+        if (!permitted) {
+          // `invariant_violation` is the taxonomy for `23514`, the guard
+          // trigger's own error — freeze part 2/4's `state` row.
+          throw new CollabError('invariant_violation', `a ${status} container cannot ${verb}`);
+        }
+        requireVersion(row, input.expectedVersion);
+        const next = verb === 'start' ? 'running'
+          : verb === 'stop' ? 'stopping'
+          : verb === 'pause' ? 'paused'
+          : 'running';
+        return clone({ patches: [advanceContainer(row, next)] });
+      },
+
+      async destroyContainer(id, input) {
+        const row = requireSummary(id);
+        const status = (row.state as unknown as { status: string }).status;
+        if (status === 'destroying' || status === 'destroyed') {
+          throw new CollabError('invariant_violation', `this container is already ${status}`);
+        }
+        requireVersion(row, input.expectedVersion);
+        /*
+         * `destroying`, NOT `destroyed`. Lane A measured it on the shipped
+         * migration: §11.1's ASCII sketch draws `stopped ──▶ destroyed`, but
+         * the transition TABLE routes teardown through `destroying` and that
+         * is what 177 implements — a direct edge raises `23514`. The fixture
+         * follows the table, so a panel that assumed the sketch fails here.
+         */
+        return clone({ patches: [advanceContainer(row, 'destroying')] });
+      },
+
+      async startContainerTerminal(id) {
+        const row = requireSummary(id);
+        const status = (row.state as unknown as { status: string }).status;
+        // `canExec` is `status === 'running'`, and the door agrees.
+        if (status !== 'running') {
+          throw new CollabError('invariant_violation', `a ${status} container has no shell to exec into`);
+        }
+        /* NOT a `CommandResult` — the door answers ids, so there is nothing to
+           reconcile. Mirrored here so a caller that treats it like a spawn
+           fails in jsdom rather than in the app. */
+        return clone({ workSessionId: `ws-exec-${id}`, containerId: id });
+      },
+
+      async containerProviders() {
+        /*
+         * P0's node runs `TM8_CONTAINER_PROVIDERS=fake`, and `probe.ok` is
+         * produced by ACTUALLY creating and destroying a container — not by a
+         * PATH check (§5). The fixture says `true` with a detail that names
+         * the measurement, because a probe with no detail is a claim.
+         */
+        return clone({
+          nodeId: 'node-launch',
+          providers: [{
+            id: 'fake',
+            isolation: 'container' as const,
+            profiles: ['shell' as const],
+            surfaces: ['terminal' as const],
+            features: { pause: true, snapshot: false, fork: false, expose: false, nested: false, gpu: false },
+            limits: { maxContainers: 8, maxCpus: 16, maxMemMiB: 65536 },
+            probe: { ok: true, detail: 'created and destroyed a probe container in 12ms', measuredAt: T_FIXTURE_PROBE },
+          }],
+          images: [{ profile: 'shell' as const, ref: 'ghcr.io/tm8/shell:1', digest: null, cached: true }],
+          caps: { containers: 8, live: 1 },
         });
       },
     },

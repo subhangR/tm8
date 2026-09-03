@@ -63,6 +63,7 @@ import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
 import type { MembershipAuthoring } from './bodies/MembershipBlock';
 import type { MemoryMarkKind } from '../domain/memory';
 import { GovernedBody } from './bodies/GovernedBody';
+import { MachineBody } from './bodies/MachineBody';
 import { RestrictedBody } from './bodies/RestrictedBody';
 import { WorkSessionContent } from './bodies/WorkSessionContent';
 import { AttachmentStrip } from '../files/AttachmentStrip';
@@ -1541,6 +1542,28 @@ function PanelBody(
         blocks={config.panel.blocks ?? []}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
+      />
+    );
+  }
+  /*
+   * THE MACHINE ARM (Containers P0, Design §13.2).
+   *
+   * `liveness` and NOT `detail.content` — R-UI-5. The prop is already threaded
+   * to this component for the terminal arm, and it is the SAME seam verdict:
+   * a container's runtime is probed the way a session's PTY is. Passing the
+   * recorded status here instead would make the LIVE dot a second rendering of
+   * the pill sitting next to it, which is precisely the ghost the two-source
+   * law exists to expose.
+   *
+   * REMOVING THIS ARM is lane D's negative control: `MachineBody` stops
+   * mounting and `GenericBody` renders in its place, because the chain falls
+   * through. That is what proves the fallback is real rather than assumed.
+   */
+  if (config.panel.archetype === 'machine') {
+    return (
+      <MachineBody
+        detail={detail}
+        {...(props.liveness ? { liveness: props.liveness } : {})}
       />
     );
   }

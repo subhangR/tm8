@@ -18,10 +18,26 @@ import {
   sessionTeammateEdges,
 } from './index';
 
+/*
+ * A HAND-WRITTEN LITERAL, and that is the hazard rather than the design.
+ *
+ * `domain/registry.test.ts` derives its list from `CoreEntityKindSchema.options`
+ * and so reds the moment the contract grows a kind. This one does not — it has
+ * sat at the original fifteen while `voice_channel`, `memory`, `worktree`,
+ * `artifact`, `loop` and `graph` each landed, silently covering none of them.
+ * So a new kind gets fixture coverage only if someone adds it BY HAND, which
+ * is exactly what a green suite here will not tell you.
+ *
+ * `container` is added because migration 177 landed it. The six missing kinds
+ * above are a PRE-EXISTING gap and are deliberately not closed here: each needs
+ * its own summary and detail fixture, which is a wave of its own and not this
+ * lane's. Recorded rather than quietly widened.
+ */
 const CORE_KINDS: CoreEntityKind[] = [
   'channel', 'task', 'message', 'member', 'team_member',
   'doc', 'file', 'spell', 'skill', 'pull_request', 'commit',
   'work_session', 'collection', 'project', 'interaction_profile',
+  'container',
 ];
 
 describe('fixture dataset', () => {
@@ -40,7 +56,7 @@ describe('fixture dataset', () => {
     }
   });
 
-  it('covers all 15 core kinds plus a custom kind', () => {
+  it('covers every kind in CORE_KINDS plus a custom kind', () => {
     const kinds = new Set(fixtureSummaries.map((s) => s.kind));
     for (const k of CORE_KINDS) expect(kinds.has(k), `missing core kind ${k}`).toBe(true);
     expect([...kinds].some((k) => k.startsWith('c:')), 'missing a custom c:* kind').toBe(true);
