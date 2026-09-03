@@ -364,6 +364,86 @@ describe('kit focus rings — every interactive atom, one grammar', () => {
   });
 });
 
+/**
+ * THE COLOUR BUDGET — accent is scarce, and scarcity IS the mechanism.
+ *
+ * Sweeps every rule in kit.css and asserts the accent (`--pn-brand*`) appears
+ * only in a rule doing one of its two sanctioned jobs. Expressed as ROLES
+ * rather than a snapshot of selectors, so it states the law instead of
+ * freezing today's file: adding a new focus ring passes, painting a new
+ * surface blue fails and names the selector that did it.
+ *
+ * Deliberately scoped to `kit/`. A package-wide accent guard is written but
+ * unregistered: hex-ban.test.ts's own header explains why a lane guard that
+ * fails on another seat's file is worse than the hole it closes — "their only
+ * moves are nag or exempt, and exempt is how guards die."
+ */
+describe('the colour budget — accent is scarce, and that is the point', () => {
+  /** Strip comments first: the law is *written* in kit.css and names the tokens. */
+  const RULES: ReadonlyArray<{ selector: string; body: string }> = (() => {
+    const bare = kitCss.replace(/\/\*[\s\S]*?\*\//g, '');
+    const out: { selector: string; body: string }[] = [];
+    const rule = /([^{}]+)\{([^{}]*)\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = rule.exec(bare)) !== null) {
+      out.push({ selector: m[1].trim().replace(/\s+/g, ' '), body: m[2] });
+    }
+    return out;
+  })();
+
+  // Accent has exactly two jobs: WHERE YOU ARE, and WHAT YOU CAN ACT ON.
+  const SANCTIONED: ReadonlyArray<RegExp> = [
+    /:focus-visible/, // where you are — the one focus grammar
+    /\.k-btn--brand/, // what you can act on — the primary action fill
+    /\.kit-resizer/, // what you can act on — the active drag handle
+    /\.k-underline-slide/, // where you are — the selection indicator
+  ];
+
+  it('spends the accent only on "where you are" and "what you can act on"', () => {
+    const offenders = RULES.filter((r) => /--pn-brand/.test(r.body))
+      .filter((r) => !SANCTIONED.some((ok) => ok.test(r.selector)))
+      .map((r) => r.selector);
+    expect(offenders).toEqual([]);
+  });
+
+  it('binds identity to ink, not to the status or accent palettes', () => {
+    // Was: tone-2 = --pn-block, tone-4 = --pn-brand. An avatar sits beside
+    // every actor on every surface, so this was the largest accent leak in the
+    // kit — and it made a ring say "blocked" when it meant "actor #2".
+    // The initials already carry identity; the ring was redundant with them.
+    const tones = RULES.filter((r) => /\.kit-avatar--tone-\d/.test(r.selector));
+    expect(tones.length).toBeGreaterThan(0);
+    for (const t of tones) {
+      expect(t.body).toMatch(/--kit-avatar-tone:\s*var\(--pn-line-2\)/);
+      expect(t.body).not.toMatch(/--pn-brand|--pn-info|--pn-run|--pn-block|--pn-wait/);
+    }
+    // The per-surface escape hatch survives, same shape as --kit-label-floor.
+    expect(block(kitCss, '.kit-avatar.kit-avatar {', 'kit.css')).toMatch(
+      /border:\s*1px solid var\(--kit-avatar-tone\)/,
+    );
+  });
+
+  it('gives a count ink, because a count never changes what you do', () => {
+    // `brand` was the one Pill tone naming a COLOUR rather than a STATE, and
+    // two of its three call sites render a count (`N unread`). So the tone
+    // whose meaning was a colour is how counts became accent.
+    expect(block(kitCss, '.kit-pill--brand', 'kit.css')).toMatch(/color:\s*var\(--pn-ink-2\)/);
+    expect(block(kitCss, '.kit-pill--brand', 'kit.css')).not.toMatch(/--pn-brand/);
+    // LabelCountBadge is the primitive answer: its quantity is already ink.
+    expect(block(kitCss, '.kit-label-count__quantity', 'kit.css')).toMatch(
+      /color:\s*var\(--pn-ink-4\)/,
+    );
+  });
+
+  it('keeps every status a WORD, so nothing depends on hue alone', () => {
+    for (const tone of ['run', 'wait', 'block', 'info', 'idle'] as const) {
+      const rule = block(kitCss, `.kit-pill--${tone}`, 'kit.css');
+      expect(rule).toMatch(/color:\s*var\(--pn-[a-z0-9-]+\)/);
+      expect(rule).not.toMatch(/background/); // colour on the word, never a fill
+    }
+  });
+});
+
 describe('calm primitive surfaces', () => {
   it('status pills keep semantic ink on a neutral bordered card', () => {
     const pill = block(kitCss, '.kit-pill {', 'kit.css');
