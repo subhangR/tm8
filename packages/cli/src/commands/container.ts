@@ -825,7 +825,16 @@ async function containerPolicy(cmd: CommandContext): Promise<ExitCode> {
 async function containerRun(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['cwd', 'env', 'timeout-ms', 'stdin', 'user', 'mutation-id']);
   const containerId = requireContainerId('container run', cmd.args[0]);
-  const argv = cmd.passthrough.map((a, i) => boundedText(a, `argv[${i}]`, 1, 256));
+  // schemas.ts: `argv: z.array(z.string()).min(1).max(256)`. The 256 bounds the
+  // ARRAY, and `z.string()` carries NO length bound — so each element is
+  // unbounded and the COUNT is capped. An earlier version had this exactly
+  // inverted, capping each element at 256 characters and not capping the count:
+  // `container run c1 -- node -e "<a 300-char script>"` was refused here and
+  // would have been accepted there. A false refusal the server never sees.
+  const argv = [...cmd.passthrough];
+  if (argv.length > 256) {
+    throw new CliError(`tm8 container run accepts at most 256 argv entries, got ${argv.length}`, EXIT_USAGE);
+  }
   if (argv.length === 0) {
     throw new CliError('tm8 container run requires an argv after `--`', EXIT_USAGE, {
       hint: 'example: tm8 container run <container-id> -- ls -la /workspace',
