@@ -257,7 +257,38 @@ describe.sequential('task assignment provenance (129)', () => {
     // that call the spawn door. 176 re-creates execution_spawn from 150's body,
     // and 150's provenance behaviour is 129's — the widening is one `if` on the
     // parent kind and touches nothing this suite asserts.
+    //
+    // NOTE FOR #574: this branch previously applied 172 on its own line here,
+    // for the `column t.start_date does not exist` half of the migration-172
+    // class. CHAT_ENTITY_MIGRATIONS now lists 172, so that line was DROPPED at
+    // the rebase rather than kept — applying the same file twice is a duplicate,
+    // and duplicate applies are how this suite breaks (177 itself has three bare
+    // `create table` and fails outright on a re-apply).
     database.apply(CHAT_ENTITY_MIGRATIONS);
+    // …and 177, for EXACTLY the reason 135, 147, 171 and 176 are here — the
+    // fifth instance of one recurring shape. 177 adds the `container` core kind,
+    // and the read model joins `public.containers` into `ENTITY_FROM`, so
+    // current code selects from a relation a 129-era schema does not have and
+    // `loadEntitySummariesByIds` refuses to run — the identical failure the four
+    // above each caused, with a different relation again.
+    //
+    // Same safety argument, checked the same way: 177 creates its own kind row,
+    // detail table and side tables, adds five edge types, widens three CHECKs on
+    // `public.work_sessions`, and re-creates `internal.entity_content` and
+    // `public.work_session_transition`. This suite exercises assignment
+    // provenance on tasks and members; it calls neither of those two functions
+    // and touches no container, so the position statement at 129 survives it.
+    //
+    // ⚠ THIS IS A REPLAY POSITION, AND AN EASY ONE TO MISS. The database this
+    // line runs against is chain[0..129) + 129 + the four above + 177. It DOES
+    // now contain `public.chats`, because 176 is in CHAT_ENTITY_MIGRATIONS, so
+    // 177's borrowed `chat` arm resolves here — but only because 176 is applied
+    // above. Remove 176 from that list and this line STILL applies clean, since
+    // `internal.entity_content` is `language plpgsql` and its table references
+    // are validated at FIRST EXECUTION rather than at CREATE; it would fail only
+    // when something resolves a chat entity's content, which this suite never
+    // does.
+    database.apply(['177_container_kind.sql']);
   }, 180_000);
 
   afterAll(async () => {
