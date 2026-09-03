@@ -3772,8 +3772,31 @@ export const ContainerPortShareSchema = z.enum(['none', 'space', 'link']);
  * `spec.env` — an env var is stored on the container row, returned by every
  * read of it, and visible to anything that can see the entity. The refusal is
  * here rather than in the door because a caller deserves a 400 that names the
- * key, and because the CLI and the UI validate against this same schema and so
- * refuse it before a request is ever sent.
+ * key rather than a raw plpgsql error.
+ *
+ * IT IS NOT EQUIVALENT TO THE DATABASE'S PREDICATE, AND NOTHING PINS THEM
+ * TOGETHER. An earlier version of this comment claimed a caller is refused
+ * before a request is ever sent; that is false for a non-empty set of keys.
+ * 177's door (`177_container_kind.sql:866`) matches SUBSTRINGS:
+ *
+ *     env_key ~* '(secret|token|password|passwd|api[_-]?key|credential
+ *                  |private[_-]?key|access[_-]?key|auth)'
+ *
+ * while the regex below matches `_`-delimited SEGMENTS. So the DB is the
+ * STRICTER side, and these pass here and are refused there:
+ *
+ *     AUTHOR, TOKENIZER, AUTHENTICATION, AUTHORIZED_KEYS, OAUTH,
+ *     ACCESSKEY, MYTOKENVALUE
+ *
+ * `AUTHOR` is the worked example: an ordinary env var that this schema
+ * accepts and the door rejects with a raw 22023, which is exactly the
+ * experience the named-key 400 exists to prevent.
+ *
+ * THIS PR DOES NOT INTRODUCE THE DIVERGENCE — 177 is already on main — it
+ * introduced the CLAIM OF EQUIVALENCE, which is what is corrected here.
+ * Reconciling them means LOOSENING the door, which is a migration in
+ * another lane; it is on the P0 follow-up register. Tightening this regex
+ * to match would reject more, not fix `AUTHOR`.
  *
  * It is a NAME heuristic and it is deliberately broad: false positives cost a
  * caller one rename, a false negative writes a credential into the graph.
