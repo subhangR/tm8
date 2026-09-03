@@ -220,18 +220,48 @@ export function registerW2ContainerHandlers(
     return rethrowingContainer(() => handler(ctx, service));
   };
 
-  const handlers: Partial<Record<OperationName, (ctx: RequestContext) => Promise<unknown>>> = {};
-  for (const name of CONTAINER_RUNTIME_OPERATIONS) {
-    handlers[name] = withContainerRuntime(name, async (_ctx, service) => {
-      // The runtime ops that DO work are bound by the execution wiring, which
-      // replaces these entries. Reaching this body means the op is in
-      // P0_IMPLEMENTED but nothing bound it — a wiring bug, and an honest 501
-      // beats a crash.
-      void service;
-      throw fail('not_implemented', `${name} is not bound on this node`, { operation: name });
-    });
-  }
+  /**
+   * Reaching a handler body means the op is in `P0_IMPLEMENTED` but nothing
+   * bound a real implementation — a wiring bug, and an honest 501 beats a
+   * crash. Phase 1 replaces these with the `ContainerService` calls.
+   */
+  const unbound = (name: OperationName) => withContainerRuntime(name, async (_ctx, service) => {
+    void service;
+    throw fail('not_implemented', `${name}: not bound on this node`, { operation: name });
+  });
 
-  registry.registerAll(handlers as Record<string, (ctx: RequestContext) => Promise<unknown>>);
+  // AN OBJECT LITERAL, ENUMERATED, and it has to stay one. The conformance
+  // source inventory parses this file's AST and REFUSES a computed argument
+  // (`registry.registerAll must use an auditable object literal`), because the
+  // registry is the answer to "what does this node serve" and a reader must be
+  // able to audit it without executing anything. A `for` loop over the
+  // operation list is shorter and unauditable; twenty-four lines that can be
+  // read is the trade the repo has already decided to make.
+  registry.registerAll({
+    'containers.create': unbound('containers.create'),
+    'containers.start': unbound('containers.start'),
+    'containers.stop': unbound('containers.stop'),
+    'containers.pause': unbound('containers.pause'),
+    'containers.resume': unbound('containers.resume'),
+    'containers.destroy': unbound('containers.destroy'),
+    'containers.update': unbound('containers.update'),
+    'containers.policy.set': unbound('containers.policy.set'),
+    'containers.run': unbound('containers.run'),
+    'containers.terminal.start': unbound('containers.terminal.start'),
+    'containers.attach': unbound('containers.attach'),
+    'containers.computer': unbound('containers.computer'),
+    'containers.browser.endpoint': unbound('containers.browser.endpoint'),
+    'containers.files.put': unbound('containers.files.put'),
+    'containers.files.get': unbound('containers.files.get'),
+    'containers.logs': unbound('containers.logs'),
+    'containers.expose': unbound('containers.expose'),
+    'containers.unexpose': unbound('containers.unexpose'),
+    'containers.proxy': unbound('containers.proxy'),
+    'containers.snapshot': unbound('containers.snapshot'),
+    'containers.fork': unbound('containers.fork'),
+    'containers.attention': unbound('containers.attention'),
+    'containers.providers.list': unbound('containers.providers.list'),
+    'containers.pools.set': unbound('containers.pools.set'),
+  });
   void json;
 }
