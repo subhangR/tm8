@@ -774,6 +774,82 @@ describe('the remaining verbs bind their own shapes', () => {
   });
 });
 
+// ── string bounds, restated from the SCHEMA rather than the design's table ──
+
+describe('string lengths are bounded locally, from schemas.ts not §4.2', () => {
+  /**
+   * These exist because the first version of this noun bounded every NUMBER
+   * and every COUNT and no STRING LENGTH except `--allow`. The cause was not
+   * carelessness about individual fields — it was restating Design §4.2's
+   * bounds TABLE, which is a summary that lists the numeric ranges and omits
+   * the string lengths, while the file header claimed the bounds were "the
+   * server's own". An auditor checking the file against the table confirmed it
+   * as complete every time. The authority is `packages/contract/src/schemas.ts`.
+   */
+  const long = (n: number): string => 'x'.repeat(n);
+
+  it('--title is bounded at 512, and the refusal names the limit', async () => {
+    const ran = await drive(['container', 'create', 'shell', '--title', long(513)]);
+    expect(ran.code).toBe(EXIT_USAGE);
+    expect(ran.stderr).toMatch(/at most 512/);
+    expect(seen).toEqual([]);
+  });
+
+  it('--image is bounded at 1024', async () => {
+    const ran = await drive(['container', 'create', 'shell', '--image', long(1025)]);
+    expect(ran.code).toBe(EXIT_USAGE);
+    expect(seen).toEqual([]);
+  });
+
+  it('a --label VALUE is bounded at 1024, and the value is never echoed', async () => {
+    const value = long(1025);
+    const ran = await drive(['container', 'create', 'shell', '--label', `k=${value}`]);
+    expect(ran.code).toBe(EXIT_USAGE);
+    // The length, not the content — a bound refusal must not put 1 KB of the
+    // caller's data into a terminal, a scrollback or this process's journal.
+    expect(ran.stderr).toMatch(/1025/);
+    expect(ran.stderr).not.toContain(value);
+    expect(seen).toEqual([]);
+  });
+
+  it('an --env VALUE is bounded at 32768, and is never echoed either', async () => {
+    const value = long(32769);
+    const ran = await drive(['container', 'create', 'shell', '--env', `NODE_ENV=${value}`]);
+    expect(ran.code).toBe(EXIT_USAGE);
+    expect(ran.stderr).not.toContain(value);
+    expect(seen).toEqual([]);
+  });
+
+  it('an EMPTY value is refused where the schema says .min(1), and says to omit the flag', async () => {
+    const ran = await drive(['container', 'create', 'shell', '--title', '']);
+    expect(ran.code).toBe(EXIT_USAGE);
+    expect(ran.stderr).toMatch(/omit the flag/);
+    expect(seen).toEqual([]);
+  });
+
+  it('--user, --cwd and a run argv are bounded too', async () => {
+    for (const argv of [
+      ['container', 'run', CTR, '--user', long(256), '--', 'ls'],
+      ['container', 'run', CTR, '--cwd', long(4097), '--', 'ls'],
+      ['container', 'run', CTR, '--', long(257)],
+    ]) {
+      seen = [];
+      const ran = await drive(argv);
+      expect(ran.code, argv.slice(0, 4).join(' ')).toBe(EXIT_USAGE);
+      expect(seen).toEqual([]);
+    }
+  });
+
+  it('POSITIVE CONTROL — values AT the bound are accepted, so the checks are not refusing everything', async () => {
+    const ran = await drive([
+      'container', 'create', 'shell',
+      '--title', long(512), '--image', long(1024), '--label', `k=${long(1024)}`,
+    ]);
+    expect(ran.code, ran.stderr).toBe(0);
+    expect(String(body().title)).toHaveLength(512);
+  });
+});
+
 // ── response shapes ────────────────────────────────────────────────────────
 
 describe('the rows that answer RAW BYTES are classified as such', () => {
