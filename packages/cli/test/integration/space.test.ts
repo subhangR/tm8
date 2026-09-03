@@ -151,7 +151,7 @@ describe('the node itself', () => {
     // 150 -> 151 (2026-08-12): projects.files.archive. Measured off a live
     // /health in CI, not derived — these two are the only pins in the tree that
     // a local run cannot reach, because they need a running server.
-    expect(health.operations).toBe(171) /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */ /* 162→165 2026-08-16 W4/132: spaces.taskWorkflows.* */ /* 157→158 2026-08-13: #188 chat route */; // MEASURED off /health; +1 2026-08-13 tracking.pr.merge.
+    expect(health.operations).toBe(195) /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */ /* 162→165 2026-08-16 W4/132: spaces.taskWorkflows.* */ /* 157→158 2026-08-13: #188 chat route */; // MEASURED off /health; +1 2026-08-13 tracking.pr.merge.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });
