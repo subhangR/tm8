@@ -66,10 +66,24 @@ describe('the machine archetype mounts, and it mounts BY ARCHETYPE', () => {
       <EntityDetailPanel detail={detailFor(status)} reasons={REASONS} ctx={ctx} />,
     );
     expect(getByTestId('machine-body')).toBeTruthy();
-    // THE FALLBACK MUST NOT ALSO BE THERE. With the archetype arm removed the
-    // chain falls through to GenericBody, and this is the assertion that
-    // distinguishes "the machine body rendered" from "something rendered".
-    expect(queryByTestId('generic-body')).toBeNull();
+    /*
+     * THE FALLBACK MUST NOT ALSO BE THERE — and this assertion names what
+     * `GenericBody` ACTUALLY renders, which is the whole point.
+     *
+     * It first read `queryByTestId('generic-body')`, and that testid DOES NOT
+     * EXIST: `GenericBody` marks its sections `block-<name>`, so the assertion
+     * passed in every world and proved nothing. Caught by reading the negative
+     * control's own output rather than its count — the mutated run failed on
+     * `machine-body` being absent, and the fallback half was never tested.
+     *
+     * `block-fields` is what a container falls through to: the row declares no
+     * `panel.blocks`, so `EntityDetailPanel`'s `DEFAULT_BLOCKS`
+     * (`[{ block: 'fields' }]`) is what GenericBody draws. Removing the
+     * `'machine'` arm therefore swaps `machine-body` for `block-fields`, and
+     * this pair is what proves the archetype chain SELECTED the body rather
+     * than the body merely existing.
+     */
+    expect(queryByTestId('block-fields')).toBeNull();
   });
 
   it.each(STATUSES)('%s: the status word comes from the entity', (status) => {
