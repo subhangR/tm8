@@ -69,6 +69,27 @@ describe('OBLIGATION 1 — the shell is told a modal is open', () => {
     expect(setKeyboardContext).toHaveBeenLastCalledWith({ modalDepth: 1 });
   });
 
+  it('DOUBLE-OPEN then single close still returns the depth to zero', () => {
+    /*
+     * THE MIRROR OF THE CLAMP BELOW, and the one I originally left open.
+     * `open()` incremented while `close()` clamped, so open-open-close left
+     * the depth at 1 with the sheet SHUT — the shell believing a modal is open
+     * forever and Esc doing nothing at all.
+     *
+     * Latent rather than live (no wired path opens twice without an
+     * intervening close), and fixed structurally rather than by clamping the
+     * increment: the depth is now a projection of the `isOpen` boolean, so the
+     * two cannot disagree however many times either is called.
+     */
+    const { host, setKeyboardContext } = mk();
+    const { result } = renderHook(() => useNewContainerSheet(host));
+    act(() => { result.current.open(); result.current.open(); });
+    expect(setKeyboardContext).toHaveBeenLastCalledWith({ modalDepth: 1 });
+    act(() => result.current.close());
+    expect(setKeyboardContext).toHaveBeenLastCalledWith({ modalDepth: 0 });
+    expect(result.current.isModalOpen()).toBe(false);
+  });
+
   it('works with no keyboard controller installed — it is optional, not required', () => {
     const { host } = mk({ setKeyboardContext: undefined });
     const { result } = renderHook(() => useNewContainerSheet(host));
