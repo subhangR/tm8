@@ -76,14 +76,38 @@ describe('every containers.* row is REGISTERED, built or not', () => {
 });
 
 describe('TM8_CONTAINERS=off answers 501 for every runtime operation', () => {
-  it('refuses each one with not_implemented, and NEVER not_found', async () => {
-    const registry = registryWith(false);
+  it('refuses each one with not_implemented FOR THE GATE\'S REASON — and never does so with the gate on', async () => {
+    // A DIFFERENTIAL, and it has to be one. Asserting `code: 'not_implemented'`
+    // alone proved nothing here: 501 is also what this family answers when the
+    // gate is ON, because every handler is still `unbound` and the P0 ops have
+    // no service composed. So the code is the failure mode of the SETUP as well
+    // as of the gate, and the old single-arm version of this test stayed green
+    // with the gate deleted entirely.
+    //
+    // Composing a `ContainerService` does NOT rescue it — there is nothing
+    // behind the service to reach until P1 binds the handler bodies. The only
+    // signal that distinguishes gate-off from every other 501 in P0 is the
+    // REASON, so both arms assert on that.
+    //
+    //   gate OFF -> every op cites TM8_CONTAINERS=off
+    //   gate ON  -> no op cites it (it 501s for a different, honest reason)
+    //
+    // Delete the gate and the off-arm fails for all 24 operations at once.
+    const off = registryWith(false);
+    const on = registryWith(true);
     for (const name of CONTAINER_RUNTIME_OPERATIONS) {
-      const handler = registry.get(name);
-      expect(handler, name).toBeDefined();
-      await expect(handler!(ctx()), name).rejects.toMatchObject({
+      const offHandler = off.get(name);
+      expect(offHandler, name).toBeDefined();
+      await expect(offHandler!(ctx()), name).rejects.toMatchObject({
         code: 'not_implemented',
       });
+      await expect(offHandler!(ctx()), `${name} must cite the gate when off`)
+        .rejects.toThrow(/TM8_CONTAINERS=off/);
+
+      const onHandler = on.get(name);
+      expect(onHandler, name).toBeDefined();
+      await expect(onHandler!(ctx()), `${name} must NOT cite the gate when on`)
+        .rejects.not.toThrow(/TM8_CONTAINERS=off/);
     }
   });
 
