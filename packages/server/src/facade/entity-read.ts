@@ -1466,7 +1466,13 @@ function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | '
   return raw === 'terminal' || raw === 'chat' ? { initialContentSurface: raw } : {};
 }
 
-function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
+/**
+ * Exported alongside its twin `contentOf` so the per-kind arms can be tested
+ * directly. Without it a state arm is only reachable through a full assembly,
+ * which needs a populated `AssemblyContext` — and a test that builds one is
+ * testing assembly, not the arm.
+ */
+export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
   switch (row.kind) {
     case 'task':
       return {

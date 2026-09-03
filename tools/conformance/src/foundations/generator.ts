@@ -236,6 +236,10 @@ function nounForOperation(operation: OperationName): string {
     // two maps must agree or the cross-check in
     // `packages/cli/test/discovery-operations.test.ts` reds.
     case 'chat': return 'chat';
+
+    // 177: the CLI noun is `container` (`NOUN_BY_FAMILY.containers`), singular
+    // like every other row here.
+    case 'containers': return 'container';
     default: throw new Error(`operation ${operation} has no noun/help disposition`);
   }
 }

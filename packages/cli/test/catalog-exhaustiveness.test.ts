@@ -19,6 +19,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  MOUNTED_OPERATIONS,
   OPERATIONS,
   RESERVED_OPERATIONS,
   V1_OPERATIONS,
@@ -49,17 +50,27 @@ import { isExitCode } from '../src/exit.js';
 // 166 -> 169 (141): auth.password.change + auth.invite.signup + auth.claim.reissue
 // (the three account-lifecycle ops of FIRST-RUN-CLAIM-DESIGN.md §10) — MEASURED.
 // 169 -> 172 (148): spaces.workflows list/upsert/delete — MEASURED
-const EXPECTED_ROWS = 172;
+// 172 -> 197 (177, TM8-CONTAINERS-DESIGN §4.1): the 25 containers.* rows, all
+// v1, so 170 -> 195. MEASURED on the tree, not carried.
+const EXPECTED_ROWS = 197;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('172 rows = 170 v1 + 2 reserved, 171 HTTP + 1 WS (measured; +3 148 workflows)', () => {
+  it('197 rows = 195 v1 + 2 reserved, 195 mounted HTTP + 1 mounted WS (measured; +25 177 containers)', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(170);
+    expect(V1_OPERATIONS.length).toBe(195);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
-    expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
+    // TWO WS ROWS, ONE MOUNTED SOCKET, and the difference is the point.
+    // `containers.stream` re-declares `events.subscribe`'s `WS /v2/ws` so the
+    // container family's socket is DISCOVERABLE under its own name; it carries
+    // `aliasOf` and is excluded from MOUNTED_OPERATIONS, so nothing opens a
+    // second socket on that path. Counting rows and counting mounts are
+    // different questions; this file asks both, separately, on purpose.
+    expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(2);
+    expect(MOUNTED_OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
+    expect(MOUNTED_OPERATIONS.filter((o) => o.method !== 'WS')).toHaveLength(195);
   });
 });
 
@@ -84,9 +95,12 @@ describe('every row binds', () => {
       ['stream', []],
     ]);
     for (const op of OPERATIONS) byMode.get(responseMode(op.name))?.push(op.name);
-    expect(byMode.get('stream')).toEqual(['events.subscribe']);
+    // Both WS rows are streams — the alias is a real catalog row and is
+    // CLASSIFIED like one; it simply does not add a mount.
+    expect(byMode.get('stream')).toEqual(['events.subscribe', 'containers.stream']);
     expect(byMode.get('bytes')?.sort()).toEqual(['artifacts.export', 'bridge.fetchBlob', 'files.download']);
-    expect(byMode.get('envelope')).toHaveLength(EXPECTED_ROWS - 4);
+    // -5, not -4: three byte rows plus TWO stream rows now.
+    expect(byMode.get('envelope')).toHaveLength(EXPECTED_ROWS - 5);
     expect([...byMode.values()].reduce((n, list) => n + list.length, 0)).toBe(EXPECTED_ROWS);
   });
 });
@@ -131,11 +145,12 @@ describe('every row resolves through the client and the error mapping', () => {
     }
 
     expect(resolved.size).toBe(EXPECTED_ROWS);
-    // 136 HTTP rows produced an honest 8; the single WS row produced usage 2
-    // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(171);
-    expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(171);
+    // The HTTP rows produced an honest 8; BOTH WS rows produced usage 2
+    // without a request. Every one is a resolution; none is a fall-through.
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(195);
+    expect([...resolved.entries()].filter(([, c]) => c === 2).map(([name]) => name))
+      .toEqual(['events.subscribe', 'containers.stream']);
+    expect(requested).toHaveLength(195);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -168,7 +183,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(171);
+    expect(httpRows).toBe(195);
   });
 });
 
