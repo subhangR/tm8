@@ -2038,6 +2038,356 @@ const ROWS: Record<OperationName, Row> = {
       'restore is append-only: it creates a NEW revision whose provenance records the source revision, never mutating history',
     ],
   },
+
+  // ── containers (TM8-CONTAINERS-DESIGN §14) ───────────────────────────────
+  //
+  // Twenty-five rows, and every one of them is here because this record is
+  // `Record<OperationName, Row>` — the build breaks until the family is total,
+  // which is the property that stops a catalog operation from shipping with no
+  // CLI disposition at all. Two rows have `cmd: null` and that is a decision,
+  // not an omission (see each).
+  //
+  // FIFTEEN OF THESE ANSWER 501 IN P0 AND STILL HAVE A COMMAND. A `status:
+  // 'v1'` row with no handler answers 404, which breaks DEV-13, so every row
+  // is registered server-side and answers an honest `not_implemented` with a
+  // named reason until its runtime lands. The `availability` axis is what
+  // reports that, and it is MEASURED from what this node actually answered —
+  // never narrated here. Nothing in these notes says "not yet": a note is a
+  // contract fact, and a roadmap in a note becomes a lie the moment the
+  // roadmap moves.
+  //
+  // Container READS are deliberately absent: `entity get/children/connections`
+  // and `entity query --kind container` already answer them, and §4.5 names
+  // only `containers.logs` and `containers.providers.list` as family-specific
+  // reads, because their truth is on the node rather than in the graph.
+  'containers.create': {
+    cmd: ['container', 'create'],
+    syn: 'tm8 container create <profile> [--title <t>] [--space <space-id>] [--project <project-resource-id>] [--image <ref>] [--provider <id>] [--node <name>] [--cpus <n>] [--mem <MiB>] [--disk <MiB>] [--mount <host>:<guest>[:ro]...] [--env <key>=<value>...] [--port <n>...] [--network open|balanced|locked] [--allow <host>...] [--ephemeral|--persistent] [--ttl <seconds>] [--idle-hibernate <seconds>] [--grace <seconds>] [--snapshot-on-stop] [--share none|space|explicit] [--parent <container-id>] [--template <container-id>] [--label <key>=<value>...] [--no-start] [--confirm-untrusted] [--mutation-id <id>]',
+    sum: 'Create a machine an agent can run in or drive, and start it',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'machine', 'vm', 'sandbox', 'docker', 'new', 'birth'],
+    notes: [
+      'the birth verb: `tm8 entity create container` is refused server-side, exactly as work_session is',
+      'create-and-start is the default; --no-start leaves the machine provisioned and stopped',
+      '--mount takes a HOST path and it never comes back — reads carry {guest, ro} only (ruling R5)',
+      '--env refuses credential-looking keys and never echoes a value; credentials reach a machine through the credential path (§12.3)',
+      'replaying the same --mutation-id returns the first result and never provisions a second machine',
+    ],
+    examples: [
+      'tm8 container create shell --title <title> --space <space-id>',
+      'tm8 container create browser --network locked --allow <hostname>',
+    ],
+  },
+  'containers.start': {
+    cmd: ['container', 'start'],
+    syn: 'tm8 container start <container-id> --expect-version <n> [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Start a stopped machine',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'start', 'resume', 'boot', 'machine'],
+    notes: [
+      '--timeout-ms is the PROVIDER budget and is a different clock from the global transport option, which is named separately and measured in SECONDS',
+    ],
+    examples: ['tm8 container start <container-id> --expect-version <n>'],
+  },
+  'containers.stop': {
+    cmd: ['container', 'stop'],
+    syn: 'tm8 container stop <container-id> --expect-version <n> [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Stop a running or paused machine, keeping its record',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'stop', 'halt', 'machine'],
+    examples: ['tm8 container stop <container-id> --expect-version <n>'],
+  },
+  'containers.pause': {
+    cmd: ['container', 'pause'],
+    syn: 'tm8 container pause <container-id> --expect-version <n> [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Freeze a running machine without releasing its memory',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'pause', 'freeze', 'suspend', 'machine'],
+    notes: ['a provider that reports no `pause` feature refuses this rather than emulating it with a stop'],
+  },
+  'containers.resume': {
+    cmd: ['container', 'resume'],
+    syn: 'tm8 container resume <container-id> --expect-version <n> [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Unfreeze a paused machine',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'resume', 'unpause', 'thaw', 'machine'],
+  },
+  'containers.destroy': {
+    cmd: ['container', 'destroy'],
+    syn: 'tm8 container destroy <container-id> --expect-version <n> [--force] [--keep-snapshot] [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Destroy a machine and its runtime object',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'destroy', 'delete', 'remove', 'machine'],
+    notes: [
+      '--expect-version IS the deliberate act this destructive verb requires; --force changes how the machine is stopped, never who may stop it',
+      '--keep-snapshot preserves the disk image the lifecycle would otherwise discard',
+    ],
+    examples: ['tm8 container destroy <container-id> --expect-version <n>'],
+  },
+  'containers.update': {
+    cmd: ['container', 'update'],
+    syn: 'tm8 container update <container-id> --expect-version <n> [--title <t>] [--ephemeral|--persistent] [--ttl <seconds>] [--idle-hibernate <seconds>] [--grace <seconds>] [--snapshot-on-stop] [--share none|space|explicit] [--label <key>=<value>...] [--mutation-id <id>]',
+    sum: 'Change a machine\'s title, lifecycle, share mode or labels',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['container', 'update', 'rename', 'share', 'lifecycle', 'ttl', 'label'],
+    notes: [
+      'the share vocabulary is the work_session one (none|space|explicit), NOT the exposed-port one (none|space|link)',
+      'cpu, memory and mounts are fixed at create — a machine that needs different hardware is a new machine',
+    ],
+  },
+  'containers.policy.set': {
+    cmd: ['container', 'policy'],
+    syn: 'tm8 container policy <container-id> --expect-version <n> --network open|balanced|locked [--allow <host>...] [--mutation-id <id>]',
+    sum: 'Set a machine\'s egress preset and its allowlist',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'policy', 'network', 'egress', 'firewall', 'allowlist'],
+    notes: ['the policy is a preset PLUS an allowlist; an allowlist alone has no rule to widen and is refused'],
+  },
+  'containers.run': {
+    cmd: ['container', 'run'],
+    syn: 'tm8 container run <container-id> [--cwd <path>] [--env <key>=<value>...] [--timeout-ms <n>] [--stdin <text-source>] [--user <name>] [--mutation-id <id>] -- <argv...>',
+    sum: 'Run one command inside a machine and return its output',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'run', 'exec', 'command', 'shell', 'argv'],
+    notes: [
+      'the argv is PASSTHROUGH after a literal `--`, so the machine\'s own flags are never parsed by this CLI',
+      'the ledgered result is capped at 64 KiB; beyond that `truncated` is set and the full output is in `container logs` for 24 h',
+    ],
+    examples: ['tm8 container run <container-id> -- ls -la /workspace'],
+  },
+  'containers.terminal.start': {
+    cmd: ['container', 'terminal'],
+    syn: 'tm8 container terminal <container-id> [--title <t>] [--cwd <path>] [--cols <n>] [--rows <n>] [--mutation-id <id>]',
+    sum: 'Open a PTY inside a machine as a work session, and print its id',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'terminal', 'pty', 'shell', 'exec', 'console'],
+    notes: [
+      'there is NO argv field: the shell is the image\'s login shell, the same RCE boundary execution.terminal.start draws',
+      'the result is a work_session of kind container_exec — attach to it with `tm8 session attach`',
+    ],
+  },
+  'containers.attach': {
+    cmd: ['container', 'attach'],
+    syn: 'tm8 container attach <container-id> --surface screen|browser|adb|docker [--mode view|drive] [--mutation-id <id>]',
+    sum: 'Mint a grant for one of a machine\'s live surfaces',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'attach', 'surface', 'screen', 'vnc', 'cdp', 'adb', 'grant'],
+    notes: [
+      'every call mints a FRESH grant — the door is unledgered, so a mutation id is recorded but never replayed',
+      'the grant token travels ONLY in the `tm8-grant.<token>` websocket subprotocol; a token-bearing URL is refused by the transport',
+      'a terminal is not an attachable surface — `tm8 container terminal` opens one',
+    ],
+  },
+  'containers.stream': {
+    // NO COMMAND, AND THE REASON IS THE SOCKET ITSELF. This row re-declares the
+    // EXISTING `/v2/ws` binding for discoverability (it carries `aliasOf:
+    // 'events.subscribe'`, so nothing mounts it twice); the bytes on it are RFB
+    // frames, CDP messages, adb and docker streams dispatched on a grant. There
+    // is nothing a terminal can do with any of them, and a command that printed
+    // them would be printing a binary protocol into a shell. The UI dials it.
+    cmd: null,
+    sum: 'The websocket a surface grant is redeemed on — the same socket as PTY and graph events',
+    authz: 'entity',
+    input: 'none',
+    tags: ['container', 'stream', 'websocket', 'surface', 'rfb', 'frames'],
+    reason: 'a surface stream carries a binary protocol dispatched on a grant; there is no terminal rendering of it',
+    notes: [
+      'not a second socket: it is the existing /v2/ws binding re-declared so the surface protocol is discoverable',
+      'mint the grant with `tm8 container attach`, then dial this socket with a client that speaks the encoding',
+    ],
+  },
+  'containers.computer': {
+    cmd: ['container', 'computer'],
+    syn: 'tm8 container computer <container-id> <action> [--x <n>] [--y <n>] [--to <x>,<y>] [--text <t>] [--keys <chord>] [--dx <n>] [--dy <n>] [--ms <n>] [--url <url>] [--no-screenshot] [--keep] [--out <file>] [--scale <f>] [--mutation-id <id>]',
+    sum: 'Perform one computer action in a machine and return a screenshot',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'computer', 'click', 'type', 'key', 'scroll', 'screenshot', 'gui', 'automation'],
+    notes: [
+      'one vocabulary, three drivers (desktop/Xvfb, browser/CDP, android/adb) — deliberately the intersection of computer-use, Playwright and adb',
+      'coordinates are in SCREENSHOT pixels at the scale the last screenshot reported; the node keeps the mapping',
+      '--keep stores the screenshot as an artifact revision on the container, which is the reviewable record',
+      'the ledgered result is capped at 64 KiB',
+    ],
+    examples: ['tm8 container computer <container-id> click --x <n> --y <n>'],
+  },
+  'containers.browser.endpoint': {
+    cmd: ['container', 'browser'],
+    syn: 'tm8 container browser <container-id> endpoint [--ttl <seconds>] | goto <url> | text',
+    sum: 'Mint a CDP websocket endpoint for a browser machine, or drive it',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'browser', 'cdp', 'playwright', 'chrome', 'endpoint', 'goto'],
+    notes: [
+      'the CDP url is BEARER-BOUND and is the one documented exception to subprotocol-only carriage: connectOverCDP cannot send a subprotocol',
+      '`goto` and `text` are containers.computer actions under a friendlier spelling, not a second operation',
+      'every call mints a FRESH endpoint — the grant door is unledgered',
+    ],
+  },
+  'containers.files.put': {
+    cmd: ['container', 'cp'],
+    syn: 'tm8 container cp <container-id> <src> ctr:<dst>',
+    sum: 'Copy files into a machine as a tar stream',
+    authz: 'entity',
+    input: 'unbound',
+    side: 'execution',
+    tags: ['container', 'cp', 'copy', 'files', 'upload', 'tar'],
+    notes: [
+      'exactly one side of the copy carries the `ctr:` prefix, and which side it is chooses the direction and the operation',
+    ],
+  },
+  'containers.files.get': {
+    cmd: ['container', 'cp'],
+    syn: 'tm8 container cp <container-id> ctr:<src> <dst>',
+    sum: 'Copy files out of a machine as a tar stream',
+    authz: 'entity',
+    input: 'none',
+    tags: ['container', 'cp', 'copy', 'files', 'download', 'tar'],
+    notes: [
+      'copying OUT is a read and refuses --mutation-id; copying IN is a command and accepts one',
+    ],
+  },
+  'containers.logs': {
+    cmd: ['container', 'logs'],
+    syn: 'tm8 container logs <container-id> [--since <timestamp>] [--tail <n>] [--follow]',
+    sum: 'Read a machine\'s stdout and stderr',
+    authz: 'entity',
+    input: 'none',
+    tags: ['container', 'logs', 'stdout', 'stderr', 'tail', 'follow', 'output'],
+    notes: [
+      'one of the two family-specific reads: a machine\'s log truth is on the node, not in the graph',
+      'the full output of a truncated `container run` is here for 24 h',
+    ],
+  },
+  'containers.expose': {
+    cmd: ['container', 'expose'],
+    syn: 'tm8 container expose <container-id> <port> --expect-version <n> [--share none|space|link] [--mutation-id <id>]',
+    sum: 'Publish a machine\'s port through the node\'s reverse proxy',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'expose', 'port', 'publish', 'proxy', 'share'],
+    notes: [
+      'the port-share vocabulary is none|space|link and it is NOT the container share vocabulary — `link` means a bearer URL anyone holding it may open',
+      'a minted share token is in the json DTO and is never printed to a terminal',
+    ],
+  },
+  'containers.unexpose': {
+    cmd: ['container', 'unexpose'],
+    syn: 'tm8 container unexpose <container-id> <port> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Withdraw a published port and invalidate its share',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'unexpose', 'port', 'withdraw', 'proxy'],
+  },
+  'containers.proxy': {
+    // NO COMMAND, AND IT IS A SCOPE DECISION RATHER THAN A REFUSAL — the shape
+    // `credentials.*` and `execution.terminal.start` take above. This is the
+    // reverse proxy an exposed port is reached THROUGH: a browser opens the URL
+    // `container expose` printed. A `tm8` verb here would be `curl` with extra
+    // steps and a worse error surface, and the catalog row exists so the path
+    // is discoverable by exact lookup and by tag.
+    cmd: null,
+    sum: 'The reverse-proxy path an exposed port is served on',
+    authz: 'entity',
+    input: 'none',
+    tags: ['container', 'proxy', 'port', 'http', 'forward', 'url'],
+    reason: 'an exposed port is opened in a browser or by an ordinary HTTP client; a CLI verb would add nothing to either',
+    notes: ['the URL to open is what `tm8 container expose` returns'],
+  },
+  'containers.snapshot': {
+    cmd: ['container', 'snapshot'],
+    syn: 'tm8 container snapshot <container-id> --expect-version <n> [--name <name>] [--make-template] [--mutation-id <id>]',
+    sum: 'Capture a machine\'s disk as a reusable image',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'snapshot', 'image', 'template', 'save'],
+    notes: ['--template marks the snapshot as a base other machines are created and pooled from'],
+  },
+  'containers.fork': {
+    cmd: ['container', 'fork'],
+    syn: 'tm8 container fork <container-id> [--title <t>] [--ephemeral|--persistent] [--ttl <seconds>] [--cpus <n>] [--mem <MiB>] [--disk <MiB>] [--mutation-id <id>]',
+    sum: 'Create a new machine from this one\'s snapshot, with a snapshot_of edge',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'fork', 'clone', 'copy', 'branch', 'snapshot'],
+    notes: ['no version guard: a fork READS the source machine and never changes its record'],
+  },
+  'containers.attention': {
+    cmd: ['container', 'attention'],
+    syn: 'tm8 container attention <container-id> --reason login|captcha|2fa|payment|approval|other [--detail <text>] [--points <n>] [--mutation-id <id>]',
+    sum: 'Ask a human to take over a machine, with a bounded score',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['container', 'attention', 'takeover', 'human', 'login', 'captcha', '2fa'],
+    notes: [
+      'the takeover path for the moments an agent must not automate: a login, a captcha, a payment (§12.5)',
+      'points are 1-100 and rank the request against every other call on human attention',
+    ],
+  },
+  'containers.providers.list': {
+    cmd: ['container', 'providers'],
+    syn: 'tm8 container providers [--node <name>]',
+    sum: 'What this node can actually run: providers, their probes, and cached images',
+    authz: 'server',
+    input: 'none',
+    tags: ['container', 'providers', 'capabilities', 'probe', 'images', 'node', 'docker'],
+    notes: [
+      'the other family-specific read: which providers exist is node truth, not graph truth',
+      'the `probe` verdict is produced by ACTUALLY creating and destroying a container, not by checking a PATH',
+    ],
+    examples: ['tm8 container providers --node <name>'],
+  },
+  'containers.pools.set': {
+    cmd: ['container', 'pool'],
+    syn: 'tm8 container pool <template-id> --expect-version <n> --warm <n> [--mutation-id <id>]',
+    sum: 'Set how many machines to keep warm from a template',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'pool', 'warm', 'prewarm', 'template', 'capacity'],
+    notes: [
+      'the positional is a TEMPLATE container and the guard is the template\'s version — a pool is a warm count on the template, not an object of its own',
+      '--warm is 0-8',
+    ],
+  },
 };
 
 /**
@@ -2089,6 +2439,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // no `chat_threads` table to describe. `tools/conformance`'s generator holds
   // the same map and moves with it.
   chat: 'chat',
+  containers: 'container',
   // Required even though all four `credentials.*` rows are `cmd: null`: the
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
@@ -2150,10 +2501,11 @@ export const CATALOG_DIGEST =
   // hand-derived.
   // Re-measured 148 (+ the three spaces.workflows rows) — read from the
   // regenerated conformance manifest, never hand-derived.
-  // Re-measured 176 (Chat as an Entity): `chat.threads.start` became
-  // `chat.start`, one row in and one out, so the catalog COUNT is unchanged and
-  // only the digest moves — read from the regenerated conformance manifest.
-  'sha256:10f0bc777952cceb5191a18476e2e4423a60246be2f5f9424b248e0be50e99b3';
+  // Re-measured on the MERGED tree (176's chat.start rename + the 25
+  // containers.* rows). RECOMPUTED from JSON.stringify(OPERATIONS), never
+  // adjusted from either side of the merge — neither branch's value is
+  // correct once both landed.
+  'PENDING_RECOMPUTE';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -2358,6 +2710,27 @@ const COMMAND_ALIASES = new Map<string, {
   // for exactly that reason: an alias declares a second spelling of an existing
   // operation, and a new catalog row would have been a second way to ask a
   // question `collections.query` already answers.
+  ['container screenshot', {
+    path: ['container', 'screenshot'],
+    syntax: 'tm8 container screenshot <container-id> [--out <file>] [--keep] [--scale <f>] [--mutation-id <id>]',
+    summary: 'Capture a machine\'s screen — sugar for `container computer screenshot`',
+    notes: [
+      'sugar over containers.computer with action=screenshot — it adds no catalog operation and lands in the same ledger row',
+      '--out writes the PNG to a file; without it the human view prints the dimensions and the scale, never the image bytes',
+      'the scale is what a caller needs to convert their next click: coordinates are in SCREENSHOT pixels',
+    ],
+    examples: ['tm8 container screenshot <container-id> --out <file>'],
+  }],
+  ['container adb', {
+    path: ['container', 'adb'],
+    syntax: 'tm8 container adb <container-id> [--timeout-ms <n>] [--mutation-id <id>] -- <adb args...>',
+    summary: 'Run adb against an android machine — sugar over `container run`',
+    notes: [
+      'sugar over containers.run — the node prefixes `adb -s <serial>`, and the serial is node-local runtime truth a client is never given',
+      'the adb arguments are PASSTHROUGH after a literal `--`, so adb\'s own flags are never parsed by this CLI',
+    ],
+    examples: ['tm8 container adb <container-id> -- shell input tap <x> <y>'],
+  }],
   ['worktree list', {
     path: ['worktree', 'list'],
     syntax: 'tm8 worktree list [--space <space-id>] [--status active|merged|abandoned|deleted] [--limit <count>] [--cursor <cursor>]',
@@ -2583,6 +2956,16 @@ COMMAND_ORDER.splice(
   'chat send',
   'chat turns',
 );
+// `container screenshot` and `container adb` are ALIASES over operations that
+// already have a command, for the same reason `worktree list|status` are: a
+// second catalog row for a spelling would be a second way to ask one question.
+// `container browser` is not an alias — it owns `containers.browser.endpoint` —
+// but two of its three sub-verbs invoke `containers.computer`, so both
+// operations are named here and the command is as available as its WEAKEST.
+COMMAND_OPS.set('container screenshot', ['containers.computer']);
+COMMAND_OPS.set('container adb', ['containers.run']);
+COMMAND_OPS.set('container browser', ['containers.browser.endpoint', 'containers.computer']);
+COMMAND_ORDER.push('container screenshot', 'container adb');
 COMMAND_OPS.set('worktree list', ['collections.query']);
 COMMAND_OPS.set('worktree status', ['entities.get']);
 COMMAND_ORDER.push('worktree list', 'worktree status');
@@ -2701,6 +3084,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   teammate: 'Teammate-scoped configuration',
   voice: 'Mint LiveKit room-join grants for voice channels',
   artifact: 'Versioned, viewable static-web bundles: publish, revisions, preview, export',
+  container: 'Machines an agent runs in or drives: create, lifecycle, exec, surfaces, ports',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */
