@@ -2023,6 +2023,40 @@ const ROWS: readonly KindConfig[] = [
     ],
   },
 
+  /*
+   * -- chat (migration 176) -- 176 REPAIR ONLY.
+   *
+   * R-D rules this tree experimental and tm8-ui canonical, so there is no
+   * feature work here — but `domain/registry.test.ts` asserts totality over
+   * `CoreEntityKindSchema` and CI runs THIS tree's vitest, so a new kind with
+   * no row is a build failure. Mirrors tm8-ui's row exactly.
+   *
+   * `quickCreate: false`: a chat is born from `chat.start`, which needs a
+   * teammate, a model and a mode; `chat` is excluded from `CreatableEntityKind`
+   * for that reason, and a refused Create control is not a control.
+   */
+  {
+    kind: 'chat',
+    label: 'Chat',
+    labelPlural: 'Chats',
+    icon: '❝',
+    iconArt: KIND_ART.chat,
+    slug: 'chats',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '❝', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'CHAT' }],
+    },
+  },
+
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',

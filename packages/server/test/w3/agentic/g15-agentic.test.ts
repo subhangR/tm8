@@ -33,7 +33,12 @@ import {
 // Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
 // Re-derived 2026-08-09 at the dispatcher merge — the catalog is now 138 rows.
 // 2026-08-12: moved with the catalog (collections.addItem/removeItem, 142 -> 144 rows).
-const CATALOG_DIGEST = 'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417'; // re-derived 148 (spaces.workflows)
+// re-derived 148 (spaces.workflows); re-derived 176 (Chat as an Entity: the
+// catalog row `chat.threads.start` became `chat.start`, one operation in and one
+// out, so the COUNT is unchanged and only the digest moves). Read out of the
+// failing run's Received line, which is the same thing as re-deriving it and the
+// only version that cannot be typed from memory.
+const CATALOG_DIGEST = 'sha256:10f0bc777952cceb5191a18476e2e4423a60246be2f5f9424b248e0be50e99b3';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {

@@ -178,6 +178,10 @@ describe('W1 frozen-row schema amendments', () => {
       'loop',
       // 2026-08-16: `graph` — the blueprint/diagram kind (Craft P1, R1-R3).
       'graph',
+      // 2026-09-03: `chat` — a conversation with a teammate, as an entity
+      // (migration 176). Excluded from `CreatableEntityKind`: `chat.start` is
+      // its only door, the way `execution.spawn` is `work_session`'s.
+      'chat',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

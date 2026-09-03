@@ -460,7 +460,7 @@ describe('B1: execution_spawn ledger replay is what made a stable id a silent no
 
   async function freshTask(title: string): Promise<string> {
     const rows = await asApp((q) =>
-      q(`select public.create_task($1,$2,null,'',$3::jsonb,null,null,'medium','[]'::jsonb,null,null,null,'attached_to',$4) result`,
+      q(`select public.create_task($1,$2,null,'',$3::jsonb,null,null,'medium','[]'::jsonb,null,null,null,null,'attached_to',$4) result`,
         [fixture.spaceId, title, '{}', `task-${title}-${Math.random()}`]));
     return (rows[0]!.result as { entity: { id: string } }).entity.id;
   }

@@ -175,6 +175,18 @@ export const KIND_ART = {
     'M11.7 7.8v2.2',
   ],
 
+  /**
+   * A speech bubble with a tail, and a second one behind it.
+   *
+   * NOT the message mark (one bubble) and not the channel mark (a hash): a chat
+   * is a CONVERSATION — two speakers, durable, with a life longer than any one
+   * message — and the two overlapping bubbles say exactly that at 16px.
+   */
+  chat: [
+    'M5.4 2.6h6.4a1.8 1.8 0 0 1 1.8 1.8v3.4a1.8 1.8 0 0 1-1.8 1.8H9.2L6.6 11.4V9.6H5.4a1.8 1.8 0 0 1-1.8-1.8V4.4a1.8 1.8 0 0 1 1.8-1.8z',
+    'M2.4 6.2v4.6a1.8 1.8 0 0 0 1.8 1.8h1v1.6',
+  ],
+
   /** A sealed package — an artifact is a published bundle, bytes and all. */
   artifact: ['M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z', 'M2.6 5.3 8 8.2l5.4-2.9', 'M8 8.2v5.4'],
 

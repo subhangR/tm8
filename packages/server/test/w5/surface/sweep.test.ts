@@ -880,7 +880,25 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // case, and it does so structurally. If this line goes red a fifth time on
     // arrears, the honest repair is to assert the count against the tree rather
     // than against a literal.
-    expect(server.appliedMigrations.length).toBe(160);
+    //
+    // 160 -> 162 on 2026-09-03. TWO, and only one of them is this branch's:
+    // the literal said 160 while main at 388f90c4 already applies 161, so this
+    // line was ALREADY RED ON MAIN — the exact "every branch open across a
+    // landing inherits the failure" cost the note above predicts, paid here by
+    // a branch that did not cause it. The other is `176_chat_entity.sql`.
+    //
+    // 162 -> 163 in the SAME branch: the spawn door moved into its own file
+    // (`178_spawn_parent_may_be_a_chat.sql`) after this literal had already been
+    // reasoned about, so the bump was made for one file and the split made it
+    // two. The literal is the one line a clean rebase — or a clean refactor —
+    // is worth nothing on. MEASURED, not incremented:
+    //   git ls-tree -r --name-only HEAD db/migrations | grep -c '\.sql$'  -> 163
+    //
+    // A NEW EXACT LITERAL, not `migrationFiles().length`: the note forbids the
+    // live-computed form for a reason that still holds — it would pass on any
+    // chain length and could no longer notice a chain that silently shrank,
+    // which is the one thing this assertion exists to catch.
+    expect(server.appliedMigrations.length).toBe(163);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
@@ -1115,7 +1133,7 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'auth.logout',
   // Chat is registered even without a provider runtime; the handler validates
   // the requested model/identity before returning its degraded-mode refusal.
-  'chat.threads.start',
+  'chat.start',
   // 2026-08-12: collections.addItem validates its body in-handler — the sweep's
   // synthetic path params name no real collection, a handler-reached 400.
   'collections.addItem',

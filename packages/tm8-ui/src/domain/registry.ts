@@ -1715,6 +1715,47 @@ const ROWS: readonly KindConfig[] = [
     ],
   },
 
+  /*
+   * -- chat (migration 176: a conversation with a teammate, as an entity) --
+   *
+   * WAVE 1 IS THE ROW AND NOTHING ELSE. `domain/registry.test.ts` asserts
+   * totality over `CoreEntityKindSchema`, so a new kind with no row is a build
+   * failure; this is the honest minimum that keeps main usable while the
+   * surfaces land in Wave 2. What that means concretely:
+   *
+   *   * `panel.archetype: 'generic'` — a fields list, the same body every kind
+   *     gets before it earns a bespoke one. Wave 2 mounts the transcript and
+   *     composer here.
+   *   * `quickCreate: false` — a chat is born from `chat.start`, which needs a
+   *     teammate, a model and a mode. The placeholder-only generic flow cannot
+   *     supply them, and `chat` is excluded from `CreatableEntityKind` for
+   *     exactly that reason. A refused Create control is not a control (the
+   *     `work_session` ruling above, same shape).
+   *   * NOT in the default menu — Wave 2's UI lane seats the Chats tab
+   *     together with the surface it points at.
+   */
+  {
+    kind: 'chat',
+    label: 'Chat',
+    labelPlural: 'Chats',
+    icon: '❝',
+    iconArt: KIND_ART.chat,
+    slug: 'chats',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '❝', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'CHAT' }, COLLECTIONS_BLOCK],
+    },
+  },
+
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',

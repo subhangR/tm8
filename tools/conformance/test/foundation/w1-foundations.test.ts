@@ -193,9 +193,10 @@ describe('W1.C generated catalog and reachability foundations', () => {
     }
   });
 
-  it('is total over 21 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
-    // 19 -> 20 (2026-08-09): `loop`; 20 -> 21 (2026-08-16): `graph` (Craft P1).
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(21);
+  it('is total over 22 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
+    // 19 -> 20 (2026-08-09): `loop`; 20 -> 21 (2026-08-16): `graph` (Craft P1);
+    // 21 -> 22 (2026-09-03): `chat` (migration 176, Chat as an Entity).
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(22);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',
@@ -390,14 +391,20 @@ describe('W2.C01 current mounted registry inventory', () => {
       // Re-measured 148: the three spaces.workflows handlers join. Read out of
       // the FAILING RUN's Received line, which is the same thing as calling the
       // inventory and the only version of it that cannot be typed from memory.
-      .toBe('9b5404b789f3200fc34e59908b5f436338742b0865cb02b6fa6bd94a26d0eb20');
+      // Re-measured 176 (Chat as an Entity): the COUNT is unchanged — the
+      // handler `chat.threads.start` became `chat.start`, one name in, one out
+      // — and the digest moves because it hashes the sorted NAME list. Read out
+      // of the failing run's Received line, as above.
+      .toBe('d5ef7a0412cf35d922cde545ba45bf63fcd6c688c9efbac44bf1a80f6a40cd04');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
     // 80 -> 84 (2026-08-12, Git UI landing): the four execution.git* command
     // bodies bind.
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
-    // +1 (2026-08-13, merge union): chat.threads.start binds its body.
+    // +1 (2026-08-13, merge union): chat.threads.start binds its body —
+    //     RENAMED to chat.start by 176; the count is unchanged because the
+    //     operation was replaced, not added to.
     // +2 (114): UpdateMemberRoleInput binds spaces.members.updateRole, and
     // ResolveInviteInput binds auth.invite.resolve — the latter claim-free, so
     // strictness is the only control on that body.

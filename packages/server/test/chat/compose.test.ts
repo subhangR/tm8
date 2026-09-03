@@ -13,13 +13,13 @@ import {
 } from '../../src/chat/compose.js';
 import type { ChatLaunchConfigInput } from '../../src/chat/runtime.js';
 
-const ROOT = '019f0000-0000-7000-8000-000000000401';
+const CHAT = '019f0000-0000-7000-8000-000000000401';
 const SPACE = '019f0000-0000-7000-8000-000000000402';
 const TEAMMATE = '019f0000-0000-7000-8000-000000000403';
 
-function launch(mode: ChatMode, rootMessageId = ROOT): ChatLaunchConfigInput {
+function launch(mode: ChatMode, chatId = CHAT): ChatLaunchConfigInput {
   return {
-    rootMessageId,
+    chatId,
     requesterIdentityId: 'identity-a',
     requesterAuthKind: 'browser',
     teammateId: TEAMMATE,
@@ -45,7 +45,7 @@ function fakeDb(): Db {
       id: 'runtime-session',
       expires_at: new Date(Date.now() + 60_000).toISOString(),
       runtime_member_id: 'runtime-member',
-      runtime_thread_root_id: ROOT,
+      runtime_chat_id: CHAT,
     }),
     tx: async () => { throw new Error('not used'); },
     end: async () => undefined,

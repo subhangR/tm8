@@ -85,7 +85,7 @@ describe('thread list churn — the mobile flicker', () => {
     const delta = (seq: number) => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: QUIET_ID,
+        chatId: QUIET_ID,
         messageId,
         seq,
         part: { kind: 'text', text: `token ${seq} ` },
@@ -126,7 +126,7 @@ describe('thread list churn — the mobile flicker', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.done',
-        threadRootId: QUIET_ID,
+        chatId: QUIET_ID,
         messageId,
         usage: { output_tokens: 7 },
       });
@@ -152,7 +152,7 @@ describe('thread list churn — the mobile flicker', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: QUIET_ID,
+        chatId: QUIET_ID,
         messageId,
         seq: 0,
         part: { kind: 'text', text: 'thinking ' },
@@ -163,7 +163,7 @@ describe('thread list churn — the mobile flicker', () => {
       for (let seq = 1; seq < 20; seq += 1) {
         controls.emit({
           type: 'chat.turn.delta',
-          threadRootId: QUIET_ID,
+          chatId: QUIET_ID,
           messageId,
           seq,
           part: { kind: 'text', text: `word${seq} ` },
@@ -184,7 +184,7 @@ describe('thread list churn — the mobile flicker', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.done',
-        threadRootId: QUIET_ID,
+        chatId: QUIET_ID,
         messageId,
         usage: { output_tokens: 4 },
       });

@@ -45,16 +45,17 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 20 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 22 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
     // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20;
-    // then `graph` joined with migration 135 (Craft P1) → 21.
+    // then `graph` joined with migration 135 (Craft P1) → 21;
+    // then `chat` joined with migration 176 (Chat as an Entity) → 22.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(21);
+    expect(CORE_KINDS.length).toBe(22);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -122,6 +123,7 @@ describe('slugs, reserved words and route strategies (WLT §2.1 verbatim)', () =
     // the Entity List Panel. The slug is PLURAL because `channel` is a WLT
     // §2.1 reserved word — see the registry row.
     channel: 'channels',
+    chat: 'chats',
     message: null,
   };
 

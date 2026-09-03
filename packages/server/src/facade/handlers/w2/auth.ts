@@ -191,6 +191,7 @@ function authSessionGet(deps: FacadeDeps): OperationHandler {
           ...(session.runtimeThreadRootId
             ? { runtimeThreadRootId: session.runtimeThreadRootId }
             : {}),
+          ...(session.runtimeChatId ? { runtimeChatId: session.runtimeChatId } : {}),
           label: session.label,
           expiresAt: session.expiresAt,
         },

@@ -27,7 +27,8 @@ export interface ChatHomeSurfaceProps {
   seam: Seam;
   spaceId: SpaceId | string;
   nodeKey: string;
-  anchorId?: EntityId;
+  /** 176: the entity a new chat here is about, written as an `about` edge. */
+  aboutId?: EntityId;
   /** Pass-through to the screen (Craft P1): pins new threads to one mode. */
   pinnedMode?: ChatHomeScreenProps['pinnedMode'];
   bridge?: ChatHomeL2Bridge;
@@ -78,6 +79,9 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
    * the only place that knows whether this is bare Home (the seeded default
    * channel) or a contextual chat on some other entity.
    */
+  // The anchor is OPTIONAL now (176): a new chat has no entity to hang staged
+  // files off, and an anchor-less upload lands in the space library until
+  // `chat.start` attaches it to the opening message.
   const attach = useMemo(
     () => attachmentsPortFromSeam(seam, screen.spaceId).startUpload,
     [seam, screen.spaceId],

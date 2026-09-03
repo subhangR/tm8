@@ -29,7 +29,8 @@ interface Fixture {
 
 let database: W1ScratchDatabase;
 let fixture: Fixture;
-let rootMessageId: string;
+let chatId: string;
+let openingMessageId: string;
 
 async function seed(db: W1ScratchDatabase): Promise<Fixture> {
   const values: Fixture = {
@@ -94,13 +95,14 @@ async function asIdentity<T extends QueryResultRow>(
   });
 }
 
-async function post(body: string, parentMessageId: string | null, fileIds: string[]): Promise<string> {
+/** A turn: anchored ON THE CHAT, flat, carrying whatever files were staged. */
+async function post(body: string, fileIds: string[]): Promise<string> {
   return asIdentity(fixture.identityA, async (client) => {
     const row = (await client.query<{ result: { messageIds: string[] } }>(
       `select public.w2_post_message_batch(
-         $1::uuid[], $2, $3::uuid, '{}'::uuid[], $4::uuid[], null, null, $5
+         $1::uuid[], $2, null, '{}'::uuid[], $3::uuid[], null, null, $4, null, null
        ) result`,
-      [[fixture.anchorId], body, parentMessageId, fileIds, `chat-attach-${randomUUID()}`],
+      [[chatId], body, fileIds, `chat-attach-${randomUUID()}`],
     )).rows[0]!;
     return row.result.messageIds[0]!;
   });
@@ -110,7 +112,7 @@ async function claim(): Promise<Record<string, unknown> | null> {
   const row = await asIdentity(fixture.identityA, async (client) => (
     await client.query<{ result: Record<string, unknown> | null }>(
       `select public.claim_next_chat_turn($1) result`,
-      [rootMessageId],
+      [chatId],
     )
   ).rows[0]!);
   return row.result;
@@ -120,17 +122,18 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('chat_attach');
   database.apply(migrationFiles());
   fixture = await seed(database);
-  rootMessageId = await post('root prompt, no files', null, []);
-  await asIdentity(fixture.identityA, async (client) => (
-    await client.query<{ result: Record<string, unknown> }>(
-      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) result`,
+  chatId = randomUUID();
+  const started = await asIdentity(fixture.identityA, async (client) => (
+    await client.query<{ result: { messageId: string } }>(
+      `select public.start_chat($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) result`,
       [
-        rootMessageId, fixture.teammateId, 'gpt-5.6-sol', 'openai', 'codex', 'ask',
-        randomUUID(), `/tmp/tm8-chat-${rootMessageId}`, `chat-attach-config-${randomUUID()}`,
-        null, 'scratch',
+        chatId, fixture.spaceId, fixture.teammateId, 'gpt-5.6-sol', 'openai', 'codex',
+        'ask', 'scratch', null, randomUUID(), `/tmp/tm8-chat-${chatId}`, null,
+        'root prompt, no files', [], null, `chat-attach-config-${randomUUID()}`,
       ],
     )
   ).rows[0]!);
+  openingMessageId = started.result.messageId;
 }, 240_000);
 
 afterAll(async () => {
@@ -140,11 +143,11 @@ afterAll(async () => {
 describe.sequential('claim_next_chat_turn and message attachments', () => {
   it('answers an empty list for a turn whose message has no files', async () => {
     const claimed = await claim();
-    expect(claimed).toMatchObject({ userMessageId: rootMessageId, attachments: [] });
+    expect(claimed).toMatchObject({ userMessageId: openingMessageId, attachments: [] });
   });
 
   it('carries the file the human attached, with the id the teammate can fetch', async () => {
-    await post('here is the spec', rootMessageId, [fixture.fileA]);
+    await post('here is the spec', [fixture.fileA]);
     const claimed = await claim();
     expect(claimed).toMatchObject({
       attachments: [

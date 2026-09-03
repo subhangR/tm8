@@ -1,6 +1,6 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417",
+  "catalogDigest": "sha256:10f0bc777952cceb5191a18476e2e4423a60246be2f5f9424b248e0be50e99b3",
   "catalog": {
     "total": 172,
     "v1": 170,
@@ -656,9 +656,9 @@
         "source": "server-router"
       },
       {
-        "operation": "chat.threads.start",
+        "operation": "chat.start",
         "method": "POST",
-        "path": "/v2/chat/threads",
+        "path": "/v2/chats",
         "status": "registered",
         "source": "server-router"
       },
@@ -2859,17 +2859,16 @@
         "publicComposite": null
       },
       {
-        "operation": "chat.threads.start",
+        "operation": "chat.start",
         "noun": "chat-thread",
         "exposure": "public",
-        "helpRef": "tm8://help/operation/chat.threads.start",
+        "helpRef": "tm8://help/operation/chat.start",
         "intentTags": [
           "chat",
-          "threads",
           "start"
         ],
-        "inputSchemaRef": "StartChatThreadInputSchema",
-        "resultSchemaRef": "StartChatThreadResultSchema",
+        "inputSchemaRef": "StartChatInputSchema",
+        "resultSchemaRef": "StartChatResultSchema",
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
@@ -5378,6 +5377,39 @@
         },
         "migration": {
           "strategy": "graph-detail"
+        }
+      },
+      "chat": {
+        "kind": "chat",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "chats"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "chat-detail"
         }
       }
     },

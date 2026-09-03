@@ -968,17 +968,18 @@ const ROWS: Record<OperationName, Row> = {
       'thread history survives — replies, ordering, and cursors are unaffected',
     ],
   },
-  'chat.threads.start': {
+  'chat.start': {
     cmd: null,
-    sum: 'Configure an already-posted human root as a write-once TM8 Chat thread',
-    authz: 'entity',
+    sum: 'Create a chat entity with a teammate and post its opening turn',
+    authz: 'space',
     input: 'bound',
     reason: 'browser_chat_composer_only',
-    tags: ['chat', 'thread', 'agent', 'teammate', 'model'],
+    tags: ['chat', 'agent', 'teammate', 'model'],
     notes: [
-      'post the human-authored root first with message send; this operation creates no message',
-      'configuration is write-once and this call is the sole trigger for turn one',
-      'workdirMode picks where the thread works: `project` (requires projectId, and the server resolves the path from the project itself) or `scratch` (a server-owned empty directory). Like every other part of the configuration it is pinned for the thread\'s life',
+      'creates the chat AND its first message in one transaction; there is no separate root to post first',
+      'a chat is the anchor of its own transcript: every later turn is `message send --to <chatId>`, from a human, a work session, or another chat',
+      'workdirMode picks where the chat works: `project` (requires projectId, and the server resolves the path from the project itself) or `scratch` (a server-owned empty directory). Like every other part of the configuration it is pinned for the chat\'s life',
+      'aboutId records what the chat is about as an `about` edge — the Craft blueprint, the task, the pull request it was opened from',
       'v1 exposes this through the browser composer; exact-operation help remains available to CLI users',
     ],
   },
@@ -2137,7 +2138,10 @@ export const CATALOG_DIGEST =
   // hand-derived.
   // Re-measured 148 (+ the three spaces.workflows rows) — read from the
   // regenerated conformance manifest, never hand-derived.
-  'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417';
+  // Re-measured 176 (Chat as an Entity): `chat.threads.start` became
+  // `chat.start`, one row in and one out, so the catalog COUNT is unchanged and
+  // only the digest moves — read from the regenerated conformance manifest.
+  'sha256:10f0bc777952cceb5191a18476e2e4423a60246be2f5f9424b248e0be50e99b3';
 
 export const GRAMMAR_VERSION = '2';
 

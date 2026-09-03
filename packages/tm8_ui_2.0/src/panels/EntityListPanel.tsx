@@ -1416,7 +1416,12 @@ function KindSelector({
       initialFocus.current === 'first'
         ? items[0]
         : initialFocus.current === 'last'
-          ? items.at(-1)
+          // `items.at(-1)` under `lib: ES2021` (Array.prototype.at is ES2022).
+          // UNRELATED TO 176 and inherited from main at 388f90c4 — measured by
+          // typechecking main's own tm8_ui_2.0 source in this tree. Cleared
+          // here because it fails the gate's typecheck stage for every PR, and
+          // an index is what `.at(-1)` compiles to anyway.
+          ? items[items.length - 1]
           : items.find((item) => item.getAttribute('aria-current') === 'page') ?? items[0];
     target?.focus();
   }, [config.kind, menuItems, open]);

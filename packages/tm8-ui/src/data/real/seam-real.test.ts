@@ -458,10 +458,12 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // `spaces.taskWorkflows.upsert|delete` (migration 132). The READ has no
       // verb for the same reason as axes: workflows ride `spaceSettings()`.
       'upsertTaskWorkflow', 'deleteTaskWorkflow',
-      // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
-      // write half of the chat-home bridge. Sorts between spawn and
-      // startTerminal.
-      'startChatThread',
+      // 176: `chat.start` — the write half of the chat-home bridge, and now the
+      // ONLY door a chat is born from. It replaces `startChatThread`, which
+      // configured an already-posted root message; this one creates the chat
+      // entity and posts its opening turn together. Sorts between spawn and
+      // startTerminal, exactly where its predecessor did.
+      'startChat',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
       // belongs and is a coincidence worth not relying on.

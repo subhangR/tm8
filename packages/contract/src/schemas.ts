@@ -35,7 +35,7 @@ import type {
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
   AuthSessionGetResult, AuthSessionView, AuthSignupInput,
-  AuthSignupResult, ChannelTab, ChatThreadSummary, ChatTurnFrame, ChatTurnUsage,
+  AuthSignupResult, ChannelTab, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
@@ -66,11 +66,12 @@ import type {
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
   Mention, MessageBatchResult, MessageDeliveryDisposition,
   MessageDeliveryQuery, MessageDeliveryRecord,
-  MessageDeliveryView, MessagePart, MessageView, MoveEntityInput, NavChannelNode,
+  MessageChatTurnRecord, MessageDeliveryView, MessagePart, MessageView, MoveEntityInput,
+  NavChannelNode,
   NotificationItem, Page, PaletteAction, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
-  PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatThreadInput,
-  StartChatThreadResult,
+  PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatInput,
+  StartChatResult,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   CommitSessionAttribution,
   ProjectBlameHunk, ProjectBranch, ProjectBranchTopology,
@@ -137,6 +138,9 @@ export const CoreEntityKindSchema = z.enum([
   // Craft P1 (2026-08-16): the graph/blueprint kind — one row holding
   // vertices AND edges, content-discriminated by graphType (R1/R3).
   'graph',
+  // Chat as an Entity (2026-09-03, migration 176). Not in
+  // `CreatableEntityKind`: `chat.start` is its only door.
+  'chat',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -457,6 +461,24 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     graphType: z.string().min(1),
     nodeCount: z.number().int().nonnegative(),
     edgeCount: z.number().int().nonnegative(),
+  }).strict(),
+  // 176 — the chat row's facts. `runtimeState` is the durable claim about the
+  // headless child; `turnState` is the queue. They are independent: a chat can
+  // be 'stopped' with a turn 'queued', which is what "the node restarted, your
+  // message is still coming" looks like.
+  z.object({
+    kind: z.literal('chat'),
+    teammateId: EntityIdSchema,
+    model: z.string().min(1),
+    provider: z.string().min(1),
+    agentTool: z.string().min(1),
+    mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
+    workdirMode: z.enum(['project', 'scratch']),
+    projectId: EntityIdSchema.nullable(),
+    runtimeState: z.enum(['cold', 'live', 'stopped']),
+    turnState: z.enum(['idle', 'queued', 'running']),
+    turnCount: z.number().int().nonnegative(),
+    lastTurnAt: IsoTimestamp.nullable(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),
@@ -785,6 +807,9 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()),
     source: z.string().nullable(),
   }).passthrough(),
+  // A chat has no content beyond its summary (R5): the working directory and
+  // the native session id are the two facts that stay server-side.
+  z.object({ kind: z.literal('chat') }).strict(),
   z.object({
     kind: z.literal('artifact'),
     description: z.string().nullable(),
@@ -1038,28 +1063,18 @@ export const MessagePartSchema: z.ZodType<MessagePart> = z.discriminatedUnion('k
   }).strict(),
 ]);
 
-export const ChatThreadSummarySchema: z.ZodType<ChatThreadSummary> = z.object({
-  rootMessageId: EntityIdSchema,
-  anchorId: EntityIdSchema,
+export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
+  spaceId: SpaceIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
-  createdAt: IsoTimestamp,
-  lastReplyAt: IsoTimestamp.nullable(),
-  projectId: EntityIdSchema.nullable(),
   workdirMode: z.enum(['project', 'scratch']),
-  title: z.string().nullable().optional(),
-  replyCount: z.number().int().nonnegative().optional(),
-}).strict();
-
-export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.object({
-  rootMessageId: EntityIdSchema,
-  teammateId: EntityIdSchema,
-  model: z.string().min(1),
-  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
-  clientMutationId: z.string().min(1),
   projectId: EntityIdSchema.nullable().optional(),
-  workdirMode: z.enum(['project', 'scratch']),
+  title: z.string().max(240).nullable().optional(),
+  body: z.string().min(1).max(10000),
+  attachmentIds: z.array(EntityIdSchema).max(16).optional(),
+  aboutId: EntityIdSchema.nullable().optional(),
+  clientMutationId: z.string().min(1),
 })
   .strict()
   // The pairing is refused HERE as well as in SQL, because a mismatch that only
@@ -1070,23 +1085,24 @@ export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.obj
       ? typeof input.projectId === 'string'
       : input.projectId === undefined || input.projectId === null),
     { message: 'projectId is required for workdirMode "project" and refused for "scratch"' },
-  ) as z.ZodType<StartChatThreadInput>;
+  ) as z.ZodType<StartChatInput>;
 
-export const StartChatThreadResultSchema: z.ZodType<StartChatThreadResult> = z.object({
-  thread: ChatThreadSummarySchema,
-}).strict();
+export const StartChatResultSchema: z.ZodType<StartChatResult> = z.lazy(() => z.object({
+  chat: EntitySummarySchema,
+  messageId: EntityIdSchema,
+}).strict()) as z.ZodType<StartChatResult>;
 
 export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('chat.turn.delta'),
-    threadRootId: EntityIdSchema,
+    chatId: EntityIdSchema,
     messageId: EntityIdSchema,
     seq: z.number().int().nonnegative(),
     part: MessagePartSchema,
   }).strict(),
   z.object({
     type: z.literal('chat.turn.done'),
-    threadRootId: EntityIdSchema,
+    chatId: EntityIdSchema,
     messageId: EntityIdSchema,
     usage: ChatTurnUsageSchema.nullable(),
   }).strict(),
@@ -1524,6 +1540,7 @@ export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   actingAsTeamMemberId: z.string().uuid().nullable(),
   runtimeMemberId: z.string().uuid().nullable().optional(),
   runtimeThreadRootId: z.string().uuid().nullable().optional(),
+  runtimeChatId: z.string().uuid().nullable().optional(),
   label: z.string().nullable(),
   createdAt: IsoTimestamp.optional(),
   expiresAt: IsoTimestamp,
@@ -1815,7 +1832,7 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
 
 /** The runtime half of `CreatableEntityKind` — the one place the set is stated. */
 export const CreatableEntityKindSchema = z.union([
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat']),
   CustomEntityKindSchema,
 ]);
 
@@ -3021,9 +3038,18 @@ export const MessageDeliveryRecordSchema: z.ZodType<MessageDeliveryRecord> = z.o
   updatedAt: IsoTimestamp,
 }).strict();
 
+export const MessageChatTurnRecordSchema: z.ZodType<MessageChatTurnRecord> = z.object({
+  chatId: EntityIdSchema,
+  turnId: z.string().min(1),
+  state: z.enum(['queued', 'running', 'completed', 'error']),
+}).strict();
+
 export const MessageDeliveryViewSchema: z.ZodType<MessageDeliveryView> = z.lazy(() => z.object({
   message: MessageViewSchema,
   deliveries: z.array(MessageDeliveryRecordSchema),
+  // 176: optional under the rolling-node rule — an older node omits the key and
+  // that means "cannot tell you", never "this message woke no chat".
+  chatTurns: z.array(MessageChatTurnRecordSchema).optional(),
 }).strict());
 
 export const HandoffDeliveryStatusSchema = z.enum(['prepared', 'dispatching', 'delivered', 'refused', 'unknown']);
@@ -3456,7 +3482,6 @@ export const HomeSnapshotSchema: z.ZodType<HomeSnapshot> = z.lazy(() => z.object
   inFlight: CollectionResultSchema,
   needsMe: CollectionResultSchema,
   activity: pageOf(ActivityItemSchema),
-  chatThreads: z.array(ChatThreadSummarySchema).optional(),
 }).strict());
 
 export const TaskAxisSchema: z.ZodType<TaskAxis> = z.object({

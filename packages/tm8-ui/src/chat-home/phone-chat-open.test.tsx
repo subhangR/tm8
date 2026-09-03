@@ -407,7 +407,7 @@ describe('the transcript follows the bottom without becoming a scroll source', (
            has not wrapped yet, which is most of a stream. */
         controls.emit({
           type: 'chat.turn.delta',
-          threadRootId: FIRST_ROOT,
+          chatId: FIRST_ROOT,
           messageId: CHAT_HOME_FIXTURE_THREAD.turns[1]!.messageId,
           seq,
           text: ` tok${seq}`,
@@ -430,7 +430,7 @@ describe('the transcript follows the bottom without becoming a scroll source', (
     await act(async () => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: FIRST_ROOT,
+        chatId: FIRST_ROOT,
         messageId: CHAT_HOME_FIXTURE_THREAD.turns[1]!.messageId,
         seq: 920,
         text: ' one more sentence that lengthens the transcript.',
@@ -466,7 +466,7 @@ describe('the transcript follows the bottom without becoming a scroll source', (
     await act(async () => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: FIRST_ROOT,
+        chatId: FIRST_ROOT,
         messageId: CHAT_HOME_FIXTURE_THREAD.turns[1]!.messageId,
         seq: 930,
         text: ' arriving underneath them.',
@@ -483,7 +483,7 @@ describe('the transcript follows the bottom without becoming a scroll source', (
     await act(async () => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: FIRST_ROOT,
+        chatId: FIRST_ROOT,
         messageId: CHAT_HOME_FIXTURE_THREAD.turns[1]!.messageId,
         seq: 931,
         text: ' and one more.',

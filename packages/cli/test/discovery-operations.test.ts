@@ -191,9 +191,11 @@ describe('the CLI command projection', () => {
     // oblige four command implementations in the same change.
     expect(commandless.sort()).toEqual([
       'bridge.fetchBlob',
-      // chat.threads.start is browser-composer-only by design (D1/D2): a chat
-      // turn is a UI conversation, and the CLI already has message send.
-      'chat.threads.start',
+      // chat.start is browser-composer-only by design (D1/D2): a chat turn is a
+      // UI conversation, and the CLI already has message send — which since 176
+      // reaches a chat directly, because a chat is the anchor of its own
+      // transcript. Wave 2's CLI lane adds the `chat` noun.
+      'chat.start',
       'credentials.delete',
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',

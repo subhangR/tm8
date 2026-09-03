@@ -152,7 +152,15 @@ export function filesPortFromSeam(seam: Seam, spaceId: SpaceId): FilesPort {
 export interface AttachmentsPort {
   /** Seam Amendment 3. Never null in this port: the seam always answers. */
   downloadHref(fileEntityId: string): string;
-  startUpload(file: File, anchorId: EntityId): FileUploadTask;
+  /**
+   * `anchorId` is OPTIONAL (176), matching `FileUploadTaskOptions.anchorId`,
+   * which has been optional since the files-explorer lane: an anchor-less
+   * upload lands in the space library attached to nothing. A chat composer
+   * staging files for a chat that does not exist yet is the caller that needs
+   * it — the file's `attached_to` edge is written when `chat.start` carries
+   * its id in `attachmentIds`.
+   */
+  startUpload(file: File, anchorId?: EntityId): FileUploadTask;
   /**
    * Seam Amendment 5. Deletes the `attached_to` EDGE, never the file: the same
    * bytes may hang off three other entities, and "remove from this task" must
@@ -195,7 +203,7 @@ export function attachmentsPortFromSeam(seam: Seam, spaceId: SpaceId | string): 
   return {
     downloadHref: (fileEntityId) => seam.files.downloadHref(fileEntityId as EntityId),
     startUpload: (file, anchorId) =>
-      createFileUploadTask({ files: seam.files, file, spaceId, anchorId }),
+      createFileUploadTask({ files: seam.files, file, spaceId, ...(anchorId ? { anchorId } : {}) }),
     /**
      * The mutation id is minted HERE because the server requires one and the
      * strip has no journal to reconcile against — the same choice the row

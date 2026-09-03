@@ -123,7 +123,7 @@ describe('socket: inbound frame discrimination', () => {
     const { ws, h } = connected();
     const frame = {
       type: 'chat.turn.delta',
-      threadRootId: 'root-1',
+      chatId: 'root-1',
       messageId: 'message-1',
       seq: 4,
       part: { kind: 'text', text: 'durable delta' },
@@ -179,7 +179,7 @@ describe('socket: parseFrame in isolation', () => {
     expect(parseFrame({ type: 'presence.changed' }).kind).toBe('presence');
     expect(parseFrame({
       type: 'chat.turn.done',
-      threadRootId: 'r',
+      chatId: 'r',
       messageId: 'm',
       usage: {},
     }).kind).toBe('chat-turn');

@@ -66,14 +66,14 @@ export function turnPartFromMessagePart(part: MessagePart): ChatTurnPart {
 export type WireChatTurnFrame =
   | {
       type: 'chat.turn.delta';
-      threadRootId: string;
+      chatId: string;
       messageId: string;
       seq: number;
       part: MessagePart;
     }
   | {
       type: 'chat.turn.done';
-      threadRootId: string;
+      chatId: string;
       messageId: string;
       usage: ChatTurnUsage | null;
     };
@@ -82,7 +82,7 @@ export function chatTurnFrameFromWire(frame: WireChatTurnFrame): ChatTurnFrame {
   if (frame.type === 'chat.turn.delta') {
     return {
       type: 'chat.turn.delta',
-      threadRootId: frame.threadRootId,
+      chatId: frame.chatId,
       messageId: frame.messageId,
       seq: frame.seq,
       part: turnItemFromMessagePart(frame.part),
@@ -90,7 +90,7 @@ export function chatTurnFrameFromWire(frame: WireChatTurnFrame): ChatTurnFrame {
   }
   return {
     type: 'chat.turn.done',
-    threadRootId: frame.threadRootId,
+    chatId: frame.chatId,
     messageId: frame.messageId,
     usage: chatUsageFromWire(frame.usage),
   };

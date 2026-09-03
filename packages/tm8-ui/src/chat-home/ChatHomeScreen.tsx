@@ -63,8 +63,19 @@ import './chat-home.css';
 export interface ChatHomeScreenProps {
   port: ChatHomePort;
   spaceId: SpaceId | string;
-  /** Bare Home defaults to the space entity. A contextual host passes its entity instead. */
-  anchorId?: EntityId;
+  /**
+   * The entity a NEW chat here is about (176). Craft passes the blueprint; bare
+   * Home passes none.
+   *
+   * IT IS NOT AN ANCHOR ANY MORE, which is why it is not called one. A chat
+   * used to have to be posted onto somebody else's row — the seeded default
+   * channel for bare Home (GateApp substituted it because the space id is not
+   * an entity and messages.post 404s on it), the blueprint for Craft. A chat
+   * anchors its own transcript now, so the context entity is a RELATION the
+   * server writes as an `about` edge, and a chat with no subject simply has
+   * no edge instead of borrowing a channel's identity.
+   */
+  aboutId?: EntityId;
   /**
    * A host that IS a mode (Craft P1: the Craft studio pins 'craft') — new
    * threads start in it and the mode select is held, exactly as a configured
@@ -87,22 +98,22 @@ export interface ChatHomeScreenProps {
   /** Same authenticated file-byte seam used by the Files screen. */
   assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
   /**
-   * Starts one upload against the anchor this chat writes to.
+   * Starts one upload for a staged chip.
    *
-   * TAKES THE ANCHOR RATHER THAN BEING BOUND TO IT — same signature as
-   * `AttachmentsPort.startUpload`, so a host assigns that verb with no
-   * adapter. The screen resolves its own anchor (bare Home falls back to the
-   * seeded default channel), and binding the port outside would mean the
-   * default lived in two places, free to disagree.
-   *
-   * UPLOADS START IMMEDIATELY, against the ANCHOR, not against the thread: a
-   * new conversation has no root message until Send, and holding a pasted
-   * file until then would mean the writer watches nothing happen. The anchor
-   * exists before the first word is typed.
+   * THE ANCHOR IS OPTIONAL, AND FOR A NEW CHAT THERE IS NONE (176). Uploads
+   * start immediately — a writer who pastes an image must not watch nothing
+   * happen until Send — and a new conversation has no entity to hang them off
+   * yet. `FileUploadTaskOptions.anchorId` has been optional since the
+   * files-explorer lane: an anchor-less upload lands in the space library
+   * attached to nothing, and `chat.start` then carries its id in
+   * `attachmentIds`, which is what writes the `attached_to` edge to the
+   * opening message. That is strictly more honest than the old behaviour,
+   * which attached every staged file to the seeded default channel because
+   * the chat had no id of its own to offer.
    *
    * Absent ⇒ paste and drop stay inert and the attach control says why.
    */
-  attach?: (file: File, anchorId: EntityId) => FileUploadTask;
+  attach?: (file: File, anchorId?: EntityId) => FileUploadTask;
   /**
    * Skills `/` can REFERENCE (R1 — the agent reads the link and decides;
    * nothing is invoked). `undefined` ⇒ `/` types plain text.
@@ -293,7 +304,7 @@ type ComposerPhase =
 export function ChatHomeScreen({
   port,
   spaceId,
-  anchorId = spaceId as EntityId,
+  aboutId,
   pinnedMode,
   models,
   newMutationId = defaultMutationId,
@@ -652,7 +663,7 @@ export function ChatHomeScreen({
     async (rootId: EntityId): Promise<ChatThreadDetail> => {
       let next = await port.readThread(rootId);
       for (const frame of recentFramesRef.current) {
-        if (frame.threadRootId !== rootId) continue;
+        if (frame.chatId !== rootId) continue;
         next = mergeChatTurnFrame(next, frame);
       }
       return next;
@@ -773,7 +784,7 @@ export function ChatHomeScreen({
   useEffect(
     () =>
       port.subscribe((frame) => {
-        if (frame.threadRootId === activeRootRef.current) {
+        if (frame.chatId === activeRootRef.current) {
           if (frame.type === 'chat.turn.done') {
             // The turn's parts are all durable in the snapshot by now — its
             // deltas are pure replay weight. Keep the small done frame so a
@@ -800,7 +811,7 @@ export function ChatHomeScreen({
         // Any thread's activity keeps the sidebar honest, active or not — and
         // a frame for a root the list has never seen means another member
         // started a thread: re-read the list.
-        if (!knownRootsRef.current.has(frame.threadRootId) && !refreshingThreadsRef.current) {
+        if (!knownRootsRef.current.has(frame.chatId) && !refreshingThreadsRef.current) {
           refreshingThreadsRef.current = true;
           void refreshThreads().finally(() => {
             refreshingThreadsRef.current = false;
@@ -836,7 +847,7 @@ export function ChatHomeScreen({
          * and otherwise left to the next `listThreads` read.
          */
         setThreads((current) => {
-          const index = current.findIndex((thread) => thread.rootId === frame.threadRootId);
+          const index = current.findIndex((thread) => thread.rootId === frame.chatId);
           if (index === -1) return current;
           const thread = current[index];
           if (!thread) return current;
@@ -853,7 +864,7 @@ export function ChatHomeScreen({
           next[index] = { ...thread, state: 'idle', updatedAt: new Date().toISOString() };
           return next;
         });
-        if (frame.threadRootId !== activeRootRef.current) return;
+        if (frame.chatId !== activeRootRef.current) return;
         // A delta for a message we have never seen means another participant
         // started this turn — pull their message in alongside the stream.
         if (
@@ -861,9 +872,9 @@ export function ChatHomeScreen({
           detailRef.current &&
           !detailRef.current.turns.some((turn) => turn.messageId === frame.messageId)
         ) {
-          refreshDetail(frame.threadRootId);
+          refreshDetail(frame.chatId);
         }
-        const stopped = frame.threadRootId === stoppedRootRef.current;
+        const stopped = frame.chatId === stoppedRootRef.current;
         setDetail((current) => {
           if (!current) return current;
           const merged = mergeChatTurnFrame(current, frame);
@@ -878,7 +889,7 @@ export function ChatHomeScreen({
           // expectation — another participant's older turn finishing must not
           // hide the pulse for our still-queued one.
           const startedAt = firstSeenRef.current.get(frame.messageId) ?? 0;
-          if (expectingRootRef.current === frame.threadRootId && startedAt < expectingMarkRef.current) {
+          if (expectingRootRef.current === frame.chatId && startedAt < expectingMarkRef.current) {
             return;
           }
           expectingRootRef.current = null;
@@ -1094,7 +1105,12 @@ export function ChatHomeScreen({
       onSelect: (option) => ({ insert: skillReference(option.display, option.id) }),
     }],
     attachments: {
-      start: attach ? (file: File) => attach(file, anchorId) : undefined,
+      // An open chat is the anchor for its own staged files; a new one has
+      // nothing to name yet and the file lands in the space library until
+      // `chat.start` attaches it.
+      start: attach
+        ? (file: File) => (selectedRootId ? attach(file, selectedRootId) : attach(file))
+        : undefined,
       placement: { mode: 'chip' },
     },
     onKeyDown: (event) => {
@@ -1260,7 +1276,7 @@ export function ChatHomeScreen({
           (detailRef.current?.turns ?? []).map((turn) => turn.messageId),
         );
         await port.postTurn({
-          threadRootId: selectedRootId,
+          chatId: selectedRootId,
           body,
           clientMutationId: newMutationId('chat-turn'),
           ...(attachmentIds.length ? { attachmentIds } : {}),
@@ -1288,42 +1304,45 @@ export function ChatHomeScreen({
         return;
       }
 
+      // ONE CALL NOW (176). This was post-then-configure: a message, then a
+      // binding row keyed to it. `chat.start` creates the chat and posts its
+      // opening turn in one transaction, so the intermediate `configuring`
+      // phase — and the window it named, in which a message existed that was
+      // not yet a chat — has nothing left to describe.
       setPhase('posting-root');
-      const root = await port.startThread.createRoot({
+      const created = await port.startThread.create({
         spaceId,
-        anchorId,
+        // `aboutId` replaces the anchor. Bare Home passes none; a contextual
+        // host (Craft) passes the entity the chat is about, and the server
+        // writes it as an `about` edge instead of anchoring the transcript on
+        // somebody else's row.
+        ...(aboutId ? { aboutId } : {}),
         body,
-        clientMutationId: newMutationId('chat-root'),
-        ...(attachmentIds.length ? { attachmentIds } : {}),
-      });
-      setPhase('configuring');
-      const configured = await port.startThread.configure({
-        rootMessageId: root.threadRootId,
         teammateId,
         model: selectedModel.model,
         mode: chatMode,
-        clientMutationId: newMutationId('chat-config'),
+        clientMutationId: newMutationId('chat-start'),
+        ...(attachmentIds.length ? { attachmentIds } : {}),
       });
       if (
-        configured.threadRootId !== root.threadRootId ||
-        configured.teammateId !== teammateId ||
-        configured.model !== selectedModel.model ||
-        configured.mode !== chatMode
+        created.teammateId !== teammateId ||
+        created.model !== selectedModel.model ||
+        created.mode !== chatMode
       ) {
-        throw new Error('The node returned a different thread configuration than the one selected.');
+        throw new Error('The node returned a different chat configuration than the one selected.');
       }
       setDraft((current) => (current.trim() === body ? '' : current));
       staged.clear();
-      // The select effect owns loading the new thread — a second concurrent
-      // read here would race it for setDetail/setPhase. `expecting` keeps the
-      // pulse honest until the first frame arrives.
-      expectingRootRef.current = root.threadRootId;
+      // The select effect owns loading the new chat — a second concurrent read
+      // here would race it for setDetail/setPhase. `expecting` keeps the pulse
+      // honest until the first frame arrives.
+      expectingRootRef.current = created.chatId;
       expectingMarkRef.current = frameSeqRef.current;
       preTurnIdsRef.current = new Set();
-      chooseRoot(root.threadRootId);
-      onThreadSelected?.(root.threadRootId);
+      chooseRoot(created.chatId);
+      onThreadSelected?.(created.chatId);
       setPhase('streaming');
-      await refreshThreads(root.threadRootId);
+      await refreshThreads(created.chatId);
     } catch (error) {
       // Never let a failed send in one thread rewrite another's phase or show
       // its error under an unrelated conversation.
@@ -1338,7 +1357,7 @@ export function ChatHomeScreen({
       }
     }
   }, [
-    anchorId,
+    aboutId,
     busy,
     chatMode,
     chooseRoot,

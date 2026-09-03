@@ -198,8 +198,8 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
-  StartChatThreadInput,
-  StartChatThreadResult,
+  StartChatInput,
+  StartChatResult,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -807,11 +807,11 @@ export interface Seam {
     ): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
     /**
-     * Amendment 10 (with `home` above): the contract's `chat.threads.start`
-     * — the write half of the chat-home bridge. Input is an ALREADY-POSTED
-     * root message id; the op never creates messages and triggers turn 1.
+     * `chat.start` (176) — the write half of the chat-home bridge, and now the
+     * ONLY door a chat is born from. It creates the chat entity and posts its
+     * opening turn in one transaction; there is no root message to post first.
      */
-    startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult>;
+    startChat(input: StartChatInput): Promise<StartChatResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;

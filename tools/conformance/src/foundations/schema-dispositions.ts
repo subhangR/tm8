@@ -51,8 +51,8 @@ import {
   SetTeammateProfileDefaultInputSchema,
   SpaceProfileDefaultViewSchema,
   SpaceSettingsViewSchema,
-  StartChatThreadInputSchema,
-  StartChatThreadResultSchema,
+  StartChatInputSchema,
+  StartChatResultSchema,
   TeammateProfileDefaultViewSchema,
   UpdateInteractionProfileDraftInputSchema,
   UpdateMenuInputSchema,
@@ -125,8 +125,8 @@ export const SCHEMA_REGISTRY = {
   SetTeammateProfileDefaultInputSchema,
   SpaceProfileDefaultViewSchema,
   SpaceSettingsViewSchema,
-  StartChatThreadInputSchema,
-  StartChatThreadResultSchema,
+  StartChatInputSchema,
+  StartChatResultSchema,
   TeammateProfileDefaultViewSchema,
   UpdateInteractionProfileDraftInputSchema,
   UpdateMenuInputSchema,
@@ -178,7 +178,7 @@ export const ADDITIVE_SCHEMA_DISPOSITIONS = {
  */
 export const POST_DOSSIER_SCHEMA_DISPOSITIONS = {
   'execution.dispatch': { requestSchema: 'ExecutionDispatchInputSchema', resultSchema: 'ExecutionDispatchResultSchema' },
-  'chat.threads.start': { requestSchema: 'StartChatThreadInputSchema', resultSchema: 'StartChatThreadResultSchema' },
+  'chat.start': { requestSchema: 'StartChatInputSchema', resultSchema: 'StartChatResultSchema' },
 } as const satisfies Readonly<Partial<Record<OperationName, OperationSchemaDisposition>>>;
 
 export const FROZEN_SCHEMA_DISPOSITIONS = {
