@@ -64,6 +64,14 @@ export interface CraftScreenProps {
   onNotice?: (text: string) => void;
 }
 
+/** One frozen empty set, so "no selection" never mints a new identity. */
+const EMPTY_ABOUT: ReadonlySet<EntityId> = new Set();
+
+/** Set equality by membership — the only question `aboutSelected` is asked. */
+function sameIds(current: ReadonlySet<EntityId>, next: readonly EntityId[]): boolean {
+  return current.size === next.length && next.every((id) => current.has(id));
+}
+
 let craftSeq = 0;
 const cmid = (tag: string) => `craft:${tag}:${Date.now()}:${(craftSeq += 1)}`;
 
@@ -222,24 +230,36 @@ export function CraftScreen({
    * all of them at once, and only Craft — the only surface that scopes by
    * subject — pays for it.
    *
-   * RE-RUN ON `threads`, deliberately: a send that creates a craft chat writes
-   * a new `about` edge, and the list publish is the signal that it happened.
-   * `null` while unread is not "no chats" — the effect below waits for
-   * `threads` for the same reason, so an empty set before the read lands
-   * simply means the resolution has not happened yet.
+   * RE-RUN WHEN THE THREAD LIST'S MEMBERSHIP CHANGES, deliberately: a send
+   * that creates a craft chat writes a new `about` edge, and the list publish
+   * is the signal that it happened. Keyed on the ROOT IDS rather than on the
+   * `threads` array, because that array's identity changes on every publish
+   * including ones that changed nothing.
+   *
+   * AND IT SETTLES RATHER THAN RE-SETTING. An unconditional `setAboutSelected`
+   * re-renders this screen on every publish, and the canvas's freshness diff
+   * (below) is render-order sensitive: measured, the extra render made
+   * `craft-screen.test.tsx > renders the ROW on the canvas` fail about one run
+   * in three — a real nondeterminism this screen did not have before, not a
+   * pre-existing flake. Writing only on a genuine change removes it.
+   *
+   * An empty set before the read lands is not "no chats"; the effect below
+   * waits for `threads` for the same reason.
    */
-  const [aboutSelected, setAboutSelected] = useState<ReadonlySet<EntityId>>(new Set());
+  const [aboutSelected, setAboutSelected] = useState<ReadonlySet<EntityId>>(EMPTY_ABOUT);
+  const threadKey = threads.map((thread) => thread.rootId).join(',');
   useEffect(() => {
     if (!selectedId) {
-      setAboutSelected(new Set());
+      setAboutSelected((current) => (current.size === 0 ? current : EMPTY_ABOUT));
       return;
     }
     let live = true;
     void port.chatIdsAbout(selectedId).then((ids) => {
-      if (live) setAboutSelected(new Set(ids));
+      if (!live) return;
+      setAboutSelected((current) => (sameIds(current, ids) ? current : new Set(ids)));
     });
     return () => { live = false; };
-  }, [port, selectedId, threads]);
+  }, [port, selectedId, threadKey]);
 
   const resolvedForRef = useRef<EntityId | null>(null);
   useEffect(() => {
