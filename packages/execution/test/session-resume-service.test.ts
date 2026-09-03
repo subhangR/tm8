@@ -178,7 +178,31 @@ describe('SpawnService.resume — guards and orchestration', () => {
 
     const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
 
-    expect(result.manifest.coordinator).toEqual({ sessionId: coordinatorSessionId });
+    expect(result.manifest.coordinator).toEqual({
+      sessionId: coordinatorSessionId,
+      kind: 'work_session',
+    });
+  });
+
+  it('restores a CHAT coordinator as a chat, not as a session (176)', async () => {
+    // Resume re-reads the parent's kind rather than trusting the recorded
+    // manifest: a worker that comes back must be told the same thing about its
+    // return address as it was told at launch, and a chat that has since been
+    // deleted should stop being described as one.
+    const chatId = '66666666-6666-4666-8666-666666666666';
+    graph.resumeInfo = {
+      ...RESUME_INFO,
+      mode: 'coordinated-worker',
+      parentSessionId: chatId,
+    };
+    graph.resumeReplayed = true;
+
+    graph.parentKind = 'chat';
+
+    const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+
+    expect(result.manifest.coordinator).toEqual({ sessionId: chatId, kind: 'chat' });
+    expect(graph.spawnContextInputs.at(-1)?.parentSessionId).toBe(chatId);
   });
 
   it('does not boot a second child on a ledger replay', async () => {

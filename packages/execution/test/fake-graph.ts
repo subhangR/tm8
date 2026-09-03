@@ -64,10 +64,18 @@ export class FakeGraph implements GraphPort {
   /** Return this existing session from the next create attempt as a ledger replay. */
   replaySessionId: string | null = null;
 
-  constructor(private readonly options: FakeGraphOptions) {}
+  constructor(private readonly options: FakeGraphOptions) {
+    this.parentKind = options.parentKind ?? null;
+  }
 
   /** Every `LoadSpawnContextInput` this fake was handed, in order. */
   readonly spawnContextInputs: LoadSpawnContextInput[] = [];
+
+  /**
+   * What the graph would say `parentSessionId` IS (176). Mutable so a test can
+   * change the parent between constructing the fake and driving a resume.
+   */
+  parentKind: SpawnContext['parentKind'] = null;
 
   async loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext> {
     this.authSeen.push(auth);
@@ -75,9 +83,9 @@ export class FakeGraph implements GraphPort {
     return {
       spaceId: input.spaceId,
       // 176: the real loader reads the parent's kind from the graph. The fake
-      // answers from a fixture option so a chat-parented spawn can be composed
-      // without a database.
-      parentKind: this.options.parentKind ?? null,
+      // answers from a field so a chat-parented spawn can be composed without a
+      // database, and a resume can change it mid-test.
+      parentKind: this.parentKind,
       project:
         this.options.withProject === false
           ? null

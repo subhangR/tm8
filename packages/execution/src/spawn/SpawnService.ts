@@ -1432,6 +1432,12 @@ export class SpawnService {
       teamMemberId: info.teamMemberId,
       projectId: info.projectId,
       taskIds: info.taskIds,
+      // The stored parent, resolved the same way spawn resolves it. A resumed
+      // worker must be told the same thing about its return address as it was
+      // told at launch — and the kind is re-READ rather than taken from the
+      // recorded manifest, because a chat that has since been deleted should
+      // stop being described as one.
+      parentSessionId: info.parentSessionId,
     });
 
     // The posture is the one launch fact `work_sessions` does NOT carry (the
