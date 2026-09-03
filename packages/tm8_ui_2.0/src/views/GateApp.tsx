@@ -36,7 +36,7 @@ import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../rou
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
-import { UiVersionSwitch } from '../ui-version';
+import { UiVersionReturn } from '../ui-version';
 import { useShellKind } from '../mobile';
 import { MobileShell } from './MobileShell';
 import { isUnbuiltViewRef } from './view-ref-screens';
@@ -1875,13 +1875,13 @@ export function GateApp(props: GateAppProps = {}) {
                       />
                     ) : null}
 
-                    {/* THE UI VERSION SWITCH — the door to the frozen 1.0 UI.
-                        Unconditional, unlike Copy link: a Space is what makes
-                        a LINK addressable, and the other UI is addressable
-                        without one. It refuses with its own reason when the
-                        server serves no 1.0 bundle, so it needs no gate here.
-                     */}
-                    <UiVersionSwitch className="auth-menu__row auth-menu__row--live" />
+                    {/* THE WAY BACK to the product UI at `/`. Unconditional,
+                        unlike Copy link: a Space is what makes a LINK
+                        addressable, and the product UI is addressable without
+                        one. It needs no probe either — if this bundle is on
+                        screen it was served from the same origin, so `/` is
+                        reachable by construction. */}
+                    <UiVersionReturn className="auth-menu__row auth-menu__row--live" />
                   </>
                 }
               />

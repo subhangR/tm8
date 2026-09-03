@@ -6,7 +6,7 @@
 # rotates the result into $TM8_PROD_DIR. Nothing here reloads on a source edit —
 # that is staging's job (8888/8887, deploy/staging/env.sh).
 #
-#   prod UI      http://127.0.0.1:7777   (vite preview over packages/tm8_ui_2.0/dist)
+#   prod UI      http://127.0.0.1:7777   (vite preview over packages/tm8-ui/dist)
 #   prod server  http://127.0.0.1:7778   (node packages/server/dist/index.js)
 #   prod DB      tm8_stable @ 5442
 #   prod data    ~/.local/share/tm8/data
@@ -76,21 +76,22 @@ export TM8_IDEMPOTENCY_ENABLED=0
 export TM8_PREVIEW_FRAME_ANCESTORS="http://127.0.0.1:${TM8_UI_PORT} http://localhost:${TM8_UI_PORT}"
 
 # Serve the same bundle 7777 serves, so :7778 is a same-origin fallback.
-export TM8_UI_DIR="$TM8_PROD_ROOT/packages/tm8_ui_2.0/dist"
+export TM8_UI_DIR="$TM8_PROD_ROOT/packages/tm8-ui/dist"
 
-# THE ALTERNATE 1.0 UI, mounted at /ui-1.0/ on the same origin (see
+# THE ALTERNATE 2.0 UI, mounted at /ui-2.0/ on the same origin (see
 # packages/server/src/http/static.ts). Same origin is the point: both UIs then
 # share the session cookie, so switching does not land on a sign-in wall.
 #
-# Unset it to withdraw the alternate UI — nothing 404s except /ui-1.0/ itself,
+# Unset it to withdraw the alternate UI — nothing 404s except /ui-2.0/ itself,
 # and the switch control in the product UI reports itself unavailable rather
 # than offering a door onto nothing.
 #
-# `dist-1.0`, not `dist`. That is a safety interlock; the reason is in
-# packages/tm8-ui/vite.config.ts and it is about not repointing production.
-export TM8_UI_1_0_DIR="$TM8_PROD_ROOT/packages/tm8-ui/dist-1.0"
+# `dist-2.0`, not `dist`. That is a safety interlock; the reason is in
+# packages/tm8_ui_2.0/vite.config.ts and it is about not white-screening the
+# root if TM8_UI_DIR is ever left naming that package.
+export TM8_UI_2_0_DIR="$TM8_PROD_ROOT/packages/tm8_ui_2.0/dist-2.0"
 
-# The vite preview proxy target (packages/tm8_ui_2.0/vite.preview.config.ts reads it).
+# The vite preview proxy target (packages/tm8-ui/vite.preview.config.ts reads it).
 export TM8_SERVER_ORIGIN="http://127.0.0.1:7778"
 
 # node, never bun: packages/server and packages/execution load node-pty, which

@@ -21,6 +21,7 @@ const TEST_CONFIG = {
   host: '127.0.0.1',
   port: 0,
   uiDir: undefined,
+  ui20Dir: undefined,
   maxBodyBytes: 1024 * 1024,
   databaseUrl: undefined,
 };

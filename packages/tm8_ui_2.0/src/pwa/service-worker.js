@@ -116,7 +116,15 @@ function isApiRequest(url) {
 }
 
 /**
- * The OTHER UI's mount — this worker's root scope covers it, and must not.
+ * The OTHER UI — this worker's root scope would cover it, and must not.
+ *
+ * DORMANT SINCE 2026-09-03. This bundle no longer installs `pwaShell`, so no
+ * `sw.js` is emitted from this source and `register.ts` returns early on
+ * `BASE_URL !== '/'`. It is kept intact, and correct for the root case, so
+ * that re-installing the plugin is the only edit needed if this package ever
+ * takes the root back — a worker resurrected without this guard is a silent
+ * failure. `packages/tm8-ui/src/pwa/service-worker.js` carries the live copy,
+ * excluding `/ui-2.0/`.
  *
  * `/ui-1.0/` is a whole second application bundle, not a route of this one.
  * Two failures follow from touching it, and the navigation one is the reason

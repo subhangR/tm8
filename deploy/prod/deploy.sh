@@ -30,11 +30,11 @@
 #   3  link deps     hardlink node_modules — root AND every workspace package.
 #                    bun's isolated linker needs a real node_modules inside each
 #                    package (packages/server/node_modules/@tm8/contract, the
-#                    tm8_ui_2.0 .bin/vite shim). Copying only the root one produces a
+#                    tm8-ui .bin/vite shim). Copying only the root one produces a
 #                    tree where `tsc -b` cannot find @tm8/contract and vite
 #                    cannot resolve itself.
 #   4  build         tsc -b --force (contract→cli) + a SEPARATE `vite build` for
-#                    packages/tm8_ui_2.0. `bun run build` is tsc only; skipping the
+#                    packages/tm8-ui. `bun run build` is tsc only; skipping the
 #                    vite half ships a stale UI against a new server and is the
 #                    classic silent failure here.
 #   5  backup        pg_dump tm8_stable before anything touches the schema
@@ -128,7 +128,7 @@ prod_pids() {
   {
     supervisor_pids "$root"
     pgrep -f "$root/packages/server/dist/index.js" || true
-    pgrep -f "$root/packages/tm8_ui_2.0/node_modules/.bin/vite" || true
+    pgrep -f "$root/packages/tm8-ui/node_modules/.bin/vite" || true
     pgrep -f "$root/node_modules/.bun/@esbuild" || true
   } | sort -u
   return 0
@@ -432,31 +432,40 @@ chmod +x packages/cli/dist/index.js
 ln -sf index.js packages/cli/dist/tm8
 ok "tsc -b"
 
+# A stale `packages/tm8-ui/dist` SYMLINK (it used to point at ../tm8_ui_2.0/dist,
+# bridging a root-owned /etc/tm8/prod.env that named the old path) would make the
+# product build below write THROUGH it into the alternate package. Remove it
+# first; idempotent, and a no-op on a tree that never had one.
+if [[ -L packages/tm8-ui/dist ]]; then
+  rm -f packages/tm8-ui/dist
+  warn "removed the legacy packages/tm8-ui/dist symlink"
+fi
+
 info "ui (vite build — this is a SEPARATE build; \`bun run build\` is tsc only) …"
-(cd packages/tm8_ui_2.0 && node_modules/.bin/vite build) \
+(cd packages/tm8-ui && node_modules/.bin/vite build) \
   || die "vite build failed — prod is untouched and still serving the previous build"
 ok "vite build"
 
-# The ALTERNATE 1.0 UI, served at /ui-1.0/ for the version switch. It emits to
-# `dist-1.0`, NEVER `dist`: `/opt/tm8/prod/packages/tm8-ui/dist` is a symlink to
-# ../tm8_ui_2.0/dist bridging a stale root-owned /etc/tm8/prod.env, and a real
-# `dist/` here would replace it and silently repoint prod at the 1.0 bundle.
-# See packages/tm8-ui/vite.config.ts.
+# The ALTERNATE 2.0 UI, served at /ui-2.0/ for the version switch. It emits to
+# `dist-2.0`, NEVER `dist`: the product pointer TM8_UI_DIR names
+# packages/tm8-ui/dist, and a bundle built with `base: '/ui-2.0/'` sitting in a
+# directory the root pointer might name would white-screen the site rather than
+# fail loudly. See packages/tm8_ui_2.0/vite.config.ts.
 #
 # NOT `die` ON FAILURE, unlike the product UI: this bundle is optional. A deploy
 # that cannot build the alternate UI must still ship the product one — failing
 # the whole rollout over a rollback affordance would make the affordance more
 # dangerous than the thing it exists to protect against.
-info "ui 1.0 (the alternate UI at /ui-1.0/) …"
-if (cd packages/tm8-ui && node_modules/.bin/vite build); then
-  ok "vite build (1.0)"
+info "ui 2.0 (the alternate UI at /ui-2.0/) …"
+if (cd packages/tm8_ui_2.0 && node_modules/.bin/vite build); then
+  ok "vite build (2.0)"
 else
-  warn "1.0 UI build failed — shipping without it; the version switch will report it unavailable"
+  warn "2.0 UI build failed — shipping without it; the version switch will report it unavailable"
 fi
 
 [[ -f "$NEXT/packages/server/dist/index.js"    ]] || die "build produced no packages/server/dist/index.js"
-[[ -f "$NEXT/packages/tm8_ui_2.0/dist/index.html"  ]] || die "build produced no packages/tm8_ui_2.0/dist/index.html"
-ok "artifacts present: server/dist/index.js, tm8_ui_2.0/dist/index.html"
+[[ -f "$NEXT/packages/tm8-ui/dist/index.html"  ]] || die "build produced no packages/tm8-ui/dist/index.html"
+ok "artifacts present: server/dist/index.js, tm8-ui/dist/index.html"
 
 if (( BUILD_ONLY )); then
   elapsed=$(( $(date +%s) - started_at ))

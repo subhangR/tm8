@@ -115,16 +115,15 @@ export interface SpaceTabBarProps {
    */
   shareSlot?: ReactNode;
   /**
-   * THE WAY BACK TO THE PRODUCT UI, when this bundle is being served as the
-   * alternate 1.0 UI under `/ui-1.0/`.
+   * THE DOOR TO THE ALTERNATE 2.0 UI, when this bundle is serving the root.
    *
    * A slot and not a rendered control, for the same reason as `shareSlot`: the
    * bar has no business knowing this package has a sibling. Left undefined the
    * bar is unchanged, which is every existing shell test and this bundle
    * rendered anywhere the switch is not in play.
    *
-   * It sits FIRST in the right-hand cluster, before the palette hint: an exit
-   * a viewer is looking for should not be the control they find last.
+   * It sits FIRST in the right-hand cluster, before the palette hint: a door a
+   * viewer is looking for should not be the control they find last.
    */
   uiSwitchSlot?: ReactNode;
 }

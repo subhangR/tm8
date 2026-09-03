@@ -24,12 +24,6 @@ export default defineConfig({
     proxy: {
       '/v2': { target, changeOrigin: false, ws: true },
       '/health': { target, changeOrigin: false },
-      /* The alternate 1.0 UI is served by tm8-server (TM8_UI_1_0_DIR), not by
-         vite — so the version switch's destination has to be proxied like the
-         API is. Without this line `/ui-1.0/` falls to vite's own SPA fallback
-         and answers with THIS app's index.html: the switch would appear to
-         work and change nothing. */
-      '/ui-1.0': { target, changeOrigin: false },
     },
   },
 });

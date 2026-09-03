@@ -20,13 +20,20 @@
  * fall through to the frame's `not_found`.
  *
  * A handler can also be MOUNTED under a prefix (`mountPath`), which is how a
- * second bundle is served beside the product one: `TM8_UI_1_0_DIR` puts the
- * frozen 1.0 UI at `/ui-1.0/` on the same origin, so the version switch is a
+ * second bundle is served beside the product one: `TM8_UI_2_0_DIR` puts the
+ * Astryx 2.0 UI at `/ui-2.0/` on the same origin, so the version switch is a
  * navigation rather than a second process on a second port — and the session
  * cookie, which is what makes the switched-to UI usable at all, needs no
  * cross-origin story. A mounted handler claims ONLY its prefix and falls
  * through for everything else, so mounting one can never shadow the product
  * UI's routes.
+ *
+ * WHICH BUNDLE IS WHICH CHANGED ON 2026-09-03, and this seam did not. Until
+ * then the product UI at `/` was `packages/tm8_ui_2.0` and the mount held the
+ * 1.0 snapshot; the roles are now swapped — `packages/tm8-ui` is the product UI
+ * and 2.0 is the alternate. The mount is deliberately named for the bundle it
+ * carries rather than for "the other one", so a reader never has to know which
+ * way round the pair currently is.
  */
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -53,15 +60,15 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Where the frozen 1.0 UI answers.
+ * Where the alternate 2.0 UI answers.
  *
  * Both UI bundles hardcode this same string (they cannot import from the
  * server package), so it is duplicated in exactly three places and each one
- * names the other two: here, `tm8_ui_2.0/src/ui-version/`, and
- * `tm8-ui/vite.config.ts`'s `base`. Changing it means changing all three and
- * rebuilding the 1.0 bundle — its asset URLs are baked at build time.
+ * names the other two: here, `tm8-ui/src/ui-version/`, and
+ * `tm8_ui_2.0/vite.config.ts`'s `base`. Changing it means changing all three
+ * and rebuilding the 2.0 bundle — its asset URLs are baked at build time.
  */
-export const UI_1_0_MOUNT_PATH = '/ui-1.0';
+export const UI_2_0_MOUNT_PATH = '/ui-2.0';
 
 export interface StaticHandler {
   /** Streams the asset and returns true, or returns false to fall through. */
@@ -73,7 +80,7 @@ export interface StaticHandler {
 
 export interface StaticHandlerOptions {
   /**
-   * Serve this bundle under a URL prefix (`/ui-1.0`) instead of at the root.
+   * Serve this bundle under a URL prefix (`/ui-2.0`) instead of at the root.
    *
    * The prefix is stripped before the path is resolved against `uiDir`, so the
    * traversal guard below still compares against the real root — the mount is
@@ -96,7 +103,7 @@ export function createStaticHandler(
    * unmounted path has to reach the next handler, and a mounted handler that
    * answered for `/` would shadow the product UI entirely.
    *
-   * `/ui-1.0` with no trailing slash maps to `/` rather than being refused —
+   * `/ui-2.0` with no trailing slash maps to `/` rather than being refused —
    * that is the address a person types, and refusing it would make the switch
    * work only from a link that happened to carry the slash.
    */
@@ -154,7 +161,7 @@ export function createStaticHandler(
 }
 
 /**
- * `/ui-1.0`, `ui-1.0/` and `/ui-1.0/` all mean the same mount.
+ * `/ui-2.0`, `ui-2.0/` and `/ui-2.0/` all mean the same mount.
  *
  * A prefix that normalizes to `/` is rejected rather than accepted as "the
  * root": a caller asking to mount at `/` wants the plain handler and should

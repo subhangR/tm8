@@ -15,36 +15,66 @@ import { pwaShell } from './vite-plugin-pwa-shell';
 const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
 
 /**
- * THIS PACKAGE IS THE FROZEN 1.0 SNAPSHOT, and since the UI version switch it
- * is BUILT AND SERVED AGAIN — as the alternate UI at `/ui-1.0/`, never as the
- * product one. `packages/tm8_ui_2.0` is the product UI; see `scripts/lib/ui.mjs`.
+ * THIS PACKAGE IS THE PRODUCT UI, served at `/`. It was the frozen 1.0 snapshot
+ * between 2026-08-29 and 2026-09-03; on 2026-09-03 the owner reversed that and
+ * the pair swapped roles. `packages/tm8_ui_2.0` is now the ALTERNATE UI behind
+ * the version switch, at `/ui-2.0/`; see `scripts/lib/ui.mjs`, the pointer every
+ * launcher, doctor and deploy path reads.
  *
- * Three things here exist only because of that, and each would be wrong for a
- * bundle served at the root:
+ * Three things follow from being the ROOT bundle, and each was the opposite
+ * while this package was the mounted one:
  *
- *  1. `base` — the mount path is baked into every asset URL at build time. It
- *     is duplicated in `packages/server/src/http/static.ts` (UI_1_0_MOUNT_PATH)
- *     and `tm8_ui_2.0/src/ui-version/mount.ts`; changing it means changing all
- *     three and rebuilding this bundle.
+ *  1. NO `base`. Vite's default `/` is correct and must stay implicit-correct:
+ *     the mount path is baked into every asset URL at build time, so a `base`
+ *     here would make every asset 404 at the root. The mounted bundle's base
+ *     lives in `tm8_ui_2.0/vite.config.ts` and is duplicated in
+ *     `packages/server/src/http/static.ts` (`UI_2_0_MOUNT_PATH`) and
+ *     `tm8-ui/src/ui-version/mount.ts`; changing it means changing all three
+ *     and rebuilding that bundle.
  *
- *  2. `build.outDir` is `dist-1.0`, NOT `dist`. This is a production safety
- *     interlock, not a preference. On the live box `/opt/tm8/prod/packages/
- *     tm8-ui/dist` is a SYMLINK to `../tm8_ui_2.0/dist`, bridging a stale
- *     root-owned `/etc/tm8/prod.env` that still names the old path. Emitting a
- *     real `dist/` here would replace that symlink on the next deploy and
- *     silently repoint production at the 1.0 bundle — a total UI swap that
- *     nothing would report. Do not "tidy" this back to `dist`.
+ *  2. `build.outDir` is the default `dist`, and `TM8_UI_DIR` names it. The old
+ *     `dist-1.0` override was a production interlock against a stale
+ *     root-owned `/etc/tm8/prod.env`; that pointer has since been rewritten and
+ *     `deploy/utho/deploy.sh` removes the legacy `dist` symlink before building,
+ *     so emitting `dist` here no longer risks repointing production.
  *
- *  3. NO `pwaShell`. A service worker for this bundle would install with
- *     `/ui-1.0/` scope beside the product worker's root scope; two workers
- *     racing over one origin is not something the alternate UI needs to be
- *     worth having. `tm8_ui_2.0/src/pwa/service-worker.js` excludes this mount
- *     for the matching reason on its side.
+ *  3. `pwaShell` IS INSTALLED. A service worker belongs to whichever bundle
+ *     holds the root scope, and that is this one; `src/pwa/register.ts` guards
+ *     on `BASE_URL === '/'` so a mounted build of this package would still
+ *     register nothing. `tm8_ui_2.0` drops the plugin for the matching reason
+ *     on its side — two workers racing over one origin is not something the
+ *     alternate UI needs to be worth having.
  */
 export default defineConfig({
-  base: '/ui-1.0/',
-  build: { outDir: 'dist-1.0' },
-  plugins: [react()],
+  plugins: [
+    react(),
+    /**
+     * The precache list. `critical` (the HTML, entry chunk and stylesheet) is
+     * derived from the bundle; these are the copied-from-`public/` files worth
+     * having offline on top of it.
+     *
+     * The two font faces are Hanken Grotesk 400 and 600 latin — `--pn-ui` at
+     * body weight and at the weight every heading, title and tab label uses.
+     * They are 69 kB together and they are the difference between the installed
+     * app looking like itself on a cold offline launch and falling back to
+     * system-ui. The other faces (latin-ext, the serif display face, the mono)
+     * are runtime-cached: they are wanted less often and `font-display: swap`
+     * means their absence costs a repaint, not a broken screen.
+     */
+    pwaShell({
+      optional: [
+        '/manifest.webmanifest',
+        '/icons/icon-192.png',
+        '/icons/icon-512.png',
+        '/icons/icon-maskable-512.png',
+        '/icons/apple-touch-icon-180.png',
+        '/favicon.ico',
+        '/tm8-mark.png',
+        '/fonts/HankenGrotesk-400-latin.woff2',
+        '/fonts/HankenGrotesk-600-latin.woff2',
+      ],
+    }),
+  ],
   server: {
     port: 4612,
     strictPort: true,
@@ -52,6 +82,12 @@ export default defineConfig({
     proxy: {
       '/v2': { target, changeOrigin: false, ws: true },
       '/health': { target, changeOrigin: false },
+      /* The alternate 2.0 UI is served by tm8-server (TM8_UI_2_0_DIR), not by
+         vite — so the version switch's destination has to be proxied like the
+         API is. Without this line `/ui-2.0/` falls to vite's own SPA fallback
+         and answers with THIS app's index.html: the switch would appear to
+         work and change nothing. */
+      '/ui-2.0': { target, changeOrigin: false },
     },
   },
   test: {

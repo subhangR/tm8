@@ -1,14 +1,14 @@
 /**
  * TWO UI BUNDLES ON ONE ORIGIN, through the pipeline.
  *
- * The version switch in the product UI is a plain navigation to `/ui-1.0/`.
+ * The version switch in the product UI is a plain navigation to `/ui-2.0/`.
  * Everything that makes that navigation land on the OTHER bundle rather than
  * re-rendering the product one is a property of dispatch order and prefix
  * stripping, and only a request can see it:
  *
  *  · the mounted handler is consulted BEFORE the root handler. The root
  *    handler answers extension-less paths with its own index.html, so the
- *    reverse order would serve the 2.0 shell at the 1.0 address with a 200 —
+ *    reverse order would serve the 1.0 shell at the 2.0 address with a 200 —
  *    a switch that silently does nothing, which is worse than a 404 because
  *    it looks like it worked;
  *  · the mount claims ONLY its prefix, so adding one cannot cost the product
@@ -26,13 +26,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { HandlerRegistry } from '../src/facade/index.js';
 import { createFacadeServer, type FacadeServer } from '../src/http/server.js';
-import { createStaticHandler, UI_1_0_MOUNT_PATH } from '../src/http/static.js';
+import { createStaticHandler, UI_2_0_MOUNT_PATH } from '../src/http/static.js';
 
 const TEST_CONFIG = {
   host: '127.0.0.1',
   port: 0,
   uiDir: undefined,
-  ui10Dir: undefined,
+  ui20Dir: undefined,
   maxBodyBytes: 1024 * 1024,
   databaseUrl: undefined,
 };
@@ -46,14 +46,14 @@ function makeBundle(marker: string): string {
   return dir;
 }
 
-describe('the 1.0 UI mount beside the product UI', () => {
+describe('the 2.0 UI mount beside the product UI', () => {
   let server: FacadeServer;
   let base: string;
   let secretDir: string;
 
   beforeAll(async () => {
-    const productDir = makeBundle('ui-2.0');
-    const legacyDir = makeBundle('ui-1.0');
+    const productDir = makeBundle('ui-1.0');
+    const altDir = makeBundle('ui-2.0');
 
     // A file OUTSIDE both roots, to prove the traversal guard still bites once
     // the mount prefix has been stripped.
@@ -67,7 +67,7 @@ describe('the 1.0 UI mount beside the product UI', () => {
       config: TEST_CONFIG,
       registry: new HandlerRegistry(),
       staticHandler: createStaticHandler(productDir),
-      staticMounts: [createStaticHandler(legacyDir, { mountPath: UI_1_0_MOUNT_PATH })],
+      staticMounts: [createStaticHandler(altDir, { mountPath: UI_2_0_MOUNT_PATH })],
     });
     ({ url: base } = await server.listen());
   });
@@ -84,34 +84,34 @@ describe('the 1.0 UI mount beside the product UI', () => {
   it('serves the product bundle at the root', async () => {
     const res = await body('/');
     expect(res.status).toBe(200);
-    expect(res.text).toContain('ui-2.0');
+    expect(res.text).toContain('ui-1.0');
   });
 
-  it('serves the 1.0 bundle under its mount, not the product one', async () => {
-    const res = await body('/ui-1.0/');
+  it('serves the 2.0 bundle under its mount, not the product one', async () => {
+    const res = await body('/ui-2.0/');
     expect(res.status).toBe(200);
-    expect(res.text).toContain('ui-1.0');
-    expect(res.text).not.toContain('ui-2.0');
+    expect(res.text).toContain('ui-2.0');
+    expect(res.text).not.toContain('ui-1.0');
   });
 
   it('answers the mount with no trailing slash — the address a person types', async () => {
-    const res = await body('/ui-1.0');
+    const res = await body('/ui-2.0');
     expect(res.status).toBe(200);
-    expect(res.text).toContain('ui-1.0');
+    expect(res.text).toContain('ui-2.0');
   });
 
   it('serves each bundle its OWN assets at the same relative path', async () => {
-    expect((await body('/assets/app.js')).text).toContain('ui-2.0');
-    expect((await body('/ui-1.0/assets/app.js')).text).toContain('ui-1.0');
+    expect((await body('/assets/app.js')).text).toContain('ui-1.0');
+    expect((await body('/ui-2.0/assets/app.js')).text).toContain('ui-2.0');
   });
 
   it('gives the mounted bundle its own SPA fallback', async () => {
-    // A client route inside the 1.0 app resolves to the 1.0 index, never the
+    // A client route inside the 2.0 app resolves to the 2.0 index, never the
     // product one — otherwise a deep link into the alternate UI boots the app
     // it was trying to leave.
-    const res = await body('/ui-1.0/s/some-space/tasks');
+    const res = await body('/ui-2.0/s/some-space/tasks');
     expect(res.status).toBe(200);
-    expect(res.text).toContain('ui-1.0');
+    expect(res.text).toContain('ui-2.0');
   });
 
   it('404s a missing asset under the mount instead of returning HTML', async () => {
@@ -120,7 +120,7 @@ describe('the 1.0 UI mount beside the product UI', () => {
     // the thing that makes SPA bugs unreadable. Asserted on the content type
     // rather than the body: the honest 404 quotes the path back, so a body
     // check would match the mount's own name.
-    const res = await fetch(`${base}/ui-1.0/assets/missing.js`);
+    const res = await fetch(`${base}/ui-2.0/assets/missing.js`);
     expect(res.status).toBe(404);
     expect(res.headers.get('content-type')).toContain('application/json');
     expect(await res.text()).not.toContain('<!doctype');
@@ -134,9 +134,9 @@ describe('the 1.0 UI mount beside the product UI', () => {
 
   it('keeps the traversal guard after the prefix is stripped', async () => {
     for (const attempt of [
-      '/ui-1.0/../../etc/passwd',
-      '/ui-1.0/%2e%2e/%2e%2e/etc/passwd',
-      `/ui-1.0/..${secretDir}/secret.txt`,
+      '/ui-2.0/../../etc/passwd',
+      '/ui-2.0/%2e%2e/%2e%2e/etc/passwd',
+      `/ui-2.0/..${secretDir}/secret.txt`,
     ]) {
       const res = await fetch(`${base}${attempt}`);
       expect(await res.text()).not.toContain('not yours');
@@ -147,8 +147,8 @@ describe('the 1.0 UI mount beside the product UI', () => {
     // The dispatch is guarded on `method === 'GET'`, so a HEAD probe would 404
     // against a server that IS serving the bundle. The control probes with GET
     // for exactly this reason; this case pins the fact it depends on.
-    expect((await fetch(`${base}/ui-1.0/index.html`)).status).toBe(200);
-    expect((await fetch(`${base}/ui-1.0/index.html`, { method: 'HEAD' })).status).toBe(404);
+    expect((await fetch(`${base}/ui-2.0/index.html`)).status).toBe(200);
+    expect((await fetch(`${base}/ui-2.0/index.html`, { method: 'HEAD' })).status).toBe(404);
   });
 
   it('refuses a mount at the root rather than shadowing the product UI', () => {
@@ -156,18 +156,18 @@ describe('the 1.0 UI mount beside the product UI', () => {
   });
 });
 
-describe('with no 1.0 bundle configured', () => {
+describe('with no 2.0 bundle configured', () => {
   let server: FacadeServer;
   let base: string;
 
   beforeAll(async () => {
-    // The default posture: an operator who set no TM8_UI_1_0_DIR gets no mount,
+    // The default posture: an operator who set no TM8_UI_2_0_DIR gets no mount,
     // and the switch control in the product UI reports itself unavailable
     // rather than offering a door onto nothing.
     server = createFacadeServer({
       config: TEST_CONFIG,
       registry: new HandlerRegistry(),
-      staticHandler: createStaticHandler(makeBundle('ui-2.0')),
+      staticHandler: createStaticHandler(makeBundle('ui-1.0')),
     });
     ({ url: base } = await server.listen());
   });
@@ -179,7 +179,7 @@ describe('with no 1.0 bundle configured', () => {
   it('404s the probe the switch uses, so the control refuses honestly', async () => {
     // index.html specifically: probing the directory would hit the product
     // UI's SPA fallback and answer 200 for a bundle that is not there.
-    const res = await fetch(`${base}/ui-1.0/index.html`);
+    const res = await fetch(`${base}/ui-2.0/index.html`);
     expect(res.status).toBe(404);
   });
 });
