@@ -40,6 +40,7 @@ import { AuxEntityPanel } from './auxPanel';
 import { PanelResizer, useElementWidth, usePanelFlag, usePanelWidth } from '../kit';
 import {
   EntityListPanel,
+  NewContainerSheet,
   type ControlHost,
   type DetailReasons,
 } from '../panels';
@@ -68,9 +69,10 @@ import type { Notice } from '../shell';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { useLaunchPort } from './useLaunchPort';
 import { useMembershipSurface } from './membershipSurface';
-import { usePanelPrimaries } from './usePanelPrimaries';
+import { composeListActions, usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useSessionStart } from './useSessionStart';
+import { useNewContainerSheet } from './useNewContainerSheet';
 import type { GateData } from './useGateData';
 
 /* Same floor and same default as the channel screen's aside: two surfaces
@@ -340,9 +342,22 @@ export function HomeView(props: HomeViewProps) {
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     projectId: data.launch.projects.find((p) => p.selectedByDefault && p.trusted)?.id ?? null,
+    onOpen: (id: EntityId) => navStore.getState().openCenter(id),
+    onError: (verb: ActionRef, error: unknown) => notifyActionFailed(verb, '', error),
+  });
+
+  /* The container birth sheet — same shape as `sessionStart` above, plus the
+     modal obligations. See `useNewContainerSheet`. */
+  const newContainer = useNewContainerSheet({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
     onOpen: (id) => navStore.getState().openCenter(id),
     onError: (verb, error) => notifyActionFailed(verb, '', error),
   });
+
+  /* ONE `onAction` reaches the list panel and two hooks perform verbs for it. */
+  const listActions = composeListActions([sessionStart, newContainer]);
   const rowLifecycle = useRowLifecycle({
     data,
     viewerMemberId: props.viewerMemberId,
@@ -430,7 +445,19 @@ export function HomeView(props: HomeViewProps) {
     (kind: string): { refusal: { cause: string; remedy: string } | null; perform: () => void } => {
       const action = rootBirthAction(kind);
       if (action) {
-        const dispatch = sessionStart.onAction;
+        /*
+         * `listActions`, NOT `sessionStart` — and this was a live defect the
+         * moment `container` declared `quickStart: 'new-container'`.
+         *
+         * `rootBirthAction(kind)` returns the kind's `list.quickStart`, so for
+         * a container this dispatches `'new-container'`. `sessionStart.onAction`
+         * is a switch that handles ONLY `start-terminal` and returns on its
+         * `default:` — so the header's ＋ would have been drawn ENABLED (the
+         * dispatcher exists) and done nothing at all. That is the exact
+         * enabled-inert shape `define()`'s throwing runner and `wiredActions`
+         * exist to prevent, arriving through the one path that bypasses both.
+         */
+        const dispatch = listActions.onAction;
         return dispatch
           ? { refusal: null, perform: () => dispatch(action, '') }
           : {
@@ -458,7 +485,7 @@ export function HomeView(props: HomeViewProps) {
           }),
       };
     },
-    [newEntity, sessionStart.onAction],
+    [newEntity, listActions.onAction],
   );
   const cellBirth = birthFor(cellConfig.kind);
 
@@ -864,6 +891,38 @@ export function HomeView(props: HomeViewProps) {
           onLaunch={(config) => props.onLaunchSubmit?.(config)}
           onDispatch={props.onLaunchDispatch}
         />
+      )}
+      {/* THE CONTAINER BIRTH SHEET — same overlay slot and same reason as the
+          launch sheet above: it overlays the region rather than entering it as
+          a column, so it never touches V/cMin. Mounted only while open, so the
+          draft is discarded on dismiss rather than persisting invisibly into
+          the next open. */}
+      {newContainer.isOpen && (
+        <div className="pn-ncs-scrim" role="presentation" onClick={newContainer.close}>
+          <div
+            className="pn-ncs-host"
+            role="dialog"
+            aria-modal="true"
+            aria-label="New container"
+            /* The scrim dismisses; the sheet must not. Without this a click on
+               any control inside bubbles up and closes the form under the
+               viewer's own cursor. */
+            onClick={(event) => event.stopPropagation()}
+          >
+            <NewContainerSheet
+              spaceId={data.spaceId}
+              projects={data.launch.projects
+                .filter((project) => !project.scratch)
+                .map((project) => ({
+                  id: project.id as EntityId,
+                  title: project.name,
+                  trusted: project.trusted,
+                }))}
+              onCreate={newContainer.create}
+              onCancel={newContainer.close}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

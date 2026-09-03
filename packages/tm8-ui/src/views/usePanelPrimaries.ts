@@ -295,6 +295,42 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
  * it refused; a verb two parts claim goes to the first, so the order here is
  * the precedence and there is no silent merge of two behaviours.
  */
+/**
+ * THE LIST PANEL'S COMPOSER — `composePanelActions`' twin, and it needs to be a
+ * twin rather than a reuse because the SIGNATURES DIFFER.
+ *
+ * A detail-panel verb is `(ref) => void`: the panel is already bound to one
+ * entity. A list-panel verb is `(ref, entityId) => void`, because the list has
+ * many rows and the header has none. Passing one where the other is expected
+ * type-checks under a structural rule that silently drops the second argument,
+ * so the two are kept apart deliberately.
+ *
+ * SAME ROUTING RULE as its twin: by `wiredActions`, which each hook derives
+ * from its own handler set. A verb no part claims stays unclaimed and the
+ * control keeps drawing refused; a verb two parts claim goes to the first, so
+ * the order here is the precedence and there is no silent merge.
+ *
+ * WHY IT IS NEEDED AT ALL: `EntityListPanel` takes ONE `onAction`, and the
+ * container's birth verb and the session's `start-terminal` are performed by
+ * two different hooks — a host that passed either alone would drop the other
+ * lane's verb back to disabled-with-reason, which is the exact defect both
+ * hooks were extracted to fix.
+ */
+export function composeListActions(
+  parts: readonly {
+    onAction?: ((ref: ActionRef, entityId: string) => void) | undefined;
+    wiredActions: readonly ActionRef[];
+  }[],
+): { onAction: (ref: ActionRef, entityId: string) => void; wiredActions: readonly ActionRef[] } {
+  const live = parts.filter((part) => part.onAction);
+  return {
+    onAction: (ref, entityId) => {
+      live.find((part) => part.wiredActions.includes(ref))?.onAction?.(ref, entityId);
+    },
+    wiredActions: live.flatMap((part) => [...part.wiredActions]),
+  };
+}
+
 export function composePanelActions(
   parts: readonly { onAction?: ((ref: ActionRef) => void) | undefined; wiredActions: readonly ActionRef[] }[],
 ): { onAction: (ref: ActionRef) => void; wiredActions: readonly ActionRef[] } {

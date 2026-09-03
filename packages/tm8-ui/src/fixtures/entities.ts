@@ -152,10 +152,33 @@ const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
    * provider call still running, and filing it under Done would show a machine
    * as gone while it is still being torn down.
    *
-   * THIS IS THE UI'S READING OF §11.1, NOT A COPY OF THE SERVER'S. The
-   * authority is migration 177's own category function (lane A). This comment
-   * exists so the next reader checks rather than assumes — the exact failure
-   * the `spawning` note above records, where this table lied about the server.
+   * THIS IS THE SHIPPED SERVER MAPPING, verbatim — no longer the UI's reading.
+   *
+   * It began as a guess and is worth recording as one, because the checking is
+   * what made it true. Asked of lane A, it walked a container through all nine
+   * statuses on a live chain and found `status_category` STUCK at `to_do`
+   * through `destroyed` — and `status_id` pinned at the generic "To Do" state
+   * with it. Both halves stuck, which is the `work_session` empty-tab defect
+   * (477 sessions, To Do 0 / In Progress 6 / Done 471) arriving a second time.
+   *
+   * The mapping below was then ruled and implemented, including both of the
+   * judgement calls: `stopped` → `done` for `exited`'s reason (both can come
+   * back, neither has a live runtime until they do), and `destroying` →
+   * `in_progress` because a provider call is still in flight.
+   *
+   * ONE THING CHANGED ON THE WAY IN, and it is why containers carry no
+   * workflow state: `category_transition_allowed('done','in_progress')` is
+   * FALSE, so with `stopped = done` the legal `stopped → running` transition
+   * would raise inside `set_container_status` and abort the door. Lane A
+   * brute-forced all 4^9 mappings — every consistent one required
+   * `stopped = in_progress`. The resolution keeps this mapping and writes
+   * `entities.status_category` DIRECTLY, clearing `status_id`:
+   * `validate_status_transition` is `before update of status_id`, so writing
+   * the category alone never fires it.
+   *
+   * So a container's `status_id` is NULL BY DESIGN. Its lifecycle is
+   * node-owned (single writer `set_container_status`) and the category is a
+   * projection for the tabs, not an authority.
    */
   requested: 'to_do',
   provisioning: 'to_do',
