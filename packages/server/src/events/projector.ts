@@ -144,6 +144,13 @@ const WS_STATUSES = ['spawning', 'running', 'idle', 'exited', 'failed'] as const
 const WS_SHARE_MODES = ['none', 'space', 'explicit'] as const;
 const IP_STATUSES = ['draft', 'active', 'retired'] as const;
 const WT_STATUSES = ['active', 'merged', 'abandoned', 'deleted'] as const;
+// containers (177). MIRRORS entity-read.ts — see the note on the join below.
+const CTR_STATUSES = ['requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed'] as const;
+const CTR_PROFILES = ['shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom'] as const;
+const CTR_ISOLATION = ['process', 'container', 'gvisor', 'microvm', 'vm'] as const;
+const CTR_SURFACES = ['terminal', 'screen', 'browser', 'adb', 'docker', 'http'] as const;
+const CTR_SHARE_MODES = ['none', 'space', 'explicit'] as const;
 
 /**
  * Hydrates the entity-shaped payloads an event projection needs.
@@ -314,6 +321,17 @@ interface SummaryRow {
   wt_base_ref: string | null;
   wt_base_commit_oid: string | null;
   wt_status: string | null;
+  ctr_title: string | null;
+  ctr_status: string | null;
+  ctr_profile: string | null;
+  ctr_provider: string | null;
+  ctr_isolation: string | null;
+  ctr_node_id: string | null;
+  ctr_surfaces: unknown;
+  ctr_lifecycle: Record<string, unknown> | null;
+  ctr_share_mode: string | null;
+  ctr_started_at: Date | string | null;
+  ctr_expires_at: Date | string | null;
   artifact_name: string | null;
   artifact_description: string | null;
   artifact_revision_number: number | null;
@@ -446,6 +464,17 @@ select
   wt.base_ref        as wt_base_ref,
   wt.base_commit_oid as wt_base_commit_oid,
   wt.status          as wt_status,
+  ctr.title          as ctr_title,
+  ctr.status         as ctr_status,
+  ctr.profile        as ctr_profile,
+  ctr.provider       as ctr_provider,
+  ctr.isolation      as ctr_isolation,
+  ctr.node_id        as ctr_node_id,
+  ctr.surfaces       as ctr_surfaces,
+  ctr.lifecycle      as ctr_lifecycle,
+  ctr.share_mode     as ctr_share_mode,
+  ctr.started_at     as ctr_started_at,
+  ctr.expires_at     as ctr_expires_at,
   art.name           as artifact_name,
   art.description    as artifact_description,
   arev.revision_number as artifact_revision_number,
@@ -499,6 +528,13 @@ left join lateral (
    where t.chat_id = cht.entity_id
 ) chq on cht.entity_id is not null
 left join public.graphs gr           on gr.entity_id = e.id
+left join public.containers ctr      on ctr.entity_id = e.id
+-- No container_runtime_state join, and no runtime_ref / host_spec columns.
+-- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
+-- event at all (§15) -- joining the side table here would put a value on the
+-- event path that nothing ever refreshes it for. runtime_ref and host_spec
+-- stay server-side under R5, exactly as in entity-read.ts.
+-- (No backticks in here: this whole query is a JS template literal.)
 left join public.artifacts art       on art.entity_id = e.id
 left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 left join public.custom_entities cev on cev.entity_id = e.id
@@ -978,6 +1014,9 @@ export class PgEntityProjector implements EntityProjector {
         // Its own detail-row title — MIRRORS entity-read.ts titleOf, including
         // the empty-string fallback (the column defaults to '').
         return r.chat_title && r.chat_title.length > 0 ? r.chat_title : 'Chat';
+      case 'container':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.ctr_title ?? 'Container';
       case 'worktree':
         // The branch is the human name — MIRRORS entity-read.ts titleOf.
         return r.wt_branch ?? 'Worktree';
@@ -1300,6 +1339,31 @@ export class PgEntityProjector implements EntityProjector {
           turnCount: Number(r.chat_turn_count ?? 0),
           lastTurnAt: iso(r.chat_last_turn_at),
         };
+      case 'container': {
+        // MIRRORS entity-read.ts stateOf. The two must agree exactly: a field
+        // that differs between the boot read and the event is drift a client
+        // sees as a value that changes for no reason on the next poll.
+        const surfaces = Array.isArray(r.ctr_surfaces)
+          ? r.ctr_surfaces.filter((k): k is typeof CTR_SURFACES[number] =>
+            (CTR_SURFACES as readonly string[]).includes(k as string))
+          : [];
+        const lifecycle = r.ctr_lifecycle ?? {};
+        return {
+          kind: 'container',
+          status: oneOf(r.ctr_status, CTR_STATUSES, 'failed'),
+          profile: oneOf(r.ctr_profile, CTR_PROFILES, 'custom'),
+          provider: r.ctr_provider ?? '',
+          // `process` is the WEAKEST class: an unknown value must degrade to
+          // claiming the LEAST isolation, never the most.
+          isolation: oneOf(r.ctr_isolation, CTR_ISOLATION, 'process'),
+          nodeId: r.ctr_node_id ?? '',
+          surfaces,
+          ephemeral: lifecycle.ephemeral !== false,
+          shareMode: oneOf(r.ctr_share_mode, CTR_SHARE_MODES, 'none'),
+          startedAt: iso(r.ctr_started_at),
+          expiresAt: iso(r.ctr_expires_at),
+        };
+      }
       case 'worktree':
         // Semantic lifecycle only — allocation (disk) state is deliberately
         // not on the event path either. MIRRORS entity-read.ts stateOf.

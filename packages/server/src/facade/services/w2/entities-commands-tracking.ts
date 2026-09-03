@@ -62,6 +62,19 @@ const RESTRICTED_LIFECYCLE_KINDS = new Set([
   'project',
   'interaction_profile',
   'artifact',
+  // `container` (177) is here for exactly the reason `work_session` is: it is
+  // born from `containers.create`, which RESERVES the record and then
+  // provisions a runtime under a saga. A generic `entities.create container`
+  // would produce a record with no machine behind it — one that renders in a
+  // list, counts in the rail, and fails every verb — and a generic
+  // `entities.delete` would orphan a running runtime the graph no longer
+  // knows about. Destruction is `containers.destroy`, which stops the runtime
+  // first and soft-deletes the envelope after.
+  //
+  // Unlike `work_session`, this kind does NOT open a rename door here: the
+  // title is patched through `containers.update`, which is ledgered and
+  // asserts a version like the rest of the family.
+  'container',
 ]);
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because

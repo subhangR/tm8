@@ -19,6 +19,22 @@
  * or declare it body-less; an omission here is a to-do, not a decision.
  */
 import {
+  ContainersAttachInputSchema,
+  ContainersAttentionInputSchema,
+  ContainersBrowserEndpointInputSchema,
+  ContainersComputerInputSchema,
+  ContainersCreateInputSchema,
+  ContainersDestroyInputSchema,
+  ContainersExposeInputSchema,
+  ContainersForkInputSchema,
+  ContainersLifecycleInputSchema,
+  ContainersPolicySetInputSchema,
+  ContainersPoolsSetInputSchema,
+  ContainersRunInputSchema,
+  ContainersSnapshotInputSchema,
+  ContainersTerminalStartInputSchema,
+  ContainersUnexposeInputSchema,
+  ContainersUpdateInputSchema,
   AddMessageAttachmentsInputSchema,
   ArtifactsCreateInputSchema,
   ArtifactsPreviewStartInputSchema,
@@ -299,6 +315,34 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // custom entity kinds (T-L4)
   'entityKinds.create': EntityKindCreateInputSchema,
   'entityKinds.update': EntityKindUpdateInputSchema,
+
+  // containers (TM8-CONTAINERS-DESIGN §4.2)
+  //
+  // BOUND EVEN WHERE THE OPERATION IS NOT BUILT YET, and that ordering is the
+  // point. Validation runs AFTER the registry lookup (see the header), so an
+  // unbuilt op still answers 501 rather than 400 — but the moment its runtime
+  // lands, the shape is already enforced. Binding late is how `execution.resume`
+  // shipped with no server-side validation at all.
+  'containers.create': ContainersCreateInputSchema,
+  // The four share one shape; `destroy` adds force/keepSnapshot.
+  'containers.start': ContainersLifecycleInputSchema,
+  'containers.stop': ContainersLifecycleInputSchema,
+  'containers.pause': ContainersLifecycleInputSchema,
+  'containers.resume': ContainersLifecycleInputSchema,
+  'containers.destroy': ContainersDestroyInputSchema,
+  'containers.update': ContainersUpdateInputSchema,
+  'containers.policy.set': ContainersPolicySetInputSchema,
+  'containers.run': ContainersRunInputSchema,
+  'containers.terminal.start': ContainersTerminalStartInputSchema,
+  'containers.attach': ContainersAttachInputSchema,
+  'containers.computer': ContainersComputerInputSchema,
+  'containers.browser.endpoint': ContainersBrowserEndpointInputSchema,
+  'containers.expose': ContainersExposeInputSchema,
+  'containers.unexpose': ContainersUnexposeInputSchema,
+  'containers.snapshot': ContainersSnapshotInputSchema,
+  'containers.fork': ContainersForkInputSchema,
+  'containers.attention': ContainersAttentionInputSchema,
+  'containers.pools.set': ContainersPoolsSetInputSchema,
 };
 
 /**
@@ -339,4 +383,10 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   // actorId/clientMutationId, so there is no CommandContext to bind either. A
   // strict empty schema would only break the no-body POST the CLI sends.
   'auth.claim.reissue',
+  // containers (177): the ONE container command with no zod body, and it is
+  // the first clause above rather than a gap. `containers.files.put` carries a
+  // TAR STREAM, not JSON — its request body is bytes, and a strict object
+  // schema would refuse every legitimate upload. Its parameters travel in the
+  // path and the query.
+  'containers.files.put',
 ];

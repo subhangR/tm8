@@ -679,7 +679,11 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // derived check above has something true to compare against.
     // 141: +1 — auth.claim.reissue is genuinely body-less (no input, auth.* so
     // no CommandContext), enumerated as such rather than left to hide.
-    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(10);
+    // 177: +1 — `containers.files.put` carries a tar stream, not JSON, so it
+    // is genuinely body-less in the zod sense and enumerated as such. Every
+    // other container command IS bound, including the ones whose runtime does
+    // not exist yet.
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(11);
     expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',

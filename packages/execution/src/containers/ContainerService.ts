@@ -497,12 +497,28 @@ export class ContainerService {
       try {
         const { record, provider, handle } = await this.resolveRuntime(auth, row.containerEntityId);
         if (row.action === 'stop' && handle) {
+          // THROUGH `stopping`, never straight to `stopped`. The guard's edge
+          // table (177) has no `running -> stopped` edge, so the direct write
+          // is `23514` — and a sweeper that swallowed it would leave the
+          // machine running with nothing left to retry the stop.
+          await this.graph.setContainerStatus(auth, {
+            containerId: row.containerEntityId, status: 'stopping',
+            operation: null, clientMutationId: null,
+          });
           await provider.stop(handle, { timeoutMs: 30_000 });
           await this.graph.setContainerStatus(auth, {
             containerId: row.containerEntityId, status: 'stopped',
             operation: null, clientMutationId: null,
           });
         } else if (row.action === 'destroy' && handle) {
+          // Likewise: `destroyed` is reachable ONLY through `destroying`
+          // (lane A, 177). Design §11.1's ASCII sketch draws a direct
+          // `stopped -> destroyed` edge; its transition TABLE does not, and
+          // the table is what shipped.
+          await this.graph.setContainerStatus(auth, {
+            containerId: row.containerEntityId, status: 'destroying',
+            operation: null, clientMutationId: null,
+          });
           await provider.destroy(handle);
           await this.graph.setContainerStatus(auth, {
             containerId: row.containerEntityId, status: 'destroyed',
