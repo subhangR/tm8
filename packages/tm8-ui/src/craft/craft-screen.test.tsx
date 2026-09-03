@@ -145,8 +145,21 @@ describe('the craft studio', () => {
       },
     });
     await waitFor(() => expect(view.getByTestId('crf-canvas').textContent).toContain('Ship docs'));
-    const freshCells = view.getByTestId('crf-canvas').querySelectorAll('.crf-cell--fresh');
-    expect(freshCells).toHaveLength(1);
+    /*
+     * WAIT FOR THE GLOW, NOT JUST FOR THE CARD — two different commits.
+     *
+     * The card arrives with the fold; the fresh SET is recomputed by an effect
+     * that runs after that commit and re-renders. `waitFor` can observe the
+     * DOM in between, and what it sees there is the PREVIOUS patch's fresh set
+     * — which is `{a, b}`, so the count is 2 and the message reads exactly
+     * like the glow having spread. A pre-existing race: the window is narrow
+     * on an idle box and widens with any other async work on this screen.
+     */
+    const freshCells = await waitFor(() => {
+      const cells = view.getByTestId('crf-canvas').querySelectorAll('.crf-cell--fresh');
+      expect(cells).toHaveLength(1);
+      return cells;
+    });
     expect(freshCells[0]!.textContent).toContain('Ship docs');
     view.unmount();
   });

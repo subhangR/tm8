@@ -73,21 +73,28 @@ export interface ChatThreadSummary {
   rootId: EntityId;
   /**
    * The entity this conversation is ABOUT — the crafted `graph` row for a Craft
-   * chat, null for a bare Home chat.
+   * chat, `null` for a bare Home chat.
    *
-   * SINCE 176 IT IS THE `about` EDGE, not the message anchor. The name is kept
-   * for one wave so the Craft picker's filter and its tests do not move in the
-   * same change as the data model underneath them; Wave 2's UI lane renames it
-   * alongside the panel that draws the relation.
+   * RENAMED FROM `anchorId` (Wave 2). Since 176 it is the `about` EDGE, not
+   * the message anchor: a chat is the anchor of its own transcript now, so the
+   * context entity is a relation rather than the place the messages had to
+   * live. Wave 1 kept the old name for one wave so the Craft picker's filter
+   * did not move in the same change as the data model underneath it.
    *
-   * SURFACED BECAUSE A HOST CANNOT SCOPE WITHOUT IT. `listThreads` is
-   * space-wide by construction, so a contextual surface (Craft) that wants
-   * "the conversations about THIS object" had no way to ask: the L2 read has
-   * carried `anchorId` all along (`ChatThreadListItem`) and the fold to a
-   * summary simply dropped it. Filtering here is honest — same rows, fewer —
-   * where a second anchored read would be a second source of truth.
+   * `null` MEANS "NO SUBJECT", AND IT USED TO MEAN "ITSELF". Wave 1 folded an
+   * absent subject to the chat's own id (`item.aboutId ?? item.chatId`), which
+   * made every bare Home chat look like a chat about itself — harmless while
+   * the only reader was an equality filter that never matched, and a lie the
+   * moment a panel header draws the relation. It is null now.
+   *
+   * IT IS NOT POPULATED BY `listThreads`. A chat's subject is an edge and no
+   * list read carries edges, so Wave 1 paid one `connections` call PER CHAT to
+   * fill this in — a documented N+1 on the one read that scales with the
+   * space. That read is gone: `readThread` fills the field for the ONE chat
+   * being opened, and a host that wants "the conversations about X" asks X
+   * instead (`chatIdsAbout`, one incoming-edge read).
    */
-  anchorId: EntityId;
+  aboutId: EntityId | null;
   title: string;
   preview: string;
   updatedAt: string;
@@ -159,6 +166,30 @@ export interface ChatTurn {
   /** The ordinary durable message body. Rich assistant output may instead be in parts. */
   body: string;
   parts: ChatTurnPart[];
+  /**
+   * THE ENTITY THIS MESSAGE WAS AUTHORED FROM — the recorder-owned
+   * `authored_from` edge's target (`FeedItem.sourceWorkSessionId`, which is
+   * named for its first destination kind and carries whatever the edge points
+   * at: since 176 that may be a work_session OR a chat).
+   *
+   * WHAT IT IS FOR: a chat is a routing target now, so a message in this
+   * transcript may have been written by a work session reporting back or by
+   * another chat — and neither is the person or the agent this conversation is
+   * between. Those render as THIRD-PARTY bubbles with a chip naming the source,
+   * and this is the only field that can tell them apart. `state.author` cannot:
+   * a session's persona resolves to the same `team_member` summary the chat's
+   * own agent has, and a chat author resolves to a bare `member`.
+   *
+   * THE CHAT'S OWN AGENT TURNS CARRY IT TOO, pointing at the chat itself —
+   * `createAgentMessage` passes `p_source_chat_id = turn.chatId` so the SQL
+   * self-guard fires and the chat is never handed its own output. So a reader
+   * must compare against the chat's id rather than test for presence.
+   *
+   * OPTIONAL, like every other additive field here: `messages.list` does not
+   * carry provenance, so a port that reads only that supplies none, and absent
+   * renders exactly as today.
+   */
+  sourceEntityId?: EntityId | null;
   /**
    * Files carried on this message — the server's own `content.attachments`,
    * populated on every message read (`FileAttachment[]`, contract v1). The
@@ -240,6 +271,23 @@ export interface ChatHomePort {
   /** Non-null means the space-wide L2 read does not exist on this node yet. */
   threadListUnavailableReason?: string | null;
   listThreads(spaceId: SpaceId | string): Promise<readonly ChatThreadSummary[]>;
+  /**
+   * The chats whose `about` edge points at one entity — the ONE read that
+   * replaces Wave 1's per-chat N+1.
+   *
+   * ASKED OF THE SUBJECT, NOT OF THE CHATS, and that is the whole saving: the
+   * edge is chat → subject, so reading it from the subject's INCOMING side
+   * answers for every chat at once. Wave 1 asked each chat what it was about
+   * (one `connections` call per row, bounded only by the chat list) to serve a
+   * single host — Craft's picker — that already knew which subject it cared
+   * about.
+   *
+   * Returns ids rather than summaries: the caller already holds the rows from
+   * `listThreads` and wants to FILTER them, and returning summaries here would
+   * be a second source of truth about what exists — the thing `onThreadsChange`
+   * exists to prevent.
+   */
+  chatIdsAbout(aboutId: EntityId): Promise<readonly EntityId[]>;
   readThread(chatId: EntityId): Promise<ChatThreadDetail>;
   listTeammates(spaceId: SpaceId | string): Promise<readonly ChatTeammateOption[]>;
   /**

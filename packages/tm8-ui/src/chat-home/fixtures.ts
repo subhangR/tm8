@@ -4,8 +4,10 @@ import type {
   ChatHomePort,
   ChatPostInput,
   ChatCreateInput,
+  ChatThreadConfig,
   ChatThreadDetail,
   ChatThreadSummary,
+  ChatTurn,
   ChatTurnFrame,
 } from './types';
 
@@ -32,7 +34,10 @@ const ANCHOR_ID = '019f0000-0000-7000-8000-000000000001' as EntityId;
 export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
   summary: {
     rootId: ROOT_ID,
-    anchorId: ANCHOR_ID,
+    /* The fixture chat is about the fixture channel — the one row that
+       exercises the panel header's relation. Wave 1's field was `anchorId`
+       and meant the message anchor; since 176 it is the `about` edge. */
+    aboutId: ANCHOR_ID,
     title: 'Plan the launch sequence',
     preview: 'I mapped the work into three dependency-safe lanes.',
     updatedAt: '2026-08-13T08:20:00.000Z',
@@ -160,6 +165,151 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
   ],
 };
 
+/**
+ * THE ENTITY FIXTURES' CHATS, AS CONVERSATIONS — the pairing that makes the
+ * chat PANEL readable in the fixture app.
+ *
+ * `src/fixtures/entities.ts` carries two chat rows (`ent-chat-launch`,
+ * `ent-chat-stopped`, PR #582) and a detail for the first. Those give the LIST
+ * its tiles and the panel its header. They cannot give it a BODY: the panel's
+ * conversation archetype mounts `ChatHomeSurface`, which builds its port from
+ * the seam, and against a fixture seam that port is this module — which knew
+ * nothing about those ids. Opening either chat rendered "This chat is not
+ * present in the latest space-wide read."
+ *
+ * So the ids are paired HERE, as literals rather than by importing the entity
+ * fixtures: `real-port.ts` imports this file on the PRODUCTION path (it is what
+ * a fixture seam resolves to), and pulling the whole entity dataset in behind
+ * it would put every fixture row in the shipped bundle. Two string constants
+ * do not.
+ *
+ * `aboutId` differs deliberately between them — one has a subject and one does
+ * not — because the header's `about` chip renders only for the first, and a
+ * pair where both look the same could not show that the absence is honest.
+ *
+ * BOTH ARE DATED BEFORE THE DEMO THREAD, and that is load-bearing rather than
+ * arbitrary. The chat screen's cold start auto-opens the most RECENT
+ * conversation, and two host-level suites drive the gate expecting to land on
+ * the demo thread — the only one carrying a ledger read line and a delegation
+ * to follow. Dating these later silently retargeted that auto-open and took
+ * both suites with it, which reads as the ledger breaking rather than as the
+ * fixture list growing.
+ */
+const ENTITY_CHAT_LAUNCH = 'ent-chat-launch' as EntityId;
+/** `sessionLive` in `src/fixtures/entities.ts` — the one session a chip can
+ *  resolve AND a host can follow through to a terminal. */
+const LIVE_SESSION = '019f0000-0000-7000-8000-000000000031' as EntityId;
+const ENTITY_CHAT_STOPPED = 'ent-chat-stopped' as EntityId;
+
+/**
+ * The subject `ent-chat-launch` is about — a TASK row `src/fixtures` carries.
+ *
+ * A task rather than a blueprint on purpose: `graph` has no summary fixture yet
+ * (`fixtures.test.ts` lists it under NO_SUMMARY_FIXTURE_YET), and pointing the
+ * relation at an id nothing resolves would draw a chip that never fills in —
+ * which looks exactly like the resolver being broken.
+ */
+const ENTITY_CHAT_SUBJECT = 'task-4f8c2a9e' as EntityId;
+
+function entityChatThread(
+  rootId: EntityId,
+  aboutId: EntityId | null,
+  title: string,
+  mode: ChatThreadConfig['mode'],
+  state: ChatThreadSummary['state'],
+  turns: ChatTurn[],
+): ChatThreadDetail {
+  return {
+    summary: {
+      rootId,
+      aboutId,
+      title,
+      /* Indexed rather than `.at(-1)`: this package's `lib` predates ES2022. */
+      preview: turns[turns.length - 1]?.body ?? title,
+      updatedAt: turns[turns.length - 1]?.createdAt ?? '2026-08-11T08:20:00.000Z',
+      replyCount: turns.length,
+      config: {
+        teammateId: AGENT.id as EntityId,
+        teammateLabel: 'Forge',
+        model: 'claude-opus-5',
+        modelLabel: 'Opus 5',
+        mode,
+      },
+      state,
+    },
+    turns,
+  };
+}
+
+/**
+ * The conversations behind the entity fixtures' two chat rows.
+ *
+ * The second turn of the first thread is THIRD-PARTY: a work session reporting
+ * back into the chat it was spawned from, which is the traffic migration 176
+ * made possible and the reason the transcript learned to draw a source chip.
+ * A fixture set without one cannot exercise that treatment, and the treatment
+ * is invisible to every jsdom assertion that does not go looking for it.
+ */
+export const ENTITY_CHAT_THREADS: readonly ChatThreadDetail[] = [
+  entityChatThread(
+    ENTITY_CHAT_LAUNCH,
+    ENTITY_CHAT_SUBJECT,
+    'Plan the launch sequence',
+    'plan',
+    'streaming',
+    [
+      {
+        messageId: 'ent-chat-launch-m1' as EntityId,
+        role: 'user',
+        author: HUMAN,
+        createdAt: '2026-08-11T08:19:00.000Z',
+        body: 'Walk me through what still has to land before we ship.',
+        parts: [],
+      },
+      {
+        messageId: 'ent-chat-launch-m2' as EntityId,
+        role: 'assistant',
+        author: AGENT,
+        createdAt: '2026-08-11T08:20:00.000Z',
+        body: 'Three lanes, none blocking the others. I have spawned the first.',
+        parts: [],
+      },
+      {
+        messageId: 'ent-chat-launch-m3' as EntityId,
+        role: 'user',
+        /* The PERSONA, resolved through a session — `kind: 'team_member'`,
+           `isAgent: true`, indistinguishable from the chat's own agent above.
+           That identity is exactly why `sourceEntityId` has to exist. */
+        author: { ...AGENT, via: { sessionId: LIVE_SESSION } },
+        createdAt: '2026-08-11T08:31:00.000Z',
+        body: 'Lane 1 is green and pushed.',
+        parts: [],
+        sourceEntityId: LIVE_SESSION,
+      },
+    ],
+  ),
+  entityChatThread(
+    ENTITY_CHAT_STOPPED,
+    null,
+    'Audit the release blockers',
+    'ask',
+    /* The node restarted with work still queued — `runtimeState: 'stopped'`
+       AND `turnState: 'queued'` on the entity row, folded to the one word this
+       surface draws. See that row's own note for why the axes are independent. */
+    'stopped-continuable',
+    [
+      {
+        messageId: 'ent-chat-stopped-m1' as EntityId,
+        role: 'user',
+        author: HUMAN,
+        createdAt: '2026-08-10T17:02:00.000Z',
+        body: 'Which of the open PRs actually block the cut?',
+        parts: [],
+      },
+    ],
+  ),
+];
+
 export interface ChatHomeFixtureControls {
   /** Every `chat.start` this fixture served, in order. */
   roots: ChatCreateInput[];
@@ -169,6 +319,17 @@ export interface ChatHomeFixtureControls {
 }
 
 export function createChatHomeFixturePort(
+  /*
+   * THE DEMO THREAD ALONE, STILL. `ENTITY_CHAT_THREADS` is NOT in this default,
+   * and that is deliberate rather than an omission: ~40 focused tests call this
+   * with no arguments and rely on the cold-start auto-open landing on the one
+   * thread there is. Widening the default silently changed what "the fixture
+   * thread" means for every one of them.
+   *
+   * The entity fixtures' threads are supplied by the one caller that needs
+   * them — `real-port.ts`'s fixture-seam branch, which is the path the fixture
+   * APP takes. See `ENTITY_CHAT_THREADS`.
+   */
   initial: readonly ChatThreadDetail[] = [CHAT_HOME_FIXTURE_THREAD],
 ): { port: ChatHomePort; controls: ChatHomeFixtureControls } {
   const details = new Map(initial.map((thread) => [thread.summary.rootId, structuredClone(thread)]));
@@ -186,6 +347,12 @@ export function createChatHomeFixturePort(
   const port: ChatHomePort = {
     async listThreads() {
       return summaries();
+    },
+    /* The fixture's own `about` index, folded from the same map the summaries
+       come from — so a fixture host filtering by subject sees exactly the rows
+       the list gave it, and the two cannot disagree. */
+    async chatIdsAbout(aboutId) {
+      return summaries().filter((s) => s.aboutId === aboutId).map((s) => s.rootId);
     },
     async readThread(rootId) {
       const detail = details.get(rootId);
@@ -213,7 +380,10 @@ export function createChatHomeFixturePort(
         details.set(chatId, {
           summary: {
             rootId: chatId,
-            anchorId: (input.aboutId ?? chatId) as EntityId,
+            /* NULL WHEN THE COMPOSER PASSED NONE. Wave 1 folded an absent
+               subject to the chat's own id, which made every bare Home chat a
+               chat about itself — invisible while nothing drew the relation. */
+            aboutId: input.aboutId ?? null,
             title: input.body,
             preview: input.body,
             updatedAt: new Date().toISOString(),

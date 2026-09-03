@@ -68,6 +68,16 @@ function dec(value: string): string | null {
 // parse
 // ---------------------------------------------------------------------------
 
+/**
+ * "Plausibly an entity id" for a query parameter that names one.
+ *
+ * DELIBERATELY LOOSE — this is a shape gate, not a validation. The route layer
+ * cannot know whether an entity exists, and a strict uuid pattern would refuse
+ * a legitimate id form the graph adopts later. It exists only so that a
+ * pasted `?about=hello` does not travel into a composer as a subject.
+ */
+const ID_LIKE = /^[0-9a-zA-Z_-]{8,64}$/;
+
 const MODES = new Set<string>(ALL_MODES);
 const TABS = new Set<string>(PANEL_TABS);
 // Retired tokens are ACCEPTED here and canonicalized below — see
@@ -319,12 +329,20 @@ function parseTarget(
            a feature alive to honour its own URL. */
         const raw = query.get('stage') ?? (query.get('graph') === 'full' ? 'graph' : null);
         const stage = COCKPIT_STAGES.has(raw as CockpitStage) ? (raw as CockpitStage) : null;
+        /* `?about=` — the subject a new conversation here is about. Same
+           lossy-tolerant posture as `?stage=`: anything that is not
+           plausibly an entity id is simply not carried, and a subject that no
+           longer exists is the SCREEN's problem to render honestly, not a
+           reason to refuse the route. */
+        const about = query.get('about');
+        const aboutId = about && ID_LIKE.test(about) ? (about as EntityId) : null;
         return {
           view: 'home',
           root: {
             type: 'chats',
             threadId: rest[2] ?? null,
             ...(stage ? { stage } : {}),
+            ...(aboutId ? { aboutId } : {}),
           },
         };
       }
@@ -448,7 +466,7 @@ function pathOf(route: Route): string {
          so the canonical form drops the segment (normalize agrees) — UNLESS a
          stage is up, which needs the `/chat` segment to survive a round-trip,
          since bare `/home` does not read `stage` (nor the `graph` alias). */
-      if (root?.type === 'chats' && root.stage) return `${base}/home/chat`;
+      if (root?.type === 'chats' && (root.stage || root.aboutId)) return `${base}/home/chat`;
       return `${base}/home`;
     }
     case 'feed':
@@ -523,6 +541,7 @@ export function build(route: Route): BuildOutcome {
   const viewParams: Param[] = [];
   if (t.view === 'home') {
     if (t.root?.type === 'chats' && t.root.stage) viewParams.push(['stage', t.root.stage]);
+    if (t.root?.type === 'chats' && t.root.aboutId) viewParams.push(['about', t.root.aboutId]);
   } else if (t.view === 'kind') {
     if (t.mode) viewParams.push(['mode', t.mode]);
   } else if (t.view === 'entity') {
@@ -619,14 +638,16 @@ export function normalize(route: Route): Route {
   }
 
   /* Canonical Home root: `chats` with no thread IS the bare `/home` form —
-     unless a stage is up, which only the `/chat` segment carries (bare `/home`
-     does not read `stage`, so collapsing would lose it). */
+     unless a stage is up or a subject is bound, both of which only the
+     `/chat` segment carries (bare `/home` reads neither, so collapsing would
+     lose them). */
   const target: NavView =
     route.target.view === 'home' &&
     route.target.root &&
     route.target.root.type === 'chats' &&
     route.target.root.threadId === null &&
-    !route.target.root.stage
+    !route.target.root.stage &&
+    !route.target.root.aboutId
       ? { view: 'home' }
       : route.target;
 

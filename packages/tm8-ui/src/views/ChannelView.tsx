@@ -267,6 +267,8 @@ export function ChannelView({
         livenessOf: data.livenessOf,
         channelFeedPort: feedPort,
         viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => setSelectedId(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
@@ -279,6 +281,8 @@ export function ChannelView({
         livenessOf: data.livenessOf,
         channelFeedPort: feedPort,
         viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => setSelectedId(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));

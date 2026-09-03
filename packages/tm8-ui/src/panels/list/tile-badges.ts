@@ -109,6 +109,15 @@ const PR_STATE_TONE: Record<string, PillTone> = {
   closed: 'idle',
 };
 
+/**
+ * The chat queue's two working words. `idle` is deliberately absent: it is
+ * filtered before the lookup (see the case), so a tone for it would be dead.
+ */
+const CHAT_TURN_TONE: Record<string, PillTone> = {
+  queued: 'wait',
+  running: 'run',
+};
+
 const PRIORITY_TONE: Record<string, PillTone> = {
   urgent: 'block',
   high: 'block',
@@ -266,6 +275,33 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return meta(str(field(row, 'agentTool')));
     case 'model':
       return meta(str(field(row, 'model')));
+    /*
+     * CHAT (migration 176). Three facts no other kind has; `model` above
+     * already answers for a chat, because that source reads `state.model`
+     * structurally and a chat state carries one.
+     *
+     * `turnState` is the QUEUE and it is drawn as a STATUS PILL rather than a
+     * meta word, because it is the one fact on the row that changes while you
+     * are looking at it. `idle` renders NOTHING: a chat that is not working is
+     * the resting state of every row in the list, and a pill on all of them
+     * would be a pill that says nothing. That is the same rule `shareMode`
+     * follows two cases down for `none`.
+     */
+    case 'chatMode':
+      return meta(str(field(row, 'mode')));
+    case 'chatTurnState': {
+      const v = str(field(row, 'turnState'));
+      if (!v || v === 'idle') return null;
+      return { slot: 'status', word: v, tone: CHAT_TURN_TONE[v] ?? 'info', dot: 'solid' };
+    }
+    case 'chatLastTurnAt': {
+      /* The ISO instant, verbatim — this module formats no dates (`dueDate`
+         above prints the stored string too). The tile's own chrome renders
+         relative time from `activityAt`; this is the chat's OWN clock, which
+         is a different fact: a renamed chat moves `activityAt` and not this. */
+      const v = str(field(row, 'lastTurnAt'));
+      return meta(v && `last turn ${v}`);
+    }
     case 'shareMode': {
       const v = str(field(row, 'shareMode'));
       return v && v !== 'none' ? meta(`shared: ${v}`) : null;
@@ -349,4 +385,5 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   'memberRole', 'score', 'taskDoneCount', 'repository', 'sha',
   'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',
   'projectVersion', 'profileVersions', 'customFields',
+  'chatMode', 'chatTurnState', 'chatLastTurnAt',
 ]);

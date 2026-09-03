@@ -75,6 +75,7 @@ import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useMembershipSurface } from './membershipSurface';
@@ -98,6 +99,14 @@ export interface EntityViewProps {
   reasons: DetailReasons;
   viewerMemberId?: string | null;
   onNotice(notice: Notice): void;
+  /**
+   * "Chat about this" — the row cluster's and the list header's verb, which is
+   * a NAVIGATION to Home's composer with the subject bound. Supplied by the
+   * shell (`chatAboutTarget`), because this screen takes navigation as a port
+   * and must not reach the global store. Absent ⇒ the verb renders refused
+   * with a reason rather than inert.
+   */
+  onChatAbout?(aboutId: EntityId | null): void;
   /** The rail row is the source of truth for WHICH kind; the in-panel kind
       switcher re-routes through it so the rail highlight never lies. */
   onKindChange?(kind: string): void;
@@ -578,6 +587,20 @@ export function EntityView(props: EntityViewProps) {
   });
 
   /**
+   * THE LIST'S DISPATCHERS, COMPOSED — the session-start verbs and
+   * `chat-about`, routed by which one names the verb.
+   *
+   * `wiredActions` is the union, so `HeaderActions` and `RowActionCluster`
+   * draw exactly the verbs something behind them can perform; a verb in
+   * neither list keeps its honest refusal rather than lighting up inert.
+   */
+  const chatAbout = useChatAbout({ open: props.onChatAbout });
+  const listActions = composeListActions([
+    { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+    { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+  ]);
+
+  /**
    * Titles for the attention list. Attention spans every kind, so the left
    * list (one kind) is not enough — the graph hydration is the widest set of
    * summaries already in memory. A miss returns undefined and the inbox reads
@@ -762,6 +785,8 @@ export function EntityView(props: EntityViewProps) {
         livenessOf: data.livenessOf,
         channelFeedPort,
         viewerMemberId: props.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => setAux({ sort: 'entity', id }),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
@@ -774,6 +799,8 @@ export function EntityView(props: EntityViewProps) {
         livenessOf: data.livenessOf,
         channelFeedPort,
         viewerMemberId: props.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => setAux({ sort: 'entity', id }),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
@@ -1006,8 +1033,8 @@ export function EntityView(props: EntityViewProps) {
              honest disabled-with-reason state on hosts without one. */
           launch={launchPort}
           /* The header verbs (101) — see the same pair in `WorkspaceView`. */
-          onAction={sessionStart.onAction}
-          wiredActions={sessionStart.wiredActions}
+          onAction={listActions.onAction}
+          wiredActions={listActions.wiredActions}
         />
       </section>
       )}
@@ -1374,6 +1401,8 @@ export function EntityView(props: EntityViewProps) {
                 livenessOf: data.livenessOf,
                 channelFeedPort,
                 viewerMemberId: props.viewerMemberId,
+                nodeKey: data.nodeKey,
+                skillOptions: data.skillOptions,
                 onOpenEntity: (id) => setAux({ sort: 'entity', id }),
                 onSwitchToTerminal: () => {
                   setContentSurfaces((current) => ({ ...current, [selectedId as EntityId]: 'terminal' }));

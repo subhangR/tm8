@@ -47,6 +47,7 @@ import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
@@ -79,6 +80,14 @@ export interface WorkspaceViewProps {
   menuCollapsed: boolean;
   reasons: DetailReasons;
   onNotice(notice: Notice): void;
+  /**
+   * "Chat about this" — the row cluster's and the list header's verb, which is
+   * a NAVIGATION to Home's composer with the subject bound. Supplied by the
+   * shell (`chatAboutTarget`), because this screen takes navigation as a port
+   * (`nav: NavPort`) and must not reach the global store. Absent ⇒ the verb
+   * renders refused with a reason rather than inert.
+   */
+  onChatAbout?(aboutId: EntityId | null): void;
   onPinRefusal?(id: EntityId, refusal: string): void;
   /** The kind selectors are LIVE: the panel switches kind (T0-1 law). */
   onLeftKindChange?(kind: string): void;
@@ -377,6 +386,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     },
   });
 
+  /**
+   * THE LIST'S DISPATCHERS, COMPOSED — the session-start verbs and
+   * `chat-about`, routed by which one names the verb.
+   *
+   * `wiredActions` is the union, so `HeaderActions` and `RowActionCluster`
+   * draw exactly the verbs something behind them can perform; a verb in
+   * neither list keeps its honest refusal rather than lighting up inert.
+   */
+  const chatAbout = useChatAbout({ open: props.onChatAbout });
+  const listActions = composeListActions([
+    { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+    { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+  ]);
+
   const renderPanel = useCallback(
     (id: EntityId, host: 'pinned' | 'stack') => {
       const detail = data.detailOf(id);
@@ -476,6 +499,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             livenessOf: data.livenessOf,
             channelFeedPort,
             viewerMemberId: props.viewerMemberId,
+            nodeKey: data.nodeKey,
+            skillOptions: data.skillOptions,
             onOpenEntity: openEntity,
             onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
           })}
@@ -486,6 +511,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             livenessOf: data.livenessOf,
             channelFeedPort,
             viewerMemberId: props.viewerMemberId,
+            nodeKey: data.nodeKey,
+            skillOptions: data.skillOptions,
             onOpenEntity: openEntity,
             onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
           }, 'discussion')}
@@ -824,8 +851,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                CONTAINS: `▮ Terminal` commits and is drawn; `launch-session`
                is absent from the list, so it is not drawn at all rather than
                drawn as a live button this dispatcher would silently drop. */
-            onAction={sessionStart.onAction}
-            wiredActions={sessionStart.wiredActions}
+            onAction={listActions.onAction}
+            wiredActions={listActions.wiredActions}
           />
         </>
       }
@@ -940,8 +967,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                CONTAINS: `▮ Terminal` commits and is drawn; `launch-session`
                is absent from the list, so it is not drawn at all rather than
                drawn as a live button this dispatcher would silently drop. */
-            onAction={sessionStart.onAction}
-            wiredActions={sessionStart.wiredActions}
+            onAction={listActions.onAction}
+            wiredActions={listActions.wiredActions}
           />
         </>
       }

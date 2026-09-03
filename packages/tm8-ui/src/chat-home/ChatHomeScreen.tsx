@@ -23,7 +23,7 @@ import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
 import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
-import type { ChatEntityResolver } from './EntityChip';
+import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
 import { EntityTray } from './EntityTray';
 import { LedgerPanel } from './LedgerPanel';
@@ -1671,6 +1671,28 @@ export function ChatHomeScreen({
               <strong>{detail?.summary.title ?? 'New conversation'}</strong>
               <span>{activeConfig ? `with ${activeConfig.teammateLabel}` : 'Work with your graph from one place'}</span>
             </div>
+            {/* THE `about` RELATION, where the conversation is (Wave 2).
+
+                A chat's subject is an edge, and until now nothing drew it: a
+                craft chat and a bare Home chat looked identical, and the one
+                fact that distinguished them lived only in the graph. It is a
+                CHIP rather than a word so the subject is reachable — the whole
+                point of the relation is that it names something you can open.
+
+                Drawn from `summary.aboutId`, which `readThread` fills for the
+                chat actually on screen. The LIST does not carry it (see
+                `ChatThreadSummary.aboutId`), so this renders once a thread is
+                open and never flickers a wrong subject in from a stale row. */}
+            {detail?.summary.aboutId ? (
+              <div className="tch-about" data-testid="chat-about-relation">
+                <span className="tch-about__word">about</span>
+                <EntityChip
+                  refInfo={{ id: detail.summary.aboutId }}
+                  resolve={resolveEntity}
+                  onOpen={onOpenEntity}
+                />
+              </div>
+            ) : null}
           </header>
         )}
 
@@ -2220,11 +2242,31 @@ function Turn({
    * on send. No `viewerId` degrades to the role heuristic — never crash,
    * never guess.
    */
-  const isSelf = viewerId
-    ? turn.author
-      ? turn.author.id === viewerId
-      : turn.role === 'user'
-    : turn.role === 'user';
+  /**
+   * THIRD PARTY — this turn was written from SOMEWHERE ELSE.
+   *
+   * A chat is a routing target since 176, so a message here may have been
+   * posted by a work session reporting back, or by another chat. Neither is
+   * the person this conversation is with, and neither is its agent — but the
+   * AUTHOR cannot tell them apart: a session's persona resolves to the same
+   * `team_member` summary the chat's own agent carries. The port reads the
+   * `authored_from` edge instead and drops the chat's own id (its agent turns
+   * carry provenance too, pointing at the chat), so presence here means
+   * exactly "not from this conversation".
+   *
+   * IT OVERRIDES SIDEDNESS. A third-party turn is `role: 'user'` and, with no
+   * `viewerId` supplied, the role heuristic would land it on the viewer's own
+   * side — a worker's report drawn as something you said. Neither side is
+   * right for it, so it renders in the middle lane and says who sent it.
+   */
+  const thirdParty = turn.sourceEntityId != null;
+  const isSelf = thirdParty
+    ? false
+    : viewerId
+      ? turn.author
+        ? turn.author.id === viewerId
+        : turn.role === 'user'
+      : turn.role === 'user';
   /**
    * AN ANSWER IS ITS RENDERED PARTS. The server writes the assistant message
    * body twice — 'Agent turn in progress.' when the turn is claimed, the
@@ -2252,7 +2294,13 @@ function Turn({
     (turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending))
     && !turn.turnInFlight;
   return (
-    <article className="tch-turn" data-role={turn.role} data-mode={mode} data-self={isSelf ? 'true' : 'false'}>
+    <article
+      className="tch-turn"
+      data-role={turn.role}
+      data-mode={mode}
+      data-self={isSelf ? 'true' : 'false'}
+      data-third-party={thirdParty ? 'true' : undefined}
+    >
       <header className="tch-turn__byline">
         <Avatar
           actorId={actorId}
@@ -2262,6 +2310,21 @@ function Turn({
           src={turn.author?.avatar}
         />
         <strong>{label}</strong>
+        {/* THE SOURCE, AS A CHIP — the same `EntityChip` a tool call's entity
+            reference gets, resolving kind mark and title through the same
+            cached reader. A bare id would say "this came from elsewhere"
+            without saying from where, which is the half of the fact that
+            matters when a worker reports into a chat you are watching. */}
+        {turn.sourceEntityId ? (
+          <span className="tch-turn__source" data-testid="chat-turn-source">
+            <span className="tch-turn__source-word">via</span>
+            <EntityChip
+              refInfo={{ id: turn.sourceEntityId }}
+              resolve={resolveEntity}
+              onOpen={onOpenEntity}
+            />
+          </span>
+        ) : null}
         <span className="tch-mode-chip" title={`This answer ran in ${mode} mode`}>{mode}</span>
         <Timestamp at={turn.createdAt} />
       </header>

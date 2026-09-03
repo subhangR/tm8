@@ -89,7 +89,17 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // but keep their refs, routes and menu-editor eligibility. Board v2 occupies
 // the visible Board seat client-side because it is a route-only screen rather
 // than a MenuViewRef.
-export const SHIPPED_DEFAULT_MENU_REVISION = 20;
+// 20 → 22 (2026-09-03, chat as an entity / migration 180): a CHATS group joins
+// after Home. THIS TREE IS FROZEN (R-D: tm8-ui is canonical), so this is the
+// mechanical parity repair a contract change forces, not feature work — the
+// group's SURFACES live in tm8-ui. `DEFAULT_MENU_GROUP_SPINE` is the one truth
+// this default and the server seeder both answer to, so a group added there
+// reds this file until it lands here too. That is the spine doing its job: the
+// 059 lesson was a seeder that silently dropped a group with every suite green.
+//
+// (21 was CodeBrain, migration 173: the constant below gained the group and
+// this number did not. Corrected in the same pass.)
+export const SHIPPED_DEFAULT_MENU_REVISION = 22;
 
 /**
  * The menu half of the revision-20 tab shell. These GROUPS become top-row
@@ -148,6 +158,13 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // group railless — add a second row here and the surface grows a third
     // pane, which is the arrangement this revision exists to prevent.
     { id: 'chats', label: 'Home', items: [{ type: 'view', ref: 'dashboard' }] },
+    // CHATS (revision 22, migration 180). The one group in this default whose
+    // item is a KIND rather than a view, which is what gives it a rail:
+    // `isRaillessGroup` answers true only for a lone childless VIEW item.
+    //
+    // THE ID IS `conversations`, NOT `chats` — that id has belonged to the
+    // group labelled Home since 127 (134 relabelled it without renaming it).
+    { id: 'conversations', label: 'Chats', items: [{ type: 'kind', ref: 'chat' }] },
     // WORK returns (revision 19), and it is the THREE-PANEL WORKSPACE — one
     // childless `workspace` view item, so the group is railless by the same
     // shape rule as Home and Board and the surface is exactly the split

@@ -52,13 +52,18 @@ function seamStub(chats: unknown[] = [chatSummary()]) {
       : { page: { items: [{ id: TEAMMATE, title: 'Forge' }] } }
   ));
   const connections = vi.fn(async () => ({ items: [] }));
+  /* `entities.feed` — the only op that projects `authored_from`. Empty by
+     default so the transcript reads exactly as it did before provenance
+     existed; the cases that care supply their own. */
+  const feed = vi.fn(async () => ({ items: [] }));
   const seam = {
     query,
     connections,
+    feed,
     commands: { postMessage, startChat },
     onChatTurn: vi.fn(() => () => undefined),
   } as unknown as Seam;
-  return { seam, postMessage, startChat, query, connections };
+  return { seam, postMessage, startChat, query, connections, feed };
 }
 
 describe('real chat-home seam adapter', () => {
@@ -305,5 +310,150 @@ describe('real chat-home seam adapter', () => {
       .toBe('streaming');
     expect((await createChatHomePortFromSeam(seamStub([stopped]).seam).listThreads('s'))[0]?.state)
       .toBe('stopped-continuable');
+  });
+
+  /**
+   * THE N+1 IS GONE — the assertion is a CALL COUNT, because that is the only
+   * thing that changed.
+   *
+   * Wave 1's `listThreads` asked each listed chat what it was about, one
+   * `entities.connections` call per row, so that Craft's picker could filter
+   * by subject. It was documented in the code as a known N+1 on the one read
+   * whose count scales with the space. A by-shape test would not have caught
+   * it and would not catch its return: the ROWS were correct either way.
+   */
+  it('lists WITHOUT a per-chat subject read, and claims no subject it did not read', async () => {
+    const { seam, connections } = seamStub([
+      chatSummary(),
+      chatSummary({ id: '019f0000-0000-7000-8000-000000000301' }),
+      chatSummary({ id: '019f0000-0000-7000-8000-000000000302' }),
+    ]);
+    const port = createChatHomePortFromSeam(seam);
+
+    const rows = await port.listThreads('space-1');
+    expect(rows).toHaveLength(3);
+    expect(connections).not.toHaveBeenCalled();
+    // NULL, not the chat's own id. Wave 1 folded an absent subject to
+    // `item.aboutId ?? item.chatId`, which made every bare Home chat look like
+    // a chat about itself — harmless while the only reader was an equality
+    // filter that never matched, and a lie the moment a header draws it.
+    expect(rows.map((row) => row.aboutId)).toEqual([null, null, null]);
+  });
+
+  it('reads the subject for the ONE chat being opened, and surfaces it', async () => {
+    const { seam, connections } = seamStub();
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({ items: [] }));
+    connections.mockResolvedValue({ items: [{ target: { id: ABOUT } }] } as never);
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+
+    const detail = await port.readThread(CHAT);
+    expect(detail.summary.aboutId).toBe(ABOUT);
+    expect(connections).toHaveBeenCalledTimes(1);
+    expect(connections).toHaveBeenCalledWith(
+      CHAT,
+      expect.objectContaining({ types: ['about'], direction: 'outgoing' }),
+    );
+  });
+
+  it('answers "which chats are about X" from ONE incoming-edge read on X', async () => {
+    const { seam, connections } = seamStub();
+    connections.mockResolvedValue({
+      items: [{ source: { id: CHAT } }, { source: { id: '019f0000-0000-7000-8000-000000000301' } }],
+    } as never);
+    const port = createChatHomePortFromSeam(seam);
+
+    const ids = await port.chatIdsAbout(ABOUT);
+    // Asked of the SUBJECT, not of the chats — which is the whole saving.
+    expect(connections).toHaveBeenCalledTimes(1);
+    expect(connections).toHaveBeenCalledWith(
+      ABOUT,
+      expect.objectContaining({ types: ['about'], direction: 'incoming' }),
+    );
+    expect(ids).toEqual([CHAT, '019f0000-0000-7000-8000-000000000301']);
+  });
+
+  it('a subject that cannot be read is not a reason to fail the list or the thread', async () => {
+    const { seam, connections } = seamStub();
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({ items: [] }));
+    connections.mockRejectedValue(new Error('refused'));
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+
+    await expect(port.readThread(CHAT)).resolves.toMatchObject({ summary: { aboutId: null } });
+    await expect(port.chatIdsAbout(ABOUT)).resolves.toEqual([]);
+  });
+
+  /**
+   * THIRD-PARTY PROVENANCE — `authored_from`, read beside the transcript.
+   *
+   * A chat is a routing target since 176, so a message here may have been
+   * written by a work session reporting back or by another chat. `state.author`
+   * cannot tell those apart from the chat's own agent — a session's persona
+   * resolves to the same `team_member` summary — so the marker is the edge.
+   */
+  it('marks turns authored from ELSEWHERE, and never the chat\'s own agent turns', async () => {
+    const OWN = '019f0000-0000-7000-8000-000000000401' as EntityId;
+    const FROM_SESSION = '019f0000-0000-7000-8000-000000000402' as EntityId;
+    const HUMAN = '019f0000-0000-7000-8000-000000000403' as EntityId;
+    const SESSION = '019f0000-0000-7000-8000-000000000404' as EntityId;
+    const { seam, feed } = seamStub();
+    const message = (id: string, body: string) => ({
+      id,
+      kind: 'message',
+      createdAt: '2026-09-03T08:00:00.000Z',
+      createdBy: null,
+      state: { kind: 'message', author: null },
+      content: { kind: 'message', body },
+    });
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({
+      items: [message(HUMAN, 'Ping.'), message(OWN, 'Pong.'), message(FROM_SESSION, 'Lane done.')],
+    }));
+    feed.mockResolvedValue({
+      items: [
+        // A human turn: no `authored_from` edge at all.
+        { itemKind: 'message', message: { id: HUMAN }, sourceWorkSessionId: null },
+        // THE CHAT'S OWN AGENT TURN. `createAgentMessage` posts it with
+        // `p_source_chat_id = the chat`, so it DOES carry provenance — pointing
+        // here. Testing for mere presence would draw every agent reply as a
+        // third party, which is why the port compares against the chat id.
+        { itemKind: 'message', message: { id: OWN }, sourceWorkSessionId: CHAT },
+        { itemKind: 'message', message: { id: FROM_SESSION }, sourceWorkSessionId: SESSION },
+        // Activity rows ride the same feed and are not turns.
+        { itemKind: 'activity', activity: { id: 'act-1' }, sourceWorkSessionId: SESSION },
+      ],
+    } as never);
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+
+    const detail = await port.readThread(CHAT);
+    expect(feed).toHaveBeenCalledWith(CHAT, { limit: 100 });
+    expect(detail.turns.map((turn) => turn.sourceEntityId)).toEqual([
+      undefined, undefined, SESSION,
+    ]);
+  });
+
+  it('renders the transcript unchanged when the node cannot serve the feed', async () => {
+    const { seam, feed } = seamStub();
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({
+      items: [{
+        id: MSG,
+        kind: 'message',
+        createdAt: '2026-09-03T08:00:00.000Z',
+        createdBy: null,
+        state: { kind: 'message', author: null },
+        content: { kind: 'message', body: 'Ping.' },
+      }],
+    }));
+    feed.mockRejectedValue(new Error('feed scope not applicable'));
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+
+    // A provenance read is an enhancement to a conversation, never a gate on
+    // reading it: every bubble is first-party, which is what this surface
+    // assumed before provenance existed.
+    const detail = await port.readThread(CHAT);
+    expect(detail.turns).toHaveLength(1);
+    expect(detail.turns[0]?.sourceEntityId).toBeUndefined();
   });
 });

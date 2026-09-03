@@ -18,7 +18,7 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-20 menu-backed tabs', () => {
+  it('encodes the shipped group spine — the revision-22 menu-backed tabs', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       // Revision 17 (2026-08-16, unified Home — task 01a00932): the Work and
       // Channels groups retired and the conversation tab is renamed HOME.
@@ -28,6 +28,12 @@ describe('the shipped default menu', () => {
       // the redesigned Collab surface (a later feature). The group id under
       // the Home label is still `chats` — ids are wire-stable, labels move.
       'Home',
+      // Revision 22 (2026-09-03, migration 180): CHATS, seated after Home —
+      // the tab that lists the `chat` kind migration 176 registered. Its group
+      // id is `conversations`, NOT `chats`: that id belongs to the group
+      // labelled Home above, which is why Wave 1 left the menu alone rather
+      // than "swapping the Chats group" and deleting Home.
+      'Chats',
       // Revision 19 (2026-08-16, migration 140 — task 01a00b46): WORK returns
       // second in the row, and it is the three-panel workspace itself. 17
       // retired a Work group that was a RAIL OF ROWS duplicating Home's
@@ -53,7 +59,14 @@ describe('the shipped default menu', () => {
     // four are whole-centre views. A menu rail on any of them would be a
     // column holding one row repeating the tab's own name — what made
     // revision 13 retire the tab, solved by the shape rule instead.
-    for (const group of SHIPPED_DEFAULT_MENU.groups) {
+    // CHATS IS THE ONE EXCEPTION (revision 22, migration 180), and it is the
+    // shape rule ANSWERING rather than an exemption: `isRaillessGroup` requires
+    // a lone childless VIEW item, and that group's one item is a KIND. Asserted
+    // as an exact PARTITION so a second railed tab arriving by accident still
+    // reds this.
+    const railed = SHIPPED_DEFAULT_MENU.groups.filter((g) => !isRaillessGroup(g));
+    expect(railed.map((g) => g.id)).toEqual(['conversations']);
+    for (const group of SHIPPED_DEFAULT_MENU.groups.filter((g) => isRaillessGroup(g))) {
       expect(isRaillessGroup(group), group.id).toBe(true);
     }
     // The rule still answers false for a group with real rows — a

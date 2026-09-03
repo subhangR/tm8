@@ -1718,21 +1718,45 @@ const ROWS: readonly KindConfig[] = [
   /*
    * -- chat (migration 176: a conversation with a teammate, as an entity) --
    *
-   * WAVE 1 IS THE ROW AND NOTHING ELSE. `domain/registry.test.ts` asserts
-   * totality over `CoreEntityKindSchema`, so a new kind with no row is a build
-   * failure; this is the honest minimum that keeps main usable while the
-   * surfaces land in Wave 2. What that means concretely:
+   * WAVE 2 MAKES THIS THE REAL ROW. Wave 1 shipped the honest minimum — a
+   * generic fields body and a one-badge tile — because `registry.test.ts`
+   * asserts totality over `CoreEntityKindSchema` and a kind with no row is a
+   * build failure. The surfaces are here now.
    *
-   *   * `panel.archetype: 'generic'` — a fields list, the same body every kind
-   *     gets before it earns a bespoke one. Wave 2 mounts the transcript and
-   *     composer here.
+   *   * `panel.archetype: 'conversation'` — the body IS the transcript and its
+   *     composer, with nothing above it. See the archetype's own docblock in
+   *     `types.ts` for why this is neither `hub` (which hangs a feed beneath
+   *     front-door regions a chat does not have) nor `terminal`.
+   *   * `panel.conversation: 'chat-thread'` — WHICH conversation, as registry
+   *     DATA, so `defaultConversationSurfaceKind` never reads a kind literal.
+   *   * `composition: 'chat'` — the body ends at its composer, so no strip, no
+   *     attention section, no footer under it. The same declaration `channel`
+   *     and `work_session` carry, for the same reason.
+   *   * `panel.threads` is ABSENT, i.e. false: a chat is FLAT (176 §1.3 — every
+   *     turn is a root message on the chat and the user→agent pairing lives in
+   *     `chat_turns`). A thread pane here would offer to branch a conversation
+   *     the data model cannot branch.
    *   * `quickCreate: false` — a chat is born from `chat.start`, which needs a
    *     teammate, a model and a mode. The placeholder-only generic flow cannot
    *     supply them, and `chat` is excluded from `CreatableEntityKind` for
    *     exactly that reason. A refused Create control is not a control (the
-   *     `work_session` ruling above, same shape).
-   *   * NOT in the default menu — Wave 2's UI lane seats the Chats tab
-   *     together with the surface it points at.
+   *     `work_session` ruling above, same shape). The list header points at the
+   *     composer instead — see `quickLaunch` below.
+   *   * `rowActions` names NO verbs of its own. `run` arrives by derivation
+   *     (`applyLaunch`) and `chat-about` by derivation (`applyChatAbout`), and
+   *     a chat has no third verb a row can perform: it cannot be completed
+   *     (no category vocabulary of its own) and it cannot be terminated (the
+   *     runtime is stopped from the composer, which knows whether a turn is in
+   *     flight).
+   *
+   * THE TILE PRINTS WHAT THE ROW ACTUALLY CARRIES. `model`, `mode`,
+   * `turnState` and `lastTurnAt` are all on `state` (contract `kind: 'chat'`).
+   * The TEAMMATE'S NAME is not — the state carries `teammateId` and nothing
+   * else, and a tile that rendered a uuid would be worse than one that renders
+   * nothing. The name is visible where the conversation is (the thread header
+   * resolves it through `listTeammates`), and putting it on the row needs one
+   * server-side join in `entity-read.ts`'s chat arm. Recorded rather than
+   * faked.
    */
   {
     kind: 'chat',
@@ -1748,11 +1772,36 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'messages' }] },
+      tile: {
+        badges: [
+          { source: 'chatTurnState' },
+          { source: 'model' },
+          { source: 'chatMode' },
+          { source: 'chatLastTurnAt' },
+          { source: 'messages' },
+        ],
+      },
+      // The header verb is the ONE door a chat is actually born through, and
+      // it is `chat-about` rather than `create` for the same reason
+      // `quickCreate` is false: the composer is the configuration.
+      //
+      // `quickStart`, NOT `quickLaunch` — the two are not interchangeable and
+      // the difference is exactly this verb's shape: `quickLaunch` carries
+      // `flow: 'launch'` and EXPANDS the spawn config in place, while this one
+      // commits on click (it navigates to the composer). Declared as
+      // `quickLaunch` it would open a five-section execution card for a chat.
+      //
+      // At the HEADER there is no row, so the verb opens a chat about nothing
+      // — which is bare Home's new conversation, the honest reading of "start
+      // a chat" from a list of chats. See the action's availability: a subject
+      // is optional, not required.
+      quickStart: 'chat-about',
+      inlineEdit: { title: true },
     }),
     panel: {
-      archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'CHAT' }, COLLECTIONS_BLOCK],
+      archetype: 'conversation',
+      conversation: 'chat-thread',
+      composition: 'chat',
     },
   },
 
@@ -2020,7 +2069,43 @@ function applyLaunch(row: KindConfig): KindConfig {
   };
 }
 
-const KINDS: readonly KindConfig[] = ROWS.map(applyLaunch);
+/**
+ * `chat-about` — "open a chat about this", on every row that can BE talked
+ * about, which is every row.
+ *
+ * DERIVED FOR THE SAME REASON `run` IS. The verb is drawn from the tile's
+ * `list.rowActions`, and writing it into nineteen arrays by hand would make
+ * "which kinds can you open a chat about?" a question with nineteen possible
+ * answers and no authority — the exact drift `applyLaunch` was extracted to
+ * end. Here it has one answer, and it is the graph's: `about` is registered
+ * with `dst_kinds = array['*']` (migration 056:203), so every kind is a legal
+ * subject and no per-kind list belongs in this package.
+ *
+ * TWO EXCLUSIONS, both structural rather than editorial:
+ *
+ *   · `message` — `strategy: 'anchored'` with `slug: null`. It has no
+ *     collection surface, so it has no tile for the verb to sit on; declaring
+ *     it would be a control on a list that does not exist.
+ *   · `chat` itself — the verb OPENS a chat, and a chat about a chat is a
+ *     nesting nobody asked for. Its row still gets the HEADER verb
+ *     (`quickStart`), which is where starting a conversation belongs on a list
+ *     of conversations.
+ *
+ * Appended LAST rather than prepended: `run` leads the cluster by ruling
+ * (`RULED_ORDER`), and an unranked verb keeps its declared position, so this
+ * lands after the kind's own verbs and before the tail's process control.
+ * Idempotent — a row that already names it keeps its own ordering.
+ */
+const NO_CHAT_ABOUT: ReadonlySet<string> = new Set(['message', 'chat']);
+
+function applyChatAbout(row: KindConfig): KindConfig {
+  if (NO_CHAT_ABOUT.has(row.kind)) return row;
+  const declared = row.list.rowActions ?? [];
+  if (declared.includes('chat-about')) return row;
+  return { ...row, list: { ...row.list, rowActions: [...declared, 'chat-about'] } };
+}
+
+const KINDS: readonly KindConfig[] = ROWS.map(applyLaunch).map(applyChatAbout);
 
 const BY_KIND: ReadonlyMap<string, KindConfig> = new Map(KINDS.map((row) => [row.kind, row]));
 

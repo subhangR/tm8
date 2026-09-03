@@ -32,6 +32,7 @@ import { registerNoticeSink } from '../terminal/notifications';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
 import type { ScreenKey } from '../stores/screenStackStore';
 import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
+import { chatAboutTarget } from './useChatAbout';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
@@ -1357,6 +1358,19 @@ export function GateApp(props: GateAppProps = {}) {
    * identity check is what makes an unknown ref unrenderable rather than
    * silently generic (A1a's landing note).
    */
+  /**
+   * "CHAT ABOUT THIS" — the shell's half of the row-cluster verb.
+   *
+   * The verb is a NAVIGATION (see `useChatAbout`), and navigation is the
+   * shell's job: the two screens that draw the verb take navigation as a port
+   * and must not reach the store themselves. One function, handed to both, so
+   * the tile in the workspace and the tile on a kind screen cannot land in
+   * different places.
+   */
+  const openChatAbout = useCallback((aboutId: EntityId | null) => {
+    navStore.getState().navigate(chatAboutTarget(aboutId));
+  }, []);
+
   const presentKind = useCallback<KindPresenter>((ref) => {
     const row = getKind(ref);
     if (row.kind !== ref) return null;
@@ -1981,6 +1995,8 @@ export function GateApp(props: GateAppProps = {}) {
                 channelFeedPort: graphChatFeedPort,
                 connection: data.connection,
                 viewerMemberId,
+                nodeKey,
+                skillOptions: data.skillOptions,
               }}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'git' ? (
@@ -2108,6 +2124,7 @@ export function GateApp(props: GateAppProps = {}) {
               kind={activeTarget.ref}
               reasons={reasons}
               onNotice={notices.push}
+              onChatAbout={openChatAbout}
               onKindChange={(next) => navigateTo({ type: 'kind', ref: next })}
               /* §1.1 — the shell HOLDS the layout mode, so it survives
                  re-renders of this ternary and a kind switch resets it
@@ -2253,6 +2270,11 @@ export function GateApp(props: GateAppProps = {}) {
                   createKindUnavailable={regions.createKindUnavailable}
                   routeThreadId={regions.routeThreadId}
                   onThreadSelected={regions.onThreadSelected}
+                  /* `?about=` — the subject "Chat about this" bound before it
+                     navigated here. Absent for a bare Home chat, which is the
+                     ordinary case; see `HomeView`'s prop for why it rides the
+                     address rather than component state. */
+                  {...(regions.aboutId ? { aboutId: regions.aboutId } : {})}
                   stage={regions.stage}
                   onStageChange={regions.onStageChange}
                   /* The fleet's Transcript link lands on the session's own
@@ -2347,6 +2369,7 @@ export function GateApp(props: GateAppProps = {}) {
               data={data}
               viewerMemberId={viewerMemberId}
               serverBaseUrl={activeServer.routeBaseUrl}
+              onChatAbout={openChatAbout}
               nav={nav}
               leftKind={kinds.leftKind}
               rightKind={kinds.rightKind}

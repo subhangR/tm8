@@ -239,6 +239,53 @@
 .tch-turn__byline strong { color: var(--pn-ink-2); font-size: var(--pn-fs-micro); }
 .tch-turn__byline time { font-family: var(--pn-mono); font-size: var(--pn-fs-tick); }
 
+/* THIRD-PARTY TURNS — written from somewhere that is not this conversation
+   (a work session reporting back, another chat). A chat is a routing target
+   since 176, so these are ordinary traffic here, not an error state.
+
+   CENTRED, not sided. The two sides mean "you" and "the other party", and a
+   worker's report is neither; giving it a side would file it under whichever
+   of the two it is not. It keeps its own indent instead and carries the
+   source chip that names where it came from.
+
+   The left rule is the whole visual difference. Deliberately NOT a colour
+   change: `--pn-block` and friends carry meaning (something is wrong,
+   something is waiting) and nothing here is wrong. */
+.cv2-root .tch-turn[data-third-party='true'] .tch-turn__byline {
+  justify-content: flex-start;
+}
+.cv2-root .tch-turn[data-third-party='true'] .md-root.tch-user-body {
+  margin-left: 26px;
+  border-left: 2px solid var(--pn-ink-3);
+  background: var(--pn-bg);
+}
+/* The `about` relation on the conversation header — the subject this chat is
+   about, as an openable chip. Sits at the end of the header row so the title
+   keeps the leading edge; wraps rather than truncating, because a subject you
+   cannot read is the same as no subject. */
+.tch-about {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-left: auto;
+}
+.tch-about__word {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-tick);
+}
+
+.tch-turn__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.tch-turn__source-word {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-tick);
+}
+
 /* The bubble is a MARKDOWN ROOT since the body render went through
    kit/Markdown, so the panel trick applies (panels.css:947): the `.md-root`
    qualifier is what makes the bubble's own voice outrank markdown.css's

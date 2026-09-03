@@ -221,7 +221,7 @@ describe('Chat Home', () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
     await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
-    const rootId = controls.roots[0]?.anchorId ?? '019f0000-0000-7000-8000-000000000010';
+    const rootId = controls.roots[0]?.aboutId ?? '019f0000-0000-7000-8000-000000000010';
     const messageId = '019f0000-0000-7000-8000-000000000077' as EntityId;
 
     act(() => {

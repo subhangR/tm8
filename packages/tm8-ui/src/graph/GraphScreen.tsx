@@ -37,6 +37,7 @@ import { graphSurfaceFor } from '../views/graphSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from '../views/membershipSurface';
 import { conversationSurfaceFor } from '../views/conversationSurface';
+import type { TriggerOption } from '../rich-input';
 import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
 import type { ConnectionState } from '../data/seam';
 import type { ContentSurface } from '../routes';
@@ -100,6 +101,14 @@ export interface GraphScreenProps {
     channelFeedPort: ChannelFeedPort;
     connection: ConnectionState;
     viewerMemberId?: string | null;
+    /**
+     * The node this browser is talking to, for the chat composer's per-node
+     * model catalog. Part of the CHAT port rather than the top level because
+     * that is the only surface here that needs it, and this port is narrow by
+     * charter — see `seam?: Seam` above for the same posture.
+     */
+    nodeKey: string;
+    skillOptions?: readonly TriggerOption[];
   };
   nodes: readonly EntitySummary[];
   edges: readonly EdgeView[];
@@ -236,6 +245,8 @@ export function GraphScreen(props: GraphScreenProps) {
         livenessOf: data.livenessOf,
         channelFeedPort: props.chat.channelFeedPort,
         viewerMemberId: props.chat.viewerMemberId,
+        nodeKey: props.chat.nodeKey,
+        ...(props.chat.skillOptions ? { skillOptions: props.chat.skillOptions } : {}),
         onOpenEntity: (id) => setSelectedId(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
@@ -248,6 +259,8 @@ export function GraphScreen(props: GraphScreenProps) {
         livenessOf: data.livenessOf,
         channelFeedPort: props.chat.channelFeedPort,
         viewerMemberId: props.chat.viewerMemberId,
+        nodeKey: props.chat.nodeKey,
+        ...(props.chat.skillOptions ? { skillOptions: props.chat.skillOptions } : {}),
         onOpenEntity: (id) => setSelectedId(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
