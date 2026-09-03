@@ -230,6 +230,24 @@ export function NewContainerSheet(props: NewContainerSheetProps) {
           className="pn-ncs__input"
           value={draft.title}
           placeholder="build box"
+          /*
+           * 512 IS `ContainersCreateInputSchema`'s OWN BOUND — `title:
+           * z.string().min(1).max(512)` in `packages/contract/src/schemas.ts`,
+           * which is the authority. NOT Design §4.2's table: that table lists
+           * the numeric ranges and omits the string lengths, so an audit
+           * against it confirms an unbounded field forever.
+           *
+           * REFUSED HERE RATHER THAN SENT TO BE REFUSED THERE — the same rule
+           * the untrusted-project gate above follows. `maxLength` stops the
+           * 513th character at the source, paste included, so the limit is
+           * felt while typing instead of arriving as a 400 after the button.
+           *
+           * The `.min(1)` half is already handled and in the other direction:
+           * `buildContainersCreateInput` OMITS an empty title rather than
+           * sending `''`, because absent and empty are different instructions
+           * to a `.strict()` schema.
+           */
+          maxLength={512}
           onChange={(e) => set('title', e.target.value)}
         />
       </label>

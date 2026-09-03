@@ -152,6 +152,30 @@ describe('the sheet itself', () => {
     expect((onCreate.mock.calls[0]![0] as ContainersCreateInput).profile).toBe('browser');
   });
 
+  it('bounds the title at the contract\u2019s own 512, refusing here rather than there', () => {
+    /*
+     * `ContainersCreateInputSchema.title` is `.min(1).max(512)`. Both halves
+     * are handled, in opposite directions and in different places:
+     *   · `.max` here, as `maxLength`, so the 513th character never happens;
+     *   · `.min` in the builder, which OMITS an empty title rather than
+     *     sending `''` (absent and empty are different instructions).
+     *
+     * Asserted against the SCHEMA rather than a hard-coded 512 in two places,
+     * so the day the contract moves the bound this test fails instead of
+     * quietly enforcing the old one.
+     */
+    const { container } = render(<NewContainerSheet spaceId={SPACE} onCreate={vi.fn()} />);
+    const input = container.querySelector('.pn-ncs__input') as HTMLInputElement;
+    expect(input.maxLength).toBe(512);
+
+    // And a title AT the bound still parses — a positive control, so the
+    // check cannot pass by refusing everything.
+    const atBound = build({ title: 'x'.repeat(512) });
+    expect(ContainersCreateInputSchema.safeParse(atBound).success).toBe(true);
+    // One over is refused by the contract, which is what the input prevents.
+    expect(ContainersCreateInputSchema.safeParse(build({ title: 'x'.repeat(513) })).success).toBe(false);
+  });
+
   it('marks the selected card in the DOM, since no vitest here sees the tint', () => {
     // The stylesheet colours `[data-selected='yes']`, and jsdom loads no
     // stylesheets — so the attribute has to carry the meaning on its own or
