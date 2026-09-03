@@ -38,6 +38,16 @@ import type {
   AuthSignupResult, ChannelTab, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
+  ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
+  ContainerNetworkPolicy, ContainerProviderDescriptor, ContainerSpec, ContainerSpecInput,
+  ContainerSurfaceSpec,
+  ContainersAttachInput, ContainersAttentionInput, ContainersBrowserEndpointInput,
+  ContainersCreateInput, ContainersComputerInput, ContainersDestroyInput,
+  ContainersExposeInput, ContainersForkInput, ContainersLifecycleInput,
+  ContainersLogsResult, ContainersPolicySetInput, ContainersPoolsSetInput,
+  ContainersProvidersListResult, ContainersRunInput, ContainersRunResult,
+  ContainersSnapshotInput, ContainersTerminalStartInput, ContainersTerminalStartResult,
+  ContainersUnexposeInput, ContainersUpdateInput, SurfaceAttachGrant,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
   CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput, CreateVoiceTokenInput,
   CredentialConnectionView, CredentialProviderName, CredentialsDeleteInput,
@@ -141,6 +151,8 @@ export const CoreEntityKindSchema = z.enum([
   // Chat as an Entity (2026-09-03, migration 176). Not in
   // `CreatableEntityKind`: `chat.start` is its only door.
   'chat',
+  // Containers (177): a machine an agent runs in or drives.
+  'container',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -1832,7 +1844,11 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
 
 /** The runtime half of `CreatableEntityKind` — the one place the set is stated. */
 export const CreatableEntityKindSchema = z.union([
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat']),
+  // `chat` and `container` are excluded for the same reason `work_session`
+  // is: each is born only from its own door — `chat.start` and
+  // `containers.create` — which supply a runtime binding a generic create
+  // could not. A generic create would make a record with nothing behind it.
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container']),
   CustomEntityKindSchema,
 ]);
 
@@ -3670,6 +3686,368 @@ export const WireErrorBodySchema: z.ZodType<WireErrorBody> = z.object({
     requestId: z.string(),
     retryable: z.boolean(),
   }).strict(),
+}).strict();
+
+
+// --- containers (TM8-CONTAINERS-DESIGN §4.2) --------------------------------
+
+export const ContainerStatusSchema = z.enum([
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+]);
+export const ContainerProfileSchema = z.enum([
+  'shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom',
+]);
+export const ContainerIsolationClassSchema = z.enum([
+  'process', 'container', 'gvisor', 'microvm', 'vm',
+]);
+export const ContainerSurfaceKindSchema = z.enum([
+  'terminal', 'screen', 'browser', 'adb', 'docker', 'http',
+]);
+export const ContainerNetworkPresetSchema = z.enum(['open', 'balanced', 'locked']);
+/** The work_session vocabulary, deliberately. NOT the port-share one. */
+export const ContainerShareModeSchema = z.enum(['none', 'space', 'explicit']);
+/** The port vocabulary: `link`, no `explicit`. See the type's warning. */
+export const ContainerPortShareSchema = z.enum(['none', 'space', 'link']);
+
+/**
+ * ENV KEYS THAT LOOK LIKE SECRETS ARE REFUSED, BY NAME, AT THE CONTRACT.
+ *
+ * Secrets reach a machine through the credential path (§12.3), never through
+ * `spec.env` — an env var is stored on the container row, returned by every
+ * read of it, and visible to anything that can see the entity. The refusal is
+ * here rather than in the door because a caller deserves a 400 that names the
+ * key, and because the CLI and the UI validate against this same schema and so
+ * refuse it before a request is ever sent.
+ *
+ * It is a NAME heuristic and it is deliberately broad: false positives cost a
+ * caller one rename, a false negative writes a credential into the graph.
+ */
+const SECRET_ENV_KEY_RE =
+  /(^|_)(SECRET|SECRETS|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIAL|CREDENTIALS|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY|SESSION_KEY|AUTH|BEARER)(_|$)/;
+const SECRET_ENV_KEY_EXACT = new Set([
+  'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN', 'TM8_AGENT_TOKEN',
+]);
+
+/** True when this env var NAME looks like a secret. Exported for the tests. */
+export function isSecretLookingEnvKey(key: string): boolean {
+  const upper = key.toUpperCase();
+  return SECRET_ENV_KEY_EXACT.has(upper) || SECRET_ENV_KEY_RE.test(upper);
+}
+
+const ContainerEnvSchema = z.record(z.string(), z.string().max(32768))
+  .refine((env) => Object.keys(env).length <= 256, { message: 'at most 256 env vars' })
+  .superRefine((env, ctx) => {
+    for (const key of Object.keys(env)) {
+      if (isSecretLookingEnvKey(key)) {
+        // The KEY, never the value — a refusal must not echo the secret it
+        // just refused into a log, a CLI transcript or an error body.
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `env key ${key} looks like a secret; secrets reach a container through the credential path, not spec.env`,
+          path: [key],
+        });
+      }
+    }
+  });
+
+export const ContainerMountInputSchema: z.ZodType<ContainerMountInput> = z.object({
+  host: z.string().min(1).max(4096),
+  guest: z.string().min(1).max(4096).regex(/^\//, 'guest must be an absolute path'),
+  ro: z.boolean(),
+}).strict();
+
+export const ContainerMountSchema: z.ZodType<ContainerMount> = z.object({
+  guest: z.string().min(1).max(4096).regex(/^\//, 'guest must be an absolute path'),
+  ro: z.boolean(),
+}).strict();
+
+export const ContainerNetworkPolicySchema: z.ZodType<ContainerNetworkPolicy> = z.object({
+  preset: ContainerNetworkPresetSchema,
+  allow: z.array(z.string().min(1).max(253)).max(256),
+}).strict();
+
+export const ContainerSurfaceSpecSchema: z.ZodType<ContainerSurfaceSpec> = z.object({
+  enabled: z.boolean(),
+  port: z.number().int().min(1).max(65535).optional(),
+}).strict();
+
+const containerSurfaceMapSchema = z.record(ContainerSurfaceKindSchema, ContainerSurfaceSpecSchema);
+
+const CPUS_MIN = 0.25;
+const CPUS_MAX = 16;
+const MEM_MIB_MIN = 128;
+const MEM_MIB_MAX = 65536;
+const DISK_MIB_MIN = 512;
+const DISK_MIB_MAX = 512000;
+
+export const ContainerSpecSchema: z.ZodType<ContainerSpec> = z.object({
+  profile: ContainerProfileSchema,
+  image: z.string().min(1).max(1024).optional(),
+  cpus: z.number().min(CPUS_MIN).max(CPUS_MAX),
+  memMiB: z.number().int().min(MEM_MIB_MIN).max(MEM_MIB_MAX),
+  diskMiB: z.number().int().min(DISK_MIB_MIN).max(DISK_MIB_MAX).optional(),
+  mounts: z.array(ContainerMountSchema).max(16),
+  env: ContainerEnvSchema,
+  ports: z.array(z.number().int().min(1).max(65535)).max(32),
+  network: ContainerNetworkPolicySchema,
+  surfaces: containerSurfaceMapSchema,
+  labels: z.record(z.string(), z.string().max(1024)),
+}).strict() as z.ZodType<ContainerSpec>;
+
+export const ContainerSpecInputSchema: z.ZodType<ContainerSpecInput> = z.object({
+  image: z.string().min(1).max(1024).optional(),
+  cpus: z.number().min(CPUS_MIN).max(CPUS_MAX).optional(),
+  memMiB: z.number().int().min(MEM_MIB_MIN).max(MEM_MIB_MAX).optional(),
+  diskMiB: z.number().int().min(DISK_MIB_MIN).max(DISK_MIB_MAX).optional(),
+  mounts: z.array(ContainerMountInputSchema).max(16).optional(),
+  env: ContainerEnvSchema.optional(),
+  ports: z.array(z.number().int().min(1).max(65535)).max(32).optional(),
+  network: ContainerNetworkPolicySchema.optional(),
+  surfaces: containerSurfaceMapSchema.optional(),
+  labels: z.record(z.string(), z.string().max(1024)).optional(),
+}).strict() as z.ZodType<ContainerSpecInput>;
+
+const TTL_MIN = 60;
+const TTL_MAX = 604800;
+
+export const ContainerLifecycleSchema: z.ZodType<ContainerLifecycle> = z.object({
+  ephemeral: z.boolean(),
+  ttlSeconds: z.number().int().min(TTL_MIN).max(TTL_MAX).nullable(),
+  idleHibernateSeconds: z.number().int().min(TTL_MIN).max(TTL_MAX).nullable(),
+  graceSeconds: z.number().int().min(0).max(86400),
+  snapshotOnStop: z.boolean(),
+}).strict();
+
+export const ContainerLifecycleInputSchema: z.ZodType<ContainerLifecycleInput> = z.object({
+  ephemeral: z.boolean().optional(),
+  ttlSeconds: z.number().int().min(TTL_MIN).max(TTL_MAX).nullable().optional(),
+  idleHibernateSeconds: z.number().int().min(TTL_MIN).max(TTL_MAX).nullable().optional(),
+  graceSeconds: z.number().int().min(0).max(86400).optional(),
+  snapshotOnStop: z.boolean().optional(),
+}).strict();
+
+export const ContainerProviderDescriptorSchema: z.ZodType<ContainerProviderDescriptor> = z.object({
+  id: z.string().min(1).max(64),
+  isolation: ContainerIsolationClassSchema,
+  profiles: z.array(ContainerProfileSchema),
+  surfaces: z.array(ContainerSurfaceKindSchema),
+  features: z.object({
+    pause: z.boolean(), snapshot: z.boolean(), fork: z.boolean(),
+    expose: z.boolean(), nested: z.boolean(), gpu: z.boolean(),
+  }).strict(),
+  limits: z.object({
+    maxContainers: z.number().int().nonnegative(),
+    maxCpus: z.number().nonnegative(),
+    maxMemMiB: z.number().int().nonnegative(),
+  }).strict(),
+  probe: z.object({
+    ok: z.boolean(), detail: z.string(), measuredAt: z.string().min(1),
+  }).strict(),
+}).strict();
+
+export const ContainersCreateInputSchema: z.ZodType<ContainersCreateInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpaceIdSchema,
+  title: z.string().min(1).max(512).nullable().optional(),
+  profile: ContainerProfileSchema,
+  provider: z.string().min(1).max(64).nullable().optional(),
+  nodeId: z.string().min(1).max(255).nullable().optional(),
+  image: z.string().min(1).max(1024).nullable().optional(),
+  spec: ContainerSpecInputSchema.optional(),
+  lifecycle: ContainerLifecycleInputSchema.optional(),
+  shareMode: ContainerShareModeSchema.optional(),
+  parentId: EntityIdSchema.nullable().optional(),
+  templateId: EntityIdSchema.nullable().optional(),
+  projectId: EntityIdSchema.nullable().optional(),
+  confirmUntrusted: z.literal(true).optional(),
+  start: z.boolean().optional(),
+}).strict() as z.ZodType<ContainersCreateInput>;
+
+const TIMEOUT_MS_MIN = 1000;
+const TIMEOUT_MS_MAX = 600000;
+
+export const ContainersLifecycleInputSchema: z.ZodType<ContainersLifecycleInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  timeoutMs: z.number().int().min(TIMEOUT_MS_MIN).max(TIMEOUT_MS_MAX).optional(),
+}).strict() as z.ZodType<ContainersLifecycleInput>;
+
+export const ContainersDestroyInputSchema: z.ZodType<ContainersDestroyInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  timeoutMs: z.number().int().min(TIMEOUT_MS_MIN).max(TIMEOUT_MS_MAX).optional(),
+  force: z.boolean().optional(),
+  keepSnapshot: z.boolean().optional(),
+}).strict() as z.ZodType<ContainersDestroyInput>;
+
+export const ContainersUpdateInputSchema: z.ZodType<ContainersUpdateInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  title: z.string().min(1).max(512).optional(),
+  lifecycle: ContainerLifecycleInputSchema.optional(),
+  shareMode: ContainerShareModeSchema.optional(),
+  labels: z.record(z.string(), z.string().max(1024)).optional(),
+}).strict() as z.ZodType<ContainersUpdateInput>;
+
+export const ContainersPolicySetInputSchema: z.ZodType<ContainersPolicySetInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  network: ContainerNetworkPolicySchema,
+}).strict() as z.ZodType<ContainersPolicySetInput>;
+
+export const ContainersRunInputSchema: z.ZodType<ContainersRunInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  argv: z.array(z.string()).min(1).max(256),
+  cwd: z.string().min(1).max(4096).optional(),
+  env: ContainerEnvSchema.optional(),
+  stdin: z.string().max(1048576).optional(),
+  timeoutMs: z.number().int().min(TIMEOUT_MS_MIN).max(TIMEOUT_MS_MAX).optional(),
+  user: z.string().min(1).max(255).optional(),
+}).strict() as z.ZodType<ContainersRunInput>;
+
+export const ContainersTerminalStartInputSchema: z.ZodType<ContainersTerminalStartInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  title: z.string().min(1).max(512).optional(),
+  cwd: z.string().min(1).max(4096).optional(),
+  cols: z.number().int().min(1).max(1000).optional(),
+  rows: z.number().int().min(1).max(1000).optional(),
+}).strict() as z.ZodType<ContainersTerminalStartInput>;
+
+export const ContainersAttachInputSchema: z.ZodType<ContainersAttachInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  surface: z.enum(['screen', 'browser', 'adb', 'docker']),
+  mode: z.enum(['view', 'drive']),
+}).strict() as z.ZodType<ContainersAttachInput>;
+
+export const ContainersComputerInputSchema: z.ZodType<ContainersComputerInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  action: z.enum(['screenshot', 'click', 'double_click', 'right_click', 'move',
+    'drag', 'type', 'key', 'scroll', 'wait', 'goto', 'text']),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  to: z.object({ x: z.number(), y: z.number() }).strict().optional(),
+  text: z.string().max(65536).optional(),
+  keys: z.string().max(256).optional(),
+  dx: z.number().optional(),
+  dy: z.number().optional(),
+  ms: z.number().int().min(0).max(60000).optional(),
+  url: z.string().min(1).max(4096).optional(),
+  screenshot: z.boolean().optional(),
+  keep: z.boolean().optional(),
+  scale: z.number().min(0.25).max(1).optional(),
+}).strict() as z.ZodType<ContainersComputerInput>;
+
+export const ContainersBrowserEndpointInputSchema: z.ZodType<ContainersBrowserEndpointInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  ttlSeconds: z.number().int().min(1).max(3600).optional(),
+}).strict() as z.ZodType<ContainersBrowserEndpointInput>;
+
+export const ContainersExposeInputSchema: z.ZodType<ContainersExposeInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  port: z.number().int().min(1).max(65535),
+  share: ContainerPortShareSchema.optional(),
+}).strict() as z.ZodType<ContainersExposeInput>;
+
+export const ContainersUnexposeInputSchema: z.ZodType<ContainersUnexposeInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  port: z.number().int().min(1).max(65535),
+}).strict() as z.ZodType<ContainersUnexposeInput>;
+
+export const ContainersSnapshotInputSchema: z.ZodType<ContainersSnapshotInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  name: z.string().min(1).max(255).optional(),
+  makeTemplate: z.boolean().optional(),
+}).strict() as z.ZodType<ContainersSnapshotInput>;
+
+export const ContainersForkInputSchema: z.ZodType<ContainersForkInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  title: z.string().min(1).max(512).optional(),
+  lifecycle: ContainerLifecycleInputSchema.optional(),
+  spec: ContainerSpecInputSchema.optional(),
+}).strict() as z.ZodType<ContainersForkInput>;
+
+export const ContainersAttentionInputSchema: z.ZodType<ContainersAttentionInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  reason: z.enum(['login', 'captcha', '2fa', 'payment', 'approval', 'other']),
+  detail: z.string().max(4096).optional(),
+  points: z.number().int().min(1).max(100).optional(),
+}).strict() as z.ZodType<ContainersAttentionInput>;
+
+export const ContainersPoolsSetInputSchema: z.ZodType<ContainersPoolsSetInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  warm: z.number().int().min(0).max(8),
+}).strict() as z.ZodType<ContainersPoolsSetInput>;
+
+export const ContainersProvidersListResultSchema: z.ZodType<ContainersProvidersListResult> = z.object({
+  nodeId: z.string().min(1),
+  providers: z.array(ContainerProviderDescriptorSchema),
+  images: z.array(z.object({
+    profile: ContainerProfileSchema,
+    ref: z.string().min(1),
+    digest: z.string().min(1).nullable(),
+    cached: z.boolean(),
+  }).strict()),
+  caps: z.object({
+    containers: z.number().int().nonnegative(),
+    live: z.number().int().nonnegative(),
+  }).strict(),
+}).strict();
+
+export const ContainersRunResultSchema: z.ZodType<ContainersRunResult> = z.object({
+  exitCode: z.number().int().nullable(),
+  stdout: z.string(),
+  stderr: z.string(),
+  truncated: z.boolean(),
+  durationMs: z.number().nonnegative(),
+  timedOut: z.boolean(),
+}).strict();
+
+export const ContainersTerminalStartResultSchema: z.ZodType<ContainersTerminalStartResult> = z.object({
+  workSessionId: EntityIdSchema,
+  containerId: EntityIdSchema,
+}).strict();
+
+export const SurfaceAttachGrantSchema: z.ZodType<SurfaceAttachGrant> = z.object({
+  containerId: EntityIdSchema,
+  surface: ContainerSurfaceKindSchema,
+  encoding: z.enum(['rfb', 'frames', 'cdp', 'adb', 'docker']),
+  url: z.string().min(1),
+  protocol: z.literal('ws'),
+  mode: z.enum(['view', 'drive']),
+  token: z.string().min(1),
+  expiresAt: z.string().min(1),
+  geometry: z.object({ w: z.number(), h: z.number(), dpr: z.number() }).strict().optional(),
+}).strict();
+
+export const ContainersLogsResultSchema: z.ZodType<ContainersLogsResult> = z.object({
+  containerId: EntityIdSchema,
+  lines: z.array(z.object({
+    ts: z.string().min(1),
+    stream: z.enum(['stdout', 'stderr']),
+    text: z.string(),
+  }).strict()),
+  truncated: z.boolean(),
 }).strict();
 
 export function envelopeOf<T>(data: z.ZodType<T>) {

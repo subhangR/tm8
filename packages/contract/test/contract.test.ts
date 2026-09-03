@@ -13,8 +13,9 @@ import {
   ProjectCreateInputSchema, ProjectDirectoryListingSchema, ProjectLinkInputSchema, ProjectResourceSchema,
   RESERVED_OPERATIONS, V1_OPERATIONS, WireErrorBodySchema, WorkInputSchema,
   WorkspaceEventSchema, bindPath,
+  MOUNTED_OPERATIONS,
 } from '../src/index.js';
-import type { EntitySummary, MessageView, WorkspaceEvent } from '../src/index.js';
+import type { EntitySummary, MessageView, OperationName, WorkspaceEvent } from '../src/index.js';
 
 const actor = {
   id: 'ent_member_1', kind: 'member' as const, displayName: 'Subhang', isAgent: false,
@@ -99,12 +100,40 @@ describe('keyset cursors (DEV-5)', () => {
 });
 
 describe('operation catalog', () => {
-  it('has unique names and unique method+path bindings', () => {
+  it('has unique names, and unique method+path bindings among the rows that MOUNT', () => {
     const names = OPERATIONS.map((o) => o.name);
     expect(new Set(names).size).toBe(names.length);
-    const bindings = OPERATIONS.map((o) => `${o.method} ${o.path}`);
+    // Uniqueness is asserted over MOUNTED_OPERATIONS, not OPERATIONS, because
+    // an alias row deliberately re-declares an existing binding so a family's
+    // socket is discoverable under its own name. The invariant that matters is
+    // that nothing MOUNTS the same `method path` twice.
+    const bindings = MOUNTED_OPERATIONS.map((o) => `${o.method} ${o.path}`);
     expect(new Set(bindings).size).toBe(bindings.length);
     for (const op of OPERATIONS) expect(op.path.startsWith(BASE_PATH)).toBe(true);
+  });
+
+  // The teeth of the rule above. Without this, `aliasOf` would be a way to opt
+  // any duplicate out of the uniqueness check; with it, an alias must name a
+  // real operation, must actually MATCH that operation's binding, and must not
+  // itself be mounted. A copy-paste duplicate cannot satisfy all three.
+  it('every alias names a real operation, shares its exact binding, and is not mounted', () => {
+    const aliases = OPERATIONS.filter((o) => 'aliasOf' in o);
+    expect(aliases.length).toBeGreaterThan(0);
+    for (const alias of aliases) {
+      const target = getOperation((alias as { aliasOf: OperationName }).aliasOf);
+      expect(target.name).not.toBe(alias.name);
+      expect(`${alias.method} ${alias.path}`).toBe(`${target.method} ${target.path}`);
+      expect(MOUNTED_OPERATIONS.map((o) => o.name)).not.toContain(alias.name);
+      // The target itself must be mounted — an alias of an alias is a chain
+      // nothing would ever serve.
+      expect(MOUNTED_OPERATIONS.map((o) => o.name)).toContain(target.name);
+    }
+  });
+
+  it('mounts every operation exactly once except the declared aliases', () => {
+    expect(MOUNTED_OPERATIONS.length).toBe(
+      OPERATIONS.length - OPERATIONS.filter((o) => 'aliasOf' in o).length,
+    );
   });
 
   it('carries the execution.* family (R16) and the entityKinds family (T-L4)', () => {

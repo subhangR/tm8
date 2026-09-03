@@ -92,8 +92,13 @@ describe('W1 adopted catalog target', () => {
     // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
     // (POST command) + .delete (DELETE command) — the real workflow tables.
     // MEASURED per PIN RULE v3, never carried.
-    expect(OPERATIONS).toHaveLength(172);
-    expect(V1_OPERATIONS).toHaveLength(170);
+    // 172 -> 197 (2026-09-03, TM8-CONTAINERS-DESIGN §4.1): the 25 `containers.*`
+    // rows, all v1, so 170 -> 195. MEASURED on this tree per PIN RULE v3,
+    // never carried: `OPERATIONS.length` = 197, `V1_OPERATIONS.length` = 195.
+    // The Design's PROSE says 27 rows and is wrong; §4.1's list is 25 and the
+    // coordinator ruled on it.
+    expect(OPERATIONS).toHaveLength(197);
+    expect(V1_OPERATIONS).toHaveLength(195);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -119,7 +124,16 @@ describe('W1 adopted catalog target', () => {
     // auth.claim.reissue, all POST commands. MEASURED.
     // 148: GET 60->61 (workflows.list), POST 79->80 (.upsert), DELETE 11->12
     // (.delete). MEASURED from the failing run.
-    }).toEqual({ GET: 61, POST: 80, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 });
+    // Containers (§4.1): GET 61->65 (files.get, logs, proxy, providers.list),
+    // POST 80->98 (18 command rows), PATCH 11->12 (update), PUT 7->8
+    // (files.put), WS 1->2 (containers.stream). MEASURED on this tree.
+    //
+    // WS IS 2 AND MOUNTS ARE STILL 1. `containers.stream` re-declares
+    // `events.subscribe`'s `WS /v2/ws` so the family's socket is discoverable
+    // under its own name; it carries `aliasOf` and is excluded from
+    // MOUNTED_OPERATIONS, so nothing mounts a second socket. Counting rows and
+    // counting mounts are different questions and this pin asks the first.
+    }).toEqual({ GET: 65, POST: 98, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -127,7 +141,8 @@ describe('W1 adopted catalog target', () => {
     // W4/132: read +1, command +2. MEASURED.
     // 141: command 101->104 (three new commands). MEASURED.
     // 148: read 64->65, command 104->106. MEASURED.
-    }).toEqual({ read: 65, command: 106, stream: 1 });
+    // Containers: read 65->69, command 106->126, stream 1->2. MEASURED.
+    }).toEqual({ read: 69, command: 126, stream: 2 });
   });
 });
 
@@ -182,6 +197,8 @@ describe('W1 frozen-row schema amendments', () => {
       // (migration 176). Excluded from `CreatableEntityKind`: `chat.start` is
       // its only door, the way `execution.spawn` is `work_session`'s.
       'chat',
+      // 2026-09-03: `container` — the machine kind (177, CONTAINERS §3.1).
+      'container',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });
