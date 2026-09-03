@@ -63,7 +63,11 @@ import { createOutput } from '../src/output.js';
 // public, all with `space task-workflow` commands. MEASURED.
 // 166 -> 169 (141): the three account-lifecycle ops. MEASURED.
 // 169 -> 172 (148): the three spaces.workflows ops. MEASURED.
-const EXPECTED_ROWS = 172;
+// 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. Two of them —
+// containers.stream and containers.proxy — are deliberately commandless, which
+// is why the commandless subtraction below moves 25 -> 27. MEASURED on this
+// tree, not carried from the design.
+const EXPECTED_ROWS = 197;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -129,7 +133,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 172 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 197 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -168,7 +172,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('157 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('193 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
@@ -177,7 +181,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    expect(histogram).toEqual({ public: 168, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 193, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -194,6 +198,13 @@ describe('the CLI command projection', () => {
       // chat.threads.start is browser-composer-only by design (D1/D2): a chat
       // turn is a UI conversation, and the CLI already has message send.
       'chat.threads.start',
+      // The two commandless container rows, each a decision recorded on its own
+      // row in operations.ts: `containers.proxy` is the reverse-proxy path a
+      // browser opens (a CLI verb would be curl with extra steps), and
+      // `containers.stream` is the surface websocket, which carries a binary
+      // protocol dispatched on a grant.
+      'containers.proxy',
+      'containers.stream',
       'credentials.delete',
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
@@ -240,8 +251,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the 25 commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 25);
+    // Minus the 27 commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 27);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {
@@ -557,6 +568,19 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'spaces.interactionProfile.setDefault': 'SetSpaceProfileDefaultInputSchema',
   'artifacts.publish': 'ArtifactsPublishInputSchema',
   'artifacts.restore': 'ArtifactsRestoreInputSchema',
+  // Containers (§14). The four lifecycle verbs SHARE one input schema, which is
+  // why eleven operations map to eight DTOs.
+  'containers.start': 'ContainersLifecycleInputSchema',
+  'containers.stop': 'ContainersLifecycleInputSchema',
+  'containers.pause': 'ContainersLifecycleInputSchema',
+  'containers.resume': 'ContainersLifecycleInputSchema',
+  'containers.destroy': 'ContainersDestroyInputSchema',
+  'containers.update': 'ContainersUpdateInputSchema',
+  'containers.policy.set': 'ContainersPolicySetInputSchema',
+  'containers.expose': 'ContainersExposeInputSchema',
+  'containers.unexpose': 'ContainersUnexposeInputSchema',
+  'containers.snapshot': 'ContainersSnapshotInputSchema',
+  'containers.pools.set': 'ContainersPoolsSetInputSchema',
 };
 
 /**
@@ -664,7 +688,9 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       if (!flags.some((f) => f.required)) missing.push(operation);
     }
     // Every mapped guard DTO is required.
-    expect(swept).toBe(20);
+    // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
+    // rows. MEASURED on this tree.
+    expect(swept).toBe(31);
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -727,6 +753,22 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     ['handoffs.withdraw', '--expect-record-version', 'expectedRecordVersion'],
     ['spaces.interactionProfile.setDefault', '--expect-settings-revision', 'expectedSettingsRevision'],
 
+    // ── CONTAINERS (§14): eleven rows, one spelling, and four of them share a
+    // DTO. `containers.start|stop|pause|resume` all carry
+    // ContainersLifecycleInputSchema, so a transposition between them is
+    // invisible to a DTO-name check and visible only here, row by row.
+    ['containers.start', '--expect-version', 'expectedVersion'],
+    ['containers.stop', '--expect-version', 'expectedVersion'],
+    ['containers.pause', '--expect-version', 'expectedVersion'],
+    ['containers.resume', '--expect-version', 'expectedVersion'],
+    ['containers.destroy', '--expect-version', 'expectedVersion'],
+    ['containers.update', '--expect-version', 'expectedVersion'],
+    ['containers.policy.set', '--expect-version', 'expectedVersion'],
+    ['containers.expose', '--expect-version', 'expectedVersion'],
+    ['containers.unexpose', '--expect-version', 'expectedVersion'],
+    ['containers.snapshot', '--expect-version', 'expectedVersion'],
+    ['containers.pools.set', '--expect-version', 'expectedVersion'],
+
     // ── THE COLLISION PAIR — one flag, two different fields, same noun ──────
     // This adjacency is what produced a real transposition once already.
     ['spaces.menu.update', '--expect-revision', 'expectedRevision'],
@@ -770,7 +812,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       rows.map((r) => r.join(' -> ')).sort();
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
-    expect(actual.length).toBe(20);
+    expect(actual.length).toBe(31);
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 
