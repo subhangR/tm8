@@ -302,6 +302,22 @@ describe('reconciliation (§11.3)', () => {
   // and the orphan below can no longer be adopted — it is quarantined instead,
   // which is the correct behaviour for a runtime that is not ours and the
   // wrong outcome for one that is.
+  //
+  // WHAT THE MUTATION ACTUALLY PROVES, stated precisely because "the test
+  // redded" is not the same claim as "the assertion I care about redded":
+  // deleting the label reds THE FIRST ASSERTION (`orphans` contains the ref,
+  // line ~317). That is the adoption claim, which is what this control is for.
+  // The four assertions after it are NOT exercised by that mutation — an
+  // earlier failure ends the test — so they are corroborating detail here, not
+  // independently proven.
+  //
+  // The one that matters among them, `quarantined` being empty, has its own
+  // lever in the SIBLING test below: "QUARANTINES an unlabelled runtime"
+  // asserts quarantine positively, as ITS first assertion, on a runtime that
+  // never had the label. Between the two, both directions of the label rule
+  // are proven by an assertion that actually executes — which is the point,
+  // and the reason not to fix this by reordering: reordering moves the masking
+  // rather than removing it.
   it('ADOPTS a labelled orphan whose status write never landed', async () => {
     const { graph, provider, service } = build();
 
