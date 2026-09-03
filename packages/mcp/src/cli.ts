@@ -20,6 +20,13 @@ if (!token) {
     ...(process.env.TM8_CHAT_SPACE_ID?.trim()
       ? { spaceId: process.env.TM8_CHAT_SPACE_ID.trim() }
       : {}),
+    // 176: the chat this server runs inside. The launch-config resolver has
+    // written it into every per-chat MCP config since Wave 1; reading it is
+    // what makes it reach the tool surface, and until it did, the variable was
+    // set and consumed by nothing.
+    ...(process.env.TM8_CHAT_ID?.trim()
+      ? { chatId: process.env.TM8_CHAT_ID.trim() }
+      : {}),
     ...(process.env.TM8_CHAT_HIDDEN_TOOLS?.trim()
       ? { hiddenTools: process.env.TM8_CHAT_HIDDEN_TOOLS.split(',').map((name) => name.trim()).filter(Boolean) }
       : {}),

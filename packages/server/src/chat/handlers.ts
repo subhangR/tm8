@@ -5,6 +5,7 @@ import {
   CollabError,
   launchModel,
   type EntitySummary,
+  type OperationName,
   type StartChatInput,
   type StartChatResult,
 } from '@tm8/contract';
@@ -14,6 +15,7 @@ import { claimsFor } from '../facade/context.js';
 import { loadEntitySummariesByIds } from '../facade/entity-read.js';
 import type { OperationHandler } from '../http/types.js';
 import type { ChatOrchestrator } from './orchestrator.js';
+import { refuseChatRuntimeBearer } from './scope.js';
 
 export interface ChatHandlerDeps {
   readonly orchestrator: ChatOrchestrator;
@@ -111,10 +113,35 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
   };
 }
 
+/**
+ * Every chat operation is human-only, and the guard is a property of the GROUP.
+ *
+ * `credentials.ts` states the reasoning at length and it holds identically
+ * here: four copies of a check are four places to be correct, and the failure
+ * that actually happens is a FIFTH operation added later, born unguarded and
+ * looking exactly like its guarded neighbours. Mapping the wrapper over the
+ * record means a new entry cannot be registered without passing through it.
+ *
+ * This is layer 1 of two. Layer 2 is `internal.require_human_auth_kind()`
+ * inside `start_chat`, reading the `tm8.auth_kind` claim. Either alone would
+ * refuse the call; both are here because this one is the readable one and that
+ * one is the one a future caller reaching the RPC another way cannot bypass.
+ */
+const CHAT_HANDLERS_ARE_HUMAN_ONLY = true;
+
 export function registerChatHandlers(
   registry: HandlerRegistry,
   facade: FacadeDeps,
   chat?: ChatHandlerDeps,
 ): void {
-  registry.register('chat.start', startChat(facade, chat));
+  const handlers: Partial<Record<OperationName, OperationHandler>> = {
+    'chat.start': startChat(facade, chat),
+  };
+  for (const [name, handler] of Object.entries(handlers)) {
+    if (!handler) continue;
+    registry.register(name as OperationName, async (ctx) => {
+      if (CHAT_HANDLERS_ARE_HUMAN_ONLY) refuseChatRuntimeBearer(ctx);
+      return handler(ctx);
+    });
+  }
 }

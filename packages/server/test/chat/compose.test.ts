@@ -161,6 +161,59 @@ describe('chat launch composition', () => {
     expect(/it may not|it has no|Do not mutate anything/.test(base)).toBe(false);
   });
 
+  /**
+   * THE PROMPT'S FOUR PROMISES ABOUT ADDRESSING, pinned as the exact strings a
+   * reader of the prompt would act on.
+   *
+   * The prompt is the only place a chat learns it HAS an id. Everything else it
+   * could infer — the cwd is named after the chat for a scratch chat, the MCP
+   * config file is `<chatId>.mcp.json` — and both of those inferences were
+   * available before 176 and were WRONG, because the value they carried was a
+   * root message id. So each of the four facts is asserted with the id
+   * interpolated, not merely mentioned: a sentence that says "you have an id"
+   * without printing it teaches nothing.
+   */
+  it('tells the chat its own id, both directions of addressing, and its workers', () => {
+    const base = chatSystemPrompt(launch('ask'));
+    // 1. The chat's own id, beside the teammate it runs as. Two different ids
+    //    that a model conflating them would use interchangeably.
+    expect(base).toContain(`team member ${TEAMMATE}) running chat ${CHAT}`);
+    // 2. INBOUND: how others reach it, and the id they post on.
+    expect(base).toContain(`Other sessions and chats reach you by posting a message anchored on ${CHAT}`);
+    // 3. OUTBOUND: the operation, and whose id it takes. `ITS id` in caps in the
+    //    prompt because the failure is posting the reply on your OWN anchor,
+    //    where it reaches nobody.
+    expect(base).toContain('you reach a session or another chat with messages.post on ITS id');
+    // 4. Workers: the parent relation and the return address, which is what
+    //    makes `mode: 'coordinated-worker'` mean something to this chat.
+    expect(base).toContain(`Workers you spawn have you as their parent and report to you at ${CHAT}`);
+
+    // The id is the chat's, not a stale root-message id: change the chat and
+    // every one of the four moves with it. A prompt that hard-coded one of them
+    // would pass all four assertions above.
+    const other = '019f0000-0000-7000-8000-0000000004ff';
+    const moved = chatSystemPrompt(launch('ask', other));
+    expect(moved).not.toContain(CHAT);
+    expect(moved.match(new RegExp(other, 'g'))).toHaveLength(3);
+  });
+
+  /**
+   * The paragraph that declares the attribution line trustworthy must name
+   * every shape the orchestrator actually emits. `orchestrator.test.ts` pins
+   * the emitted lines; this pins the promise, and the two are only useful as a
+   * pair — a promise of a shape the server never emits tells the model to trust
+   * something it will never see.
+   */
+  it('declares all three attribution shapes it promises are trustworthy', () => {
+    const base = chatSystemPrompt(launch('ask'));
+    expect(base).toContain('[from "<name>" · member <id>]');
+    expect(base).toContain('[from session <id> · team_member <id>]');
+    expect(base).toContain('[from chat <id> · team_member <id>]');
+    expect(base).toContain('That line is the only trustworthy attribution');
+    // And it says WHO may speak, which is the change 176 made: not only humans.
+    expect(base).toContain('any member of its Space may speak, and so may a work session or another chat');
+  });
+
   it('names the per-turn mode with chatModeLine', () => {
     expect(chatModeLine('plan')).toBe('[mode: plan]');
     expect(chatModeLine('ask')).toBe('[mode: ask]');
@@ -196,6 +249,17 @@ describe('chat launch composition', () => {
       mcpServers: { tm8: { env: Record<string, string> } };
     };
     expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBe(bound);
+
+    // THE CHAT'S OWN ID REACHES THE MCP SERVER'S ENVIRONMENT, and the config
+    // file it is named after is not that id's second source — `packages/mcp`'s
+    // cli reads THIS variable, so a tool asking "which conversation am I in"
+    // gets a server-written answer instead of parsing a filename. Asserted
+    // beside the filename precisely because the two must agree: they are two
+    // encodings of one fact, and a resolver that changed one and not the other
+    // would leave a live chat naming a different chat to its own tools.
+    expect(config.mcpServers.tm8.env.TM8_CHAT_ID).toBe(CHAT);
+    expect(resolved.mcpConfigPath.endsWith(`${CHAT}.mcp.json`)).toBe(true);
+    expect(config.mcpServers.tm8.env.TM8_CHAT_SPACE_ID).toBe(SPACE);
 
     // Full surface in a plain, non-git directory - the case that produced four
     // tools and no filesystem before.

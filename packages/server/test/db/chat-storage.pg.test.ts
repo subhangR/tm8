@@ -480,12 +480,23 @@ describe.sequential('TM8 Chat storage and door rules', () => {
     );
     // `chatId`, not `threadRootId`: the fact it named no longer exists, so the
     // key is renamed rather than aliased.
+    //
+    // 179 adds the three `requestedBy*` keys. They are asserted here as PRESENT
+    // AND NULL rather than dropped from the comparison, because this turn is
+    // the human-typed one and "a person did this directly" is exactly what
+    // three nulls encode. `toEqual` over the whole summary is kept deliberately:
+    // it is what makes a fourth key added later fail loudly instead of
+    // accumulating unasserted. The agent-authored shapes — where a source id is
+    // actually set — are in `chat-tool-audit-provenance.pg.test.ts`.
     expect(audits).toEqual([
       {
         verb: 'chat.tool_called',
         summary: {
           chatId, toolCallId: 'call-1', tool: 'repo_read_file',
           state: 'running', mode: 'explain',
+          requestedByActorId: fixture.memberA,
+          requestedBySessionId: null,
+          requestedByChatId: null,
         },
       },
       {
@@ -493,6 +504,9 @@ describe.sequential('TM8 Chat storage and door rules', () => {
         summary: {
           chatId, toolCallId: 'call-1', tool: 'repo_read_file',
           state: 'completed', mode: 'explain',
+          requestedByActorId: fixture.memberA,
+          requestedBySessionId: null,
+          requestedByChatId: null,
         },
       },
     ]);
