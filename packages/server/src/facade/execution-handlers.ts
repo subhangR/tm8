@@ -93,6 +93,7 @@ import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
+import { resolveSpawnParentId } from '../chat/scope.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
@@ -2573,13 +2574,20 @@ function registerHandlers(
     // through a chat's credential may legitimately parent the worker elsewhere,
     // and silently overriding a stated parent with an ambient one would make the
     // argument a lie.
-    const runtimeChatId = ctx.identity.kind === 'bearer'
-      ? ctx.identity.runtimeChatId ?? null
-      : null;
+    /**
+     * B10 — and the paragraph above is still exactly true for a HUMAN
+     * credential. `resolveSpawnParentId` is where the whole decision now lives,
+     * including its one new rule: a chat runtime may only parent what it spawns
+     * on ITSELF. That file carries the reasoning and the enumeration of what
+     * else the credential can reach; this is deliberately one call, because a
+     * default expression here plus a guard beside it is two statements about
+     * one question that can disagree.
+     */
+    const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId);
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
-      parentSessionId: input.parentSessionId ?? runtimeChatId ?? null,
+      parentSessionId,
       ...(taskIds ? { taskIds } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),

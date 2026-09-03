@@ -165,14 +165,45 @@ const ACT_GUIDES = [
   }),
 ] as const satisfies readonly OperationGuide[];
 
+/* `mode: 'coordinated-worker'` is the TEMPLATE value, and that is the whole
+   point of this guide (176/Wave 2).
+
+   A worker spawned `mode: 'worker'` has no coordinator and no return address:
+   it does its work and exits, and whatever it learned dies with its transcript.
+   `coordinated-worker` is what makes `resolveCoordinatorSessionId` resolve a
+   coordinator at all (`execution/src/spawn/manifest.ts`) — with any other mode
+   it returns null and the launched prompt carries no `<coordination>` block.
+
+   The coordinator it resolves is `parentSessionId`, which THIS caller does not
+   have to supply and should not: `execution.spawn` defaults it to the calling
+   chat's own id, read off the bearer's session row rather than from this body.
+   So the two halves — a chat that can be a parent (178) and a mode that makes
+   the parent a return address — are what turn a dispatched worker's completion
+   report into a turn in this chat instead of an inert stored message.
+
+   A guide that showed `mode: 'worker'` therefore advertised the one value that
+   silently discards the result. */
 const DELEGATE_GUIDES = [
   guide('execution.dispatch', 'Route an entity to the resident dispatcher; it chooses the teammate.', {
     body: { spaceId: '<space-id>', subjectId: '<entity-id>', note: '<optional-steer>' },
   }),
-  guide('execution.spawn', 'Start a durable worker session with an explicitly chosen teammate.', {
-    body: { spaceId: '<space-id>', teamMemberId: '<team-member-id>', taskIds: ['<task-id>'], mode: 'worker' },
-  }),
-  guide('execution.terminate', 'End a worker session.', {
+  guide(
+    'execution.spawn',
+    'Start a durable worker session with an explicitly chosen teammate. '
+      + "Use mode 'coordinated-worker' so the worker is told a coordinator is waiting and reports back "
+      + 'when it finishes or blocks. Leave parentSessionId out: it defaults to THIS chat, so the worker '
+      + "is parented on the chat and its report arrives here as a turn. Any other mode ('worker') gives "
+      + 'the worker no return address and its result is lost when it exits.',
+    {
+      body: {
+        spaceId: '<space-id>',
+        teamMemberId: '<team-member-id>',
+        taskIds: ['<task-id>'],
+        mode: 'coordinated-worker',
+      },
+    },
+  ),
+  guide('execution.terminate', 'End a worker session. Chats are not terminated this way.', {
     params: { id: '<work-session-id>' }, body: { force: false },
   }),
   guide('execution.resume', 'Resume an exited worker with its provider-native conversation.', {
@@ -180,14 +211,32 @@ const DELEGATE_GUIDES = [
   }),
 ] as const satisfies readonly OperationGuide[];
 
+/* AN AGENT'S ADDRESS IS ITS OWN ENTITY ID, and until 176 only half of that
+   sentence was true. A work session has always been reachable by anchoring a
+   message on its id; a chat was a message thread with no id to anchor on, so
+   nothing could address one. Now a chat is an entity and the two are symmetric,
+   which is worth saying in the guide rather than leaving a model to discover it
+   — `<anchor-id>` alone reads as "some entity", and a model that reads it that
+   way posts its report onto the task and nobody wakes. */
 const MESSAGE_GUIDES = [
-  guide('messages.list', 'Page thread roots or replies anchored to an entity.', {
-    params: { anchorId: '<anchor-id>' }, query: { limit: '50' },
+  guide('messages.list', 'Page thread roots or replies anchored to an entity — a task, a work session, or a chat.', {
+    params: { anchorId: '<anchor-id: entity, work-session or chat id>' }, query: { limit: '50' },
   }),
-  guide('messages.post', 'Post a durable message or direct threaded reply as the selected teammate.', {
-    body: { anchorIds: ['<anchor-id>'], body: '<message>', parentMessageId: '<optional-parent-message-id>' },
-  }),
-  guide('messages.delivery.get', 'Read storage/delivery settlement for a posted message.', {
+  guide(
+    'messages.post',
+    'Post a durable message or direct threaded reply as the selected teammate. '
+      + "An agent's address IS its entity id: anchor on a work session's id to reach that session, "
+      + "and on a chat's id to reach that chat — a chat you are answering, or the chat that spawned you. "
+      + 'Either one wakes its recipient; anchoring on a task or a document only stores the message.',
+    {
+      body: {
+        anchorIds: ['<anchor-id: entity, work-session or chat id>'],
+        body: '<message>',
+        parentMessageId: '<optional-parent-message-id>',
+      },
+    },
+  ),
+  guide('messages.delivery.get', 'Read storage/delivery settlement for a posted message, including any chat turn it queued.', {
     params: { messageId: '<message-id>' },
   }),
 ] as const satisfies readonly OperationGuide[];
@@ -284,6 +333,17 @@ export interface Tm8ToolRouterOptions {
   mode?: ChatMode;
   projectRoot?: string;
   spaceId?: string;
+  /**
+   * The chat this MCP server runs inside (`TM8_CHAT_ID`, written into the
+   * per-chat config by the server's launch-config resolver).
+   *
+   * It is NOT used to authorize anything — the server re-reads the same fact off
+   * the bearer's own session row, which is the only copy that cannot be edited
+   * by whoever can read this config file. It is here so the tool surface can
+   * TELL the model its own address instead of leaving it to infer one from the
+   * cwd or the config filename, both of which have been wrong before.
+   */
+  chatId?: string;
   fetchImpl?: typeof fetch;
   /** Provider-native equivalents omitted from MCP registration and calls. */
   hiddenTools?: readonly string[];
@@ -293,10 +353,12 @@ export class Tm8ToolRouter {
   private readonly mode: ChatMode;
   private readonly directContext: DirectToolContext;
   private readonly hiddenTools: ReadonlySet<string>;
+  private readonly chatId: string | null;
 
   constructor(private readonly transport: CatalogTransport, options: Tm8ToolRouterOptions = {}) {
     this.mode = options.mode ?? parseChatMode(undefined);
     this.hiddenTools = new Set(options.hiddenTools ?? []);
+    this.chatId = options.chatId?.trim() || null;
     this.directContext = {
       transport,
       ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
@@ -326,7 +388,7 @@ export class Tm8ToolRouter {
       }
       if (name === 'tm8_overview') {
         enforcePermission(this.mode, name);
-        return success(overview(rawArguments, this.mode, this.hiddenTools));
+        return success(overview(rawArguments, this.mode, this.hiddenTools, this.chatId));
       }
       if (!isGroupName(name)) throw new ToolInputError(`unknown tm8 MCP tool: ${name}`);
       const args = objectOf(rawArguments, 'tool arguments');
@@ -389,14 +451,27 @@ function directoryResult(name: keyof typeof GROUPS, directory: readonly Operatio
   };
 }
 
-function overview(raw: unknown, mode: ChatMode, hiddenTools: ReadonlySet<string>): Record<string, unknown> {
+function overview(
+  raw: unknown,
+  mode: ChatMode,
+  hiddenTools: ReadonlySet<string>,
+  chatId: string | null,
+): Record<string, unknown> {
   const args = objectOf(raw, 'tool arguments');
   const query = optionalString(args.query, 'query')?.toLowerCase();
   const groups = [
     { tool: 'tm8_read', purpose: 'context, search, graph traversal, inbox and action discovery' },
     { tool: 'tm8_act', purpose: 'entity, task, relationship, placement and attention mutations' },
-    { tool: 'tm8_delegate', purpose: 'dispatching and lifecycle of durable worker sessions' },
-    { tool: 'tm8_messages', purpose: 'durable anchored messages and threaded replies' },
+    {
+      tool: 'tm8_delegate',
+      purpose: "dispatching and lifecycle of durable worker sessions; spawn mode 'coordinated-worker'"
+        + ' parents the worker on this chat and gives it this chat as its return address',
+    },
+    {
+      tool: 'tm8_messages',
+      purpose: 'durable anchored messages and threaded replies; a work session or a chat is reached'
+        + ' by anchoring on ITS own entity id',
+    },
   ].filter((group) => toolPermission(mode, group.tool) === 'allow');
   const operations = Object.entries(GROUPS).flatMap(([tool, guides]) =>
     guides
@@ -410,9 +485,28 @@ function overview(raw: unknown, mode: ChatMode, hiddenTools: ReadonlySet<string>
       provenance: 'selected teammate actor',
       filesystem: toolPermission(mode, 'repo_read_file') === 'allow',
       credentialOperations: false,
+      /* B10. The credential is bound to ONE chat server-side; naming that chat
+         here is a statement about the token, not a grant. Saying so is the
+         honest half of the guard the server enforces. */
+      ...(chatId ? { boundChatId: chatId } : {}),
     },
     groups,
     mode,
+    /* The chat's own id and what it means, so `messages.post` needs no
+       inference: this is the address other sessions and chats post on to reach
+       this chat, and the parent a coordinated worker reports back to. Absent
+       only when the runtime did not set TM8_CHAT_ID — an older config file. */
+    ...(chatId
+      ? {
+        chat: {
+          id: chatId,
+          address: 'other sessions and chats reach this chat by anchoring a message on this id;'
+            + ' reach one of them with messages.post anchored on ITS id',
+          delegation: "a worker spawned mode:'coordinated-worker' is parented on this id and reports"
+            + ' back to it',
+        },
+      }
+      : {}),
     directTools: DIRECT_TOOLS
       .filter((tool) => !hiddenTools.has(tool.name) && toolPermission(mode, tool.name) !== 'deny')
       .map((tool) => ({ tool: tool.name, purpose: tool.description })),
