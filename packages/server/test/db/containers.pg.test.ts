@@ -939,6 +939,11 @@ describe('node_containers and sweep_containers', () => {
     expect(byId.get(persistent)).toMatchObject({ action: 'stop', reason: 'ttl' });
   });
 
+  // NOTE: this one is an ABSENCE assertion, so an empty result is a legitimate
+  // pass rather than a vacuity — it asserts the machine is NOT in the list, and
+  // that is true whether the list is empty or full. Left as-is deliberately;
+  // contrast the doubly-due test below, which had to be given rows to be
+  // meaningful.
   it('leaves a machine with no deadline and no idle policy alone', async () => {
     const id = await createContainer({ title: 'Quiet' });
     await setStatus(id, 'provisioning');
@@ -949,8 +954,36 @@ describe('node_containers and sweep_containers', () => {
   });
 
   it('never reports two actions for one machine', async () => {
+    // Build a machine that is due for TWO reasons at once — past its TTL AND
+    // idle — so the `distinct on` is actually exercised. Without this setup the
+    // test was VACUOUS: an empty result trivially has no duplicates, so it
+    // stayed green even when sweep_containers returned nothing at all.
+    const both = await createContainer({
+      title: 'Due twice',
+      lifecycle: { ephemeral: true, idleHibernateSeconds: 1 },
+    });
+    await setStatus(both, 'provisioning');
+    await setStatus(both, 'running');
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.containers set expires_at = now() - interval '1 minute' where entity_id = $1`,
+        [both],
+      );
+    });
+
     const due = await asApp(fixture.identityId, (q) =>
       q(`select * from public.sweep_containers($1, now())`, [NODE_ID]));
+
+    // Assert the instrument produced something BEFORE asserting a property of
+    // it. A uniqueness check over an empty set proves nothing.
+    expect(due.length, 'sweep returned no rows — the uniqueness assertion below would be vacuous')
+      .toBeGreaterThan(0);
+    const forBoth = due.filter((r) => r['container_entity_id'] === both);
+    expect(forBoth, 'the doubly-due machine must appear exactly once').toHaveLength(1);
+    // TTL outranks idle, so the node is told to destroy rather than pause.
+    expect(forBoth[0]).toMatchObject({ action: 'destroy', reason: 'ttl' });
+
     const ids = due.map((r) => r['container_entity_id'] as string);
     expect(new Set(ids).size).toBe(ids.length);
   });

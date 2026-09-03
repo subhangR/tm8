@@ -1867,6 +1867,18 @@ $$;
 -- HIGH-FREQUENCY writes starving live renames, and a machine is created a
 -- handful of times in its life. Heartbeats — the actual high-frequency write —
 -- stay off the entity entirely (§4, §17).
+--
+-- THE ALTERNATIVE WAS CONSIDERED AND REJECTED, recorded so the next person who
+-- notices the double `entity.upsert` does not "fix" it: seeding this at BEFORE
+-- INSERT, by teaching `internal.seed_entity_initial_status` to skip workflow
+-- seeding for `container`, would give one event AND a consistent row. It loses
+-- on blast radius. That function is re-created by BOTH 150 and 152 and is
+-- traversed by the creation of EVERY kind, so special-casing containers there
+-- means joining a shared body — the hazard this file avoids twice over, in
+-- `space_kind_counts` and `execution_spawn` — and putting a container-shaped
+-- condition in every other kind's birth path, to save one event on an operation
+-- that happens a handful of times per machine. Two events, localized entirely
+-- to containers, is the better trade.
 create trigger containers_category_bridge
 after insert or update of status on public.containers
 for each row execute function internal.bridge_container_status_to_category();

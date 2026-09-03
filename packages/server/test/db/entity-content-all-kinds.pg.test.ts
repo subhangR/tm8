@@ -118,47 +118,96 @@ describe('internal.entity_content resolves every core kind', () => {
     expect(missing, `entity_content has no arm for: ${missing.join(', ')}`).toEqual([]);
   });
 
+  /**
+   * Read the installed function body once. Parsing happens in TypeScript, NOT
+   * in a Postgres regex, and that is deliberate: Postgres ARE gives a whole
+   * branch the greediness of its FIRST quantifier, so a pattern mixing greedy
+   * `([a-z_]+)` with a lazy `.*?` silently turns the lazy one greedy and
+   * collapses all 22 arms into ONE match. Measured — `.*?` and `[\s\S]*?` both
+   * returned 1. JavaScript has no such rule.
+   */
+  async function entityContentSource(): Promise<string> {
+    const rows = await database.query<{ prosrc: string }>(
+      `select p.prosrc from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'internal' and p.proname = 'entity_content'`,
+    );
+    expect(rows).toHaveLength(1);
+    return rows[0]!.prosrc;
+  }
+
+  /** Every `when '<kind>' then` in the body — the TRUE arm count. */
+  function armKinds(source: string): string[] {
+    return [...source.matchAll(/when '([a-z_]+)' then/g)].map((m) => m[1]!);
+  }
+
+  /** The arms this suite can actually resolve: kind, alias, table. */
+  function resolvableArms(source: string): { kind: string; alias: string; table: string }[] {
+    return [...source.matchAll(
+      /when '([a-z_]+)' then\s+select to_jsonb\((\w+)\)[\s\S]*?from public\.(\w+)/g,
+    )].map((m) => ({ kind: m[1]!, alias: m[2]!, table: m[3]! }));
+  }
+
   it('resolves every arm to a table and column that actually exist', async () => {
     // The SECOND half of the failure shape. A source grep proves an arm is
-    // PRESENT; it does not prove the arm works. plpgsql resolves table and
-    // column names lazily, when a branch executes, so an arm naming a table
-    // that was renamed — or a `to_jsonb(x) - 'entity_id'` on a detail table
-    // whose key column is not `entity_id` — parses fine, creates fine, and
-    // fails only for the one kind nobody happened to open.
+    // PRESENT; it does not prove the arm WORKS. plpgsql resolves table and
+    // column names lazily, when a branch executes, so an arm naming a renamed
+    // table parses fine, creates fine, and fails only for the one kind nobody
+    // happened to open.
     //
-    // Running each arm's own SELECT with an id that matches nothing resolves
-    // every name in it without needing to satisfy that table's CHECK
-    // constraints, so this covers ALL arms rather than only the two whose
-    // columns happen to be defaultable.
-    const arms = await database.query<{ kind: string; alias: string; table_name: string }>(
-      `with src as (
-         select p.prosrc from pg_proc p
-           join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'internal' and p.proname = 'entity_content')
-       select m[1] kind, m[2] alias, m[3] table_name
-         from src, regexp_matches(
-           src.prosrc,
-           'when ''([a-z_]+)'' then select to_jsonb\\(([a-z]+)\\)[^\\n]*?from public\\.([a-z_]+)',
-           'g') m`,
-    );
-    // If the regex stops matching the arm style, this suite would silently
-    // check nothing. Pin the count so a rewrite of that function has to come
-    // back here deliberately.
-    expect(arms.length).toBeGreaterThanOrEqual(21);
+    // ⚠ THE PIN IS DERIVED FROM THE FUNCTION, NOT A LITERAL, AND THAT IS THE
+    // LESSON. The first version of this test used `[^\n]*?` — which cannot
+    // cross a line break — with `expect(arms.length).toBeGreaterThanOrEqual(21)`.
+    // The `container` arm is the only one that WRAPS onto a second line, so the
+    // pattern silently skipped exactly the arm this migration adds, and the
+    // `>=` passed anyway: 22 arms in the body, 21 matched, green. Migration
+    // 176's `chat` arm wraps too, so once it lands this would have skipped BOTH
+    // of the arms it exists to protect while still reporting success.
+    //
+    // A `>=` cannot detect a missing arm once the total grows, and a literal
+    // goes stale the moment a kind is added. Counting the arms out of the
+    // function and asserting EQUALITY is the only form that stays honest.
+    const source = await entityContentSource();
+    const expected = armKinds(source);
+    const arms = resolvableArms(source);
+
+    const missing = expected.filter((k) => !arms.some((a) => a.kind === k));
+    expect(
+      arms.length,
+      `the arm pattern matched ${arms.length} of ${expected.length} arms — an UNMATCHED arm is an UNCHECKED arm. Missing: ${missing.join(', ') || '(none)'}`,
+    ).toBe(expected.length);
 
     const broken: string[] = [];
     for (const arm of arms) {
       try {
         await database.query(
-          `select to_jsonb(${arm.alias}) - 'entity_id' from public.${arm.table_name} ${arm.alias}
+          `select to_jsonb(${arm.alias}) - 'entity_id' from public.${arm.table} ${arm.alias}
             where ${arm.alias}.entity_id = '00000000-0000-0000-0000-000000000000'::uuid`,
         );
       } catch {
-        broken.push(`${arm.kind} -> public.${arm.table_name}`);
+        broken.push(`${arm.kind} -> public.${arm.table}`);
       }
     }
     expect(broken, `entity_content arms name a table or column that does not resolve: ${broken.join(', ')}`)
       .toEqual([]);
+  });
+
+  it('names the container arm among the CHECKED arms, and every other core kind too', async () => {
+    // Belt and braces: a pattern that matched the right NUMBER of arms but the
+    // wrong ones would still pass the test above. This names them.
+    const source = await entityContentSource();
+    const checked = new Set(resolvableArms(source).map((a) => a.kind));
+
+    expect(checked.has('container'), 'the container arm must be among the CHECKED arms').toBe(true);
+
+    const kinds = await database.query<{ kind: string }>(
+      `select kind from public.entity_kinds where origin = 'core' and space_id is null`,
+    );
+    const unchecked = kinds
+      .map((k) => k.kind)
+      .filter((k) => !(k in NO_CONTENT_ARM))
+      .filter((k) => !checked.has(k));
+    expect(unchecked, `core kinds whose arm is never resolution-checked: ${unchecked.join(', ')}`).toEqual([]);
   });
 
   // A THIRD test was written here and REMOVED rather than shipped: "create one
