@@ -2350,7 +2350,6 @@ export function createFixtureSeam(): FixtureSeam {
         inFlight: empty(),
         needsMe: empty(),
         activity: { items: [], nextCursor: null },
-        chatThreads: [],
       };
     },
 
@@ -3604,25 +3603,42 @@ export function createFixtureSeam(): FixtureSeam {
         emit(member.spaceId, { type: 'entity.upsert', entity: clone(member) }, ctx);
         return commandResult(collection, { patches: [clone(collection), clone(member)] });
       },
-      /** Amendment 10: fixture echo of `chat.threads.start` (never turn-running). */
-      async startChatThread(input) {
-        const root = requireSummary(input.rootMessageId);
-        return {
-          thread: {
-            rootMessageId: input.rootMessageId,
-            anchorId: root.parentId ?? input.rootMessageId,
+      /** 176: fixture echo of `chat.start` (never turn-running). */
+      async startChat(input) {
+        const chat = insertSummary({
+          id: nextId('chat'),
+          kind: 'chat',
+          title: (input.title ?? input.body).slice(0, 240),
+          spaceId: input.spaceId,
+          state: {
+            kind: 'chat',
             teammateId: input.teammateId,
             model: input.model,
+            provider: 'fixture',
+            agentTool: 'claude-code',
             mode: input.mode,
-            createdAt: new Date().toISOString(),
-            lastReplyAt: null,
-            // Echoed rather than invented: the real RPC refuses a projectId
-            // that does not pair with the mode, so a fixture that normalised
-            // the pair here would be the one place the rule does not hold.
-            projectId: input.projectId ?? null,
             workdirMode: input.workdirMode,
+            projectId: input.projectId ?? null,
+            runtimeState: 'cold',
+            turnState: 'queued',
+            turnCount: 1,
+            lastTurnAt: new Date().toISOString(),
           },
-        };
+        });
+        const message = insertSummary({
+          id: nextId('msg'),
+          kind: 'message',
+          title: input.body.slice(0, 80),
+          spaceId: input.spaceId,
+          state: {
+            kind: 'message',
+            anchorId: chat.id,
+            rootMessageId: null,
+            author: viewerActor,
+            messageBatchId: null,
+          },
+        });
+        return { chat: clone(chat), messageId: message.id };
       },
 
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {

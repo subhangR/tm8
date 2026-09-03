@@ -198,8 +198,8 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
-  StartChatThreadInput,
-  StartChatThreadResult,
+  StartChatInput,
+  StartChatResult,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -811,7 +811,7 @@ export interface Seam {
      * — the write half of the chat-home bridge. Input is an ALREADY-POSTED
      * root message id; the op never creates messages and triggers turn 1.
      */
-    startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult>;
+    startChat(input: StartChatInput): Promise<StartChatResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;

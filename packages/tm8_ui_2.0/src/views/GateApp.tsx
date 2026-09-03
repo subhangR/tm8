@@ -1385,37 +1385,14 @@ export function GateApp(props: GateAppProps = {}) {
   // ChannelView, so a deep link and a bookmark keep working.
   const channelEntities = data.rowsFor('channel')(undefined);
 
-  /**
-   * PR188 review F1: the UI half of the chat composition. The server got its
-   * composition commit (compose.ts); without this bridge the shipped home
-   * rendered a disabled composer blaming the node for operations it serves.
-   * Amendment 10 seam calls: `home` (thread list) + `startChatThread`.
+  /*
+   * 176 REPAIR ONLY (R-D: this tree is experimental; tm8-ui is canonical).
+   * Both injected readers existed because a chat had no kind to list by and no
+   * door of its own — `spaces.home`'s `chatThreads` projection and
+   * `chat.threads.start` are both deleted. This tree's chat surface is not
+   * rewired here; the bridge is emptied so the package still compiles.
    */
-  const chatBridge = useMemo(() => ({
-    listThreads: async (sid: string) => (await data.seam.home(sid)).chatThreads ?? [],
-    configureThread: async (input: {
-      rootMessageId: string; teammateId: string; model: string;
-      mode: ChatMode; clientMutationId: string;
-    }) => {
-      const result = await data.seam.commands.startChatThread({
-        ...input,
-        // Held at today's behaviour ON PURPOSE. The picker and its default
-        // ladder (last-used project → the Space's most-recently-linked one →
-        // scratch only when the Space links nothing) are the follow-up UI
-        // change; sending anything else from here would pick a directory on
-        // the human's behalf through a control they cannot yet see or change.
-        // What this PR does give every thread, scratch included, is the full
-        // tool set in whatever directory it is bound to.
-        workdirMode: 'scratch',
-      });
-      return {
-        threadRootId: result.thread.rootMessageId,
-        teammateId: result.thread.teammateId,
-        model: result.thread.model,
-        mode: result.thread.mode,
-      };
-    },
-  }), [data.seam]);
+  const chatBridge = useMemo(() => ({}), []);
 
   const homeSlots = useMemo(
     () =>

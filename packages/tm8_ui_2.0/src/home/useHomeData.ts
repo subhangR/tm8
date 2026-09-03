@@ -20,7 +20,7 @@
  * `livenessOf`, which is THE verdict and is never recomputed here.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ChatThreadSummary, EntitySummary, NotificationItem } from '@tm8/contract';
+import type { EntitySummary, NotificationItem } from '@tm8/contract';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { getKind } from '../domain';
 import { activityRowOf, appendActivity, type ActivityRow } from './home-activity';
@@ -42,7 +42,7 @@ export interface HomeScreenData {
    * already satisfies this structurally; nothing new is fetched that the chat
    * surface was not already fetching.
    */
-  seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent'> & Partial<Pick<Seam, 'home'>>;
+  seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent'> & Partial<Pick<Seam, 'home' | 'query'>>;
   /** Verbatim from the seam snapshot — the ONLY source for a live count. */
   liveIds: readonly string[];
   /** THE verdict (R-UI-5). Never derived in this directory. */
@@ -111,14 +111,24 @@ export interface ChatThreadLite {
  * wrong in three fields at once and nothing said so — which is the argument
  * for mapping explicitly rather than asserting.
  */
-export function chatRowOf(thread: ChatThreadSummary): ChatThreadLite {
+/*
+ * 176 REPAIR ONLY. `HomeSnapshot.chatThreads` and `ChatThreadSummary` are gone
+ * with the chat-thread model: a chat is an entity, and the list is
+ * `entities.list kind=chat` like every other list. This maps the ordinary
+ * `EntitySummary` that read returns, which is why the three fields the note
+ * above is about are now simply the row's own — `id`, `activityAt`, and the
+ * turn count off the chat state.
+ *
+ * NO FEATURE WORK HERE, by ruling (R-D, 2026-09-02: this tree is experimental
+ * and tm8-ui is canonical). This exists because the root typecheck compiles
+ * this package, and a mechanical repair is the smallest honest answer to that.
+ */
+export function chatRowOf(chat: EntitySummary): ChatThreadLite {
   return {
-    id: thread.rootMessageId,
-    title: thread.title ?? null,
-    /* The thread's last sign of life, falling back to its birth — a thread
-       nobody has replied to is not a thread with no time. */
-    activityAt: thread.lastReplyAt ?? thread.createdAt,
-    messageCount: thread.replyCount ?? null,
+    id: chat.id,
+    title: chat.title || null,
+    activityAt: chat.activityAt,
+    messageCount: chat.state?.kind === 'chat' ? chat.state.turnCount : null,
   };
 }
 
@@ -182,18 +192,18 @@ export function useHomeData(data: HomeScreenData): HomeData {
   // list at NULL rather than empty: the strip then says nothing instead of
   // claiming the space has no conversations.
   useEffect(() => {
-    /* OPTIONAL ON THE PORT, ON PURPOSE. A host that does not serve `home` is
+    /* OPTIONAL ON THE PORT, ON PURPOSE. A host that does not serve the read is
        not broken — it is a host without conversations, and Home renders the
-       rest of itself rather than throwing. Widening the required port turned
-       four passing tests into `seam.home is not a function`, which is the
-       port telling the truth: not every caller has this. */
-    const read = seam.home;
+       rest of itself rather than throwing. 176 moved the read from `seam.home`
+       (whose `chatThreads` projection is deleted) to the ordinary entity list,
+       and the optionality rule is unchanged. */
+    const read = seam.query;
     if (typeof read !== 'function') { setChatThreads(null); return; }
     let cancelled = false;
-    void read(spaceId)
-      .then((snapshot) => {
+    void read({ spaceId, kinds: ['chat'], sort: 'activityAt_desc', limit: 50 })
+      .then((result) => {
         if (cancelled) return;
-        setChatThreads((snapshot.chatThreads ?? []).map(chatRowOf));
+        setChatThreads(result.page.items.map(chatRowOf));
       })
       .catch(() => {
         if (!cancelled) setChatThreads(null);
