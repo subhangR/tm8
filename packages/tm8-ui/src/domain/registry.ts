@@ -1998,13 +1998,24 @@ const ROWS: readonly KindConfig[] = [
       z4: { immersive: true },
     },
     palette: { createLabel: 'New container', primaryAction: 'new-container' },
-    // Title only. `containers.update` patches title/lifecycle/share/labels, but
-    // lifecycle and policy are their own verbs with their own version guards —
-    // an `editFields` dialog that offered them would send a bare patch where
-    // the contract requires `expectedVersion` on a named command.
-    editFields: [
-      { target: 'title', label: 'Title', required: true, placeholder: 'build box' },
-    ],
+    /*
+     * NO `editFields`, DELIBERATELY — and §15.1 is what forced the decision
+     * rather than taste: a kind that declares fields must also offer `edit` in
+     * `panel.primaries`, or the fields are unreachable and `registry.test.ts`
+     * says so by name.
+     *
+     * Adding `edit` would have bought nothing and cost a slot. The only member
+     * a dialog could offer is the TITLE, which `inlineEdit: { title: true }`
+     * above already reaches in one gesture — so the dialog would be a second
+     * door to a member that has one. The other three things
+     * `containers.update` patches (lifecycle, shareMode, labels) cannot go in
+     * a dialog at all: they are version-guarded commands carrying
+     * `expectedVersion`, and the edit dialog sends a bare `entities.patch`.
+     *
+     * The bar is already at six with the derived `run`. A seventh control that
+     * opens onto one field the panel edits in place is the kind of accumulation
+     * that pushed the panel tabs off their own row once before.
+     */
   },
 
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --

@@ -37,7 +37,18 @@ import type { Seam } from '../data/seam';
  * cannot hand the panel a list that has drifted from the switch below — the
  * enabled-inert failure mode, reintroduced one careless edit at a time.
  */
-export const PANEL_PRIMARY_ACTIONS: readonly ActionRef[] = ['terminate', 'resume'];
+export const PANEL_PRIMARY_ACTIONS: readonly ActionRef[] = [
+  'terminate',
+  'resume',
+  // Containers P0 (migration 177). `container-screen` is deliberately ABSENT:
+  // it is deferred-with-reason in `domain/actions.ts`, so it refuses on its own
+  // and must not be claimed here — a dispatcher entry for a verb that cannot
+  // run is the enabled-inert shape this constant exists to prevent.
+  'container-start',
+  'container-stop',
+  'container-destroy',
+  'container-terminal',
+];
 
 export interface PanelPrimariesHost {
   /**
@@ -50,6 +61,23 @@ export interface PanelPrimariesHost {
   reconcileCommand?: (result: CommandResult) => void;
   /** The node refused, verbatim — never paraphrased into a generic failure. */
   onError?: (verb: ActionRef, entityId: string, error: unknown) => void;
+  /**
+   * The version the viewer is LOOKING AT, for the container verbs that carry
+   * `expectedVersion` (catalog rows 2–8 make it mandatory).
+   *
+   * A PORT AND NOT A SEAM READ, deliberately. The panel already holds the
+   * detail it rendered the button from; re-reading the version here would race
+   * the very edit the guard is meant to catch — the point of
+   * `expectedVersion` is that it is the version the HUMAN saw, not the newest
+   * one. Absent ⇒ the verb reports the gap rather than guessing.
+   */
+  versionOf?: (entityId: string) => number | undefined;
+  /**
+   * Open an entity — used by `container-terminal`, which creates a
+   * work_session and hands it back rather than rendering anything itself.
+   * Absent ⇒ the exec session is still created; it simply is not navigated to.
+   */
+  onOpenEntity?: (entityId: string) => void;
 }
 
 export interface PanelPrimaries {
@@ -84,7 +112,7 @@ export interface PanelPrimaries {
 }
 
 export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
-  const { seam, reconcileCommand, onError } = host;
+  const { seam, reconcileCommand, onError, versionOf, onOpenEntity } = host;
   const commands = seam?.commands;
 
   /**
@@ -151,6 +179,71 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
     [commands, reconcileCommand, onError],
   );
 
+  /**
+   * THE CONTAINER LIFECYCLE VERBS — start · stop · destroy · terminal.
+   *
+   * EVERY ONE CARRIES `expectedVersion`, and it is MANDATORY on rows 2–8 of
+   * the catalog rather than optional. That is why this hook needs
+   * `versionOf`: the panel is already holding the detail, and a command sent
+   * without the version the human was looking at is the lost-update the guard
+   * exists to catch. A host that cannot supply one gets `undefined` from
+   * `forEntity`, so the verb renders refused rather than sending a command
+   * that would be rejected server-side for a reason the user cannot see.
+   *
+   * DESTROY CONFIRMS; the other three commit on click. Terminate next door
+   * commits immediately and says why — "a terminated session is resumable, so
+   * this is not the irreversible direction". A destroy IS the irreversible
+   * direction: §11.1 makes `destroyed` terminal, the runtime is gone and the
+   * row is soft-deleted. The asymmetry is the point, not an inconsistency.
+   */
+  const containerCommand = useCallback(
+    (ref: ActionRef, entityId: string) => {
+      if (!commands) {
+        throw new Error(
+          'usePanelPrimaries container verb was called with no seam: the host rendered a control it cannot perform. '
+            + 'Gate the affordance on `forEntity(...) != null`, which returns undefined precisely so this cannot happen.',
+        );
+      }
+      const expectedVersion = versionOf?.(entityId);
+      if (expectedVersion === undefined) {
+        /* NOT a silent return. A host that wired the dispatcher but cannot
+           answer "what version is on screen" has a real gap, and swallowing it
+           would send nothing while the button looked live. */
+        onError?.(ref, entityId, new Error(
+          'no expectedVersion for this container: the host must supply `versionOf` before a lifecycle verb can commit.',
+        ));
+        return;
+      }
+      const ctx = { clientMutationId: `${ref}:${entityId}:${String(Date.now())}`, expectedVersion };
+      const sent =
+        ref === 'container-start' ? commands.containerLifecycle(entityId as EntityId, 'start', ctx)
+        : ref === 'container-stop' ? commands.containerLifecycle(entityId as EntityId, 'stop', ctx)
+        : ref === 'container-destroy' ? commands.destroyContainer(entityId as EntityId, ctx)
+        : null;
+      if (sent) {
+        void sent
+          .then((result) => reconcileCommand?.(result))
+          .catch((error: unknown) => onError?.(ref, entityId, error));
+        return;
+      }
+      /*
+       * TERMINAL IS THE ODD ONE and answers ids rather than patches, so there
+       * is nothing to reconcile: it MINTS a work_session inside the container
+       * and the host opens it. `containers.terminal.start` takes no
+       * `expectedVersion` (freeze part 4/4), so the guard above is spent for
+       * nothing here — kept anyway, because the alternative is a second code
+       * path whose only difference is that it skips a check.
+       */
+      void commands
+        .startContainerTerminal(entityId as EntityId, {
+          clientMutationId: `${ref}:${entityId}:${String(Date.now())}`,
+        })
+        .then((result) => onOpenEntity?.(result.workSessionId))
+        .catch((error: unknown) => onError?.(ref, entityId, error));
+    },
+    [commands, reconcileCommand, onError, versionOf, onOpenEntity],
+  );
+
   const forEntity = useCallback(
     (entityId: string) => {
       if (!commands) return undefined;
@@ -168,12 +261,18 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
           case 'resume':
             resume(entityId);
             return;
+          case 'container-start':
+          case 'container-stop':
+          case 'container-destroy':
+          case 'container-terminal':
+            containerCommand(ref, entityId);
+            return;
           default:
             return;
         }
       };
     },
-    [commands, terminate, resume],
+    [commands, terminate, resume, containerCommand],
   );
 
   return useMemo(

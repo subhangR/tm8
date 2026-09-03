@@ -179,6 +179,8 @@ export function GraphScreen(props: GraphScreenProps) {
             }),
         }
       : {}),
+    /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
 
   // Esc walks DOWN one level per press (EntityView's ladder, same reasons):

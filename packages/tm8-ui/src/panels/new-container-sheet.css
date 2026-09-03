@@ -1,0 +1,107 @@
+/* ==========================================================================
+   NEW CONTAINER SHEET — the birth flow's form (Design §13.3).
+
+   COLOURS ARE TOKENS ONLY (§14; `src/hex-ban.test.ts` scans this file). The
+   micro-type literals are D5-verbatim — the global scale is the single `zoom`
+   lever on `.cv2-root`, never a per-element bump.
+
+   THIS SHEET OWNS NO POSITION. No `position`, no `inset`, no width, no scrim:
+   the component is the CONTENT and the host places it. On a phone that host is
+   the frame's own `MobileSheet`, because the position of a phone sheet depends
+   on where the tab bar and the keyboard inset are — which only the frame knows
+   (`mobile/CONTRACT.md` §4). A bespoke overlay here would be the eighth sheet
+   with its own idea of what dismiss means.
+   ========================================================================== */
+
+.cv2-root .pn-ncs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cv2-root .pn-ncs__group { margin: 0; padding: 0; border: 0; }
+.cv2-root .pn-ncs__group legend { padding: 0; margin-bottom: 6px; }
+
+/* AUTO-FIT, NOT A FIXED COLUMN COUNT. The sheet is placed by its host and may
+   be 390px on a phone or 420px in a desktop overlay; a pinned `repeat(2, …)`
+   would overflow the narrow case and a media query would guess at a width this
+   file does not own. */
+.cv2-root .pn-ncs__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.cv2-root .pn-ncs__card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  padding: 9px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+
+/* SELECTION IS A BORDER AND A TINT, NOT COLOUR ALONE. `data-selected` is also
+   what the tests read: jsdom loads no stylesheets, so the DOM attribute is the
+   only observable half of this rule and it must carry the meaning. */
+.cv2-root .pn-ncs__card[data-selected='yes'] {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+}
+
+.cv2-root .pn-ncs__card-label { font-size: 12px; }
+.cv2-root .pn-ncs__card-blurb { font-size: 10px; line-height: 1.4; color: var(--pn-ink-3); }
+
+.cv2-root .pn-ncs__field { display: flex; flex-direction: column; gap: 5px; }
+
+.cv2-root .pn-ncs__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-size: 12px;
+}
+
+.cv2-root .pn-ncs__hint { font-size: 10px; color: var(--pn-ink-3); }
+
+.cv2-root .pn-ncs__confirm {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-ncs__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+}
+
+.cv2-root .pn-ncs__cancel,
+.cv2-root .pn-ncs__create {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--pn-line);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cv2-root .pn-ncs__cancel { background: var(--pn-card); color: var(--pn-ink-2); }
+
+.cv2-root .pn-ncs__create {
+  background: var(--pn-brand);
+  border-color: var(--pn-brand);
+  color: var(--pn-card);
+}
+
+.cv2-root .pn-ncs__create:disabled { opacity: .6; cursor: default; }

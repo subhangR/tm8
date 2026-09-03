@@ -45,17 +45,18 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 22 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 23 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
     // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20;
     // then `graph` joined with migration 135 (Craft P1) → 21;
     // then `chat` joined with migration 176 (Chat as an Entity) → 22.
+    // then `container` joined with migration 177 (Containers P0) → 23.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(22);
+    expect(CORE_KINDS.length).toBe(23);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -1013,6 +1014,10 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
       // the same reason as the two above; work_session reaches the exclusion
       // through the terminal arm as well, this one only through here.
       chat: 'chat',
+      // The MACHINE body is a viewport onto a container, so it owns its bottom
+      // edge for the artifact's reason: a strip and a footer stapled under a
+      // frame are chrome the panel exists to get out of the way of.
+      container: 'frame',
     };
     for (const row of allKinds()) {
       expect(row.panel.composition, String(row.kind)).toBe(expected[row.kind]);

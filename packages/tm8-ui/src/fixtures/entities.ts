@@ -1,5 +1,6 @@
 import type {
   ActorSummary,
+  ContainerStatus,
   EntityCapabilities,
   EntityCounters,
   EntityDetail,
@@ -133,6 +134,36 @@ const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   idle: 'in_progress',
   exited: 'done',
   failed: 'done',
+  /*
+   * container (migration 177, Design §11.1) — MIRRORING THE SESSION MAPPING
+   * ABOVE, transition for transition, because the two lifecycles have the same
+   * shape: asked-for, alive, over.
+   *
+   *   requested / provisioning  → to_do        (the session's `spawning`)
+   *   running / paused / stopping / destroying → in_progress
+   *   stopped / destroyed       → done         (the session's `exited`)
+   *   failed                    → done         (already mapped, shared word)
+   *
+   * `stopped` lands under DONE for `exited`'s reason and not because the row
+   * is finished forever: both can come back (`containers.start`,
+   * `execution.resume`), and both have no live runtime until they do.
+   *
+   * `destroying` is IN PROGRESS rather than done — it is a transition with a
+   * provider call still running, and filing it under Done would show a machine
+   * as gone while it is still being torn down.
+   *
+   * THIS IS THE UI'S READING OF §11.1, NOT A COPY OF THE SERVER'S. The
+   * authority is migration 177's own category function (lane A). This comment
+   * exists so the next reader checks rather than assumes — the exact failure
+   * the `spawning` note above records, where this table lied about the server.
+   */
+  requested: 'to_do',
+  provisioning: 'to_do',
+  paused: 'in_progress',
+  stopping: 'in_progress',
+  stopped: 'done',
+  destroying: 'in_progress',
+  destroyed: 'done',
 };
 
 /**
@@ -1090,6 +1121,77 @@ export const chatStoppedWithWork = summary({
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// container — ONE PER STATUS (migration 177, Design §11.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE SIX CAPABILITY BOOLEANS, DERIVED FROM STATUS — lane B's `capabilitiesOf`
+ * (freeze part 2/4), restated here so the fixture cannot disagree with the
+ * server about which button a status permits.
+ *
+ * A HAND-WRITTEN TABLE OF NINE ROWS WOULD BE THE WRONG SHAPE. The panel test
+ * asserts "each status shows the right primaries", and if both the fixture and
+ * the test read the same nine hand-written rows the test proves only that two
+ * copies of one table agree. Derived from the status here, asserted against
+ * the RULE in the test, the two disagree the moment either drifts.
+ */
+export function containerCapsFor(
+  status: ContainerStatus,
+  opts: { nonTerminalSurface?: boolean; mayDrive?: boolean } = {},
+): EntityCapabilities {
+  const canAttach = status === 'running' && opts.nonTerminalSurface === true;
+  return {
+    ...CAPS_FULL,
+    canStart: status === 'stopped',
+    canStop: status === 'running' || status === 'paused',
+    canDestroy: status !== 'destroying' && status !== 'destroyed',
+    canAttach,
+    canControl: canAttach && opts.mayDrive === true,
+    canExec: status === 'running',
+  };
+}
+
+const CONTAINER_STATUSES: readonly ContainerStatus[] = [
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+];
+
+function containerSummary(status: ContainerStatus): EntitySummary {
+  return summary({
+    id: `ent-ctr-${status}`,
+    kind: 'container',
+    title: `build box (${status})`,
+    excerpt: 'A shell container on the launch node.',
+    createdBy: ada,
+    state: {
+      kind: 'container',
+      status,
+      profile: 'shell',
+      provider: 'fake',
+      isolation: 'container',
+      // NOT nullable: the create door refuses a null `p_node_id` (22023), so a
+      // container always has a home node.
+      nodeId: 'node-launch',
+      // P0's fake provider offers the exec PTY and nothing else. A fixture
+      // listing a `screen` here would make `canAttach` reachable on a surface
+      // no lane has built.
+      surfaces: ['terminal'],
+      ephemeral: status !== 'stopped',
+      shareMode: 'space',
+      startedAt: status === 'running' || status === 'paused' ? T.morning : null,
+      expiresAt: null,
+    },
+  });
+}
+
+/** One per status, in §11.1 order. The panel sweep renders every one. */
+export const containerFixtures: readonly EntitySummary[] =
+  CONTAINER_STATUSES.map(containerSummary);
+
+/** `running` — the one most surfaces want a representative of. */
+export const containerRunning = containerFixtures[2]!;
+
 export const fixtureSummaries: EntitySummary[] = [
   channelDesign, voiceStandup, voiceLounge,
   taskQueued, taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
@@ -1105,6 +1207,7 @@ export const fixtureSummaries: EntitySummary[] = [
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual, artifactPulseBoard,
+  ...containerFixtures,
 ];
 
 // ---------------------------------------------------------------------------
@@ -1605,4 +1708,62 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       totalSizeBytes: 4096,
     },
   }),
+
+  /*
+   * ONE CONTAINER DETAIL PER STATUS — nine of them, spread in below.
+   *
+   * Nine rather than one because the panel's whole job on this kind is to say
+   * WHAT STATE THE MACHINE IS IN and which verbs that state permits, so a
+   * single `running` fixture would leave eight of the nine renderings
+   * unexercised — including `destroyed`, where the row is soft-deleted, and
+   * `failed`, where an error string has to reach the reader.
+   *
+   * `capabilities` is DERIVED per row by `containerCapsFor`, never written out,
+   * so the fixture states lane B's rule rather than a transcription of it.
+   */
+  ...Object.fromEntries(
+    containerFixtures.map((row) => {
+      const status = (row.state as { status: ContainerStatus }).status;
+      return [row.id, detail(row, {
+        capabilities: containerCapsFor(status),
+        content: {
+          kind: 'container',
+          image: 'ghcr.io/tm8/shell:1',
+          spec: {
+            profile: 'shell',
+            image: 'ghcr.io/tm8/shell:1',
+            cpus: 2,
+            memMiB: 4096,
+            diskMiB: 20480,
+            /* READ FLAVOUR — `{ guest, ro }` and no host path (AMENDMENT 1,
+               ruling R5). A mount cannot be round-tripped: the create sheet
+               may SEND a host path, nothing ever reads one back. */
+            mounts: [{ guest: '/workspace', ro: false }],
+            env: { TM8_SPACE: 'fixture' },
+            ports: [],
+            network: { preset: 'balanced', allow: ['github.com'] },
+            surfaces: { terminal: { enabled: true } },
+            labels: { 'tm8.container': row.id, 'tm8.space': FIXTURE_SPACE_ID },
+          },
+          lifecycle: {
+            ephemeral: status !== 'stopped',
+            ttlSeconds: null,
+            idleHibernateSeconds: null,
+            graceSeconds: 600,
+            snapshotOnStop: false,
+          },
+          /* `screen` IS DELIBERATELY ABSENT on every row. `surfaceDetail` is a
+             `Partial<Record<…>>`, so a body reading `surfaceDetail.screen`
+             without a guard breaks here in jsdom rather than on a real
+             container that has no screen. */
+          surfaceDetail: { terminal: { live: status === 'running' } },
+          error: status === 'failed'
+            ? 'provider "fake" refused: no image satisfies profile shell at isolation microvm'
+            : null,
+          usage: status === 'running' ? { cpuPct: 12, memMiB: 812, diskMiB: 2048 } : null,
+          exposed: [],
+        },
+      })] as const;
+    }),
+  ),
 };

@@ -73,6 +73,8 @@ export function HostedEntityColumn({
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     onError: (error: unknown) => notify(error instanceof Error ? error.message : 'That action failed.'),
+     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
   const rowLifecycle = useRowLifecycle({
     data,

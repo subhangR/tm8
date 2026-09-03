@@ -347,6 +347,8 @@ export function HomeView(props: HomeViewProps) {
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     onError: notifyActionFailed,
+     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
   /* THE SESSIONS CELL'S BIRTH VERB (user ruling 2026-08-19). Home had no
      session-start dispatcher at all, so its Sessions root offered no way to

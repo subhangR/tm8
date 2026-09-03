@@ -263,6 +263,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     onError: notifySessionVerbFailed,
+     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
   const handleSessionTerminate = primaries.terminate;
 
