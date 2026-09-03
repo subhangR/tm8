@@ -325,7 +325,7 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
   },
 
   /**
-   * `StartChatThreadInputSchema` refines the PAIRING of `workdirMode` and
+   * `StartChatInputSchema` refines the PAIRING of `workdirMode` and
    * `projectId`: `project` requires an id, `scratch` refuses one. `projectId`
    * is optional in the underlying shape, so the minimal walk omits it while
    * taking the first enum member (`project`) for the required mode — which is
@@ -336,10 +336,12 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
    * would be refused by the RPC's space-link check for a reason that has
    * nothing to do with the surface being swept.
    */
-  'chat.threads.start': {
+  'chat.start': {
     clientMutationId: 'w5-surface-sweep-cmid',
-    rootMessageId: ABSENT_ID,
+    spaceId: ABSENT_ID,
     teammateId: ABSENT_ID,
+    // 176: the opening turn rides the same command, so a body is required.
+    body: 'w5surface',
     // DELIBERATELY NOT A LAUNCHABLE MODEL. `model` is only `z.string().min(1)`
     // in the schema, so any string satisfies the gate — but the handler's FIRST
     // check is `launchModel(input.model)`, and `HANDLER_AUTHORED_400` in

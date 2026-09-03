@@ -223,6 +223,16 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   // authority. See db/migrations/150_doors_resolve_categories.sql.
   ['internal.seed_entity_status_category', '150_doors_resolve_categories.sql'],
   ['internal.sync_entity_status_category', '150_doors_resolve_categories.sql'],
+  // 176 makes a chat an ENTITY, so the whole message-thread model it replaces
+  // is dropped rather than left orphaned beside it: the binding table keyed on
+  // a root message id, the door that configured one, and the human-author-only
+  // enqueue trigger whose gate was the reported defect (a worker's reply found
+  // no `members` row and the message stayed inert context). Every one of these
+  // is declared by an earlier file and correctly absent from an applied chain.
+  // See db/migrations/176_chat_entity.sql.
+  ['public.chat_threads', '176_chat_entity.sql'],
+  ['public.start_chat_thread', '176_chat_entity.sql'],
+  ['internal.queue_chat_human_reply', '176_chat_entity.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

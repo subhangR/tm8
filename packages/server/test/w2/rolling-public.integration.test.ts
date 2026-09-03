@@ -339,7 +339,7 @@ const COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS = [
 
 /** TM8 Chat's one budgeted catalog command, mounted in degraded mode too. */
 const CHAT_NET_NEW_OPERATIONS = [
-  'chat.threads.start',
+  'chat.start',
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
