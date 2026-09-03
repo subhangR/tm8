@@ -17,3 +17,10 @@ export const HOME_RAIL_KINDS = ['task', 'work_session', 'doc'] as const;
 
 /** The presence row's kind: the space's agent teammates. */
 export const HOME_PRESENCE_KIND = 'team_member';
+
+/**
+ * The chat strip's kind (176). It lives HERE and not in `src/home` because
+ * §15.2 forbids a kind literal outside `domain/`, and `home-guards.test.ts`
+ * enforces it — Home reaches kinds through the registry, never by name.
+ */
+export const HOME_CHAT_KIND = 'chat';

@@ -170,7 +170,7 @@ export {
 } from './menu';
 
 /** The merged Home page's rail/presence kinds — registry-adjacent data (D18). */
-export { HOME_PRESENCE_KIND, HOME_RAIL_KINDS } from './home-page';
+export { HOME_CHAT_KIND, HOME_PRESENCE_KIND, HOME_RAIL_KINDS } from './home-page';
 export { CATEGORY_DEFAULT_STATUS } from './status-categories';
 export {
   CHATS_ROOT,

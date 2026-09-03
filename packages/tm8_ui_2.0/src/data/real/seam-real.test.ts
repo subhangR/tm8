@@ -461,7 +461,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
       // write half of the chat-home bridge. Sorts between spawn and
       // startTerminal.
-      'startChatThread',
+      'startChat',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
       // belongs and is a coincidence worth not relying on.

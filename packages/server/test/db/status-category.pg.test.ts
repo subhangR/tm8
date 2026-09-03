@@ -49,6 +49,28 @@ const MIGRATION = '147_entity_status_category.sql';
  * not the whole remainder of the chain.
  */
 const ENDED_REASON_MIGRATION = '171_session_ended_reason.sql';
+/**
+ * 176, for EXACTLY the reason 171 is applied below: production's shared summary
+ * SELECT (`entity-read.ts`) now LEFT JOINs `public.chats`, so current code
+ * refuses to run against a 147-era schema with `relation "public.chats" does
+ * not exist`. The fourth instance of one recurring shape, not a new judgement
+ * call.
+ *
+ * 176 is the first of the four that cannot be applied ALONE: it drops
+ * signatures 153/154/167 created, so those three come with it. (133 is not
+ * listed — it is already inside this fixture's own tranche, and re-applying it
+ * raises "policy chat_turns_select already exists".)
+ *
+ * `178_spawn_parent_may_be_a_chat.sql` is DELIBERATELY ABSENT: it is the half
+ * of 176 that re-creates `execution_spawn`, which this fixture does not need
+ * and which drags 149/150 in behind it.
+ */
+const CHAT_ENTITY_MIGRATIONS = [
+  '153_chat_per_turn_mode.sql',
+  '154_chat_turn_mode_passthrough.sql',
+  '167_chat_thread_project_binding.sql',
+  '176_chat_entity.sql',
+];
 const SPACE = '00000000-0000-4000-8000-000000000001';
 const IDENTITY = '00000000-0000-4000-8000-00000000000f';
 /** A task that exists only to satisfy `entities.created_by`, which is an entity FK. */
@@ -203,6 +225,8 @@ describe.sequential('147 — entities.status_category', () => {
     // where a 129-era fixture applies `135_graph_kind.sql` and
     // `147_entity_status_category.sql` by name for the same reason.
     database.apply([ENDED_REASON_MIGRATION]);
+    database.apply(['172_task_start_date.sql']);
+    database.apply(CHAT_ENTITY_MIGRATIONS);
   }, 180_000);
 
   afterAll(async () => {

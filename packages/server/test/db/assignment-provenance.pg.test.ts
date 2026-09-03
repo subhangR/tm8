@@ -10,6 +10,23 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
+/** 176 cannot be applied alone: it drops signatures 153/154/167 created. */
+/**
+ * 176 cannot be applied alone: it drops signatures 133/153/154/167 created, so
+ * those four come with it. `178_spawn_parent_may_be_a_chat.sql` is DELIBERATELY
+ * ABSENT — it is the half of 176 that re-creates `execution_spawn`, and this
+ * suite is pinned at 129 to assert 129's spawn provenance. 178's own header
+ * records that this is why it is a separate file.
+ */
+const CHAT_ENTITY_MIGRATIONS = [
+  '133_chat_turns_select.sql',
+  '153_chat_per_turn_mode.sql',
+  '154_chat_turn_mode_passthrough.sql',
+  '167_chat_thread_project_binding.sql',
+  '172_task_start_date.sql',
+  '176_chat_entity.sql',
+];
+
 const IDENTITY = 'assignment-provenance-owner';
 
 interface Fixture {
@@ -225,6 +242,22 @@ describe.sequential('task assignment provenance (129)', () => {
     // function 171 redefines, so the position statement at 129 survives it.
     // Verified applying clean directly onto the tranche.
     database.apply(['171_session_ended_reason.sql']);
+    // …and 176, the FOURTH instance of the same shape, with one difference
+    // that has to be stated: 176 adds `public.chats` to the shared summary
+    // SELECT in `entity-read.ts`, so current code joins a relation a 129-era
+    // schema does not have (`relation "public.chats" does not exist`) — 135's
+    // failure again. But 176 is the first of the four that CANNOT be applied
+    // alone: it drops signatures 153/154/167 created, so those three come with
+    // it, and unlike 135/147/171 it DOES re-create `public.execution_spawn`
+    // (widening the parent guard to admit a chat).
+    //
+    // That last fact is exactly what this file's header says would retarget the
+    // spawn assertions, so it was MEASURED rather than argued: with these four
+    // applied, all six tests pass, including the three provenance assertions
+    // that call the spawn door. 176 re-creates execution_spawn from 150's body,
+    // and 150's provenance behaviour is 129's — the widening is one `if` on the
+    // parent kind and touches nothing this suite asserts.
+    database.apply(CHAT_ENTITY_MIGRATIONS);
   }, 180_000);
 
   afterAll(async () => {

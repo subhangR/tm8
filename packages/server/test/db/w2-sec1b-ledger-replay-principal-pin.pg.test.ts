@@ -334,7 +334,7 @@ describe.sequential('W2.SEC-1b ledger_replay principal pin', () => {
 
   function createTaskSql(): string {
     return `select public.create_task($1, $2, null, '', '{}'::jsonb, null, null, 'medium',
-                                      '[]'::jsonb, null, null, null, 'attached_to', $3) value`;
+                                      '[]'::jsonb, null, null, null, null, 'attached_to', $3) value`;
   }
 
   beforeAll(async () => {

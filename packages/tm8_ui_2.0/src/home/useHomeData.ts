@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EntitySummary, NotificationItem } from '@tm8/contract';
 import type { Seam, SessionLiveness } from '../data/seam';
-import { getKind } from '../domain';
+import { getKind, HOME_CHAT_KIND } from '../domain';
 import { activityRowOf, appendActivity, type ActivityRow } from './home-activity';
 import { assignableKinds, liveKinds } from './home-model';
 
@@ -128,7 +128,7 @@ export function chatRowOf(chat: EntitySummary): ChatThreadLite {
     id: chat.id,
     title: chat.title || null,
     activityAt: chat.activityAt,
-    messageCount: chat.state?.kind === 'chat' ? chat.state.turnCount : null,
+    messageCount: chat.state?.kind === HOME_CHAT_KIND ? chat.state.turnCount : null,
   };
 }
 
@@ -200,7 +200,7 @@ export function useHomeData(data: HomeScreenData): HomeData {
     const read = seam.query;
     if (typeof read !== 'function') { setChatThreads(null); return; }
     let cancelled = false;
-    void read({ spaceId, kinds: ['chat'], sort: 'activityAt_desc', limit: 50 })
+    void read({ spaceId, kinds: [HOME_CHAT_KIND], sort: 'activityAt_desc', limit: 50 })
       .then((result) => {
         if (cancelled) return;
         setChatThreads(result.page.items.map(chatRowOf));
