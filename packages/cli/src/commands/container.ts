@@ -53,7 +53,7 @@
  */
 import { readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
-import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { CliError, EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { assertKnownOptions } from './entity.js';
@@ -1104,14 +1104,36 @@ async function containerBrowser(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
- * `tm8 container cp <id> <src> <dst>` — one verb, TWO operations, and which
- * one runs is decided by which side carries the `ctr:` prefix.
+ * `tm8 container cp <id> <src> <dst>` — one verb, TWO operations, and which one
+ * it would run is decided by which side carries the `ctr:` prefix.
  *
  * That is also why the mutation-id rule is not uniform here: copying INTO a
  * machine is `containers.files.put`, a command that accepts a mutation id;
  * copying OUT is `containers.files.get`, a read, and a read refuses one. A
  * single blanket rule for the verb would be wrong in one direction whichever
  * way it was written.
+ *
+ * WHY THIS VALIDATES EVERYTHING AND THEN REFUSES INSTEAD OF SENDING.
+ *
+ * Both `containers.files.*` rows carry a TAR OCTET-STREAM, not a JSON body —
+ * `files.put` sends one and `files.get` returns one. `observedInvoke` speaks
+ * JSON: it would serialize a request body the server cannot read, and try to
+ * JSON-parse a tar archive coming back. Sending a made-up JSON field naming a
+ * LOCAL path would be worse than useless — the node cannot open a path on the
+ * caller's disk, so the request would be a lie in the shape of a success.
+ *
+ * The bytes path exists in this package (`commands/file.ts` does a raw
+ * `fetch` PUT with its own headers and error handling for blob upload), and
+ * this verb will use its shape when the runtime behind `containers.files.*`
+ * lands — those two rows answer 501 today whatever a client sends.
+ *
+ * So the caller gets everything the CLI can honestly give: the direction is
+ * resolved, the `ctr:` prefix rule is enforced, and a mutation id is refused on
+ * the read direction — all locally, all before anything is sent. Then it exits
+ * 8, the code this CLI reserves for "catalogued, not built here" (DEV-13),
+ * which is the same answer the node gives for these two rows today. What it
+ * does NOT do is put a malformed request on the wire and render the reply as
+ * though a file had moved.
  */
 async function containerCp(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['mutation-id']);
@@ -1133,28 +1155,25 @@ async function containerCp(cmd: CommandContext): Promise<ExitCode> {
       EXIT_USAGE,
     );
   }
-
-  if (dstInside) {
-    const client = clientFor(cmd.ctx);
-    // A tar stream, not a zod body: the operation's input is octet-stream, so
-    // the mutation id rides the header the transport already carries rather
-    // than a JSON field there is no room for.
-    const data = await observedInvoke<unknown>(client, 'containers.files.put', {
-      params: { containerId },
-      query: { path: dst.slice(4) },
-      body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')), source: src },
-    });
-    cmd.out.data(data, () => `copied ${src} into ${dst}`);
-    return EXIT_OK;
+  // The read direction refuses a mutation id BEFORE the refusal below, so a
+  // caller who made both mistakes hears about the one they can fix.
+  if (srcInside) {
+    refuseMutationId('container cp (copying out of a machine is a read)', cmd.options.value('mutation-id'));
   }
 
-  refuseMutationId('container cp (copying out of a machine is a read)', cmd.options.value('mutation-id'));
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'containers.files.get', {
-    params: { containerId },
-    query: { path: src.slice(4) },
-  });
-  cmd.out.data(data, () => `copied ${src} to ${dst}`);
-  return EXIT_OK;
+  const operation = dstInside ? 'containers.files.put' : 'containers.files.get';
+  throw new CliError(
+    `\`tm8 container cp\` cannot transfer bytes in this CLI build: ${operation} carries a tar ` +
+      'octet-stream, and this command has no tar transport yet',
+    EXIT_NOT_IMPLEMENTED,
+    {
+      hint:
+        `the operation is real and catalogued — read its contract with \`tm8 help container cp\`. ` +
+        `Nothing was sent: a JSON request naming a path on YOUR disk is not something the node could act on, ` +
+        `so it is refused here rather than answered wrongly. Copy files today with \`tm8 container run\`, ` +
+        `or mount the directory at create time with --mount.`,
+    },
+  );
 }
 
 /** `tm8 container logs <id>` — a READ, so `--mutation-id` is refused. */
