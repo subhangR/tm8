@@ -91,17 +91,42 @@ export function useNewContainerSheet(host: NewContainerSheetHost): NewContainerS
   const [isOpen, setIsOpen] = useState(false);
   const depth = useRef(0);
 
+  /*
+   * THE DEPTH IS THIS SHEET'S OWN STATE, SO IT IS 0 OR 1 — NEVER A COUNTER.
+   *
+   * `open()` incremented and `close()` clamped, which is a ONE-SIDED GUARD and
+   * the exact failure this hook's own tests describe as "just as invisible":
+   * open twice, close once, and the depth is left at 1 with the sheet SHUT.
+   * The shell then believes a modal is open forever, and Esc does nothing at
+   * all — the mirror image of obligation 1, reached by the opposite mistake.
+   *
+   * IT IS NOT A STACK, and that is the fix rather than clamping the increment.
+   * `useLaunchSheet` counts because it can be reopened onto a different
+   * SUBJECT while open. This sheet has no subject: its whole state is one
+   * boolean, so the honest depth is a projection of that boolean and cannot
+   * drift from it. Deriving it makes the asymmetry unrepresentable instead of
+   * merely guarded on both sides.
+   *
+   * The guard I did write proves I had the hazard in mind, which is precisely
+   * why the unguarded mirror read as already handled.
+   */
+  const setDepth = useCallback(
+    (next: 0 | 1) => {
+      depth.current = next;
+      setKeyboardContext?.({ modalDepth: next });
+    },
+    [setKeyboardContext],
+  );
+
   const open = useCallback(() => {
     setIsOpen(true);
-    depth.current += 1;
-    setKeyboardContext?.({ modalDepth: depth.current });
-  }, [setKeyboardContext]);
+    setDepth(1);
+  }, [setDepth]);
 
   const close = useCallback(() => {
     setIsOpen(false);
-    depth.current = Math.max(0, depth.current - 1);
-    setKeyboardContext?.({ modalDepth: depth.current });
-  }, [setKeyboardContext]);
+    setDepth(0);
+  }, [setDepth]);
 
   /*
    * OBLIGATION 2, in its space-scoped form. Keyed on the space ITSELF rather
