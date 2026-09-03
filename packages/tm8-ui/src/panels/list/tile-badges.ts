@@ -385,4 +385,5 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   'memberRole', 'score', 'taskDoneCount', 'repository', 'sha',
   'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',
   'projectVersion', 'profileVersions', 'customFields',
+  'chatMode', 'chatTurnState', 'chatLastTurnAt',
 ]);

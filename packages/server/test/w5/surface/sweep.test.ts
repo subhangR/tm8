@@ -900,25 +900,33 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // merges silently and one short. This branch carried 162 and main carried
     // 163, so the values differed and git had to ask.
     //
-    // 164 -> 165, by `179_chat_tool_audit_provenance.sql` (Wave 2, L2-runtime).
-    // The fourth bump in two days, and the second one this line has caught
-    // rather than inherited — which is the whole argument for the exact literal
-    // and against every clever alternative.
+    // 164 -> 165, by `179_chat_tool_audit_provenance.sql` (Wave 2, L2-runtime),
+    // and 165 -> 166 by `180_menu_chats_tab.sql` (Wave 2, L2-ui). That is the
+    // fifth bump in two days and the third this line has CAUGHT rather than
+    // inherited — the whole argument for the exact literal and against every
+    // clever alternative.
     //
     // MEASURED on the tree actually being merged, never carried over from the
-    // value that was here:
-    //   git ls-tree -r --name-only HEAD db/migrations | grep -c '\.sql$'  -> 165
+    // value that was here, and never from either side of the conflict:
+    //   git ls-tree -r --name-only HEAD db/migrations | grep -c '\.sql$'  -> 166
     // cross-checked against origin/main after rebasing:
-    //   git ls-tree -r --name-only origin/main db/migrations | grep -c    -> 164
-    // (main 164, which now includes 177 from #574, + this branch's one file).
-    // `git ls-tree` rather than `ls`, so an untracked stray .sql in the working
-    // directory cannot inflate the number the literal is set from.
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c   -> 165
+    // (main 165, which now includes 177 from #574 and 179 from #578, plus this
+    // branch's one file). `git ls-tree` rather than `ls`, so an untracked stray
+    // .sql in the working directory cannot inflate the number.
+    //
+    // RE-MEASURE ON EVERY REBASE. Wave 2 ran four lanes on main at once and
+    // three of them added a migration, so this literal is a merge conflict by
+    // construction — which is the point. A conflict is the GOOD outcome: the
+    // failure it exists to catch is the one that does NOT conflict, two
+    // branches making the IDENTICAL edit, which git merges silently and one
+    // short (#441/#453, three times in one afternoon).
     //
     // A NEW EXACT LITERAL, not `migrationFiles().length`: the note forbids the
     // live-computed form for a reason that still holds — it would pass on any
     // chain length and could no longer notice a chain that silently shrank,
     // which is the one thing this assertion exists to catch.
-    expect(server.appliedMigrations.length).toBe(165);
+    expect(server.appliedMigrations.length).toBe(166);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

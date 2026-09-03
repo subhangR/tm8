@@ -133,9 +133,20 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     expect(children[1]?.className.includes('lp__assignwrap')).toBe(true);
   });
 
-  it('a task lists Archive, then Complete, then Run', () => {
+  it('a task lists Archive, then Complete, then Run, then Chat about this', () => {
     const { container } = mount('task', DELETABLE);
-    expect(verbsIn(firstCluster(container))).toEqual(['archive', 'complete', 'run']);
+    /*
+     * `chat-about` is DERIVED onto every kind (`applyChatAbout`) and lands
+     * LAST, which is the position the ruling gives it rather than a leftover:
+     * `RULED_ORDER` ranks Complete then Run, an unranked verb keeps its
+     * declared position after the ranked ones, and this one is appended.
+     *
+     * That is also the right place for it. The two ruled verbs act on the row
+     * — finish it, work it — and Archive retires it; opening a conversation
+     * ABOUT the row is the one verb here that leaves the row alone, so it
+     * sits at the far end of the acting-on-it sequence rather than inside it.
+     */
+    expect(verbsIn(firstCluster(container))).toEqual(['archive', 'complete', 'run', 'chat-about']);
   });
 
   /**
@@ -170,6 +181,12 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     expect(marks).toEqual([
       'collections',
       'Complete',
+      // `chat-about` is derived onto every kind and unranked, so it keeps its
+      // declared position — after the middle verbs, before the anatomy's own
+      // affordances and the tail. It is not a session verb; it is the
+      // universal "talk about this row", and the tail slot is still the
+      // process control's.
+      'chat-about',
       'Copy session ID',
       'terminate',
       'Expand details',

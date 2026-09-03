@@ -2,9 +2,10 @@
  * CRAFT — the blueprint studio (Craft P1, task 01a00a31; design doc
  * 01a00a17-2d18 v2.1, rulings R1-R3).
  *
- * SPLIT PANE: a craft-mode chat on the left, anchored to the selected `graph`
- * entity (contextual chat — `ChatRootInput.anchorId` — with the mode PINNED
- * to 'craft'); a canvas on the right rendering that entity's ROW directly.
+ * SPLIT PANE: a craft-mode chat on the left, ABOUT the selected `graph`
+ * entity (contextual chat — `ChatCreateInput.aboutId`, written as an `about`
+ * edge by `chat.start` — with the mode PINNED to 'craft'); a canvas on the
+ * right rendering that entity's ROW directly.
  * The canvas dispatches on `graphType` (R3): 'entity' draws the card
  * blueprint, 'mermaid' renders the diagram source through the same Mermaid
  * component docs use, and an unknown type says so honestly.

@@ -46,14 +46,38 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     );
   });
 
-  it('names NO kind rows — every kind is a Home root now (task 01a00932 R3)', () => {
+  it('names EXACTLY ONE kind row — `chat`, and only because of what its tab is', () => {
     // Revision 17: the Work and Channels groups retired, and with them every
     // kind row the menu carried. The kinds did not lose their door — Home's
     // root column and icon rail (domain/home-rail.ts) list every collection
     // kind the registry offers, which is strictly MORE than the menu's frozen
     // caps could ever name. A kind row reappearing here would be a second
     // door beside a complete one.
-    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
+    /*
+     * REVISION 22 AMENDS THIS RULE, AND THE AMENDMENT IS NARROW.
+     *
+     * 17's law was "no kind rows", on the reasoning that Home's root column
+     * lists every collection kind the registry offers, so a menu row for one
+     * of them was a second door to a list Home already owns. That reasoning is
+     * intact and it is why this stays an exact-equality assertion rather than
+     * being relaxed to a subset: a second kind row landing here is still the
+     * defect 17 named.
+     *
+     * `chat` is admitted because the door it opens is NOT the one Home owns.
+     * Home's chats root is the two-pane CONVERSATION surface — a thread column
+     * and a transcript. This tab is the entity LIST: tiles with the queue's
+     * status pill, the four lifecycle tabs, sort, in-panel search and the row
+     * action cluster, opening a panel whose body is that same conversation.
+     * That is a different arrangement over the same rows, which is exactly the
+     * R9 two-doors posture the Board tab already sets against `task`.
+     *
+     * A VIEW REF WAS NOT AVAILABLE, and that is the other half of the reason.
+     * The Board precedent is a `board` MenuViewRef, and there is no `chats`
+     * view: adding one means widening the contract's closed `MenuViewRef`
+     * union AND a `menu_view_registry` row AND its check constraint — three
+     * server-side edits to reach a screen the kind list already renders.
+     */
+    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual(['chat']);
     // Revision 19 (migration 140): a WORK group returns, and the assertion
     // above is exactly why it can. What 17 retired was a rail of ROWS — the
     // Workspace caret with its eight kinds, the three dev kinds, git — and
@@ -176,7 +200,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(20);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(22);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

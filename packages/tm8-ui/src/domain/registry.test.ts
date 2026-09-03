@@ -231,7 +231,13 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // Note this sits directly under `inlineEdit` refusing `status: true` and
     // does NOT contradict it: the tick writes the ENVELOPE's category, never
     // `work_sessions.status`, which remains the PTY's to report.
-    expect(session.rowActions).toEqual(['complete', 'terminate']);
+    // `chat-about` is APPENDED by derivation (`applyChatAbout`), on every kind
+    // that can be an `about` target — which is every kind, because the edge is
+    // registered `dst_kinds = array['*']` (migration 056). It lands last: the
+    // cluster's `RULED_ORDER` ranks `complete` and `run`, an unranked verb
+    // keeps its declared position, and `terminate` is pulled to the tail by
+    // `TAIL_ORDER` regardless of where it sits here.
+    expect(session.rowActions).toEqual(['complete', 'terminate', 'chat-about']);
   });
 
   it('keeps Terminate as the session verb, on the row and in the compact toolbar', () => {
@@ -246,7 +252,12 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // running session off In Progress without killing it, which is exactly the
     // thing you want to do from a list rather than from inside the session.
     const session = getKind('work_session');
-    expect(session.list.rowActions).toEqual(['complete', 'terminate']);
+    expect(session.list.rowActions).toEqual(['complete', 'terminate', 'chat-about']);
+    // The PANEL's budget is untouched by the row's third verb: `chat-about` is
+    // derived onto `list.rowActions` only. `applyLaunch` writes to both arrays
+    // because Run is a verb about the entity; this one opens a conversation
+    // ELSEWHERE, and the panel's one-primary budget is for acting on what you
+    // are looking at.
     expect(session.panel.primaries).toEqual(['terminate']);
   });
 
@@ -300,8 +311,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
 
   it('4c. task keeps Run FIRST and its own row ordering', () => {
     // applyLaunch is additive, not a rebuild: a row that already names `run`
-    // keeps the order it authored.
-    expect(getKind('task').list.rowActions).toEqual(['run', 'complete']);
+    // keeps the order it authored. `applyChatAbout` is additive at the other
+    // end — it appends, so the kind's own ordering survives both derivations.
+    expect(getKind('task').list.rowActions).toEqual(['run', 'complete', 'chat-about']);
   });
 
   /**
@@ -967,6 +979,11 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
       channel: 'chat',
       work_session: 'chat',
       artifact: 'frame',
+      // A chat entity's panel body IS its transcript, ending at the composer
+      // (migration 176 + the `conversation` archetype). Same declaration and
+      // the same reason as the two above; work_session reaches the exclusion
+      // through the terminal arm as well, this one only through here.
+      chat: 'chat',
     };
     for (const row of allKinds()) {
       expect(row.panel.composition, String(row.kind)).toBe(expected[row.kind]);

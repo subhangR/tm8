@@ -46,7 +46,9 @@ const AGENT: ActorSummary = {
 function summary(rootId: string, title: string): ChatThreadSummary {
   return {
     rootId: rootId as EntityId,
-    anchorId: rootId as EntityId,
+    /* Wave 2 renamed `anchorId` and made it nullable: a chat with no subject
+       says so, instead of folding to its own id. These fixtures name none. */
+    aboutId: null,
     title,
     preview: title,
     updatedAt: '2026-08-21T09:00:00.000Z',

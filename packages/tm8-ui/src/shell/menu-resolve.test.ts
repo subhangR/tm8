@@ -18,7 +18,7 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-20 menu-backed tabs', () => {
+  it('encodes the shipped group spine — the revision-22 menu-backed tabs', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       // Revision 17 (2026-08-16, unified Home — task 01a00932): the Work and
       // Channels groups retired and the conversation tab is renamed HOME.
@@ -28,6 +28,17 @@ describe('the shipped default menu', () => {
       // the redesigned Collab surface (a later feature). The group id under
       // the Home label is still `chats` — ids are wire-stable, labels move.
       'Home',
+      // Revision 22 (2026-09-03, migration 180): CHATS, seated after Home.
+      // Migration 176 made a chat an ENTITY with the core kind `chat`; this is
+      // the tab that lists it. Its group id is `conversations`, NOT `chats` —
+      // that id has belonged to the group labelled Home since 127, which is
+      // the whole reason Wave 1 left the menu alone rather than "swapping the
+      // Chats group" and deleting Home.
+      //
+      // It is also the ONE group in this spine whose item is a KIND rather
+      // than a view, which is what gives it a rail — see the railless
+      // assertion below, where it is the named exception.
+      'Chats',
       // Revision 19 (2026-08-16, migration 140 — task 01a00b46): WORK returns
       // second in the row, and it is the three-panel workspace itself. 17
       // retired a Work group that was a RAIL OF ROWS duplicating Home's
@@ -50,12 +61,22 @@ describe('the shipped default menu', () => {
     ]);
   });
 
-  it('draws NO rail on ANY shipped tab — every group is a railless single view', () => {
-    // Home's surface draws its own icon rail inside the screen; the other
-    // four are whole-centre views. A menu rail on any of them would be a
-    // column holding one row repeating the tab's own name — what made
-    // revision 13 retire the tab, solved by the shape rule instead.
-    for (const group of SHIPPED_DEFAULT_MENU.groups) {
+  it('draws a rail on the Chats tab ALONE — every other shipped group is a railless single view', () => {
+    // Home's surface draws its own icon rail inside the screen; the others are
+    // whole-centre views. A menu rail on any of them would be a column holding
+    // one row repeating the tab's own name — what made revision 13 retire the
+    // tab, solved by the shape rule instead.
+    //
+    // CHATS IS THE ONE EXCEPTION, AND IT IS THE SHAPE RULE ANSWERING, not an
+    // exemption: `isRaillessGroup` requires a lone childless VIEW item, and
+    // this group's one item is a KIND. So the rail it draws is the kind's own
+    // row — the registry mark, the label, and `spaces.counts`' number — beside
+    // the list, which is the arrangement every kind list in the product has.
+    // Asserted as an exact PARTITION rather than skipping the group, so a
+    // second railed tab arriving by accident still reds this.
+    const railed = SHIPPED_DEFAULT_MENU.groups.filter((g) => !isRaillessGroup(g));
+    expect(railed.map((g) => g.id)).toEqual(['conversations']);
+    for (const group of SHIPPED_DEFAULT_MENU.groups.filter((g) => isRaillessGroup(g))) {
       expect(isRaillessGroup(group), group.id).toBe(true);
     }
     // The rule still answers false for a group with real rows — a

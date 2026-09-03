@@ -90,16 +90,50 @@ describe('EntityChip', () => {
     expect(onOpenEntity).toHaveBeenCalledWith(BARE_ID);
   });
 
-  it('renders NO chips anywhere for the fixture thread — the chip era is over', async () => {
+  it('renders NO chips in the TRANSCRIPT for the fixture thread — the chip era is over', async () => {
     /* S3 replaced the transcript's chip row with the ledger's counted line;
        S4 replaced the tray's chip strip with the ledger panel. The chip
        survives only where a payload IS content (ExplanationToolCard's
-       durable-entity row), which the fixture thread does not exercise. */
+       durable-entity row), which the fixture thread does not exercise.
+       
+       SCOPED TO THE TRANSCRIPT, and the scope is the ruling rather than a
+       weakening of it. What S3/S4 retired was the chip as a SUMMARY — a strip
+       of everything a turn happened to touch, which said "these were
+       mentioned" and nothing more, and which the counted ledger line says
+       better. A chip that names ONE relation is a different thing, and two of
+       them landed with the chat entity (Wave 2):
+       
+         · the conversation header's `about` subject, which is the only place
+           the relation appears at all — without it a craft chat and a bare
+           Home chat are indistinguishable on screen; and
+         · a third-party turn's SOURCE, which is what makes a work session's
+           report legible as a report rather than as something you said.
+       
+       Both are the payload, not a summary of it. The header's is asserted
+       below, so this file pins the whole census rather than one half of it. */
     const { port } = createChatHomeFixturePort();
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={vi.fn()} />,
     );
     await waitFor(() => expect(view.getAllByTestId('chat-ledger-reads')).toHaveLength(1));
-    expect(view.queryAllByTestId('chat-entity-chip')).toHaveLength(0);
+    const transcript = view.container.querySelector('.tch-transcript');
+    expect(transcript).not.toBeNull();
+    expect(transcript!.querySelectorAll('[data-testid="chat-entity-chip"]')).toHaveLength(0);
+  });
+
+  it('draws the `about` subject as a chip on the conversation header', async () => {
+    /* The fixture thread carries `aboutId` (the fixture channel), which is
+       what makes this observable at all — a fixture with no subject would let
+       a header that never draws the relation look correct. */
+    const { port } = createChatHomeFixturePort();
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={vi.fn()} />,
+    );
+    const relation = await waitFor(() => view.getByTestId('chat-about-relation'));
+    expect(relation.textContent).toContain('about');
+    expect(within(relation).getByTestId('chat-entity-chip')).toBeTruthy();
+    /* It is INSIDE the header and not in the transcript: the subject is a fact
+       about the conversation, not about any one turn in it. */
+    expect(relation.closest('.tch-conversation__head')).not.toBeNull();
   });
 });
