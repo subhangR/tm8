@@ -46,14 +46,26 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     );
   });
 
-  it('names NO kind rows — every kind is a Home root now (task 01a00932 R3)', () => {
+  it('names EXACTLY ONE kind row — `chat`, and only because of what its tab is', () => {
     // Revision 17: the Work and Channels groups retired, and with them every
     // kind row the menu carried. The kinds did not lose their door — Home's
     // root column and icon rail (domain/home-rail.ts) list every collection
     // kind the registry offers, which is strictly MORE than the menu's frozen
     // caps could ever name. A kind row reappearing here would be a second
     // door beside a complete one.
-    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
+    /*
+     * REVISION 22 AMENDS 17's RULE, NARROWLY, and this stays an exact equality
+     * rather than being relaxed: a SECOND kind ref landing here is still the
+     * defect 17 named — a menu row that is a second door to a list Home's root
+     * column already owns.
+     *
+     * `chat` is admitted because the door it opens is not the one Home owns:
+     * Home's chats root is the two-pane CONVERSATION surface, and the Chats
+     * tab is the entity LIST over the same rows. The R9 two-doors posture the
+     * Board tab already sets against `task`. See tm8-ui's copy of this test —
+     * this tree is frozen and carries the parity, not the surfaces.
+     */
+    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual(['chat']);
     // Revision 19 (migration 140): a WORK group returns, and the assertion
     // above is exactly why it can. What 17 retired was a rail of ROWS — the
     // Workspace caret with its eight kinds, the three dev kinds, git — and
@@ -176,7 +188,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(20);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(22);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });
