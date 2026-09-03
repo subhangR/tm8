@@ -472,6 +472,27 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // A seam method taking `ExecutionSpawnInput` with those omitted would be
       // one optional-field edit away from a terminal that spawns an agent.
       'startTerminal',
+      /*
+       * CONTAINERS P0 (migration 177). Five methods, appended here rather than
+       * inserted at their five sorted positions — the `.sort()`-at-the-end
+       * posture the membership four and the task-axis three already take, and
+       * for the reason recorded there: five insertions at five different points
+       * is how a list like this acquires a silent duplicate.
+       *
+       * THIS LOCK IS WHY THEY ARE LISTED AT ALL. The seam cannot gain a command
+       * without someone writing the line, and these five would otherwise have
+       * arrived as a green `Array(53)` where the guard expected 48 — which is
+       * exactly how it surfaced.
+       *
+       * `containerLifecycle` is ONE method for start/stop/pause/resume because
+       * the four share one contract DTO and one route shape; four methods would
+       * be four places for the same mandatory `expectedVersion` to drift.
+       * `startContainerTerminal` answers IDS, not a `CommandResult` — it mints
+       * a work_session inside the container, so there is nothing to reconcile
+       * and a caller must not journal it optimistically.
+       */
+      'createContainer', 'containerLifecycle', 'destroyContainer',
+      'startContainerTerminal', 'containerProviders',
       'terminate',
       // 2026-08-16 (attention history): `updateAttentionRequest` — the
       // PER-REQUEST write. `resolveAttention` above is the bulk verb and
