@@ -32,6 +32,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseInvocation, splitCommandPath, BOOLEAN_OPTIONS } from '../src/args.js';
+import { responseMode } from '../src/client.js';
 import { loadLocalConfig, resolveContext, sessionContextFromEnv } from '../src/context.js';
 import { errorLines, exitCodeFor } from '../src/errors.js';
 import { CliError, EXIT_USAGE } from '../src/exit.js';
@@ -770,6 +771,42 @@ describe('the remaining verbs bind their own shapes', () => {
     expect(ran.code, ran.stderr).toBe(0);
     expect(body().expectedVersion).toBeUndefined();
     expect(body().title).toBe('clone');
+  });
+});
+
+// ── response shapes ────────────────────────────────────────────────────────
+
+describe('the rows that answer RAW BYTES are classified as such', () => {
+  /**
+   * `BYTES_OPERATIONS` in `src/client.ts` is a CLOSED, hand-maintained set and
+   * `envelope` is the DEFAULT for anything not in it. That makes the existing
+   * "every row lands in exactly one of three shapes" sweep a tautology for byte
+   * rows: a tar-returning operation nobody classified is counted as an envelope
+   * and the totals STILL BALANCE. Nothing goes red.
+   *
+   * The consequence is not a missing feature but a WRONG ANSWER: the client
+   * would utf8-decode a tar archive, fail to parse it, and raise a
+   * ProtocolError blaming the SERVER for not sending an envelope it was never
+   * supposed to send. So these are asserted BY NAME rather than by count.
+   */
+  it('containers.files.get returns a tar archive, not an envelope', () => {
+    expect(responseMode('containers.files.get')).toBe('bytes');
+  });
+
+  it('containers.proxy returns whatever the exposed port served', () => {
+    expect(responseMode('containers.proxy')).toBe('bytes');
+  });
+
+  it('containers.files.put is NOT a bytes row — its REQUEST carries the tar, its response does not', () => {
+    // The negative case, so the two assertions above cannot pass by a change
+    // that simply classifies everything as bytes. `files.put` answers
+    // `{ ok: true }`, so `envelope` is correct and adding it would be the
+    // opposite error.
+    expect(responseMode('containers.files.put')).toBe('envelope');
+  });
+
+  it('containers.logs is an envelope — the paged read, not a byte stream', () => {
+    expect(responseMode('containers.logs')).toBe('envelope');
   });
 });
 
