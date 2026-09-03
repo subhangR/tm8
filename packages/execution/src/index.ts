@@ -104,3 +104,7 @@ export {
 export { knownAgentConfigDirs } from './transcript/agent-config-dirs.js';
 
 export const EXECUTION_PACKAGE = '@tm8/execution';
+
+// The container block (TM8-CONTAINERS-DESIGN). The server package wires the
+// graph port over `Db`; nothing here touches a database.
+export * from './containers/index.js';
