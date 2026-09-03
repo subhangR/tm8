@@ -465,7 +465,19 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
         status: operation.status === 'reserved' ? 'reserved' : 'registered',
         source: 'server-router',
       })),
-      ws: router.ws.map((operation) => ({
+      // EVERY WS ROW, INCLUDING THE ALIASES — not `router.ws`, which is the
+      // MOUNT list and is deliberately one shorter.
+      //
+      // `routes` is what a DISCOVERING CLIENT reads to learn an operation's
+      // transport, and `containers.stream` has a transport: the same
+      // `WS /v2/ws` socket, dispatched on the grant. Omitting it would leave a
+      // `status: 'v1'` catalog row that discovery can name but cannot tell you
+      // how to reach — and the evaluator's adapter asserts routes and help are
+      // one-to-one with the catalog, correctly.
+      //
+      // The mount count stays on `catalog.ws` above, from `router.ws`. Listing
+      // and mounting are different questions and the manifest answers both.
+      ws: OPERATIONS.filter((operation) => operation.method === 'WS').map((operation) => ({
         operation: operation.name as OperationName,
         method: 'WS',
         path: operation.path,

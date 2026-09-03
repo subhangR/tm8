@@ -93,20 +93,26 @@ describe('TM8_CONTAINERS=off answers 501 for every runtime operation', () => {
       .rejects.toThrow(/TM8_CONTAINERS=off/);
   });
 
-  it('gives ONE consistent answer for the whole family when off', async () => {
-    // The gate is checked BEFORE the not-built list on purpose: with containers
-    // off, a node must not give a different sentence per operation depending on
-    // which phase happened to ship it.
+  it('gives ONE consistent REASON for the whole family when off, while naming each op', async () => {
+    // Two things at once, and they pull in opposite directions. The message
+    // must NAME the operation — that is the house's standard 501 envelope, and
+    // an operator reading a log needs to know which call refused. But the
+    // REASON must not vary: with containers off, a node must not give a
+    // different explanation per operation depending on which phase shipped it.
+    // So the name is a prefix and the reason is uniform, and this asserts both.
     const registry = registryWith(false);
-    const messages = new Set<string>();
+    const reasons = new Set<string>();
     for (const name of CONTAINER_RUNTIME_OPERATIONS) {
       try {
         await registry.get(name)!(ctx());
       } catch (err) {
-        messages.add(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        expect(message, name).toContain(name);
+        reasons.add(message.slice(`${name}: `.length));
       }
     }
-    expect(messages.size).toBe(1);
+    expect(reasons.size).toBe(1);
+    expect([...reasons][0]).toContain('TM8_CONTAINERS=off');
   });
 });
 
@@ -117,7 +123,7 @@ describe('with the gate ON, the unbuilt operations still answer honestly', () =>
       code: 'not_implemented',
     });
     await expect(registry.get('containers.attach')!(ctx()))
-      .rejects.toThrow(/stream bridge \(phase 2\)/);
+      .rejects.toThrow(/containers\.attach: .*stream bridge \(phase 2\)/);
     await expect(registry.get('containers.expose')!(ctx()))
       .rejects.toThrow(/phase 3/);
   });

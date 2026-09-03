@@ -193,6 +193,11 @@ describe('W5.C generator proof', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert and
     // RequiredCommandContextSchema binds .delete; .list is a READ and binds
     // nothing, so three new ops move this by two.
-    expect(ENTRIES).toHaveLength(99);
+    // +19 (177): the container family has twenty commands and nineteen bind.
+    // `containers.files.put` carries a TAR STREAM, not JSON, so a strict object
+    // schema would refuse every legitimate upload — it is enumerated in
+    // UNBOUND_COMMAND_OPERATIONS instead. The family's five reads bind nothing,
+    // as reads do. MEASURED.
+    expect(ENTRIES).toHaveLength(118);
   });
 });

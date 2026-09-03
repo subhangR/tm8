@@ -25,12 +25,16 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {166/164/165/163} (2026-08-16, W4/132): spaces.taskWorkflows.*.
         // -> {169/167/168/166} (141): the three account-lifecycle ops.
         // -> {172/170/171/169} (148): spaces.workflows.*.
-        total: 172,
-        v1: 170,
+        // -> {197/195/195/193} (177): the 25 containers.* rows.
+        // NOTE `http` and `ws` are MOUNT counts: 24 of the 25 are HTTP, and
+        // the 25th (`containers.stream`) re-declares `events.subscribe`'s
+        // socket, so it adds a discoverable NAME and no mount — `ws` stays 1.
+        total: 197,
+        v1: 195,
         reserved: 2,
-        http: 171,
+        http: 195,
         ws: 1,
-        registerableV1Http: 169,
+        registerableV1Http: 193,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

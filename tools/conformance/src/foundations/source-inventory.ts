@@ -296,7 +296,16 @@ export async function readRouterSourceInventory(): Promise<{
 }> {
   const path = SERVER_FILES.router;
   const text = await readFile(path, 'utf8');
-  const hasCatalogDefault = /constructor\s*\(\s*operations:[\s\S]*?=\s*OPERATIONS\s*\)/m.test(text);
+  // The router must still DERIVE its table from the catalog rather than from a
+  // hand-written list — that is the property this proves, and it is why the
+  // check reads the source instead of the behaviour.
+  //
+  // `MOUNTED_OPERATIONS` is accepted alongside `OPERATIONS` because it IS the
+  // catalog, minus the rows that declare themselves aliases of another row's
+  // binding. Mounting those would put two entries on one method+path, which is
+  // the silent shadowing the router's own ordering rule exists to prevent.
+  const hasCatalogDefault =
+    /constructor\s*\(\s*operations:[\s\S]*?=\s*(?:MOUNTED_OPERATIONS|OPERATIONS)\s*\)/m.test(text);
   const excludesWs = /\.filter\(\(op\)\s*=>\s*op\.method\s*!==\s*'WS'\)/m.test(text);
   if (!hasCatalogDefault || !excludesWs) {
     throw new Error(`${path}: Router no longer proves catalog-derived HTTP routing with explicit WS exclusion`);

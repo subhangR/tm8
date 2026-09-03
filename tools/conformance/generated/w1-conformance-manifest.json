@@ -1405,6 +1405,13 @@
         "path": "/v2/ws",
         "status": "skeleton",
         "durabilityClaim": false
+      },
+      {
+        "operation": "containers.stream",
+        "method": "WS",
+        "path": "/v2/ws",
+        "status": "skeleton",
+        "durabilityClaim": false
       }
     ]
   },
