@@ -795,9 +795,24 @@ begin
     raise exception 'the opening message must contain 1..10000 characters' using errcode = '22023';
   end if;
 
+  -- WHAT IS *NOT* IN THE HASH: `p_chat_id`.
+  --
+  -- The hash answers "is this the same logical request", and the chat id is not
+  -- part of one — it is minted per ATTEMPT by the handler, because the scratch
+  -- directory has to be named before this function runs. Including it would
+  -- make every genuine retry of the same clientMutationId hash DIFFERENTLY and
+  -- come back as `23514 chat start replay does not match the original request`,
+  -- for a request that is logically identical to the one that succeeded. That
+  -- is the trap 167's deploy-window fallback was written to escape, and this is
+  -- the version of it that would ship broken from day one rather than for one
+  -- release. Measured: the storage suite caught it on the first run.
+  --
+  -- The ledger returns the ORIGINAL result, so a retry gets the chat that
+  -- exists and quietly discards its throwaway candidate id. The candidate's
+  -- empty scratch directory is the only residue, and an empty directory is a
+  -- better outcome than a caller that can never learn its own chat's id.
   request_hash := internal.w2_sha256(jsonb_build_object(
     'identityId', internal.identity_id(),
-    'chatId', p_chat_id,
     'spaceId', p_space_id,
     'teammateId', p_teammate_id,
     'model', p_model,

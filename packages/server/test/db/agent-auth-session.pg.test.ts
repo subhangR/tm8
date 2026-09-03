@@ -31,7 +31,7 @@ interface Fixture {
   memberB: string;
   personaId: string;
   workSessionId: string;
-  threadRootId: string;
+  chatId: string;
 }
 
 let database: W1ScratchDatabase;
@@ -68,7 +68,7 @@ async function seed(): Promise<Fixture> {
       memberB: randomUUID(),
       personaId: randomUUID(),
       workSessionId: randomUUID(),
-      threadRootId: randomUUID(),
+      chatId: randomUUID(),
     };
     await client.query(
       `insert into public.user_profiles(identity_id, display_name)
@@ -90,14 +90,14 @@ async function seed(): Promise<Fixture> {
               ($2, $5, 'member', $2, 'space'),
               ($3, $5, 'team_member', $1, 'space'),
               ($4, $5, 'work_session', $3, 'space'),
-              ($6, $5, 'message', $1, 'space')`,
+              ($6, $5, 'chat', $1, 'space')`,
       [
         ids.memberA,
         ids.memberB,
         ids.personaId,
         ids.workSessionId,
         ids.spaceId,
-        ids.threadRootId,
+        ids.chatId,
       ],
     );
     await client.query(
@@ -116,10 +116,19 @@ async function seed(): Promise<Fixture> {
        values ($1, 'Agent auth session', 'running', 'none', now())`,
       [ids.workSessionId],
     );
+    // 176: the credential binds to a CHAT entity, so the fixture seeds one
+    // rather than a root message on somebody else's anchor.
     await client.query(
-      `insert into public.messages(entity_id, anchor_id, author_id, body)
-       values ($1, $2, $3, 'Chat thread root')`,
-      [ids.threadRootId, ids.workSessionId, ids.memberA],
+      `insert into public.chats(
+         entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+         chat_mode, workdir_mode, cwd, native_session_id,
+         configured_by_identity_id, configured_by_member_id, client_mutation_id
+       ) values ($1,$2,'Agent auth chat',$3,'claude-opus-5','anthropic','claude-code',
+                 'ask','scratch','/tmp/tm8-chat-auth', gen_random_uuid(), $4, $5, $6)`,
+      [
+        ids.chatId, ids.spaceId, ids.personaId, ids.identityA, ids.memberA,
+        `chat-auth-${randomUUID()}`,
+      ],
     );
     await client.query(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by)
@@ -255,17 +264,17 @@ describe('072 persona-pinned agent auth sessions', () => {
 });
 
 describe('attributable agent_runtime sessions', () => {
-  it('mints through the internal helper, replaces on resume, and revokes with the thread', async () => {
-    // The root was authored by member A. Mint as member B so this proves the
-    // attribution comes from the requesting human claims, not the message.
+  it('mints through the internal helper, replaces on resume, and revokes with the chat', async () => {
+    // The chat was configured by member A. Mint as member B so this proves the
+    // attribution comes from the requesting human claims, not the chat row.
     const first = await issueAgentRuntimeSession(db, claims(fixture.identityB), {
-      threadRootId: fixture.threadRootId,
+      chatId: fixture.chatId,
       teamMemberId: fixture.personaId,
     });
 
     expect(first).toMatchObject({
       runtimeMemberId: fixture.memberB,
-      runtimeThreadRootId: fixture.threadRootId,
+      runtimeChatId: fixture.chatId,
       actingAsTeamMemberId: fixture.personaId,
     });
     expect(await resolveBearerIdentity(db, first.token)).toMatchObject({
@@ -273,7 +282,7 @@ describe('attributable agent_runtime sessions', () => {
       identityId: fixture.identityB,
       kind: 'agent_runtime',
       runtimeMemberId: fixture.memberB,
-      runtimeThreadRootId: fixture.threadRootId,
+      runtimeChatId: fixture.chatId,
       actingAsTeamMemberId: fixture.personaId,
       workSessionId: null,
     });
@@ -283,10 +292,10 @@ describe('attributable agent_runtime sessions', () => {
       return (await client.query<{
         kind: string;
         runtime_member_id: string;
-        runtime_thread_root_id: string;
+        runtime_chat_id: string;
         token_hash: string;
       }>(
-        `select kind, runtime_member_id::text, runtime_thread_root_id::text, token_hash
+        `select kind, runtime_member_id::text, runtime_chat_id::text, token_hash
            from public.auth_sessions where id=$1`,
         [first.sessionId],
       )).rows[0]!;
@@ -294,13 +303,13 @@ describe('attributable agent_runtime sessions', () => {
     expect(persisted).toMatchObject({
       kind: 'agent_runtime',
       runtime_member_id: fixture.memberB,
-      runtime_thread_root_id: fixture.threadRootId,
+      runtime_chat_id: fixture.chatId,
     });
     expect(persisted.token_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(persisted.token_hash).not.toContain(first.token);
 
     const resumed = await issueAgentRuntimeSession(db, claims(fixture.identityB), {
-      threadRootId: fixture.threadRootId,
+      chatId: fixture.chatId,
       teamMemberId: fixture.personaId,
     });
     await expect(resolveBearerIdentity(db, first.token)).rejects.toMatchObject({
@@ -308,12 +317,12 @@ describe('attributable agent_runtime sessions', () => {
     });
     const [live] = await database.query<{ count: string }>(
       `select count(*)::text count from public.auth_sessions
-        where runtime_thread_root_id=$1 and revoked_at is null`,
-      [fixture.threadRootId],
+        where runtime_chat_id=$1 and revoked_at is null`,
+      [fixture.chatId],
     );
     expect(live!.count).toBe('1');
 
-    await revokeAgentRuntimeSession(db, claims(fixture.identityB), fixture.threadRootId);
+    await revokeAgentRuntimeSession(db, claims(fixture.identityB), fixture.chatId);
     await expect(resolveBearerIdentity(db, resumed.token)).rejects.toMatchObject({
       code: 'unauthenticated',
     });
@@ -321,7 +330,7 @@ describe('attributable agent_runtime sessions', () => {
 
   it('does not let agent_runtime authority mint or extend another runtime', async () => {
     const error = await issueAgentRuntimeSession(db, claims(fixture.identityB, 'agent_runtime'), {
-      threadRootId: fixture.threadRootId,
+      chatId: fixture.chatId,
       teamMemberId: fixture.personaId,
     }).then(() => null, (caught: unknown) => caught);
 

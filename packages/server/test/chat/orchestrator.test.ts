@@ -11,12 +11,11 @@ import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import type { EventSink } from '../../src/events/ws-connection.js';
 
-const ROOT = '10000000-0000-4000-8000-000000000001';
+const CHAT = '10000000-0000-4000-8000-000000000001';
 const USER_MESSAGE = '10000000-0000-4000-8000-000000000002';
 const AGENT_MESSAGE = '10000000-0000-4000-8000-000000000003';
 const TURN = '10000000-0000-4000-8000-000000000004';
 const SPACE = '10000000-0000-4000-8000-000000000005';
-const ANCHOR = '10000000-0000-4000-8000-000000000006';
 const TEAMMATE = '10000000-0000-4000-8000-000000000007';
 const NATIVE = '10000000-0000-4000-8000-000000000008';
 const MEMBER_B = '10000000-0000-4000-8000-000000000009';
@@ -28,12 +27,11 @@ type RuntimeState = 'cold' | 'live' | 'stopped';
 function claim(runtimeState: RuntimeState): Record<string, unknown> {
   return {
     turnId: TURN,
-    rootMessageId: ROOT,
+    chatId: CHAT,
     userMessageId: USER_MESSAGE,
     agentMessageId: null,
     spaceId: SPACE,
     body: 'human prompt verbatim',
-    anchorId: ANCHOR,
     requesterIdentityId: IDENTITY,
     requesterAuthKind: 'browser',
     teammateId: TEAMMATE,
@@ -80,7 +78,7 @@ class FakeDb implements Db {
   constructor(
     claimedTurn: Record<string, unknown> | readonly Record<string, unknown>[] | null,
     private readonly events: string[],
-    readonly configuredRoots: string[] = [],
+    readonly configuredChats: string[] = [],
   ) {
     this.claimedTurns = claimedTurn === null
       ? []
@@ -137,8 +135,8 @@ class FakeDb implements Db {
   }
 
   async query<R>(): Promise<R[]> {
-    return this.configuredRoots.map((root_message_id) => (
-      { root_message_id, configured_by_identity_id: IDENTITY }) as R);
+    return this.configuredChats.map((entity_id) => (
+      { entity_id, configured_by_identity_id: IDENTITY }) as R);
   }
   async end(): Promise<void> {}
 }
@@ -189,7 +187,7 @@ describe('TM8 Chat durable orchestration', () => {
       { kind: 'usage', input_tokens: 4, output_tokens: 2 },
       { kind: 'done', reason: 'success' },
     ]);
-    await orchestrator.wake(ROOT, IDENTITY);
+    await orchestrator.wake(CHAT, IDENTITY);
 
     expect(events).toEqual([
       'agent-message', 'bind-agent-message', 'state:live',
@@ -209,7 +207,7 @@ describe('TM8 Chat durable orchestration', () => {
       { kind: 'usage', input_tokens: 20, output_tokens: 1, total_cost_usd: 4.25 },
       { kind: 'done', reason: 'interrupted' },
     ]);
-    await orchestrator.wake(ROOT, IDENTITY);
+    await orchestrator.wake(CHAT, IDENTITY);
 
     expect(runtime.starts).toHaveLength(1);
     expect(runtime.starts[0]?.resume).toEqual({ nativeSessionId: NATIVE, cwd: '/tmp/tm8-chat-test' });
@@ -224,7 +222,7 @@ describe('TM8 Chat durable orchestration', () => {
   // "teammate ignores everyone but the thread creator").
   it('wakes a thread for another human participant under the configuring identity', async () => {
     const events: string[] = [];
-    const db = new FakeDb(null, events, [ROOT]);
+    const db = new FakeDb(null, events, [CHAT]);
     const orchestrator = new ChatOrchestrator({
       db,
       runtime: new FakeRuntime([]),
@@ -233,8 +231,11 @@ describe('TM8 Chat durable orchestration', () => {
         systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
       }),
     });
+    // THE ANCHOR is what identifies the chat now (176). A chat's messages carry
+    // NO thread root, so reading `state.rootMessageId` here — as this did —
+    // would find nothing at all: the same silence, from the other side.
     await orchestrator.wakeForMessages('other-human', [{
-      state: { rootMessageId: ROOT },
+      state: { anchorId: CHAT },
     } as never]);
     expect(db.claimCalls).toBe(1);
     expect(db.claimIdentities).toEqual([IDENTITY]);
@@ -276,7 +277,7 @@ describe('TM8 Chat durable orchestration', () => {
         systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
       }),
     });
-    await orchestrator.wake(ROOT, IDENTITY);
+    await orchestrator.wake(CHAT, IDENTITY);
 
     // The mode line leads, then the server-written speaker line, then the body.
     expect(runtime.turns).toEqual([`[mode: ask]\n[from "Member B" · member ${MEMBER_B}]\nhuman prompt verbatim`]);
@@ -324,13 +325,13 @@ describe('TM8 Chat durable orchestration', () => {
       },
     });
 
-    await orchestrator.wake(ROOT, IDENTITY);
+    await orchestrator.wake(CHAT, IDENTITY);
 
     expect(resolvedFor).toEqual([
       { identityId: IDENTITY, authKind: 'browser', mode: 'new' },
       { identityId: OTHER_IDENTITY, authKind: 'browser', mode: 'resume-after-interrupt' },
     ]);
-    expect(runtime.closes).toEqual([ROOT]);
+    expect(runtime.closes).toEqual([CHAT]);
     expect(runtime.starts[1]?.resume).toEqual({
       nativeSessionId: NATIVE,
       cwd: '/tmp/tm8-chat-test',
@@ -344,7 +345,7 @@ describe('TM8 Chat durable orchestration', () => {
   // turn sat stranded until the next unrelated message or a restart sweep.
   it('re-drains for a wake that arrived while the previous drain was exiting', async () => {
     const events: string[] = [];
-    const db = new FakeDb(null, events, [ROOT]);
+    const db = new FakeDb(null, events, [CHAT]);
     const orchestrator = new ChatOrchestrator({
       db,
       runtime: new FakeRuntime([]),
@@ -353,8 +354,8 @@ describe('TM8 Chat durable orchestration', () => {
         systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
       }),
     });
-    const first = orchestrator.wake(ROOT, IDENTITY);
-    const second = orchestrator.wake(ROOT, IDENTITY);
+    const first = orchestrator.wake(CHAT, IDENTITY);
+    const second = orchestrator.wake(CHAT, IDENTITY);
     await Promise.all([first, second]);
     await new Promise((resolve) => setImmediate(resolve));
     expect(db.claimCalls).toBe(2);
@@ -382,7 +383,7 @@ describe('TM8 Chat durable orchestration', () => {
         systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
       }),
     });
-    await orchestrator.wake(ROOT, IDENTITY);
+    await orchestrator.wake(CHAT, IDENTITY);
 
     const turn = runtime.turns[0]!;
     const [modeLine, line, ...bodyLines] = turn.split('\n');
@@ -432,7 +433,7 @@ describe('TM8 Chat durable orchestration', () => {
 
     async function turnFor(attachments: unknown): Promise<string> {
       const { orchestrator, runtime } = orchestratorOver({ ...claim('cold'), attachments });
-      await orchestrator.wake(ROOT, IDENTITY);
+      await orchestrator.wake(CHAT, IDENTITY);
       return runtime.turns[0]!;
     }
 
@@ -495,7 +496,7 @@ describe('TM8 Chat durable orchestration', () => {
         requestedByDisplayName: 'Member B',
         attachments: [{ fileEntityId: FILE_A, name: 'spec.pdf', mime: 'application/pdf' }],
       });
-      await orchestrator.wake(ROOT, IDENTITY);
+      await orchestrator.wake(CHAT, IDENTITY);
       const lines = runtime.turns[0]!.split('\n');
       expect(lines[0]).toBe('[mode: ask]');
       expect(lines[1]).toBe(`[from "Member B" ${DOT} member ${MEMBER_B}]`);
