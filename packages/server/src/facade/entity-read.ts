@@ -2094,7 +2094,32 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
       canStop: running || status === 'paused',
       canDestroy: live && status !== 'destroying' && status !== 'destroyed',
       canAttach: running && attachable,
-      canControl: running && attachable,
+      /*
+       * CONTROL IS NARROWER THAN ATTACH, and it has to be decided from the ROW
+       * alone — `capabilitiesOf` receives an `EntityRow` and no viewer, so no
+       * capability in this function can be actor-dependent. My own frozen spec
+       * said `canControl = canAttach && the actor may drive`, which this
+       * signature cannot express; implementing the expressible half silently
+       * would have been the defect.
+       *
+       * So it answers the question the row CAN answer: `share_mode = 'space'`
+       * means every reader of this container may drive it, and RLS has already
+       * established that this viewer is a reader. For `none` (creator and the
+       * agents acting for them) and `explicit` (a named list) the row does not
+       * know whether THIS viewer qualifies, so it answers false.
+       *
+       * That is a deliberate FALSE NEGATIVE in those two cases: a creator who
+       * may in fact drive sees no control until the door is asked. The other
+       * direction would hand a view-only viewer a "Take over" button that
+       * `grant_surface_attach` refuses with `42501 attach refused` — a control
+       * whose only outcome is a 403, which is the same lie as advertising a
+       * Move that `entities.move` refuses.
+       *
+       * `canAttach` stays row-derived and permissive because VIEW is what
+       * share_mode 'space' and a live surface already justify; the drive/view
+       * split is exactly what the grant door's `p_mode` decides.
+       */
+      canControl: running && attachable && ctrShareModeOf(row.ctr_share_mode) === 'space',
       canExec: running,
     };
   }
