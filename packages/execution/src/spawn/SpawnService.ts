@@ -798,6 +798,12 @@ export class SpawnService {
       teamMemberId: request.teamMemberId,
       projectId: request.projectId ?? null,
       taskIds,
+      // 176: the loader resolves the parent's KIND for the manifest's
+      // coordinator block. Passed even for non-coordinated modes because the
+      // launch config that decides coordination has not been resolved yet, and
+      // re-reading the graph after it would be a second round trip describing
+      // a later instant than the persona it is composed beside.
+      parentSessionId: request.parentSessionId ?? null,
       ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
     });
 
@@ -1426,6 +1432,12 @@ export class SpawnService {
       teamMemberId: info.teamMemberId,
       projectId: info.projectId,
       taskIds: info.taskIds,
+      // The stored parent, resolved the same way spawn resolves it. A resumed
+      // worker must be told the same thing about its return address as it was
+      // told at launch — and the kind is re-READ rather than taken from the
+      // recorded manifest, because a chat that has since been deleted should
+      // stop being described as one.
+      parentSessionId: info.parentSessionId,
     });
 
     // The posture is the one launch fact `work_sessions` does NOT carry (the

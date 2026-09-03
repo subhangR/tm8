@@ -20,6 +20,7 @@
  */
 import { assertWithinBudget } from './budgets.js';
 import { flatten } from './escape.js';
+import { coordinatorKindOf, type CoordinatorKind } from './templates.js';
 
 export interface KernelFacts {
   /** `human-directed | worker | coordinator | background` — server-resolved. */
@@ -35,6 +36,14 @@ export interface KernelFacts {
   launchProjectId?: string | null;
   primaryTaskId?: string | null;
   coordinatorSessionId?: string | null;
+  /**
+   * `work_session | chat` — WHAT that id names (176). Absent reads as
+   * `work_session`, which is what every launch before 176 meant. The kernel
+   * has to say it because "coordinator work-session <id>" is a claim about the
+   * id, and a wrong claim sends a completion report looking for a terminal
+   * that does not exist.
+   */
+  coordinatorKind?: CoordinatorKind | null;
   interactionProfileId: string;
   interactionProfileVersion: number | string;
   resolvedProfileHash: string;
@@ -60,9 +69,17 @@ function id(value: string | null | undefined): string {
  */
 export function composeKernel(facts: KernelFacts): string {
   const coordinatorSession = id(facts.coordinatorSessionId);
+  // Rendered as `work-session`, not `work_session`: §9's anti-bloat rule
+  // forbids the kernel from spelling entity-kind slugs, and the prose below has
+  // always said "work-session" anyway. The hyphen is the kernel's register, not
+  // a second vocabulary — `coordinator_kind` on the §14 control block carries
+  // the slug a reader would match on.
+  const coordinatorNoun = coordinatorKindOf(facts.coordinatorKind) === 'chat'
+    ? 'chat'
+    : 'work-session';
   const completionReturnPath = coordinatorSession === KERNEL_NONE
     ? 'send the required completion reply to the assignment anchor'
-    : `send the required completion reply to coordinator work-session ${coordinatorSession}, never the assignment or task anchor`;
+    : `send the required completion reply to coordinator ${coordinatorNoun} ${coordinatorSession}, never the assignment or task anchor`;
   const text = `You are a tm8 ${id(facts.mode)} operating as ${id(facts.displayName)}.
 
 Launch facts:
@@ -75,6 +92,7 @@ Launch facts:
 - launchProject=${id(facts.launchProjectId)}
 - primaryTask=${id(facts.primaryTaskId)}
 - coordinatorSession=${coordinatorSession}
+- coordinatorKind=${coordinatorSession === KERNEL_NONE ? KERNEL_NONE : coordinatorNoun}
 - interactionProfile=${id(facts.interactionProfileId)}@${id(String(facts.interactionProfileVersion))}
 - interactionProfileHash=${id(facts.resolvedProfileHash)}
 

@@ -77,9 +77,11 @@ describe('§14.1 worker bootstrap', () => {
       '<interaction_profile id="ent_profile" profile_version="7" pin_revision="1" resolved_hash="sha256:abc" />',
     );
     expect(xml).toContain(
-      '<assignment primary_task_id="tsk_1" coordinator_session_id="ses_coord" />',
+      '<assignment primary_task_id="tsk_1" coordinator_session_id="ses_coord" coordinator_kind="work_session" />',
     );
-    expect(xml).toContain('<reply_address session_id="ses_coord">');
+    expect(xml).toContain(
+      '<reply_address session_id="ses_coord" coordinator_kind="work_session">',
+    );
     expect(xml).toContain('tm8 message send --to ses_coord');
     expect(xml).toMatch(/Never send that report to the assignment or task anchor/);
     expect(xml).toContain('</trusted_control>');
@@ -107,7 +109,53 @@ describe('§14.1 worker bootstrap', () => {
     });
     expect(xml).toContain('launch_project_id="none"');
     expect(xml).toContain('coordinator_session_id="none"');
+    // `none`, not `work_session`: with no coordinator there is nothing for a
+    // kind to describe, and a defaulted slug beside `coordinator_session_id=
+    // "none"` would read as a return address that is merely unnamed.
+    expect(xml).toContain('coordinator_kind="none"');
     expect(xml).not.toContain('<reply_address');
+  });
+});
+
+/**
+ * 176 — A CHAT IS A COORDINATOR.
+ *
+ * A chat became an entity that may parent a work session, so the id in
+ * `coordinator_session_id` is no longer necessarily a work session. The
+ * transport does not change (a chat is an anchor like any other); what changes
+ * is what the worker is told about the thing waiting, and these assertions are
+ * about that difference being STATED rather than left to be inferred.
+ */
+describe('§14.1 worker bootstrap — the coordinator kind (176)', () => {
+  it('names a chat coordinator on both the assignment and the reply address', () => {
+    const xml = workerBootstrapControl({ ...BOOTSTRAP, coordinatorKind: 'chat' });
+    expect(xml).toContain(
+      '<assignment primary_task_id="tsk_1" coordinator_session_id="ses_coord" coordinator_kind="chat" />',
+    );
+    expect(xml).toContain('<reply_address session_id="ses_coord" coordinator_kind="chat">');
+  });
+
+  it('tells a chat-coordinated worker that message send reaches it AND that a human reads it', () => {
+    const xml = workerBootstrapControl({ ...BOOTSTRAP, coordinatorKind: 'chat' });
+    // The command is deliberately identical to the work_session arm — inventing
+    // a second protocol here is the failure this wording exists to prevent.
+    expect(xml).toContain('`tm8 message send --to ses_coord`');
+    expect(xml).toMatch(/Your coordinator is a CHAT, not a work session/);
+    expect(xml).toMatch(/human reading that chat sees it/);
+    expect(xml).toMatch(/Never send that report to the assignment or task anchor/);
+  });
+
+  it('says nothing about chats when the coordinator is a work session', () => {
+    const xml = workerBootstrapControl(BOOTSTRAP);
+    expect(xml).not.toMatch(/CHAT/);
+    expect(xml).not.toMatch(/transcript/);
+  });
+
+  it('folds an absent or unrecognised kind to work_session, never to a blank', () => {
+    for (const coordinatorKind of [undefined, null, 'channel' as never]) {
+      const xml = workerBootstrapControl({ ...BOOTSTRAP, coordinatorKind });
+      expect(xml).toContain('coordinator_kind="work_session"');
+    }
   });
 });
 

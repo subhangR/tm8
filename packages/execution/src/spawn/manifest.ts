@@ -23,6 +23,7 @@ import type {
   AccessMode,
   AgentMode,
   CommandNetworkPolicy,
+  CoordinatorKind,
   CredentialSource,
   GitHubCredential,
   PermissionMode,
@@ -85,6 +86,21 @@ export function resolveCoordinatorSessionId(
     );
   }
   return coordinatorSessionId;
+}
+
+/**
+ * What the coordinator id NAMES, resolved from the parent the graph read back.
+ *
+ * Deliberately separate from {@link resolveCoordinatorSessionId}, which the
+ * spec pins as returning a string: the id and its kind are two facts, and
+ * folding them into one return would change a signature three call sites and a
+ * guard already depend on. `null`/unknown folds to `work_session` — the pre-176
+ * meaning, and the only safe reading of a parent this node could not resolve.
+ */
+export function resolveCoordinatorKind(
+  parentKind: CoordinatorKind | null | undefined,
+): CoordinatorKind {
+  return parentKind === 'chat' ? 'chat' : 'work_session';
 }
 
 /** Exact hosts tm8 grants to sandboxed Codex commands. */
@@ -1338,7 +1354,9 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // context predating this (the test fake, an older caller) is "no skills",
     // not an error. This is the value change the shape was held stable for.
     skills: context.skills ?? [],
-    coordinator: coordinatorSessionId ? { sessionId: coordinatorSessionId } : null,
+    coordinator: coordinatorSessionId
+      ? { sessionId: coordinatorSessionId, kind: resolveCoordinatorKind(context.parentKind) }
+      : null,
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
   });

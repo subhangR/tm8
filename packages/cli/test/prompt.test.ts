@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { commandSurface, composePrompt } from '../src/prompt.js';
-import { readManifest } from '../src/manifest.js';
+import { parseManifest, readManifest } from '../src/manifest.js';
 import { fileURLToPath } from 'node:url';
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/manifest.sample.json', import.meta.url));
+const V2_FIXTURE = fileURLToPath(new URL('./fixtures/manifest.v2.json', import.meta.url));
 
 describe('composePrompt', () => {
   it('gives the agent the three things it needs: who it is, its task, how to report', () => {
@@ -74,6 +75,56 @@ describe('composePrompt', () => {
     expect(system).toContain('do not simply go idle');
     expect(task).toMatch(/<reply [^>]*anchor_id="ws_01HZORION"/);
     expect(task).not.toMatch(/<reply [^>]*anchor_id="ent_01HZTASKONE"/);
+  });
+
+  /**
+   * 176 — the fact has to survive the FILE, not just the composer.
+   *
+   * `composeManifest` writes `coordinator.kind`, the CLI reads the manifest
+   * back, and the composer renders from what the reader produced. A parser that
+   * drops the field is invisible in every prompt-package test and turns every
+   * real chat-spawned worker back into one that is told nothing.
+   */
+  describe('a coordinator that is a chat', () => {
+    const chatManifest = {
+      manifestVersion: '1',
+      sessionId: 'ws_1',
+      spaceId: 'spc_1',
+      mode: 'coordinated-worker',
+      coordinator: { sessionId: 'cht_01HZCHAT', kind: 'chat' },
+      tasks: [{ id: 'tsk_1', title: 'ship the lane' }],
+    };
+
+    it('carries the kind through the v1 manifest reader into the frame', () => {
+      const { system, task } = composePrompt(parseManifest(chatManifest), { sessionId: 'ws_1' });
+      expect(system).toContain('<coordinator_session_id>cht_01HZCHAT</coordinator_session_id>');
+      expect(system).toContain('<coordinator_kind>chat</coordinator_kind>');
+      expect(system).toMatch(/A CHAT spawned you/);
+      expect(task).toMatch(/<reply [^>]*anchor_id="cht_01HZCHAT"/);
+    });
+
+    it('carries it through the v2 bootstrap projection too', () => {
+      const v2 = readManifest(V2_FIXTURE);
+      const withChat = parseManifest({
+        ...(v2.bootstrap as Record<string, unknown>),
+        session: {
+          ...((v2.bootstrap as { session: Record<string, unknown> }).session),
+          coordinatorKind: 'chat',
+        },
+      });
+      expect(withChat.coordinator?.kind).toBe('chat');
+      const { system } = composePrompt(withChat);
+      expect(system).toContain('coordinator_kind="chat"');
+      expect(system).toMatch(/Your coordinator is a CHAT/);
+    });
+
+    it('reads a manifest written before 176 as a work-session coordinator', () => {
+      // The sample fixture has a coordinator and no kind — exactly the shape
+      // every manifest on disk has today.
+      const { system } = composePrompt(readManifest(FIXTURE), { sessionId: 'ws_1' });
+      expect(system).toContain('<coordinator_kind>work_session</coordinator_kind>');
+      expect(system).not.toMatch(/A CHAT spawned you/);
+    });
   });
 
   it('escapes markup in authored text so a persona cannot break the prompt frame', () => {

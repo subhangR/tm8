@@ -101,6 +101,7 @@ describe('composeKernel', () => {
     expect(kernel).toContain('- launchProject=prj_1');
     expect(kernel).toContain('- primaryTask=tsk_1');
     expect(kernel).toContain('- coordinatorSession=ses_coord');
+    expect(kernel).toContain('- coordinatorKind=work-session');
     expect(kernel).toContain('- interactionProfile=ent_profile@7');
     expect(kernel).toContain('- interactionProfileHash=sha256:abc');
     expect(kernel).toContain('Bootstrap manifest: /run/tm8/ses_1.manifest.json');
@@ -114,6 +115,7 @@ describe('composeKernel', () => {
     expect(scratch).toContain('- launchProject=none');
     expect(scratch).toContain('- primaryTask=none');
     expect(scratch).toContain('- coordinatorSession=none');
+    expect(scratch).toContain('- coordinatorKind=none');
   });
 
   it('carries the four rules the agent cannot discover for itself', () => {
@@ -140,6 +142,24 @@ describe('composeKernel', () => {
 
     const standalone = composeKernel({ ...FACTS, coordinatorSessionId: null });
     expect(standalone).toContain('send the required completion reply to the assignment anchor');
+  });
+
+  it('calls a chat coordinator a chat — the return path is an id, but the noun is a claim', () => {
+    // 176: a chat may parent a work session, so "coordinator work-session <id>"
+    // is no longer true by construction. The kernel says which it is because
+    // the sentence it appears in is an instruction about where to send a result.
+    const chat = composeKernel({ ...FACTS, coordinatorKind: 'chat' });
+    expect(chat).toContain('- coordinatorKind=chat');
+    expect(chat).toContain('send the required completion reply to coordinator chat ses_coord');
+    expect(chat).not.toContain('coordinator work-session');
+  });
+
+  it('folds an absent or unrecognised coordinator kind to the pre-176 reading', () => {
+    for (const coordinatorKind of [undefined, null, 'channel' as never]) {
+      const kernel = composeKernel({ ...FACTS, coordinatorKind });
+      expect(kernel).toContain('- coordinatorKind=work-session');
+      expect(kernel).toContain('coordinator work-session ses_coord');
+    }
   });
 
   it('sanitizes a server-owned value that tries to forge a kernel line', () => {

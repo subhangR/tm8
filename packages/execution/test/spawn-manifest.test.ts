@@ -13,6 +13,7 @@ import {
   composeEnv,
   composeManifest,
   resolveCommandNetworkPolicy,
+  resolveCoordinatorKind,
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
   resolveWorkdir,
@@ -809,6 +810,70 @@ describe('composeManifest', () => {
     );
   });
 
+  /**
+   * 176 — the parent of a coordinated worker may be a CHAT.
+   *
+   * `resolveCoordinatorSessionId` stays a string by design: the id and what it
+   * names are two facts, and the kind arrives on the SpawnContext because a
+   * spawn's parent is graph state the loader reads, not something the caller
+   * asserts about someone else's row.
+   */
+  describe('the coordinator kind (176)', () => {
+    const coordinated = {
+      sessionId: 'sess-chat-parent',
+      request: { ...base, parentSessionId: 'chat-1' },
+      launch: {
+        mode: 'coordinated-worker' as const,
+        model: 'opus',
+        agentTool: 'claude-code',
+        permissionMode: 'bypassPermissions' as const,
+      },
+      workdir: { mode: 'project' as const, path: '/tmp/tm8-fixture' },
+      command: "claude --model 'opus'",
+      baseUrl: 'http://127.0.0.1:4610',
+    };
+
+    it('carries a chat parent through to the manifest coordinator block', () => {
+      const manifest = composeManifest({
+        ...coordinated,
+        context: { ...context(), parentKind: 'chat' },
+      });
+      expect(manifest.coordinator).toEqual({ sessionId: 'chat-1', kind: 'chat' });
+    });
+
+    it('reads a parent the loader could not resolve as the pre-176 meaning', () => {
+      // Never a refused launch and never a blank: the return ADDRESS is what a
+      // coordinated mode requires, and that guard is resolveCoordinatorSessionId's.
+      for (const parentKind of [undefined, null] as const) {
+        const manifest = composeManifest({
+          ...coordinated,
+          context: { ...context(), parentKind },
+        });
+        expect(manifest.coordinator).toEqual({
+          sessionId: 'chat-1',
+          kind: 'work_session',
+        });
+      }
+    });
+
+    it('emits no coordinator at all for an uncoordinated mode, chat parent or not', () => {
+      const manifest = composeManifest({
+        ...coordinated,
+        launch: { ...coordinated.launch, mode: 'worker' },
+        context: { ...context(), parentKind: 'chat' },
+      });
+      expect(manifest.coordinator).toBeNull();
+    });
+
+    it('folds an unrecognised parent kind rather than passing it through', () => {
+      expect(resolveCoordinatorKind('chat')).toBe('chat');
+      expect(resolveCoordinatorKind('work_session')).toBe('work_session');
+      expect(resolveCoordinatorKind(null)).toBe('work_session');
+      expect(resolveCoordinatorKind(undefined)).toBe('work_session');
+      expect(resolveCoordinatorKind('channel' as never)).toBe('work_session');
+    });
+  });
+
   it('persists the effective Codex command-network policy separately from posture', () => {
     const codexLaunch = {
       mode: 'worker' as const,
@@ -862,7 +927,10 @@ describe('composeManifest', () => {
 
     expect(manifest.manifestVersion).toBe('1');
     expect(manifest.mode).toBe('coordinated-worker');
-    expect(manifest.coordinator).toEqual({ sessionId: 'coord-session-1' });
+    expect(manifest.coordinator).toEqual({
+      sessionId: 'coord-session-1',
+      kind: 'work_session',
+    });
     expect(manifest.launch.permissionMode).toBe('bypassPermissions');
     expect(manifest.launch.commandNetwork).toEqual({
       mode: 'provider-default',

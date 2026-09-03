@@ -45,6 +45,25 @@ export const DISCOVERY_PROMPT_FORM = {
 
 const NONE = 'none';
 
+/**
+ * The two entity kinds a coordinated worker can be told to report to.
+ *
+ * `work_session` is the original and still the default: a coordinator agent at
+ * a PTY. `chat` arrived with migration 176, which made a chat an entity that
+ * may parent a work session — a chat that spawns a worker IS its coordinator,
+ * and the id in `coordinator_session_id` is then the chat's own entity id.
+ * The transport is identical (`tm8 message send --to <id>`); what differs is
+ * who reads the result, which is exactly what a worker must be told.
+ */
+export const COORDINATOR_KINDS = ['work_session', 'chat'] as const;
+
+export type CoordinatorKind = (typeof COORDINATOR_KINDS)[number];
+
+/** Anything unrecognised — including absent — is the pre-176 meaning. */
+export function coordinatorKindOf(value: string | null | undefined): CoordinatorKind {
+  return value === 'chat' ? 'chat' : 'work_session';
+}
+
 function attr(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return NONE;
   return escapeAttr(value);
@@ -68,6 +87,14 @@ export interface BootstrapControlFacts {
   resolvedProfileHash: string;
   taskId?: string | null;
   coordinatorSessionId?: string | null;
+  /**
+   * WHAT the coordinator id names. Since migration 176 a chat is an entity and
+   * may parent a work session, so a worker's return address is no longer always
+   * a work_session — and a worker that assumes it is will look for a terminal
+   * that does not exist. Absent reads as `work_session`, which is what every
+   * pre-176 manifest meant.
+   */
+  coordinatorKind?: CoordinatorKind | null;
 }
 
 function identityLine(f: BootstrapControlFacts): string {
@@ -82,19 +109,38 @@ function profileLine(f: BootstrapControlFacts): string {
   return `  <interaction_profile id="${attr(f.profileId)}" profile_version="${attr(f.profileVersion)}" pin_revision="${attr(f.pinRevision)}" resolved_hash="${attr(f.resolvedProfileHash)}" />`;
 }
 
+/**
+ * The `<reply_address>` sentence, which is the one line that has to be RIGHT
+ * about what the coordinator is.
+ *
+ * A worker whose coordinator is a chat used to be told nothing at all — the id
+ * was rendered as a work session and the worker had no way to know otherwise.
+ * The transport is the same command either way, so the chat arm exists to
+ * answer the two questions a worker actually asks about an id it did not
+ * choose: does `message send` reach it, and does anyone read what arrives.
+ */
+function replyAddressLine(coordinatorSessionId: string, kind: CoordinatorKind): string {
+  const id = attr(coordinatorSessionId);
+  const chat = kind === 'chat'
+    ? ' Your coordinator is a CHAT, not a work session: that id is the chat\'s own '
+      + 'entity id, your message lands in its transcript and runs its next turn, and the '
+      + 'human reading that chat sees it.'
+    : '';
+  return `  <reply_address session_id="${id}" coordinator_kind="${kind}">Report completion `
+    + `or blockage with \`tm8 message send --to ${id}\`.${chat} Never send that report to `
+    + 'the assignment or task anchor.</reply_address>';
+}
+
 export function workerBootstrapControl(f: BootstrapControlFacts): string {
   const coordinatorSessionId = f.coordinatorSessionId?.trim() || null;
+  const coordinatorKind = coordinatorKindOf(f.coordinatorKind);
   return [
     '<trusted_control type="tm8.worker-bootstrap" version="1">',
     identityLine(f),
     workspaceLine(f),
     profileLine(f),
-    `  <assignment primary_task_id="${attr(f.taskId)}" coordinator_session_id="${attr(f.coordinatorSessionId)}" />`,
-    ...(coordinatorSessionId
-      ? [
-          `  <reply_address session_id="${attr(coordinatorSessionId)}">Report completion or blockage with \`tm8 message send --to ${attr(coordinatorSessionId)}\`. Never send that report to the assignment or task anchor.</reply_address>`,
-        ]
-      : []),
+    `  <assignment primary_task_id="${attr(f.taskId)}" coordinator_session_id="${attr(f.coordinatorSessionId)}" coordinator_kind="${coordinatorSessionId ? coordinatorKind : NONE}" />`,
+    ...(coordinatorSessionId ? [replyAddressLine(coordinatorSessionId, coordinatorKind)] : []),
     `  <discovery root="${DISCOVERY_PROMPT_FORM.root}" actions="${DISCOVERY_PROMPT_FORM.actions}" context="${DISCOVERY_PROMPT_FORM.context}" />`,
     '  <rule>Fetch the bounded assignment snapshot before acting. Current server permissions and entity versions govern every mutation.</rule>',
     '  <git>If you create a pull request or a meaningful commit for your task, link it immediately: `tm8 task link-pr TASK_ID PR_URL` / `tm8 task link-commit TASK_ID COMMIT_URL`. An unlinked PR is invisible to tm8 — no chips, no CI nudges, and a pr_merged gate can never pass against it. After linking, tracking is automatic.</git>',
