@@ -193,9 +193,10 @@ describe('W1.C generated catalog and reachability foundations', () => {
     }
   });
 
-  it('is total over 21 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
-    // 19 -> 20 (2026-08-09): `loop`; 20 -> 21 (2026-08-16): `graph` (Craft P1).
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(21);
+  it('is total over 22 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
+    // 19 -> 20 (2026-08-09): `loop`; 20 -> 21 (2026-08-16): `graph` (Craft P1);
+    // 21 -> 22 (2026-09-03): `container` (TM8-CONTAINERS-DESIGN, migration 177).
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(22);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',
@@ -224,6 +225,48 @@ describe('W1.C generated catalog and reachability foundations', () => {
       'interactionProfiles.retire',
     ]);
     expect(OPERATIONS.some(({ name }) => name.toLowerCase().includes('template'))).toBe(false);
+
+    // ── containers (TM8-CONTAINERS-DESIGN §3.1, §15) ──────────────────────
+    //
+    // The disposition mirrors `work-session-execution`, NOT `worktree-lifecycle`,
+    // and the difference between those two precedents is the whole decision. A
+    // worktree keeps a generic patch door because its one semantic write IS an
+    // ordinary forward-only status transition. A container has no such write:
+    // `status` has a single writer (`public.set_container_status`, guarded by a
+    // trigger that enforces the edges), and every other mutable field — title,
+    // lifecycle, share mode, labels — is claimed by the named `containers.update`
+    // door. Lane B confirmed `container` is in the server's
+    // RESTRICTED_LIFECYCLE_KINDS, so this describes something real rather than
+    // being a preference with a test around it.
+    expect(CORE_KIND_DISPOSITIONS.container.capabilities.profile).toBe('container-lifecycle');
+    expect(CORE_KIND_DISPOSITIONS.container.capabilities).toMatchObject({
+      genericCreate: false,
+      genericPatch: false,
+      genericMove: false,
+      genericHierarchy: false,
+      genericDeleteRestore: false,
+      genericPoints: false,
+      // The four universal capabilities still pay rent: a machine is discussed,
+      // reacted to, and connected to the sessions that run in it.
+      messages: true,
+      reactions: true,
+      connections: true,
+    });
+    // Not menu-addressable and born only from the provisioning saga, exactly as
+    // worktree and work_session are.
+    expect(CORE_KIND_DISPOSITIONS.container.menu.strategy).toBe('not-addressable');
+    expect(CORE_KIND_DISPOSITIONS.container.migration.strategy).toBe('container-detail');
+    // Every lifecycle operation it names is a REAL catalog row. A disposition
+    // that named an operation the catalog does not carry would be a promise
+    // nothing could keep.
+    for (const operation of CORE_KIND_DISPOSITIONS.container.capabilities.lifecycleOperations) {
+      expect(OPERATIONS.some(({ name }) => name === operation), operation).toBe(true);
+    }
+    // The birth verb is `containers.create`, so the kind must be OUTSIDE the
+    // generically-creatable set. This is the assertion that would fail if
+    // someone "tidied" the exclusion away.
+    expect(CORE_KIND_DISPOSITIONS.container.capabilities.lifecycleOperations)
+      .toContain('containers.create');
   });
 
   it('fails closed on unknown operation, kind, and schema dispositions', async () => {
@@ -428,7 +471,9 @@ describe('W2.C01 current mounted registry inventory', () => {
     );
     // 160 -> 163 (W4/132): the three taskWorkflows routes, all mounted.
     // 166 -> 169 (148): the three workflows routes, all mounted.
-    expect(registerableV1Http).toHaveLength(169);
+    // 169 -> 193 (2026-09-03): 24 of the 25 containers.* rows are registerable
+    // v1 HTTP; the 25th is the WS alias, which mounts nothing. MEASURED.
+    expect(registerableV1Http).toHaveLength(193);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);
