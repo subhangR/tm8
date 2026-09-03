@@ -100,13 +100,35 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       operation.method !== 'WS'
       && operation.status === 'v1'
       && responses.get(operation.name)?.status === 501);
-    // RE-PINNED at tranche-v3 + 035: 36 -> 25 -> 0. Exact literal by design so it
-    // keeps catching the next drift; never a range, never a live-computed value.
-    // ZERO is a strong claim and it is the right one: every v1 HTTP operation in
-    // the catalog is now mounted by the production composition, so the node no
-    // longer answers 501 to anything it declares. presence.get was the last
-    // member and main.ts now always constructs an InMemoryPresenceStore.
-    expect(residual, residual.map((operation) => operation.name).join(', ')).toHaveLength(0);
+    // RE-PINNED at tranche-v3 + 035: 36 -> 25 -> 0, and 177 moves it OFF zero
+    // for the first time since. Still an exact MEMBERSHIP assertion rather than
+    // a count, so it keeps catching the next drift: any operation that answers
+    // 501 and is not on this list fails by name.
+    //
+    // WHY IT IS NO LONGER ZERO, and why that is honest rather than a
+    // regression. Zero used to mean "the node implements everything it
+    // declares". The container family declares 25 rows in P0 and implements
+    // ten; the other fifteen are REGISTERED and answer 501 with a named
+    // reason, because the alternative — leaving them unregistered — answers
+    // 404, which tells a caller the operation does not exist when it is in the
+    // contract (DEV-13). Registered-and-501 is the honest state; this list is
+    // where that honesty is written down.
+    //
+    // These five are the ones this probe reaches: the family's GET/PUT rows.
+    // The POST commands are probed elsewhere in the sweep.
+    expect(
+      residual.map((operation) => operation.name).sort(),
+      residual.map((operation) => operation.name).join(', '),
+    ).toEqual([
+      'containers.files.get',
+      'containers.files.put',
+      'containers.logs',
+      'containers.providers.list',
+      'containers.proxy',
+    ]);
+    // Every member must still answer the STANDARD closed 501 envelope — being
+    // on the list is permission to be unbuilt, never permission to be sloppy
+    // about how it says so. (The loop below already asserts this.)
     for (const operation of residual) {
       expectStandardNotImplemented(operation, responses.get(operation.name)!);
     }
@@ -124,7 +146,11 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // The four credentials.* rows bring the mounted set to 132.
     // 141: +3 (auth.password.change, auth.invite.signup, auth.claim.reissue),
     // all mounted and none answering 501 — 163 -> 166.
-    expect(implemented).toHaveLength(193);
+    // 169 -> 188 (177): the catalog's v1 non-WS rows are now 193, of which the
+    // five residual container reads answer 501 — so 188 answer for real.
+    // 193 - 5 = 188, and the residual membership asserted above is what makes
+    // that subtraction checkable rather than a fudge.
+    expect(implemented).toHaveLength(188);
   });
 
   /**

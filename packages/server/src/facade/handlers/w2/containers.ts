@@ -80,9 +80,19 @@ const P0_IMPLEMENTED = new Set<OperationName>([
   'containers.providers.list',
 ]);
 
+/**
+ * The ONE reason the whole family gives when the gate is off.
+ *
+ * Uniform on purpose: with containers disabled a node must not give a
+ * different explanation per operation depending on which phase happened to
+ * ship it. The operation name is prefixed at the throw site; this is the part
+ * that must not vary.
+ */
+const GATE_OFF_REASON = 'containers are not enabled on this node (TM8_CONTAINERS=off)';
+
 /** Why each not-yet-built op is 501 — a NAMED reason, never a bare code. */
 const NOT_BUILT_REASON: Partial<Record<OperationName, string>> = {
-  'containers.update': 'containers.update lands with the graph-only write path',
+  'containers.update': 'lands with the graph-only write path',
   'containers.policy.set': 'network policy arrives with the egress proxy (phase 4)',
   'containers.run': 'one-shot exec arrives with the docker provider (phase 1)',
   'containers.terminal.start': 'exec terminals arrive with the docker provider (phase 1)',
@@ -180,17 +190,22 @@ export function registerW2ContainerHandlers(
     name: OperationName,
     handler: (ctx: RequestContext, service: ContainerService) => Promise<unknown>,
   ) => async (ctx: RequestContext): Promise<unknown> => {
+    // Every message NAMES THE OPERATION, because the standard closed 501
+    // envelope is asserted that way across the suite — an operator reading a
+    // log needs to know which call refused, and `details.operation` alone is
+    // not what a human sees first. The REASON after the name is what stays
+    // uniform across the family for a given cause.
     if (!enabled) {
       throw fail(
         'not_implemented',
-        'containers are not enabled on this node (TM8_CONTAINERS=off)',
+        `${name}: ${GATE_OFF_REASON}`,
         { operation: name },
       );
     }
     if (!P0_IMPLEMENTED.has(name)) {
       throw fail(
         'not_implemented',
-        NOT_BUILT_REASON[name] ?? `${name} is not implemented on this node yet`,
+        `${name}: ${NOT_BUILT_REASON[name] ?? 'not implemented on this node yet'}`,
         { operation: name },
       );
     }
@@ -198,7 +213,7 @@ export function registerW2ContainerHandlers(
     if (!service) {
       throw fail(
         'not_implemented',
-        'this node has no container runtime composed',
+        `${name}: this node has no container runtime composed`,
         { operation: name },
       );
     }
