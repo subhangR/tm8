@@ -887,11 +887,18 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // landing inherits the failure" cost the note above predicts, paid here by
     // a branch that did not cause it. The other is `176_chat_entity.sql`.
     //
+    // 162 -> 163 in the SAME branch: the spawn door moved into its own file
+    // (`178_spawn_parent_may_be_a_chat.sql`) after this literal had already been
+    // reasoned about, so the bump was made for one file and the split made it
+    // two. The literal is the one line a clean rebase — or a clean refactor —
+    // is worth nothing on. MEASURED, not incremented:
+    //   git ls-tree -r --name-only HEAD db/migrations | grep -c '\.sql$'  -> 163
+    //
     // A NEW EXACT LITERAL, not `migrationFiles().length`: the note forbids the
     // live-computed form for a reason that still holds — it would pass on any
     // chain length and could no longer notice a chain that silently shrank,
     // which is the one thing this assertion exists to catch.
-    expect(server.appliedMigrations.length).toBe(162);
+    expect(server.appliedMigrations.length).toBe(163);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
