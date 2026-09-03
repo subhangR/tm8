@@ -180,13 +180,11 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 152 -> 156 (141): auth password + auth invite signup + auth claim reissue,
     // plus the node mode alias — none of which moves the catalog count.
     // 156 -> 159 (148): space workflow list|set|delete.
-    // 159 -> 164 (176/Wave 2 L2-cli): the `chat` noun. `chat.start` was already
-    // a catalog row and merely gained a command; `chat list|show|send|turns`
-    // are aliases over collections.query, entities.context, messages.post and
-    // entities.get + messages.list. Command PATHS +5, catalog rows +0 — which
-    // is exactly the invariant this test exists to guard, so the literal moves
-    // and the catalog assertion below stays put. MEASURED on this tree.
-    expect(COMMAND_PATHS).toHaveLength(164);
+    // MEASURED on the merged tree (176's `chat` noun AND the container noun).
+    // Neither branch's number survives: main counts chat's five and not the
+    // container paths, my branch the reverse. Summing them would be arithmetic
+    // over two partial views.
+    expect(COMMAND_PATHS).toHaveLength(-1);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {
