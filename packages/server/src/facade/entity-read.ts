@@ -159,7 +159,7 @@ export const ENTITY_COLUMNS = `
   ctr.spec as ctr_spec, ctr.lifecycle as ctr_lifecycle, ctr.surfaces as ctr_surfaces,
   ctr.share_mode as ctr_share_mode, ctr.started_at as ctr_started_at,
   ctr.expires_at as ctr_expires_at, ctr.error as ctr_error, ctr.title as ctr_title,
-  ctr.exposed as ctr_exposed, crs.usage as ctr_usage,
+  ctrx.ports as ctr_exposed, crs.usage as ctr_usage,
   pr.title as pr_title, pr.repo as pr_repo, pr.number as pr_number,
   pr.state as pr_state, pr.ci_status as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
@@ -263,12 +263,19 @@ function ctrUsageOf(raw: Record<string, unknown> | null): ContainerUsage | null 
   return { cpuPct: num(raw.cpuPct), memMiB: num(raw.memMiB), diskMiB: num(raw.diskMiB) };
 }
 
-function ctrExposedOf(raw: unknown): Array<{ port: number; url: string }> {
+/**
+ * The URL is DERIVED from the container id and the port, not stored.
+ *
+ * `container_exposures` records the port, the share mode and a token hash; the
+ * path is `containers.proxy`'s binding and belongs to the catalog. Storing it
+ * would mean a row that keeps claiming an old path after the binding moves.
+ */
+function ctrExposedOf(raw: unknown, containerId: string): Array<{ port: number; url: string }> {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((r): r is { port: number; url: string } =>
+    .filter((r): r is { port: number } =>
       typeof r === 'object' && r !== null && typeof (r as { port?: unknown }).port === 'number')
-    .map((r) => ({ port: r.port, url: String(r.url ?? '') }));
+    .map((r) => ({ port: r.port, url: `/v2/containers/${containerId}/ports/${r.port}/` }));
 }
 
 function ctrSurfaceDetailOf(
@@ -336,7 +343,19 @@ export const ENTITY_FROM = `
   -- no capture_event and no version bump. Heartbeats must never touch the
   -- entity: a 10s periodic write to the detail row would emit entity.upsert
   -- per container and starve live renames (the migration-165 lesson, §15).
-  left join public.container_runtime_state crs on crs.entity_id = e.id
+  left join public.container_runtime_state crs on crs.container_entity_id = e.id
+  -- Exposed ports are their OWN TABLE (container_exposures), not a column: the
+  -- port is the natural key with share and a token hash beside it, and a jsonb
+  -- blob on the row could not carry the per-port RLS the table has. Aggregated
+  -- here so a read still answers in one query.
+  -- (No backticks in here: this whole query is a JS template literal.)
+  left join lateral (
+    select coalesce(
+             jsonb_agg(jsonb_build_object('port', ce.port, 'share', ce.share) order by ce.port),
+             '[]'::jsonb) as ports
+      from public.container_exposures ce
+     where ce.container_entity_id = e.id
+  ) ctrx on true
 `;
 // NOTE what is NOT selected above: `ctr.runtime_ref` and `ctr.host_spec`.
 // R5 — `internal.command_entity` (007:36) embeds entity_content in the command
@@ -2277,7 +2296,7 @@ export function contentOf(row: EntityRow): EntityContent {
         surfaceDetail: ctrSurfaceDetailOf(surfaces, status === 'running'),
         error: row.ctr_error ?? null,
         usage: ctrUsageOf(row.ctr_usage),
-        exposed: ctrExposedOf(row.ctr_exposed),
+        exposed: ctrExposedOf(row.ctr_exposed, row.id),
       };
     }
     case 'worktree':
