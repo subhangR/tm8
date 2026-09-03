@@ -885,6 +885,23 @@ export const EntityCapabilitiesSchema: z.ZodType<EntityCapabilities> = z.object(
   canGrantPoints: z.boolean(),
   canComplete: z.boolean(),
   allowedTransitions: z.array(z.string()).optional(),
+  // The six container verbs (177). PRESENT HERE BECAUSE THE OBJECT IS
+  // `.strict()`: the server computes all six on every container read, so
+  // omitting them turns a legitimate payload into `unrecognized_keys` and every
+  // container detail fails `EntityDetailSchema`.
+  //
+  // `tsc` cannot see that omission. `z.ZodType<T>` only requires the schema to
+  // PRODUCE a valid `T`, and a schema missing an OPTIONAL member still does —
+  // so the annotation type-checks while the runtime schema is incomplete, and
+  // `.strict()` converts the incompleteness into a rejection. Third instance of
+  // that shape in this file after the `EntityState`/`EntityContent` container
+  // arms; see `test/containers.test.ts` for the guard that now covers all three.
+  canStart: z.boolean().optional(),
+  canStop: z.boolean().optional(),
+  canDestroy: z.boolean().optional(),
+  canAttach: z.boolean().optional(),
+  canControl: z.boolean().optional(),
+  canExec: z.boolean().optional(),
 }).strict();
 
 export const HierarchySchema: z.ZodType<Hierarchy> = z.lazy(() => z.object({
