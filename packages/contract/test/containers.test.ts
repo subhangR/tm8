@@ -20,6 +20,7 @@ import {
   ContainersUpdateInputSchema,
   CreatableEntityKindSchema,
   CoreEntityKindSchema,
+  EntityCapabilitiesSchema,
   EntityContentSchema,
   EntityStateSchema,
   OPERATIONS,
@@ -315,6 +316,59 @@ describe('EntityState / EntityContent carry a container arm — and every other 
       expect(unionKinds(EntityContentSchema), `EntityContentSchema has no arm for ${kind}`)
         .toContain(kind);
     }
+  });
+});
+
+describe('EntityCapabilities carries the six container verbs', () => {
+  // THE THIRD INSTANCE of the shape the two tests above exist for, and the one
+  // with the least cover. `EntityCapabilitiesSchema` is `.strict()` and
+  // annotated `z.ZodType<EntityCapabilities>`; the six container members are
+  // OPTIONAL, and a schema missing an optional member still produces a valid
+  // `EntityCapabilities`, so the annotation type-checks while the runtime
+  // schema rejects the very payload the server computes.
+  //
+  // Nothing else would catch it. The only consumer that would notice is a
+  // container fixture failing `EntityDetailSchema`, and those fixtures live in
+  // `packages/tm8-ui`, which CI typechecks but does not TEST. Deleting the six
+  // lines therefore goes green through the entire gate — which is how the
+  // omission reached review in the first place.
+  const base = {
+    canEdit: true, canDelete: false, canAddChild: false, canLink: true,
+    canPull: false, canReact: true, canGrantPoints: false, canComplete: false,
+  };
+  const containerVerbs = {
+    canStart: false, canStop: true, canDestroy: true,
+    canAttach: true, canControl: false, canExec: true,
+  };
+
+  it('accepts a capability payload carrying all six', () => {
+    const parsed = EntityCapabilitiesSchema.safeParse({ ...base, ...containerVerbs });
+    // Printed rather than asserted as a bare boolean: a strict object names the
+    // member it refused, so a red says WHICH of the six is missing.
+    expect(parsed.success ? [] : parsed.error.issues.map((i) => i.path.join('.')))
+      .toEqual([]);
+  });
+
+  it('accepts each of the six on its own, so one missing member cannot hide', () => {
+    // The `toEqual([])` above passes if ALL six are present. This localises a
+    // failure to the single member at fault instead of the whole set.
+    for (const [verb, value] of Object.entries(containerVerbs)) {
+      const parsed = EntityCapabilitiesSchema.safeParse({ ...base, [verb]: value });
+      expect(parsed.success, `EntityCapabilitiesSchema has no ${verb}`).toBe(true);
+    }
+  });
+
+  it('DISPROOF: the schema is genuinely strict, so the six passing means something', () => {
+    // Without this, the two tests above would also pass against a schema that
+    // accepted anything — they assert PRESENCE, and a permissive schema is
+    // indistinguishable from a complete one. This shows the same schema refuses
+    // an undeclared member, so acceptance of the six is evidence and not noise.
+    const parsed = EntityCapabilitiesSchema.safeParse({ ...base, canTeleport: true });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('keeps all six OPTIONAL — a non-container entity sends none of them', () => {
+    expect(EntityCapabilitiesSchema.safeParse(base).success).toBe(true);
   });
 });
 
