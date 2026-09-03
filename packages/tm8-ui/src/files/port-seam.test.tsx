@@ -136,8 +136,12 @@ describe('the files port reaches real data through a real seam', () => {
     // The measurement itself, pinned: eight edge types, none of them ours.
     // (`tracks` and `created_in` came alive with the Git UI wave fixtures —
     // task-detail git section — exactly the tripwire this pin exists to be.)
+    // (`about` arrived with the chat fixtures — a chat records what it was
+    // opened ABOUT as an edge, because it anchors its own transcript rather
+    // than being posted onto the subject's row. Ninth type, still none ours.)
     expect([...types].sort()).toEqual([
-      'blocks', 'created_in', 'references', 'relates_to', 'remembers', 'supersedes', 'tracks', 'triggered_by',
+      'about', 'blocks', 'created_in', 'references', 'relates_to', 'remembers',
+      'supersedes', 'tracks', 'triggered_by',
     ]);
   });
 });

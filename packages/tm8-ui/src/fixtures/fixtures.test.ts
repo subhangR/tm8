@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { EntityDetailSchema, EntitySummarySchema, type CoreEntityKind } from '@tm8/contract';
+import {
+  CoreEntityKindSchema,
+  EntityDetailSchema,
+  EntitySummarySchema,
+  type CoreEntityKind,
+} from '@tm8/contract';
 import {
   authoredFromSessionByEntity,
   fixtureDetails,
@@ -18,11 +23,40 @@ import {
   sessionTeammateEdges,
 } from './index';
 
-const CORE_KINDS: CoreEntityKind[] = [
-  'channel', 'task', 'message', 'member', 'team_member',
-  'doc', 'file', 'spell', 'skill', 'pull_request', 'commit',
-  'work_session', 'collection', 'project', 'interaction_profile',
-];
+/**
+ * DERIVED FROM THE CONTRACT, NOT HAND-WRITTEN — and that is the fix, not a
+ * tidy-up.
+ *
+ * This was a literal array of fifteen kinds. The contract had TWENTY-TWO, and
+ * the seven it did not name (`voice_channel`, `memory`, `worktree`,
+ * `artifact`, `loop`, `graph`, `chat`) were simply never asked about: a
+ * hand-written list that omits a kind cannot fail for it. The test's own name
+ * still said "all 15 core kinds" while the product had 22, and it had gone
+ * stale across at least four waves without a single red — the "a comparison
+ * over a shrunken set reports success" shape, in its most literal form. Found
+ * by another lane reading post-merge main, not by this suite.
+ *
+ * Deriving it means adding a kind to `CoreEntityKindSchema` now FORCES a
+ * decision here: author a fixture, or name the kind below with a reason. There
+ * is no third option in which nothing happens.
+ */
+const CORE_KINDS: CoreEntityKind[] = CoreEntityKindSchema.options;
+
+/**
+ * Kinds with no fixture yet, NAMED so their absence is a recorded decision
+ * rather than a silence. Measured on main at `ab2ffb22`; shrink this list, do
+ * not grow it.
+ *
+ * `worktree` and `graph` predate this note — neither has ever had a fixture,
+ * and both are collection kinds whose surfaces are exercised elsewhere
+ * (`craft/` mounts a real graph row). `voice_channel` has a SUMMARY and no
+ * DETAIL, so it is listed for the detail case only.
+ *
+ * `chat` is deliberately NOT here: it is the kind this note was written for,
+ * and it now has both.
+ */
+const NO_SUMMARY_FIXTURE_YET: readonly CoreEntityKind[] = ['worktree', 'graph'];
+const NO_DETAIL_FIXTURE_YET: readonly CoreEntityKind[] = ['worktree', 'graph', 'voice_channel'];
 
 describe('fixture dataset', () => {
   it('every summary validates against the contract zod schema', () => {
@@ -40,15 +74,40 @@ describe('fixture dataset', () => {
     }
   });
 
-  it('covers all 15 core kinds plus a custom kind', () => {
+  it('covers every core kind the contract declares, plus a custom kind', () => {
     const kinds = new Set(fixtureSummaries.map((s) => s.kind));
-    for (const k of CORE_KINDS) expect(kinds.has(k), `missing core kind ${k}`).toBe(true);
+    for (const k of CORE_KINDS) {
+      if (NO_SUMMARY_FIXTURE_YET.includes(k)) continue;
+      expect(kinds.has(k), `missing core kind ${k}`).toBe(true);
+    }
     expect([...kinds].some((k) => k.startsWith('c:')), 'missing a custom c:* kind').toBe(true);
   });
 
   it('covers every core kind with a detail too', () => {
     const kinds = new Set(Object.values(fixtureDetails).map((d) => d.kind));
-    for (const k of CORE_KINDS) expect(kinds.has(k), `missing detail for core kind ${k}`).toBe(true);
+    for (const k of CORE_KINDS) {
+      if (NO_DETAIL_FIXTURE_YET.includes(k)) continue;
+      expect(kinds.has(k), `missing detail for core kind ${k}`).toBe(true);
+    }
+  });
+
+  /**
+   * THE ALLOWLIST IS ITSELF CHECKED, because an allowlist nobody prunes is the
+   * same silence one level up: a kind that GAINS a fixture must leave the list,
+   * or the list slowly becomes a second hand-written array that excuses
+   * everything.
+   */
+  it('names only kinds that really have no fixture — the allowlist cannot rot either', () => {
+    const summaries = new Set(fixtureSummaries.map((s) => s.kind));
+    const details = new Set(Object.values(fixtureDetails).map((d) => d.kind));
+    expect(
+      NO_SUMMARY_FIXTURE_YET.filter((k) => summaries.has(k)),
+      'these kinds have a summary fixture now — remove them from NO_SUMMARY_FIXTURE_YET',
+    ).toEqual([]);
+    expect(
+      NO_DETAIL_FIXTURE_YET.filter((k) => details.has(k)),
+      'these kinds have a detail fixture now — remove them from NO_DETAIL_FIXTURE_YET',
+    ).toEqual([]);
   });
 
   it('carries the worst-case row: UUID-length title', () => {
