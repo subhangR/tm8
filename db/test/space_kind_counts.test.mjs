@@ -11,14 +11,17 @@
  *    would clear for everybody the moment one member opened something. Two
  *    members in one space must be able to disagree about what is unseen, and
  *    that is asserted directly below.
- *  · A MARK GOES STALE WHEN THE ENTITY CHANGES. "Seen" means seen AS IT IS NOW,
- *    not seen once and never again.
+ *  · UNSEEN MEANS CREATED SINCE YOU LOOKED. Migration 175 reversed 063/068's
+ *    "seen means seen AS IT IS NOW" rule, which counted `activity_at` and so
+ *    saturated to 100% on a space where agents touch every row continuously.
+ *    The reversal, what it costs, and why, are recorded at the test that pins
+ *    it below.
  *  · A NON-MEMBER GETS NOTHING. A counter that leaked a total would disclose
  *    the size of a space the caller cannot read.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWorld, claimsFor, cmid, literal, ok, OWNER_URL, rows, uuid } from './helpers.mjs';
+import { buildWorld, claimsFor, cmid, json, literal, ok, OWNER_URL, rows, uuid } from './helpers.mjs';
 
 const world = buildWorld('counts');
 
@@ -50,7 +53,7 @@ test('counts every live kind, with total and unseen as SEPARATE numbers', () => 
   }
 });
 
-test('an entity nobody has opened is unseen; opening it clears only that row', () => {
+test('an entity nobody has opened is unseen; opening it clears the count', () => {
   const before = countsFor(world.identityA, world.memberA, spaceA);
   assert.equal(before.task.unseen, 1, 'never opened ⇒ unseen');
 
@@ -93,10 +96,26 @@ test('UNSEEN IS PER VIEWER — the property attention_requests could not provide
   assert.ok(true);
 });
 
-test('a mark goes STALE when the entity changes after it was read', () => {
-  // "Seen" must mean "seen as it is now". A mark that survived every later
-  // edit would silently hide updates behind a number the user already cleared.
-  //
+/**
+ * 175 — A REVERSAL, recorded as one.
+ *
+ * 063 and 068 pinned the opposite of the test below: "'Seen' means seen AS IT
+ * IS NOW, not seen once and never again", so any bump to `activity_at` put a
+ * row back into `unseen`. That rule is right for a space where changes are
+ * made by people and wrong for this one, where they are made by a fleet. Every
+ * status flip, linked commit and posted message bumps `activity_at`, so every
+ * row a member had read returned to unseen within minutes and no amount of
+ * reading could get ahead of it. Measured on prod 2026-08-30, `unseen` was
+ * within a rounding error of `total` for all eighteen kinds — task 458/470,
+ * commit 223/223, memory 25/25.
+ *
+ * `unseen` now counts CREATION, which happens once per row and can therefore
+ * reach zero. What is given up is asserted here rather than left to be
+ * discovered: a row that CHANGES after you read it no longer re-flags in this
+ * aggregate. That signal still exists per-anchor in `public.unread_counts`,
+ * which this migration does not touch.
+ */
+test('a row that CHANGES after it was read is NOT news again — only creation is', () => {
   // Self-contained rather than leaning on the previous test's mark: suites run
   // against a shared database, and a precondition inherited across tests is a
   // failure that reports in the wrong place.
@@ -111,16 +130,130 @@ test('a mark goes STALE when the entity changes after it was read', () => {
 
   // Direct table write as the OWNER: tm8_app deliberately holds no INSERT or
   // UPDATE on public.entities — every real write goes through a SECURITY
-  // DEFINER RPC. This is a test fixture standing in for "something changed",
+  // DEFINER RPC. This is a test fixture standing in for "an agent touched it",
   // not a path the product uses.
   ok(
-    `update public.entities set activity_at = now() + interval '1 second'
+    `update public.entities set activity_at = now() + interval '1 hour'
       where id = ${uuid(world.taskA)}`,
     { url: OWNER_URL },
   );
 
   const after = countsFor(world.identityA, world.memberA, spaceA);
-  assert.equal(after.task.unseen, 1, 'changed since last read ⇒ unseen again');
+  assert.equal(after.task.unseen, 0, 'touched is not created — the count holds at zero');
+  assert.equal(after.task.total, 1, 'and the row is still counted');
+});
+
+/**
+ * A task created at a chosen instant, and a handle to remove it again.
+ *
+ * Created through the REAL RPC (the fixture's own discipline: tm8_app holds no
+ * INSERT on public.entities), then back-dated or forward-dated as the owner.
+ * Every one of these tests hard-deletes its row before returning: the suites
+ * share a database and run in file order, and a leaked entity would surface as
+ * a failure in a later test that never touched it.
+ */
+function seedEntity(rpc, offset) {
+  const created = json(`select ${rpc}`, {
+    claims: claimsFor(world.identityA, world.memberA),
+  });
+  const entityId = created.entity.id;
+  ok(
+    `update public.entities set created_at = now() + interval '${offset}',
+                                activity_at = now() + interval '${offset}'
+      where id = ${uuid(entityId)}`,
+    { url: OWNER_URL },
+  );
+  // The back-date is the whole point of the fixture, and an UPDATE that matches
+  // no row succeeds silently — which is exactly how the first version of this
+  // helper passed two tests for the wrong reason (it read the id off the wrong
+  // key, wrote nothing, and the assertions happened to hold anyway). Read it
+  // back, so a fixture that stops working reports as a fixture failure.
+  const stamped = rows(
+    `select (created_at > now()) as ahead, (created_at < now()) as behind
+       from public.entities where id = ${uuid(entityId)}`,
+    { url: OWNER_URL },
+  );
+  assert.equal(stamped.length, 1, 'the seeded entity exists');
+  assert.equal(
+    stamped[0][offset.startsWith('-') ? 'behind' : 'ahead'],
+    true,
+    `the seeded entity was actually moved to ${offset}`,
+  );
+  return {
+    id: entityId,
+    remove() {
+      ok(`delete from public.entities where id = ${uuid(entityId)}`, { url: OWNER_URL });
+    },
+  };
+}
+
+test('the watermark is PER KIND, so reading one row catches you up on that kind', () => {
+  // The defect this replaces: `read_marks` is keyed per ANCHOR, so clearing the
+  // task badge meant opening all 470 tasks by hand, and a kind nobody opens
+  // row-by-row (commit, pull_request) could never be cleared at all. The
+  // watermark is now the member's most recent read of ANY entity of the kind.
+  //
+  // A SECOND task, created BEFORE that read. It was never opened, and it must
+  // still be caught up: it predates the moment the member last looked at tasks.
+  const before = countsFor(world.identityA, world.memberA, spaceA);
+  const older = seedEntity(`public.create_task(${uuid(spaceA)}, 'older sibling')`, '-1 hour');
+  try {
+    ok(`select public.mark_read(${uuid(world.taskA)}, ${literal(cmid('counts-read'))})`, {
+      claims: claimsFor(world.identityA, world.memberA),
+    });
+    const after = countsFor(world.identityA, world.memberA, spaceA);
+    // A DELTA, not an absolute. The suites share a database and a leaked row
+    // from any earlier suite would otherwise report as a failure here.
+    assert.equal(after.task.total, before.task.total + 1, 'the new task is counted');
+    assert.equal(after.task.unseen, 0, 'neither is news — both predate the last read of a task');
+  } finally {
+    older.remove();
+  }
+});
+
+test('a row created AFTER the last read of its kind IS news', () => {
+  // The other half: a watermark that suppressed everything would be no better
+  // than one that suppressed nothing.
+  ok(`select public.mark_read(${uuid(world.taskA)}, ${literal(cmid('counts-read'))})`, {
+    claims: claimsFor(world.identityA, world.memberA),
+  });
+  assert.equal(
+    countsFor(world.identityA, world.memberA, spaceA).task.unseen,
+    0,
+    'precondition: caught up on tasks',
+  );
+
+  const before = countsFor(world.identityA, world.memberA, spaceA);
+  const fresh = seedEntity(`public.create_task(${uuid(spaceA)}, 'brand new')`, '1 hour');
+  try {
+    const after = countsFor(world.identityA, world.memberA, spaceA);
+    assert.equal(after.task.unseen, 1, 'created after the last read ⇒ exactly one is new');
+    assert.equal(after.task.total, before.task.total + 1, 'and the total moved with it');
+  } finally {
+    fresh.remove();
+  }
+});
+
+test('the per-kind watermark does NOT leak across kinds', () => {
+  // Reading a task must not silently mark the sessions, files and docs you have
+  // never looked at as seen. That would be the whole-workspace watermark this
+  // design deliberately did not build, and the reason `kind_marks` groups by
+  // kind instead of taking one max over the member's marks.
+  ok(`select public.mark_read(${uuid(world.taskA)}, ${literal(cmid('counts-read'))})`, {
+    claims: claimsFor(world.identityA, world.memberA),
+  });
+
+  const doc = seedEntity(`public.create_document(${uuid(spaceA)}, 'unread doc')`, '1 hour');
+  try {
+    const after = countsFor(world.identityA, world.memberA, spaceA);
+    assert.equal(
+      after.doc.unseen,
+      1,
+      'the doc is still news — reading a TASK said nothing about docs',
+    );
+  } finally {
+    doc.remove();
+  }
 });
 
 test('a soft-deleted entity leaves BOTH numbers', () => {
@@ -189,16 +322,23 @@ test('a member does not inherit history that predates them as unseen', () => {
   assert.equal(unseen, 0, 'but none of them is news to a member starting now');
 });
 
-test('anything that changes AFTER the watermark is news again', () => {
+test('anything CREATED after the watermark is news again', () => {
   // The watermark is a floor, not a mute: it suppresses backlog, and must not
-  // suppress genuine activity that happens afterwards.
-  ok(
-    `update public.entities set activity_at = now() + interval '1 hour'
-      where id = ${uuid(world.taskA)}`,
-    { url: OWNER_URL },
-  );
-  const counts = countsFor(world.identityA, world.memberA, spaceA);
-  assert.equal(counts.task.unseen, 1, 'changed after the watermark ⇒ unseen');
+  // suppress genuine news that arrives afterwards. The previous test pushed
+  // `counters_since` to `now() + 1s`, so this row has to be created past it.
+  //
+  // WAS an `activity_at` bump on the existing task, under 068's rule that a
+  // change is news. Under 175 it is not — a touched row is not a new one — so
+  // the fixture creates something instead of editing something. That is the
+  // reversal restated at the watermark, deliberately: a floor that could still
+  // be crossed by agent churn would put the saturation straight back.
+  const fresh = seedEntity(`public.create_task(${uuid(spaceA)}, 'after the watermark')`, '1 hour');
+  try {
+    const counts = countsFor(world.identityA, world.memberA, spaceA);
+    assert.equal(counts.task.unseen, 1, 'created after the watermark ⇒ unseen');
+  } finally {
+    fresh.remove();
+  }
 });
 
 test('the watermark defaults to member creation, so it is never null', () => {

@@ -183,6 +183,7 @@ export {
   type HomeRoot,
 } from './home-rail';
 export {
+  announcedCounts,
   composeEntityNavigation,
   entityNavigationLabel,
   summarizeEntityNavigation,

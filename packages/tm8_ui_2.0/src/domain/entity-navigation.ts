@@ -45,6 +45,25 @@ export interface EntityNavigationSummary {
   live?: number;
 }
 
+/**
+ * Suppress `unseen` for a kind the registry has not given a badge to.
+ *
+ * ZERO, NOT ABSENT, and the difference is load-bearing in the other direction
+ * from usual here. Absent means "the server did not answer", and every renderer
+ * treats it as "draw no numbers at all" — which would take the kind's TOTAL
+ * away too. This kind was counted; it simply has nothing to announce. Zero says
+ * exactly that, and every consumer already omits a zero `unseen`
+ * (`EntityNavigationMetrics` renders the pill only when it is positive), so no
+ * surface has to learn a fourth state.
+ *
+ * The group and space rollups below sum these, so a suppressed kind also stops
+ * inflating the aggregate that Home and the mobile drawer read — which is the
+ * number the user was actually looking at.
+ */
+export function announcedCounts(config: KindConfig, counts: EntityNavigationCounts): EntityNavigationCounts {
+  return config.announcesNew ? counts : { total: counts.total, unseen: 0 };
+}
+
 export function composeEntityNavigation(
   groups: readonly HomeRailGroup[],
   countsFor: EntityNavigationCountsFor,
@@ -56,7 +75,7 @@ export function composeEntityNavigation(
       const live = liveFor(config);
       return {
         config,
-        ...(counts === undefined ? {} : { counts }),
+        ...(counts === undefined ? {} : { counts: announcedCounts(config, counts) }),
         ...(live === undefined ? {} : { live }),
       };
     });
