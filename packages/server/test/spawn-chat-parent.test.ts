@@ -141,10 +141,19 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
     binDir = undefined;
   });
 
-  async function runSpawn(identity: RequestIdentity, body: Record<string, unknown> = {}) {
+  /**
+   * `parentKind` is a parameter because the guard below is BLIND to it, and a
+   * property you cannot vary is a property you have not tested. It defaults to
+   * 'chat' so every pre-existing case behaves exactly as before.
+   */
+  async function runSpawn(
+    identity: RequestIdentity,
+    body: Record<string, unknown> = {},
+    parentKind: string | null = 'chat',
+  ) {
     binDir = await stubClaudeOnPath();
     dataDir = await mkdtemp(join(tmpdir(), 'tm8-chatparent-data-'));
-    const db = new SpawnDb('chat');
+    const db = new SpawnDb(parentKind);
     const registry = new HandlerRegistry();
     registerExecutionHandlers(registry, {
       db,
@@ -197,14 +206,65 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
     expect(spawn?.args[PARENT_ARG_INDEX]).toBe(CHAT);
   });
 
-  it('lets an EXPLICIT parent win over the ambient one — the argument is not a lie', async () => {
-    const db = await runSpawn(
+  /**
+   * B10 — A CHAT RUNTIME MAY NAME ITS OWN CHAT AND NOTHING ELSE.
+   *
+   * This case asserted the opposite until #578, and the sentence it inherited
+   * from 176 is worth quoting, because it is still true of the caller it was
+   * written about: "an EXPLICIT parentSessionId still wins — a HUMAN driving
+   * execution.spawn through a chat's credential may legitimately parent the
+   * worker elsewhere, and silently overriding a stated parent would make the
+   * argument a lie."
+   *
+   * No human ever drives an `agent_runtime` credential. It lives in the chat's
+   * MCP server process and is handed to the model; a person driving spawn
+   * arrives as `browser` or `cli`, and those are untouched — `resolveSpawnParentId`
+   * returns their explicit parent verbatim, which `chat/scope.test.ts` pins for
+   * all three non-runtime principals. The sentence outlived its reason.
+   *
+   * The substantive half: a worker's parent IS its `<coordination>` return
+   * address, the block this file exists to get right. A chat naming a parent it
+   * does not own sends its worker's result somewhere the chat cannot read it —
+   * the failure the coordinator prompt names outright ("never the worker's own
+   * id, which sends the result where you will never read it").
+   */
+  it('refuses an explicit parent that is not the chat this credential runs', async () => {
+    // The harness answers the parent-kind read with 'chat', so this id IS a
+    // rival chat here — the case B10 is about, not a peripheral one.
+    await expect(runSpawn(
       { kind: 'bearer', identityId: 'chat-identity', authKind: 'agent_runtime', runtimeChatId: CHAT },
       { parentSessionId: PARENT_SESSION },
+    )).rejects.toThrow(/may only name the chat this runtime credential runs/);
+  });
+
+  it('refuses it whatever the parent turns out to BE — the guard never asks', async () => {
+    // BLIND TO KIND, demonstrated rather than asserted in prose. Reading the
+    // entity and relenting for a work session would hand a leaked per-chat
+    // token the power B10 warns about — hanging a worker, and therefore its
+    // return address, off any session tree in the Space. It would also make the
+    // guard depend on a read whose failure mode `loadSpawnContext` deliberately
+    // makes LENIENT (an unresolvable kind folds to work_session), and a guard
+    // must not inherit a lenient default.
+    for (const kind of ['work_session', 'channel', null]) {
+      await expect(runSpawn(
+        { kind: 'bearer', identityId: 'chat-identity', authKind: 'agent_runtime', runtimeChatId: CHAT },
+        { parentSessionId: PARENT_SESSION },
+        kind,
+      ), `parent kind ${String(kind)}`).rejects.toThrow(/may only name the chat/);
+    }
+  });
+
+  it('lets a chat runtime name its OWN chat, so the field is not a trap', async () => {
+    // Passing the ambient value explicitly must behave identically to omitting
+    // it, or the guard would punish a caller for being explicit about the very
+    // thing the server was going to do anyway.
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'chat-identity', authKind: 'agent_runtime', runtimeChatId: CHAT },
+      { parentSessionId: CHAT },
     );
 
     const spawn = db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn');
-    expect(spawn?.args[PARENT_ARG_INDEX]).toBe(PARENT_SESSION);
+    expect(spawn?.args[PARENT_ARG_INDEX]).toBe(CHAT);
   });
 
   it('parents nothing for a non-bearer caller, which has no runtime chat at all', async () => {
