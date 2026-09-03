@@ -115,8 +115,16 @@ describe('the three direct container tools', () => {
     // halves. Asserting only that the image block exists would pass either way.
     expect(JSON.stringify(result.structuredContent)).not.toContain(base64);
     expect(result.structuredContent.imageContent).toBeUndefined();
+    // The text block is asserted to EXIST before its content is asserted. The
+    // previous form was `expect(text && 'text' in text ? text.text : '')`,
+    // which falls back to `''` — and `expect('').not.toContain(base64)` passes
+    // in EVERY possible world, including one where no text block exists at all.
+    // Measured, not assumed: `expect(undefined).not.toMatch(…)` THROWS, but
+    // `expect('').not.toContain(…)` PASSES, so the ternary was the vacuous one.
     const text = result.content.find((c) => c.type === 'text');
-    expect(text && 'text' in text ? text.text : '').not.toContain(base64);
+    expect(text, 'no text content block to check').toBeDefined();
+    expect(text).toHaveProperty('text');
+    expect((text as { text: string }).text).not.toContain(base64);
 
     // …while the dimensions and the scale STAY, because they are what the model
     // needs to convert its next click's coordinates.
