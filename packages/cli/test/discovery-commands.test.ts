@@ -150,7 +150,13 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // catalog rows, the same sugar posture as `worktree status` over entities.get.
     // 156 -> 159 (148): space workflow list|set|delete over the three
     // spaces.workflows rows.
-    expect(COMMAND_PATHS).toHaveLength(159);
+    // 159 -> 183 (2026-09-03, containers): 22 command paths over the 25
+    // containers.* rows (two are deliberately commandless, and `container cp`
+    // serves BOTH files.put and files.get), PLUS two ALIASES that add no
+    // catalog row — `container screenshot` over containers.computer and
+    // `container adb` over containers.run, the `worktree list` posture.
+    // MEASURED on this tree.
+    expect(COMMAND_PATHS).toHaveLength(183);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

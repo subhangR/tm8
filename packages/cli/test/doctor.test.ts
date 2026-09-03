@@ -180,7 +180,9 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 152 -> 156 (141): auth password + auth invite signup + auth claim reissue,
     // plus the node mode alias — none of which moves the catalog count.
     // 156 -> 159 (148): space workflow list|set|delete.
-    expect(COMMAND_PATHS).toHaveLength(159);
+    // 159 -> 183 (2026-09-03, containers): 22 container command paths + the
+    // two aliases (container screenshot, container adb). MEASURED.
+    expect(COMMAND_PATHS).toHaveLength(183);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {
