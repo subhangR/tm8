@@ -383,9 +383,27 @@ describe('R5 — the client-visible record carries no host path and no runtime r
     ))[0]!.content;
 
     // `internal.command_entity` embeds this in what a CLIENT receives.
-    expect(JSON.stringify(content)).not.toContain('/Users/someone/secret-project');
+    //
+    // ⚠ ORDER IS LOAD-BEARING, and it took a reviewer's third mutation to see why.
+    // `host_spec`'s VALUE contains the host path that the string check below
+    // searches for, so any mutation that exposes the `host_spec` KEY also
+    // exposes the path. With the string check first it always won, and
+    // `not.toHaveProperty('host_spec')` could never fire — not merely unproven
+    // but UNPROVABLE in this fixture. The key checks therefore go FIRST, so each
+    // of the three assertions reds on its own mutation:
+    //   remove `- 'host_spec'`   from the arm    -> this line
+    //   remove `- 'runtime_ref'` from the arm    -> the next line
+    //   make the CREATE DOOR keep `host` in the
+    //   client-visible spec.mounts               -> the string check
+    // Note the third one is a mutation of a DIFFERENT object — the door's mount
+    // split, not the content arm — because the string can only leak through
+    // `spec` once the two keys above are subtracted. All three verified to red
+    // on their own mutation and no other.
+    // The general form: "the test redded" is not "the assertion I care about
+    // redded". Only the failure MESSAGE distinguishes them; a count never can.
     expect(content).not.toHaveProperty('host_spec');
     expect(content).not.toHaveProperty('runtime_ref');
+    expect(JSON.stringify(content)).not.toContain('/Users/someone/secret-project');
 
     const spec = content['spec'] as { mounts: Record<string, unknown>[] };
     expect(spec.mounts).toEqual([{ guest: '/workspace', ro: true }]);
