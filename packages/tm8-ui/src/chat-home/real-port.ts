@@ -118,28 +118,76 @@ export function createChatHomePortFromSeam(
   };
 
   /**
-   * The `about` target per chat.
+   * The `about` target of ONE chat — read when that chat is OPENED.
    *
-   * ONE READ PER CHAT, AND NAMED AS SUCH. A chat's subject is an edge, and no
-   * list read carries edges — so preserving the one host that scopes by it
-   * (Craft's picker, `thread.anchorId === selectedId`) costs a `connections`
-   * call each. It is bounded by the chat list itself, which is small by
-   * construction, and it is the honest Wave-1 shape: Wave 2's UI lane draws the
-   * `about` relation on the panel and this read moves with it.
+   * Wave 1 read this for every row of every list (`aboutTargets`, one
+   * `connections` call per chat) so that Craft's picker could filter by
+   * subject. That was a documented N+1 on the one read whose count scales with
+   * the space, and it is gone: the list no longer claims to know each chat's
+   * subject, `readThread` answers for the chat actually on screen, and a host
+   * that wants "the chats about X" asks X (see `chatIdsAbout`).
+   *
+   * A subject that cannot be read is not a reason to fail the thread.
    */
-  const aboutTargets = async (
-    chatIds: readonly EntityId[],
-  ): Promise<Map<EntityId, EntityId | null>> => {
-    const pairs = await Promise.all(chatIds.map(async (chatId) => {
-      try {
-        const page = await seam.connections(chatId, { types: ['about'], direction: 'outgoing', limit: 1 });
-        return [chatId, page.items[0]?.target.id ?? null] as const;
-      } catch {
-        // A subject that cannot be read is not a reason to fail the list.
-        return [chatId, null] as const;
+  const aboutTargetOf = async (chatId: EntityId): Promise<EntityId | null> => {
+    try {
+      const page = await seam.connections(chatId, {
+        types: ['about'], direction: 'outgoing', limit: 1,
+      });
+      return page.items[0]?.target.id ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * WHICH MESSAGES WERE AUTHORED FROM SOMEWHERE ELSE — one `entities.feed`
+   * read beside the transcript's own.
+   *
+   * WHY A SECOND READ AND NOT A REPLACEMENT. `messages.list` is the
+   * transcript's read: it is ordered for a transcript, paged for a transcript,
+   * and it is what every chat-home test drives. `entities.feed` is the only
+   * op that projects `authored_from` (`FeedItem.sourceWorkSessionId`,
+   * feed-context.ts:731), and it also carries activity rows this surface does
+   * not draw. So the provenance rides alongside rather than replacing a read
+   * that works — one extra call per thread OPEN, not per message and not per
+   * row of any list.
+   *
+   * SOFT-FAILS TO AN EMPTY MAP. A node that cannot serve the feed for a chat
+   * anchor renders the transcript exactly as it does today; every bubble is
+   * first-party, which is what the surface assumed before this existed. A
+   * provenance read is an enhancement to a conversation, never a gate on
+   * reading it.
+   */
+  const provenanceOf = async (chatId: EntityId): Promise<Map<EntityId, EntityId>> => {
+    const out = new Map<EntityId, EntityId>();
+    try {
+      const page = await seam.feed(chatId, { limit: 100 });
+      for (const item of page.items) {
+        if (item.itemKind !== 'message') continue;
+        const source = item.sourceWorkSessionId;
+        if (source) out.set(item.message.id, source);
       }
-    }));
-    return new Map(pairs);
+    } catch {
+      // See the docblock: absent provenance is the pre-existing rendering.
+    }
+    return out;
+  };
+
+  const chatIdsAbout: ChatHomePort['chatIdsAbout'] = async (aboutId) => {
+    try {
+      const page = await seam.connections(aboutId, {
+        types: ['about'], direction: 'incoming', limit: 100,
+      });
+      /* The edge accepts every source kind, so the incoming side of `about` on
+         a blueprint carries memories as well as chats. The caller intersects
+         with its own chat list, and this returns the ids verbatim rather than
+         second-guessing which of them is a chat — that is a question the list
+         it will be intersected with already answers. */
+      return page.items.map((edge) => edge.source.id);
+    } catch {
+      return [];
+    }
   };
 
   const listThreads: ChatHomePort['listThreads'] = async (spaceId) => {
@@ -149,9 +197,10 @@ export function createChatHomePortFromSeam(
       listTeammates(spaceId),
     ]);
     const labels = new Map(teammates.map((teammate) => [teammate.id, teammate.label]));
-    const subjects = await aboutTargets(result.page.items.map((item) => item.id));
     const items = result.page.items
-      .map((summary) => itemFromSummary(summary, subjects.get(summary.id) ?? null))
+      /* `aboutId: null` — the LIST does not claim to know each chat's subject.
+         See `aboutTargetOf` for the read this replaced. */
+      .map((summary) => itemFromSummary(summary, null))
       .filter((item): item is ChatListItem => item !== null);
     for (const item of items) {
       listCache.set(item.chatId, item);
@@ -159,7 +208,7 @@ export function createChatHomePortFromSeam(
     }
     return items.map<ChatThreadSummary>((item) => ({
       rootId: item.chatId,
-      anchorId: (item.aboutId ?? item.chatId) as EntityId,
+      aboutId: item.aboutId,
       title: item.title?.trim() || 'Conversation',
       preview: item.title?.trim() || 'Open to read this chat',
       updatedAt: item.lastTurnAt ?? item.createdAt,
@@ -183,6 +232,7 @@ export function createChatHomePortFromSeam(
     // unavailable, so this is unconditionally null.
     threadListUnavailableReason: null,
     listThreads,
+    chatIdsAbout,
     listTeammates,
     async readThread(chatId) {
       const item = await resolveItem(chatId);
@@ -190,9 +240,11 @@ export function createChatHomePortFromSeam(
       // no thread root, so this is one ordinary anchor read — no root detail to
       // fetch separately, and no `{ rootMessageId }` scope to pass. The
       // user->agent pairing that threading used to express lives in chat_turns.
-      const [page, teammates] = await Promise.all([
+      const [page, teammates, aboutId, provenance] = await Promise.all([
         seam.messages(chatId, { limit: 100 }),
         listTeammates(listSpaceCache.get(chatId) ?? lastSpaceId ?? ''),
+        aboutTargetOf(chatId),
+        provenanceOf(chatId),
       ]);
       const teammateLabel = teammates.find((teammate) => teammate.id === item.teammateId)?.label
         ?? 'Agent teammate';
@@ -200,6 +252,13 @@ export function createChatHomePortFromSeam(
       const turns = await Promise.all(
         messages.map(async (message) => ({
           messageId: message.id,
+          /* THE CHAT'S OWN AGENT TURNS ARE NOT THIRD-PARTY. `createAgentMessage`
+             posts them with `p_source_chat_id = the chat`, so their
+             `authored_from` points here — dropping that case is what keeps the
+             marker meaning "written from somewhere else". */
+          ...(provenance.get(message.id) && provenance.get(message.id) !== chatId
+            ? { sourceEntityId: provenance.get(message.id) as EntityId }
+            : {}),
           role: message.state.author?.isAgent ? 'assistant' as const : 'user' as const,
           author: message.state.author ?? message.createdBy ?? null,
           createdAt: message.createdAt,
@@ -223,7 +282,7 @@ export function createChatHomePortFromSeam(
       return {
         summary: {
           rootId: item.chatId,
-          anchorId: (item.aboutId ?? item.chatId) as EntityId,
+          aboutId,
           title: item.title?.trim() || 'Conversation',
           // An in-flight turn's body is the claim placeholder ('Agent turn in
           // progress.'), not content — preview the last settled message instead.

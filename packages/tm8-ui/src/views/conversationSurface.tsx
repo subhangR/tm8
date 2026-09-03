@@ -26,7 +26,7 @@
  * (§15.2): `hub` entities get their channel feed, everything else with a
  * detail gets the session chat.
  */
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import type { ComposerInteractionPolicy, EntityDetail, EntityId } from '@tm8/contract';
 import { getKind } from '../domain';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
@@ -37,7 +37,19 @@ import { LazyTranscriptSurface } from '../transcript/LazyTranscriptSurface';
 import type { SessionChatSeam } from '../channel-screen/SessionChatSurface';
 import type { TranscriptSeam } from '../transcript/TranscriptSurface';
 import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
-import type { ConnectionState, SessionLiveness } from '../data/seam';
+import type { TriggerOption } from '../rich-input';
+import type { ConnectionState, Seam, SessionLiveness } from '../data/seam';
+
+/**
+ * The chat surface behind a route boundary, exactly as the other three arms
+ * are. `ChatHomeSurface` pulls in the whole chat screen and its markdown
+ * renderer; a panel that merely COULD hold a chat must not carry that in its
+ * own chunk.
+ */
+const LazyChatThreadSurface = lazy(async () => {
+  const module = await import('../chat-home/ChatHomeSurface');
+  return { default: module.ChatHomeSurface };
+});
 
 /** The surfaces this slot can compose. All four expected entrants have now
  *  landed, each with its own composer and one resolver arm. */
@@ -45,7 +57,18 @@ export type ConversationSurfaceKind =
   | 'channel-feed'
   | 'session-chat'
   | 'discussion'
-  | 'transcript';
+  | 'transcript'
+  /**
+   * A CHAT ENTITY'S OWN TRANSCRIPT (migration 176) — `ChatHomeScreen` in solo
+   * mode, pinned to one chat.
+   *
+   * It is the SAME component Home draws, not a second rendering of a
+   * conversation: `soloConversation` is exactly the prop Craft already passes
+   * when the thread column is hosted outside, and `routeThreadId` is
+   * authoritative in that mode. So `/home/chat/{id}` and this panel body show
+   * one surface, and a defect fixed in one is fixed in both.
+   */
+  | 'chat-thread';
 
 /**
  * What a host must already own to fill the slot. Every member is something the
@@ -53,9 +76,21 @@ export type ConversationSurfaceKind =
  * exists only for this slot.
  */
 export interface ConversationSurfaceHost {
-  /** Widened when the transcript arm landed: the same gate seam every host
-   *  already passes, now named for both surfaces that read from it. */
-  seam: SessionChatSeam & TranscriptSeam;
+  /**
+   * Widened when the transcript arm landed: the same gate seam every host
+   * already passes, named for the surfaces that read from it — and widened
+   * again to the FULL `Seam` when the chat-thread arm landed.
+   *
+   * `ChatHomeSurface` builds its own port from the seam (`entities.list`,
+   * `messages.list`, `chat.start`, `messages.post`, the turn socket, the
+   * attachment upload lifecycle and the entity reads its chips resolve
+   * through), which is most of the surface — so naming that slice structurally
+   * would be a second copy of `Seam` that rots. All five hosts already pass a
+   * real `Seam` (`GateData.seam`, `GraphScreenData.seam`), so this narrows
+   * nothing in practice; it only stops the arm from needing a cast, which is
+   * the thing that would actually have hidden a missing capability.
+   */
+  seam: Seam & SessionChatSeam & TranscriptSeam;
   spaceId: string;
   connection: ConnectionState;
   livenessOf(id: string): SessionLiveness;
@@ -66,6 +101,25 @@ export interface ConversationSurfaceHost {
   /** The session surface's way back to the terminal — a REAL handler; the
    *  no-op ban's reasoning applies (see no-op-handler-ban.test.ts). */
   onSwitchToTerminal(): void;
+  /**
+   * WHICH NODE this browser is talking to, for the per-node model catalog the
+   * chat composer offers (`domain/model-catalog`, a localStorage delta over
+   * the contract's built-ins).
+   *
+   * Every host already has it — `GateData.nodeKey`, derived once from the
+   * active server's base url — and it is required rather than optional
+   * because 'local' is a REAL node key: defaulting to it would silently serve
+   * one node's custom models on another, which reads as the catalog randomly
+   * forgetting an entry.
+   */
+  nodeKey: string;
+  /**
+   * The composer's `/` vocabulary. Optional, and absent means `/` types plain
+   * text — the same posture `ChatHomeSurface` documents for it.
+   */
+  skillOptions?: readonly TriggerOption[] | undefined;
+  /** The viewer, for byline sidedness in the transcript. */
+  viewerName?: string | undefined;
 }
 
 /**
@@ -81,7 +135,17 @@ export interface ConversationSurfaceHost {
  * default.
  */
 export function defaultConversationSurfaceKind(detail: EntityDetail): ConversationSurfaceKind {
-  return getKind(detail.kind).panel.archetype === 'hub' ? 'channel-feed' : 'transcript';
+  /*
+   * A KIND MAY NAME ITS OWN SURFACE (`panel.conversation`, registry DATA).
+   * Read FIRST, and it is what a chat uses: the archetype fallback below can
+   * only answer 'hub or not', and a chat is not a hub and does not want the
+   * session transcript either. Putting the third answer here as
+   * `detail.kind === 'chat'` would be a kind literal outside `domain/`, which
+   * §15.2 makes a build failure — so the answer lives on the row.
+   */
+  const row = getKind(detail.kind);
+  if (row.panel.conversation) return row.panel.conversation;
+  return row.panel.archetype === 'hub' ? 'channel-feed' : 'transcript';
 }
 
 export function channelFeedSurfaceFor(
@@ -195,6 +259,41 @@ export function transcriptSurfaceFor(
   );
 }
 
+/**
+ * THE CHAT ENTITY'S TRANSCRIPT — one chat, no thread column.
+ *
+ * `soloConversation` + `routeThreadId` is the pair Craft established: solo
+ * hands selection to the HOST outright and makes `routeThreadId`
+ * authoritative, which is exactly what a panel body wants — the panel already
+ * knows which entity it is holding, and a second selector inside it could
+ * only disagree.
+ *
+ * `aboutId` is deliberately NOT passed. It is the subject a NEW chat here
+ * would be about, and this surface opens an existing one; binding the chat's
+ * own id would make a chat about itself.
+ */
+export function chatThreadSurfaceFor(
+  _detail: EntityDetail,
+  entityId: EntityId,
+  host: ConversationSurfaceHost,
+): ReactNode {
+  return (
+    <Suspense fallback={<div className="tch-load" role="status">Loading Chat…</div>}>
+      <LazyChatThreadSurface
+        seam={host.seam}
+        spaceId={host.spaceId}
+        nodeKey={host.nodeKey}
+        soloConversation
+        routeThreadId={entityId}
+        onOpenEntity={host.onOpenEntity}
+        {...(host.skillOptions ? { skillOptions: host.skillOptions } : {})}
+        {...(host.viewerName ? { viewerName: host.viewerName } : {})}
+        {...(host.viewerMemberId ? { viewerId: host.viewerMemberId } : {})}
+      />
+    </Suspense>
+  );
+}
+
 export function conversationSurfaceFor(
   detail: EntityDetail | null | undefined,
   entityId: EntityId,
@@ -211,5 +310,7 @@ export function conversationSurfaceFor(
       return discussionSurfaceFor(detail, entityId, host);
     case 'transcript':
       return transcriptSurfaceFor(detail, entityId, host);
+    case 'chat-thread':
+      return chatThreadSurfaceFor(detail, entityId, host);
   }
 }

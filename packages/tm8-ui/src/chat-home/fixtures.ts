@@ -32,7 +32,10 @@ const ANCHOR_ID = '019f0000-0000-7000-8000-000000000001' as EntityId;
 export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
   summary: {
     rootId: ROOT_ID,
-    anchorId: ANCHOR_ID,
+    /* The fixture chat is about the fixture channel — the one row that
+       exercises the panel header's relation. Wave 1's field was `anchorId`
+       and meant the message anchor; since 176 it is the `about` edge. */
+    aboutId: ANCHOR_ID,
     title: 'Plan the launch sequence',
     preview: 'I mapped the work into three dependency-safe lanes.',
     updatedAt: '2026-08-13T08:20:00.000Z',
@@ -187,6 +190,12 @@ export function createChatHomeFixturePort(
     async listThreads() {
       return summaries();
     },
+    /* The fixture's own `about` index, folded from the same map the summaries
+       come from — so a fixture host filtering by subject sees exactly the rows
+       the list gave it, and the two cannot disagree. */
+    async chatIdsAbout(aboutId) {
+      return summaries().filter((s) => s.aboutId === aboutId).map((s) => s.rootId);
+    },
     async readThread(rootId) {
       const detail = details.get(rootId);
       if (!detail) throw new Error(`Fixture thread ${rootId} does not exist.`);
@@ -213,7 +222,10 @@ export function createChatHomeFixturePort(
         details.set(chatId, {
           summary: {
             rootId: chatId,
-            anchorId: (input.aboutId ?? chatId) as EntityId,
+            /* NULL WHEN THE COMPOSER PASSED NONE. Wave 1 folded an absent
+               subject to the chat's own id, which made every bare Home chat a
+               chat about itself — invisible while nothing drew the relation. */
+            aboutId: input.aboutId ?? null,
             title: input.body,
             preview: input.body,
             updatedAt: new Date().toISOString(),

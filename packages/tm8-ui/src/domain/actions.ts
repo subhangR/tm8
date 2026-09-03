@@ -580,6 +580,40 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'set-as-default': deferred('set-as-default', 'Set as default', '◎', REASONS.setAsDefaultDeferred),
   'mark-read': deferred('mark-read', 'Mark read', '✓', REASONS.markReadDeferred),
   quote: deferred('quote', 'Quote', '❝', REASONS.quoteDeferred),
+
+  /**
+   * OPEN A CHAT ABOUT THIS (chat as an entity, 2026-09-03).
+   *
+   * Gated on `chat.start` — the operation the composer it opens will commit —
+   * and on nothing else. Two things it deliberately does NOT gate on:
+   *
+   *   · A CAPABILITY OF THE SUBJECT. `about` is an edge FROM the new chat, and
+   *     `entities.connections`' write side gates on the chat, which does not
+   *     exist yet. Requiring `canEdit` on the subject would refuse the verb on
+   *     every row a viewer can read and not write — which is most of a space,
+   *     and none of it is a reason you cannot talk about the thing.
+   *   · A SUBJECT AT ALL, beyond one being selected. Every kind is a legal
+   *     `about` target (`edge_types`, 056: `dst_kinds = array['*']`), so there
+   *     is no per-kind refusal to write here and inventing one would be this
+   *     package asserting a rule the graph does not have.
+   *
+   * It is NOT `launching()`: that flow marker opens the SPAWN config, whose
+   * five sections are about an execution — project, worktree, posture. A chat
+   * is configured in its own composer, which is where this verb lands.
+   */
+  'chat-about': define(
+    'chat-about',
+    'Chat about this',
+    '❝',
+    /*
+     * A SUBJECT IS OPTIONAL. Every other entity verb refuses without one
+     * because it acts ON the row; this one opens a composer, and a composer
+     * with no subject bound is bare Home's new conversation — the honest
+     * reading of pressing it from the Chats list HEADER, which has no row.
+     * So the only gate is the operation the composer will commit.
+     */
+    (ctx) => opGate(ctx, 'chat.start') ?? AVAILABLE,
+  ),
 };
 
 /** Resolve a ref to its definition. Total over `ActionRef` — never throws. */

@@ -23,7 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import type { EntityDetail, EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
-import type { ChatHomeL2Bridge } from '../chat-home/real-port';
+import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from '../chat-home/real-port';
 import { ChatHomeSurface } from '../chat-home/ChatHomeSurface';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { TriggerOption } from '../rich-input';
@@ -204,16 +204,52 @@ export function CraftScreen({
    * with genuinely no threads never resolves and never needs to: the chat
    * screen has nothing to auto-open either, and both land on the composer.
    */
+  /* The SAME port `ChatHomeSurface` builds from this seam — `createChatHomePortFromSeam`
+     is a pure factory over it, so this is one construction, not a second
+     reader with its own cache. */
+  const port = useMemo(() => createChatHomePortFromSeam(seam, bridge), [seam, bridge]);
+
+  /**
+   * WHICH CHATS ARE ABOUT THE SELECTED BLUEPRINT — ONE READ, asked of the
+   * blueprint rather than of every chat.
+   *
+   * The filter used to be `thread.anchorId === selectedId`, and that field was
+   * filled by `listThreads` paying one `entities.connections` call PER CHAT to
+   * discover each one's subject: a documented N+1 on the space-wide read,
+   * carried by every host of the chat surface to serve this one picker. The
+   * edge is chat → subject, so its INCOMING side on the blueprint answers for
+   * all of them at once, and only Craft — the only surface that scopes by
+   * subject — pays for it.
+   *
+   * RE-RUN ON `threads`, deliberately: a send that creates a craft chat writes
+   * a new `about` edge, and the list publish is the signal that it happened.
+   * `null` while unread is not "no chats" — the effect below waits for
+   * `threads` for the same reason, so an empty set before the read lands
+   * simply means the resolution has not happened yet.
+   */
+  const [aboutSelected, setAboutSelected] = useState<ReadonlySet<EntityId>>(new Set());
+  useEffect(() => {
+    if (!selectedId) {
+      setAboutSelected(new Set());
+      return;
+    }
+    let live = true;
+    void port.chatIdsAbout(selectedId).then((ids) => {
+      if (live) setAboutSelected(new Set(ids));
+    });
+    return () => { live = false; };
+  }, [port, selectedId, threads]);
+
   const resolvedForRef = useRef<EntityId | null>(null);
   useEffect(() => {
     if (!selectedId || resolvedForRef.current === selectedId) return;
     if (threads.length === 0) return;
     resolvedForRef.current = selectedId;
     const scoped = threads.filter(
-      (thread) => thread.config.mode === 'craft' && thread.anchorId === selectedId,
+      (thread) => thread.config.mode === 'craft' && aboutSelected.has(thread.rootId),
     );
     setRequestedThreadId(scoped[0]?.rootId ?? null);
-  }, [selectedId, threads]);
+  }, [selectedId, threads, aboutSelected]);
 
   /**
    * THE RESOLVED SELECTION, ADOPTED — the header's subject and the request
@@ -431,7 +467,7 @@ export function CraftScreen({
         <section className="crf-chat" id="crf-chat-pane" aria-label="Craft conversation">
           <CraftChatPicker
             threads={threads}
-            anchorId={selectedId}
+            aboutSelected={aboutSelected}
             selectedId={activeThreadId}
             onSelect={(id) => setRequestedThreadId(id)}
             onNewChat={() => setRequestedThreadId(null)}
@@ -442,10 +478,17 @@ export function CraftScreen({
               spaceId={spaceId}
               nodeKey={nodeKey}
               bridge={bridge}
-              /* Contextual chat: new threads anchor to the BLUEPRINT row, so the
-                 conversation and the object it crafts share one address. Falls
-                 back to bare Home's anchor only when no graph exists yet. */
-              {...(selectedId ? { anchorId: selectedId } : {})}
+              /* Contextual chat: a new thread here is ABOUT the blueprint row,
+                 written as an `about` edge by `chat.start`. No graph selected
+                 yet ⇒ no subject, which is bare Home's shape.
+
+                 THE PROP WAS `anchorId` AND NOTHING READ IT. Wave 1 renamed
+                 `ChatHomeSurfaceProps.anchorId` to `aboutId` with the model
+                 underneath it, and this spread kept the old key — a JSX spread
+                 of a conditional expression gets no excess-property check, so
+                 it compiled and silently dropped the subject. Every craft chat
+                 started since has had no `about` edge. */
+              {...(selectedId ? { aboutId: selectedId } : {})}
               pinnedMode="craft"
               skillOptions={skillOptions}
               onOpenEntity={openEntity}

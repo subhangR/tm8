@@ -1480,6 +1480,33 @@ function PanelBody(
       />
     );
   }
+  if (config.panel.archetype === 'conversation') {
+    /*
+     * THE BODY IS THE CONVERSATION AND NOTHING ELSE (chat as an entity).
+     *
+     * The hub arm below renders front-door regions and hangs the feed beneath
+     * them, which is right for a channel and wrong for a chat: a chat's title
+     * is generated from its first turn and its content arm is literally
+     * `{ kind: 'chat' }`, so anything drawn above the transcript would be a
+     * header repeating the first bubble.
+     *
+     * `composition: 'chat'` on the same row is what removes the strip, the
+     * attention section and the footer below — the body ends at its composer,
+     * whose ＋ already owns attach.
+     *
+     * The missing-host alert is the terminal arm's honesty, kept: every host
+     * wires the slot through `conversationSurfaceFor`, so this is the tripwire
+     * for the next one that forgets rather than a panel that silently renders
+     * an empty box where a conversation should be.
+     */
+    return props.conversationSurface ? (
+      <div className="pn-conversation-body">{props.conversationSurface}</div>
+    ) : (
+      <p className="pn-surface-host-missing" role="alert">
+        This conversation is unavailable in this view.
+      </p>
+    );
+  }
   if (config.panel.archetype === 'hub') {
     /*
      * THE HUB'S REDIRECT CAME HOME (user ruling 2026-08-01).

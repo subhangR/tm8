@@ -733,6 +733,19 @@ export interface GateData {
   /** Reconcile a command's authoritative detail and every summary patch. */
   reconcileCommand: (result: CommandResult | AttentionRequestMutationResult) => void;
   seam: Seam;
+  /**
+   * WHICH NODE this browser is talking to — `nodeKeyOf(serverBaseUrl)`, the
+   * key every per-node browser store is filed under (the launch cache, the
+   * remembered space and target, the editable model catalog).
+   *
+   * ON THE DATA OBJECT because five panel hosts need it and only one of them
+   * (GateApp) sits close enough to `activeServer` to derive it. Before this,
+   * `GateApp` computed it locally and passed it down prop by prop; a host that
+   * wanted it and was not on that path — the chat surface a panel body mounts
+   * — had no way to ask, and defaulting to `'local'` would have silently
+   * served one node's custom models on another.
+   */
+  nodeKey: string;
   domain: DomainStoreHandle;
 }
 
@@ -3155,10 +3168,11 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       messagesOf: (id: string) => messagesByAnchor[id as EntityId],
       reconcileCommand,
       seam,
+      nodeKey: nodeKeyOf(options.serverBaseUrl),
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
   );
 
   return data;

@@ -110,6 +110,12 @@ export type TileBadgeSource =
   | 'profileStatus'
   | 'profileVersions'
   | 'messageAuthor'
+  // chat (migration 176). `model` above already resolves for a chat — the
+  // source reads `state.model` and a chat state carries one — so only the
+  // facts no other kind has get their own members here.
+  | 'chatMode'
+  | 'chatTurnState'
+  | 'chatLastTurnAt'
   | 'customFields'
   // counters, present on every summary
   | 'points'
@@ -390,7 +396,26 @@ export type ActionRef =
   | 'unlink'
   | 'set-as-default'
   | 'mark-read'
-  | 'quote';
+  | 'quote'
+  /**
+   * OPEN A CHAT ABOUT THIS ROW (chat as an entity, 2026-09-03).
+   *
+   * A chat is an entity with an `about` edge to whatever it concerns, and
+   * `about` accepts every dst kind (`edge_types`, migration 056: `array['*']`),
+   * so this verb is universal by the same derivation `run` is — see
+   * `applyChatAbout` in the registry. Deriving it there rather than writing it
+   * into nineteen `rowActions` arrays is what keeps "which kinds can you chat
+   * about?" a question with one answer.
+   *
+   * IT NAVIGATES; IT DOES NOT SPAWN. `chat.start` needs a teammate, a model
+   * and a mode, and a row cluster has nowhere to ask for them — so the verb
+   * opens Home's new-conversation composer with the subject already bound
+   * (`/home/chat?about={id}`), and the human commits it there. That is the
+   * same two-clicks-to-launch rule `launch-session` follows, reached through
+   * the address instead of an expand: the composer IS the configuration, and
+   * the subject survives a reload and a paste.
+   */
+  | 'chat-about';
 
 export type ActionAvailability = { kind: 'available' } | { kind: 'disabled'; reason: string };
 
@@ -924,7 +949,40 @@ export type BodyArchetype =
   // Surface wave (kind-bodies-2): project's governed body and
   // interaction_profile's restricted body.
   | 'governed'
-  | 'restricted';
+  | 'restricted'
+  /**
+   * THE BODY *IS* THE CONVERSATION (chat as an entity, 2026-09-03).
+   *
+   * Not `hub`: a hub renders its front-door regions and hangs the feed
+   * BENEATH them, which is right for a channel — a channel has a topic, a
+   * roster and a description that the conversation is about. A chat has none
+   * of that. Its title is generated from its first turn and its content
+   * arm is literally `{ kind: 'chat' }` (contract: "A chat has NO content
+   * beyond its summary"), so a fields block above the transcript would be a
+   * header printing the same sentence the first bubble already says.
+   *
+   * Not `terminal` either: that arm mounts `WorkSessionContent`, a five-surface
+   * strip over a live PTY. A chat has one surface.
+   *
+   * So the arm returns the host's conversation surface and nothing else.
+   * `composition: 'chat'` rides along and does the rest — no attachment strip,
+   * no attention section, no footer under a body that ends at its composer.
+   */
+  | 'conversation';
+
+/**
+ * WHICH conversation a kind's panel mounts — REGISTRY DATA, so no component
+ * and no host asks what kind it is holding (§15.2).
+ *
+ * The values are the `ConversationSurfaceKind`s `views/conversationSurface.tsx`
+ * can compose, minus the two a kind never declares for itself: `'discussion'`
+ * is the tab EVERY entity has (the host asks for it explicitly), and a host
+ * may still override any of these per call.
+ *
+ * Absent ⇒ the archetype default: a hub gets its channel feed, everything else
+ * gets the session transcript.
+ */
+export type PanelConversationSurface = 'channel-feed' | 'chat-thread' | 'transcript';
 
 export type ContentBlockKind =
   | 'fields'
@@ -1035,6 +1093,17 @@ export interface PanelConfig {
    * silently inherit a footer nobody chose for it.
    */
   composition?: 'chat' | 'frame';
+  /**
+   * The kind's conversation surface, when it is not the archetype's default.
+   *
+   * DATA rather than a fork in the composer, for the reason `launchMode` is
+   * data on an `ActionDef`: without it `defaultConversationSurfaceKind` would
+   * have to read `detail.kind === 'chat'`, and a kind literal outside
+   * `domain/` is a build failure (§15.2). It also means a host can keep
+   * asking for a surface EXPLICITLY — the parameter still wins — so this
+   * changes what a kind gets by default and nothing else.
+   */
+  conversation?: PanelConversationSurface;
   /**
    * The kind's chat surface reads THREAD ROOTS and opens a reply branch in a
    * side pane (the Slack-thread model). REGISTRY DATA, not a kind literal: the

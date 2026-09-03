@@ -89,7 +89,17 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // but keep their refs, routes and menu-editor eligibility. Board v2 occupies
 // the visible Board seat client-side because it is a route-only screen rather
 // than a MenuViewRef.
-export const SHIPPED_DEFAULT_MENU_REVISION = 20;
+// 20 → 21 (2026-09-01, CodeBrain / migration 173): the CodeBrain group joins
+// after Graph. The constant below was edited and this number was not, which is
+// the drift this comment block exists to prevent; it is corrected here.
+// 21 → 22 (2026-09-03, chat as an entity / migration 180): a CHATS group joins
+// after Home —
+//   Home | Chats | Work | Craft | Graph | CodeBrain | Settings | Help
+// (plus GateApp's route-only Board v2 seat after Work). Migration 176 gave a
+// chat the core kind `chat`; this is the tab that lists it, and its single
+// item is a KIND ref rather than a view, so the group draws a RAIL — see the
+// group comment below.
+export const SHIPPED_DEFAULT_MENU_REVISION = 22;
 
 /**
  * The menu half of the revision-20 tab shell. These GROUPS become top-row
@@ -148,6 +158,17 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // group railless — add a second row here and the surface grows a third
     // pane, which is the arrangement this revision exists to prevent.
     { id: 'chats', label: 'Home', items: [{ type: 'view', ref: 'dashboard' }] },
+    // CHATS (revision 22, migration 180). The one group in this default whose
+    // item is a KIND rather than a view, and that is what gives it a rail:
+    // `isRaillessGroup` answers true only for a lone childless VIEW item, so
+    // this tab renders the chat list beside the rail's own `chat` row and its
+    // `spaces.counts` number.
+    //
+    // THE ID IS `conversations`, NOT `chats` — that id belongs to Home above
+    // (127 minted it for the conversation surface; 134 relabelled it Home
+    // without renaming it). See `DEFAULT_MENU_GROUP_SPINE`, the one truth this
+    // default and the server seeder both answer to, for the full account.
+    { id: 'conversations', label: 'Chats', items: [{ type: 'kind', ref: 'chat' }] },
     // WORK returns (revision 19), and it is the THREE-PANEL WORKSPACE — one
     // childless `workspace` view item, so the group is railless by the same
     // shape rule as Home and Board and the surface is exactly the split

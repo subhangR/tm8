@@ -126,6 +126,8 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
         livenessOf: data.livenessOf,
         channelFeedPort,
         viewerMemberId: host.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => onOpenEntity(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [entityId]: 'terminal' }));
@@ -138,6 +140,8 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
         livenessOf: data.livenessOf,
         channelFeedPort,
         viewerMemberId: host.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => onOpenEntity(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [entityId]: 'terminal' }));

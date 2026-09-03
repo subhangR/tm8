@@ -152,6 +152,20 @@
   display: flex;
   flex-direction: column;
 }
+/* THE CONVERSATION ARCHETYPE'S BODY (chat as an entity).
+
+   The same three declarations `.pn-terminal-body` and `.pn-hub-feed` carry,
+   and for the same reason: the chat screen's own root asks for the full height
+   of a flex column and has never had a sized parent to fill inside a panel.
+   Without `min-height: 0` the transcript refuses to scroll and grows the panel
+   instead — the flex-item default is `min-height: auto`, which is the one
+   value that makes an overflowing child push its parent open. */
+.cv2-root .pn-conversation-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 /* THE SESSION-DETAILS DRAWER AND ITS FLOATING CONTROLS ARE GONE (user ruling
    2026-08-19). `.pn-terminal-drawer*`, `.pn-terminal-overlay*` and
    `.pn-ctxhead*` — roughly 160 lines — are deleted with the markup they

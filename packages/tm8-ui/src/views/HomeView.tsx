@@ -49,6 +49,7 @@ import { attachmentsFor } from '../files/port';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { navStore, useNavStore } from '../stores/navStore';
+import { chatAboutTarget, composeListActions, useChatAbout } from './useChatAbout';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
 import {
   CHATS_ROOT,
@@ -193,6 +194,20 @@ export interface HomeChatRegions {
   stage?: CockpitStage | null;
   onStageChange?(next: CockpitStage | null): void;
   /**
+   * `?about=` — the entity a NEW conversation started here should be about.
+   *
+   * Route-owned for the same reason `?stage=` is, and for one more: the verb
+   * that sets it ("Chat about this", on a row's action cluster and on the
+   * Chats list header) is a NAVIGATION, not a command. It has nowhere to ask
+   * for a teammate, a model and a mode, so it hands the subject to the
+   * composer through the address and the human commits it there — where a
+   * reload keeps it and a paste carries it.
+   *
+   * IGNORED once a thread is open: an existing conversation's subject is
+   * already decided.
+   */
+  aboutId?: EntityId | null;
+  /**
    * A KIND root's list CONTENT: the WORKSPACE's own `EntityListPanel` —
    * the exact tree, tiles, lifecycle tabs, sort and in-panel search the
    * workspace list draws (user ruling 2026-08-16: "exact tree structure,
@@ -239,6 +254,11 @@ export function HomeView(props: HomeViewProps) {
      Resolved here, once, so the screen never has to arbitrate. */
   const routeStage: CockpitStage | null =
     routeRoot?.type === 'chats' && !centerId ? (routeRoot.stage ?? null) : null;
+  /* The subject a new conversation here is about (`?about=`), from the same
+     root. Unlike the stage it does not compete with region B for space — it
+     configures the COMPOSER — so it survives an open entity. */
+  const routeAboutId: EntityId | null =
+    routeRoot?.type === 'chats' ? (routeRoot.aboutId ?? null) : null;
 
   /* Switching the root is BROWSING (D6): it renames the address's root and
      touches neither trail. Remembered so a bare `/home` returns here. */
@@ -341,6 +361,20 @@ export function HomeView(props: HomeViewProps) {
     onOpen: (id) => navStore.getState().openCenter(id),
     onError: (verb, error) => notifyActionFailed(verb, '', error),
   });
+
+  /**
+   * THE LIST'S DISPATCHERS, COMPOSED — the session-start verbs and
+   * `chat-about`, routed by which one names the verb. Home builds the route
+   * verb itself: unlike the workspace and the kind screen it already owns
+   * `navStore` for its own root and thread addresses.
+   */
+  const chatAbout = useChatAbout({
+    open: (aboutId) => navStore.getState().navigate(chatAboutTarget(aboutId)),
+  });
+  const listActions = composeListActions([
+    { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+    { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+  ]);
   const rowLifecycle = useRowLifecycle({
     data,
     viewerMemberId: props.viewerMemberId,
@@ -616,12 +650,14 @@ export function HomeView(props: HomeViewProps) {
           membershipSets={rowLifecycle.membershipSets}
           connectionsOf={data.connectionsOf}
           launch={launchPort}
+          onAction={listActions.onAction}
+          wiredActions={listActions.wiredActions}
           compact
         />
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, ctx, centerId, rowLifecycle, primaries, launchPort],
+    [data, ctx, centerId, rowLifecycle, primaries, launchPort, listActions],
   );
 
   const regions: HomeChatRegions = {
@@ -652,6 +688,10 @@ export function HomeView(props: HomeViewProps) {
     /* The stage PANE itself is rendered by the screen, not composed here: the
        fleet and the graph are both folds of the THREAD, and the turns live in
        the screen. This layer owns only the address. */
+    /* Only while the composer is what is on screen — see the prop's docblock.
+       A link that names both a thread and a subject names an intention that
+       cannot be honoured, and the thread is the more specific of the two. */
+    ...(routeAboutId && routeThreadId == null ? { aboutId: routeAboutId } : {}),
     stage: routeStage,
     onStageChange: (next) =>
       navStore.getState().navigate({

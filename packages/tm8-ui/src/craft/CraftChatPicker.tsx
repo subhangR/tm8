@@ -8,15 +8,22 @@
  * select can hold one string per row, so the honest choice was to relocate
  * the column's contents, not to shrink them to titles and drop the search.
  *
- * SCOPE, AND THE ESCAPE HATCH. The picker lists CRAFT threads anchored to
- * the selected blueprint (`anchorId`), which is what makes the two pane
- * headers one hierarchy: the graph names the object, this names the
- * conversations about it. But anchoring is a property of how a thread was
- * STARTED, and threads predating the Craft studio were not started that way
- * — so a scoped list can be legitimately empty while the space is full of
+ * SCOPE, AND THE ESCAPE HATCH. The picker lists CRAFT threads that are ABOUT
+ * the selected blueprint, which is what makes the two pane headers one
+ * hierarchy: the graph names the object, this names the conversations about
+ * it. But being about something is a property of how a thread was STARTED,
+ * and threads predating the Craft studio were not started that way — so a
+ * scoped list can be legitimately empty while the space is full of
  * conversations. "Show every conversation" is therefore not a nicety: it is
  * the difference between an empty state and a dead end, and the empty state
  * says so in as many words.
+ *
+ * THE SCOPE ARRIVES AS A SET OF IDS, NOT AS A FIELD ON EACH ROW. It used to
+ * be `thread.anchorId === anchorId`, and filling that field cost the
+ * space-wide list one `entities.connections` call PER CHAT — an N+1 every
+ * host of the chat surface paid so that this one picker could filter. The
+ * host now asks the BLUEPRINT what points at it (one incoming-edge read) and
+ * hands the answer down.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
@@ -26,8 +33,14 @@ import { Timestamp } from '../kit';
 
 export interface CraftChatPickerProps {
   threads: readonly ChatThreadSummary[];
-  /** The blueprint the studio is on — the anchor the scoped list filters to. */
-  anchorId: EntityId | null;
+  /**
+   * The ids of the chats whose `about` edge points at the blueprint the studio
+   * is on — the scope the default list filters to, resolved by the host in one
+   * read. An EMPTY set is a real answer ("no conversations about this one"),
+   * and it is also what an unread scope looks like; the host waits for its
+   * list before resolving a selection, so the two never diverge in practice.
+   */
+  aboutSelected: ReadonlySet<EntityId>;
   selectedId: EntityId | null;
   onSelect(id: EntityId): void;
   /** ＋ — back to the new-conversation composer, pinned to craft by the host. */
@@ -36,7 +49,7 @@ export interface CraftChatPickerProps {
 
 export function CraftChatPicker({
   threads,
-  anchorId,
+  aboutSelected,
   selectedId,
   onSelect,
   onNewChat,
@@ -48,8 +61,10 @@ export function CraftChatPicker({
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   const scoped = useMemo(
-    () => threads.filter((thread) => thread.config.mode === 'craft' && thread.anchorId === anchorId),
-    [threads, anchorId],
+    () => threads.filter(
+      (thread) => thread.config.mode === 'craft' && aboutSelected.has(thread.rootId),
+    ),
+    [threads, aboutSelected],
   );
   /* The scoped list is the default; the toggle only WIDENS it. Falling back
      automatically when the scope is empty was the tempting alternative and
