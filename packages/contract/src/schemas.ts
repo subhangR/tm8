@@ -382,6 +382,21 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     committedAt: z.string().nullable().optional(),
   }).strict(),
   z.object({
+    kind: z.literal('container'),
+    status: ContainerStatusSchema,
+    profile: ContainerProfileSchema,
+    provider: z.string(),
+    isolation: ContainerIsolationClassSchema,
+    // NOT nullable: the create door refuses a null node, so a container always
+    // has a home node and a consumer never renders "nowhere".
+    nodeId: z.string(),
+    surfaces: z.array(ContainerSurfaceKindSchema),
+    ephemeral: z.boolean(),
+    shareMode: ContainerShareModeSchema,
+    startedAt: z.string().nullable(),
+    expiresAt: z.string().nullable(),
+  }).strict(),
+  z.object({
     kind: z.literal('file'),
     name: z.string(),
     mimeType: z.string(),
@@ -714,6 +729,29 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     description: z.string(),
     acceptanceCriteria: z.array(AcceptanceCriterionSchema),
     pointsEstimate: z.number().nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('container'),
+    image: z.string(),
+    spec: ContainerSpecSchema,
+    lifecycle: ContainerLifecycleSchema,
+    // PARTIAL: a container with no adb surface omits the key rather than
+    // carrying a fake one, so every consumer must guard.
+    surfaceDetail: z.record(ContainerSurfaceKindSchema, z.object({
+      live: z.boolean(),
+      geometry: z.object({ w: z.number(), h: z.number(), dpr: z.number() }).strict().optional(),
+      meta: z.record(z.string(), z.unknown()).optional(),
+    }).strict()),
+    error: z.string().nullable(),
+    // NULL is a MEASURED absence — no heartbeat has landed — never zeros.
+    usage: z.object({
+      cpuPct: z.number(), memMiB: z.number(), diskMiB: z.number(),
+    }).strict().nullable(),
+    exposed: z.array(z.object({ port: z.number().int(), url: z.string() }).strict()),
+    // THERE IS NO `runtimeRef` HERE AND THERE MUST NEVER BE ONE (R5). This arm
+    // is embedded in the command result by `internal.command_entity`, so every
+    // member of it reaches the client; `.strict()` is what makes adding one
+    // back a test failure rather than a silent leak.
   }).strict(),
   z.object({
     kind: z.literal('channel'),

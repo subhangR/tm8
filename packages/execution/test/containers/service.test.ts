@@ -255,6 +255,47 @@ describe('lifecycle verbs refuse illegal transitions by name', () => {
   });
 });
 
+describe('the sweeper honours the guard\'s edge table (§11.1)', () => {
+  // 177 has no `running -> stopped` and no `* -> destroyed` edge: both route
+  // through an intermediate state. A sweeper that wrote the terminal status
+  // directly would take `23514` and leave the machine running.
+  it('stops THROUGH `stopping`', async () => {
+    const { graph, service } = build();
+    const created = await service.create(createReq());
+    graph.sweepRows = [{ containerEntityId: created.containerId, action: 'stop', reason: 'ttl' }];
+    graph.statusWrites.length = 0;
+    await service.sweep({});
+    expect(graph.statusWrites.map((w) => w.status)).toEqual(['stopping', 'stopped']);
+  });
+
+  it('destroys THROUGH `destroying`', async () => {
+    const { graph, service } = build();
+    const created = await service.create(createReq());
+    graph.sweepRows = [{ containerEntityId: created.containerId, action: 'destroy', reason: 'ttl' }];
+    graph.statusWrites.length = 0;
+    await service.sweep({});
+    expect(graph.statusWrites.map((w) => w.status)).toEqual(['destroying', 'destroyed']);
+  });
+
+  it('writes every sweep transition as node-internal — no ledger op, no version', async () => {
+    const { graph, service } = build();
+    const created = await service.create(createReq());
+    graph.sweepRows = [{ containerEntityId: created.containerId, action: 'stop', reason: 'idle' }];
+    graph.statusWrites.length = 0;
+    await service.sweep({});
+    for (const write of graph.statusWrites) {
+      expect(write.operation).toBeNull();
+      expect(write.clientMutationId).toBeNull();
+    }
+  });
+
+  it('NEVER THROWS — a failed repair is logged, not propagated', async () => {
+    const { graph, service } = build();
+    graph.sweepRows = [{ containerEntityId: 'ctr-missing', action: 'stop', reason: 'ttl' }];
+    await expect(service.sweep({})).resolves.toEqual([]);
+  });
+});
+
 describe('reconciliation (§11.3)', () => {
   // THE NEGATIVE CONTROL'S TARGET. `tm8.container` on the runtime object is the
   // ONLY key tying a runtime to a record. Remove FakeProvider.create's label
