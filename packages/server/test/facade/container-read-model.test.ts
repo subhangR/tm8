@@ -8,9 +8,12 @@
  * invisible in a passing test suite unless something asks the question
  * directly, which is what the first describe block does.
  */
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { EntityContentSchema, EntityStateSchema } from '@tm8/contract';
+import { Router } from '../../src/http/router.js';
 import {
   ENTITY_COLUMNS,
   ENTITY_FROM,
@@ -91,6 +94,44 @@ describe('R5 — what the read model must NEVER carry', () => {
   });
 });
 
+describe('the exposures aggregate stays on the RLS path', () => {
+  // WHY THIS IS A TEST AND NOT A COMMENT. `container_exposures` carries
+  // per-port RLS (`using internal.entity_readable(container_entity_id)`) and a
+  // `share_token_hash` column. RLS only fires for the CALLER's role: a
+  // SECURITY DEFINER body runs as `tm8_graph_owner` and the policy does not
+  // apply, so the same aggregate moved into a definer function would return
+  // exposures on containers the viewer may read but whose ports they should
+  // not — and it would return rows either way, so nothing would look wrong.
+  //
+  // That is the #407 / mig 156-160 trap, which has already cost this repo a
+  // PR. `ENTITY_FROM` is only ever interpolated into `q.query` inside
+  // `db.tx(claimsFor(...))`, which does `set_config('role', …, true)` with
+  // `tm8_app` as the default — so today it is correctly on the caller's role.
+  //
+  // These two assertions are what make that survive someone "optimising" the
+  // read into a definer RPC later.
+  const source = readFileSync(
+    new URL('../../src/facade/entity-read.ts', import.meta.url), 'utf8',
+  );
+
+  it('selects the port and the share mode, and NEVER the token hash', () => {
+    expect(source).toMatch(/container_exposures/);
+    // A hash is not a secret, but it is capability-shaped and has no business
+    // on a read that every list row assembles.
+    expect(source).not.toMatch(/share_token_hash/);
+  });
+
+  it('lives inside ENTITY_FROM — the query that runs under the caller\'s claims', () => {
+    // If the aggregate ever moves out of this template it stops being covered
+    // by the claims transaction, and this fails rather than going quiet.
+    const from = source.slice(
+      source.indexOf('export const ENTITY_FROM'),
+      source.indexOf('export interface EntityRow'),
+    );
+    expect(from).toMatch(/left join lateral[\s\S]*container_exposures/);
+  });
+});
+
 describe('the state arm', () => {
   it('projects the hot fields and validates against the contract', () => {
     const state = stateOf(containerRow(), CTX);
@@ -166,6 +207,60 @@ describe('the content arm', () => {
     expect(content.lifecycle).toMatchObject({
       ephemeral: true, graceSeconds: 600, ttlSeconds: null,
     });
+  });
+});
+
+describe('the derived expose URL actually routes', () => {
+  // THE TWO HALVES ARE ONE CHANGE, and this is the assertion that says so.
+  //
+  // `containers.expose` returns a URL, the CLI PRINTS IT TO A USER
+  // (`port 8080 -> <url>`), and the panel puts it in the ports section. The
+  // read model DERIVES that URL from (containerId, port) rather than storing
+  // it — right, because a stored URL would keep asserting a path after
+  // `containers.proxy`'s binding moved.
+  //
+  // But deriving it makes the derivation's target load-bearing, and that
+  // target could not be routed at all until `compileRoute` learned a trailing
+  // `*`: the asterisk was escaped into a literal, so the route matched a path
+  // containing `*` and nothing a browser sends. Without this test the two
+  // fixes are separately green and jointly broken — a working verb handing
+  // out a link that 404s, which the user would reasonably blame on `expose`.
+  const router = new Router();
+
+  const derivedUrls = () => {
+    const content = contentOf(containerRow({
+      ctr_exposed: [{ port: 8080, share: 'none' }, { port: 3000, share: 'space' }],
+    })) as { exposed: Array<{ port: number; url: string }> };
+    return content.exposed;
+  };
+
+  it('derives one URL per exposed port, from the id and the port', () => {
+    expect(derivedUrls()).toEqual([
+      { port: 8080, url: '/v2/containers/00000000-0000-7000-8000-000000000001/ports/8080/' },
+      { port: 3000, url: '/v2/containers/00000000-0000-7000-8000-000000000001/ports/3000/' },
+    ]);
+  });
+
+  it('every derived URL RESOLVES through the real router to containers.proxy', () => {
+    for (const { port, url } of derivedUrls()) {
+      const match = router.match('GET', url);
+      expect(match, `derived URL does not route: ${url}`).toBeDefined();
+      expect(match!.opName).toBe('containers.proxy');
+      expect(match!.params.port).toBe(String(port));
+      // The INDEX request — a bare trailing slash with an empty remainder.
+      // This is the case lane C's probe showed the old pattern failing, and
+      // the reason the wildcard compiles to `(.*)` and not `(.+)`.
+      expect(match!.params.rest).toBe('');
+    }
+  });
+
+  it('routes a real asset path below the derived URL, slashes included', () => {
+    const { url } = derivedUrls()[0]!;
+    const match = router.match('GET', `${url}assets/app.js`);
+    expect(match?.opName).toBe('containers.proxy');
+    // `([^/]+)` could never carry this, which is why the grammar needed a
+    // wildcard rather than another `:param`.
+    expect(match?.params.rest).toBe('assets/app.js');
   });
 });
 
