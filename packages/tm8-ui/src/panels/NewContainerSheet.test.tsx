@@ -205,6 +205,49 @@ describe('the sheet itself', () => {
     expect(onCreate).not.toHaveBeenCalled();
   });
 
+  it('an ABSENT `trusted` is treated as UNTRUSTED, not as trusted', async () => {
+    /*
+     * THE THREE-STATE TRAP, and the reason the check is `!== true` rather than
+     * `=== false`. `trusted` is optional on the prop, so a host that does not
+     * know a project's trust level omits it — and `=== false` sorts that third
+     * state into "trusted", skipping the confirm and sending a create the node
+     * then refuses for a reason the viewer never saw.
+     *
+     * The same inverse-default this lane rejects for the capability booleans:
+     * absent is not permission. Tested with `undefined` specifically, because
+     * a test that only ever passes `false` passes under both spellings.
+     */
+    const onCreate = vi.fn();
+    const { getByTestId, container } = render(
+      <NewContainerSheet
+        spaceId={SPACE}
+        onCreate={onCreate}
+        projects={[{ id: 'ent-prj-1', title: 'tm8' }]}
+      />,
+    );
+    fireEvent.change(container.querySelector('select')!, { target: { value: 'ent-prj-1' } });
+    expect(container.querySelector('button[type="submit"]')).toBeNull();
+    expect(getByTestId('disabled-with-reason').getAttribute('aria-disabled')).toBe('true');
+    expect(container.textContent).toContain('not marked trusted');
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it('a project explicitly marked trusted needs NO confirm — the gate is not blanket', () => {
+    // Guard the guard: `!== true` must not turn every project into a
+    // confirmation. A gate that always fires is as useless as one that never
+    // does, and it trains people to tick without reading.
+    const { container } = render(
+      <NewContainerSheet
+        spaceId={SPACE}
+        onCreate={vi.fn()}
+        projects={[{ id: 'ent-prj-1', title: 'tm8', trusted: true }]}
+      />,
+    );
+    fireEvent.change(container.querySelector('select')!, { target: { value: 'ent-prj-1' } });
+    expect(container.querySelector('button[type="submit"]')).toBeTruthy();
+    expect(container.textContent).not.toContain('not marked trusted');
+  });
+
   it('commits once the untrusted project is confirmed, and says so on the wire', async () => {
     const onCreate = vi.fn();
     const { getByText, container } = render(
