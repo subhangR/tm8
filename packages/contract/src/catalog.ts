@@ -23,6 +23,25 @@ export interface OperationBinding {
   path: string;
   kind: OperationKind;
   status: OperationStatus;
+  /**
+   * THIS ROW RE-DECLARES AN EXISTING BINDING; it does not add a mount.
+   *
+   * Every other row owns its `method path` pair exclusively, and the
+   * conformance generator asserts that — a duplicate binding is normally a
+   * copy-paste defect that would shadow a real route. One case is legitimate:
+   * a family wants its socket DISCOVERABLE under its own name while sharing
+   * one physical endpoint with another family (`containers.stream` and
+   * `events.subscribe` are both `WS /v2/ws`; the socket dispatches on the
+   * grant, per TM8-CONTAINERS-DESIGN §4.1).
+   *
+   * Declaring it here is what keeps the uniqueness invariant's teeth: an
+   * alias is legal ONLY when it says so and names what it aliases, so any
+   * duplicate that is a mistake still fails. Anything that MOUNTS routes
+   * (the HTTP router, the WS upgrade handler, the router inventory) must skip
+   * alias rows; anything that LISTS operations (discovery, the CLI catalog,
+   * help) must include them — being listed is the entire point.
+   */
+  aliasOf?: string;
 }
 
 export const BASE_PATH = '/v2';
@@ -414,6 +433,51 @@ export const OPERATIONS = [
   // own actions are existing ops (`entities.patch`, `edges.create`,
   // `execution.spawn`, `messages.post`).
   { name: 'execution.dispatch',                          method: 'POST',   path: '/v2/execution/dispatch',                                             kind: 'command', status: 'v1' },
+
+  // containers — machines agents run in or drive (TM8-CONTAINERS-DESIGN §4.1).
+  //
+  // TWENTY-FIVE ROWS. The Design's PROSE says 27 and is wrong; §4.1's list is
+  // the contract and the coordinator ruled on it (2026-09-03).
+  //
+  // Reads go through the UNIVERSAL entity reads — `entities.get`,
+  // `entities.children`, `entities.connections`, `collections.query` — because
+  // a container is an entity. THERE IS DELIBERATELY NO `containers.get`.
+  // `providers.list` and `logs` are the only family-specific reads, because
+  // their truth is on the node and not in the graph.
+  //
+  // EVERY ROW IS REGISTERED IN P0, INCLUDING THE ONES NOT YET BUILT. A `v1`
+  // row with no handler answers 404, which breaks the reserved-op honesty rule
+  // (DEV-13) exactly as a `reserved` row 404ing would. The not-yet-built ones
+  // answer `501 not_implemented` with a named reason — the same mechanism the
+  // `TM8_CONTAINERS=off` gate uses, so it is one path and not two.
+  { name: 'containers.create',           method: 'POST',   path: '/v2/containers',                                        kind: 'command', status: 'v1' },
+  { name: 'containers.start',            method: 'POST',   path: '/v2/containers/:containerId/commands/start',            kind: 'command', status: 'v1' },
+  { name: 'containers.stop',             method: 'POST',   path: '/v2/containers/:containerId/commands/stop',             kind: 'command', status: 'v1' },
+  { name: 'containers.pause',            method: 'POST',   path: '/v2/containers/:containerId/commands/pause',            kind: 'command', status: 'v1' },
+  { name: 'containers.resume',           method: 'POST',   path: '/v2/containers/:containerId/commands/resume',           kind: 'command', status: 'v1' },
+  { name: 'containers.destroy',          method: 'POST',   path: '/v2/containers/:containerId/commands/destroy',          kind: 'command', status: 'v1' },
+  { name: 'containers.update',           method: 'PATCH',  path: '/v2/containers/:containerId',                           kind: 'command', status: 'v1' },
+  { name: 'containers.policy.set',       method: 'POST',   path: '/v2/containers/:containerId/commands/policy',           kind: 'command', status: 'v1' },
+  { name: 'containers.run',              method: 'POST',   path: '/v2/containers/:containerId/commands/run',              kind: 'command', status: 'v1' },
+  { name: 'containers.terminal.start',   method: 'POST',   path: '/v2/containers/:containerId/terminals',                 kind: 'command', status: 'v1' },
+  { name: 'containers.attach',           method: 'POST',   path: '/v2/containers/:containerId/attach',                    kind: 'command', status: 'v1' },
+  // The EXISTING `/v2/ws` binding re-declared for discoverability — NOT a
+  // second socket. The PTY, graph events and every container surface share
+  // one socket and dispatch on the grant.
+  { name: 'containers.stream',           method: 'WS',     path: '/v2/ws',                                                kind: 'stream',  status: 'v1', aliasOf: 'events.subscribe' },
+  { name: 'containers.computer',         method: 'POST',   path: '/v2/containers/:containerId/commands/computer',         kind: 'command', status: 'v1' },
+  { name: 'containers.browser.endpoint', method: 'POST',   path: '/v2/containers/:containerId/commands/browser-endpoint', kind: 'command', status: 'v1' },
+  { name: 'containers.files.put',        method: 'PUT',    path: '/v2/containers/:containerId/files',                     kind: 'command', status: 'v1' },
+  { name: 'containers.files.get',        method: 'GET',    path: '/v2/containers/:containerId/files',                     kind: 'read',    status: 'v1' },
+  { name: 'containers.logs',             method: 'GET',    path: '/v2/containers/:containerId/logs',                      kind: 'read',    status: 'v1' },
+  { name: 'containers.expose',           method: 'POST',   path: '/v2/containers/:containerId/commands/expose',           kind: 'command', status: 'v1' },
+  { name: 'containers.unexpose',         method: 'POST',   path: '/v2/containers/:containerId/commands/unexpose',         kind: 'command', status: 'v1' },
+  { name: 'containers.proxy',            method: 'GET',    path: '/v2/containers/:containerId/ports/:port/*',             kind: 'read',    status: 'v1' },
+  { name: 'containers.snapshot',         method: 'POST',   path: '/v2/containers/:containerId/commands/snapshot',         kind: 'command', status: 'v1' },
+  { name: 'containers.fork',             method: 'POST',   path: '/v2/containers/:containerId/commands/fork',             kind: 'command', status: 'v1' },
+  { name: 'containers.attention',        method: 'POST',   path: '/v2/containers/:containerId/commands/attention',        kind: 'command', status: 'v1' },
+  { name: 'containers.providers.list',   method: 'GET',    path: '/v2/containers/providers',                              kind: 'read',    status: 'v1' },
+  { name: 'containers.pools.set',        method: 'POST',   path: '/v2/containers/:containerId/commands/pool',             kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];
 
 export type OperationName = (typeof OPERATIONS)[number]['name'];
@@ -432,6 +496,17 @@ export function isOperationName(name: string): name is OperationName {
 
 /** Operations every v1 deployment must implement (everything not reserved). */
 export const V1_OPERATIONS = OPERATIONS.filter((op) => op.status === 'v1');
+
+/**
+ * The rows that OWN a `method path` binding — every row except the aliases.
+ *
+ * This is the list anything that MOUNTS should read: the HTTP router, the WS
+ * upgrade handler, and any inventory that asserts one route per binding.
+ * Discovery, help and the CLI catalog read `OPERATIONS` instead, because an
+ * alias exists precisely to be listed. See `OperationBinding.aliasOf`.
+ */
+export const MOUNTED_OPERATIONS: readonly OperationBinding[] =
+  OPERATIONS.filter((op) => !('aliasOf' in op));
 
 /** Reserved operations — must answer `501 not_implemented`, never 404. */
 export const RESERVED_OPERATIONS = OPERATIONS.filter((op) => op.status === 'reserved');
