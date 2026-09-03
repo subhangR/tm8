@@ -98,9 +98,29 @@ describe('every row binds', () => {
     // Both WS rows are streams — the alias is a real catalog row and is
     // CLASSIFIED like one; it simply does not add a mount.
     expect(byMode.get('stream')).toEqual(['events.subscribe', 'containers.stream']);
-    expect(byMode.get('bytes')?.sort()).toEqual(['artifacts.export', 'bridge.fetchBlob', 'files.download']);
-    // -5, not -4: three byte rows plus TWO stream rows now.
-    expect(byMode.get('envelope')).toHaveLength(EXPECTED_ROWS - 5);
+    // BY NAME, and this used to be a tautology. `envelope` is the DEFAULT for
+    // anything absent from the closed `BYTES_OPERATIONS` set, so a byte row
+    // nobody classified lands in `envelope` and every count still balances —
+    // the old `envelope == EXPECTED_ROWS - 4` could not tell "correctly
+    // envelope" from "defaulted because nobody looked", and it would have
+    // passed forever for `containers.files.get` (a tar archive) and
+    // `containers.proxy` (whatever the exposed port served). Misclassified,
+    // the client utf8-decodes a tar, fails to parse it, and raises a
+    // ProtocolError blaming the SERVER for an envelope it never sent.
+    expect(byMode.get('bytes')?.sort()).toEqual([
+      'artifacts.export',
+      'bridge.fetchBlob',
+      'containers.files.get',
+      'containers.proxy',
+      'files.download',
+    ]);
+    // THE NEGATIVE CASE, so this cannot be satisfied by classifying everything
+    // as bytes. `containers.files.put` carries its tar in the REQUEST; the set
+    // classifies RESPONSES, and its response is `{ ok: true }`.
+    expect(byMode.get('bytes')).not.toContain('containers.files.put');
+    expect(byMode.get('envelope')).toContain('containers.files.put');
+    // -7: five byte rows plus two stream rows.
+    expect(byMode.get('envelope')).toHaveLength(EXPECTED_ROWS - 7);
     expect([...byMode.values()].reduce((n, list) => n + list.length, 0)).toBe(EXPECTED_ROWS);
   });
 });
@@ -155,18 +175,25 @@ describe('every row resolves through the client and the error mapping', () => {
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
     const blob = new Uint8Array([1, 2, 3]);
-    const fetchImpl = (async (input: RequestInfo | URL) => {
-      const isBlob =
-        String(input).includes('/download') ||
-        String(input).includes('/bridge/blobs/') ||
-        String(input).includes('/export');
-      return isBlob
-        ? new Response(blob, { status: 200 })
-        : new Response(JSON.stringify({ data: { echoed: String(input) }, requestId: 'req_ok' }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          });
-    }) as unknown as typeof fetch;
+    // THE MOCK IS TOLD THE MODE; it does not guess it from the URL.
+    //
+    // It used to decide "is this a blob" with `String(input).includes('/download')`
+    // and two more substrings — a second, independent classifier that had to
+    // agree with `responseMode` by coincidence of path spelling. It stopped
+    // agreeing the moment a byte row arrived whose path contains none of them
+    // (`containers.files.get` is `/v2/containers/:id/files`), and the symptom
+    // was this test failing with a tar-vs-JSON mismatch that looked like a
+    // defect in the client.
+    //
+    // Extending the substring list would work today and be wrong again for the
+    // next byte row. The loop below already KNOWS the mode, so it says so.
+    let expectBlob = false;
+    const fetchImpl = (async (input: RequestInfo | URL) => (expectBlob
+      ? new Response(blob, { status: 200 })
+      : new Response(JSON.stringify({ data: { echoed: String(input) }, requestId: 'req_ok' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))) as unknown as typeof fetch;
     const client = new Tm8Client({ baseUrl: 'http://127.0.0.1:4610', fetchImpl });
 
     let httpRows = 0;
@@ -174,6 +201,8 @@ describe('every row resolves through the client and the error mapping', () => {
       const mode = responseMode(op.name);
       if (mode === 'stream') continue;
       httpRows++;
+      // The one line that replaces the URL guessing above.
+      expectBlob = mode === 'bytes';
       if (mode === 'bytes') {
         const res = await client.download(op.name, { params: params(op.name) });
         expect([...res.bytes], op.name).toEqual([1, 2, 3]);
