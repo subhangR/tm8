@@ -1832,7 +1832,7 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
 
 /** The runtime half of `CreatableEntityKind` — the one place the set is stated. */
 export const CreatableEntityKindSchema = z.union([
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat']),
   CustomEntityKindSchema,
 ]);
 

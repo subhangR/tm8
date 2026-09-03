@@ -1,17 +1,17 @@
 import type {
-  CommandResult,
-  EntityDetail,
+  ChatMode,
   EntityId,
+  EntitySummary,
   MessageBatchResult,
   MessageView,
   SpaceId,
-  ChatMode,
+  CommandResult,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { createChatHomeFixturePort } from './fixtures';
 import { turnPartFromMessagePart } from './wire';
 import type {
-  ChatConfigureInput,
+  ChatCreateInput,
   ChatHomePort,
   ChatStartResult,
   ChatThreadDetail,
@@ -19,31 +19,60 @@ import type {
   ChatTurnPart,
 } from './types';
 
-/** The ruled minimal item from the L2 spaces.home chatThreads read. */
-export interface ChatThreadListItem {
-  rootMessageId: EntityId;
-  anchorId: EntityId;
+/**
+ * The chat facts this port needs off a listed row.
+ *
+ * IT IS NO LONGER A BRIDGE-SUPPLIED SHAPE (176). Before the chat entity, this
+ * came from `spaces.home`'s bespoke `chatThreads` projection, which existed
+ * only because a chat had no kind to list by — so the host had to inject a
+ * reader and the port had to survive its absence. A chat is an entity now, so
+ * this is folded from an ordinary `EntitySummary` with `state.kind === 'chat'`,
+ * the same read every other list in the product uses.
+ */
+interface ChatListItem {
+  chatId: EntityId;
+  aboutId: EntityId | null;
   teammateId: EntityId;
   model: string;
   mode: ChatMode;
   createdAt: string;
-  lastReplyAt: string | null;
-  /** PR188 review F4: root body excerpt so rows are distinguishable. */
-  title?: string | null;
-  replyCount?: number;
+  lastTurnAt: string | null;
+  title: string | null;
+  turnCount: number;
+  state: ChatThreadSummary['state'];
 }
 
-/** Injection points owned by L2. Every existing-seam operation is wired below. */
+/**
+ * Injection points still owned by the host. `listThreads` and `configureThread`
+ * are GONE: both were workarounds for a chat that was not an entity, and both
+ * are now ordinary seam calls. `readParts` stays as a test/override seam.
+ */
 export interface ChatHomeL2Bridge {
-  listThreads?(spaceId: SpaceId | string): Promise<readonly ChatThreadListItem[]>;
   readParts?(messageId: EntityId): Promise<readonly ChatTurnPart[]>;
-  configureThread?(input: ChatConfigureInput): Promise<ChatStartResult>;
 }
 
-const LIST_UNAVAILABLE =
-  'Conversation history is unavailable on this node because the space-wide chatThreads read has not landed yet.';
-const START_UNAVAILABLE =
-  'New chat is unavailable on this node because the write-once thread configuration operation has not landed yet.';
+function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): ChatListItem | null {
+  if (summary.state?.kind !== 'chat') return null;
+  const state = summary.state;
+  return {
+    chatId: summary.id,
+    aboutId,
+    teammateId: state.teammateId,
+    model: state.model,
+    mode: state.mode,
+    createdAt: summary.createdAt,
+    lastTurnAt: state.lastTurnAt,
+    title: summary.title,
+    turnCount: state.turnCount,
+    // The two axes the server projects separately, folded to the one word this
+    // surface draws. `turnState` is the queue, `runtimeState` the child: a
+    // chat with nothing queued whose runtime stopped is continuable, which is
+    // a different thing from idle and the composer says so.
+    state: state.turnState === 'running' || state.turnState === 'queued'
+      ? 'streaming'
+      : state.runtimeState === 'stopped' ? 'stopped-continuable' : 'idle',
+  };
+}
 
 export function createChatHomePortFromSeam(
   seam: Seam,
@@ -51,7 +80,7 @@ export function createChatHomePortFromSeam(
 ): ChatHomePort {
   if ('fixtureControls' in seam) return createChatHomeFixturePort().port;
 
-  const listCache = new Map<EntityId, ChatThreadListItem>();
+  const listCache = new Map<EntityId, ChatListItem>();
   const listSpaceCache = new Map<EntityId, SpaceId | string>();
   /** The last space this port listed — the self-heal refresh needs a scope. */
   let lastSpaceId: SpaceId | string | null = null;
@@ -59,20 +88,19 @@ export function createChatHomePortFromSeam(
   /**
    * Post-ship fix (2026-08-13, "This chat thread is not present in the latest
    * space-wide read" hit live): the cache is a COALESCER, not an authority.
-   * A thread that exists on the server but missed the last home read — a
-   * just-created chat, a re-created port, another tab's new thread — must not
-   * make the surface unreadable. On a miss, refresh ONCE from the bridge and
-   * only then fail with the honest message.
+   * A chat that exists on the server but missed the last list read — a
+   * just-created one, a re-created port, another tab's new chat — must not make
+   * the surface unreadable. On a miss, refresh ONCE and only then fail.
    */
-  const resolveItem = async (rootMessageId: EntityId): Promise<ChatThreadListItem> => {
-    const cached = listCache.get(rootMessageId);
+  const resolveItem = async (chatId: EntityId): Promise<ChatListItem> => {
+    const cached = listCache.get(chatId);
     if (cached) return cached;
-    if (lastSpaceId !== null && bridge.listThreads) {
+    if (lastSpaceId !== null) {
       await listThreads(lastSpaceId);
-      const refreshed = listCache.get(rootMessageId);
+      const refreshed = listCache.get(chatId);
       if (refreshed) return refreshed;
     }
-    throw new Error('This chat thread is not present in the latest space-wide read.');
+    throw new Error('This chat is not present in the latest space-wide read.');
   };
 
   const listTeammates: ChatHomePort['listTeammates'] = async (spaceId) => {
@@ -89,26 +117,55 @@ export function createChatHomePortFromSeam(
     }));
   };
 
+  /**
+   * The `about` target per chat.
+   *
+   * ONE READ PER CHAT, AND NAMED AS SUCH. A chat's subject is an edge, and no
+   * list read carries edges — so preserving the one host that scopes by it
+   * (Craft's picker, `thread.anchorId === selectedId`) costs a `connections`
+   * call each. It is bounded by the chat list itself, which is small by
+   * construction, and it is the honest Wave-1 shape: Wave 2's UI lane draws the
+   * `about` relation on the panel and this read moves with it.
+   */
+  const aboutTargets = async (
+    chatIds: readonly EntityId[],
+  ): Promise<Map<EntityId, EntityId | null>> => {
+    const pairs = await Promise.all(chatIds.map(async (chatId) => {
+      try {
+        const page = await seam.connections(chatId, { types: ['about'], direction: 'outgoing', limit: 1 });
+        return [chatId, page.items[0]?.target.id ?? null] as const;
+      } catch {
+        // A subject that cannot be read is not a reason to fail the list.
+        return [chatId, null] as const;
+      }
+    }));
+    return new Map(pairs);
+  };
+
   const listThreads: ChatHomePort['listThreads'] = async (spaceId) => {
     lastSpaceId = spaceId;
-    if (!bridge.listThreads) return [];
-    const items = await bridge.listThreads(spaceId);
-    for (const item of items) {
-      listCache.set(item.rootMessageId, item);
-      listSpaceCache.set(item.rootMessageId, spaceId);
-    }
-    const teammates = await listTeammates(spaceId);
+    const [result, teammates] = await Promise.all([
+      seam.query({ spaceId, kinds: ['chat'], sort: 'activityAt_desc', limit: 100 }),
+      listTeammates(spaceId),
+    ]);
     const labels = new Map(teammates.map((teammate) => [teammate.id, teammate.label]));
+    const subjects = await aboutTargets(result.page.items.map((item) => item.id));
+    const items = result.page.items
+      .map((summary) => itemFromSummary(summary, subjects.get(summary.id) ?? null))
+      .filter((item): item is ChatListItem => item !== null);
+    for (const item of items) {
+      listCache.set(item.chatId, item);
+      listSpaceCache.set(item.chatId, spaceId);
+    }
     return items.map<ChatThreadSummary>((item) => ({
-      rootId: item.rootMessageId,
-      anchorId: item.anchorId,
-      // F4: the root body is the only honest title a chat has. The literal
-      // 'Conversation' made every real row identical while the fixture port
-      // showed real titles — exactly the class of demo-only truth.
+      rootId: item.chatId,
+      anchorId: (item.aboutId ?? item.chatId) as EntityId,
       title: item.title?.trim() || 'Conversation',
-      preview: item.title?.trim() || 'Open to read this thread',
-      updatedAt: item.lastReplyAt ?? item.createdAt,
-      replyCount: item.replyCount ?? 0,
+      preview: item.title?.trim() || 'Open to read this chat',
+      updatedAt: item.lastTurnAt ?? item.createdAt,
+      // Turns, not replies: a chat is flat, so there is no reply count to give.
+      // Each turn is one human message, which is the number this row meant.
+      replyCount: item.turnCount,
       config: {
         teammateId: item.teammateId,
         teammateLabel: labels.get(item.teammateId) ?? 'Agent teammate',
@@ -116,24 +173,30 @@ export function createChatHomePortFromSeam(
         modelLabel: item.model,
         mode: item.mode,
       },
-      state: 'idle',
+      state: item.state,
     }));
   };
 
   return {
-    threadListUnavailableReason: bridge.listThreads ? null : LIST_UNAVAILABLE,
+    // The space-wide read is `entities.list kind=chat` — an ordinary list every
+    // node that has the chat kind serves. There is nothing left to be
+    // unavailable, so this is unconditionally null.
+    threadListUnavailableReason: null,
     listThreads,
     listTeammates,
-    async readThread(rootMessageId) {
-      const item = await resolveItem(rootMessageId);
-      const [rootDetail, replies, teammates] = await Promise.all([
-        seam.entity(rootMessageId),
-        seam.messages(item.anchorId, { rootMessageId, limit: 100 }),
-        listTeammates(listSpaceCache.get(rootMessageId) ?? ''),
+    async readThread(chatId) {
+      const item = await resolveItem(chatId);
+      // FLAT (176 §1.3). Every message of a chat is anchored ON the chat with
+      // no thread root, so this is one ordinary anchor read — no root detail to
+      // fetch separately, and no `{ rootMessageId }` scope to pass. The
+      // user->agent pairing that threading used to express lives in chat_turns.
+      const [page, teammates] = await Promise.all([
+        seam.messages(chatId, { limit: 100 }),
+        listTeammates(listSpaceCache.get(chatId) ?? lastSpaceId ?? ''),
       ]);
-      const root = messageFromDetail(rootDetail);
-      const teammateLabel = teammates.find((teammate) => teammate.id === item.teammateId)?.label ?? 'Agent teammate';
-      const messages = [root, ...replies.items];
+      const teammateLabel = teammates.find((teammate) => teammate.id === item.teammateId)?.label
+        ?? 'Agent teammate';
+      const messages = page.items;
       const turns = await Promise.all(
         messages.map(async (message) => ({
           messageId: message.id,
@@ -159,15 +222,15 @@ export function createChatHomePortFromSeam(
       );
       return {
         summary: {
-          rootId: item.rootMessageId,
-          anchorId: item.anchorId,
-          title: root.content.body || 'Conversation',
+          rootId: item.chatId,
+          anchorId: (item.aboutId ?? item.chatId) as EntityId,
+          title: item.title?.trim() || 'Conversation',
           // An in-flight turn's body is the claim placeholder ('Agent turn in
           // progress.'), not content — preview the last settled message instead.
           preview: [...messages].reverse().find((message) => !message.turnInFlight)?.content.body
             || 'No text response',
-          updatedAt: item.lastReplyAt ?? item.createdAt,
-          replyCount: replies.items.length,
+          updatedAt: item.lastTurnAt ?? item.createdAt,
+          replyCount: item.turnCount,
           config: {
             teammateId: item.teammateId,
             teammateLabel,
@@ -175,62 +238,59 @@ export function createChatHomePortFromSeam(
             modelLabel: item.model,
             mode: item.mode,
           },
-          state: 'idle',
+          state: item.state,
         },
         turns,
       } satisfies ChatThreadDetail;
     },
     startThread: {
-      unavailableReason: bridge.configureThread ? null : START_UNAVAILABLE,
-      async createRoot(input) {
-        const result = await seam.commands.postMessage({
+      unavailableReason: null,
+      async create(input: ChatCreateInput): Promise<ChatStartResult> {
+        const result = await seam.commands.startChat({
           clientMutationId: input.clientMutationId,
-          anchorIds: [input.anchorId],
+          spaceId: input.spaceId as SpaceId,
+          teammateId: input.teammateId,
+          model: input.model,
+          mode: input.mode,
+          // Held at today's behaviour ON PURPOSE: the project picker is the
+          // follow-up UI change, and sending anything else from here would pick
+          // a directory on the human's behalf through a control they cannot yet
+          // see. Every chat, scratch included, gets the full tool set in
+          // whatever directory it is bound to.
+          workdirMode: 'scratch',
           body: input.body,
-          /* Omitted rather than sent empty: the server validates the array
-             when it is present, and an empty one is a claim about files
-             nobody staged. */
+          ...(input.aboutId ? { aboutId: input.aboutId } : {}),
+          /* Omitted rather than sent empty: the server validates the array when
+             it is present, and an empty one is a claim about files nobody
+             staged. */
           ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
         });
-        const threadRootId = messageIdFrom(result);
-        // Seed the caches from what THIS port just wrote, so the immediate
-        // configure -> read -> post sequence never races the next home read.
-        // teammateId/model are provisional until configure() fills them.
-        listCache.set(threadRootId, {
-          rootMessageId: threadRootId,
-          anchorId: input.anchorId,
-          teammateId: '' as EntityId,
-          model: '',
-          mode: 'ask',
-          createdAt: new Date().toISOString(),
-          lastReplyAt: null,
-          title: input.body,
-        });
-        listSpaceCache.set(threadRootId, input.spaceId);
-        lastSpaceId = input.spaceId;
-        return { threadRootId };
-      },
-      async configure(input) {
-        if (!bridge.configureThread) throw new Error(START_UNAVAILABLE);
-        const result = await bridge.configureThread(input);
-        const seeded = listCache.get(input.rootMessageId);
-        if (seeded) {
-          listCache.set(input.rootMessageId, {
-            ...seeded,
-            teammateId: input.teammateId,
-            model: input.model,
-            mode: input.mode,
-          });
+        const item = itemFromSummary(result.chat, input.aboutId ?? null);
+        // Seed the cache from what THIS port just wrote, so the immediate
+        // create -> read -> post sequence never races the next list read.
+        if (item) {
+          listCache.set(item.chatId, item);
+          listSpaceCache.set(item.chatId, input.spaceId);
         }
-        return result;
+        lastSpaceId = input.spaceId;
+        return {
+          chatId: result.chat.id,
+          teammateId: input.teammateId,
+          model: input.model,
+          mode: input.mode,
+        };
       },
     },
     async postTurn(input) {
-      const item = await resolveItem(input.threadRootId);
+      // ANCHORED ON THE CHAT, and with no parent. That is the whole re-key: a
+      // turn used to be a threaded reply under the root message because the
+      // root message WAS the chat. Now the chat is the anchor, the server's
+      // batch RPC sees a chat anchor and queues the turn, and it does so for
+      // whoever wrote it — a human here, a work session or another chat
+      // elsewhere.
       const result = await seam.commands.postMessage({
         clientMutationId: input.clientMutationId,
-        anchorIds: [item.anchorId],
-        parentMessageId: input.threadRootId,
+        anchorIds: [input.chatId],
         body: input.body,
         ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
       });
@@ -253,9 +313,4 @@ function messageIdFrom(result: CommandResult | MessageBatchResult): EntityId {
   throw new Error('messages.post stored no message in its result.');
 }
 
-function messageFromDetail(detail: EntityDetail): MessageView {
-  if (detail.kind !== 'message' || detail.state.kind !== 'message' || detail.content.kind !== 'message') {
-    throw new Error(`Chat root ${detail.id} is not a message.`);
-  }
-  return detail as unknown as MessageView;
-}
+export type { MessageView };

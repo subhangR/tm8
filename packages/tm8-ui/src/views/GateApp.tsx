@@ -1387,36 +1387,17 @@ export function GateApp(props: GateAppProps = {}) {
   const channelEntities = data.rowsFor('channel')(undefined);
 
   /**
-   * PR188 review F1: the UI half of the chat composition. The server got its
-   * composition commit (compose.ts); without this bridge the shipped home
-   * rendered a disabled composer blaming the node for operations it serves.
-   * Amendment 10 seam calls: `home` (thread list) + `startChatThread`.
+   * THE BRIDGE IS EMPTY NOW (176), and that is the change.
+   *
+   * It carried two injected readers — `listThreads` over `spaces.home`'s
+   * bespoke `chatThreads` projection, and `configureThread` over
+   * `chat.threads.start` — because a chat was not an entity: it had no kind to
+   * list by and no door of its own that a port could reach. Both are ordinary
+   * seam calls in `real-port.ts` now (`entities.list kind=chat` and
+   * `chat.start`), so the host injects nothing and the port cannot be
+   * half-wired. The object stays so a later override (`readParts`) has a place.
    */
-  const chatBridge = useMemo(() => ({
-    listThreads: async (sid: string) => (await data.seam.home(sid)).chatThreads ?? [],
-    configureThread: async (input: {
-      rootMessageId: string; teammateId: string; model: string;
-      mode: ChatMode; clientMutationId: string;
-    }) => {
-      const result = await data.seam.commands.startChatThread({
-        ...input,
-        // Held at today's behaviour ON PURPOSE. The picker and its default
-        // ladder (last-used project → the Space's most-recently-linked one →
-        // scratch only when the Space links nothing) are the follow-up UI
-        // change; sending anything else from here would pick a directory on
-        // the human's behalf through a control they cannot yet see or change.
-        // What this PR does give every thread, scratch included, is the full
-        // tool set in whatever directory it is bound to.
-        workdirMode: 'scratch',
-      });
-      return {
-        threadRootId: result.thread.rootMessageId,
-        teammateId: result.thread.teammateId,
-        model: result.thread.model,
-        mode: result.thread.mode,
-      };
-    },
-  }), [data.seam]);
+  const chatBridge = useMemo(() => ({}), []);
 
   const homeSlots = useMemo(
     () =>
@@ -1670,7 +1651,6 @@ export function GateApp(props: GateAppProps = {}) {
              node that serves both operations. */
           chatBridge={chatBridge}
           {...(viewerMemberId ? { viewerMemberId } : {})}
-          {...(channelEntities[0]?.id ? { chatAnchorId: channelEntities[0].id } : {})}
           {...(data.spaces.find((sp) => sp.id === data.spaceId)?.name
             ? { spaceLabel: data.spaces.find((sp) => sp.id === data.spaceId)?.name }
             : {})}
@@ -2242,11 +2222,15 @@ export function GateApp(props: GateAppProps = {}) {
                   spaceId={data.spaceId}
                   nodeKey={nodeKey}
                   bridge={chatBridge}
-                  /* PR188 review F3: the space id is NOT an entity and
-                     messages.post 404s on it (measured). Bare-home chats anchor
-                     to the seeded default channel; the per-user home thread is
-                     the ruled follow-up (R1) and needs a server seam first. */
-                  anchorId={channelEntities[0]?.id}
+                  /* THE DEFAULT-CHANNEL SUBSTITUTION IS GONE (176).
+                     It read: "the space id is NOT an entity and messages.post
+                     404s on it (measured), so bare-home chats anchor to the
+                     seeded default channel". Both halves were true and the
+                     workaround is no longer needed — a chat anchors its own
+                     transcript, so bare Home passes no subject at all rather
+                     than borrowing a channel's identity for every conversation
+                     that had nothing to do with it. A contextual host (Craft)
+                     passes `aboutId`, which the server writes as an edge. */
                   /* One read per space, shared with every other rich input in
                      the shell — see `useGateData`. */
                   skillOptions={data.skillOptions}

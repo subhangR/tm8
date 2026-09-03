@@ -2,9 +2,8 @@ import type { ActorSummary, EntityId } from '@tm8/contract';
 import { mergeChatTurnFrame } from './turn-model';
 import type {
   ChatHomePort,
-  ChatConfigureInput,
   ChatPostInput,
-  ChatRootInput,
+  ChatCreateInput,
   ChatThreadDetail,
   ChatThreadSummary,
   ChatTurnFrame,
@@ -162,8 +161,8 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
 };
 
 export interface ChatHomeFixtureControls {
-  roots: ChatRootInput[];
-  configs: ChatConfigureInput[];
+  /** Every `chat.start` this fixture served, in order. */
+  roots: ChatCreateInput[];
   posts: ChatPostInput[];
   interrupts: EntityId[];
   emit(frame: ChatTurnFrame): void;
@@ -174,8 +173,7 @@ export function createChatHomeFixturePort(
 ): { port: ChatHomePort; controls: ChatHomeFixtureControls } {
   const details = new Map(initial.map((thread) => [thread.summary.rootId, structuredClone(thread)]));
   const listeners = new Set<(frame: ChatTurnFrame) => void>();
-  const roots: ChatRootInput[] = [];
-  const configs: ChatConfigureInput[] = [];
+  const roots: ChatCreateInput[] = [];
   const posts: ChatPostInput[] = [];
   const interrupts: EntityId[] = [];
   let serial = 100;
@@ -206,30 +204,32 @@ export function createChatHomeFixturePort(
     },
     startThread: {
       unavailableReason: null,
-      async createRoot(input) {
+      // ONE CALL (176): the chat and its opening turn are created together, so
+      // the fixture no longer models a message that is not yet a chat.
+      async create(input) {
         roots.push(input);
         serial += 1;
-        const rootId = `019f0000-0000-7000-8000-${String(serial).padStart(12, '0')}` as EntityId;
-        details.set(rootId, {
+        const chatId = `019f0000-0000-7000-8000-${String(serial).padStart(12, '0')}` as EntityId;
+        details.set(chatId, {
           summary: {
-            rootId,
-            anchorId: input.anchorId,
+            rootId: chatId,
+            anchorId: (input.aboutId ?? chatId) as EntityId,
             title: input.body,
             preview: input.body,
             updatedAt: new Date().toISOString(),
             replyCount: 1,
             config: {
-              teammateId: AGENT.id as EntityId,
-              teammateLabel: 'Pending configuration',
-              model: '',
-              modelLabel: 'Pending configuration',
-              mode: 'ask',
+              teammateId: input.teammateId,
+              teammateLabel: input.teammateId === AGENT.id ? 'Forge' : 'Researcher',
+              model: input.model,
+              modelLabel: input.model,
+              mode: input.mode,
             },
-            state: 'idle',
+            state: 'streaming',
           },
           turns: [
             {
-              messageId: rootId,
+              messageId: chatId,
               role: 'user',
               author: HUMAN,
               createdAt: new Date().toISOString(),
@@ -238,25 +238,8 @@ export function createChatHomeFixturePort(
             },
           ],
         });
-        return { threadRootId: rootId };
-      },
-      async configure(input) {
-        configs.push(input);
-        const detail = details.get(input.rootMessageId);
-        if (!detail) throw new Error(`Fixture thread ${input.rootMessageId} does not exist.`);
-        detail.summary = {
-          ...detail.summary,
-          config: {
-            teammateId: input.teammateId,
-            teammateLabel: input.teammateId === AGENT.id ? 'Forge' : 'Researcher',
-            model: input.model,
-            modelLabel: input.model,
-            mode: input.mode,
-          },
-          state: 'streaming',
-        };
         return {
-          threadRootId: input.rootMessageId,
+          chatId,
           teammateId: input.teammateId,
           model: input.model,
           mode: input.mode,
@@ -265,8 +248,8 @@ export function createChatHomeFixturePort(
     },
     async postTurn(input) {
       posts.push(input);
-      const detail = details.get(input.threadRootId);
-      if (!detail) throw new Error(`Fixture thread ${input.threadRootId} does not exist.`);
+      const detail = details.get(input.chatId);
+      if (!detail) throw new Error(`Fixture chat ${input.chatId} does not exist.`);
       serial += 1;
       const messageId = `019f0000-0000-7000-8001-${String(serial).padStart(12, '0')}` as EntityId;
       detail.turns.push({
@@ -354,7 +337,6 @@ export function createChatHomeFixturePort(
     port,
     controls: {
       roots,
-      configs,
       posts,
       interrupts,
       emit(frame) {
@@ -362,8 +344,8 @@ export function createChatHomeFixturePort(
         // publishes, so a snapshot read always contains what earlier frames
         // carried. The fixture must model that or replay-pruning cannot be
         // exercised honestly.
-        const stored = details.get(frame.threadRootId);
-        if (stored) details.set(frame.threadRootId, mergeChatTurnFrame(stored, frame));
+        const stored = details.get(frame.chatId);
+        if (stored) details.set(frame.chatId, mergeChatTurnFrame(stored, frame));
         for (const listener of listeners) listener(frame);
       },
     },
