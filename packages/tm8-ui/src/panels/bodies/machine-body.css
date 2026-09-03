@@ -11,7 +11,7 @@
    not a preference.
 
    `container` is the second kind with `composition: 'frame'`. The first is
-   `artifact`, and its sheet records what went wrong: the frame's section took
+   `artifact`, and its sheet records the overpaint that resulted: the frame's section took
    `min-height: 0` while `.pn-preview__frame` beneath it held a 420px floor,
    so the section shrank freely, nothing on the path clipped, and on a short
    panel THE IFRAME PAINTED STRAIGHT OVER THE BLOCK BELOW IT. See panels.css
