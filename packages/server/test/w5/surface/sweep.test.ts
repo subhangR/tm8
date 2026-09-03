@@ -900,16 +900,25 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // merges silently and one short. This branch carried 162 and main carried
     // 163, so the values differed and git had to ask.
     //
-    // MEASURED on the tree actually being merged, not derived from either side:
-    //   ls db/migrations/*.sql | wc -l   -> 164
-    // (main 163 + this branch's one file; cross-checked against
-    //  `git ls-tree -r --name-only origin/main db/migrations | grep -c` = 163)
+    // 164 -> 165, by `179_chat_tool_audit_provenance.sql` (Wave 2, L2-runtime).
+    // The fourth bump in two days, and the second one this line has caught
+    // rather than inherited — which is the whole argument for the exact literal
+    // and against every clever alternative.
+    //
+    // MEASURED on the tree actually being merged, never carried over from the
+    // value that was here:
+    //   git ls-tree -r --name-only HEAD db/migrations | grep -c '\.sql$'  -> 165
+    // cross-checked against origin/main after rebasing:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c    -> 164
+    // (main 164, which now includes 177 from #574, + this branch's one file).
+    // `git ls-tree` rather than `ls`, so an untracked stray .sql in the working
+    // directory cannot inflate the number the literal is set from.
     //
     // A NEW EXACT LITERAL, not `migrationFiles().length`: the note forbids the
     // live-computed form for a reason that still holds — it would pass on any
     // chain length and could no longer notice a chain that silently shrank,
     // which is the one thing this assertion exists to catch.
-    expect(server.appliedMigrations.length).toBe(164);
+    expect(server.appliedMigrations.length).toBe(165);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

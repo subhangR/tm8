@@ -5,7 +5,6 @@ import {
   CollabError,
   launchModel,
   type EntitySummary,
-  type OperationName,
   type StartChatInput,
   type StartChatResult,
 } from '@tm8/contract';
@@ -114,34 +113,50 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
 }
 
 /**
- * Every chat operation is human-only, and the guard is a property of the GROUP.
+ * Every chat operation is human-only.
  *
  * `credentials.ts` states the reasoning at length and it holds identically
- * here: four copies of a check are four places to be correct, and the failure
- * that actually happens is a FIFTH operation added later, born unguarded and
- * looking exactly like its guarded neighbours. Mapping the wrapper over the
- * record means a new entry cannot be registered without passing through it.
+ * here: N copies of a check are N places to be correct, and the failure that
+ * actually happens is an operation added later, born unguarded and looking
+ * exactly like its guarded neighbours.
  *
  * This is layer 1 of two. Layer 2 is `internal.require_human_auth_kind()`
  * inside `start_chat`, reading the `tm8.auth_kind` claim. Either alone would
  * refuse the call; both are here because this one is the readable one and that
  * one is the one a future caller reaching the RPC another way cannot bypass.
  */
-const CHAT_HANDLERS_ARE_HUMAN_ONLY = true;
+function humanOnly(handler: OperationHandler): OperationHandler {
+  return async (ctx) => {
+    refuseChatRuntimeBearer(ctx);
+    return handler(ctx);
+  };
+}
 
+/**
+ * `registerAll` WITH AN OBJECT LITERAL, and neither half is a style choice.
+ *
+ * `tools/conformance`'s source inventory parses this file and requires every
+ * registration to name its operation as a string literal — `register` with a
+ * literal, or `registerAll` with a literal object whose keys are literal. The
+ * first shape of this function mapped a wrapper over a record and called
+ * `registry.register(name as OperationName, …)`, which the inventory rightly
+ * refused: a computed name makes the registered surface unauditable, so
+ * `chat.start` would have vanished from the very census that exists to say what
+ * this node mounts.
+ *
+ * So the wrapper is applied per entry rather than over the record. That trades
+ * away the by-construction guarantee — a new entry here CAN forget `humanOnly`
+ * — and `test/chat/handlers-human-only.test.ts` buys it back where it belongs:
+ * it walks every operation this function registers and asserts each one refuses
+ * a chat-runtime credential, so a future unguarded entry fails a test rather
+ * than shipping.
+ */
 export function registerChatHandlers(
   registry: HandlerRegistry,
   facade: FacadeDeps,
   chat?: ChatHandlerDeps,
 ): void {
-  const handlers: Partial<Record<OperationName, OperationHandler>> = {
-    'chat.start': startChat(facade, chat),
-  };
-  for (const [name, handler] of Object.entries(handlers)) {
-    if (!handler) continue;
-    registry.register(name as OperationName, async (ctx) => {
-      if (CHAT_HANDLERS_ARE_HUMAN_ONLY) refuseChatRuntimeBearer(ctx);
-      return handler(ctx);
-    });
-  }
+  registry.registerAll({
+    'chat.start': humanOnly(startChat(facade, chat)),
+  });
 }
