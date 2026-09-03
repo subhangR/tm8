@@ -29,6 +29,14 @@ import type {
   WorkSessionEndedKind,
   WorkSessionKind,
   AcceptanceCriterion,
+  ContainerIsolationClass,
+  ContainerLifecycle,
+  ContainerProfile,
+  ContainerShareMode,
+  ContainerSpec,
+  ContainerStatus,
+  ContainerSurfaceKind,
+  ContainerUsage,
   ActorSummary,
   ChatMode,
   ChatWorkdirMode,
@@ -146,6 +154,12 @@ export const ENTITY_COLUMNS = `
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
+  ctr.status as ctr_status, ctr.profile as ctr_profile, ctr.provider as ctr_provider,
+  ctr.isolation as ctr_isolation, ctr.node_id as ctr_node_id, ctr.image as ctr_image,
+  ctr.spec as ctr_spec, ctr.lifecycle as ctr_lifecycle, ctr.surfaces as ctr_surfaces,
+  ctr.share_mode as ctr_share_mode, ctr.started_at as ctr_started_at,
+  ctr.expires_at as ctr_expires_at, ctr.error as ctr_error, ctr.title as ctr_title,
+  ctr.exposed as ctr_exposed, crs.usage as ctr_usage,
   pr.title as pr_title, pr.repo as pr_repo, pr.number as pr_number,
   pr.state as pr_state, pr.ci_status as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
@@ -164,6 +178,110 @@ export const ENTITY_COLUMNS = `
  * them somewhere, and doing it once here beats a per-kind query path that can
  * drift kind by kind.
  */
+// --- containers (177) -------------------------------------------------------
+
+const CONTAINER_STATUSES_SET = new Set<ContainerStatus>([
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+]);
+
+/**
+ * A status the contract does not know is reported as `failed`, not dropped and
+ * not passed through. The column is CHECK-constrained, so this can only fire
+ * on a node reading a newer database than its own build — and the honest
+ * answer there is "something is wrong with this container", never a value the
+ * client's exhaustive switch will fall through.
+ */
+function ctrStatusOf(raw: string | null): ContainerStatus {
+  if (raw && CONTAINER_STATUSES_SET.has(raw as ContainerStatus)) return raw as ContainerStatus;
+  return 'failed';
+}
+
+function ctrProfileOf(raw: string | null): ContainerProfile {
+  const known: ContainerProfile[] = ['shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom'];
+  return known.includes(raw as ContainerProfile) ? (raw as ContainerProfile) : 'custom';
+}
+
+function ctrIsolationOf(raw: string | null): ContainerIsolationClass {
+  const known: ContainerIsolationClass[] = ['process', 'container', 'gvisor', 'microvm', 'vm'];
+  // `process` is the WEAKEST class, so an unknown value degrades to claiming
+  // the least isolation rather than the most. A wrong guess upward would tell
+  // a reader their container is more contained than it is.
+  return known.includes(raw as ContainerIsolationClass) ? (raw as ContainerIsolationClass) : 'process';
+}
+
+function ctrSurfacesOf(raw: unknown): ContainerSurfaceKind[] {
+  const known: ContainerSurfaceKind[] = ['terminal', 'screen', 'browser', 'adb', 'docker', 'http'];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((k): k is ContainerSurfaceKind => known.includes(k as ContainerSurfaceKind));
+}
+
+function ctrShareModeOf(raw: string | null): ContainerShareMode {
+  return raw === 'space' || raw === 'explicit' ? raw : 'none';
+}
+
+function ctrLifecycleOf(raw: Record<string, unknown> | null): ContainerLifecycle {
+  const row = raw ?? {};
+  const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+  return {
+    ephemeral: row.ephemeral !== false,
+    ttlSeconds: num(row.ttlSeconds),
+    idleHibernateSeconds: num(row.idleHibernateSeconds),
+    graceSeconds: typeof row.graceSeconds === 'number' ? row.graceSeconds : 600,
+    snapshotOnStop: row.snapshotOnStop === true,
+  };
+}
+
+function ctrSpecOf(raw: Record<string, unknown> | null, profile: ContainerProfile): ContainerSpec {
+  const row = (raw ?? {}) as Partial<ContainerSpec>;
+  return {
+    profile: row.profile ?? profile,
+    ...(row.image !== undefined ? { image: row.image } : {}),
+    cpus: typeof row.cpus === 'number' ? row.cpus : 1,
+    memMiB: typeof row.memMiB === 'number' ? row.memMiB : 1024,
+    ...(row.diskMiB !== undefined ? { diskMiB: row.diskMiB } : {}),
+    // Guest-only by construction: the door never writes a host path into
+    // `spec`, and this read would carry one to the client if it did (R5).
+    mounts: Array.isArray(row.mounts)
+      ? row.mounts.map((m: { guest?: unknown; ro?: unknown }) => ({
+        guest: String(m.guest ?? ''), ro: m.ro === true,
+      }))
+      : [],
+    env: (row.env ?? {}) as Record<string, string>,
+    ports: Array.isArray(row.ports) ? row.ports : [],
+    network: row.network ?? { preset: 'balanced', allow: [] },
+    surfaces: row.surfaces ?? {},
+    labels: (row.labels ?? {}) as Record<string, string>,
+  };
+}
+
+function ctrUsageOf(raw: Record<string, unknown> | null): ContainerUsage | null {
+  // NULL IS A MEASURED ABSENCE — no heartbeat has landed — and renders
+  // nothing. Defaulting to zeros would draw an idle machine.
+  if (!raw) return null;
+  const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+  return { cpuPct: num(raw.cpuPct), memMiB: num(raw.memMiB), diskMiB: num(raw.diskMiB) };
+}
+
+function ctrExposedOf(raw: unknown): Array<{ port: number; url: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((r): r is { port: number; url: string } =>
+      typeof r === 'object' && r !== null && typeof (r as { port?: unknown }).port === 'number')
+    .map((r) => ({ port: r.port, url: String(r.url ?? '') }));
+}
+
+function ctrSurfaceDetailOf(
+  surfaces: ContainerSurfaceKind[],
+  live: boolean,
+): Partial<Record<ContainerSurfaceKind, { live: boolean }>> {
+  // PARTIAL by design: a container with no adb surface omits the key rather
+  // than carrying a fake one, so every consumer must guard.
+  const detail: Partial<Record<ContainerSurfaceKind, { live: boolean }>> = {};
+  for (const kind of surfaces) detail[kind] = { live };
+  return detail;
+}
+
 export const ENTITY_FROM = `
   from public.entities e
   left join public.entity_counters ec on ec.entity_id = e.id
@@ -213,7 +331,19 @@ export const ENTITY_FROM = `
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
   left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
+  left join public.containers ctr        on ctr.entity_id = e.id
+  -- Usage is folded in AT READ TIME from the operational side table, which has
+  -- no capture_event and no version bump. Heartbeats must never touch the
+  -- entity: a 10s periodic UPDATE on the detail row would emit entity.upsert
+  -- per container and starve live renames (the migration-165 lesson, §15).
+  left join public.container_runtime_state crs on crs.entity_id = e.id
 `;
+// NOTE what is NOT selected above: `ctr.runtime_ref` and `ctr.host_spec`.
+// R5 — `internal.command_entity` (007:36) embeds entity_content in the command
+// result a client receives, so anything reachable here reaches the client.
+// Native runtime ids and host bind-mount paths stay server-side; they are
+// reachable through `containers.providers.list` and `containers.logs`, which
+// are node-side reads with their own authorization.
 
 export interface EntityRow {
   id: string;
@@ -356,6 +486,24 @@ export interface EntityRow {
   wt_base_commit_oid: string | null;
   wt_status: string | null;
   wt_status_changed_at: Date | string | null;
+  // containers (177). NO `ctr_runtime_ref` and NO `ctr_host_spec` — see the
+  // note under ENTITY_FROM.
+  ctr_status: string | null;
+  ctr_profile: string | null;
+  ctr_provider: string | null;
+  ctr_isolation: string | null;
+  ctr_node_id: string | null;
+  ctr_image: string | null;
+  ctr_spec: Record<string, unknown> | null;
+  ctr_lifecycle: Record<string, unknown> | null;
+  ctr_surfaces: unknown;
+  ctr_share_mode: string | null;
+  ctr_started_at: Date | string | null;
+  ctr_expires_at: Date | string | null;
+  ctr_error: string | null;
+  ctr_title: string | null;
+  ctr_exposed: unknown;
+  ctr_usage: Record<string, unknown> | null;
   /** pull_requests mirror columns; optional keeps legacy row fixtures source-compatible. */
   pr_title?: string | null;
   pr_repo?: string | null;
@@ -1211,6 +1359,10 @@ export function titleOf(row: EntityRow): string {
       // An empty one is legal (the column defaults to '') and must still render
       // as something a human can read, never as an id (L3).
       return row.chat_title && row.chat_title.length > 0 ? row.chat_title : 'Chat';
+    case 'container':
+      // Its own detail-row title — MIRRORS the projector twin, the same way
+      // graph and artifact do.
+      return row.ctr_title ?? 'Container';
     case 'worktree':
       // The branch IS the human name of a worktree; paths are server-computed
       // noise and ids are forbidden as titles (L3).
@@ -1530,6 +1682,24 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         turnCount: Number(row.chat_turn_count ?? 0),
         lastTurnAt: isoOrNull(row.chat_last_turn_at),
       };
+    case 'container': {
+      // Hot and small — this rides EVERY list row, so it carries the surface
+      // KINDS that exist and not their detail. `usage` is content, not state.
+      const profile = ctrProfileOf(row.ctr_profile);
+      return {
+        kind: 'container',
+        status: ctrStatusOf(row.ctr_status),
+        profile,
+        provider: row.ctr_provider ?? '',
+        isolation: ctrIsolationOf(row.ctr_isolation),
+        nodeId: row.ctr_node_id ?? '',
+        surfaces: ctrSurfacesOf(row.ctr_surfaces),
+        ephemeral: ctrLifecycleOf(row.ctr_lifecycle).ephemeral,
+        shareMode: ctrShareModeOf(row.ctr_share_mode),
+        startedAt: isoOrNull(row.ctr_started_at),
+        expiresAt: isoOrNull(row.ctr_expires_at),
+      };
+    }
     case 'worktree':
       // SEMANTIC lifecycle only. Operational disk health lives in
       // worktree_allocations, which is deliberately not on this read: state
@@ -1875,6 +2045,34 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   if (row.kind.startsWith('c:')) {
     return { ...base, canEdit: live, canAddChild: live, canPull: live };
   }
+  if (row.kind === 'container') {
+    // The six container verbs (§15), derived from status + share_mode.
+    //
+    // They GATE THE BUTTON, not the dot. `canAttach` says the viewer is
+    // ALLOWED to open the screen; whether pixels are flowing comes from
+    // `seam.liveness.statusOf` (R-UI-5) and is a different question.
+    //
+    // `canDelete` stays false: a container is not deleted, it is DESTROYED,
+    // and `entities.delete` refuses the kind. Offering a delete control that
+    // the only door for it refuses would be a lie in the UI.
+    const status = ctrStatusOf(row.ctr_status);
+    const running = status === 'running';
+    const surfaces = ctrSurfacesOf(row.ctr_surfaces);
+    // `terminal` is reached through `containers.terminal.start`, not through a
+    // surface grant — so it does not make a container attachable.
+    const attachable = surfaces.some((kind) => kind !== 'terminal');
+    return {
+      ...base,
+      canEdit: live,
+      canDelete: false,
+      canStart: status === 'stopped',
+      canStop: running || status === 'paused',
+      canDestroy: live && status !== 'destroying' && status !== 'destroyed',
+      canAttach: running && attachable,
+      canControl: running && attachable,
+      canExec: running,
+    };
+  }
   return base;
 }
 
@@ -2059,6 +2257,23 @@ export function contentOf(row: EntityRow): EntityContent {
         layout: row.graph_layout ?? {},
         source: row.graph_source,
       };
+    case 'container': {
+      const status = ctrStatusOf(row.ctr_status);
+      const surfaces = ctrSurfacesOf(row.ctr_surfaces);
+      const profile = ctrProfileOf(row.ctr_profile);
+      return {
+        kind: 'container',
+        image: row.ctr_image ?? '',
+        spec: ctrSpecOf(row.ctr_spec, profile),
+        lifecycle: ctrLifecycleOf(row.ctr_lifecycle),
+        // A surface is live only while the machine is; a recorded surface on a
+        // stopped container is a fact about its shape, not about a pipe.
+        surfaceDetail: ctrSurfaceDetailOf(surfaces, status === 'running'),
+        error: row.ctr_error ?? null,
+        usage: ctrUsageOf(row.ctr_usage),
+        exposed: ctrExposedOf(row.ctr_exposed),
+      };
+    }
     case 'worktree':
       return {
         kind: 'worktree',

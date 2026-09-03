@@ -182,8 +182,23 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
   'spaces.interactionProfile.setDefault',
 ]);
 
+// `container` is deliberately ABSENT from EDITABLE_KINDS: `entities.patch`
+// refuses the kind outright (it is in RESTRICTED_LIFECYCLE_KINDS), so listing
+// it here would advertise an action the only door for it refuses. A container
+// is renamed through `containers.update`.
 const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill']);
-const HIERARCHICAL_KINDS = new Set(['task', 'doc', 'channel', 'collection']);
+// READING structure vs CHANGING it — one set could not answer both once
+// `container` arrived, and conflating them is how an action list comes to
+// advertise a verb the door refuses.
+//
+// `container` IS hierarchical to READ: nesting is real (a `dind`/microvm
+// parent holds children, §4.2), the tree renders it, and `entities.children`
+// answers for it. It is NOT movable: `entities.move` calls
+// `assertGenericLifecycle`, which refuses the kind, because re-parenting a
+// container would move a running runtime between owners without the runtime
+// hearing about it.
+const HIERARCHICAL_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'container']);
+const MOVABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection']);
 const PULLABLE_KINDS = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
 function operationParams(operation: OperationName): string[] {
@@ -205,9 +220,14 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
     case 'entities.patch':
       return live && EDITABLE_KINDS.has(row.kind);
     case 'entities.move':
-      return live && HIERARCHICAL_KINDS.has(row.kind);
+      return live && MOVABLE_KINDS.has(row.kind);
     case 'entities.delete':
-      return live && row.kind !== 'member' && row.kind !== 'project' && row.kind !== 'interaction_profile';
+      // `container` joins the refusals: it is DESTROYED, not deleted, and
+      // `containers.destroy` stops the runtime before soft-deleting the
+      // envelope. Advertising a delete the door refuses would offer a control
+      // whose only outcome is a 403.
+      return live && row.kind !== 'member' && row.kind !== 'project'
+        && row.kind !== 'interaction_profile' && row.kind !== 'container';
     case 'entities.restore':
       return false;
     case 'entities.children':

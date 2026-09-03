@@ -20,6 +20,8 @@ import {
   ContainersUpdateInputSchema,
   CreatableEntityKindSchema,
   CoreEntityKindSchema,
+  EntityContentSchema,
+  EntityStateSchema,
   OPERATIONS,
   getOperation,
   isSecretLookingEnvKey,
@@ -230,3 +232,112 @@ describe('the narrow unions that are easy to widen by accident', () => {
     expect(ContainersCreateInputSchema.safeParse(createInput({ confirmUntrusted: false })).success).toBe(false);
   });
 });
+
+describe('EntityState / EntityContent carry a container arm — and every other kind', () => {
+  // WHY THIS TEST EXISTS. Both unions are annotated `z.ZodType<EntityState>`,
+  // and that annotation checks the schema PARSES to the type — it does NOT
+  // check the union is exhaustive over the type's arms. A union missing an arm
+  // is still assignable, so adding a TS arm and forgetting the zod one is
+  // invisible to `tsc`. That is exactly what happened when `container` landed:
+  // every file compiled and a real container payload failed `safeParse` at
+  // runtime. Lane D found it against its fixtures, one package downstream.
+  //
+  // This is the assertion that catches it here instead, and catches the next
+  // kind too.
+  const state = {
+    kind: 'container' as const,
+    status: 'running' as const,
+    profile: 'shell' as const,
+    provider: 'fake',
+    isolation: 'process' as const,
+    nodeId: 'node-a',
+    surfaces: ['terminal' as const],
+    ephemeral: true,
+    shareMode: 'none' as const,
+    startedAt: '2026-09-03T00:00:00.000Z',
+    expiresAt: null,
+  };
+
+  const content = {
+    kind: 'container' as const,
+    image: 'alpine:3',
+    spec: {
+      profile: 'shell' as const, cpus: 1, memMiB: 512, mounts: [], env: {}, ports: [],
+      network: { preset: 'balanced' as const, allow: [] }, surfaces: {}, labels: {},
+    },
+    lifecycle: {
+      ephemeral: true, ttlSeconds: null, idleHibernateSeconds: null,
+      graceSeconds: 600, snapshotOnStop: false,
+    },
+    surfaceDetail: { terminal: { live: true } },
+    error: null,
+    usage: null,
+    exposed: [],
+  };
+
+  it('accepts a container state payload', () => {
+    const parsed = EntityStateSchema.safeParse(state);
+    expect(parsed.success).toBe(true);
+  });
+
+  it('accepts a container content payload', () => {
+    const parsed = EntityContentSchema.safeParse(content);
+    expect(parsed.success).toBe(true);
+  });
+
+  it('REFUSES a runtimeRef smuggled into content (R5)', () => {
+    // `.strict()` is what makes putting it back a red rather than a silent
+    // leak of a native runtime id to every client that can see the entity.
+    expect(EntityContentSchema.safeParse({ ...content, runtimeRef: 'docker://abc' }).success)
+      .toBe(false);
+  });
+
+  it('REFUSES a host path in a read-side mount (R5)', () => {
+    expect(EntityContentSchema.safeParse({
+      ...content,
+      spec: { ...content.spec, mounts: [{ host: '/Users/me', guest: '/workspace', ro: true }] },
+    }).success).toBe(false);
+  });
+
+  it('accepts a surfaceDetail with NO screen key — it is partial', () => {
+    expect(EntityContentSchema.safeParse({ ...content, surfaceDetail: {} }).success).toBe(true);
+  });
+
+  it('every CoreEntityKind has an arm in BOTH unions', () => {
+    // Asserted by INSPECTING THE UNION rather than by parsing a sample of each
+    // kind. A sample-based test proves a payload someone hand-wrote validates,
+    // which drifts and fails for reasons that have nothing to do with the arm
+    // being present; this asks the question directly — "is there an arm whose
+    // `kind` literal is this kind" — and cannot pass by accident.
+    for (const kind of CoreEntityKindSchema.options) {
+      expect(unionKinds(EntityStateSchema), `EntityStateSchema has no arm for ${kind}`)
+        .toContain(kind);
+      expect(unionKinds(EntityContentSchema), `EntityContentSchema has no arm for ${kind}`)
+        .toContain(kind);
+    }
+  });
+});
+
+/**
+ * The `kind` literals each arm of a discriminated-ish union accepts.
+ *
+ * It reaches through `z.lazy` and reads zod internals, which is a deliberate
+ * trade: the alternative is trusting `z.ZodType<T>`, and that annotation is
+ * exactly what failed to notice the missing arm in the first place.
+ */
+function unionKinds(schema: unknown): string[] {
+  const def = (schema as { _def: Record<string, unknown> })._def;
+  const resolved = typeof def.getter === 'function'
+    ? (def.getter as () => { _def: Record<string, unknown> })()._def
+    : def;
+  const options = (resolved.options ?? []) as Array<{ _def: { shape?: () => Record<string, unknown> }; shape?: Record<string, unknown> }>;
+  const kinds: string[] = [];
+  for (const option of options) {
+    const shape = typeof option._def.shape === 'function' ? option._def.shape() : option.shape;
+    const kind = shape?.kind as { _def?: { value?: string; values?: string[] } } | undefined;
+    if (!kind?._def) continue;
+    if (kind._def.value !== undefined) kinds.push(kind._def.value);
+    else if (kind._def.values) kinds.push(...kind._def.values);
+  }
+  return kinds;
+}
