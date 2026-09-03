@@ -891,14 +891,25 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // (`178_spawn_parent_may_be_a_chat.sql`) after this literal had already been
     // reasoned about, so the bump was made for one file and the split made it
     // two. The literal is the one line a clean rebase — or a clean refactor —
-    // is worth nothing on. MEASURED, not incremented:
-    //   git ls-tree -r --name-only HEAD db/migrations | grep -c '\.sql$'  -> 163
+    // is worth nothing on.
+    //
+    // 163 -> 164 on the SAME DAY, by #574, and this is the third bump in one
+    // afternoon: `177_container_kind.sql`. It CONFLICTED here rather than
+    // auto-resolving, which is the good outcome and not the usual one — the
+    // #441/#453 family is two branches making the IDENTICAL edit, which git
+    // merges silently and one short. This branch carried 162 and main carried
+    // 163, so the values differed and git had to ask.
+    //
+    // MEASURED on the tree actually being merged, not derived from either side:
+    //   ls db/migrations/*.sql | wc -l   -> 164
+    // (main 163 + this branch's one file; cross-checked against
+    //  `git ls-tree -r --name-only origin/main db/migrations | grep -c` = 163)
     //
     // A NEW EXACT LITERAL, not `migrationFiles().length`: the note forbids the
     // live-computed form for a reason that still holds — it would pass on any
     // chain length and could no longer notice a chain that silently shrank,
     // which is the one thing this assertion exists to catch.
-    expect(server.appliedMigrations.length).toBe(163);
+    expect(server.appliedMigrations.length).toBe(164);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
