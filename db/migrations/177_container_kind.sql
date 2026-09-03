@@ -415,22 +415,35 @@ comment on column public.stream_grants.multi_use is
 --    triggers and bumps `activity_at` on BOTH endpoints, so a per-action edge
 --    would make every keystroke a graph write.
 -- -----------------------------------------------------------------------------
+--
+--    ⚠ EVERY ROW NEEDS A NON-NULL `props_schema`. Design §3.4 spells `drives`
+--    and `controls` with `null`, and 001:756 calls the column "nullable and
+--    UNENFORCED in v1" — but `w2-edges-placements.pg.test.ts:285` pins
+--    `count(*) filter (where props_schema is null) = 0` across the WHOLE
+--    registry, so a null here reds a suite this lane never runs. CI caught it;
+--    no focused suite could. All 38 pre-existing rows carry a schema, and the
+--    11 with no meaningful properties use the empty-object form below — so that
+--    is the convention for `drives` and `controls`, not an invention.
+--
+--    `additionalProperties: true` on all five for the same reason: every
+--    existing row has it, and props are unenforced in v1, so a row that omitted
+--    it would be the only one making a claim about closedness.
 insert into public.edge_types(type, src_kinds, dst_kinds, description, props_schema, acyclic) values
   ('runs_in', array['work_session'], array['container'],
    'the session''s process tree executes inside the container',
-   '{"type":"object","properties":{"launcher":{"type":"string"}}}'::jsonb, false),
+   '{"type":"object","properties":{"launcher":{"type":"string"}},"additionalProperties":true}'::jsonb, false),
   ('drives', array['work_session'], array['container'],
    'the session uses the container through tools (run/computer/attach)',
-   null, false),
+   '{"type":"object","properties":{},"additionalProperties":true}'::jsonb, false),
   ('mounts', array['container'], array['project'],
    'the project working dir is bind-mounted in the container',
-   '{"type":"object","properties":{"guest":{"type":"string"},"ro":{"type":"boolean"}}}'::jsonb, false),
+   '{"type":"object","properties":{"guest":{"type":"string"},"ro":{"type":"boolean"}},"additionalProperties":true}'::jsonb, false),
   ('snapshot_of', array['container'], array['container'],
    'this container was forked from that snapshot/template',
-   '{"type":"object","properties":{"image":{"type":"string"}}}'::jsonb, true),
+   '{"type":"object","properties":{"image":{"type":"string"}},"additionalProperties":true}'::jsonb, true),
   ('controls', array['team_member','member'], array['container'],
    'explicit input (takeover/exec) grant from the creator',
-   null, false)
+   '{"type":"object","properties":{},"additionalProperties":true}'::jsonb, false)
 on conflict (type) do nothing;
 
 -- -----------------------------------------------------------------------------
@@ -1744,6 +1757,18 @@ begin
       replay #>> '{entity,id}', p_entity_id::text, 'entity');
     return replay;
   end if;
+  -- The MIRROR of expose's range check, and it is not decoration. Without it a
+  -- null or out-of-range port makes `port = p_port` match nothing, the delete
+  -- affects zero rows, and the door still ledgers a command, bumps the version
+  -- and writes an activity row — REPORTING SUCCESS FOR SOMETHING THAT DID NOT
+  -- HAPPEN. Found by auditing this file for one-sided guards: expose carried
+  -- four input validations and unexpose carried none, which is the shape that
+  -- appears exactly where a hazard HAS been thought about, because the care on
+  -- the guarded side is what makes the mirror look already handled.
+  if p_port is null or p_port not between 1 and 65535 then
+    raise exception 'exposed port must be in 1..65535 (got %)', p_port using errcode = '22023';
+  end if;
+
   e := internal.live_entity(p_entity_id, 'container');
   perform internal.require_space_member(e.space_id);
   actor := internal.resolve_actor(p_actor_id, e.space_id);

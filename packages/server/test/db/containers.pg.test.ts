@@ -1390,6 +1390,25 @@ describe('exposed ports', () => {
     ).rejects.toMatchObject({ code: '22023' });
   });
 
+  it('refuses to unexpose a port outside 1..65535, rather than reporting a no-op as success', async () => {
+    // The mirror of expose's range check. Without it the delete matches nothing
+    // and the door still ledgers, bumps the version and writes an activity row —
+    // success for something that did not happen.
+    const id = await createContainer({ title: 'Bad unexpose' });
+    const version = await versionOf(id);
+    await expect(
+      asApp(fixture.identityId, (q) =>
+        q(`select public.unexpose_container_port($1,$2,70000,$3,$4)`, [
+          id,
+          version,
+          fixture.memberId,
+          cmid('unexpose-bad'),
+        ])),
+    ).rejects.toMatchObject({ code: '22023' });
+    // and the refusal is a refusal: no version was consumed.
+    expect(await versionOf(id)).toBe(version);
+  });
+
   it('unexposes what it exposed', async () => {
     const id = await createContainer({ title: 'Retracted' });
     const beforeExpose = await versionOf(id);
