@@ -43,7 +43,11 @@ export type CoreEntityKind =
   // between them lives inside the row. Content-discriminated `graphType`
   // ('entity' = orchestratable blueprint, 'mermaid' = durable diagram source,
   // more later). It never writes real public.edges while being crafted.
-  | 'graph';
+  | 'graph'
+  // Containers (TM8-CONTAINERS-DESIGN §3.1, migration 177): a machine an
+  // agent runs IN or drives. It is an entity so hierarchy, edges, messages
+  // and attention all work on it for free; the RUNTIME behind it is not.
+  | 'container';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -418,7 +422,24 @@ export type CoreEntityState =
    * vertices and edges themselves are content, not state: a summary never
    * needs them and they can be large.
    */
-  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number };
+  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number }
+  /**
+   * Containers (§4.2). Hot and small — this arrives on EVERY list row, so it
+   * carries the surface KINDS that are live and not their detail; the panel
+   * hydrates `surfaceDetail` from content.
+   *
+   * `nodeId` is `string`, NOT `string | null`: the create door refuses a null
+   * `p_node_id` with `22023`, so a container always has a home node and a
+   * consumer never has to render "nowhere".
+   *
+   * `startedAt`/`expiresAt` null are MEASURED absences — never started, and
+   * no TTL — and render nothing, never a default.
+   */
+  | { kind: 'container'; status: ContainerStatus; profile: ContainerProfile;
+      provider: string; isolation: ContainerIsolationClass; nodeId: string;
+      surfaces: ContainerSurfaceKind[]; ephemeral: boolean;
+      shareMode: ContainerShareMode;
+      startedAt: string | null; expiresAt: string | null };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -694,7 +715,33 @@ export type CoreEntityContent =
    * type does not use is simply empty. `layout` is presentation only.
    */
   | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
-      layout: Record<string, { x: number; y: number }>; source: string | null };
+      layout: Record<string, { x: number; y: number }>; source: string | null }
+  /**
+   * Containers (§4.2), hydrated in the panel.
+   *
+   * THERE IS NO `runtimeRef` HERE, and there must never be one (R5). This arm
+   * is embedded in the command result by `internal.command_entity` (007:36),
+   * so every member of it reaches the client; the door subtracts
+   * `runtime_ref` and `host_spec` for exactly that reason. Runtime ids are
+   * reachable through `containers.providers.list` and `containers.logs`,
+   * which are node-side reads with their own authorization.
+   *
+   * `surfaceDetail` is PARTIAL: a container with no `adb` surface omits the
+   * key rather than carrying a fake one, so every read of it must guard.
+   *
+   * `usage` is folded in from `container_runtime_state` AT READ TIME and is
+   * null when no sample exists. Heartbeats deliberately never touch the
+   * entity (§15, the migration-165 lesson): a 10 s periodic UPDATE on the
+   * detail row would emit `entity.upsert` per container and starve live
+   * renames. Do not read freshness off `version`.
+   */
+  | { kind: 'container'; image: string; spec: ContainerSpec;
+      lifecycle: ContainerLifecycle;
+      surfaceDetail: Partial<Record<ContainerSurfaceKind, {
+        live: boolean; geometry?: ContainerGeometry; meta?: Record<string, unknown> }>>;
+      error: string | null;
+      usage: ContainerUsage | null;
+      exposed: Array<{ port: number; url: string }> };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -764,7 +811,45 @@ export interface EntityCapabilities { canEdit: boolean; canDelete: boolean; canA
    * (doc 06 §1.5). Today no server matrix exists, so no server populates it;
    * the field lands with the contract so both old and new servers are legal.
    */
-  allowedTransitions?: string[] }
+  allowedTransitions?: string[];
+  /**
+   * CONTAINER VERBS (§15), derived from status + share_mode + actor.
+   *
+   * ADDITIVE AND OPTIONAL, structurally exactly like `allowedTransitions`
+   * above — and WITH THE OPPOSITE MEANING WHEN ABSENT. Read that sentence
+   * twice before adding a seventh member here.
+   *
+   *   `allowedTransitions` absent  → NO MATRIX; fall back to the registry
+   *                                  vocabulary, which is MORE permissive.
+   *   a capability boolean absent  → NOT PERMITTED. Deny.
+   *
+   * Two members of one interface, the same shape, opposite defaults. The
+   * reason they differ: `allowedTransitions` narrows a permission that
+   * already exists, so having nothing to say means "do not narrow". These
+   * GRANT a permission that otherwise does not exist, so having nothing to
+   * say means "no grant". A reader who reaches for the neighbouring
+   * precedent gets the wrong answer, which is why this is spelled out.
+   *
+   * Concretely, a consumer has three states and must treat them as:
+   *   `true`      → the control is live.
+   *   `false`     → disabled, with the registry's `capabilityReasons` sentence.
+   *   `undefined` → disabled, "capabilities not loaded". NEVER as `true`.
+   *
+   * Do not "simplify" `?? false` into `?? true`, and do not delete the
+   * `undefined` arm as dead code because today's server always populates
+   * these: absence is legal in the contract, and an older server is a legal
+   * peer. They are absent on every non-container kind by design.
+   *
+   * They gate the BUTTON, not the DOT. Liveness comes from
+   * `seam.liveness.statusOf` (R-UI-5): `canAttach: true` says the viewer is
+   * ALLOWED to open the screen, not that pixels are flowing.
+   */
+  canStart?: boolean;
+  canStop?: boolean;
+  canDestroy?: boolean;
+  canAttach?: boolean;
+  canControl?: boolean;
+  canExec?: boolean }
 
 export interface Page<T> { items: T[]; nextCursor: Cursor | null; total?: number }
 
@@ -1974,6 +2059,11 @@ export interface PatchTaskInput extends CommandContext {
 export type CreatableEntityKind = Exclude<
   EntityKind,
   'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'
+  // `container` is born ONLY from `containers.create`, which reserves the
+  // record and then provisions a runtime (§8.4). A generic create would
+  // produce a container record with no machine behind it — a row that
+  // renders, lists and counts while every verb on it fails.
+  | 'container'
 >;
 
 export interface CreateEntityInput extends CommandContext {
@@ -3021,7 +3111,418 @@ export type WorkSessionEndedKind =
   | 'server_restart'
   | 'out_of_memory'
   | 'crashed'
+  // 177: the two endings a CONTAINER causes. `container_stopped` is
+  // orderly — the machine an exec session lived in was stopped, so the
+  // session ended with it and nothing was wrong. `runtime_lost` is the
+  // involuntary one: reconciliation found the runtime gone underneath a
+  // session that was still running. They stay distinct for the same
+  // reason `out_of_memory` does — folding them together would hide the
+  // only one of the two that means something broke.
+  | 'container_stopped'
+  | 'runtime_lost'
   | 'unknown';
+
+
+// --- containers (TM8-CONTAINERS-DESIGN §4, migration 177) -------------------
+
+/**
+ * The nine statuses. SINGLE WRITER: `public.set_container_status` — the guard
+ * trigger refuses a direct `update containers set status` with `23514`, the
+ * same shape as the worktree status guard (057:100-119). The legal edges live
+ * in `internal.container_transition_allowed`, not here.
+ */
+export type ContainerStatus =
+  | 'requested' | 'provisioning' | 'running' | 'paused' | 'stopping'
+  | 'stopped' | 'destroying' | 'destroyed' | 'failed';
+
+/** A profile is a promise about surfaces plus a default image (§9). */
+export type ContainerProfile =
+  | 'shell' | 'desktop' | 'browser' | 'android' | 'ios' | 'dind' | 'custom';
+
+/**
+ * Ordered WEAKEST TO STRONGEST — the isolation policy (§12.1) compares two of
+ * these, so the order of this union is load-bearing and `CONTAINER_ISOLATION_RANK`
+ * below is the machine-readable half. A new class must be inserted at its real
+ * strength, never appended.
+ */
+export type ContainerIsolationClass =
+  | 'process' | 'container' | 'gvisor' | 'microvm' | 'vm';
+
+/**
+ * What you can attach to. `terminal` is the exec PTY — it is reached through
+ * `containers.terminal.start`, which mints a real work_session, NOT through
+ * `containers.attach`. That is why `ContainersAttachInput.surface` is a
+ * narrower union than this type.
+ */
+export type ContainerSurfaceKind =
+  | 'terminal' | 'screen' | 'browser' | 'adb' | 'docker' | 'http';
+
+export type ContainerNetworkPreset = 'open' | 'balanced' | 'locked';
+
+/**
+ * THE SAME VOCABULARY AS `work_sessions.share_mode`, deliberately (§4.2) — an
+ * alias, not a parallel enum, so one share control serves both kinds.
+ *
+ * IT IS NOT THE EXPOSED-PORT VOCABULARY. `ContainerPortShare` has `link` and
+ * no `explicit`; this one has `explicit` and no `link`. They read alike and
+ * mean different things, so they stay two types.
+ */
+export type ContainerShareMode = WorkSessionShareMode;
+
+/** Exposed-port sharing (§6.5). See the warning on `ContainerShareMode`. */
+export type ContainerPortShare = 'none' | 'space' | 'link';
+
+/**
+ * INPUT side only. `host` is a node-local absolute path.
+ *
+ * R5 (Design v4 §3.1): host paths and native runtime identifiers stay
+ * server-side — `internal.command_entity` (007:36) embeds `entity_content` in
+ * the command result a client receives, so anything in the read arm reaches
+ * the client. The door splits an incoming spec, routing `mounts[].host` into
+ * the server-only `containers.host_spec`. A mount therefore CANNOT round-trip:
+ * you send a host path and you never read one back.
+ */
+export interface ContainerMountInput { host: string; guest: string; ro: boolean }
+
+/** READ side. What `ContainerSpec.mounts` carries — no host path, by R5. */
+export interface ContainerMount { guest: string; ro: boolean }
+
+export interface ContainerNetworkPolicy { preset: ContainerNetworkPreset; allow: string[] }
+export interface ContainerSurfaceSpec { enabled: boolean; port?: number }
+
+/** The RESOLVED spec, as stored and as read back. */
+export interface ContainerSpec {
+  profile: ContainerProfile;
+  image?: string;
+  cpus: number;
+  memMiB: number;
+  diskMiB?: number;
+  /** Guest paths only (R5). */
+  mounts: ContainerMount[];
+  /** NON-secret only — the contract REFUSES known secret-looking keys. */
+  env: Record<string, string>;
+  ports: number[];
+  network: ContainerNetworkPolicy;
+  surfaces: Partial<Record<ContainerSurfaceKind, ContainerSurfaceSpec>>;
+  /** Always includes `tm8.container=<entityId>` and `tm8.space=<spaceId>`. */
+  labels: Record<string, string>;
+}
+
+/**
+ * What a CALLER may send. Every member optional; the node fills the rest from
+ * the profile catalog. `profile` is NOT here — it is a top-level field of
+ * `ContainersCreateInput`, because it selects the defaults this partial
+ * overrides and so cannot itself be one of them.
+ */
+export interface ContainerSpecInput {
+  image?: string;
+  cpus?: number;
+  memMiB?: number;
+  diskMiB?: number;
+  /** Input flavour: carries the host path. */
+  mounts?: ContainerMountInput[];
+  env?: Record<string, string>;
+  ports?: number[];
+  network?: ContainerNetworkPolicy;
+  surfaces?: Partial<Record<ContainerSurfaceKind, ContainerSurfaceSpec>>;
+  labels?: Record<string, string>;
+}
+
+/**
+ * Every member REQUIRED on the read side. `ttlSeconds` and
+ * `idleHibernateSeconds` are explicitly nullable and `null` means NO TTL / NO
+ * idle hibernation — a measured absence, never "not loaded".
+ */
+export interface ContainerLifecycle {
+  ephemeral: boolean;
+  ttlSeconds: number | null;
+  idleHibernateSeconds: number | null;
+  /** How long a stopped ephemeral machine survives so a human can read it (§11.2). */
+  graceSeconds: number;
+  snapshotOnStop: boolean;
+}
+
+/** The input flavour of `ContainerLifecycle` — all optional, same meanings. */
+export interface ContainerLifecycleInput {
+  ephemeral?: boolean;
+  ttlSeconds?: number | null;
+  idleHibernateSeconds?: number | null;
+  graceSeconds?: number;
+  snapshotOnStop?: boolean;
+}
+
+export interface ContainerUsage { cpuPct: number; memMiB: number; diskMiB: number }
+export interface ContainerGeometry { w: number; h: number; dpr: number }
+
+/**
+ * §5's provider descriptor, as `containers.providers.list` returns it.
+ *
+ * `probe` IS PRODUCED BY DOING — actually creating and destroying a tiny
+ * container — never by checking for a binary on PATH. That is the whole point
+ * of the field: `ok: false` with a `detail` is the honest answer a node gives
+ * when docker is installed and not working, which a PATH check calls healthy.
+ */
+export interface ContainerProviderDescriptor {
+  id: string;
+  isolation: ContainerIsolationClass;
+  profiles: ContainerProfile[];
+  surfaces: ContainerSurfaceKind[];
+  features: { pause: boolean; snapshot: boolean; fork: boolean; expose: boolean; nested: boolean; gpu: boolean };
+  limits: { maxContainers: number; maxCpus: number; maxMemMiB: number };
+  probe: { ok: boolean; detail: string; measuredAt: string };
+}
+
+/**
+ * The execution block's error codes (§4.3), mapped to the closed taxonomy in
+ * the handler layer exactly as `SpawnError.code` is.
+ */
+export type ContainerErrorCode =
+  | 'invalid_spec' | 'not_found' | 'forbidden' | 'policy'
+  | 'state' | 'budget' | 'no_provider' | 'runtime' | 'timeout';
+
+/** Isolation strength, machine-readable. See `ContainerIsolationClass`. */
+export const CONTAINER_ISOLATION_RANK: Record<ContainerIsolationClass, number> = {
+  process: 0, container: 1, gvisor: 2, microvm: 3, vm: 4,
+};
+
+/** The nine statuses as a value, for exhaustive iteration in tests and UI. */
+export const CONTAINER_STATUSES = [
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+] as const satisfies readonly ContainerStatus[];
+
+export const CONTAINER_PROFILES = [
+  'shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom',
+] as const satisfies readonly ContainerProfile[];
+
+export const CONTAINER_SURFACE_KINDS = [
+  'terminal', 'screen', 'browser', 'adb', 'docker', 'http',
+] as const satisfies readonly ContainerSurfaceKind[];
+
+// --- containers: operation inputs and results (§4.2) ------------------------
+
+export interface ContainersCreateInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: SpaceId;
+  title?: string | null;
+  profile: ContainerProfile;
+  /** null = the node picks the best provider satisfying policy (§12.1). */
+  provider?: string | null;
+  /** null = the serving node; else a `server_connections` name it can reach. */
+  nodeId?: string | null;
+  image?: string | null;
+  spec?: ContainerSpecInput;
+  lifecycle?: ContainerLifecycleInput;
+  shareMode?: ContainerShareMode;
+  /** Nesting: the parent must be a RUNNING `dind`/microvm container, same space. */
+  parentId?: EntityId | null;
+  templateId?: EntityId | null;
+  /** When set, the project's working dir mounts at /workspace (rw) + `mounts` edge. */
+  projectId?: EntityId | null;
+  /** Required when `projectId` is untrusted — the same gate as `execution.spawn`. */
+  confirmUntrusted?: true;
+  /** Default TRUE: create and start in one call. */
+  start?: boolean;
+}
+
+/** start | stop | pause | resume. */
+export interface ContainersLifecycleInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  timeoutMs?: number;
+}
+
+export interface ContainersDestroyInput extends ContainersLifecycleInput {
+  force?: boolean;
+  keepSnapshot?: boolean;
+}
+
+export interface ContainersUpdateInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  title?: string;
+  lifecycle?: ContainerLifecycleInput;
+  shareMode?: ContainerShareMode;
+  labels?: Record<string, string>;
+}
+
+export interface ContainersPolicySetInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  network: ContainerNetworkPolicy;
+}
+
+export interface ContainersRunInput extends CommandContext {
+  clientMutationId: string;
+  argv: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  stdin?: string;
+  timeoutMs?: number;
+  user?: string;
+}
+
+export interface ContainersRunResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  durationMs: number;
+  timedOut: boolean;
+}
+
+/**
+ * NO `argv` MEMBER, and this is deliberate. The exec terminal runs the image's
+ * own login shell, which is the same RCE boundary `execution.terminal.start`
+ * already draws. An argv here would let any caller with terminal permission
+ * run an arbitrary command as a different boundary than the one reviewed.
+ */
+export interface ContainersTerminalStartInput extends CommandContext {
+  clientMutationId: string;
+  title?: string;
+  cwd?: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface ContainersTerminalStartResult {
+  workSessionId: EntityId;
+  containerId: EntityId;
+}
+
+export interface ContainersAttachInput extends CommandContext {
+  clientMutationId: string;
+  /** NOT `terminal` (that is `containers.terminal.start`) and NOT `http`. */
+  surface: 'screen' | 'browser' | 'adb' | 'docker';
+  mode: 'view' | 'drive';
+}
+
+/**
+ * THE TOKEN TRAVELS ONLY IN THE SUBPROTOCOL `tm8-grant.<token>`, NEVER IN THE
+ * URL — `ptyTransport` already refuses token-bearing URLs, so a URL-token dial
+ * does not degrade, it fails.
+ */
+export interface SurfaceAttachGrant {
+  containerId: EntityId;
+  surface: ContainerSurfaceKind;
+  encoding: 'rfb' | 'frames' | 'cdp' | 'adb' | 'docker';
+  url: string;
+  protocol: 'ws';
+  mode: 'view' | 'drive';
+  token: string;
+  expiresAt: string;
+  geometry?: ContainerGeometry;
+}
+
+/**
+ * The vocabulary is deliberately the INTERSECTION of Anthropic's computer-use
+ * tool, Playwright and adb (§7.2), so a computer-use model wires in without a
+ * translation layer. Do not add an action only one driver can serve.
+ */
+export interface ContainersComputerInput extends CommandContext {
+  clientMutationId: string;
+  action: 'screenshot' | 'click' | 'double_click' | 'right_click' | 'move'
+    | 'drag' | 'type' | 'key' | 'scroll' | 'wait' | 'goto' | 'text';
+  x?: number;
+  y?: number;
+  to?: { x: number; y: number };
+  text?: string;
+  keys?: string;
+  dx?: number;
+  dy?: number;
+  ms?: number;
+  url?: string;
+  /** Default true: return a screenshot after the action. */
+  screenshot?: boolean;
+  /** Store the screenshot as an artifact revision on the container. */
+  keep?: boolean;
+  /** 0.25–1; default node-chosen so the long edge is <= 1568 px. */
+  scale?: number;
+}
+
+export interface ContainersComputerResult {
+  ok: boolean;
+  screenshot?: { mime: 'image/png' | 'image/jpeg'; base64: string; w: number; h: number; scale: number };
+  text?: string;
+  artifactRevision?: { artifactId: EntityId; revisionNumber: number };
+}
+
+export interface ContainersBrowserEndpointInput extends CommandContext {
+  clientMutationId: string;
+  ttlSeconds?: number;
+}
+
+/**
+ * `wsEndpoint` is a BEARER-BOUND URL (`/v2/containers/:id/cdp/<grantId>`) —
+ * the one documented exception to subprotocol-only grants (§16.1), because
+ * Playwright's `connectOverCDP` cannot send a subprotocol. Multi-use, <= 1 h,
+ * bound to actor + container, revoked on stop, never logged.
+ */
+export interface ContainersBrowserEndpointResult {
+  wsEndpoint: string;
+  expiresAt: string;
+  cdpVersion: string;
+}
+
+export interface ContainersExposeInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  port: number;
+  share?: ContainerPortShare;
+}
+
+export interface ContainersExposeResult {
+  port: number;
+  url: string;
+  shareToken?: string;
+}
+
+export interface ContainersUnexposeInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  port: number;
+}
+
+export interface ContainersSnapshotInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  name?: string;
+  makeTemplate?: boolean;
+}
+
+export interface ContainersForkInput extends CommandContext {
+  clientMutationId: string;
+  title?: string;
+  lifecycle?: ContainerLifecycleInput;
+  spec?: ContainerSpecInput;
+}
+
+export interface ContainersAttentionInput extends CommandContext {
+  clientMutationId: string;
+  reason: 'login' | 'captcha' | '2fa' | 'payment' | 'approval' | 'other';
+  detail?: string;
+  points?: number;
+}
+
+export interface ContainersPoolsSetInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  /** 0–8 warm children kept ready on a template container. */
+  warm: number;
+}
+
+export interface ContainersProvidersListResult {
+  nodeId: string;
+  providers: ContainerProviderDescriptor[];
+  images: Array<{ profile: ContainerProfile; ref: string; digest: string | null; cached: boolean }>;
+  caps: { containers: number; live: number };
+}
+
+export interface ContainersLogsResult {
+  containerId: EntityId;
+  lines: Array<{ ts: string; stream: 'stdout' | 'stderr'; text: string }>;
+  truncated: boolean;
+}
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 
