@@ -62,6 +62,17 @@
 .cv2-root .hp-needs .hp-rail__label { color: var(--pn-wait); }
 .cv2-root .hp-needs .hp-card { border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-line)); }
 
+/* --- agent sign-ins ------------------------------------------------------ */
+/* Same header rhythm as a glance rail; the interactive body is the shared
+   credential component, not Home-owned duplicate markup. */
+.cv2-root .hp-credentials {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.cv2-root .hp-credentials .cred-intro { max-width: 680px; }
+
 .cv2-root .hp-card {
   display: flex;
   flex-direction: column;

@@ -11,7 +11,7 @@
  * looking entirely correct, so each gets its own test rather than riding along
  * inside a happy-path render.
  */
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type {
   CredentialsDeleteResult,
@@ -19,6 +19,7 @@ import type {
   CredentialProviderName,
 } from '@tm8/contract';
 import { CredentialsSection } from './CredentialsSection';
+import { CREDENTIAL_PROVIDER_PRESENTATIONS } from './provider-presentation';
 import { disconnectVerdictOf, verdictOf, type CredentialsPort } from './port';
 
 function connection(over: Partial<CredentialsStatusView['providers'][number]> & { provider: CredentialProviderName }) {
@@ -67,7 +68,69 @@ function portWith(
   };
 }
 
-describe('honest degradation — three states that must NOT render the same', () => {
+describe('five providers and four honest states', () => {
+  it('renders all five product names with currentColor inline marks and their binaries', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({ provider: 'anthropic', connected: true, status: 'active' }),
+            connection({ provider: 'openai' }),
+            connection({ provider: 'github', connected: true, login: 'ada', status: 'active' }),
+            connection({ provider: 'gemini', status: 'stale' }),
+            connection({ provider: 'hermes', status: 'unavailable' }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    await screen.findByTestId('credential-provider-grid');
+    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(5);
+    expect(Object.values(CREDENTIAL_PROVIDER_PRESENTATIONS).map(({ name, binary }) => [name, binary])).toEqual([
+      ['Claude Code', 'claude'],
+      ['Codex', 'codex'],
+      ['GitHub', 'gh'],
+      ['Gemini', 'gemini'],
+      ['Hermes', 'hermes'],
+    ]);
+
+    for (const [id, provider] of Object.entries(CREDENTIAL_PROVIDER_PRESENTATIONS)) {
+      const card = screen.getByTestId(`credential-card-${id}`);
+      expect(within(card).getByText(provider.name)).toBeTruthy();
+      expect(card.querySelector('.cred-card__binary')?.textContent).toBe(provider.binary);
+      const mark = card.querySelector('svg');
+      expect(mark?.getAttribute('aria-hidden')).toBe('true');
+      expect(mark?.innerHTML).toContain('currentColor');
+    }
+  });
+
+  it('renders unavailable differently from disconnected and never offers a doomed Connect', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({ provider: 'openai', status: null }),
+            connection({ provider: 'hermes', status: 'unavailable' }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const unavailable = await screen.findByTestId('credential-card-hermes');
+    const disconnected = screen.getByTestId('credential-card-openai');
+    expect(unavailable.getAttribute('data-credential-state')).toBe('unavailable');
+    expect(disconnected.getAttribute('data-credential-state')).toBe('disconnected');
+    expect(screen.getByTestId('credential-verdict-hermes').textContent).toContain(
+      'hermes is not installed on this node',
+    );
+    expect(screen.getByTestId('credential-install-hermes').textContent).toContain('Install hermes');
+    expect(screen.queryByTestId('credential-connect-hermes')).toBeNull();
+    expect(within(unavailable).queryByRole('button')).toBeNull();
+    expect(screen.getByTestId('credential-connect-openai').textContent).toBe('Connect');
+  });
+
   /**
    * STATE 1. `gitCredentialStore: 'absent'` does not mean "not connected". It
    * means the github entry's `connected` is UNKNOWN, never measured — 079
@@ -87,11 +150,11 @@ describe('honest degradation — three states that must NOT render the same', ()
     );
 
     const verdict = await screen.findByTestId('credential-verdict-github');
-    expect(verdict.textContent).toContain('Unknown');
+    expect(verdict.textContent).toContain('Could not be measured');
     // THE ASSERTION THAT MATTERS: the confident negative is absent.
     expect(verdict.textContent).not.toContain('Not connected');
     // And it says WHY it cannot tell, so "unknown" is not itself a shrug.
-    expect(screen.getByTestId('credential-unknown-why').textContent).toContain('does not exist on this node');
+    expect(screen.getByTestId('credential-unknown-why').textContent).toContain('may already be signed in');
   });
 
   /**
@@ -112,7 +175,7 @@ describe('honest degradation — three states that must NOT render the same', ()
 
     const verdict = await screen.findByTestId('credential-verdict-github');
     expect(verdict.textContent).toContain('Not connected');
-    expect(verdict.textContent).not.toContain('Unknown');
+    expect(verdict.textContent).not.toContain('Could not be measured');
   });
 
   /**
@@ -132,12 +195,13 @@ describe('honest degradation — three states that must NOT render the same', ()
     );
 
     const verdict = await screen.findByTestId('credential-verdict-anthropic');
-    expect(verdict.textContent).toContain('Connected');
+    expect(verdict.textContent).toBe('Connected — inference access');
     // The row simply does not exist — not present-and-empty, not a placeholder.
     expect(screen.queryByTestId('credential-login-anthropic')).toBeNull();
     // And none of the words that would imply a name is still coming.
     expect(verdict.textContent).not.toContain('unknown user');
     expect(verdict.textContent).not.toMatch(/null|pending|loading|…/i);
+    expect(document.body.textContent).not.toMatch(/connected as null/i);
   });
 
   /** The control for state 2: a provider that HAS a name still shows it. */
@@ -285,7 +349,7 @@ describe('disconnect — a partial success is neither a green tick nor a red err
   });
 });
 
-describe('the verdict function — the three states are three values, not two', () => {
+describe('the verdict function — four meanings are four values', () => {
   it('separates unknown from disconnected on the store, not on `connected`', () => {
     const github = { provider: 'github' as const, connected: false, login: null };
     expect(verdictOf(github, 'absent')).toBe('unknown');
@@ -296,6 +360,13 @@ describe('the verdict function — the three states are three values, not two', 
     // A `connected: true` can only have come from somewhere real; inventing a
     // doubt about it would be its own dishonesty.
     expect(verdictOf({ provider: 'github', connected: true, login: 'ada' }, 'absent')).toBe('connected-named');
+  });
+
+  it('separates an absent binary from both a disconnection and a failed measurement', () => {
+    const base = { provider: 'hermes' as const, connected: false, login: null };
+    expect(verdictOf({ ...base, status: 'unavailable' }, 'present')).toBe('unavailable');
+    expect(verdictOf({ ...base, status: 'stale' }, 'present')).toBe('unknown');
+    expect(verdictOf({ ...base, status: null }, 'present')).toBe('disconnected');
   });
 
   it('separates a permanently-null login from a named one', () => {

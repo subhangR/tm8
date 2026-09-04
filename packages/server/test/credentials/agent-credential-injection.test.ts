@@ -91,6 +91,21 @@ describe('DbAgentCredentialHome', () => {
     expect(home?.configDir).toBe(`${DATA_DIR}/credentials/${IDENTITY}/openai`);
   });
 
+  it.each([
+    ['gemini', 'gemini'],
+    ['hermes', 'hermes'],
+  ] as const)('resolves the %s tool to its own %s provider directory', async (agentTool, provider) => {
+    const recorded: RecordedQuery[] = [];
+    const home = await resolver([{ provider }], recorded).resolve(CLAIMS, { agentTool });
+
+    expect(home).toEqual({
+      provider,
+      homeDir: `${DATA_DIR}/credentials/${IDENTITY}`,
+      configDir: `${DATA_DIR}/credentials/${IDENTITY}/${provider}`,
+    });
+    expect(recorded[0]?.params).toEqual([provider]);
+  });
+
   it('returns null when the member has not connected this provider', async () => {
     // The ordinary case, and NOT an error. Injecting here would hand the member
     // an empty config directory and therefore an unauthenticated agent.

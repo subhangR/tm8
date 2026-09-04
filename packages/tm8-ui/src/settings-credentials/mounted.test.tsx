@@ -2,7 +2,7 @@
 /**
  * THE SECTION IS REACHABLE, AND THE LOGIN TERMINAL IS NOT.
  *
- * Two claims, and neither is provable by the component test next door.
+ * Three claims, none provable by the component test next door.
  *
  * 1. A HUMAN CAN GET TO IT. This repository already contains FOUR built,
  *    tested, never-imported surfaces — settings-governance's three screens and
@@ -25,6 +25,10 @@
  *    surfaces, not on the helper — `rowsFor` has a measured history of
  *    accepting a filter argument and ignoring it, so a green helper test can
  *    certify a filter that no surface applies.
+ *
+ * 3. HOME AND SETTINGS MOUNT ONE IMPLEMENTATION. A static caller check pins
+ *    both hosts to `CredentialsProviderBlock`; duplicating provider markup in
+ *    Home would fail even if both copies happened to look alike today.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -48,6 +52,10 @@ const port: CredentialsPort = {
   load: async () => ({
     providers: [
       { provider: 'anthropic', connected: true, login: null, authMethod: 'oauth', status: 'active', connectedAt: null, lastVerifiedAt: null },
+      { provider: 'openai', connected: false, login: null, authMethod: null, status: null, connectedAt: null, lastVerifiedAt: null },
+      { provider: 'github', connected: false, login: null, authMethod: null, status: null, connectedAt: null, lastVerifiedAt: null },
+      { provider: 'gemini', connected: false, login: null, authMethod: null, status: 'stale', connectedAt: null, lastVerifiedAt: null },
+      { provider: 'hermes', connected: false, login: null, authMethod: null, status: 'unavailable', connectedAt: null, lastVerifiedAt: null },
     ],
     gitCredentialStore: 'absent',
   }),
@@ -69,6 +77,7 @@ const settingsPort = {
   loadMembers: async () => [],
   loadIdentity: async () => ({ memberId: 'm-1', displayName: 'Ada', avatar: null, role: 'owner' }) as never,
   loadMenu: async () => ({ menu: null, source: 'default', error: null }) as never,
+  loadInvites: async () => [],
   updateProfile: async () => ({}) as never,
 };
 
@@ -94,7 +103,9 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
 
     // The body that appears is the real one — it has reached the port and is
     // drawing a provider card, not the shell's "built in another module" card.
+    expect(await screen.findByTestId('credentials-provider-block')).toBeTruthy();
     expect(await screen.findByTestId('credential-card-anthropic')).toBeTruthy();
+    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(5);
     expect(screen.queryByTestId('section-absent')).toBeNull();
   });
 
@@ -122,6 +133,21 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
     // Passed through the shell's slot, on the SettingsShell that GateApp
     // actually renders — not merely imported.
     expect(gate).toMatch(/<SettingsShell[\s\S]*?sections=\{[\s\S]*?credentials:/);
+  });
+
+  it('Home and Settings mount the same provider block instead of forking its markup', () => {
+    const settings = readFileSync(
+      join(process.cwd(), 'src/settings-credentials/CredentialsSection.tsx'),
+      'utf8',
+    );
+    const home = readFileSync(join(process.cwd(), 'src/home-page/HomePage.tsx'), 'utf8');
+
+    expect(settings).toMatch(/<CredentialsProviderBlock\b/);
+    expect(home).toMatch(/<CredentialsProviderBlock\b/);
+    // The home host still binds spaceId at the same port adapter; it does not
+    // call credentials operations directly or grow a second adapter.
+    expect(home).toContain('credentialsPortFromSeam(data.seam, data.spaceId)');
+    expect(home).not.toMatch(/data\.seam\.credentials\.(status|disconnect|startLogin|finishLogin)/);
   });
 });
 

@@ -1344,16 +1344,16 @@ export interface AuthClaimResult {
 // ---------------------------------------------------------------------------
 
 /**
- * The three providers a login terminal can run.
+ * The five declared providers the credential surface can represent.
  *
- * Wider than what `account_agent_credentials` will store, and DELIBERATELY so
- * (R6): that table's CHECK admits only the two FILE-shaped providers, while a
- * GitHub token is string-shaped and belongs in 093's `account_git_credentials`.
- * `credential_sessions.provider` carries all three because the terminal can run
- * `gh auth login` regardless of where its output lands. A provider is admitted
- * by measuring its login flow, never by widening a constraint.
+ * Wider than either credential store, and DELIBERATELY so: the four
+ * FILE-shaped providers live in `account_agent_credentials`, while a GitHub
+ * token is string-shaped and belongs in 093's `account_git_credentials`.
+ * `credential_sessions.provider` carries all five because availability is a
+ * runtime fact: a declared provider whose CLI is absent is reported as
+ * unavailable and refused before a login terminal is created.
  */
-export type CredentialProviderName = 'anthropic' | 'openai' | 'github';
+export type CredentialProviderName = 'anthropic' | 'openai' | 'github' | 'gemini' | 'hermes';
 
 /** One provider's card on the Connections screen. */
 export interface CredentialConnectionView {
@@ -1372,7 +1372,22 @@ export interface CredentialConnectionView {
    */
   login: string | null;
   authMethod: string | null;
-  status: 'active' | 'stale' | 'revoked' | null;
+  /**
+   * The stored row's lifecycle, PLUS one value the database never holds.
+   *
+   * `active | stale | revoked` are `account_agent_credentials.status`. The
+   * fourth, `unavailable`, is a NODE measurement — this provider's CLI is not
+   * installed here — and is deliberately carried in the same field because the
+   * UI's question is a single one ("what may I say about this provider?") and a
+   * second nullable field would let a caller render a state that contradicts
+   * this one. It is never persisted in that column, and migration 123 does not
+   * widen the CHECK to admit it.
+   *
+   * When it is set, `connected` is always false: a stored credential whose
+   * consumer cannot be found is not a usable connection. The row itself is
+   * untouched and reappears the moment the binary is installed.
+   */
+  status: 'active' | 'stale' | 'revoked' | 'unavailable' | null;
   connectedAt: string | null;
   lastVerifiedAt: string | null;
 }
@@ -1391,7 +1406,7 @@ export interface CredentialConnectionView {
  * a node where the table exists.
  */
 export interface CredentialsStatusView {
-  /** One entry per provider in `CredentialProviderName`, always all three. */
+  /** One entry per provider in `CredentialProviderName`, always all five. */
   providers: CredentialConnectionView[];
   /**
    * `present` — the table exists and was read.
@@ -2685,7 +2700,16 @@ export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
  */
 export type LaunchAccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
 export type LaunchCredentialSource = 'member' | 'node';
-export type LaunchCredentialProvider = 'anthropic' | 'openai' | 'github';
+/**
+ * Which credentials a launch may pick a SOURCE for (member's vs the node's).
+ *
+ * Defined FROM `CredentialProviderName` rather than restating it. It was a
+ * restated union and it drifted exactly as you would expect: it still read
+ * three providers after the credential set grew to five, so a launch could not
+ * express a Gemini choice the credentials screen had already offered. An alias
+ * cannot drift.
+ */
+export type LaunchCredentialProvider = CredentialProviderName;
 export type LaunchCredentialSources = Partial<Record<LaunchCredentialProvider, LaunchCredentialSource>>;
 
 // --- execution.* operation family (R16) ------------------------------------

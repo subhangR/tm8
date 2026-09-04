@@ -48,6 +48,15 @@
 // scratch makes them ABSENT rather than empty, which is strictly stronger, so
 // there is nothing to blank here.
 //
+// THE NULL CONFIG-DIRECTORY OVERRIDE IS AN HONESTLY SMALLER GUARANTEE. Gemini
+// and Hermes publish no documented environment variable that redirects their
+// credential directory, so their table entries below are `null` and this
+// composer adds no provider-specific key for them. Their per-identity `HOME` is
+// the whole credential-storage isolation tm8 can claim for those two. Anthropic,
+// OpenAI and GitHub get that boundary PLUS a vendor-documented override pinned
+// to `configDir`; `null` records that the latter guarantee does not exist rather
+// than implying all five providers are isolated in the same way.
+//
 // THE ONE PROVIDER-SPECIFIC BEHAVIOUR FLAG. Utho's installed gh 2.62.0 asks
 // `Authenticate Git with your GitHub credentials? (Y/n)` even when `--web`,
 // `--git-protocol https` and `--skip-ssh-key` already make the answer
@@ -60,29 +69,34 @@
 
 import { withAgentBinDirs } from '../spawn/manifest.js';
 
-/** The three vendors a Tier B login terminal can authenticate against. */
-export type CredentialProvider = 'anthropic' | 'openai' | 'github';
+/** The five vendors a Tier B login terminal can authenticate against. */
+export type CredentialProvider = 'anthropic' | 'openai' | 'github' | 'gemini' | 'hermes';
 
 export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   'anthropic',
   'openai',
   'github',
+  'gemini',
+  'hermes',
 ];
 
 /**
- * The ONE environment variable that redirects each vendor CLI's credential
- * storage at a per-identity directory.
+ * The environment variable, when one exists, that redirects a vendor CLI's
+ * credential storage at a per-identity directory.
  *
- * Exactly one of these is set per terminal. Setting two would be meaningless at
- * best and, for a provider whose CLI reads another's variable, actively
- * confusing; a table keyed by provider makes "exactly one" structural rather
- * than a rule someone has to remember.
+ * Exactly one non-null override is set for Anthropic, OpenAI or GitHub. Setting
+ * two would be meaningless at best and, for a provider whose CLI reads
+ * another's variable, actively confusing; a table keyed by provider makes
+ * "one or none" structural rather than a rule someone has to remember. See the
+ * header for why Gemini and Hermes deliberately have none.
  */
 export const CREDENTIAL_CONFIG_DIR_VAR = {
   anthropic: 'CLAUDE_CONFIG_DIR',
   openai: 'CODEX_HOME',
   github: 'GH_CONFIG_DIR',
-} as const satisfies Record<CredentialProvider, string>;
+  gemini: null,
+  hermes: null,
+} as const satisfies Record<CredentialProvider, string | null>;
 
 /**
  * The keys every credential environment carries, whatever the provider.
@@ -104,9 +118,10 @@ export const CREDENTIAL_ENV_BASE_KEYS = [
 
 /** The complete, exact key set for a given provider's login terminal. */
 export function credentialEnvKeys(provider: CredentialProvider): string[] {
+  const configDirVar = CREDENTIAL_CONFIG_DIR_VAR[provider];
   return [
     ...CREDENTIAL_ENV_BASE_KEYS,
-    CREDENTIAL_CONFIG_DIR_VAR[provider],
+    ...(configDirVar === null ? [] : [configDirVar]),
     ...(provider === 'github' ? ['GH_PROMPT_DISABLED'] : []),
   ].sort();
 }
@@ -116,7 +131,7 @@ export function credentialEnvKeys(provider: CredentialProvider): string[] {
  *
  * The bare launchd path, which is what tm8-server actually inherits when it
  * runs as a macOS service. `withAgentBinDirs` then appends the package-manager
- * bin dirs where `claude`, `codex` and `gh` really live.
+ * bin dirs where installed vendor CLIs live.
  */
 const FALLBACK_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -124,7 +139,7 @@ export interface ComposeCredentialEnvInput {
   provider: CredentialProvider;
   /** `<dataDir>/credentials/<identityId>` — this terminal's entire HOME. */
   homeDir: string;
-  /** `<homeDir>/<provider>` — the vendor CLI's config directory. */
+  /** `<homeDir>/<provider>` — used when the vendor has a config-dir override. */
   configDir: string;
   /**
    * The SERVER's environment. Read for exactly two things — the PATH to start
@@ -145,10 +160,11 @@ export interface ComposeCredentialEnvInput {
  */
 export function composeCredentialEnv(input: ComposeCredentialEnvInput): Record<string, string> {
   const { provider, homeDir, configDir, parentEnv } = input;
+  const configDirVar = CREDENTIAL_CONFIG_DIR_VAR[provider];
 
   const env: Record<string, string> = {
-    // The per-identity home. This is what makes `~/.claude`, `~/.codex` and
-    // `~/.config/gh` resolve to this member's directory and not the node's.
+    // The per-identity home. This is what makes every vendor's HOME-relative
+    // defaults resolve to this member's directory and not the node's.
     HOME: homeDir,
 
     // Discovery only. `withAgentBinDirs` reads `parentEnv.HOME` — the SERVER's
@@ -171,10 +187,12 @@ export function composeCredentialEnv(input: ComposeCredentialEnvInput): Record<s
     // `$XDG_CONFIG_HOME/gh`, so pointing it inside this identity's own home
     // means even the fallback rung cannot reach the node's `gh` credentials.
     XDG_CONFIG_HOME: `${homeDir}/.config`,
-
-    // Exactly one, chosen by table. See CREDENTIAL_CONFIG_DIR_VAR.
-    [CREDENTIAL_CONFIG_DIR_VAR[provider]]: configDir,
   };
+
+  // One provider-specific redirect or none, chosen by table. A null entry must
+  // add no property at all: neither an `undefined` value nor a synthetic
+  // "null" key is a truthful environment. See the header.
+  if (configDirVar !== null) env[configDirVar] = configDir;
 
   // GitHub's fixed command already chooses HTTPS credentials, so its extra
   // confirmation prompt has no remaining decision to collect. Disabling gh's

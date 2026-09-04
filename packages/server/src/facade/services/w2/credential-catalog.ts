@@ -15,9 +15,9 @@
  * The credential stores are split by SHAPE, not by vendor preference (sub-doc 0,
  * ruling R6):
  *
- *   * FILE-shaped credentials — anthropic, openai — are a 0600 file in a
- *     per-account config directory. `account_agent_credentials` (083) indexes
- *     them and holds no secret column at all.
+ *   * FILE-shaped credentials — anthropic, openai, gemini and hermes — live in
+ *     a per-identity credential home. `account_agent_credentials` (083, widened
+ *     by 123) indexes them and holds no secret column at all.
  *   * A GitHub token is a STRING, and its home is `account_git_credentials`,
  *     which ships on main in migration 093 with encrypted secret columns.
  *
@@ -45,9 +45,10 @@
  *      authorization in place this is no longer space-drivable, but a live
  *      terminal still holds a half-finished OAuth flow that can complete AFTER
  *      the revoke and write a fresh credential to disk.
- *   3. THE ACCOUNT'S LIVE AGENT SESSIONS carrying that provider. `anthropic`
- *      maps to the claude tool, `openai` to codex, and `github` to ALL of them
- *      because the git credential injects universally.
+ *   3. THE ACCOUNT'S LIVE AGENT SESSIONS carrying that provider. The four
+ *      file-shaped providers map through the same provider→tool table spawn
+ *      lookup uses; `github` maps to ALL tools because git injection is
+ *      universal.
  *
  * BEST-EFFORT, AND IT NEVER RESURRECTS. A kill that fails is recorded in
  * `failures` and changes nothing about the revoke. `revoked: true` alongside a
@@ -68,44 +69,44 @@ import type {
   CredentialsDeleteResult,
   CredentialsStatusView,
 } from '@tm8/contract';
-import type { Logger } from '@tm8/execution';
+import { CREDENTIAL_PROVIDERS, type Logger } from '@tm8/execution';
 
 import type { Db } from '../../../db/types.js';
-import { credentialConfigDir } from '../../../credentials/agent-credential-home.js';
+import {
+  credentialConfigDir,
+  credentialHomeDir,
+} from '../../../credentials/agent-credential-home.js';
+import { AGENT_TOOLS_BY_CREDENTIAL_PROVIDER } from '../../../credentials/agent-credential-injection.js';
 import type { CredentialPrincipal } from './credential-sessions.js';
+import {
+  measureCredentialBinary,
+  type CredentialBinaryResolver,
+} from './credential-probe.js';
 
 /**
  * Every provider a card is rendered for, in display order.
  *
- * The list is the SESSION table's three-value CHECK, not the credential table's
- * two. A member can run a GitHub login here even though what it produces is
- * stored elsewhere, so a status view that omitted github would be describing
- * the storage rather than the feature.
+ * This is the SESSION table's five-value CHECK, not either credential store's
+ * CHECK. Four file-shaped providers are indexed in
+ * `account_agent_credentials`; GitHub is intentionally absent from that table
+ * because its string-shaped token lives in `account_git_credentials`. A member
+ * can still run all five login flows here, so deriving the cards from either
+ * storage table would describe an implementation shape rather than the feature.
+ * `CREDENTIAL_PROVIDERS` is also the login table's order, so the two surfaces
+ * cannot drift independently.
  */
-export const CREDENTIAL_STATUS_PROVIDERS: readonly CredentialProviderName[] = [
-  'anthropic',
-  'openai',
-  'github',
-] as const;
+export const CREDENTIAL_STATUS_PROVIDERS: readonly CredentialProviderName[] =
+  CREDENTIAL_PROVIDERS;
 
 /**
- * Which agent tool a provider's credential is consumed by — R3 step 3's
- * targeting rule, and the only place it is written down.
- *
- * The values are the ones `SpawnService` actually branches on
- * (`SpawnService.ts:379,556,685`): `claude-code` and `codex`, NOT `claude`.
- *
- * `github` maps to `null` meaning EVERY tool rather than to an empty list
- * meaning none. The git credential is injected into every agent session
- * regardless of which CLI it runs, so narrowing it would leave live sessions
- * holding a token the member believes they just disconnected. R3 says "all of
- * A's live agent sessions" for exactly this reason.
+ * R3 step 3's targeting rule. The file-shaped map lives at the spawn lookup
+ * seam and is imported above, so spawn and disconnect cannot disagree. GitHub
+ * remains the one exceptional `null` (EVERY tool): an empty list would mean
+ * none, leaving sessions alive with a token the member believes disconnected.
  */
-const PROVIDER_AGENT_TOOLS: Record<CredentialProviderName, readonly string[] | null> = {
-  anthropic: ['claude-code'],
-  openai: ['codex'],
-  github: null,
-};
+function agentToolsForProvider(provider: CredentialProviderName): readonly string[] | null {
+  return provider === 'github' ? null : AGENT_TOOLS_BY_CREDENTIAL_PROVIDER[provider];
+}
 
 /** Statuses that mean a work session may still be holding a credential. */
 const LIVE_SESSION_STATUSES = ['spawning', 'running', 'idle'] as const;
@@ -151,6 +152,10 @@ export interface W2CredentialCatalogServiceOptions {
   /** Node data root; the per-identity credential home hangs off it. */
   dataDir: string;
   logger?: Logger;
+  /** The server environment from which the login terminal's PATH is composed. */
+  env?: NodeJS.ProcessEnv;
+  /** Test seam for binary presence; production resolves executables on PATH. */
+  binaryResolver?: CredentialBinaryResolver;
   /**
    * Remove the on-disk credential material for one provider.
    *
@@ -177,6 +182,8 @@ export class W2CredentialCatalogService {
   private readonly terminals: CredentialTerminalPort;
   private readonly dataDir: string;
   private readonly logger: Logger | undefined;
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly binaryResolver: CredentialBinaryResolver | undefined;
   private readonly removeCredentialFiles: NonNullable<
     W2CredentialCatalogServiceOptions['removeCredentialFiles']
   >;
@@ -189,6 +196,8 @@ export class W2CredentialCatalogService {
     this.terminals = options.terminals;
     this.dataDir = options.dataDir;
     this.logger = options.logger;
+    this.env = options.env ?? process.env;
+    this.binaryResolver = options.binaryResolver;
     this.removeCredentialFiles = options.removeCredentialFiles ?? removeCredentialDirectory;
     this.revokeGitCredential = options.revokeGitCredential;
   }
@@ -198,7 +207,7 @@ export class W2CredentialCatalogService {
   // -------------------------------------------------------------------------
 
   /**
-   * The merged view. Always all three providers, in a fixed order.
+   * The merged view. Always all five providers, in a fixed order.
    *
    * A provider with no row is `connected: false` with every other field null —
    * an ABSENT row is the encoding of "not connected" (PR2 is deliberate about
@@ -252,10 +261,57 @@ export class W2CredentialCatalogService {
     }
 
     return {
-      providers: CREDENTIAL_STATUS_PROVIDERS.map(
-        (provider) => byProvider.get(provider) ?? notConnected(provider),
+      providers: CREDENTIAL_STATUS_PROVIDERS.map((provider) =>
+        this.withMeasuredAvailability(
+          provider,
+          byProvider.get(provider) ?? notConnected(provider),
+          principal.identityId,
+        ),
       ),
       gitCredentialStore: git.store,
+    };
+  }
+
+  /**
+   * Overlay the node-level CLI measurement on the stored connection fact.
+   *
+   * `unavailable` is a successful negative measurement and must not collapse
+   * into the null status that means disconnected. A resolver failure is the
+   * opposite: it established nothing, so `stale` carries it to the UI's
+   * `unknown` verdict. Both override `connected` because a stored credential
+   * whose consumer cannot be found is not currently a usable connection; the
+   * stored row is untouched and becomes visible again as soon as the binary is
+   * installed.
+   */
+  private withMeasuredAvailability(
+    provider: CredentialProviderName,
+    stored: CredentialConnectionView,
+    identityId: string,
+  ): CredentialConnectionView {
+    const measurement = measureCredentialBinary({
+      provider,
+      homeDir: credentialHomeDir(this.dataDir, identityId),
+      configDir: credentialConfigDir(this.dataDir, identityId, provider),
+      parentEnv: this.env,
+      ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
+    });
+    if (measurement.status === 'available') return stored;
+    if (measurement.status === 'unknown') {
+      this.logger?.warn?.('credential CLI availability could not be measured', {
+        provider,
+        binary: measurement.binary,
+        detail: measurement.detail,
+      });
+      return { ...stored, connected: false, status: 'stale' };
+    }
+    return {
+      ...stored,
+      connected: false,
+      // The wire vocabulary is deliberately wider than the database's
+      // three-value credential-row status CHECK: this is a node measurement,
+      // not a value that is ever persisted in that column. The contract's
+      // `status` union carries it directly, so there is nothing to cast.
+      status: 'unavailable',
     };
   }
 
@@ -505,7 +561,7 @@ export class W2CredentialCatalogService {
     principal: CredentialPrincipal,
     failures: CredentialsDeleteResult['failures'],
   ): Promise<string[]> {
-    const tools = PROVIDER_AGENT_TOOLS[provider];
+    const tools = agentToolsForProvider(provider);
     const terminated: string[] = [];
 
     let rows: LiveAgentSessionRow[];

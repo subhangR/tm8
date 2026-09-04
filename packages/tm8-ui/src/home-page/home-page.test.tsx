@@ -13,6 +13,8 @@
  *     dot is colour + word, never colour alone (C8/L10);
  *   - a quiet space renders NO needs-you strip (an inbox-zero canvas is
  *     quiet, not an empty amber box).
+ *   - the five-provider sign-in block is a real Home section and is the same
+ *     shared component Settings mounts.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
@@ -28,10 +30,9 @@ import {
   teamMemberForge,
   teamMemberScout,
 } from '../fixtures/entities';
-import type { HomeScreenData } from '../home';
-import { HomePage } from './HomePage';
+import { HomePage, type HomePageData } from './HomePage';
 
-const seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent'> = {
+const seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent' | 'credentials'> = {
   identity: async () => ({
     identityId: 'idn-ada',
     accountId: 'acct-ada',
@@ -48,9 +49,45 @@ const seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent'> = {
   }),
   inbox: async () => ({ items: [], nextCursor: null }),
   onEvent: () => () => undefined,
+  credentials: {
+    status: async () => ({
+      providers: [
+        { provider: 'anthropic', connected: true, login: null, authMethod: 'oauth', status: 'active', connectedAt: null, lastVerifiedAt: null },
+        { provider: 'openai', connected: false, login: null, authMethod: null, status: null, connectedAt: null, lastVerifiedAt: null },
+        { provider: 'github', connected: true, login: 'ada', authMethod: 'oauth', status: 'active', connectedAt: null, lastVerifiedAt: null },
+        { provider: 'gemini', connected: false, login: null, authMethod: null, status: 'stale', connectedAt: null, lastVerifiedAt: null },
+        { provider: 'hermes', connected: false, login: null, authMethod: null, status: 'unavailable', connectedAt: null, lastVerifiedAt: null },
+      ],
+      gitCredentialStore: 'present',
+    }),
+    disconnect: async (provider) => ({
+      provider,
+      revoked: true,
+      terminatedCredentialSessionIds: [],
+      terminatedAgentSessionIds: [],
+      failures: [],
+    }),
+    startLogin: async (spaceId, provider) => ({
+      workSessionId: 'ws-home-login',
+      spaceId,
+      provider,
+      expiresAt: '2026-09-04T12:10:00.000Z',
+      command: `${provider} login`,
+    }),
+    finishLogin: async (workSessionId) => ({
+      workSessionId,
+      provider: 'github',
+      connected: true,
+      login: 'ada',
+      authMethod: 'oauth',
+      status: 'active',
+      stored: true,
+      terminated: true,
+    }),
+  },
 };
 
-function makeData(rows: Record<string, readonly EntitySummary[]>): HomeScreenData {
+function makeData(rows: Record<string, readonly EntitySummary[]>): HomePageData {
   return {
     spaceId: FIXTURE_SPACE_ID,
     seam,
@@ -85,6 +122,22 @@ describe('the merged home canvas', () => {
   it('renders the chat slot as the hero', () => {
     const { getByTestId } = renderPage({});
     expect(within(getByTestId('home-page')).getByTestId('chat-slot')).toBeTruthy();
+  });
+
+  it('mounts the shared five-provider sign-in block as a real Home section', async () => {
+    const { findByTestId } = renderPage({});
+    const section = await findByTestId('home-credentials');
+    expect(within(section).getByTestId('credentials-provider-block')).toBeTruthy();
+    expect(within(section).getAllByTestId(/^credential-card-/)).toHaveLength(5);
+    for (const name of ['Claude Code', 'Codex', 'GitHub', 'Gemini', 'Hermes']) {
+      expect(within(section).getByText(name)).toBeTruthy();
+    }
+    // Home receives the same unavailable semantics as Settings: no action that
+    // the server has already measured will fail.
+    expect(within(section).queryByTestId('credential-connect-hermes')).toBeNull();
+    expect(within(section).getByTestId('credential-install-hermes').textContent).toContain(
+      'Install hermes',
+    );
   });
 
   it('rails render cards newest-activity-first and open their entity', () => {

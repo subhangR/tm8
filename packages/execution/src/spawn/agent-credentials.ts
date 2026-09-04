@@ -28,12 +28,29 @@ import type { GraphAuth } from './types.js';
 /**
  * The providers an ORDINARY agent session can be given a credential for.
  *
- * Two, not three. `github` is deliberately absent: it is string-shaped and
- * already ships through `account_git_credentials` as env-var injection
- * (sub-doc 0, and §A5's split-by-shape rule). Adding it here would be a SECOND
- * GitHub delivery mechanism racing the first, and the shipped one carries the
- * load-bearing empty-value helper reset that stops a machine-wide credential
- * helper answering with somebody else's login.
+ * TWO, out of the five a member can now LOG IN to. The two lists are different
+ * on purpose and the difference is not an oversight:
+ *
+ *  * `github` is string-shaped and already ships through
+ *    `account_git_credentials` as env-var injection (sub-doc 0, and §A5's
+ *    split-by-shape rule). Adding it here would be a SECOND GitHub delivery
+ *    mechanism racing the first, and the shipped one carries the load-bearing
+ *    empty-value helper reset that stops a machine-wide credential helper
+ *    answering with somebody else's login.
+ *
+ *  * `gemini` and `hermes` are admitted as LOGIN providers (migration 123) but
+ *    NOT yet as spawn-time injections. Login and injection are separate
+ *    admissions with separate evidence: login needed a verb and a probe, both
+ *    of which gemini now has. Injection additionally needs the API-KEY
+ *    PRECEDENCE measurement that finding C8 / ruling 13 forced for anthropic —
+ *    whether a node-level `GEMINI_API_KEY` or `GOOGLE_API_KEY` silently
+ *    outranks a member's stored login, exactly as `ANTHROPIC_API_KEY` was
+ *    measured to do. Until someone runs that experiment, suppressing those keys
+ *    would be a guess and NOT suppressing them would risk the member's session
+ *    quietly authenticating as the node. So a member can connect a Google
+ *    account here and see it on the card, and a spawned gemini agent still uses
+ *    whatever the node uses. That is the honest intermediate state, and it is
+ *    the one thing on this surface that a reader should not mistake for done.
  */
 export type AgentCredentialProvider = 'anthropic' | 'openai';
 
@@ -79,8 +96,12 @@ export const AGENT_CREDENTIAL_CONFIG_DIR_VAR = {
  * An agent environment therefore never carries two competing credentials for
  * one provider. The suppression is scoped to the connected provider ONLY: a
  * member who has not connected keeps today's behaviour byte for byte, and
- * `GEMINI_API_KEY` / `GOOGLE_API_KEY` are untouched because no gemini provider
- * is admitted (ruling 6) — do not generalise this beyond the admitted set.
+ * `GEMINI_API_KEY` / `GOOGLE_API_KEY` are untouched. Ruling 6's original reason
+ * ("no gemini provider is admitted") expired with migration 123, which admits
+ * gemini as a LOGIN provider; the conclusion survives on the narrower ground
+ * above — gemini is not a spawn-time injection, so there is no member
+ * credential here for a node key to outrank yet. Do not generalise this beyond
+ * the injected set.
  *
  * Deliberately NOT a fallback: a stale member credential must fail visibly and
  * attributably ("reconnect your Anthropic account"), never quietly revert to

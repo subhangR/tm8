@@ -95,17 +95,27 @@ const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] a
  * a list that fits on screen whole is only friction. */
 const TEAMMATE_SEARCH_FROM = 5;
 type CredentialChoice = '' | 'member' | 'node';
-type AgentCredentialProvider = Extract<CredentialProviderName, 'anthropic' | 'openai'>;
+// The FILE-shaped providers an agent tool can consume. `github` is excluded
+// because its credential injects universally rather than being chosen per tool.
+type AgentCredentialProvider = Extract<
+  CredentialProviderName, 'anthropic' | 'openai' | 'gemini' | 'hermes'
+>;
 
 const AGENT_CREDENTIAL_PROVIDER: Partial<Record<string, AgentCredentialProvider>> = {
   'claude-code': 'anthropic',
   codex: 'openai',
+  gemini: 'gemini',
+  hermes: 'hermes',
 };
 
+// Vendor names, not product names: this sheet is choosing WHOSE credential to
+// inject. The home and settings tiles name the product the member recognises.
 const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   github: 'GitHub',
+  gemini: 'Google',
+  hermes: 'Nous',
 };
 
 export function LaunchSheet(props: LaunchSheetProps) {
@@ -182,6 +192,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
     anthropic: '',
     openai: '',
     github: '',
+    gemini: '',
+    hermes: '',
   });
   const [credentialStatus, setCredentialStatus] = useState<CredentialsStatusView | null>(null);
   const [credentialStatusState, setCredentialStatusState] = useState<'idle' | 'loading' | 'ready' | 'error'>(

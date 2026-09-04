@@ -1,14 +1,16 @@
 /**
  * HomePage — the merged single home (user ruling, task 01a0027d, 2026-08-14).
  *
- * ONE canvas, three altitudes:
+ * ONE canvas, four altitudes:
  *
  *   1. The CHAT is the hero — the existing chat-home surface, mounted solo
  *      (its thread sidebar hidden by this module's stylesheet; full thread
  *      management stays on the Messages screen).
  *   2. NEEDS YOU directly beneath, only when it has rows — triage outranks
  *      everything, and an inbox-zero space shows rails only.
- *   3. Glance RAILS for the daily collections (domain's `HOME_RAIL_KINDS`),
+ *   3. AGENT SIGN-INS — the same live credential block Settings hosts, here
+ *      as a first-class section rather than a link away from Home.
+ *   4. Glance RAILS for the daily collections (domain's `HOME_RAIL_KINDS`),
  *      a teammate presence row, and the escape hatch to the full workspace.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
@@ -29,6 +31,7 @@
  */
 import { useMemo, type ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
+import type { Seam } from '../data/seam';
 import { HOME_PRESENCE_KIND, HOME_RAIL_KINDS, KindIcon, getKind } from '../domain';
 import {
   composeMyWork,
@@ -38,13 +41,22 @@ import {
   type HomeScreenData,
   type HomeSection,
 } from '../home';
+import {
+  CredentialsProviderBlock,
+  credentialsPortFromSeam,
+} from '../settings-credentials';
 import './home-page.css';
 
 /** Cards per rail — a glance, not a list. The header opens the whole kind. */
 const RAIL_CARD_CAP = 6;
 
+/** Home's existing narrow read port plus the human-only credential operations. */
+export type HomePageData = Omit<HomeScreenData, 'seam'> & {
+  seam: HomeScreenData['seam'] & Pick<Seam, 'credentials'>;
+};
+
 export interface HomePageProps {
-  data: HomeScreenData;
+  data: HomePageData;
   /** The solo chat surface — the host mounts it (seam wiring is its business). */
   chat: ReactNode;
   onOpenEntity(id: string): void;
@@ -102,6 +114,14 @@ export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
 
+  // Home is the host at this boundary. It hands the shared component the same
+  // narrow port as Settings, with spaceId bound inside that adapter — never in
+  // the component and never by routing around the human-only seam operations.
+  const credentialsPort = useMemo(
+    () => credentialsPortFromSeam(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
+
   /* The full T5-1 composition, reused for its NEEDS YOU section alone — the
      other sections' facts render as rails below, where the whole space (not
      just "mine") is the design. */
@@ -137,6 +157,13 @@ export function HomePage(props: HomePageProps) {
         ) : needsYou && (home.viewerError || home.notificationsError) ? (
           <p className="hp-note" role="status">{needsYou.emptyNote}</p>
         ) : null}
+
+        <section className="hp-credentials" aria-label="Agent sign-ins" data-testid="home-credentials">
+          <div className="hp-rail__head">
+            <span className="hp-rail__label kit-eyebrow">Agent sign-ins</span>
+          </div>
+          <CredentialsProviderBlock port={credentialsPort} />
+        </section>
 
         {HOME_RAIL_KINDS.map((kind) => {
           const config = getKind(kind);

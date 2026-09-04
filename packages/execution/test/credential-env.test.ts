@@ -90,8 +90,25 @@ function pollutedParentEnv(): NodeJS.ProcessEnv {
 }
 
 describe('composeCredentialEnv — acceptance criterion 1: the exact key set', () => {
+  it('pins the complete provider order and each config-directory override', () => {
+    expect(CREDENTIAL_PROVIDERS).toEqual([
+      'anthropic',
+      'openai',
+      'github',
+      'gemini',
+      'hermes',
+    ]);
+    expect(CREDENTIAL_CONFIG_DIR_VAR).toEqual({
+      anthropic: 'CLAUDE_CONFIG_DIR',
+      openai: 'CODEX_HOME',
+      github: 'GH_CONFIG_DIR',
+      gemini: null,
+      hermes: null,
+    });
+  });
+
   it.each(CREDENTIAL_PROVIDERS)(
-    'returns exactly the provider key set for %s, and the config variable is the only vendor credential key',
+    'returns exactly the provider key set for %s, with no unselected vendor credential key',
     (provider) => {
       const env = composeCredentialEnv({
         provider,
@@ -99,10 +116,11 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
         configDir: CONFIG_DIR(provider),
         parentEnv: pollutedParentEnv(),
       });
+      const configDirVar = CREDENTIAL_CONFIG_DIR_VAR[provider];
 
       // THE PRIMARY CONTROL. Not "does not contain X" — "is exactly this".
       expect(Object.keys(env).sort()).toEqual([
-        CREDENTIAL_CONFIG_DIR_VAR[provider],
+        ...(configDirVar === null ? [] : [configDirVar]),
         'HOME',
         'LANG',
         'PATH',
@@ -117,10 +135,20 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
       // silently weaken a different test in a different package.
       expect(Object.keys(env).sort()).toEqual(credentialEnvKeys(provider));
 
-      // Exactly ONE vendor config variable, never two.
-      const vendorKeys = Object.values(CREDENTIAL_CONFIG_DIR_VAR).filter((key) => key in env);
-      expect(vendorKeys).toEqual([CREDENTIAL_CONFIG_DIR_VAR[provider]]);
-      expect(env[CREDENTIAL_CONFIG_DIR_VAR[provider]]).toBe(CONFIG_DIR(provider));
+      // Exactly the selected vendor override when one exists, and none for the
+      // HOME-only providers. In particular, null must not become a key named
+      // "null" or an entry whose value is undefined.
+      const documentedConfigKeys = Object.values(CREDENTIAL_CONFIG_DIR_VAR).filter(
+        (key): key is string => key !== null,
+      );
+      const vendorKeys = documentedConfigKeys.filter((key) => key in env);
+      expect(vendorKeys).toEqual(configDirVar === null ? [] : [configDirVar]);
+      if (configDirVar === null) {
+        expect(env).not.toHaveProperty('null');
+        expect(Object.values(env)).not.toContain(CONFIG_DIR(provider));
+      } else {
+        expect(env[configDirVar]).toBe(CONFIG_DIR(provider));
+      }
     },
   );
 
@@ -349,6 +377,8 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
       anthropic: 'claude auth login',
       openai: 'codex login --device-auth',
       github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
+      gemini: 'gemini',
+      hermes: 'hermes login',
     });
   });
 
