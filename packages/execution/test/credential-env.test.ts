@@ -65,6 +65,7 @@ function pollutedParentEnv(): NodeJS.ProcessEnv {
     OPENAI_API_KEY: 'sk-LEAKED',
     GEMINI_API_KEY: 'LEAKED',
     GOOGLE_API_KEY: 'LEAKED',
+    CURSOR_API_KEY: 'cursor-LEAKED',
 
     // C7 — the spawning human's FULL identity, not a reduced principal.
     TM8_AGENT_TOKEN: 'tm8-agent-token-LEAKED',
@@ -97,6 +98,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
       'github',
       'gemini',
       'hermes',
+      'cursor',
     ]);
     expect(CREDENTIAL_CONFIG_DIR_VAR).toEqual({
       anthropic: 'CLAUDE_CONFIG_DIR',
@@ -104,6 +106,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
       github: 'GH_CONFIG_DIR',
       gemini: null,
       hermes: null,
+      cursor: null,
     });
   });
 
@@ -128,6 +131,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
         'TERM',
         'XDG_CONFIG_HOME',
         ...(provider === 'github' ? ['GH_PROMPT_DISABLED'] : []),
+        ...(provider === 'cursor' ? ['NO_OPEN_BROWSER'] : []),
       ].sort());
 
       // The exported helper must agree with the function it describes; the
@@ -152,7 +156,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
     },
   );
 
-  it('makes GitHub device login non-interactive without changing the other providers', () => {
+  it('sets each measured headless-PTY flag only for its own provider', () => {
     for (const provider of CREDENTIAL_PROVIDERS) {
       const env = composeCredentialEnv({
         provider,
@@ -163,7 +167,12 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
 
       if (provider === 'github') expect(env['GH_PROMPT_DISABLED']).toBe('1');
       else expect(env).not.toHaveProperty('GH_PROMPT_DISABLED');
+
+      if (provider === 'cursor') expect(env['NO_OPEN_BROWSER']).toBe('1');
+      else expect(env).not.toHaveProperty('NO_OPEN_BROWSER');
     }
+
+    expect(credentialEnvKeys('cursor')).toContain('NO_OPEN_BROWSER');
   });
 
   /**
@@ -196,6 +205,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
         'OPENAI_API_KEY',
         'GEMINI_API_KEY',
         'GOOGLE_API_KEY',
+        'CURSOR_API_KEY',
         'XDG_CACHE_HOME',
         'CLAUDE_CODE_ENTRYPOINT',
         'CLAUDECODE',
@@ -379,6 +389,7 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
       github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
       gemini: 'gemini',
       hermes: 'hermes login',
+      cursor: 'cursor-agent login',
     });
   });
 

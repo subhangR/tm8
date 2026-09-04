@@ -26,7 +26,7 @@ function port() {
 describe('the credentials port against a real seam', () => {
   it('returns the merged view AND its completeness report', async () => {
     const status = await port().load();
-    // All five providers, always — the contract says the array is never
+    // All six providers, always — the contract says the array is never
     // partial, so a screen may index it without guarding.
     expect(status.providers.map((p) => p.provider)).toEqual([
       'anthropic',
@@ -34,7 +34,13 @@ describe('the credentials port against a real seam', () => {
       'github',
       'gemini',
       'hermes',
+      'cursor',
     ]);
+    expect(status.providers.find((provider) => provider.provider === 'cursor')).toMatchObject({
+      connected: true,
+      login: null,
+      status: 'active',
+    });
     expect(status.gitCredentialStore).toBe('absent');
   });
 

@@ -467,7 +467,7 @@ const serviceRpcs: RpcHandler = async (fn) => {
 // ---------------------------------------------------------------------------
 
 describe('credentials.status merges two stores and degrades honestly', () => {
-  it('answers all five providers in display order even when nothing is connected', async () => {
+  it('answers all six providers in display order even when nothing is connected', async () => {
     const db = new FakeDb(serviceQueries);
     const registry = registryFor(db);
     const view = await invoke(registry, 'credentials.status', context('credentials.status', 'browser'));
@@ -479,6 +479,7 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       'github',
       'gemini',
       'hermes',
+      'cursor',
     ]);
     expect(parsed.providers.every((p) => p.connected === false)).toBe(true);
   });
@@ -794,7 +795,7 @@ describe('the login session operations answer their contract shapes', () => {
     });
 
     const error = await service.start(
-      { spaceId: SPACE_ID, provider: 'hermes' },
+      { spaceId: SPACE_ID, provider: 'cursor' },
       {
         identityId: 'identity-human',
         claims: { identityId: 'identity-human', authKind: 'browser' },
@@ -803,8 +804,8 @@ describe('the login session operations answer their contract shapes', () => {
 
     expect(error).toBeInstanceOf(CollabError);
     expect((error as CollabError).code).toBe('invalid_input');
-    expect((error as Error).message).toContain("'hermes'");
-    expect((error as Error).message).toMatch(/install/i);
+    expect((error as Error).message).toContain("'cursor-agent'");
+    expect((error as Error).message).toContain('curl https://cursor.com/install -fsS | bash');
     expect(db.calls).toEqual([]);
     expect(launched).toEqual([]);
   });

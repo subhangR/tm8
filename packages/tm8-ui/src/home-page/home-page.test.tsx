@@ -13,8 +13,8 @@
  *     dot is colour + word, never colour alone (C8/L10);
  *   - a quiet space renders NO needs-you strip (an inbox-zero canvas is
  *     quiet, not an empty amber box).
- *   - the five-provider sign-in block is a real Home section and is the same
- *     shared component Settings mounts.
+ *   - the compact six-provider rail sits immediately above Sessions, while
+ *     the detailed sign-in block remains the shared component Settings mounts.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
@@ -57,6 +57,7 @@ const seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent' | 'credentials'> = {
         { provider: 'github', connected: true, login: 'ada', authMethod: 'oauth', status: 'active', connectedAt: null, lastVerifiedAt: null },
         { provider: 'gemini', connected: false, login: null, authMethod: null, status: 'stale', connectedAt: null, lastVerifiedAt: null },
         { provider: 'hermes', connected: false, login: null, authMethod: null, status: 'unavailable', connectedAt: null, lastVerifiedAt: null },
+        { provider: 'cursor', connected: true, login: null, authMethod: null, status: 'active', connectedAt: null, lastVerifiedAt: null },
       ],
       gitCredentialStore: 'present',
     }),
@@ -124,20 +125,37 @@ describe('the merged home canvas', () => {
     expect(within(getByTestId('home-page')).getByTestId('chat-slot')).toBeTruthy();
   });
 
-  it('mounts the shared five-provider sign-in block as a real Home section', async () => {
+  it('mounts the compact provider rail above Sessions and keeps the detailed shared block', async () => {
     const { findByTestId } = renderPage({});
     const section = await findByTestId('home-credentials');
     expect(within(section).getByTestId('credentials-provider-block')).toBeTruthy();
-    expect(within(section).getAllByTestId(/^credential-card-/)).toHaveLength(5);
-    for (const name of ['Claude Code', 'Codex', 'GitHub', 'Gemini', 'Hermes']) {
+    expect(within(section).getAllByTestId(/^credential-card-/)).toHaveLength(6);
+    for (const name of ['Claude Code', 'Codex', 'GitHub', 'Gemini', 'Hermes', 'Cursor']) {
       expect(within(section).getByText(name)).toBeTruthy();
     }
+    const cursor = within(section).getByTestId('credential-card-cursor');
+    expect(cursor.getAttribute('data-credential-state')).toBe('connected');
+    expect(within(section).getByTestId('credential-verdict-cursor').textContent).toBe(
+      'Connected — inference access',
+    );
     // Home receives the same unavailable semantics as Settings: no action that
     // the server has already measured will fail.
     expect(within(section).queryByTestId('credential-connect-hermes')).toBeNull();
     expect(within(section).getByTestId('credential-install-hermes').textContent).toContain(
       'Install hermes',
     );
+
+    const compact = await findByTestId('home-provider-rail');
+    expect(within(compact).getAllByTestId(/^provider-rail-chip-/)).toHaveLength(6);
+    expect(
+      within(compact).getByTestId('provider-rail-chip-cursor').getAttribute('data-provider-state'),
+    ).toBe('connected');
+    expect(within(compact).getByLabelText('Hermes — unavailable').tagName).toBe('SPAN');
+
+    const sessions = await findByTestId('hp-rail-sessions');
+    expect(
+      compact.compareDocumentPosition(sessions) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('rails render cards newest-activity-first and open their entity', () => {

@@ -1390,9 +1390,9 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
 // ledger is enabled.
 // ---------------------------------------------------------------------------
 
-/** All five declared login-terminal providers; credential storage remains shape-specific. */
+/** All six declared login-terminal providers; credential storage remains shape-specific. */
 export const CredentialProviderNameSchema: z.ZodType<CredentialProviderName> =
-  z.enum(['anthropic', 'openai', 'github', 'gemini', 'hermes']);
+  z.enum(['anthropic', 'openai', 'github', 'gemini', 'hermes', 'cursor']);
 
 /** Mirrors 083's `account_agent_credentials.status` CHECK exactly. */
 const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);

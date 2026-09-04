@@ -211,6 +211,66 @@
   stroke-width: 1.4;
 }
 
+/* Every settled edge is directional. `Link.direction` chooses marker-start or
+   marker-end in the component, including incoming relations whose SVG path is
+   laid out focus-first but whose actual arrow points back toward the focus. */
+.sg-arrowhead { fill: var(--pn-line-2); }
+
+/* --- live session traffic -------------------------------------------------
+   One technique, three physical forms: message dots, a delegation baton, and
+   a completion return trace. Their arrowheads differ too (filled, open, and
+   barred), so colour is never the only distinction. */
+.sg-link--pulse {
+  --sg-pulse-color: var(--pn-brand);
+  stroke: var(--sg-pulse-color);
+  stroke-width: 2;
+  pointer-events: none;
+  opacity: 0;
+  animation: sg-pulse-forward var(--pn-dur-slow) var(--pn-ease-standard)
+    var(--sg-pulse-delay, 0ms) both;
+}
+
+.sg-link--pulse[data-travel='reverse'] { animation-name: sg-pulse-reverse; }
+.sg-link--pulse[data-pulse-kind='message'] {
+  --sg-pulse-color: var(--pn-brand);
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+}
+.sg-link--pulse[data-pulse-kind='delegation'] {
+  --sg-pulse-color: var(--pn-run);
+  stroke-width: 2.8;
+  stroke-dasharray: 11 4;
+  stroke-linecap: square;
+}
+.sg-link--pulse[data-pulse-kind='completion'] {
+  --sg-pulse-color: var(--pn-wait);
+  stroke-width: 2.4;
+  stroke-dasharray: 1 3 7 3;
+  stroke-linecap: butt;
+}
+.sg-link--pulse[data-pulse-outcome='failed'] { --sg-pulse-color: var(--pn-block); }
+
+.sg-pulse-arrow { fill: none; stroke: context-stroke; }
+.sg-pulse-arrow--message { fill: context-stroke; stroke: none; }
+.sg-pulse-arrow--delegation,
+.sg-pulse-arrow--completion {
+  stroke-width: 1.6;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+@keyframes sg-pulse-forward {
+  0% { stroke-dashoffset: 28; opacity: 0; }
+  18%, 78% { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+@keyframes sg-pulse-reverse {
+  0% { stroke-dashoffset: -28; opacity: 0; }
+  18%, 78% { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
 /* --- cells ---------------------------------------------------------------- */
 
 .sg-cell { cursor: pointer; }
@@ -255,6 +315,23 @@
   stroke: var(--pn-brand);
   stroke-width: 2;
 }
+
+/* Endpoint forms mirror the travelling traces: ring, heavy hand-off box,
+   broken return box. They remain visible when motion is reduced. */
+.sg-cell[data-pulse-kind='message'] .sg-box {
+  stroke: var(--pn-brand);
+  stroke-width: 2;
+}
+.sg-cell[data-pulse-kind='delegation'] .sg-box {
+  stroke: var(--pn-run);
+  stroke-width: 3;
+}
+.sg-cell[data-pulse-kind='completion'] .sg-box {
+  stroke: var(--pn-wait);
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+.sg-cell[data-pulse-outcome='failed'] .sg-box { stroke: var(--pn-block); }
 
 .sg-box--fold {
   fill: var(--pn-hover);
@@ -346,4 +423,16 @@
   font-size: var(--pn-fs-micro);
   line-height: var(--pn-lh-snug);
   color: var(--pn-ink-3);
+}
+
+/* Motion is optional; information is not. The pulse becomes a stationary
+   patterned line with its oriented marker and endpoint form still present. */
+@media (prefers-reduced-motion: reduce) {
+  .sg-link--pulse {
+    animation: none;
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+  .sg-hops__opt,
+  .sg-btn { transition: none; }
 }

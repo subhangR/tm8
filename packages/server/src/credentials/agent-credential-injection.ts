@@ -40,10 +40,13 @@
  * identity-keyed directory is correctly re-adopted by the same human's
  * re-created account, and an account-keyed one would orphan on every recreate.
  */
-import type {
-  AgentCredentialHome,
-  AgentCredentialHomePort,
-  CredentialProvider,
+import {
+  AGENT_CREDENTIAL_CONFIG_DIR_VAR,
+  AGENT_TOOL_CREDENTIAL_PROVIDER,
+  agentCredentialProviderFor,
+  type AgentCredentialProvider,
+  type AgentCredentialHome,
+  type AgentCredentialHomePort,
 } from '@tm8/execution';
 
 import type { Db, DbClaims } from '../db/types.js';
@@ -62,41 +65,39 @@ export interface DbAgentCredentialHomeOptions {
 /**
  * Which agent tools consume each FILE-shaped provider credential.
  *
- * This table is read in both directions. Spawn lookup starts with an agent tool
- * and finds its provider below; Disconnect starts with a provider and imports
- * the same table to find every live tool process that may already hold it.
- * Keeping those directions on one table prevents a provider from being
- * injected into new sessions but omitted from the containment kill, or killed
- * on disconnect without ever having been delivered.
+ * This provider-to-tools view is derived from execution's canonical
+ * tool-to-provider table. Spawn lookup reads that source directly; Disconnect
+ * imports this reverse projection to find every live tool process that may
+ * already hold the provider. A provider therefore cannot be injected into new
+ * sessions but omitted from the containment kill, or killed on disconnect
+ * without ever having been delivered.
  *
  * GitHub is deliberately absent: its string-shaped token is injected into all
  * tools through `account_git_credentials`, so the catalog represents it with
  * `null` (all tools) rather than one row here.
  */
-export const AGENT_TOOLS_BY_CREDENTIAL_PROVIDER = {
-  anthropic: ['claude-code'],
-  openai: ['codex'],
-  gemini: ['gemini'],
-  hermes: ['hermes'],
-} as const satisfies Record<
-  Exclude<CredentialProvider, 'github'>,
-  readonly string[]
->;
+function toolsByCredentialProvider(): Record<AgentCredentialProvider, readonly string[]> {
+  const result = Object.fromEntries(
+    (Object.keys(AGENT_CREDENTIAL_CONFIG_DIR_VAR) as AgentCredentialProvider[])
+      .map((provider) => [provider, [] as string[]]),
+  ) as Record<AgentCredentialProvider, string[]>;
+  for (const [agentTool, provider] of Object.entries(AGENT_TOOL_CREDENTIAL_PROVIDER)) {
+    result[provider].push(agentTool);
+  }
+  return result;
+}
 
-export type AgentFileCredentialProvider = keyof typeof AGENT_TOOLS_BY_CREDENTIAL_PROVIDER;
+export const AGENT_TOOLS_BY_CREDENTIAL_PROVIDER: Readonly<
+  Record<AgentCredentialProvider, readonly string[]>
+> = toolsByCredentialProvider();
+
+export type AgentFileCredentialProvider = AgentCredentialProvider;
 
 /** The provider `agentTool` consumes, or null when it has no admitted mapping. */
 export function credentialProviderForAgentTool(
   agentTool: string | null | undefined,
 ): AgentFileCredentialProvider | null {
-  if (!agentTool) return null;
-  for (const provider of Object.keys(
-    AGENT_TOOLS_BY_CREDENTIAL_PROVIDER,
-  ) as AgentFileCredentialProvider[]) {
-    const tools: readonly string[] = AGENT_TOOLS_BY_CREDENTIAL_PROVIDER[provider];
-    if (tools.includes(agentTool)) return provider;
-  }
-  return null;
+  return agentCredentialProviderFor(agentTool);
 }
 
 /**
@@ -150,7 +151,7 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     if (rows.length === 0) return null;
 
     return {
-      provider: provider as AgentCredentialHome['provider'],
+      provider,
       homeDir: credentialHomeDir(this.dataDir, claims.identityId),
       configDir: credentialConfigDir(this.dataDir, claims.identityId, provider),
     };

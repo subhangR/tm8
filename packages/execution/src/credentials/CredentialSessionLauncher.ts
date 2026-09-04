@@ -86,6 +86,14 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  *    before it mints a work session or starts a PTY. Nothing here retroactively
  *    claims a measurement, and the entry must not be reworded as though it did
  *    until someone has actually watched the flow.
+ *
+ *  cursor — `cursor-agent login` is MEASURED on this node (2026-09-04,
+ *    cursor-agent 2026.09.02-c22c1a3): the binary is present, the login verb
+ *    was observed, and its HOME-scoped storage was located at
+ *    `.cursor/cli-config.json`. This is evidence, unlike Hermes's declaration
+ *    above. `cursor-agent logout` also exists, but tm8 Disconnect revokes the
+ *    stored credential plus its sessions; invoking a vendor logout is a
+ *    separate decision and is deliberately not wired here.
  */
 export const CREDENTIAL_LOGIN_COMMANDS = {
   anthropic: 'claude auth login',
@@ -93,6 +101,7 @@ export const CREDENTIAL_LOGIN_COMMANDS = {
   github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
   gemini: 'gemini',
   hermes: 'hermes login',
+  cursor: 'cursor-agent login',
 } as const satisfies Record<CredentialProvider, string>;
 
 /**

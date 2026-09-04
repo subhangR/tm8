@@ -21,7 +21,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DbAgentCredentialHome } from '../../src/credentials/agent-credential-injection.js';
+import {
+  AGENT_TOOLS_BY_CREDENTIAL_PROVIDER,
+  DbAgentCredentialHome,
+  credentialProviderForAgentTool,
+} from '../../src/credentials/agent-credential-injection.js';
 import type { Db, DbClaims } from '../../src/db/types.js';
 
 const DATA_DIR = '/var/lib/tm8';
@@ -63,6 +67,19 @@ function resolver(rows: Array<{ provider: string }>, recorded: RecordedQuery[] =
 }
 
 describe('DbAgentCredentialHome', () => {
+  it('uses the execution tool map in both directions for every file-shaped provider', () => {
+    expect(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER).toEqual({
+      anthropic: ['claude-code'],
+      openai: ['codex'],
+      gemini: ['gemini'],
+      hermes: ['hermes'],
+      cursor: ['cursor'],
+    });
+    for (const [provider, tools] of Object.entries(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER)) {
+      for (const tool of tools) expect(credentialProviderForAgentTool(tool)).toBe(provider);
+    }
+  });
+
   it('resolves an active anthropic credential to PR2 credential-home layout', async () => {
     const recorded: RecordedQuery[] = [];
     const home = await resolver([{ provider: 'anthropic' }], recorded).resolve(CLAIMS, {
@@ -94,6 +111,7 @@ describe('DbAgentCredentialHome', () => {
   it.each([
     ['gemini', 'gemini'],
     ['hermes', 'hermes'],
+    ['cursor', 'cursor'],
   ] as const)('resolves the %s tool to its own %s provider directory', async (agentTool, provider) => {
     const recorded: RecordedQuery[] = [];
     const home = await resolver([{ provider }], recorded).resolve(CLAIMS, { agentTool });

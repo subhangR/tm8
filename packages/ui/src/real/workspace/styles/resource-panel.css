@@ -92,8 +92,19 @@
   font-family: var(--pn-ui); font-size: 9px; font-weight: 700; line-height: 16px; text-align: center;
 }
 
-/* quick launch — redesign-tokens.css */
-.ws-res .pn-quick { display: flex; gap: 8px; padding: 12px 14px; flex-wrap: wrap; border-bottom: 1px solid var(--pn-line); }
+/* quick launch — one six-slot strip at the real narrow panel width. */
+.ws-res .pn-quick {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(32px, 1fr));
+  gap: 3px;
+  min-width: 0;
+  /* 6×32 + 5×3 + 2×6 = 219px: every target still fits at the
+     workspace's measured 220px resource-panel floor without a 5+1 wrap. */
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--pn-line);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
 .ws-res .pn-qchip {
   display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px;
   border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-pill);
@@ -102,7 +113,8 @@
 }
 .ws-res .pn-qchip:hover:not(:disabled) { border-color: var(--pn-ink-4); color: var(--pn-ink); background: var(--pn-hover); }
 .ws-res .pn-qchip--icon {
-  width: 32px; height: 32px; padding: 0; gap: 0;
+  position: relative;
+  width: 100%; min-width: 32px; height: 34px; padding: 0; gap: 0;
   justify-content: center; border-radius: var(--pn-r-sm);
   color: var(--pn-ink-3);
 }
@@ -110,11 +122,75 @@
 .ws-res .pn-qchip--icon img { width: 16px; height: 16px; object-fit: contain; }
 .ws-res .pn-qchip:disabled,
 .ws-res .pn-ib:disabled { opacity: 1; }
+.ws-res .pn-qchip[aria-disabled="true"] { cursor: not-allowed; }
 .ws-quick-mark { font-size: 20px; line-height: 1; }
 .ws-quick-mark[data-tool="claude"] { color: #A984FF; }
 .ws-quick-mark[data-tool="codex"] { color: #00A67E; }
 .ws-quick-mark[data-tool="hermes"] { color: #F59E0B; }
 .ws-quick-mark[data-tool="gemini"] { color: #38BDF8; }
+.ws-quick-mark[data-tool="cursor"] { color: var(--pn-ink-2); }
+
+/* Shape + glyph both carry state, so the badge survives greyscale and does
+   not ask colour alone to distinguish an absent binary from an unknown probe. */
+.ws-res .pn-qchip__state {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentcolor;
+  border-radius: 50%;
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+.ws-res .pn-qchip__state--connected {
+  border-color: var(--pn-run);
+  background: var(--pn-run);
+  color: var(--pn-surface);
+}
+.ws-res .pn-qchip__state--disconnected { color: var(--pn-ink-3); }
+.ws-res .pn-qchip__state--unavailable {
+  border-radius: 2px;
+  border-color: var(--pn-block);
+  color: var(--pn-block);
+}
+.ws-res .pn-qchip__state--unknown {
+  border-style: dashed;
+  border-color: var(--pn-wait);
+  color: var(--pn-wait);
+}
+
+.ws-res .pn-quick__notice,
+.ws-res .pn-quick__error {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+.ws-res .pn-quick__notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ws-res .pn-quick__notice button {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-size: 9.5px;
+}
+.ws-res .pn-quick__error { color: var(--pn-block); }
 
 /* Terminals / Agents / Docs / Drawings — redesign-tokens.css */
 .ws-res .pn-filters {

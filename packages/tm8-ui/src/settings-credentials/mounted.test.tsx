@@ -56,6 +56,7 @@ const port: CredentialsPort = {
       { provider: 'github', connected: false, login: null, authMethod: null, status: null, connectedAt: null, lastVerifiedAt: null },
       { provider: 'gemini', connected: false, login: null, authMethod: null, status: 'stale', connectedAt: null, lastVerifiedAt: null },
       { provider: 'hermes', connected: false, login: null, authMethod: null, status: 'unavailable', connectedAt: null, lastVerifiedAt: null },
+      { provider: 'cursor', connected: true, login: null, authMethod: null, status: 'active', connectedAt: null, lastVerifiedAt: null },
     ],
     gitCredentialStore: 'absent',
   }),
@@ -105,7 +106,7 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
     // drawing a provider card, not the shell's "built in another module" card.
     expect(await screen.findByTestId('credentials-provider-block')).toBeTruthy();
     expect(await screen.findByTestId('credential-card-anthropic')).toBeTruthy();
-    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(5);
+    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(6);
     expect(screen.queryByTestId('section-absent')).toBeNull();
   });
 

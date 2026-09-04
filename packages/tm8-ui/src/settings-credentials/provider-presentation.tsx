@@ -98,6 +98,26 @@ function HermesMark(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function CursorMark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} {...markProps}>
+      <path
+        d="M5 4.5 18.5 11.25l-6 2.15-2.25 6.1L5 4.5Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="m12.5 13.4 4.3 4.3"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
   anthropic: {
     name: 'Claude Code',
@@ -127,6 +147,12 @@ export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
     name: 'Hermes',
     binary: 'hermes',
     icon: HermesMark,
+    needsGitCredentialStore: false,
+  },
+  cursor: {
+    name: 'Cursor',
+    binary: 'cursor-agent',
+    icon: CursorMark,
     needsGitCredentialStore: false,
   },
 } as const satisfies Record<CredentialProviderName, CredentialProviderPresentation>;

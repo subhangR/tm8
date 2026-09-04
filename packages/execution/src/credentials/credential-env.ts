@@ -48,16 +48,17 @@
 // scratch makes them ABSENT rather than empty, which is strictly stronger, so
 // there is nothing to blank here.
 //
-// THE NULL CONFIG-DIRECTORY OVERRIDE IS AN HONESTLY SMALLER GUARANTEE. Gemini
-// and Hermes publish no documented environment variable that redirects their
-// credential directory, so their table entries below are `null` and this
+// THE NULL CONFIG-DIRECTORY OVERRIDE IS AN HONESTLY SMALLER GUARANTEE. Gemini,
+// Hermes and Cursor publish no documented environment variable that redirects
+// their credential directory, so their table entries below are `null` and this
 // composer adds no provider-specific key for them. Their per-identity `HOME` is
-// the whole credential-storage isolation tm8 can claim for those two. Anthropic,
-// OpenAI and GitHub get that boundary PLUS a vendor-documented override pinned
-// to `configDir`; `null` records that the latter guarantee does not exist rather
-// than implying all five providers are isolated in the same way.
+// the whole credential-storage isolation tm8 can claim for those three.
+// Anthropic, OpenAI and GitHub get that boundary PLUS a vendor-documented
+// override pinned to `configDir`; `null` records that the latter guarantee does
+// not exist rather than implying all six providers are isolated in the same
+// way.
 //
-// THE ONE PROVIDER-SPECIFIC BEHAVIOUR FLAG. Utho's installed gh 2.62.0 asks
+// THE TWO PROVIDER-SPECIFIC BEHAVIOUR FLAGS. Utho's installed gh 2.62.0 asks
 // `Authenticate Git with your GitHub credentials? (Y/n)` even when `--web`,
 // `--git-protocol https` and `--skip-ssh-key` already make the answer
 // unambiguous. In the browser PTY that leaves `gh` blocked in read(0) before it
@@ -66,11 +67,24 @@
 // the deployed binary, it emits the one-time code and device URL immediately
 // and waits for browser completion. It is set ONLY for GitHub below so the
 // other vendors retain their interactive OAuth input paths.
+//
+// Cursor Agent 2026.09.02-c22c1a3 has the same headless-PTY failure class and
+// its own `login --help` names the remedy exactly: "Set NO_OPEN_BROWSER to
+// disable browser opening." There is no browser on this node, so without that
+// flag `cursor-agent login` waits on a browser that will never open. The table
+// below sets `NO_OPEN_BROWSER=1` ONLY for Cursor; no other provider's browser
+// behaviour is changed.
 
 import { withAgentBinDirs } from '../spawn/manifest.js';
 
-/** The five vendors a Tier B login terminal can authenticate against. */
-export type CredentialProvider = 'anthropic' | 'openai' | 'github' | 'gemini' | 'hermes';
+/** The six vendors a Tier B login terminal can authenticate against. */
+export type CredentialProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'github'
+  | 'gemini'
+  | 'hermes'
+  | 'cursor';
 
 export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   'anthropic',
@@ -78,6 +92,7 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   'github',
   'gemini',
   'hermes',
+  'cursor',
 ];
 
 /**
@@ -88,7 +103,7 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
  * two would be meaningless at best and, for a provider whose CLI reads
  * another's variable, actively confusing; a table keyed by provider makes
  * "one or none" structural rather than a rule someone has to remember. See the
- * header for why Gemini and Hermes deliberately have none.
+ * header for why Gemini, Hermes and Cursor deliberately have none.
  */
 export const CREDENTIAL_CONFIG_DIR_VAR = {
   anthropic: 'CLAUDE_CONFIG_DIR',
@@ -96,7 +111,18 @@ export const CREDENTIAL_CONFIG_DIR_VAR = {
   github: 'GH_CONFIG_DIR',
   gemini: null,
   hermes: null,
+  cursor: null,
 } as const satisfies Record<CredentialProvider, string | null>;
+
+/** Provider-only process behaviour, kept in one table so keys and values agree. */
+const CREDENTIAL_BEHAVIOR_ENV = {
+  anthropic: {},
+  openai: {},
+  github: { GH_PROMPT_DISABLED: '1' },
+  gemini: {},
+  hermes: {},
+  cursor: { NO_OPEN_BROWSER: '1' },
+} as const satisfies Record<CredentialProvider, Readonly<Record<string, string>>>;
 
 /**
  * The keys every credential environment carries, whatever the provider.
@@ -122,7 +148,7 @@ export function credentialEnvKeys(provider: CredentialProvider): string[] {
   return [
     ...CREDENTIAL_ENV_BASE_KEYS,
     ...(configDirVar === null ? [] : [configDirVar]),
-    ...(provider === 'github' ? ['GH_PROMPT_DISABLED'] : []),
+    ...Object.keys(CREDENTIAL_BEHAVIOR_ENV[provider]),
   ].sort();
 }
 
@@ -194,11 +220,9 @@ export function composeCredentialEnv(input: ComposeCredentialEnvInput): Record<s
   // "null" key is a truthful environment. See the header.
   if (configDirVar !== null) env[configDirVar] = configDir;
 
-  // GitHub's fixed command already chooses HTTPS credentials, so its extra
-  // confirmation prompt has no remaining decision to collect. Disabling gh's
-  // prompting starts the headless device flow directly; it does not disable
-  // the browser authorization or the subsequent credential write.
-  if (provider === 'github') env['GH_PROMPT_DISABLED'] = '1';
+  // The selected provider's headless-PTY remedy, or no extra behaviour at all.
+  // The header records the measured reason for each admitted key.
+  Object.assign(env, CREDENTIAL_BEHAVIOR_ENV[provider]);
 
   return env;
 }

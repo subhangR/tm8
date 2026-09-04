@@ -15,9 +15,10 @@
  * The credential stores are split by SHAPE, not by vendor preference (sub-doc 0,
  * ruling R6):
  *
- *   * FILE-shaped credentials — anthropic, openai, gemini and hermes — live in
- *     a per-identity credential home. `account_agent_credentials` (083, widened
- *     by 123) indexes them and holds no secret column at all.
+ *   * FILE-shaped credentials — anthropic, openai, gemini, hermes and cursor —
+ *     live in a per-identity credential home. `account_agent_credentials`
+ *     (083, widened by 123 and 124) indexes them and holds no secret column at
+ *     all.
  *   * A GitHub token is a STRING, and its home is `account_git_credentials`,
  *     which ships on main in migration 093 with encrypted secret columns.
  *
@@ -45,7 +46,7 @@
  *      authorization in place this is no longer space-drivable, but a live
  *      terminal still holds a half-finished OAuth flow that can complete AFTER
  *      the revoke and write a fresh credential to disk.
- *   3. THE ACCOUNT'S LIVE AGENT SESSIONS carrying that provider. The four
+ *   3. THE ACCOUNT'S LIVE AGENT SESSIONS carrying that provider. The five
  *      file-shaped providers map through the same provider→tool table spawn
  *      lookup uses; `github` maps to ALL tools because git injection is
  *      universal.
@@ -86,11 +87,11 @@ import {
 /**
  * Every provider a card is rendered for, in display order.
  *
- * This is the SESSION table's five-value CHECK, not either credential store's
- * CHECK. Four file-shaped providers are indexed in
+ * This is the SESSION table's six-value CHECK, not either credential store's
+ * CHECK. Five file-shaped providers are indexed in
  * `account_agent_credentials`; GitHub is intentionally absent from that table
  * because its string-shaped token lives in `account_git_credentials`. A member
- * can still run all five login flows here, so deriving the cards from either
+ * can still run all six login flows here, so deriving the cards from either
  * storage table would describe an implementation shape rather than the feature.
  * `CREDENTIAL_PROVIDERS` is also the login table's order, so the two surfaces
  * cannot drift independently.
@@ -207,7 +208,7 @@ export class W2CredentialCatalogService {
   // -------------------------------------------------------------------------
 
   /**
-   * The merged view. Always all five providers, in a fixed order.
+   * The merged view. Always all six providers, in a fixed order.
    *
    * A provider with no row is `connected: false` with every other field null —
    * an ABSENT row is the encoding of "not connected" (PR2 is deliberate about

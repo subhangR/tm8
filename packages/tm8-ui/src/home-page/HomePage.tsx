@@ -9,9 +9,10 @@
  *   2. NEEDS YOU directly beneath, only when it has rows — triage outranks
  *      everything, and an inbox-zero space shows rails only.
  *   3. AGENT SIGN-INS — the same live credential block Settings hosts, here
- *      as a first-class section rather than a link away from Home.
+ *      as a first-class management section rather than a link away from Home.
  *   4. Glance RAILS for the daily collections (domain's `HOME_RAIL_KINDS`),
- *      a teammate presence row, and the escape hatch to the full workspace.
+ *      with a compact sign-in strip immediately above Sessions, then teammate
+ *      presence and the escape hatch to the full workspace.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
  *   - `useHomeData` / `composeMyWork` (src/home) — the NEEDS YOU composition
@@ -29,7 +30,7 @@
  * kinds come from `domain/home-page.ts`, presence state is read structurally
  * (`'liveWork' in state`), and every glyph resolves through the registry.
  */
-import { useMemo, type ReactNode } from 'react';
+import { Fragment, useMemo, type ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { HOME_PRESENCE_KIND, HOME_RAIL_KINDS, KindIcon, getKind } from '../domain';
@@ -45,6 +46,7 @@ import {
   CredentialsProviderBlock,
   credentialsPortFromSeam,
 } from '../settings-credentials';
+import { ProviderRail } from '../provider-rail';
 import './home-page.css';
 
 /** Cards per rail — a glance, not a list. The header opens the whole kind. */
@@ -169,33 +171,47 @@ export function HomePage(props: HomePageProps) {
           const config = getKind(kind);
           const rows = [...data.rowsFor(kind)(undefined)].sort(byActivity).slice(0, RAIL_CARD_CAP);
           return (
-            <section key={kind} className="hp-rail" aria-label={config.labelPlural} data-testid={`hp-rail-${config.slug ?? kind}`}>
-              <div className="hp-rail__head">
-                <button type="button" className="hp-rail__open" onClick={() => props.onOpenKind(kind)}>
-                  <span className="hp-rail__label kit-eyebrow">{config.labelPlural}</span>
-                  <span aria-hidden="true">▸</span>
-                </button>
-              </div>
-              {rows.length > 0 ? (
-                <div className="hp-rail__scroll">
-                  {rows.map((summary) => (
-                    <RowCard
-                      key={summary.id}
-                      row={homeRowOf(summary, {
-                        ...(config.list.liveTreatment
-                          ? { liveness: data.livenessOf(summary.id) }
-                          : {}),
-                        streaming: data.activity[summary.id] === true,
-                        compact: true,
-                      })}
-                      onOpen={props.onOpenEntity}
-                    />
-                  ))}
+            <Fragment key={kind}>
+              {kind === HOME_RAIL_KINDS[1] ? (
+                <section
+                  className="hp-provider-signins hp-rail"
+                  aria-label="Quick provider sign-ins"
+                  data-testid="home-provider-rail"
+                >
+                  <div className="hp-rail__head">
+                    <span className="hp-rail__label kit-eyebrow">Sign in to agents</span>
+                  </div>
+                  <ProviderRail port={credentialsPort} />
+                </section>
+              ) : null}
+              <section className="hp-rail" aria-label={config.labelPlural} data-testid={`hp-rail-${config.slug ?? kind}`}>
+                <div className="hp-rail__head">
+                  <button type="button" className="hp-rail__open" onClick={() => props.onOpenKind(kind)}>
+                    <span className="hp-rail__label kit-eyebrow">{config.labelPlural}</span>
+                    <span aria-hidden="true">▸</span>
+                  </button>
                 </div>
-              ) : (
-                <p className="hp-note">No {config.labelPlural.toLowerCase()} yet.</p>
-              )}
-            </section>
+                {rows.length > 0 ? (
+                  <div className="hp-rail__scroll">
+                    {rows.map((summary) => (
+                      <RowCard
+                        key={summary.id}
+                        row={homeRowOf(summary, {
+                          ...(config.list.liveTreatment
+                            ? { liveness: data.livenessOf(summary.id) }
+                            : {}),
+                          streaming: data.activity[summary.id] === true,
+                          compact: true,
+                        })}
+                        onOpen={props.onOpenEntity}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="hp-note">No {config.labelPlural.toLowerCase()} yet.</p>
+                )}
+              </section>
+            </Fragment>
           );
         })}
 

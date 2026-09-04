@@ -73,6 +73,16 @@
 }
 .cv2-root .hp-credentials .cred-intro { max-width: 680px; }
 
+/* The compact density sits directly above Sessions. Its heading and spacing
+   use the same rail rhythm as Tasks/Sessions/Docs; the full credential block
+   above remains the detailed management surface (disconnects and outcomes). */
+.cv2-root .hp-provider-signins {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
 .cv2-root .hp-card {
   display: flex;
   flex-direction: column;

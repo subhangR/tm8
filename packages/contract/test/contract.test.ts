@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ActorSummarySchema, BASE_PATH, CollabError, CollectionQuerySchema, CommandResultSchema,
-  CreateEntityInputSchema, CURSOR_VERSION, decodeCursor, encodeCursor,
+  CreateEntityInputSchema, CredentialProviderNameSchema, CURSOR_VERSION, decodeCursor, encodeCursor,
   EntityKindSchema, EntitySummarySchema, ERROR_STATUS, ExecutionLivenessSchema,
   ExecutionSpawnInputSchema,
   FileUploadGrantSchema, FileUploadInitInputSchema,
@@ -130,6 +130,13 @@ describe('operation catalog', () => {
 });
 
 describe('DTO schemas', () => {
+  it('admits Cursor as the sixth credential provider and keeps the provider vocabulary closed', () => {
+    for (const provider of ['anthropic', 'openai', 'github', 'gemini', 'hermes', 'cursor']) {
+      expect(CredentialProviderNameSchema.safeParse(provider).success, provider).toBe(true);
+    }
+    expect(CredentialProviderNameSchema.safeParse('cursor-agent').success).toBe(false);
+  });
+
   it('accepts a canonical task summary and rejects drift', () => {
     expect(EntitySummarySchema.safeParse(taskSummary).success).toBe(true);
     expect(EntitySummarySchema.safeParse({ ...taskSummary, surprise: 1 }).success).toBe(false);

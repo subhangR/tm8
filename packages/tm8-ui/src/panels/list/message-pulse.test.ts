@@ -1,6 +1,59 @@
 import { describe, expect, it } from 'vitest';
+import type { DurableWorkspaceEvent, EntitySummary, WorkSessionStatus } from '@tm8/contract';
 
-import { routeMessagePulse, type PulseTreeIndex } from './message-pulse';
+import {
+  advanceSessionEventState,
+  createSessionEventState,
+  deriveSessionTransition,
+  routeMessagePulse,
+  routePulsePath,
+  type PulseTreeIndex,
+} from './message-pulse';
+
+function session(
+  id: string,
+  status: WorkSessionStatus,
+  parentId: string | null,
+): EntitySummary {
+  const at = '2026-09-04T12:00:00.000Z';
+  return {
+    id,
+    spaceId: 'space-1',
+    kind: 'work_session',
+    title: id,
+    parentId,
+    position: 0,
+    visibility: 'space',
+    version: status === 'spawning' ? 1 : 2,
+    activityAt: at,
+    createdAt: at,
+    updatedAt: at,
+    deletedAt: null,
+    createdBy: { kind: 'member', id: 'member-1', displayName: 'Member' },
+    counters: {},
+    state: {
+      kind: 'work_session',
+      status,
+      agentTool: 'codex',
+      model: 'gpt-5',
+      shareMode: 'space',
+      startedAt: status === 'spawning' ? null : at,
+      exitedAt: status === 'exited' || status === 'failed' ? at : null,
+    },
+    badges: {},
+  } as EntitySummary;
+}
+
+function upsert(entity: EntitySummary, seq: number): DurableWorkspaceEvent {
+  return {
+    type: 'entity.upsert',
+    spaceId: 'space-1',
+    seq,
+    occurredAt: '2026-09-04T12:00:00.000Z',
+    schemaVersion: 1,
+    entity,
+  };
+}
 
 /**
  *      root
@@ -29,6 +82,46 @@ function index(hidden: readonly string[] = []): PulseTreeIndex {
   };
 }
 
+describe('deriveSessionTransition', () => {
+  it('derives a delegation from the birth of a child work session', () => {
+    const event = upsert(session('child', 'spawning', 'parent'), 10);
+    expect(deriveSessionTransition(event, createSessionEventState())).toEqual({
+      key: 'delegation:child',
+      kind: 'delegation',
+      fromId: 'parent',
+      toId: 'child',
+      evidence: 'entity',
+    });
+  });
+
+  it('derives a completion only on a non-terminal to terminal status change', () => {
+    const prior = createSessionEventState([session('child', 'running', 'parent')]);
+    expect(deriveSessionTransition(upsert(session('child', 'exited', 'parent'), 11), prior)).toEqual({
+      key: 'completion:child:11',
+      kind: 'completion',
+      fromId: 'child',
+      toId: 'parent',
+      outcome: 'exited',
+    });
+  });
+
+  it('returns null for an unrelated upsert', () => {
+    const unrelated = {
+      ...session('not-a-session', 'running', null),
+      kind: 'doc',
+      state: { kind: 'doc', format: 'markdown', childCount: 0 },
+    } as unknown as EntitySummary;
+    expect(deriveSessionTransition(upsert(unrelated, 12), createSessionEventState())).toBeNull();
+  });
+
+  it('returns null when the per-space sequence was already consumed', () => {
+    const event = upsert(session('child', 'spawning', 'parent'), 13);
+    const first = deriveSessionTransition(event, createSessionEventState());
+    const advanced = advanceSessionEventState(createSessionEventState(), event, first);
+    expect(deriveSessionTransition(event, advanced)).toBeNull();
+  });
+});
+
 describe('routeMessagePulse', () => {
   it('routes up to the common ancestor and back down, arriving last', () => {
     const route = routeMessagePulse('a1', 'b1', index());
@@ -42,6 +135,12 @@ describe('routeMessagePulse', () => {
     expect(route.fromRowId).toBe('a1');
     expect(route.toRowId).toBe('b1');
     expect(route.absorbed).toBe(false);
+    expect(routePulsePath('a1', 'b1', index()).steps).toEqual([
+      { fromId: 'a1', toId: 'a' },
+      { fromId: 'a', toId: 'root' },
+      { fromId: 'root', toId: 'b' },
+      { fromId: 'b', toId: 'b1' },
+    ]);
   });
 
   it('lights a shared wire once between siblings rather than stuttering', () => {

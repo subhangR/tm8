@@ -22,6 +22,7 @@
  *   openai     `codex login status`  → NOT YET CAPTURED on any node
  *   gemini     `.gemini/oauth_creds.json` under the isolated HOME
  *   hermes     no verified status verb OR credential-file location
+ *   cursor     `cursor-agent status --format json` → JSON `{isAuthenticated}`
  *
  * The openai row is the honest one. Nobody has run that command and recorded
  * its output, so this file does not pretend to parse it: an answer it cannot
@@ -38,6 +39,14 @@
  * Hermes is stricter still: neither a status verb nor its credential-file
  * location has been measured, so a present binary can only answer `stale`.
  * Inventing either would turn declaration into evidence.
+ *
+ * Cursor Agent 2026.09.02-c22c1a3 is the first of these new providers with a
+ * real status verb. Its measured signed-out answer carries
+ * `isAuthenticated:false`; that boolean is the whole decision. No signed-in
+ * shape has been observed, so this probe neither names nor guesses any other
+ * field. Missing, non-boolean or unparseable data is `stale`, never a confident
+ * connection or disconnection. Its HOME-scoped credential file was separately
+ * located at `.cursor/cli-config.json` and is recorded in the spec below.
  */
 import { execFile } from 'node:child_process';
 import { accessSync, constants, statSync } from 'node:fs';
@@ -97,6 +106,12 @@ const CREDENTIAL_PROBE_SPECS = {
     install:
       'Install Hermes Agent from https://hermes-agent.nousresearch.com/docs/getting-started/quickstart/ and make its `hermes` binary available to tm8.',
   },
+  cursor: {
+    command: ['cursor-agent', 'status', '--format', 'json'],
+    credentialFile: ['.cursor', 'cli-config.json'],
+    install:
+      'Install Cursor Agent with `curl https://cursor.com/install -fsS | bash`, then make its `cursor-agent` binary available to tm8.',
+  },
 } as const satisfies Record<
   CredentialProvider,
   {
@@ -108,8 +123,9 @@ const CREDENTIAL_PROBE_SPECS = {
 
 /**
  * Only providers with measured, non-interactive status verbs appear here.
- * A partial record is the control: adding Gemini or Hermes would require a real
+ * A partial record is the control: Gemini and Hermes would each require a real
  * command, so neither can acquire a guessed `--status` by exhaustiveness.
+ * Cursor appears because its status verb was observed on this node.
  */
 export const CREDENTIAL_PROBE_COMMANDS: Readonly<
   Partial<Record<CredentialProvider, readonly string[]>>
@@ -140,8 +156,9 @@ export interface ProbeResult {
   /** True ONLY when the probe positively confirmed an authenticated identity. */
   connected: boolean;
   /**
-   * `active` when confirmed, `stale` when the probe could not tell, and
-   * `unavailable` when PATH resolution positively established no binary.
+   * `active` when the probe gave a confident answer (connected OR
+   * disconnected), `stale` when it could not tell, and `unavailable` when PATH
+   * resolution positively established no binary.
    *
    * There is deliberately no `failed`: a probe that cannot be parsed has told
    * us nothing about the credential, and recording "no credential" on the
@@ -639,6 +656,67 @@ async function readGeminiProbe(env: Record<string, string>): Promise<ProbeResult
 }
 
 /**
+ * `cursor-agent status --format json` — a measured boolean answer.
+ *
+ * The signed-out payload observed on this node includes several other fields,
+ * but a signed-in payload has not been observed. Reading only
+ * `isAuthenticated` makes both boolean answers usable without inventing a
+ * login, auth method, token field or status vocabulary that the evidence does
+ * not establish. Exit status is deliberately irrelevant.
+ */
+function readCursorProbe(outcome: CommandOutcome): ProbeResult {
+  const base = { provider: 'cursor' as const, authMethod: null, login: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(firstJsonObject(outcome.stdout));
+  } catch {
+    return {
+      ...base,
+      connected: false,
+      status: 'stale',
+      detail: 'cursor-agent status --format json did not answer JSON',
+    };
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return {
+      ...base,
+      connected: false,
+      status: 'stale',
+      detail: 'cursor-agent status --format json returned an unexpected payload',
+    };
+  }
+
+  const isAuthenticated = (parsed as Record<string, unknown>)['isAuthenticated'];
+  if (typeof isAuthenticated !== 'boolean') {
+    return {
+      ...base,
+      connected: false,
+      status: 'stale',
+      detail: 'cursor-agent status --format json did not answer a boolean isAuthenticated',
+    };
+  }
+
+  if (!isAuthenticated) {
+    return {
+      ...base,
+      connected: false,
+      // `active` describes a successfully understood probe. Because negative
+      // probes are never persisted, it cannot become an active credential row.
+      status: 'active',
+      detail: 'cursor-agent status reports isAuthenticated=false',
+    };
+  }
+
+  return {
+    ...base,
+    connected: true,
+    status: 'active',
+    detail: null,
+  };
+}
+
+/**
  * Run the provider's probe and return what it actually established.
  *
  * Note the order for github: the environment is asserted BEFORE the probe runs.
@@ -691,6 +769,7 @@ export async function runCredentialProbe(input: RunCredentialProbeInput): Promis
 
   if (provider === 'anthropic') return readAnthropicProbe(outcome);
   if (provider === 'github') return readGithubProbe(outcome, env, cwd, run);
+  if (provider === 'cursor') return readCursorProbe(outcome);
   return readOpenAiProbe(outcome);
 }
 

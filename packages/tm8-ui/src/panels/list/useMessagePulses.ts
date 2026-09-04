@@ -1,11 +1,12 @@
 /**
- * `useMessagePulses` — the raw-event tap behind the session-tree pulse.
+ * `useMessagePulses` — the raw-event tap behind session-to-session motion.
  *
  * WHY THE RAW SEAM AND NOT THE DOMAIN STORE. The store already subscribes
  * globally (`data/project/domain-store.ts:193`) but it REDUCES THE TRANSIENCE
  * AWAY: `messagesByAnchor` answers "a message exists", and the pulse needs "a
- * message just arrived". Those are different facts, and only the second one is
- * animatable. So this is a genuine second consumer of `seam.onEvent`, matching
+ * message just arrived". The same is true of a session birth and a terminal
+ * status transition. Those are transient facts, so this is a genuine second
+ * consumer of `seam.onEvent`, matching
  * `channel-screen/chat-store.ts:379` — not a duplicate of the store.
  *
  * WHY THIS HOLDS A LIST AND NOT A FLAG PER ROW. Two sessions can message the
@@ -14,27 +15,45 @@
  * lifetime, so concurrent traffic looks like concurrent traffic.
  *
  * WHAT IS DELIBERATELY NOT HERE: no routing, no geometry, no knowledge that a
- * tree exists. This hook only says "A sent to B, just now". `message-pulse.ts`
- * decides what that looks like, and it is pure so it can be tested without a
- * seam, a DOM or a clock.
+ * tree or graph exists. This hook only retains a bounded live tail of typed
+ * `delegation | completion | message` pulses. `message-pulse.ts` derives and
+ * routes them with pure functions that need no seam, DOM or clock.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { DurableWorkspaceEvent } from '@tm8/contract';
+import type { DurableWorkspaceEvent, EntitySummary } from '@tm8/contract';
 
 import type { Unsubscribe } from '../../data/seam';
+import {
+  advanceSessionEventState,
+  appendBoundedPulse,
+  createSessionEventState,
+  deriveSessionTransition,
+  isFreshSessionEvent,
+  pulseFromEvent,
+  seedSessionEventState,
+  type SessionPulse,
+} from './message-pulse';
+
+export type {
+  Completion,
+  Delegation,
+  SessionMessagePulse,
+  SessionPulse,
+  SessionPulseKind,
+} from './message-pulse';
+/** Compatibility name used by the existing GateData/ListPanel wiring. */
+export type MessagePulse = SessionPulse;
 
 /** Exactly the seam surface this hook consumes. A full `Seam` satisfies it. */
 export interface MessagePulseSeamPort {
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
 }
 
-export interface MessagePulse {
-  /** Stable per arrival, so React keeps one animation per message. */
-  key: string;
-  /** The sending work session. */
-  fromId: string;
-  /** The anchor the message landed on. */
-  toId: string;
+export interface MessagePulseOptions {
+  /** Summaries the mounting screen already holds, used as the before image. */
+  knownEntities?: readonly EntitySummary[];
+  /** Optional liveness tap; the session graph uses it to refresh immediately. */
+  onEvent?: (event: DurableWorkspaceEvent, pulse: SessionPulse | null) => void;
 }
 
 /**
@@ -42,54 +61,86 @@ export interface MessagePulse {
  * per-segment stagger of the longest realistic path; the CSS decides the actual
  * motion, and this only decides when the entry stops existing.
  */
-const PULSE_TTL_MS = 1400;
+const PULSE_TTL_MS = 2_200;
+
+/** Hard ceiling: bursts drop their oldest visual, never queue without bound. */
+export const MAX_CONCURRENT_PULSES = 12;
 
 /**
  * Arrivals currently worth animating. Empty is the steady state — this returns a
  * stable frozen empty array when idle so a consumer's memo dependencies do not
  * churn on every unrelated event.
  */
-export function useMessagePulses(seam: MessagePulseSeamPort | undefined): readonly MessagePulse[] {
-  const [pulses, setPulses] = useState<readonly MessagePulse[]>(EMPTY);
+export function useMessagePulses(
+  seam: MessagePulseSeamPort | undefined,
+  options: MessagePulseOptions = EMPTY_OPTIONS,
+): readonly SessionPulse[] {
+  const [pulses, setPulses] = useState<readonly SessionPulse[]>(EMPTY);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const active = useRef<readonly SessionPulse[]>(EMPTY);
+  const eventState = useRef(createSessionEventState(options.knownEntities));
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
-    if (seam === undefined) return undefined;
+    if (seam === undefined || typeof seam.onEvent !== 'function') return undefined;
     const live = timers.current;
+    let mounted = true;
+    active.current = EMPTY;
+    eventState.current = createSessionEventState(optionsRef.current.knownEntities);
+    setPulses(EMPTY);
 
     const off = seam.onEvent((event) => {
-      if (event.type !== 'message.created') return;
-      // Provenance is hydrated by the event mapper from the recorder-owned
-      // `authored_from` edge. It is absent for a human-authored message, which
-      // is the ordinary case and simply has no wire to travel.
-      const fromId = event.sourceWorkSessionId;
-      const toId = event.anchorId;
-      if (typeof fromId !== 'string' || fromId === '' || fromId === toId) return;
+      if (!mounted) return;
+      eventState.current = seedSessionEventState(
+        eventState.current,
+        optionsRef.current.knownEntities ?? EMPTY_ENTITIES,
+      );
+      if (!isFreshSessionEvent(event, eventState.current)) return;
 
-      // The message id keys the animation. Re-delivery of the same event (the
-      // poll fallback merging with the socket) must refresh the existing pulse
-      // rather than stack a second copy on the same wire.
-      const key = event.message.id;
-      setPulses((prev) => [...prev.filter((pulse) => pulse.key !== key), { key, fromId, toId }]);
+      const pulse = pulseFromEvent(event, eventState.current);
+      const transition = deriveSessionTransition(event, eventState.current);
+      eventState.current = advanceSessionEventState(eventState.current, event, transition);
+      optionsRef.current.onEvent?.(event, pulse);
+      if (pulse === null) return;
 
-      clearTimeout(live.get(key));
-      live.set(
-        key,
-        setTimeout(() => {
+      const next = appendBoundedPulse(active.current, pulse, MAX_CONCURRENT_PULSES);
+      const retained = new Set(next.map((item) => item.key));
+      for (const [key, timer] of live) {
+        if (!retained.has(key)) {
+          clearTimeout(timer);
           live.delete(key);
-          setPulses((prev) => (prev.some((pulse) => pulse.key === key) ? prev.filter((p) => p.key !== key) : prev));
+        }
+      }
+      active.current = next;
+      setPulses(next);
+
+      clearTimeout(live.get(pulse.key));
+      live.set(
+        pulse.key,
+        setTimeout(() => {
+          if (!mounted) return;
+          live.delete(pulse.key);
+          const remaining = active.current.filter((item) => item.key !== pulse.key);
+          if (remaining.length === active.current.length) return;
+          active.current = remaining;
+          setPulses(remaining.length === 0 ? EMPTY : remaining);
         }, PULSE_TTL_MS),
       );
     });
 
     return () => {
+      mounted = false;
       off();
       for (const timer of live.values()) clearTimeout(timer);
       live.clear();
+      active.current = EMPTY;
     };
   }, [seam]);
 
   return useMemo(() => (pulses.length === 0 ? EMPTY : pulses), [pulses]);
 }
 
-const EMPTY: readonly MessagePulse[] = Object.freeze([]);
+const EMPTY: readonly SessionPulse[] = Object.freeze([]);
+const EMPTY_ENTITIES: readonly EntitySummary[] = Object.freeze([]);
+const EMPTY_OPTIONS: MessagePulseOptions = Object.freeze({});

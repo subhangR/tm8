@@ -211,7 +211,7 @@ function ProviderCard({
         <VerdictLine verdict={verdict} login={entry.login} binary={presentation.binary} />
       </div>
 
-      {/* A connected-null result is a permanent product fact, not an account
+      {/* A connected-null result is a complete probe answer, not an account
           name that is still loading. Only a real name earns an Account row. */}
       {verdict === 'connected-named' ? (
         <div className="cred-card__account">

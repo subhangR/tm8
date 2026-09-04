@@ -537,7 +537,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 113.
     // 113 -> 114 on 2026-09-04: 123_gemini_hermes_credentials.sql widens the
     // two credential-provider CHECKs. MEASURED on this tree: 114 SQL files.
-    expect(server.appliedMigrations.length).toBe(114);
+    // 114 -> 115 on 2026-09-04: 124_cursor_credentials.sql admits the measured
+    // Cursor provider to the same two CHECKs. MEASURED on this tree: 115 files.
+    // 115 -> 116 on 2026-09-04: 125_credential_provider_rpc_guards.sql makes
+    // both credential RPC guards follow the admitted sets that 123/124 put in
+    // the table CHECKs. MEASURED on this tree: 116 files.
+    expect(server.appliedMigrations.length).toBe(116);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

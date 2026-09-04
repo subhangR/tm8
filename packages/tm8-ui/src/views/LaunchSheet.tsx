@@ -97,15 +97,12 @@ const TEAMMATE_SEARCH_FROM = 5;
 type CredentialChoice = '' | 'member' | 'node';
 // The FILE-shaped providers an agent tool can consume. `github` is excluded
 // because its credential injects universally rather than being chosen per tool.
-type AgentCredentialProvider = Extract<
-  CredentialProviderName, 'anthropic' | 'openai' | 'gemini' | 'hermes'
->;
-
-const AGENT_CREDENTIAL_PROVIDER: Partial<Record<string, AgentCredentialProvider>> = {
+const AGENT_CREDENTIAL_PROVIDER: Readonly<Partial<Record<string, CredentialProviderName>>> = {
   'claude-code': 'anthropic',
   codex: 'openai',
   gemini: 'gemini',
   hermes: 'hermes',
+  cursor: 'cursor',
 };
 
 // Vendor names, not product names: this sheet is choosing WHOSE credential to
@@ -116,6 +113,7 @@ const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> = {
   github: 'GitHub',
   gemini: 'Google',
   hermes: 'Nous',
+  cursor: 'Cursor',
 };
 
 export function LaunchSheet(props: LaunchSheetProps) {
@@ -186,15 +184,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
   // always SENDS one (unlike the quick config, which can send nothing at all).
   const [accessMode, setAccessMode] = useState<NonNullable<LaunchConfig['accessMode']>>('auto');
   // Each provider defaults independently to Auto (the absent key). Keeping the
-  // UI state provider-keyed means switching Claude ↔ Codex does not carry an
-  // Anthropic choice into OpenAI, while GitHub remains independent from both.
-  const [credentialChoices, setCredentialChoices] = useState<Record<CredentialProviderName, CredentialChoice>>({
-    anthropic: '',
-    openai: '',
-    github: '',
-    gemini: '',
-    hermes: '',
-  });
+  // UI state provider-keyed means switching tools never carries one vendor's
+  // choice into another, while GitHub remains independently selectable.
+  const [credentialChoices, setCredentialChoices] = useState<
+    Partial<Record<CredentialProviderName, CredentialChoice>>
+  >({});
   const [credentialStatus, setCredentialStatus] = useState<CredentialsStatusView | null>(null);
   const [credentialStatusState, setCredentialStatusState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     props.loadCredentialStatus ? 'loading' : 'idle',
@@ -238,9 +232,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
 
   const agentCredentialProvider = AGENT_CREDENTIAL_PROVIDER[agentToolId] ?? null;
   const agentCredentialSource = agentCredentialProvider
-    ? credentialChoices[agentCredentialProvider]
+    ? credentialChoices[agentCredentialProvider] ?? ''
     : '';
-  const githubCredentialSource = credentialChoices.github;
+  const githubCredentialSource = credentialChoices.github ?? '';
   const agentConnection = agentCredentialProvider
     ? credentialStatus?.providers.find((entry) => entry.provider === agentCredentialProvider)
     : null;

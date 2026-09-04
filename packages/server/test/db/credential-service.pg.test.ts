@@ -44,6 +44,7 @@ import {
 import {
   assertNoGitHubTokenEnv,
   captureGitHubToken,
+  CREDENTIAL_PROBE_COMMANDS,
   measureCredentialBinary,
   runCredentialProbe as runCredentialProbeImpl,
   type CredentialBinaryResolver,
@@ -359,7 +360,7 @@ describe('AC7 — the credential home, and the 0755 repair case', () => {
     expect(alice.configDir).not.toBe(bob.configDir);
   });
 
-  it.each(['gemini', 'hermes'] as const)(
+  it.each(['gemini', 'hermes', 'cursor'] as const)(
     'creates the new %s identity and provider directories at 0700 too',
     async (provider) => {
       const identity = `identity-${provider}`;
@@ -454,6 +455,82 @@ describe('AC6 — success is never inferred from a clean exit', () => {
     expect(probe.status).toBe('stale');
     expect(probe.detail).toMatch(/neither a status verb nor a credential-file location/i);
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it('uses Cursor Agent\'s measured status verb and treats isAuthenticated=false as disconnected', async () => {
+    const run = vi.fn<CommandRunner>(async () =>
+      outcome({
+        stdout: JSON.stringify({
+          status: 'unauthenticated',
+          isAuthenticated: false,
+          hasAccessToken: false,
+          hasRefreshToken: false,
+          message: 'Not logged in',
+        }),
+      }),
+    );
+    const probe = await runCredentialProbe({
+      provider: 'cursor',
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+      run,
+    });
+
+    expect(CREDENTIAL_PROBE_COMMANDS.cursor).toEqual([
+      'cursor-agent',
+      'status',
+      '--format',
+      'json',
+    ]);
+    expect(run).toHaveBeenCalledWith(CREDENTIAL_PROBE_COMMANDS.cursor, {
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+    });
+    expect(probe).toMatchObject({
+      provider: 'cursor',
+      connected: false,
+      status: 'active',
+      login: null,
+      authMethod: null,
+    });
+  });
+
+  it('accepts only Cursor\'s observed isAuthenticated field for a signed-in answer', async () => {
+    const run: CommandRunner = async () =>
+      outcome({ stdout: JSON.stringify({ isAuthenticated: true }) });
+    const probe = await runCredentialProbe({
+      provider: 'cursor',
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+      run,
+    });
+
+    expect(probe).toEqual({
+      provider: 'cursor',
+      connected: true,
+      status: 'active',
+      login: null,
+      authMethod: null,
+      detail: null,
+    });
+  });
+
+  it.each([
+    ['not JSON', 'not-json'],
+    ['a missing field', JSON.stringify({ status: 'authenticated' })],
+    ['a non-boolean field', JSON.stringify({ isAuthenticated: 'true' })],
+    ['a non-object payload', 'null'],
+  ])('keeps Cursor stale for %s rather than inventing an answer', async (_case, stdout) => {
+    const run: CommandRunner = async () => outcome({ stdout });
+    const probe = await runCredentialProbe({
+      provider: 'cursor',
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+      run,
+    });
+
+    expect(probe.connected).toBe(false);
+    expect(probe.status).toBe('stale');
   });
 
   it('records anthropic as NOT connected when loggedIn is false, despite exit 0', async () => {

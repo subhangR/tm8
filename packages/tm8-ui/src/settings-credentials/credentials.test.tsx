@@ -68,8 +68,8 @@ function portWith(
   };
 }
 
-describe('five providers and four honest states', () => {
-  it('renders all five product names with currentColor inline marks and their binaries', async () => {
+describe('six providers and four honest states', () => {
+  it('renders all six product names with currentColor inline marks, binaries, and a connected Cursor', async () => {
     render(
       <CredentialsSection
         port={portWith({
@@ -79,6 +79,7 @@ describe('five providers and four honest states', () => {
             connection({ provider: 'github', connected: true, login: 'ada', status: 'active' }),
             connection({ provider: 'gemini', status: 'stale' }),
             connection({ provider: 'hermes', status: 'unavailable' }),
+            connection({ provider: 'cursor', connected: true, status: 'active' }),
           ],
           gitCredentialStore: 'present',
         })}
@@ -86,13 +87,14 @@ describe('five providers and four honest states', () => {
     );
 
     await screen.findByTestId('credential-provider-grid');
-    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(5);
+    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(6);
     expect(Object.values(CREDENTIAL_PROVIDER_PRESENTATIONS).map(({ name, binary }) => [name, binary])).toEqual([
       ['Claude Code', 'claude'],
       ['Codex', 'codex'],
       ['GitHub', 'gh'],
       ['Gemini', 'gemini'],
       ['Hermes', 'hermes'],
+      ['Cursor', 'cursor-agent'],
     ]);
 
     for (const [id, provider] of Object.entries(CREDENTIAL_PROVIDER_PRESENTATIONS)) {
@@ -103,30 +105,40 @@ describe('five providers and four honest states', () => {
       expect(mark?.getAttribute('aria-hidden')).toBe('true');
       expect(mark?.innerHTML).toContain('currentColor');
     }
+
+    const cursor = screen.getByTestId('credential-card-cursor');
+    expect(cursor.getAttribute('data-credential-state')).toBe('connected');
+    expect(screen.getByTestId('credential-verdict-cursor').textContent).toBe(
+      'Connected — inference access',
+    );
+    expect(screen.getByTestId('credential-connect-cursor').textContent).toBe('Reconnect');
+    expect(screen.getByTestId('credential-disconnect-cursor')).toBeTruthy();
   });
 
-  it('renders unavailable differently from disconnected and never offers a doomed Connect', async () => {
+  it('renders an unavailable Cursor differently from disconnected and never offers a doomed Connect', async () => {
     render(
       <CredentialsSection
         port={portWith({
           providers: [
             connection({ provider: 'openai', status: null }),
-            connection({ provider: 'hermes', status: 'unavailable' }),
+            connection({ provider: 'cursor', status: 'unavailable' }),
           ],
           gitCredentialStore: 'present',
         })}
       />,
     );
 
-    const unavailable = await screen.findByTestId('credential-card-hermes');
+    const unavailable = await screen.findByTestId('credential-card-cursor');
     const disconnected = screen.getByTestId('credential-card-openai');
     expect(unavailable.getAttribute('data-credential-state')).toBe('unavailable');
     expect(disconnected.getAttribute('data-credential-state')).toBe('disconnected');
-    expect(screen.getByTestId('credential-verdict-hermes').textContent).toContain(
-      'hermes is not installed on this node',
+    expect(screen.getByTestId('credential-verdict-cursor').textContent).toContain(
+      'cursor-agent is not installed on this node',
     );
-    expect(screen.getByTestId('credential-install-hermes').textContent).toContain('Install hermes');
-    expect(screen.queryByTestId('credential-connect-hermes')).toBeNull();
+    expect(screen.getByTestId('credential-install-cursor').textContent).toContain(
+      'Install cursor-agent',
+    );
+    expect(screen.queryByTestId('credential-connect-cursor')).toBeNull();
     expect(within(unavailable).queryByRole('button')).toBeNull();
     expect(screen.getByTestId('credential-connect-openai').textContent).toBe('Connect');
   });
@@ -362,8 +374,11 @@ describe('the verdict function — four meanings are four values', () => {
     expect(verdictOf({ provider: 'github', connected: true, login: 'ada' }, 'absent')).toBe('connected-named');
   });
 
-  it('separates an absent binary from both a disconnection and a failed measurement', () => {
-    const base = { provider: 'hermes' as const, connected: false, login: null };
+  it('maps every real Cursor probe outcome without a provider-specific UI branch', () => {
+    const base = { provider: 'cursor' as const, connected: false, login: null };
+    expect(verdictOf({ ...base, connected: true, status: 'active' }, 'present')).toBe(
+      'connected-unnamed',
+    );
     expect(verdictOf({ ...base, status: 'unavailable' }, 'present')).toBe('unavailable');
     expect(verdictOf({ ...base, status: 'stale' }, 'present')).toBe('unknown');
     expect(verdictOf({ ...base, status: null }, 'present')).toBe('disconnected');

@@ -67,7 +67,7 @@ export function credentialsPortFromSeam(
 export type ConnectionVerdict =
   /** Connected, and there is a vendor-side account name to show. */
   | 'connected-named'
-  /** Connected, and there NEVER will be a name. Not pending, not missing. */
+  /** Connected, and the probe supplied no name. Complete, not pending. */
   | 'connected-unnamed'
   /** Measured false — this member genuinely has not connected this provider. */
   | 'disconnected'
@@ -92,8 +92,9 @@ export function verdictOf(
   gitCredentialStore: 'present' | 'absent',
 ): ConnectionVerdict {
   if (entry.connected) {
-    // Anthropic's connected login is NULL forever by migration 083's design.
-    // The unnamed value is therefore a complete answer, not missing data.
+    // NULL is a complete answer: legacy Anthropic rows have it forever, and
+    // Cursor's measured status proves authentication without naming an account.
+    // Neither positive result is missing data that the renderer should await.
     return entry.login === null ? 'connected-unnamed' : 'connected-named';
   }
   if (entry.status === 'unavailable') return 'unavailable';

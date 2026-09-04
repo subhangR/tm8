@@ -18,7 +18,7 @@
  *    silently overwrites another.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { RealFacade } from '../../RealFacade';
 import { TmClient } from '../../TmClient';
 import { ResourcePanel } from '../ResourcePanel';
@@ -77,6 +77,18 @@ function doc(id: string, title: string, format: 'markdown' | 'excalidraw') {
   return { ...base(id, 'doc', title), state: { kind: 'doc', format, childCount: 0 } };
 }
 
+const credentialStatus = {
+  providers: [
+    { provider: 'anthropic', connected: true, login: null, authMethod: 'oauth', status: 'active', connectedAt: null, lastVerifiedAt: null },
+    { provider: 'openai', connected: false, login: null, authMethod: null, status: null, connectedAt: null, lastVerifiedAt: null },
+    { provider: 'github', connected: false, login: null, authMethod: null, status: null, connectedAt: null, lastVerifiedAt: null },
+    { provider: 'gemini', connected: false, login: null, authMethod: null, status: 'stale', connectedAt: null, lastVerifiedAt: null },
+    { provider: 'hermes', connected: false, login: null, authMethod: null, status: 'unavailable', connectedAt: null, lastVerifiedAt: null },
+    { provider: 'cursor', connected: true, login: null, authMethod: null, status: 'active', connectedAt: null, lastVerifiedAt: null },
+  ],
+  gitCredentialStore: 'present',
+};
+
 let calls: Array<{ method: string; url: string; body: any }> = [];
 /** Bodies the stub serves for `entities.get`, so a save can change what a re-read returns. */
 let docBody = '# notes';
@@ -89,7 +101,19 @@ function stubNode() {
     calls.push({ method, url: u, body });
 
     let data: unknown = {};
-    if (u.includes('/v2/collections/query')) {
+    if (u.endsWith('/v2/identity/credentials') && method === 'GET') {
+      data = credentialStatus;
+    } else if (u.includes('/v2/identity/credentials/login-sessions/') && u.endsWith('/finish')) {
+      data = {
+        workSessionId: 'ws_login', provider: 'openai', connected: true,
+        login: null, authMethod: 'oauth', status: 'active', stored: true, terminated: true,
+      };
+    } else if (u.endsWith('/v2/identity/credentials/login-sessions') && method === 'POST') {
+      data = {
+        workSessionId: 'ws_login', spaceId: body?.spaceId, provider: body?.provider,
+        expiresAt: '2026-09-04T12:10:00.000Z', command: `${body?.provider} login`,
+      };
+    } else if (u.includes('/v2/collections/query')) {
       const kind = body?.kinds?.[0];
       const items =
         kind === 'work_session'
@@ -251,6 +275,64 @@ describe('shared polling', () => {
 // ---------------------------------------------------------------------------
 
 describe('ResourcePanel — over the real facade', () => {
+  it('draws five agent providers plus terminal as one state-aware quick strip', async () => {
+    render(<ResourcePanel {...panel()} />);
+    await screen.findByLabelText('Claude — connected');
+
+    const toolbar = screen.getByRole('toolbar', { name: 'Quick launch' });
+    expect(within(toolbar).getAllByTestId(/^quick-provider-/)).toHaveLength(5);
+    expect(toolbar.querySelectorAll('.pn-qchip--icon')).toHaveLength(6);
+    expect(within(toolbar).getByLabelText('Cursor — connected')).toBeTruthy();
+
+    const expected = {
+      anthropic: ['connected', '✓'],
+      openai: ['disconnected', '○'],
+      hermes: ['unavailable', '×'],
+      gemini: ['unknown', '?'],
+    } as const;
+    for (const [provider, [stateName, mark]] of Object.entries(expected)) {
+      const chip = within(toolbar).getByTestId(`quick-provider-${provider}`);
+      expect(chip.getAttribute('data-provider-state')).toBe(stateName);
+      expect(chip.querySelector('.pn-qchip__state')?.textContent).toBe(mark);
+    }
+  });
+
+  it('keeps connected launchers on the existing spawn gate', async () => {
+    render(<ResourcePanel {...panel()} />);
+    const claude = await screen.findByLabelText('Claude — connected') as HTMLButtonElement;
+
+    expect(claude.disabled).toBe(true);
+    expect(claude.title).toMatch(/Choose a task and agent/);
+  });
+
+  it('does not offer a click for a provider whose CLI is unavailable', async () => {
+    render(<ResourcePanel {...panel()} />);
+    const hermes = await screen.findByLabelText('Hermes — unavailable');
+
+    expect(hermes.tagName).toBe('SPAN');
+    expect(hermes.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(hermes);
+    expect(calls.some((call) => call.url.includes('/credentials/login-sessions'))).toBe(false);
+  });
+
+  it('starts the sign-in terminal for a disconnected provider and exposes finish', async () => {
+    const p = panel();
+    render(<ResourcePanel {...p} />);
+    fireEvent.click(await screen.findByLabelText('Codex — disconnected'));
+
+    await waitFor(() => expect(calls).toContainEqual(expect.objectContaining({
+      method: 'POST',
+      url: expect.stringContaining('/v2/identity/credentials/login-sessions'),
+      body: { spaceId: SPACE, provider: 'openai' },
+    })));
+    expect(p.onOpenSession).toHaveBeenCalledWith('ws_login');
+
+    fireEvent.click(screen.getByRole('button', { name: "I've finished" }));
+    await waitFor(() => expect(calls.some((call) =>
+      call.url.endsWith('/v2/identity/credentials/login-sessions/ws_login/finish'),
+    )).toBe(true));
+  });
+
   it('lists work_sessions through collections.query, grouped live/finished', async () => {
     render(<ResourcePanel {...panel()} />);
     await waitFor(() => expect(screen.getByText(/live · 1/)).toBeTruthy());

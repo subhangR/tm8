@@ -601,7 +601,7 @@ export function createFixtureSeam(): FixtureSeam {
   const nextId = (kind: string): string => `fx-${kind.replace(/^c:/, 'c-')}-${++idN}`;
 
   /**
-   * All five declared providers, drawn so that every honest-degradation state
+   * All six declared providers, drawn so that every honest-degradation state
    * is on screen and a surface cannot pass by collapsing two of them. Mutable,
    * because `disconnect` writes to it.
    */
@@ -656,6 +656,17 @@ export function createFixtureSeam(): FixtureSeam {
         status: 'unavailable',
         connectedAt: null,
         lastVerifiedAt: null,
+      },
+      // Cursor has a real status verb: this is a positive probe, not a guess
+      // from the presence of files or the login terminal's exit code.
+      {
+        provider: 'cursor',
+        connected: true,
+        login: null,
+        authMethod: null,
+        status: 'active',
+        connectedAt: FIXTURE_NOW,
+        lastVerifiedAt: FIXTURE_NOW,
       },
     ],
     // 'absent' is the fixture's default deliberately: it is the state of the
@@ -3156,6 +3167,8 @@ export function createFixtureSeam(): FixtureSeam {
      *  - gemini could not establish a connection answer (`stale` -> unknown).
      *  - hermes is measured unavailable, because its binary is absent. It must
      *    never acquire a Connect button that can only fail.
+     *  - cursor's real status verb positively reports a connection. Its probe
+     *    supplies no account name, so the connected-null shape remains honest.
      */
     credentials: {
       async status() {

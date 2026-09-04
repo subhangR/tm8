@@ -1344,16 +1344,22 @@ export interface AuthClaimResult {
 // ---------------------------------------------------------------------------
 
 /**
- * The five declared providers the credential surface can represent.
+ * The six declared providers the credential surface can represent.
  *
- * Wider than either credential store, and DELIBERATELY so: the four
+ * Wider than either credential store, and DELIBERATELY so: the five
  * FILE-shaped providers live in `account_agent_credentials`, while a GitHub
  * token is string-shaped and belongs in 093's `account_git_credentials`.
- * `credential_sessions.provider` carries all five because availability is a
+ * `credential_sessions.provider` carries all six because availability is a
  * runtime fact: a declared provider whose CLI is absent is reported as
  * unavailable and refused before a login terminal is created.
  */
-export type CredentialProviderName = 'anthropic' | 'openai' | 'github' | 'gemini' | 'hermes';
+export type CredentialProviderName =
+  | 'anthropic'
+  | 'openai'
+  | 'github'
+  | 'gemini'
+  | 'hermes'
+  | 'cursor';
 
 /** One provider's card on the Connections screen. */
 export interface CredentialConnectionView {
@@ -1406,7 +1412,7 @@ export interface CredentialConnectionView {
  * a node where the table exists.
  */
 export interface CredentialsStatusView {
-  /** One entry per provider in `CredentialProviderName`, always all five. */
+  /** One entry per provider in `CredentialProviderName`, always all six. */
   providers: CredentialConnectionView[];
   /**
    * `present` — the table exists and was read.
