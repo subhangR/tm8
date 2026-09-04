@@ -1,0 +1,126 @@
+/* --- ZoomableFigure --------------------------------------------------------
+   The frame around a drawing that is bigger than its column. Read
+   `kit/ZoomableFigure.tsx`'s docblock first — the reasoning lives there and is
+   not repeated here; this file only states the parts that are decisions ABOUT
+   the cascade.
+
+   THE HOST OWNS THE FRAME, THIS OWNS THE BEHAVIOUR. `.kit-zfig` is always
+   written alongside the caller's own class (`md-mermaid`, `tch-xgraph__stage`),
+   which keeps its border, padding, background and centring. Nothing here
+   restyles a resting figure — a reader who never touches a control sees exactly
+   what shipped before. */
+
+.cv2-root .kit-zfig {
+  position: relative;
+}
+
+/* At rest this is a plain scroll container, which IS the doc-column behaviour
+   `markdown.css` argues for: pan a wide flowchart rather than shrink it into
+   unreadability. The component writes no transform in this state. */
+.cv2-root .kit-zfig__viewport {
+  overflow: auto;
+  outline-offset: -2px;
+}
+.cv2-root .kit-zfig__viewport:focus-visible {
+  outline: 1px solid var(--pn-brand);
+}
+
+.cv2-root .kit-zfig__canvas {
+  /* The zoom-toward-cursor maths in the component assumes the top-left corner
+     is the fixed point; any other origin silently offsets every zoom. */
+  transform-origin: 0 0;
+}
+
+/* Once zoomed or expanded the component drives position with a transform, so
+   native scrolling is switched off — two pan mechanisms on one box fight.
+   `touch-action: none` is what lets a finger drag and pinch reach us at all,
+   and it is scoped to this state on purpose: at rest a touch over a diagram
+   still scrolls the page, which is what a phone reader expects. */
+.cv2-root .kit-zfig[data-interactive='true'] .kit-zfig__viewport {
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+.cv2-root .kit-zfig[data-interactive='true'] .kit-zfig__viewport:active {
+  cursor: grabbing;
+}
+
+/* --- expanded --------------------------------------------------------------
+   Fullscreen as a CSS state, on the SAME element, exactly as the artifact
+   viewer does it (`panels.css` → `.pn-preview--fullscreen`): no reparenting, so
+   the SVG below is never re-rendered.
+
+   Doubled class on purpose. These rules must outrank the HOST's frame rules —
+   `.cv2-root .md-mermaid` is (0,2,0) — and they must do it by ARITHMETIC rather
+   than by import order, which is the whole lesson of `kit/css-specificity.ts`.
+   `.cv2-root .kit-zfig.kit-zfig--expanded` is (0,3,0) and wins wherever it is
+   loaded from. */
+.cv2-root .kit-zfig.kit-zfig--expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  /* Paper, not the host's card: this is now the page, and it is the surface
+     mermaid's own `background` theme variable is read from. */
+  background: var(--pn-paper);
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .kit-zfig.kit-zfig--expanded .kit-zfig__viewport {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The column clamp is RELEASED here so the drawing can exceed the lane it was
+   born in. Generic on purpose — this shell knows nothing about mermaid — and at
+   (0,4,1) it outranks both `.cv2-root .md-mermaid__svg svg` (0,2,1) and
+   `.tch-xgraph__stage svg` (0,1,1). It cannot outrank the INLINE `max-width`
+   mermaid writes on its own root svg, and does not try to: magnifying past that
+   is the transform's job, not the cascade's. */
+.cv2-root .kit-zfig.kit-zfig--expanded .kit-zfig__canvas svg {
+  max-width: none;
+  height: auto;
+}
+
+/* --- controls --------------------------------------------------------------
+   Outside the child's subtree (the trust boundary — see the component's §1) and
+   pinned to a corner of the figure. */
+.cv2-root .kit-zfig__controls {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  /* NEVER `display: none` / `visibility: hidden`: either would drop these out
+     of the tab order, and a control a keyboard cannot reach is not a control.
+     Opacity keeps them focusable, and `:focus-within` below is what makes them
+     appear the moment someone Tabs in. */
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .kit-zfig:hover .kit-zfig__controls,
+.cv2-root .kit-zfig:focus-within .kit-zfig__controls,
+.cv2-root .kit-zfig[data-interactive='true'] .kit-zfig__controls {
+  opacity: 1;
+}
+
+/* No hover to reveal them with, so they are simply always on — the phone and
+   tablet case, where hover-only chrome is chrome that does not exist. */
+@media (hover: none) {
+  .cv2-root .kit-zfig__controls {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .kit-zfig__controls {
+    transition: none;
+  }
+}

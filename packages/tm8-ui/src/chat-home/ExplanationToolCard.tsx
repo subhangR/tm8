@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { Mermaid } from '../kit';
+import { Mermaid, ZoomableFigure } from '../kit';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { extractEntityRefs } from './entity-refs';
 import {
@@ -124,7 +124,18 @@ function GraphCard({
         <span data-basis="inferred">dashed · agent-inferred explanation</span>
         {!graph.verified ? <span data-basis="pending">dotted · awaiting verification</span> : null}
       </div>
-      <div className="tch-xgraph__stage">
+      {/* The same squeeze the mermaid card had, in a different stylesheet: this
+          stage scrolls sideways with the svg pinned at a 620px min-width, so a
+          twelve-node graph is a scroll strip in a chat lane. It gets the SAME
+          shell rather than its own expand button, so there is one keyboard
+          contract and one set of controls across every diagram in the product.
+          Node presses survive it — `ZoomableFigure` never starts a pan on a
+          `role="button"`, and swallows the click a completed pan would emit. */}
+      <ZoomableFigure
+        className="tch-xgraph__stage"
+        label={`${graph.title} graph`}
+        testId="explanation-graph-figure"
+      >
         <svg
           viewBox={`0 0 ${layout.width} ${layout.height}`}
           role="img"
@@ -197,7 +208,7 @@ function GraphCard({
             })}
           </g>
         </svg>
-      </div>
+      </ZoomableFigure>
       {graph.caption ? <p className="tch-explain__caption">{graph.caption}</p> : null}
     </section>
   );
