@@ -5,14 +5,23 @@ import { Avatar } from '../../kit';
 import './maestro-task-tile.css';
 
 export interface MaestroTaskTileProps {
-  rootRef: RefObject<HTMLDivElement>;
+  /* React 19 widened `useRef<T>(null)` to `RefObject<T | null>`; a prop typed
+     `RefObject<T>` can no longer receive one. The null is real — the ref is
+     null before mount — so the type is corrected to admit it rather than
+     cast at the call sites, which would move a real case into a blind spot. */
+  rootRef: RefObject<HTMLDivElement | null>;
   id: string;
   title: string;
   depth: number;
   selected: boolean;
   attention: boolean;
   attentionReason?: string;
+  /** `category === 'done'` — this task FINISHED. Never `deletedAt` (C2). */
   completed: boolean;
+  /** `deletedAt != null` — this task was FILED AWAY, at whatever status. A row
+      may be both; the two are orthogonal axes and read differently. The
+      session tile has carried this distinction all along. */
+  archived: boolean;
   childCount: number;
   childrenExpanded: boolean;
   onToggleChildren?: () => void;
@@ -24,6 +33,17 @@ export interface MaestroTaskTileProps {
     hollow: boolean;
     streaming: boolean;
   };
+  /**
+   * The status mark as a live CONTROL, when the host has one to give. Absent ⇒
+   * the mark stays the read-only dot it has always been, so a kind whose state
+   * nothing may write cannot end up with a status that looks pressable — which
+   * is the exact defect this prop exists to fix for the kinds that do.
+   *
+   * The control is handed its glyph rather than drawing one: tone and
+   * hollowness are resolved HERE, against the liveness precedence this tile's
+   * host owns, and a refused control must wear the same mark as a live one.
+   */
+  statusControl?: ReactNode;
   assignees: readonly ActorSummary[];
   /**
    * Provenance, shown only when nobody is assigned. Almost every task in a
@@ -57,11 +77,13 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     attention,
     attentionReason,
     completed,
+    archived,
     childCount,
     childrenExpanded,
     onToggleChildren,
     onSelect,
     status,
+    statusControl,
     assignees,
     creator,
     badges,
@@ -79,6 +101,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       className={[
         'pn-tt',
         completed ? 'pn-tt--completed' : '',
+        archived ? 'pn-tt--archived' : '',
         selected ? 'pn-tt--active' : '',
         attention ? 'pn-tt--attention' : '',
       ]
@@ -116,12 +139,20 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         )}
         {childCount > 0 ? <span className="pn-tt__arrowCount">{childCount}</span> : null}
 
-        <span className="pn-tt__status" title={status.title ?? status.label}>
-          <MaestroStatusGlyph
-            tone={status.tone}
-            hollow={status.hollow}
-            streaming={status.streaming}
-          />
+        {/* The visually-hidden word stays in BOTH forms: it is the row's own
+            read-out of the fact, and a status a sighted user reads as a dot
+            must not become unreadable to a screen reader merely because the
+            dot has become pressable. The wrapper's `title` does go when a
+            control is present — the control carries its own, and two native
+            tooltips on one 16px target is one too many. */}
+        <span className="pn-tt__status" title={statusControl ? undefined : (status.title ?? status.label)}>
+          {statusControl ?? (
+            <MaestroStatusGlyph
+              tone={status.tone}
+              hollow={status.hollow}
+              streaming={status.streaming}
+            />
+          )}
           <span className="pn-tt__status-text">{status.label}</span>
         </span>
 
@@ -182,7 +213,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
 
         {attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null}
 
-        <div className="pn-tt__actions">
+        <div className="pn-tt__actions lp__cluster">
           {actions}
           <button
             type="button"
@@ -219,7 +250,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
  * started one shows the same dot hollowed out. Tone carries the meaning
  * (`run` is green), so nothing here hard-codes a colour.
  */
-function MaestroStatusGlyph({
+export function MaestroStatusGlyph({
   tone,
   hollow,
   streaming,

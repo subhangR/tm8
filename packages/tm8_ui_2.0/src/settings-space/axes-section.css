@@ -1,0 +1,315 @@
+/* SETTINGS > TASK AXES — this section's own stylesheet.
+ *
+ * Owned by the axes lane and imported from `AxesSection.tsx`, never from
+ * `index.ts`. `settings.css` is shared by twelve parallel lanes and is not
+ * ours to touch (SECTION-CONTRACT.md §5), so everything here is prefixed
+ * `.set-axes__`.
+ *
+ * WHAT THIS FILE FIXES, measured in Chrome at 1508x882 and 900x600 before it
+ * existed:
+ *
+ *  1. THE ACTION COLUMN DID NOT LINE UP. The row was one flex line, and the
+ *     seeded row's `DisabledAction` carries a 96-character caption INSIDE the
+ *     control. That caption sized the flex item, so `seeded · edit · delete`
+ *     started at x=594 while every other row's started at x=1076 — a 482px
+ *     disagreement between row 1 and row 2 of the same table (333px at
+ *     900x600). A grid with a shared `auto` action track cannot drift,
+ *     whatever the row holds; measured 0 at both sizes after.
+ *  2. THE VALUES WERE A SENTENCE. `axisValues.join(' · ')` put a 12-value
+ *     axis on one 850px mono run that wrapped and dragged the axis NAME onto
+ *     two lines with it. They are a SET, so they are drawn as a set: chips
+ *     that wrap in their own track, clamped to eight with a reveal, so one
+ *     pathological axis cannot bury the nine rows under it. Clamped by COUNT
+ *     rather than a scrolling pane, because §3 allows one scroller per
+ *     section and the section already spent it.
+ * RECLASSIFIED (Kinetic W3 sweep). Mono is DATA here: the axis NAME (a key),
+ * its vocabulary chips (enum tokens), and counts. Sentences (the invariant
+ * note, row notes, refusals, hints), field labels, and button words speak
+ * Figtree; the provenance tag wears the caps badge grammar. Words and counts
+ * unchanged.
+ *
+ *  3. THE REFUSAL LANDED NOWHERE NEAR THE ACT. A delete refused on row 3
+ *     rendered as a bare span at the TOP of the scroller — 155px above the
+ *     button that was clicked, styled in the same ink-4 grey as every hint,
+ *     813px wide starting at x=341 with no gutter at all, and shoving the
+ *     whole list down to make room. It now renders in the row that was
+ *     refused, in the block colour, inside the measure, 65px below its own
+ *     button.
+ */
+
+/* --- groups -------------------------------------------------------------- */
+
+/* Two groups, labelled, instead of one undifferentiated stack: the registry
+   you READ, and the form you WRITE with. §7.5. */
+.set-axes__group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 14px var(--set-gutter) 6px;
+}
+.set-axes__group-count {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+/* The invariant stated ONCE. It used to be re-typed under every row, so four
+   axes bought four copies of the same 700px sentence and the section read as
+   grey boilerplate with data hidden in it. */
+.set-axes__note {
+  padding: 0 var(--set-gutter) 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+
+/* --- a registry row ------------------------------------------------------ */
+
+/* The fix for (1). `minmax(0, 1fr)` on the identity track is load-bearing: a
+   bare `1fr` is `minmax(auto, 1fr)`, which refuses to shrink below its content
+   and would push the actions out of the card again the moment a value list
+   got long. */
+.set-axes__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 14px;
+  row-gap: 5px;
+  align-items: start;
+  padding: 9px var(--set-gutter);
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+
+.set-axes__ident {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.set-axes__name {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+
+/* --- the value set ------------------------------------------------------- */
+
+.set-axes__values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.set-axes__value {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-x-hairline-soft);
+  border-radius: var(--pn-r-sm);
+  padding: 1px 6px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+/* An empty vocabulary MEANS free text (001) — it is a property of the axis,
+   not a missing chip, so it is not drawn as one. */
+.set-axes__free {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
+  color: var(--pn-ink-4);
+}
+/* An interactive word — ui at the floor, even beside 9px data chips. */
+.set-axes__more {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 1px 2px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-brand-2);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.set-axes__more:disabled { cursor: default; opacity: 0.5; }
+
+/* --- the action column --------------------------------------------------- */
+
+.set-axes__acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  /* The column is `auto`; this keeps rows whose actions differ (the seeded
+     row draws a refusal where the others draw a button) from each having a
+     different width and tearing the right edge apart. */
+  min-width: 168px;
+}
+.set-axes__prov {
+  /* A provenance WORD ("seeded") — caps badge grammar. */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-x-hairline-soft);
+  border-radius: var(--pn-r-sm);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+/* `edit` and `delete` were `<button class="set-invite__meta">` — a span class
+   on a button, so they rendered in the browser's own grey chrome at a font
+   the section never chose. They are ghost buttons now. */
+.set-axes__act {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.set-axes__act:hover:not(:disabled) { background: var(--pn-hover); }
+.set-axes__act:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+.set-axes__act:disabled { opacity: 0.45; cursor: default; }
+/* Danger keeps the SECONDARY form: block ink on the bordered ghost. */
+.set-axes__act--danger { color: var(--pn-block); }
+
+/* The tooltip form of the seeded row's refused delete. It sits inside the ONE
+   scroller, so it opens toward the row's right edge rather than past it. The
+   cause is not left to the tooltip alone — `.set-axes__rownote` states it in
+   standing prose under the row. */
+.cv2-root .set-axes__acts .hon-tip {
+  left: auto;
+  right: 0;
+  max-width: 320px;
+}
+
+/* UNAVAILABLE ≠ INVISIBLE (L6), and the default tooltip treatment — borderless
+   ink-4 at 0.55 opacity — lost that here: measured against the bordered ghost
+   buttons in the same track, the seeded row's refused `delete` read as a row
+   that simply HAS no delete rather than one whose delete is refused. It keeps
+   the ghost button's box and metrics so the three action slots line up, and
+   takes a DASHED edge, which is the difference between "a control" and "a
+   control that cannot act". */
+.cv2-root .set-axes__acts .hon-disabled--tooltip {
+  /* Same box and metrics as .set-axes__act so the action slots line up. */
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  padding: 0 10px;
+  border: 1px dashed var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  opacity: 0.75;
+}
+
+/* --- per-row prose ------------------------------------------------------- */
+
+.set-axes__rownote {
+  grid-column: 1 / -1;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-4);
+}
+
+/* The fix for (3): the server's refusal, in the row it was refused in.
+   A refusal is a sentence — Figtree, block ink (danger stays secondary). */
+.set-axes__refusal {
+  grid-column: 1 / -1;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-block);
+  background: var(--pn-block-soft);
+  border-left: 2px solid var(--pn-block);
+  border-radius: var(--pn-r-sm);
+  padding: 6px 9px;
+  overflow-wrap: anywhere;
+}
+
+/* --- the create / edit form ---------------------------------------------- */
+
+.set-axes__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px var(--set-gutter) 14px;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+/* An edit form replaces a row in the list, so it is tinted to say it is the
+   same object in another state and not a second axis. */
+.set-axes__form--edit {
+  background: var(--pn-hover);
+}
+/* The standing create form is the registry's foot, not another row. A rule
+   above it does the separating that a second group heading was doing — the
+   `Define a new axis` group over a `New axis` eyebrow printed the same words
+   twice in eleven vertical pixels. */
+.set-axes__form--create {
+  border-top: 1px solid var(--pn-line);
+  border-bottom: 0;
+  padding-top: 14px;
+  margin-top: 6px;
+}
+.set-axes__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* `flex-wrap` plus a real basis rather than two `flex: 1` inputs: at the
+   900x600 measure the pair still fits on one line, and below it they stack
+   instead of squeezing to 60px each. */
+.set-axes__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+/* Field LABELS are words — ui 600 at the floor, no caps dressing. */
+.set-axes__label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+.set-axes__hint {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
+  color: var(--pn-ink-4);
+}
+.set-axes__buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The submit button carried `.set-refuse--block`, which is `display: block;
+   width: 100%` — a class written for the DisabledAction wrapper, not for a
+   live button. It got no brass, so a full-width unstyled grey bar read as
+   inert, and in the edit form it took the whole line and pushed `cancel` onto
+   the next one. It is the brass chip it always was. */
+.set-axes__submit { flex: none; }

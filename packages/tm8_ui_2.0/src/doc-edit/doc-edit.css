@@ -1,0 +1,706 @@
+/* ==========================================================================
+   DOC AUTHORING — the T5-3 edit surface.
+
+   ORACLE: "T0-1 workspace structure review (1)/T5-3 Doc Authoring Hi-Fi.dc.html".
+   Three frames, cited below by their data-screen-label:
+     F1 "T5-3 — Read and edit modes"            (lines 21-133)
+     F2 "T5-3 — Z4 split view + block editors"  (lines 136-193)
+     F3 "T5-3 — Save states, dark, 320 floor"   (lines 196-272)
+
+   EVERY COLOUR RESOLVES THROUGH A TOKEN — `src/hex-ban.test.ts` walks this
+   file and must never need to be told not to. The mapping is stated ONCE here
+   so a reviewer can check it without a colour picker; every value in this
+   canvas already had a name:
+
+     #FFFFFF → --pn-card       #FBFAF6 → --pn-surface   #F2EFE8 → --pn-hover
+     #ECE8DF → --pn-active     #E7E3D9 → --pn-line      #D8D3C6 → --pn-line-2
+     #23201B → --pn-ink        #5B564C → --pn-ink-2     #8E897B → --pn-ink-3
+     #B7B2A4 → --pn-ink-4      #B26A2B → --pn-brand     #9A581F → --pn-brand-2
+     #3F6C90 → --pn-info       #BD8A2A → --pn-wait      #3E8E5A → --pn-run
+     rgba(178,106,43,.11) → --pn-brand-soft
+     rgba(178,106,43,.35/.2) → rgba(var(--pn-brand-rgb), α)   [the token file
+       ships the triple for exactly this, so both re-theme]
+
+   ONE PAIR HAS NO TOKEN, and it is NOT a new one: the editor/prose ink
+   #3A362E (light) / #D8D0BE (dark, F3 line 228 region) is the SAME measured
+   pair `panels/bodies/reader-body.css` already reported as the colour need
+   `--pn-x-prose-ink`. This file uses the identical
+   `var(--pn-x-prose-ink, var(--pn-ink))` fallback rather than raising a second
+   request for one colour — when that property lands in canvas-extra.css both
+   surfaces correct together. Recorded under COLOR NEEDS in the handover.
+
+   TWO ALPHA VALUES ARE DERIVED, not measured, and say so: the info banner's
+   fill and rule (oracle rgba(63,108,144,.08) / .25) have no rgb triple in the
+   token file, so they resolve through `--pn-info-soft` and a `color-mix`
+   against --pn-info. The fill therefore sits at the token's .12 rather than
+   the canvas's .08 — a stated DRIFT, not an eyeballed match.
+
+   MICRO TYPE SIZES ARE D5-VERBATIM: 9/9.5/10/10.5/11/11.5px are the canvas's
+   own literals and stay as written. Global scale is the single `zoom: 1.1`
+   lever on `.cv2-root` (D60); nothing here bumps a size.
+
+   THE HAIRLINE RULE (D-ledgered): --pn-line BOUNDS a component (the action
+   bar, the footer, the banner, a card); --pn-x-hairline-soft SEPARATES
+   repeated siblings inside one. Every rule below is a component boundary, so
+   every rule below is --pn-line.
+   ========================================================================== */
+
+/* --- the editor root ------------------------------------------------------
+   The oracle's edit panel is a column that fills the panel body: action bar,
+   optional banner, a body that takes the remaining height, footer. `min-height:
+   0` on the body is what makes the source area scroll instead of pushing the
+   footer off the bottom — the failure D63's vh/zoom lesson came from, one
+   layer in. */
+.cv2-root .de-root,
+.cv2-root .de-split {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+/* --- the action bar (F1b line 81) -----------------------------------------
+   Oracle: `height:32px;display:flex;align-items:center;gap:8px;padding:0 12px;
+   border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C`.
+
+   `flex-wrap` is an ADDITION, and it is the 320 floor's mechanism (F3c, line
+   247): at the floor the canvas keeps the toggle, Save and the save word, and
+   folds Cancel into the header ✕. We cannot fold a control we do not own into
+   a header we do not own, so the row wraps instead — everything stays reachable
+   and nothing is clipped. RULED divergence, recorded. */
+.cv2-root .de-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--pn-line);
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .de-bar__spacer {
+  flex: 1;
+}
+
+/* The split view's own breadcrumb line (F2a line 146). */
+.cv2-root .de-bar__title {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* --- Write ⇄ Preview (F1b line 82-85) -------------------------------------
+   Oracle: a bordered pill containing two segments; the active one takes
+   #ECE8DF, the quiet one #8E897B ink with a #E7E3D9 divider. */
+.cv2-root .de-stance {
+  display: inline-flex;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  overflow: hidden;
+  background: var(--pn-card);
+  flex: none;
+}
+
+.cv2-root .de-stance__opt {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  padding: 3px 10px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .de-stance__opt + .de-stance__opt {
+  border-left: 1px solid var(--pn-line);
+}
+
+.cv2-root .de-stance__opt:hover {
+  background: var(--pn-hover);
+}
+
+.cv2-root .de-stance__opt[aria-pressed='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
+/* --- Cancel / Save (F1b lines 88-89) --------------------------------------
+   Cancel  11.5px/600, --pn-ink-2, 1px --pn-line-2, r6, 2px 9px, on --pn-card
+   Save    11.5px/600, --pn-brand-2 on --pn-brand-soft, 1px brand@.35, r6 */
+.cv2-root .de-btn {
+  appearance: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 9px;
+  flex: none;
+}
+
+.cv2-root .de-btn--quiet {
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+}
+
+.cv2-root .de-btn--quiet:hover:not(:disabled) {
+  background: var(--pn-hover);
+}
+
+.cv2-root .de-btn--primary {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+}
+
+.cv2-root .de-btn--primary:hover:not(:disabled) {
+  background: rgba(var(--pn-brand-rgb), 0.2);
+}
+
+/* Nothing staged. Not a refusal — so not the disabled-with-reason treatment —
+   but it must not read as armed either. D32's rule: follow what the canvas
+   DRAWS for a quiet control, which is reduced presence, not a new colour. */
+.cv2-root .de-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cv2-root .de-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- the conflict banner (F1b lines 91-100) -------------------------------
+   Oracle: `display:flex;gap:8px;align-items:flex-start;padding:8px 12px;
+   background:rgba(63,108,144,.08);border-bottom:1px solid rgba(63,108,144,.25)`.
+   Fill and rule are DERIVED from --pn-info (see the header note on alpha). */
+.cv2-root .de-banner {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--pn-info-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--pn-info) 25%, transparent);
+}
+
+.cv2-root .de-banner__glyph {
+  color: var(--pn-info);
+  font-size: 11px;
+  padding-top: 1px;
+  flex: none;
+}
+
+.cv2-root .de-banner__text {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Oracle: 11.5px/600 #23201B. */
+.cv2-root .de-banner__fact {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+/* Oracle: 10.5px/1.45 #5B564C. */
+.cv2-root .de-banner__sub {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .de-banner__moves {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Oracle: mono 9px, #3F6C90, underline on hover. The out is QUIET — a fact
+   with a way out, not a pair of shouting buttons (annotation, line 128). */
+.cv2-root .de-banner__move {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-info);
+  white-space: nowrap;
+  padding: 1px 0;
+}
+
+.cv2-root .de-banner__move:hover {
+  text-decoration: underline;
+}
+
+/* --- the body ------------------------------------------------------------- */
+.cv2-root .de-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+/* --- the write stance (F1b line 101) --------------------------------------
+   Oracle: `flex:1;overflow:auto;padding:12px;font-family:'JetBrains Mono';
+   font-size:11.5px;line-height:1.8;color:#3A362E;background:#FFFFFF`. */
+.cv2-root .de-source {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-card);
+}
+
+.cv2-root .de-source__area {
+  flex: 1;
+  /* A textarea has no intrinsic minimum that respects a flex parent; without
+     this it refuses to shrink and pushes the footer out of view. The 120px
+     floor keeps it usable at the F3c 320 floor. */
+  min-height: 120px;
+  resize: none;
+  border: 0;
+  outline-offset: -2px;
+  padding: 12px;
+  background: var(--pn-card);
+  font-family: var(--pn-mono);
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: var(--pn-x-prose-ink, var(--pn-ink));
+  /* The oracle draws a brass caret bar beside the text (line 111) — that is a
+     static mock of a real caret. A textarea has one, so it is coloured rather
+     than drawn a second time. Two carets in one field is exactly the defect a
+     transcription produces and jsdom cannot see. */
+  caret-color: var(--pn-brand);
+}
+
+.cv2-root .de-source__area:read-only {
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+}
+
+/* --- insert a file --------------------------------------------------------
+   A quiet strip directly under the source, above the fence chips: the two
+   belong together (both are "things in this document that are not prose") and
+   neither may take height from the writing surface. */
+.cv2-root .de-insert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--pn-card);
+}
+/* The real input stays reachable to the keyboard and to a test, but the
+   button is the visible control — a raw file input cannot be styled to sit in
+   this row without lying about its size. */
+.cv2-root .de-insert__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.cv2-root .de-insert__hint,
+.cv2-root .de-insert__why {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .de-insert__why { color: var(--pn-block); }
+
+/* --- the fence chips (F1b line 105-110) -----------------------------------
+   Oracle: `border:1px dashed #D8D3C6;border-radius:7px;padding:6px 9px;
+   display:flex;align-items:center;gap:7px;background:#FBFAF6`. The dashes are
+   the canvas's own signal that the chip stands in for something else. */
+.cv2-root .de-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px 12px;
+  background: var(--pn-card);
+}
+
+.cv2-root .de-block {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 6px 9px;
+  background: var(--pn-surface);
+}
+
+.cv2-root .de-block__glyph {
+  color: var(--pn-ink-3);
+  font-size: 11px;
+}
+
+/* Oracle: 10px #5B564C, taking the free width. */
+.cv2-root .de-block__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .de-block__note {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-wait);
+}
+
+/* Oracle: 9.5px #9A581F, underline on hover. */
+.cv2-root .de-block__open {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-brand-2);
+  white-space: nowrap;
+}
+
+.cv2-root .de-block__open:hover {
+  text-decoration: underline;
+}
+
+/* --- the preview stance (F2a lines 162-166) -------------------------------
+   The split's preview pane is the measured one: serif 17px/500 heading, serif
+   13.5px/1.7 prose, a --pn-line quote rule at 10px mono, on --pn-surface. */
+.cv2-root .de-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px;
+  background: var(--pn-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cv2-root .de-preview__heading {
+  margin: 0;
+  font-family: var(--pn-prose);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--pn-ink);
+}
+
+.cv2-root .de-preview__prose {
+  margin: 0;
+  font-family: var(--pn-prose);
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--pn-x-prose-ink, var(--pn-ink));
+  text-wrap: pretty;
+}
+
+/* Oracle: `border-left:2px solid #E7E3D9;padding:2px 0 2px 10px;mono 10px
+   #8E897B`. The rule BOUNDS the quote, so --pn-line. */
+.cv2-root .de-preview__quote {
+  margin: 0;
+  border-left: 2px solid var(--pn-line);
+  padding: 2px 0 2px 10px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+}
+
+/* The un-rendered diagram. The oracle hatches this area (line 166); the hatch
+   is kept because it reads as "a picture belongs here", and the sentence under
+   it is what stops the hatch being read as a failed load. */
+.cv2-root .de-preview__block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--pn-surface),
+    var(--pn-surface) 7px,
+    var(--pn-hover) 7px,
+    var(--pn-hover) 14px
+  );
+}
+
+.cv2-root .de-preview__block-label {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  padding: 2px 7px;
+}
+
+.cv2-root .de-preview__block-note,
+.cv2-root .de-preview__empty {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+  text-align: center;
+}
+
+/* --- the footer (F1b line 113, F3a line 204-207) --------------------------
+   Oracle: `height:28px;border-top:1px solid #E7E3D9;display:flex;
+   align-items:center;gap:10px;padding:0 12px;mono 10px`. */
+.cv2-root .de-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 28px;
+  padding: 2px 12px;
+  border-top: 1px solid var(--pn-line);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  flex: none;
+}
+
+.cv2-root .de-foot__spacer {
+  flex: 1;
+}
+
+.cv2-root .de-foot__hint {
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+/* THE SAVE WORD — word + colour, never colour alone (F3a, line 208). The dot
+   is empty and aria-hidden, so the meaning always survives it. */
+.cv2-root .de-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.cv2-root .de-word__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.cv2-root .de-word--idle {
+  color: var(--pn-ink-3);
+}
+.cv2-root .de-word--wait {
+  color: var(--pn-wait);
+}
+.cv2-root .de-word--run {
+  color: var(--pn-run);
+}
+.cv2-root .de-word--info {
+  color: var(--pn-info);
+}
+.cv2-root .de-word--block {
+  color: var(--pn-block);
+}
+
+/* The oracle pulses the saving dot (`pnPulse 1.6s infinite`, line 205). Honoured
+   through the package's own motion story rather than a private keyframe, and
+   dropped entirely under reduced-motion — a pulsing dot is decoration, the word
+   beside it is the information. */
+@keyframes de-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.cv2-root .de-word--wait .de-word__dot {
+  animation: de-pulse 1.6s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .de-word--wait .de-word__dot {
+    animation: none;
+  }
+}
+
+/* --- the Z4 split (F2a lines 152-168) ------------------------------------- */
+.cv2-root .de-split__panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.cv2-root .de-split__pane {
+  flex-basis: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Oracle: a 1px #D8D3C6 column with a 7x26 r4 grab handle centred on it. */
+.cv2-root .de-split__bar {
+  width: 1px;
+  flex: none;
+  background: var(--pn-line-2);
+  cursor: col-resize;
+  position: relative;
+  /* The browser claims a touch drag as a pan unless told otherwise, and it
+     decides BEFORE the first `pointermove` is dispatched — so no amount of
+     JavaScript can win the gesture back afterwards. `.shell-ws__gap` already
+     declares this for the same reason. */
+  touch-action: none;
+}
+/* A 1px hit area is a mouse target, not a thumb target. The bar keeps its 1px
+   RULE — the visible line must not thicken — while the TOUCHABLE area is widened
+   symmetrically around it with a transparent outset, so the divider looks
+   identical and can actually be grabbed.
+
+   COARSE POINTERS ONLY, and that restriction is the point: this outset overlays
+   22px of each pane, and on desktop that would silently eat clicks and text
+   selection along the whole seam — a regression on a surface in daily use,
+   traded for a hit area a mouse does not need. A mouse can already hit 1px. */
+@media (pointer: coarse) {
+  .cv2-root .de-split__bar::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    /* 44px total, centred on the 1px rule. */
+    inset-inline: -21px -22px;
+  }
+}
+
+.cv2-root .de-split__grip {
+  position: absolute;
+  top: 50%;
+  left: -3px;
+  width: 7px;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 4px;
+  background: var(--pn-line-2);
+}
+
+.cv2-root .de-split__bar:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+/* --- the block stage (F2b lines 175-189) ---------------------------------- */
+.cv2-root .de-blockstage {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  overflow: hidden;
+  background: var(--pn-surface);
+}
+
+/* Oracle: `height:30px;gap:8px;padding:0 10px;background:#FBFAF6;
+   border-bottom:1px solid #E7E3D9`. */
+.cv2-root .de-blockstage__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 30px;
+  padding: 3px 10px;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .de-blockstage__label {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .de-blockstage__panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Oracle: `flex:1;background:#FFFFFF;padding:8px 10px;mono 9.5px/1.7 #5B564C`. */
+.cv2-root .de-blockstage__source {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: auto;
+  background: var(--pn-card);
+  padding: 8px 10px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.7;
+  color: var(--pn-ink-2);
+  border-right: 1px solid var(--pn-line-2);
+  white-space: pre-wrap;
+}
+
+/* Oracle: `flex:1.4` hatched. */
+.cv2-root .de-blockstage__canvas {
+  flex: 1.4;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--pn-surface),
+    var(--pn-surface) 7px,
+    var(--pn-hover) 7px,
+    var(--pn-hover) 14px
+  );
+}
+
+.cv2-root .de-blockstage__note {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--pn-ink-3);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  padding: 3px 7px;
+}
+
+/* --- the 320 floor (F3c lines 240-263) ------------------------------------
+   The canvas's promise is that the toggle, Save and the save word all SURVIVE.
+   Nothing above uses a fixed width, the two bars wrap, and the source area has
+   a min-height rather than a percentage — so the floor is a consequence of the
+   construction rather than a media query defending it. Stated as a constraint,
+   NOT as a measurement: this has not yet been looked at in a browser at 320px,
+   and the handover's NOT-CHECKED section says so. */

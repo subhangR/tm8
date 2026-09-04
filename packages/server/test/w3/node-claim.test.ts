@@ -126,7 +126,13 @@ describe('first-run node claim, over the public surface', () => {
       await server.request('GET', '/v2/auth/claim'),
     );
     expect(status.claimed).toBe(true);
-    expect(status.signupPath).toBe('admin');
+    // 141: was 'admin', now 'invite'. §10.0 required this to flip in the SAME
+    // change that lands `auth.invite.signup`: before it existed, an invited
+    // person's only route to an account was the node-admin-gated `auth.signup`,
+    // so 'admin' was honest. Now a claimed node accepts invite-bound self-signup,
+    // so 'invite' is what a new person will actually use — and 'admin' would be
+    // the lie the honesty surface exists to remove.
+    expect(status.signupPath).toBe('invite');
   });
 
   it('burned the token — the same one cannot claim twice', async () => {

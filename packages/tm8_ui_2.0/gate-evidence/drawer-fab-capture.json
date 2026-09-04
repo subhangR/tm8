@@ -1,0 +1,173 @@
+{
+ "viewport": "390x844 dpr3 mobile",
+ "findings": [
+  {
+   "frame": "drawer-fab-01-tasks-with-fab",
+   "note": "Tasks: header ＋ kept, FAB added, no tab bar",
+   "viewportWidth": 390,
+   "overflowCount": 0,
+   "overflowRoots": [],
+   "tapUnderMin": 1,
+   "smallest": [
+    {
+     "el": "input.lp__searchinput",
+     "w": 332.5,
+     "h": 23
+    }
+   ],
+   "fab": {
+    "w": 56,
+    "h": 56,
+    "right": 378,
+    "bottom": 832
+   },
+   "drawerPanel": null,
+   "menu": {
+    "w": 44,
+    "h": 44,
+    "right": 44,
+    "bottom": 48
+   },
+   "tabBar": null,
+   "drawerRows": 0,
+   "drawerSections": [],
+   "title": "Tasks"
+  },
+  {
+   "frame": "drawer-fab-02-drawer-open",
+   "note": "the drawer: Chats · Destinations · the rail groups · Settings + account",
+   "viewportWidth": 390,
+   "overflowCount": 0,
+   "overflowRoots": [],
+   "tapUnderMin": 1,
+   "smallest": [
+    {
+     "el": "input.lp__searchinput",
+     "w": 332.5,
+     "h": 23
+    }
+   ],
+   "fab": {
+    "w": 56,
+    "h": 56,
+    "right": 378,
+    "bottom": 832
+   },
+   "drawerPanel": {
+    "w": 328.6,
+    "h": 844,
+    "right": 328.6,
+    "bottom": 844
+   },
+   "menu": {
+    "w": 44,
+    "h": 44,
+    "right": 44,
+    "bottom": 48
+   },
+   "tabBar": null,
+   "drawerRows": 29,
+   "drawerSections": [
+    "Chats",
+    "Destinations",
+    "Work",
+    "Library",
+    "People",
+    "More"
+   ],
+   "title": "Tasks"
+  },
+  {
+   "frame": "drawer-fab-03-sessions-no-fab",
+   "note": "Sessions: no wired create, so NO FAB — absent, not inert",
+   "viewportWidth": 390,
+   "overflowCount": 0,
+   "overflowRoots": [],
+   "tapUnderMin": 1,
+   "smallest": [
+    {
+     "el": "input.lp__searchinput",
+     "w": 332.5,
+     "h": 23
+    }
+   ],
+   "fab": null,
+   "drawerPanel": null,
+   "menu": {
+    "w": 44,
+    "h": 44,
+    "right": 44,
+    "bottom": 48
+   },
+   "tabBar": null,
+   "drawerRows": 0,
+   "drawerSections": [],
+   "title": "Sessions"
+  },
+  {
+   "frame": "drawer-fab-04-commits-no-fab",
+   "note": "Commits: observed, not authored — NO FAB",
+   "viewportWidth": 390,
+   "overflowCount": 0,
+   "overflowRoots": [],
+   "tapUnderMin": 1,
+   "smallest": [
+    {
+     "el": "input.lp__searchinput",
+     "w": 332.5,
+     "h": 23
+    }
+   ],
+   "fab": null,
+   "drawerPanel": null,
+   "menu": {
+    "w": 44,
+    "h": 44,
+    "right": 44,
+    "bottom": 48
+   },
+   "tabBar": null,
+   "drawerRows": 0,
+   "drawerSections": [],
+   "title": "Commits"
+  }
+ ],
+ "checks": [
+  [
+   "no tab bar on any frame",
+   true
+  ],
+  [
+   "the ☰ is on every frame and clears the floor",
+   true
+  ],
+  [
+   "Tasks draws a FAB, and it clears the floor",
+   true
+  ],
+  [
+   "the FAB sits inside the viewport",
+   true
+  ],
+  [
+   "Sessions draws NO FAB",
+   true
+  ],
+  [
+   "Commits draws NO FAB",
+   true
+  ],
+  [
+   "the drawer opened, with rows and sections",
+   true
+  ],
+  [
+   "nothing overflows on any frame",
+   true
+  ],
+  [
+   "no frame regressed a tap target below the floor beyond the known list rows",
+   true
+  ]
+ ]
+}

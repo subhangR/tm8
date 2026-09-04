@@ -18,13 +18,18 @@ export {
   type ParsedDiff,
   type ParseUnifiedDiffOptions,
 } from './diff-parse';
+export { useMenuAnchor, PANELS_MENU_HEIGHT, type MenuAnchor } from './useMenuAnchor';
+export { useTreeDisclosure, ancestorPath, type TreeDisclosure } from './useTreeDisclosure';
 export { ActorRef } from './ActorRef';
 export { AvatarStack } from './AvatarStack';
 export { VRule, HRule } from './Hairline';
 export { BootLoader } from './BootLoader';
+export { RibbonMark, RIBBON_LOOP_SECONDS, type RibbonMotion } from './RibbonMark';
 export {
   Markdown,
   headingsIn,
+  MD_HEADING_ATTR,
+  type DocHeading,
   type MarkdownComponents,
   type MarkdownFileHref,
   type MarkdownProps,
@@ -40,6 +45,7 @@ export {
   RESIZE_STEP,
   usePanelWidth,
   usePanelFlag,
+  usePanelChoice,
   useElementWidth,
   type PanelResizerProps,
   type PanelWidth,

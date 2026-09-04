@@ -28,12 +28,19 @@ import {
   type InviteRedemption,
   type RedeemInviteInput,
   type SpaceInviteView,
+  type TaskAxis,
+  type TaskAxisInput,
+  type TaskWorkflow,
+  type StatusCategory,
+  type Workflow,
+  type TaskWorkflowInput,
   type UpdateMemberRoleInput,
   bindPath,
   CollabError,
   FILE_MAX_SIZE_BYTES_DEFAULT,
   WORKSPACE_EVENT_SCHEMA_VERSION,
   type ActivityItem,
+  type ArtifactsPreviewStartInput,
   type ActorSummary,
   type AttentionRequest,
   type AttentionRequestPage,
@@ -69,6 +76,7 @@ import {
   type FeedItem,
   type FileUploadGrant,
   type FileUploadInitInput,
+  type GraphEdgeView,
   type GraphQuery,
   type GraphResult,
   type HandoffView,
@@ -144,11 +152,15 @@ import {
   fixtureDetails,
   fixtureHandoffsBySession,
   fixtureSummaries,
+  memberAda,
+  memberNoor,
   noor,
   sessionCredentialLogin,
+  sessionExited,
   sessionLive,
   sessionStale,
 } from '../../fixtures';
+import { SHIPPED_DEFAULT_MENU } from '../../domain';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
@@ -183,6 +195,84 @@ const FIXTURE_FILE_CHANGES = {
   filesTruncated: false,
   source: 'transcript' as const,
 };
+
+/**
+ * THE LIVE SESSION'S TRANSCRIPT, LONG ENOUGH TO PAGE.
+ *
+ * 34 turns against a 20-turn window, so the walk backwards takes two pages and
+ * the second one reaches the beginning — the only shape in which BOTH ends of
+ * the feature are reachable from a fixture: a `hasOlder: true` boundary that
+ * invites the walk, and the earned `hasOlder: false` claim that this really is
+ * where the session started.
+ *
+ * `offset` stands in for the byte offset of the record behind each turn. Its
+ * VALUES are arbitrary; what has to be true is the shape the real reader
+ * guarantees — strictly increasing, and 0 for the first turn, so that walking
+ * back terminates at the start of the file rather than at an arbitrary floor.
+ * The offsets are spaced unevenly on purpose: an evenly-spaced fixture would
+ * let a client that computed the next cursor arithmetically (`windowStart -
+ * pageSize`) pass, and that client is broken against a real transcript, where
+ * turns are wildly different sizes.
+ */
+interface FixtureTranscriptTurn {
+  at: string;
+  source: 'user' | 'assistant';
+  text: string;
+  truncated: boolean;
+  offset: number;
+}
+
+function fixtureTranscriptTurns(): FixtureTranscriptTurn[] {
+  const beats: [source: 'user' | 'assistant', text: string][] = [
+    ['user', 'Take the failing spawn test and find why the PTY never emits.'],
+    ['assistant', 'Reading the spawn service and its test harness to see which side owns the timeout.'],
+    ['assistant', 'The harness builds the ring before the host is attached, so there is a window with no reader.'],
+    ['user', 'Does it fail the same way under codex?'],
+    ['assistant', 'Same failure, different timing — which points at the harness rather than at either adapter.'],
+    ['assistant', 'Instrumenting the ring with a write counter to see whether the bytes arrive at all.'],
+    ['assistant', 'They arrive. 4 frames land before the first read, so nothing is lost — it is only unread.'],
+    ['user', 'Then the assertion is wrong, not the code.'],
+    ['assistant', 'Agreed for the first flush. The second assertion is still measuring something real.'],
+    ['assistant', 'Splitting the test: one case for the buffered frames, one for the live stream.'],
+    ['assistant', 'The buffered case passes immediately. The live case still hangs at 5s.'],
+    ['user', 'Do not raise the timeout to make it pass.'],
+    ['assistant', 'No — a timeout raise would hide it. Tracing where the stream stops instead.'],
+    ['assistant', 'The stream stops at the first resize: the host re-opens the fd and the old reader keeps the stale one.'],
+    ['assistant', 'That is the bug. Resize swaps the descriptor without re-subscribing the consumer.'],
+    ['user', 'Is that reachable outside the test?'],
+    ['assistant', 'Yes — any terminal resize on a live session hits it, which matches the “terminal goes quiet” reports.'],
+    ['assistant', 'Writing a regression that resizes mid-stream and asserts the bytes keep coming.'],
+    ['assistant', 'The regression fails on main and passes with the re-subscribe, which is the pair worth having.'],
+    ['user', 'Good. Keep the split tests too.'],
+    ['assistant', 'Kept. The buffered case is what tells you WHICH half broke when this regresses again.'],
+    ['assistant', 'Running the whole execution suite to see what else touched the resize path.'],
+    ['assistant', 'One unrelated red, already red on main — recording it rather than folding it in here.'],
+    ['user', 'Diff it by name against main before you believe that.'],
+    ['assistant', 'Done. Same single test by name on both sides, so it is inherited and not mine.'],
+    ['assistant', 'Tidying the instrumentation back out; the counter was a probe, not a feature.'],
+    ['assistant', 'Re-reading the diff for anything I left behind. The probe is gone and the fix is three lines.'],
+    ['user', 'Does the re-subscribe leak the old reader?'],
+    ['assistant', 'It did. Closing the stale descriptor in the same step, with a test that counts open handles.'],
+    ['assistant', 'Handle count is flat across 50 resizes now, where it grew by one per resize before.'],
+    ['assistant', 'Full suite green apart from the inherited red.'],
+    ['user', 'Ship it.'],
+    ['assistant', 'Committed and pushed; the PR body carries the handle-count numbers.'],
+    ['assistant', 'Linked to the task, so the status chips track it from here.'],
+  ];
+  // Uneven, strictly increasing, first turn at 0.
+  let offset = 0;
+  return beats.map(([source, text], i) => {
+    const turn: FixtureTranscriptTurn = {
+      at: new Date(Date.UTC(2026, 0, 4, 9, 15 + i * 3, 2)).toISOString(),
+      source,
+      text,
+      truncated: false,
+      offset,
+    };
+    offset += 180 + ((i * 137) % 420);
+    return turn;
+  });
+}
 /**
  * Re-exported because seam-level tests address the fixture space through the
  * SEAM module they exercise. This was imported here and NOT re-exported for a
@@ -213,6 +303,11 @@ const FIXTURE_PROJECTS: readonly ProjectResource[] = [
 const clone = <T>(x: T): T => structuredClone(x);
 
 const FIXTURE_BASE_MS = Date.parse(FIXTURE_NOW);
+
+/** Seeded attention history is dated off the fixture clock, never a real
+ *  one: `Date.now()` here would make every relative timestamp in the
+ *  gallery drift with the wall clock and no screenshot would reproduce. */
+const FIXTURE_HISTORY_EPOCH = FIXTURE_NOW;
 
 // -- Tier 1 file reads (Amendment 8) -----------------------------------------
 // The SAME file the contention fixture flags as overlapping, so the git
@@ -473,7 +568,7 @@ function fixtureLaunchRecord(sessionId: EntityId): SessionLaunchRecord {
           title: 'Wire the DEBUG surface',
           description: 'Show the spawn-time configuration, not just the command journal.',
           priority: 'high',
-          workStatus: 'in_progress',
+          status: 'in_progress',
           acceptanceCriteria: [],
         },
       ],
@@ -563,16 +658,388 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         prompt: '', config: {},
         nextRunAt: state.nextRunAt, lastRunAt: state.lastRunAt, lastError: state.lastError,
       };
+    case 'graph':
+      // The graph content arm is CLOSED like loop's — produce a whole one.
+      return {
+        kind: 'graph', graphType: state.graphType,
+        nodes: [], edges: [], layout: {}, source: null,
+      };
+    // voice_channel and chat are CLOSED variants carrying nothing but their
+    // kind, so they cannot fall through to the open arm below: that one is
+    // `{ [key: string]: unknown; kind: file|spell|skill|pull_request|commit }`
+    // and a bare `{ kind: 'chat' }` does not satisfy it.
+    case 'voice_channel':
+      return { kind: 'voice_channel' };
+    case 'chat':
+      return { kind: 'chat' };
+    // container is closed AND wide — seven required fields, none of which the
+    // open arm supplies. Written out in full rather than cast, because the two
+    // empty values here are MEANINGFUL: `surfaceDetail` is Partial and the
+    // contract says a container with no `adb` surface OMITS the key rather than
+    // carrying a fake one, and `usage` is null exactly when no runtime sample
+    // exists. A fixture that invented either would model a read the node never
+    // produces.
+    case 'container':
+      return {
+        kind: 'container',
+        image: 'ghcr.io/tm8/fixture-shell:latest',
+        spec: {
+          profile: 'shell',
+          cpus: 2,
+          memMiB: 2048,
+          mounts: [],
+          env: {},
+          ports: [],
+          network: { preset: 'balanced', allow: [] },
+          surfaces: {},
+          labels: {},
+        },
+        lifecycle: {
+          ephemeral: true,
+          ttlSeconds: null,
+          idleHibernateSeconds: null,
+          graceSeconds: 300,
+          snapshotOnStop: false,
+        },
+        surfaceDetail: {},
+        error: null,
+        usage: null,
+        exposed: [],
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
   }
 }
 
+/** Minimal HTML escaping for fixture titles landing inside the demo page. */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+}
+
+/** Unicode-safe base64 for the data: URL — bare btoa throws past Latin-1. */
+function toBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/**
+ * The fixture bundle's page — self-contained, CSS-only, deterministic. It
+ * names its own revision in the markup so switching revisions in the viewer
+ * produces a VISIBLY different page, not two identical frames the switcher
+ * only claims are different.
+ */
+function artifactDemoPage(title: string, revisionNumber: number): string {
+  const safe = escapeHtml(title);
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${safe} — fixture preview</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh; display: grid; place-items: center;
+    font: 15px/1.6 ui-sans-serif, system-ui, sans-serif; color: #e6e9f2;
+    background:
+      radial-gradient(1100px 500px at 15% -10%, #223052 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 110%, #2a1f45 0%, transparent 55%),
+      #0c0f17;
+  }
+  main {
+    width: min(560px, 92vw); padding: 40px 44px; border-radius: 18px;
+    background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.09);
+  }
+  .rev {
+    display: inline-block; font: 600 11px/1 ui-monospace, monospace;
+    letter-spacing: .12em; color: #9fd4ff; padding: 6px 12px;
+    border: 1px solid rgba(159,212,255,.35); border-radius: 999px; margin-bottom: 18px;
+  }
+  h1 { font-size: 30px; letter-spacing: -.02em; margin-bottom: 10px; }
+  p { color: #aab3c7; }
+  .meter { height: 6px; border-radius: 3px; margin-top: 26px; overflow: hidden; background: rgba(255,255,255,.08); }
+  .meter i {
+    display: block; height: 100%; width: ${40 + revisionNumber * 18}%; border-radius: 3px;
+    background: linear-gradient(90deg, #5b8cff, #a06bff); animation: fill 1.2s ease-out;
+  }
+  @keyframes fill { from { width: 0 } }
+  footer { margin-top: 26px; font: 11px/1.5 ui-monospace, monospace; color: #6b7385; }
+</style>
+</head>
+<body>
+<main>
+  <span class="rev">REVISION ${revisionNumber}</span>
+  <h1>${safe}</h1>
+  <p>This page is the artifact's own bundle executing inside the sandboxed
+     preview frame — fixture-served, so the whole render path runs with no
+     server attached.</p>
+  <div class="meter"><i></i></div>
+  <footer>tm8 fixture seam &middot; sandbox="allow-scripts" &middot; data: URL</footer>
+</main>
+</body>
+</html>`;
+}
+
+/** CRC-32 (IEEE), the zip checksum. Table built once, lazily. */
+let CRC_TABLE: Uint32Array | null = null;
+function crc32(bytes: Uint8Array): number {
+  if (CRC_TABLE === null) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      CRC_TABLE[n] = c >>> 0;
+    }
+  }
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]!) & 0xff]! ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * A REAL zip (stored, no compression): local headers, central directory,
+ * EOCD. Real because the honest fixture answer for export is bytes a zip
+ * reader actually opens — a fake blob "downloads" successfully and then fails
+ * in the user's hands, which is the dishonest order. Deterministic: the DOS
+ * stamp is the fixture epoch, never the wall clock (same law as tick()).
+ */
+function storedZip(entries: Array<{ path: string; bytes: Uint8Array }>): Blob {
+  const enc = new TextEncoder();
+  const le = (v: number, n: number): number[] => Array.from({ length: n }, (_, i) => (v >>> (8 * i)) & 0xff);
+  const dosTime = 0;
+  const dosDate = ((2026 - 1980) << 9) | (7 << 5) | 28; // 2026-07-28, FIXTURE_NOW's day
+  const parts: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  for (const { path, bytes } of entries) {
+    const name = enc.encode(path);
+    const crc = crc32(bytes);
+    // versionNeeded, flags, method(0=stored), time, date, crc, csize, usize, nameLen, extraLen
+    const common = [
+      ...le(20, 2), ...le(0, 2), ...le(0, 2), ...le(dosTime, 2), ...le(dosDate, 2),
+      ...le(crc, 4), ...le(bytes.length, 4), ...le(bytes.length, 4), ...le(name.length, 2), ...le(0, 2),
+    ];
+    const local = new Uint8Array([...le(0x04034b50, 4), ...common, ...name]);
+    central.push(new Uint8Array([
+      ...le(0x02014b50, 4), ...le(20, 2), ...common,
+      ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 4), ...le(offset, 4), ...name,
+    ]));
+    parts.push(local, bytes);
+    offset += local.length + bytes.length;
+  }
+  const cdSize = central.reduce((a, c) => a + c.length, 0);
+  const eocd = new Uint8Array([
+    ...le(0x06054b50, 4), ...le(0, 2), ...le(0, 2),
+    ...le(entries.length, 2), ...le(entries.length, 2), ...le(cdSize, 4), ...le(offset, 4), ...le(0, 2),
+  ]);
+  // One contiguous copy: BlobPart demands a plain ArrayBuffer, and the chunk
+  // views above are typed over ArrayBufferLike.
+  const chunks = [...parts, ...central, eocd];
+  const out = new Uint8Array(chunks.reduce((a, c) => a + c.length, 0));
+  let pos = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, pos);
+    pos += chunk.length;
+  }
+  return new Blob([out.buffer], { type: 'application/zip' });
+}
+
+/** The artifact summary's current revision — state-carried, 1 when absent. */
+function currentRevisionOf(s: EntitySummary): number {
+  const state = s.state as { revisionNumber?: unknown };
+  return typeof state.revisionNumber === 'number' ? state.revisionNumber : 1;
+}
+
+/**
+ * How many entities carry seeded history. Small on purpose: this is a specimen,
+ * not a load test, and every seeded row is a row some other lane's assertion
+ * could trip over.
+ */
+const ATTENTION_HISTORY_ENTITIES = 3;
+
+/**
+ * Materialize the attention table once.
+ *
+ * TWO HALVES, AND THE SECOND ONE EXISTS BECAUSE THE FIRST FOUND NOTHING.
+ *
+ * The PENDING half is the old badge-synthesis, moved here verbatim, because its
+ * arithmetic is load-bearing: `attention-model.ts` regroups these rows and its
+ * result is asserted to equal `badges.attention`. Points are spread across
+ * `pendingCount` rows with the largest pinned to `maxPoints`, so count/sum/max
+ * survive the round trip.
+ *
+ * It produces ZERO ROWS TODAY. Not one summary in `fixtures/entities.ts`
+ * carries a `badges.attention`, so the fixture seam has always answered the
+ * attention queue with an empty page — the inbox, its grouping, and every
+ * attention surface downstream have never once rendered real content off a
+ * fixture. That was invisible precisely because empty is also the correct
+ * answer for an entity with nothing waiting. The half is kept anyway: it is
+ * correct, and the moment the dataset gains a badge it starts working.
+ *
+ * The HISTORY half seeds SETTLED rows directly, on a deterministic handful of
+ * entities. Settled deliberately: `resolved` and `dismissed` contribute
+ * NOTHING to the badge (`recomputeAttentionBadge` counts only open and
+ * acknowledged), so seeding them gives the history surface real content without
+ * putting an attention badge onto a fixture entity that other lanes' list,
+ * graph and home assertions currently expect to be unflagged. A specimen must
+ * not change what its neighbours measure.
+ *
+ * The pending state is still reachable from here — `updateAttentionRequest` can
+ * move a row back to `open`, which is what the tests use to exercise the badge
+ * appearing and dropping again.
+ */
+function seedAttentionRows(summaries: ReadonlyMap<EntityId, EntitySummary>): AttentionRequest[] {
+  const rows: AttentionRequest[] = [];
+
+  for (const s of summaries.values()) {
+    if (s.deletedAt !== null) continue;
+    const agg = s.badges.attention;
+    if (!agg || agg.pendingCount <= 0) continue;
+
+    const rest = Math.max(0, agg.totalPoints - agg.maxPoints);
+    const others = Math.max(0, agg.pendingCount - 1);
+    const each = others > 0 ? Math.max(1, Math.round(rest / others)) : 0;
+    for (let i = 0; i < agg.pendingCount; i += 1) {
+      const first = i === 0;
+      rows.push({
+        id: `att-${s.id}-${i}`,
+        spaceId: s.spaceId,
+        entityId: s.id,
+        reason: first ? agg.latestReason : `${agg.latestReason} (${i + 1})`,
+        points: first ? agg.maxPoints : Math.min(each, 100),
+        status: 'open',
+        version: 1,
+        requestedBy: s.createdBy,
+        acknowledgedBy: null,
+        resolvedBy: null,
+        resolutionNote: null,
+        createdAt: agg.oldestRequestedAt,
+        updatedAt: agg.oldestRequestedAt,
+        acknowledgedAt: null,
+        resolvedAt: null,
+      });
+    }
+  }
+
+  // Sorted by id so the same entities are chosen on every run — a specimen that
+  // moves between runs is one nobody can write an assertion against.
+  const subjects = [...summaries.values()]
+    .filter((s) => s.deletedAt === null)
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .slice(0, ATTENTION_HISTORY_ENTITIES);
+
+  for (const [index, s] of subjects.entries()) {
+    const day = (n: number) => new Date(Date.parse(FIXTURE_HISTORY_EPOCH) - n * 86_400_000).toISOString();
+    rows.push({
+      id: `att-${s.id}-h0`,
+      spaceId: s.spaceId,
+      entityId: s.id,
+      reason: 'Blocked on a decision only a human can make; the agent stopped rather than guess.',
+      points: 80 - index * 5,
+      status: 'resolved',
+      version: 2,
+      requestedBy: s.createdBy,
+      acknowledgedBy: null,
+      resolvedBy: s.createdBy,
+      resolutionNote: 'Answered in the thread — the agent picked up from there.',
+      createdAt: day(4),
+      updatedAt: day(3),
+      acknowledgedAt: null,
+      resolvedAt: day(3),
+    });
+    rows.push({
+      id: `att-${s.id}-h1`,
+      spaceId: s.spaceId,
+      entityId: s.id,
+      reason: 'Second agent raised the same block a few minutes later.',
+      points: 40 - index * 5,
+      status: 'dismissed',
+      version: 2,
+      requestedBy: s.createdBy,
+      acknowledgedBy: null,
+      resolvedBy: s.createdBy,
+      // No note: a declined request often has none, and the row has to render
+      // honestly without one.
+      resolutionNote: null,
+      createdAt: day(2),
+      updatedAt: day(1),
+      acknowledgedAt: null,
+      resolvedAt: day(1),
+    });
+  }
+
+  return rows;
+}
+
+/**
+ * Migration 147/150's ruled status → category mapping, mirrored so fixture
+ * summaries carry the same denormalized `category` the node projects (the
+ * server derives it in a trigger on every status write; `touch` is this
+ * fixture's equivalent single seam). Every other kind honestly OMITS the key —
+ * "no status" is a different fact from `to_do` — until phase 5 gives them one.
+ */
+const WORK_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
+  open: 'to_do',
+  pulled: 'to_do',
+  working: 'in_progress',
+  in_review: 'in_progress',
+  blocked: 'in_progress',
+  done: 'done',
+  cancelled: 'cancelled',
+};
+
+/**
+ * MIGRATION 155's mapping, the session half of the same mirror.
+ *
+ * The docblock above says every other kind "honestly OMITS the key … until
+ * phase 5 gives them one". Phase 5 GAVE work_session one — 155 installs
+ * `internal.session_status_category` and an AFTER trigger on every writer, and
+ * backfills — and this table never followed. The omission stopped being honest
+ * the day that migration ran: on the node a running session reads
+ * `category: 'in_progress'`, and in this fixture the same row read `undefined`,
+ * which the category predicate below treats as matching NO tab at all.
+ *
+ * That gap is why the reported defect had no failing test. Four empty tabs
+ * looks the same as a landing-tab bug from inside a fixture-backed test, so
+ * neither could be asserted, and the panel walk above renders every kind
+ * without ever reading a row into a band.
+ *
+ * `spawning -> to_do` is 155's ruling verbatim, including its reason: a
+ * spawning session has been ASKED for, not started, and it is what makes
+ * `session_resume` a legal `done -> to_do` reopen rather than a refused
+ * `done -> in_progress`.
+ */
+const SESSION_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
+  spawning: 'to_do',
+  running: 'in_progress',
+  idle: 'in_progress',
+  exited: 'done',
+  failed: 'done',
+};
+
+function stampCategory(s: EntitySummary): void {
+  if (s.state.kind === 'task') {
+    const category = WORK_STATUS_CATEGORY[s.state.status];
+    if (category) s.category = category;
+    return;
+  }
+  if (s.state.kind === 'work_session') {
+    const category = SESSION_STATUS_CATEGORY[s.state.status];
+    if (category) s.category = category;
+  }
+}
+
 export function createFixtureSeam(): FixtureSeam {
   // -- in-memory state (isolated clone of the FE dataset) --------------------
   const summaries = new Map<EntityId, EntitySummary>(
-    clone(fixtureSummaries).map((s) => [s.id, s]),
+    clone(fixtureSummaries).map((s) => {
+      stampCategory(s);
+      return [s.id, s];
+    }),
   );
   const extras = new Map<EntityId, DetailExtras>(
     Object.values(clone(fixtureDetails)).map((d) => [
@@ -581,6 +1048,24 @@ export function createFixtureSeam(): FixtureSeam {
     ]),
   );
 
+  /**
+   * ATTENTION ROWS ARE STATE HERE, not a projection of the badge.
+   *
+   * They used to be synthesized per call from `summary.badges.attention`, and
+   * that made one whole half of the feature unrepresentable: the badge counts
+   * only `open` + `acknowledged` (server `entity-read.ts:520-523`), so a
+   * fixture derived from it could never produce a `resolved` or `dismissed`
+   * row — the exact rows an attention HISTORY surface exists to show. Every
+   * test and the whole fixture gallery saw an empty history and could not tell
+   * that from a broken one.
+   *
+   * So the direction is inverted to match the server's: rows are the truth and
+   * the badge is DERIVED from them (`recomputeAttentionBadge`). The seed still
+   * reproduces each entity's stored aggregate exactly — count, sum and max all
+   * round-trip, which is what the inbox's grouping is checked against — and
+   * history rows are added on top, where they cannot disturb it.
+   */
+  const attentionRows: AttentionRequest[] = seedAttentionRows(summaries);
   const openSpaces = new Set<SpaceId>();
   const seqBySpace = new Map<SpaceId, number>();
   const readMarks = new Map<EntityId, string>();
@@ -812,6 +1297,92 @@ export function createFixtureSeam(): FixtureSeam {
   const invites: SpaceInviteView[] = [];
   let inviteSeq = 0;
 
+  /**
+   * The task-axis registry, MUTABLE — W2. Seeded with exactly what the node
+   * seeds every space (001's `type` axis, kind 'default', position 0), so
+   * the fixture-backed product draws the axis picker and the Settings > Axes
+   * screen has real rows to curate. The array itself is the store the CRUD
+   * verbs below mutate; `spaceSettings()` clones it per read.
+   */
+  const taskAxes: TaskAxis[] = [
+    {
+      id: 'axis-type',
+      spaceId: FIXTURE_SPACE_ID,
+      name: 'type',
+      axisValues: ['default', 'code', 'design', 'review', 'test'],
+      kind: 'default',
+      position: 0,
+    },
+  ];
+  let axisSeq = 0;
+
+  /**
+   * W4 — the task-workflow registry (132), MUTABLE like `taskAxes` above:
+   * one row per (space, `type` value) naming the SUBSET of statuses tasks of
+   * that type may be moved TO. Seeded empty because the node seeds none; the
+   * CRUD verbs below curate it and `spaceSettings()` clones it per read.
+   */
+  const taskWorkflows: TaskWorkflow[] = [];
+  let workflowSeq = 0;
+
+  /**
+   * 132's trigger (`internal.validate_task_workflow`), mirrored refusal for
+   * refusal so a fixture-backed status write refuses exactly like the node:
+   * fires only when the status actually CHANGES; a task with no `type` value
+   * (the trigger reads `new.axes ->> 'type'`), a type with no rule, or a
+   * space with no rules is never touched; moving FROM an illegal status is
+   * free, moving TO one refuses in the trigger's own words (23514 →
+   * invariant_violation through the node's SQLSTATE map).
+   */
+  function requireWorkflowAllows(s: EntitySummary, status: string): void {
+    if (s.state.kind !== 'task') return;
+    if (s.state.status === status) return;
+    const typeValue = (s.state.axes ?? {})['type'];
+    if (typeof typeValue !== 'string' || typeValue === '') return;
+    const rule = taskWorkflows.find((w) => w.typeValue === typeValue);
+    if (!rule) return;
+    if (!(rule.statuses as readonly string[]).includes(status)) {
+      throw new CollabError(
+        'invariant_violation',
+        `workflow for type ${typeValue} does not allow status ${status}`,
+      );
+    }
+  }
+
+  /**
+   * The node's own in-use predicate, mirrored: does any task in the space
+   * carry a value under this axis NAME (`tasks.axes ? name`)? Used by
+   * delete/rename/value-removal exactly as `w2_delete_task_axis` /
+   * `w2_update_task_axis` use it — refusal, never orphaning (measured
+   * 2026-08-16; 132 relaxes only the default-kind special cases).
+   */
+  function axisInUse(name: string, keepingValues?: readonly string[]): boolean {
+    return [...summaries.values()].some((s) => {
+      if (s.state.kind !== 'task') return false;
+      const value = (s.state.axes ?? {})[name];
+      if (typeof value !== 'string') return false;
+      return keepingValues === undefined ? true : !keepingValues.includes(value);
+    });
+  }
+
+  /** The shared validation the three w2_* RPCs apply, in the node's words. */
+  function validateAxisInput(input: TaskAxisInput): void {
+    if (!input.name || input.name.trim().length < 1 || input.name.trim().length > 100) {
+      throw new CollabError('invalid_input', 'task axis name must contain 1 to 100 characters');
+    }
+    const values = input.axisValues;
+    if (
+      !Array.isArray(values)
+      || values.some((v) => typeof v !== 'string' || v.trim() === '')
+      || new Set(values).size !== values.length
+    ) {
+      throw new CollabError('invalid_input', 'task axis values must be unique non-empty strings');
+    }
+    if (input.kind !== 'default' && input.kind !== 'manual') {
+      throw new CollabError('invalid_input', 'invalid task axis kind');
+    }
+  }
+
   /** Mirrors the node's shape (`'inv_' + 32 hex`) without pretending to be one. */
   function newInviteCode(): string {
     inviteSeq += 1;
@@ -943,11 +1514,45 @@ export function createFixtureSeam(): FixtureSeam {
     });
   }
 
+  /**
+   * Rebuild one entity's `badges.attention` from its rows — the same aggregate
+   * the server computes in SQL (`entity-read.ts:506-535`), including the part
+   * that is easy to miss: `acknowledged` counts as PENDING. An entity with no
+   * pending rows loses the badge key entirely rather than carrying a zeroed
+   * one, because the contract schema declares those counts `.positive()`
+   * (`schemas.ts:307-312`) — the badge is absent, never zero.
+   */
+  function recomputeAttentionBadge(s: EntitySummary): void {
+    const pending = attentionRows.filter(
+      (r) => r.entityId === s.id && (r.status === 'open' || r.status === 'acknowledged'),
+    );
+    if (pending.length === 0) {
+      const { attention: _attention, ...badges } = s.badges;
+      s.badges = badges;
+      return;
+    }
+    const latest = [...pending].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0];
+    s.badges = {
+      ...s.badges,
+      attention: {
+        pendingCount: pending.length,
+        totalPoints: pending.reduce((sum, r) => sum + r.points, 0),
+        maxPoints: Math.max(...pending.map((r) => r.points)),
+        latestReason: latest.reason,
+        oldestRequestedAt: pending.reduce(
+          (oldest, r) => (r.createdAt < oldest ? r.createdAt : oldest),
+          pending[0].createdAt,
+        ),
+      },
+    };
+  }
+
   function touch(s: EntitySummary): void {
     s.version += 1;
     const at = tick();
     s.updatedAt = at;
     s.activityAt = at;
+    stampCategory(s);
   }
 
   function pageOf<T>(all: T[], opts?: PageOpts): Page<T> {
@@ -956,6 +1561,16 @@ export function createFixtureSeam(): FixtureSeam {
     const end = Math.min(all.length, start + limit);
     return { items: all.slice(start, end), nextCursor: end < all.length ? String(end) : null, total: all.length };
   }
+
+  /** The node's own group labels (collections.ts) — the fixture must hand
+   *  back 'High', not 'high', or a label-rendering surface diverges. */
+  const GROUP_STATUS_LABELS: Record<string, string> = {
+    open: 'Open', pulled: 'Pulled', working: 'Working', in_review: 'In review',
+    done: 'Done', blocked: 'Blocked', cancelled: 'Cancelled',
+  };
+  const GROUP_PRIORITY_LABELS: Record<string, string> = {
+    urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low',
+  };
 
   /**
    * `groupBy` answered for real, PAGE-SCOPED like the node's own.
@@ -969,17 +1584,52 @@ export function createFixtureSeam(): FixtureSeam {
    */
   function groupsFor(rows: EntitySummary[], input: CollectionQuery): { groups?: CollectionGroup[] } {
     const groupBy = input.groupBy;
-    if (groupBy !== 'workStatus') return {};
-    const byKey = new Map<string, EntitySummary[]>();
-    for (const row of pageOf(rows, input).items) {
-      if (row.state.kind !== 'task') continue;
-      const key = row.state.workStatus;
-      const bucket = byKey.get(key);
-      if (bucket) bucket.push(row);
-      else byKey.set(key, [row]);
+    if (groupBy !== 'status' && groupBy !== 'priority' && groupBy !== 'assignee') return {};
+    /**
+     * The server's `groupItems` arms, mirrored (collections.ts): a
+     * multi-assignee task appears in EVERY assignee column, no assignee is
+     * the '' / "Unassigned" column, labels are the server's display words
+     * (WORK_STATUS_LABELS / PRIORITY_LABELS), and a NON-task row lands in
+     * the same default bucket the server gives it ('open' / 'medium' /
+     * Unassigned) instead of vanishing from the groups it counts toward.
+     */
+    const keysOf = (row: EntitySummary): readonly (readonly [string, string])[] => {
+      if (groupBy === 'status') {
+        const status = row.state.kind === 'task' ? row.state.status : 'open';
+        return [[status, GROUP_STATUS_LABELS[status] ?? status]];
+      }
+      if (groupBy === 'priority') {
+        const priority = row.state.kind === 'task' ? row.state.priority : 'medium';
+        return [[priority, GROUP_PRIORITY_LABELS[priority] ?? priority]];
+      }
+      const assignees = row.state.kind === 'task' ? row.state.assignees : [];
+      if (assignees.length === 0) return [['', 'Unassigned']];
+      return assignees.map((a) => [a.id, a.displayName] as const);
+    };
+    /**
+     * `total` counts ALL filtered rows (the server's `groupTotals` CTE runs
+     * before LIMIT); `items` stay page-scoped. Off-page groups (total > 0,
+     * empty page slice) are kept for status/priority and dropped for
+     * assignee — the server appends empty groups for closed vocabularies
+     * only, never for the open actor axis.
+     */
+    const byKey = new Map<string, { label: string; items: EntitySummary[]; total: number }>();
+    const paged = new Set(pageOf(rows, input).items.map((r) => r.id));
+    for (const row of rows) {
+      for (const [key, label] of keysOf(row)) {
+        let bucket = byKey.get(key);
+        if (!bucket) {
+          bucket = { label, items: [], total: 0 };
+          byKey.set(key, bucket);
+        }
+        bucket.total += 1;
+        if (paged.has(row.id)) bucket.items.push(row);
+      }
     }
     return {
-      groups: [...byKey].map(([key, items]) => ({ key, label: key, items })),
+      groups: [...byKey]
+        .filter(([, g]) => groupBy !== 'assignee' || g.items.length > 0)
+        .map(([key, g]) => ({ key, label: g.label, items: g.items, total: g.total })),
     };
   }
 
@@ -1026,6 +1676,33 @@ export function createFixtureSeam(): FixtureSeam {
   }
 
   /**
+   * The performer of an assignment, spoken in the ENTITY id vocabulary.
+   *
+   * This fixture has TWO id spaces for one person — `act-ada` the actor and
+   * `ent-member-ada` the member entity (documented at `spaceSettings` below;
+   * unifying them predates this change and is not its job). The real server
+   * has ONE id, and `assigned_by` resolves through the same entity read as
+   * the assignee, so an `assignments` record whose two arms spoke different
+   * vocabularies would be a parity bug: the roster the assigned-by chips are
+   * drawn from is built on ENTITY rows, and a filter that can never match is
+   * indistinguishable from one that is broken. Every seam-written edge is
+   * authored by the viewer, so the map only needs the humans the identity
+   * can be.
+   */
+  function assignmentAuthor(author: ActorSummary): ActorSummary {
+    const entityId = author.id === ada.id ? memberAda.id : author.id === noor.id ? memberNoor.id : author.id;
+    const entity = summaries.get(entityId);
+    if (!entity || (entity.kind !== 'member' && entity.kind !== 'team_member')) return clone(author);
+    return {
+      id: entity.id,
+      kind: entity.kind,
+      displayName: entity.title,
+      avatar: null,
+      isAgent: entity.kind === 'team_member',
+    };
+  }
+
+  /**
    * Both actor rosters, recomputed from the edges that ARE them: a task's
    * `assigned_to` and a channel's `has_member` (migration 080). Two arms of one
    * function because the projection is identical and the meaning is not — the
@@ -1033,8 +1710,30 @@ export function createFixtureSeam(): FixtureSeam {
    * `relations.assignees` / `relations.members`).
    */
   function projectAssignees(s: EntitySummary): void {
-    if (s.state.kind === 'task') s.state.assignees = projectActorEdges(s, 'assigned_to');
-    else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
+    if (s.state.kind === 'task') {
+      s.state.assignees = projectActorEdges(s, 'assigned_to');
+      /* 129's provenance projection: one entry per CURRENT `assigned_to`
+         edge, its `assignedBy` the actor who WROTE that edge — the server
+         projects the same rows out of assigned_by/assigned_at
+         (entity-read.ts). Additive field: a task this function never ran on
+         keeps no `assignments`, exactly as pre-129 rows read NULL. */
+      const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === 'assigned_to');
+      s.state.assignments = (group?.edges ?? []).flatMap((edge) => {
+        const target = summaries.get(edge.target.id);
+        if (!target || (target.kind !== 'member' && target.kind !== 'team_member')) return [];
+        return [{
+          assignee: {
+            id: target.id,
+            kind: target.kind,
+            displayName: target.title,
+            avatar: null,
+            isAgent: target.kind === 'team_member',
+          },
+          assignedBy: assignmentAuthor(edge.createdBy),
+          assignedAt: edge.createdAt,
+        }];
+      });
+    } else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
   }
 
   function defaultStateFor(input: CreateEntityInput): EntityState {
@@ -1046,7 +1745,7 @@ export function createFixtureSeam(): FixtureSeam {
     switch (kind) {
       case 'task':
         return {
-          kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
+          kind: 'task', status: 'open', priority: 'medium', axes: {},
           dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
         };
       case 'channel':
@@ -1064,7 +1763,14 @@ export function createFixtureSeam(): FixtureSeam {
       case 'doc':
         return { kind: 'doc', format: (c.format as 'markdown') ?? 'markdown', childCount: 0 };
       case 'team_member':
-        return { kind: 'team_member', owner: viewerActor, model: null, agentTool: null, liveWork: null };
+        // `defaultProfileId: null` — a freshly created teammate has no
+        // `defaults_to_profile` edge yet, and the field's contract is that
+        // absence means exactly that, so the fixture states it rather than
+        // omitting it and leaving the UI to guess.
+        return {
+          kind: 'team_member', owner: viewerActor, model: null, agentTool: null,
+          liveWork: null, defaultProfileId: null,
+        };
       case 'file':
         return {
           kind: 'file', name: (c.name as string) ?? input.title,
@@ -1099,6 +1805,15 @@ export function createFixtureSeam(): FixtureSeam {
           subjectScope: (c.subjectScope as string) ?? '',
           doesNotEstablish: (c.doesNotEstablish as string) ?? '',
           measuredAt: (c.measuredAt as string | null) ?? null,
+        };
+      case 'graph':
+        // Craft P1: counts mirror what the create carried; the row's real
+        // body lives in content, exactly as the server projects it.
+        return {
+          kind: 'graph',
+          graphType: (c.graphType as string) ?? 'entity',
+          nodeCount: Array.isArray(c.nodes) ? c.nodes.length : 0,
+          edgeCount: Array.isArray(c.edges) ? c.edges.length : 0,
         };
       default:
         throw new CollabError('invalid_input', `kind ${kind} is not client-creatable`);
@@ -1218,16 +1933,85 @@ export function createFixtureSeam(): FixtureSeam {
           { actor: clone(noor), role: 'member' as const, joinedAt: FIXTURE_NOW },
         ],
         invites,
-        taskAxes: [],
-        menu: {
-          schemaVersion: 1,
-          revision: 1,
-          groups: [{ id: 'fixture', label: 'Fixture', items: [{ type: 'view', ref: 'settings' }] }],
-        },
+        // The MUTABLE registry above — seeded with the node's own seed, and
+        // the same rows the W2 CRUD verbs curate. Position order, exactly as
+        // `spaces.settings` answers it.
+        taskAxes: [...taskAxes].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
+        // W4 ride-along, exactly as the node answers it: the same settings
+        // round trip that carries the axes carries the workflows keyed on them.
+        taskWorkflows: [...taskWorkflows].sort((a, b) => a.typeValue.localeCompare(b.typeValue)).map((w) => clone(w)),
+        /* THE SAME MENU `menu()` ANSWERS WITH, because on the node they are
+           the same row. `spaces.settings` reads `space_menu_configs` directly
+           and `spaces.menu.get` reads it through `get_space_menu`; a node
+           cannot serve two different menus for one space, so a fixture that
+           does is lying about a shape its consumers now rely on.
+
+           It used to, harmlessly: nothing read `settings.menu`, because boot
+           took the menu from the separate `menu()` round trip. That read is
+           gone (it was a duplicate — see `hydrate`), so this field is now the
+           rail's actual source and the disagreement became visible as a tab
+           row nobody designed. `menu()` resolves null here by C-4 and the UI
+           substitutes its shipped default, so the shipped default is exactly
+           what a consistent settings payload has to carry. */
+        menu: SHIPPED_DEFAULT_MENU,
         defaultChannelId: null,
         defaultInteractionProfileId: 'ip-house-style',
         settingsRevision: 1,
       });
+    },
+    /**
+     * `spaces.workflows.list` (migration 149), mirrored: ONE global default —
+     * spaceId null, four display-named states each carrying its category, To
+     * Do initial — plus this space's own workflows migrated from the mutable
+     * `taskWorkflows` exactly as 149 migrates them: name = the type value,
+     * kind 'task', states named by the RAW status literals (that equality is
+     * phase 6's join key), categories per the ruled mapping, first state
+     * initial. Zero transition rows — empty means "the ruled category-level
+     * defaults apply", which is the normal case.
+     */
+    async workflows(_spaceId): Promise<Workflow[]> {
+      const globalDefault: Workflow = {
+        id: 'wf-global-default',
+        spaceId: null,
+        name: 'Default',
+        kind: null,
+        states: (
+          [
+            ['To Do', 'to_do'],
+            ['In Progress', 'in_progress'],
+            ['Done', 'done'],
+            ['Cancelled', 'cancelled'],
+          ] as const
+        ).map(([name, category], i) => ({
+          id: `wfs-default-${category}`,
+          workflowId: 'wf-global-default',
+          name,
+          category,
+          position: i,
+          isInitial: i === 0,
+          isDefault: i === 0,
+        })),
+        transitions: [],
+      };
+      const migrated: Workflow[] = [...taskWorkflows]
+        .sort((a, b) => a.typeValue.localeCompare(b.typeValue))
+        .map((w) => ({
+          id: `wf-${w.id}`,
+          spaceId: w.spaceId,
+          name: w.typeValue,
+          kind: 'task',
+          states: w.statuses.map((status, i) => ({
+            id: `wfs-${w.id}-${status}`,
+            workflowId: `wf-${w.id}`,
+            name: status,
+            category: WORK_STATUS_CATEGORY[status] ?? 'to_do',
+            position: i,
+            isInitial: i === 0,
+            isDefault: false,
+          })),
+          transitions: [],
+        }));
+      return [globalDefault, ...migrated];
     },
     /**
      * Amendment 11 mirror. Answers WITHOUT consulting the viewer, exactly like
@@ -1290,12 +2074,46 @@ export function createFixtureSeam(): FixtureSeam {
         if (input.kinds && !input.kinds.includes(s.kind)) return false;
         if (input.parentId !== undefined && s.parentId !== input.parentId) return false;
         if (subtree && !subtree.has(s.id)) return false;
+        /* A CREDENTIAL LOGIN TERMINAL IS NOT WORK (082, Ruling 16), and the
+           query is where that rule lives — `collections.ts` pushes
+           `ws.session_kind is distinct from 'credential'` into the same WHERE
+           its `count(*)` runs over.
+
+           This fixture used to seed `ws-credential-login` as `running` and
+           COUNT it, while `projectRows` refused to render it. Every test that
+           read a session band therefore saw `total: 3` over two rows and
+           nobody noticed, because no assertion compared the two. That is the
+           production defect in miniature: the live node's session list read
+           "To Do 1" over an empty tab. */
+        if ((s.state as { sessionKind?: unknown }).sessionKind === 'credential') return false;
         const f = input.filters;
-        if (f?.workStatus && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
-        if (f?.sessionStatus && !(s.state.kind === 'work_session'
+        /* Empty lists are NO constraint — the server guards every arm with
+           `length > 0` (collections.ts), so `priority: []` must not read as
+           "match nothing" here while the node reads it as "unfiltered". */
+        if (f?.status?.length && !(s.state.kind === 'task' && f.status.includes(s.state.status))) return false;
+        /* Phase 1's category predicate (PR #353): NULL never matches, so the
+           filter's PRESENCE restricts to entities that have a status at all —
+           `NULL = any(...)` server semantics, mirrored. */
+        if (f?.category?.length && !(s.category !== undefined && f.category.includes(s.category))) return false;
+        if (f?.priority?.length && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
+        if (f?.sessionStatus?.length && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;
-        if (f?.assigneeIds && !(s.state.kind === 'task'
+        if (f?.assigneeIds?.length && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
+        /* 129's provenance filter: a task matches when ANY of its CURRENT
+           assignments was performed by a listed actor. `assignments` is the
+           additive contract field; a task without it (pre-provenance data)
+           matches nothing, exactly as its rows have NULL assigned_by. */
+        if (f?.assignedByIds?.length && !(s.state.kind === 'task'
+          && (s.state.assignments ?? []).some((a) => a.assignedBy !== null
+            && f.assignedByIds!.includes(a.assignedBy.id)))) return false;
+        /* The clock window (`collections.ts`: `e.activity_at >= $n`). Honoured
+           here because the graph canvas's whole scope is this predicate — a
+           fixture that ignored it would hand back the entire space and let a
+           test prove a window that does nothing. Compared as strings: `tick()`
+           and the caller both produce `toISOString()`, which is always UTC and
+           fixed-width, so lexical order IS chronological order. */
+        if (f?.activeSince && s.activityAt < f.activeSince) return false;
         /* The `edge` clause the server executes as an EXISTS over
            public.edges (collections.ts): keep this row exactly when it has an
            edge of `type` in `direction` whose OTHER endpoint is `entityId`.
@@ -1375,7 +2193,16 @@ export function createFixtureSeam(): FixtureSeam {
       }
       return clone({
         nodes,
-        edges,
+        // Project to the WIRE shape (`GraphEdgeView`): endpoint ids, not
+        // embedded summaries. The traversal above works in `EdgeView` because
+        // that is what the fixture's connection extras hold; what leaves this
+        // seam must match what the node sends, or the fixture stops being a
+        // stand-in for it. Both endpoints are in `nodes` by the filters above.
+        edges: edges.map(({ source, target, ...rest }): GraphEdgeView => ({
+          ...rest,
+          sourceId: source.id,
+          targetId: target.id,
+        })),
         clusters: [...clustersByParent].map(([parentId, childIds]) => ({ parentId, childIds })),
       });
     },
@@ -1596,7 +2423,6 @@ export function createFixtureSeam(): FixtureSeam {
         inFlight: empty(),
         needsMe: empty(),
         activity: { items: [], nextCursor: null },
-        chatThreads: [],
       };
     },
 
@@ -1690,6 +2516,71 @@ export function createFixtureSeam(): FixtureSeam {
       // native transcript, so every other session renders the explained empty.
       // `stats: null` rather than a zeroed object — there are no statistics
       // about a file that was never found, and zeros read as "did nothing".
+      /*
+       * THE EXITED SESSION'S POST-MORTEM STORY (HANDOVER-SessionAnatomy.md §8
+       * F1). Every session but the live PTY used to answer the explained empty,
+       * which meant the exited canvas could only ever be seen in its
+       * no-transcript form — the one state where the stats panel renders no
+       * numbers at all.
+       *
+       * This arm is shaped around the ONE rule the panel exists to keep:
+       * HOLLOW IS NOT ZERO. `outputTokens: 0` is a measured zero and must reach
+       * the DOM as `0`; `cacheReadTokens`/`cacheCreationTokens` are null and
+       * must reach it as `—`. A fixture with four populated numbers would let a
+       * renderer that gates on truthiness pass every test in the package.
+       *
+       * `partial: false` and a non-zero `malformed` are deliberate too: they are
+       * the combination that proves the two caveat markers are independent
+       * rather than one flag rendered twice.
+       */
+      if (workSessionId === sessionExited.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: true,
+          unavailableReason: null,
+          searchedPaths: [],
+          agentTool: 'claude-code' as const,
+          entries: [
+            {
+              at: '2026-01-02T11:02:00.000Z',
+              source: 'user' as const,
+              text: 'Move the token scale onto the shared ramp and keep both themes legible.',
+              truncated: false,
+            },
+            {
+              at: '2026-01-02T11:41:00.000Z',
+              source: 'assistant' as const,
+              text: 'Done — the ramp is shared and the dark values fall out of it rather than being authored twice.',
+              truncated: false,
+            },
+          ],
+          stats: {
+            partial: false,
+            userMessages: 1,
+            assistantMessages: 1,
+            // A REAL ZERO, next to two hollows. This is the whole point of the
+            // arm: `0` and `—` are different claims and must render differently.
+            toolCalls: 0,
+            inputTokens: 12_400,
+            outputTokens: 0,
+            cacheReadTokens: null,
+            cacheCreationTokens: null,
+            tools: [],
+            models: ['claude-fable-5'],
+          },
+          stuck: null,
+          lastActivityAt: '2026-01-02T11:41:00.000Z',
+          // Non-zero: the "some lines did not parse" marker has a story, and it
+          // is the honest explanation for why a count looks low.
+          malformed: 3,
+          // A SHORT transcript read whole: the window reaches byte 0, so the
+          // top of this one is the real beginning of the session. This is the
+          // arm that proves the earned `hasOlder: false` claim renders.
+          windowStart: 0,
+          hasOlder: false,
+          ...(opts?.files ? { fileChanges: clone(FIXTURE_FILE_CHANGES) } : {}),
+        });
+      }
       if (workSessionId !== sessionLive.id) {
         return clone({
           sessionId: workSessionId,
@@ -1702,39 +2593,46 @@ export function createFixtureSeam(): FixtureSeam {
           stuck: null,
           lastActivityAt: null,
           malformed: 0,
+          // No file was opened, so there is no byte to page back from.
+          windowStart: null,
+          hasOlder: false,
         });
       }
-      // Oldest-first, as the contract requires of a tail, and short enough that
-      // the default window (20) never trims it — a fixture that silently paged
-      // would hide the renderer's ordering bug rather than expose it.
-      const entries = [
-        {
-          at: '2026-01-04T09:15:02.000Z',
-          source: 'user' as const,
-          text: 'Take the failing spawn test and find why the PTY never emits.',
-          truncated: false,
-        },
-        {
-          at: '2026-01-04T09:15:44.000Z',
-          source: 'assistant' as const,
-          text: 'Reading the spawn service and its test harness to see which side owns the timeout.',
-          truncated: false,
-        },
-        {
-          at: '2026-01-04T09:18:10.000Z',
-          source: 'assistant' as const,
-          text: 'The harness asserts on a ring that is only filled after the first flush, so the read races the write.',
-          truncated: false,
-        },
-      ];
+      /*
+       * THE PAGING ARM — and it pages for real.
+       *
+       * A fixture that cannot answer a `before` request with a genuinely
+       * EARLIER window makes every paging test theatre: the test would pass
+       * against a seam that quietly returned the same turns forever. So this
+       * arm models the server's actual cursor rule rather than approximating
+       * it — each turn gets a synthetic byte offset, a window is the newest
+       * `last` turns below the cursor, and the page reports the offset of the
+       * FIRST TURN IT RETURNED. Windows therefore abut exactly as the reader's
+       * do, and walking back to `hasOlder: false` reaches turn 0 and no
+       * further.
+       *
+       * Long enough (34 turns against a 20-turn window) that the walk takes
+       * two pages and the second one lands on the beginning.
+       */
+      const liveTurns = fixtureTranscriptTurns();
       const last = opts?.last ?? 20;
+      const before = opts?.before ?? Number.POSITIVE_INFINITY;
+      const below = liveTurns.filter((t) => t.offset < before);
+      const window = last > 0 ? below.slice(-last) : below;
+      // The offset of the first turn RETURNED, never the first turn read: a
+      // cursor at the window's own start would leave the turns the `last`
+      // slice dropped unreachable, which is the one bug this feature exists to
+      // not have.
+      const windowStart = window[0]?.offset ?? 0;
       return clone({
         sessionId: workSessionId,
         available: true,
       unavailableReason: null,
       searchedPaths: [],
         agentTool: 'claude-code',
-        entries: entries.slice(-last),
+        entries: window.map(({ offset: _offset, ...entry }) => entry),
+        windowStart,
+        hasOlder: windowStart > 0,
         stats: {
           // True on purpose: the reader tails a bounded slice, so the honest
           // default state of this surface is "you are looking at a window".
@@ -1756,7 +2654,7 @@ export function createFixtureSeam(): FixtureSeam {
         // Null, not a zeroed object: the heuristic does not fire on this
         // session, and a `{ silentMs: 0 }` would render as a stuck badge.
         stuck: null,
-        lastActivityAt: '2026-01-04T09:18:10.000Z',
+        lastActivityAt: liveTurns[liveTurns.length - 1]?.at ?? null,
         malformed: 0,
         // The transcript-derived file accounting — attached only when asked,
         // like the real server's `files=1`. Observed tool calls, not git.
@@ -1842,50 +2740,20 @@ export function createFixtureSeam(): FixtureSeam {
       return clone(pageOf<NotificationItem>([], opts));
     },
     /**
-     * The fixture stores the AGGREGATE (`badges.attention`), never individual
-     * requests, because that is the only shape the server hands the UI on a
-     * summary. So the per-request rows here are SYNTHESIZED to reproduce their
-     * own aggregate exactly — count, sum, and max all round-trip. Individual
-     * ids and timestamps are fixture inventions and mean nothing.
+     * Served from the row store, filtered the way the server filters
+     * (`entities-commands-tracking.ts:1214-1240`). NOTE WHAT IS ABSENT: no
+     * status filter is applied unless the caller asks for one, so the default
+     * answer is the FULL history including `resolved` and `dismissed`. That is
+     * the server's behaviour too — the badge is the only place that narrows to
+     * pending — and a history surface depends on it.
      */
     async attentionRequests(input): Promise<AttentionRequestPage> {
-      const rows: AttentionRequest[] = [];
-      for (const s of summaries.values()) {
-        if (s.deletedAt !== null) continue;
-        if (s.spaceId !== input.spaceId) continue;
-        if (input.entityId && s.id !== input.entityId) continue;
-        const agg = s.badges.attention;
-        if (!agg || agg.pendingCount <= 0) continue;
-
-        // Spread totalPoints across pendingCount rows, with the largest row
-        // pinned to maxPoints so the panel's max matches the server's.
-        const rest = Math.max(0, agg.totalPoints - agg.maxPoints);
-        const others = Math.max(0, agg.pendingCount - 1);
-        const each = others > 0 ? Math.max(1, Math.round(rest / others)) : 0;
-        for (let i = 0; i < agg.pendingCount; i += 1) {
-          const first = i === 0;
-          rows.push({
-            id: `att-${s.id}-${i}`,
-            spaceId: s.spaceId,
-            entityId: s.id,
-            reason: first ? agg.latestReason : `${agg.latestReason} (${i + 1})`,
-            points: first ? agg.maxPoints : Math.min(each, 100),
-            status: 'open',
-            version: 1,
-            requestedBy: s.createdBy,
-            acknowledgedBy: null,
-            resolvedBy: null,
-            resolutionNote: null,
-            createdAt: agg.oldestRequestedAt,
-            updatedAt: agg.oldestRequestedAt,
-            acknowledgedAt: null,
-            resolvedAt: null,
-          });
-        }
-      }
-      // Only 'open' rows exist above, so any other status filter is empty —
-      // truthfully, since the fixture cannot represent an acknowledged request.
-      const filtered = rows
+      const filtered = attentionRows
+        .filter((r) => r.spaceId === input.spaceId)
+        .filter((r) => (input.entityId ? r.entityId === input.entityId : true))
+        // A row whose entity was deleted is gone: the real table cascades on
+        // `entities`, so a tombstoned entity has no history to show.
+        .filter((r) => summaries.get(r.entityId)?.deletedAt == null)
         .filter((r) => (input.status ? r.status === input.status : true))
         .filter((r) => (input.minPoints ? r.points >= input.minPoints : true))
         // The server's order, mirrored: points desc, createdAt asc, id asc.
@@ -2037,6 +2905,24 @@ export function createFixtureSeam(): FixtureSeam {
           ...(input.kind === 'memory' ? { excerpt: derivedTitle } : {}),
           state: defaultStateFor(input),
         });
+        if (input.kind === 'graph') {
+          /* The row IS the graph (Craft P1 R1): the create's content is the
+             body a detail read must hand back, so it cannot be synthesized
+             from state alone the way the light kinds are. */
+          const c = (input.content ?? {}) as Record<string, unknown>;
+          extras.set(s.id, {
+            content: {
+              kind: 'graph',
+              graphType: (c.graphType as string) ?? 'entity',
+              nodes: Array.isArray(c.nodes) ? (c.nodes as never[]) : [],
+              edges: Array.isArray(c.edges) ? (c.edges as never[]) : [],
+              layout: (c.layout as Record<string, { x: number; y: number }>) ?? {},
+              source: (c.source as string | null) ?? null,
+            },
+            connections: clone(NO_CONNECTIONS),
+            capabilities: { ...CAPS_FULL },
+          });
+        }
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },
@@ -2054,7 +2940,7 @@ export function createFixtureSeam(): FixtureSeam {
           ...(input.position !== undefined ? { position: input.position } : {}),
           excerpt: input.description,
           state: {
-            kind: 'task', workStatus: 'open', priority: input.priority ?? 'medium',
+            kind: 'task', status: 'open', priority: input.priority ?? 'medium',
             axes: input.axes ?? {}, dueDate: input.dueDate ?? null, assignees: [],
             acceptance: { total: criteria.length, completed: criteria.filter((c) => c.done).length },
           },
@@ -2096,21 +2982,125 @@ export function createFixtureSeam(): FixtureSeam {
             const due = patched.dueDate;
             s.state.dueDate = typeof due === 'string' ? due : null;
           }
+          /**
+           * Same crossing for `priority`: the node's `update_task_content`
+           * writes `tasks.priority` and `stateOf` projects it, so a fixture
+           * that banked it in content alone would let the board's priority
+           * drop report success while every fresh read said 'medium' — an
+           * optimistic move that could never settle NOR roll back.
+           */
+          if (s.state.kind === 'task' && 'priority' in patched) {
+            const p = patched.priority;
+            if (p === 'low' || p === 'medium' || p === 'high' || p === 'urgent') s.state.priority = p;
+          }
+          /* `axes` makes the same content→state crossing as `dueDate`, and
+             with the server's own replace-wholesale semantics
+             (`update_task_content`: `axes = coalesce(p_axes, axes)`): a
+             present object REPLACES the stored record — the MERGE is the
+             writer's job — and an absent key changes nothing. A fixture that
+             merged here would pass a writer that forgets to merge, which the
+             real node would quietly data-lose. */
+          if (s.state.kind === 'task' && 'axes' in patched) {
+            const axes = patched.axes;
+            if (axes !== null && typeof axes === 'object') {
+              s.state.axes = { ...(axes as Record<string, string>) };
+            }
+          }
+          /**
+           * And the crossing is a MOVE, not a copy: the node's `contentOf`
+           * never carries these state-projected keys (task content is
+           * kind/description/acceptanceCriteria/pointsEstimate, strict), so
+           * a fixture that left them merged into content would hand back a
+           * detail `EntityDetailSchema` refuses — contract-invalid in a way
+           * the real server never is.
+           *
+           * `axes` joins that list on the merge: it is an EntityState field
+           * with no home in the strict task content, so the block main added
+           * above has to clear it here for the same reason the other two are
+           * cleared. Leaving it would make every axis write hand back a
+           * contract-invalid detail.
+           */
+          if (s.state.kind === 'task') {
+            const c = e.content as Record<string, unknown>;
+            delete c.priority;
+            delete c.dueDate;
+            delete c.axes;
+          }
         }
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },
+      /**
+       * The bulk verb, mirroring `resolve_entity_attention` (050:208-212):
+       * every open OR acknowledged row on the entity flips to `resolved`, and
+       * the rows are RETAINED with their reason, points and requester intact.
+       * It is a status flip, not a delete — which is the whole reason a
+       * history surface has anything to show after you open an entity.
+       */
       async resolveAttention(id, input) {
         const s = requireSummary(id);
-        const affectedCount = s.badges.attention?.pendingCount ?? 0;
+        const pending = attentionRows.filter(
+          (r) => r.entityId === id && (r.status === 'open' || r.status === 'acknowledged'),
+        );
+        const at = tick();
+        for (const row of pending) {
+          row.status = 'resolved';
+          row.resolvedBy = clone(viewerActor);
+          row.resolvedAt = at;
+          row.updatedAt = at;
+          // The RPC bumps `version` on every row it touches, which is why a
+          // client holding rows fetched before an open will fail its next
+          // update with a version conflict rather than silently overwriting.
+          row.version += 1;
+          if (input.resolutionNote !== undefined) row.resolutionNote = input.resolutionNote;
+        }
+        const affectedCount = pending.length;
         if (affectedCount > 0) {
-          const { attention: _attention, ...badges } = s.badges;
-          s.badges = badges;
+          recomputeAttentionBadge(s);
           touch(s);
           emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         }
         return { request: null, entity: clone(s), affectedCount };
+      },
+      /**
+       * The per-request verb, mirroring `update_attention_request` (050:97-179)
+       * — including the part that is easy to get wrong: moving a row BACK to
+       * open or acknowledged CLEARS the resolution stamps rather than leaving a
+       * resolved-by on a row that is not resolved (050:148-167).
+       */
+      async updateAttentionRequest(requestId, input) {
+        const row = attentionRows.find((r) => r.id === requestId);
+        if (!row) throw new CollabError('not_found', `attention request ${requestId} not found`);
+        if (row.version !== input.expectedVersion) {
+          throw new CollabError(
+            'version_conflict',
+            `expected version ${input.expectedVersion}, have ${row.version}`,
+          );
+        }
+        const s = requireSummary(row.entityId);
+        const at = tick();
+        if (input.reason !== undefined) row.reason = input.reason;
+        if (input.points !== undefined) row.points = input.points;
+        if (input.resolutionNote !== undefined) row.resolutionNote = input.resolutionNote;
+        if (input.status !== undefined) {
+          row.status = input.status;
+          const settled = input.status === 'resolved' || input.status === 'dismissed';
+          row.resolvedBy = settled ? clone(viewerActor) : null;
+          row.resolvedAt = settled ? at : null;
+          row.acknowledgedBy = input.status === 'acknowledged' ? clone(viewerActor) : row.acknowledgedBy;
+          row.acknowledgedAt = input.status === 'acknowledged' ? at : row.acknowledgedAt;
+          if (input.status === 'open') {
+            row.acknowledgedBy = null;
+            row.acknowledgedAt = null;
+          }
+        }
+        row.updatedAt = at;
+        row.version += 1;
+        recomputeAttentionBadge(s);
+        touch(s);
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return { request: clone(row), entity: clone(s), affectedCount: 1 };
       },
       /**
        * Amendment 4 mirror: writes the VIEWER's profile — the only row this
@@ -2218,14 +3208,165 @@ export function createFixtureSeam(): FixtureSeam {
       },
 
       /**
+       * W2 — the axis registry's writes, mirroring the w2_* RPCs refusal for
+       * refusal: shared input validation, the (space,name) uniqueness, the
+       * three in-use refusals AND the two default-axis refusals (delete and
+       * demote — 016, KEPT by the amended ruling 2026-08-16), all in the
+       * node's own words.
+       */
+      async createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        validateAxisInput(input);
+        if (taskAxes.some((a) => a.name === input.name)) {
+          throw new CollabError('conflict', `a task axis named ${input.name} already exists`);
+        }
+        axisSeq += 1;
+        const axis: TaskAxis = {
+          id: `axis-fixture-${axisSeq}`,
+          spaceId,
+          name: input.name,
+          axisValues: [...input.axisValues],
+          kind: input.kind,
+          position: input.position,
+        };
+        taskAxes.push(axis);
+        return clone(axis);
+      },
+
+      async updateTaskAxis(spaceId: SpaceId, axisId: string, input: TaskAxisInput): Promise<TaskAxis> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const axis = taskAxes.find((a) => a.id === axisId);
+        if (!axis) throw new CollabError('not_found', 'task axis not found');
+        validateAxisInput(input);
+        if (axis.kind === 'default' && input.kind !== 'default') {
+          throw new CollabError('invariant_violation', 'the default task axis cannot be demoted');
+        }
+        if (input.name !== axis.name && axisInUse(axis.name)) {
+          throw new CollabError('invariant_violation', 'cannot rename a task axis that tasks still use');
+        }
+        if (axis.axisValues.length > 0 && axisInUse(axis.name, input.axisValues)) {
+          throw new CollabError('invariant_violation', 'cannot remove a task axis value that tasks still use');
+        }
+        axis.name = input.name;
+        axis.axisValues = [...input.axisValues];
+        axis.kind = input.kind;
+        axis.position = input.position;
+        return clone(axis);
+      },
+
+      async deleteTaskAxis(spaceId: SpaceId, axisId: string): Promise<{ axisId: string }> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const index = taskAxes.findIndex((a) => a.id === axisId);
+        if (index < 0) throw new CollabError('not_found', 'task axis not found');
+        if (taskAxes[index]!.kind === 'default') {
+          throw new CollabError('invariant_violation', 'the default task axis cannot be deleted');
+        }
+        if (axisInUse(taskAxes[index]!.name)) {
+          throw new CollabError('invariant_violation', 'task axis is still in use by tasks');
+        }
+        taskAxes.splice(index, 1);
+        return { axisId };
+      },
+
+      /**
+       * W4 — the workflow registry's writes, mirroring `upsert_task_workflow`
+       * / `delete_task_workflow` (132) refusal for refusal, in the ORDER the
+       * SQL raises them: the RPC's own duplicate check (22023 →
+       * invalid_input) fires before the insert, whose two check constraints
+       * (23514 → invariant_violation) carry Postgres's own message shape. The
+       * admin gate is NOT mirrored: the fixture viewer is the space owner,
+       * exactly as in the axis verbs above.
+       */
+      async upsertTaskWorkflow(spaceId: SpaceId, input: TaskWorkflowInput): Promise<TaskWorkflow> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const statuses = input.statuses;
+        if (new Set(statuses).size !== statuses.length) {
+          throw new CollabError('invalid_input', 'workflow statuses must be unique');
+        }
+        const seven = ['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled'];
+        if (statuses.some((v) => !seven.includes(v))) {
+          throw new CollabError(
+            'invariant_violation',
+            'new row for relation "task_workflows" violates check constraint "task_workflows_statuses_valid"',
+          );
+        }
+        // ⚠ NO LONGER MIRRORS THE SERVER, DELIBERATELY. Migration 151 (phase 4)
+        // DROPPED `task_workflows_structural_statuses` — the doors resolve a
+        // state by category and the completion gate rides the →done transition,
+        // so the schema no longer needs the three. The rule survives on the
+        // client (`domain/workflows.ts` STRUCTURAL_STATUSES, rendered as
+        // always-included checkboxes in WorkflowsSection) because 132's
+        // `tasks_validate_workflow` trigger still polices the legacy column
+        // against this vocabulary until phase 6 retires `task_workflows`. This
+        // arm is the fixture standing in for that client rule, in the old
+        // constraint's words; delete it with the rule, in phase 6.
+        if (!(['open', 'working', 'done'] as const).every((v) => (statuses as readonly string[]).includes(v))) {
+          throw new CollabError(
+            'invariant_violation',
+            'new row for relation "task_workflows" violates check constraint "task_workflows_structural_statuses"',
+          );
+        }
+        const typeValue = input.typeValue.trim();
+        const existing = taskWorkflows.find((w) => w.typeValue === typeValue);
+        if (existing) {
+          existing.statuses = [...statuses];
+          return clone(existing);
+        }
+        workflowSeq += 1;
+        const row: TaskWorkflow = {
+          id: `workflow-fixture-${workflowSeq}`,
+          spaceId,
+          typeValue,
+          statuses: [...statuses],
+        };
+        taskWorkflows.push(row);
+        return clone(row);
+      },
+
+      /** Deleting a rule widens the vocabulary back to the seven; no task row changes. */
+      async deleteTaskWorkflow(spaceId: SpaceId, workflowId: string): Promise<{ workflowId: string }> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const index = taskWorkflows.findIndex((w) => w.id === workflowId);
+        if (index < 0) throw new CollabError('not_found', 'task workflow not found');
+        taskWorkflows.splice(index, 1);
+        return { workflowId };
+      },
+
+      /**
        * The viewer is already a member of the fixture space, so this answers
        * `joined: false` — which is the node's own answer for an existing
        * member and NOT a stub. A fixture cannot mint a second human.
        */
       async redeemInvite(input: RedeemInviteInput): Promise<InviteRedemption> {
         const invite = invites.find((i) => i.code === input.code);
+        // THE NODE'S OWN LADDER, IN THE NODE'S OWN ORDER (migration 118),
+        // because the join screen renders a different sentence per rung and a
+        // fixture that answered `forbidden` for all of them could exercise
+        // none of it. The sqlstates map through `http/errors.ts`:
+        // P0002 -> not_found, 42501 -> forbidden, 53400 -> limit_exceeded.
         if (!invite) throw new CollabError('not_found', 'invite not found');
         if (invite.revoked) throw new CollabError('forbidden', 'invite was revoked');
+        if (invite.expiresAt !== null && Date.parse(invite.expiresAt) < Date.parse(tick())) {
+          throw new CollabError('forbidden', 'invite has expired');
+        }
+        // Exhaustion is checked ONLY for a non-member on the node — an existing
+        // member spends no use — and the fixture viewer is always already a
+        // member, so this rung is unreachable here for the same reason
+        // `joined` is always false. Written out rather than omitted so the
+        // fixture and the RPC can be read side by side.
+        if (invite.uses >= invite.maxUses) {
+          throw new CollabError('limit_exceeded', 'invite is exhausted');
+        }
         return { spaceId: FIXTURE_SPACE_ID, memberId: viewerActor.id, joined: false };
       },
 
@@ -2255,8 +3396,11 @@ export function createFixtureSeam(): FixtureSeam {
         }
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
+        // W4 — the 132 trigger mirror: a status write outside the row's type
+        // vocabulary refuses here exactly as `public.tasks`'s trigger does.
+        if (input.status !== undefined) requireWorkflowAllows(s, input.status);
         if (input.title !== undefined) s.title = input.title;
-        if (input.workStatus !== undefined) s.state.workStatus = input.workStatus;
+        if (input.status !== undefined) s.state.status = input.status;
         if (input.priority !== undefined) s.state.priority = input.priority;
         if (input.axes !== undefined) s.state.axes = input.axes;
         if (input.dueDate !== undefined) s.state.dueDate = input.dueDate;
@@ -2345,7 +3489,7 @@ export function createFixtureSeam(): FixtureSeam {
         const s = requireSummary(id);
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
-        s.state.workStatus = 'done';
+        s.state.status = 'done';
         s.state.acceptance = { ...s.state.acceptance, completed: s.state.acceptance.total };
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
@@ -2354,7 +3498,10 @@ export function createFixtureSeam(): FixtureSeam {
       async work(id, input: WorkInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
-        s.state.workStatus = input.status;
+        // W4 — the 132 trigger mirror. `complete` next door is deliberately
+        // unguarded: `done` is structural, so no vocabulary can exclude it.
+        requireWorkflowAllows(s, input.status);
+        s.state.status = input.status;
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
@@ -2529,19 +3676,45 @@ export function createFixtureSeam(): FixtureSeam {
         emit(member.spaceId, { type: 'entity.upsert', entity: clone(member) }, ctx);
         return commandResult(collection, { patches: [clone(collection), clone(member)] });
       },
-      /** Amendment 10: fixture echo of `chat.threads.start` (never turn-running). */
-      async startChatThread(input) {
-        const root = requireSummary(input.rootMessageId);
-        return {
-          thread: {
-            rootMessageId: input.rootMessageId,
-            anchorId: root.parentId ?? input.rootMessageId,
+      /** 176: fixture echo of `chat.start` (never turn-running). */
+      async startChat(input) {
+        const chat = insertSummary({
+          id: nextId('chat'),
+          kind: 'chat',
+          title: (input.title ?? input.body).slice(0, 240),
+          spaceId: input.spaceId,
+          state: {
+            kind: 'chat',
             teammateId: input.teammateId,
             model: input.model,
-            createdAt: new Date().toISOString(),
-            lastReplyAt: null,
+            provider: 'fixture',
+            agentTool: 'claude-code',
+            mode: input.mode,
+            workdirMode: input.workdirMode,
+            // Echoed rather than invented: the real RPC refuses a projectId
+            // that does not pair with the mode, so a fixture that normalised
+            // the pair here would be the one place the rule does not hold.
+            projectId: input.projectId ?? null,
+            runtimeState: 'cold',
+            turnState: 'queued',
+            turnCount: 1,
+            lastTurnAt: new Date().toISOString(),
           },
-        };
+        });
+        const message = insertSummary({
+          id: nextId('msg'),
+          kind: 'message',
+          title: input.body.slice(0, 80),
+          spaceId: input.spaceId,
+          state: {
+            kind: 'message',
+            anchorId: chat.id,
+            rootMessageId: null,
+            author: viewerActor,
+            messageBatchId: null,
+          },
+        });
+        return { chat: clone(chat), messageId: message.id };
       },
 
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {
@@ -2630,14 +3803,57 @@ export function createFixtureSeam(): FixtureSeam {
         requireSummary(anchorId);
         readMarks.set(anchorId, lastReadAt);
       },
-      async previewArtifact(id: string) {
-        requireSummary(id);
-        // The fixture has no preview listener and no bundle bytes — a fake
-        // URL here would render a broken iframe that reads as a product bug.
-        throw new CollabError('not_implemented', 'fixture data cannot execute artifact previews');
+      async previewArtifact(id: string, input: ArtifactsPreviewStartInput) {
+        const s = requireSummary(id);
+        const current = currentRevisionOf(s);
+        const revisionNumber = input.revisionNumber ?? current;
+        if (revisionNumber < 1 || revisionNumber > current) {
+          throw new CollabError('not_found', `revision ${revisionNumber} does not exist`);
+        }
+        // A data: URL is a previewUrl the viewer must treat as OPAQUE, which
+        // makes the fixture a proof of that rule: any code path that parses
+        // or re-bases the URL breaks here first, not in production.
+        const mintedAt = tick();
+        return {
+          previewSessionId: nextId('preview'),
+          token: `fx-preview-${revisionNumber}`,
+          revisionNumber,
+          // The fixture clock ~600s out — the server's own TTL, so the
+          // viewer's re-mint scheduling runs against fixture data too.
+          expiresAt: new Date(Date.parse(mintedAt) + 600_000).toISOString(),
+          previewUrl: `data:text/html;base64,${toBase64(artifactDemoPage(s.title, revisionNumber))}`,
+        };
+      },
+      async listArtifactRevisions(id: string) {
+        const s = requireSummary(id);
+        const current = currentRevisionOf(s);
+        const revisions = [];
+        for (let n = current; n >= 1; n--) {
+          revisions.push({
+            revisionNumber: n,
+            manifestSha256: n.toString(16).padStart(2, '0').repeat(32),
+            entrypoint: 'index.html',
+            fileCount: 1,
+            totalSizeBytes: 1024 + n * 512,
+            sourceProvenance: null,
+            // Newest first like the server orders it; one fixture day apart.
+            createdAt: new Date(FIXTURE_BASE_MS - (current - n) * 86_400_000).toISOString(),
+            publishedBy: s.createdBy.id,
+          });
+        }
+        return { revisions };
+      },
+      async exportArtifactRevision(id: string, revisionNumber: number) {
+        const s = requireSummary(id);
+        const current = currentRevisionOf(s);
+        if (revisionNumber < 1 || revisionNumber > current) {
+          throw new CollabError('not_found', `revision ${revisionNumber} does not exist`);
+        }
+        const html = artifactDemoPage(s.title, revisionNumber);
+        return storedZip([{ path: 'index.html', bytes: new TextEncoder().encode(html) }]);
       },
       async spawn(input: ExecutionSpawnInput) {
-        requireSummary(input.teamMemberId);
+        const teamMember = requireSummary(input.teamMemberId);
         const tasks = (input.taskIds ?? []).map(requireSummary);
         const startedAt = tick();
         const s = insertSummary({
@@ -2650,6 +3866,14 @@ export function createFixtureSeam(): FixtureSeam {
             kind: 'work_session', status: 'running',
             agentTool: input.agentTool ?? 'claude-code', model: input.model ?? null,
             shareMode: 'space', startedAt, exitedAt: null,
+            /* The persona the run acts as — the node projects it from the
+               session's `participates_in` edge. A spawn HAS a team member by
+               construction, so omitting it here would give the fixture the one
+               shape the server never produces: an agent session nobody runs. */
+            teammate: {
+              id: teamMember.id, kind: 'team_member', displayName: teamMember.title,
+              avatar: null, isAgent: true,
+            },
           },
         });
         extras.set(s.id, {
@@ -2716,7 +3940,7 @@ export function createFixtureSeam(): FixtureSeam {
               spaceId: subject.spaceId,
               parentId: subject.id,
               state: {
-                kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
+                kind: 'task', status: 'open', priority: 'medium', axes: {},
                 dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
               },
             });
@@ -3249,16 +4473,16 @@ export function createFixtureSeam(): FixtureSeam {
       },
       /**
        * THE R-UI-5 predicate — the only place liveness truth is computed:
-       *   workStatus !== 'running'  → 'not-running'
+       *   status !== 'running'  → 'not-running'
        *   no snapshot for the space → 'unknown' (rendered neutral, NEVER live)
        *   id ∈ liveEntityIds        → 'live'
        *   otherwise                 → 'stale'
        * NOTE (flagged to bridge, not fixed here — seam.ts is locked): the seam
-       * types `workStatus` with the task `WorkStatus` vocabulary, which cannot
+       * types `status` with the task `WorkStatus` vocabulary, which cannot
        * express the work_session `'running'` literal; the comparison widens.
        */
       statusOf(session): SessionLiveness {
-        if ((session.workStatus as string | null) !== 'running') return 'not-running';
+        if ((session.status as string | null) !== 'running') return 'not-running';
         const s = summaries.get(session.id);
         const snap = s ? livenessBySpace.get(s.spaceId) : undefined;
         if (!snap) return 'unknown';

@@ -1,0 +1,24 @@
+/*
+ * THE HEADER'S ID TAIL — `.pn-header__ref`, the mono last-4 beside the kind
+ * glyph (wave 3 header polish).
+ *
+ * A SEPARATE FILE, not an append to `panels.css`, for the same coordination
+ * reason `panel-bar-phone.css` gives: that file is shared and has concurrent
+ * lane work in it; one new file per change avoids the merge conflict.
+ *
+ * THE GRAMMAR IS `gv-node__ref`'s (graph.css:854) on purpose — the graph card
+ * and the panel header state the same identity fact and must read as one
+ * vocabulary: mono, micro, uppercase, dimmed a step below the words around it
+ * so it identifies without shouting. Dimming is `opacity` on `currentColor`
+ * rather than a named ink token, so the tail follows the header through the
+ * terminal archetype's dark scope with no second declaration.
+ */
+.cv2-root .pn-header__ref {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  align-self: center;
+}

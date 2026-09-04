@@ -20,7 +20,7 @@
 | Server derives actor and work-session from the session-scoped credential; request bodies cannot claim another session | Chat doc §15 step 4 |
 | Exactly-once delivery REJECTED — no atomic commit spans Postgres and `proc.write()`; `unknown` is a real terminal outcome | SCM §8.2; WORKSPACE R6-1 |
 
-**Headline finding from the tree:** far more of this loop is already implemented than the design docs assume. `entities.feed` with `session_chat_v1` (all five membership terms), the 8-state delivery ledger, the governed one-write PTY handshake, the wake budget, and the §14 injection templates all exist. The loop fails today at exactly three seams: **agents have no session-scoped credential** (they act as the loopback Owner), **`authored_from` provenance is an unwired resolver** (always null), and **the PTY delivery writes the raw body instead of the §14.4 envelope**. Close those three and the core round trip works.
+**Headline finding from the tree:** far more of this loop is already implemented than the design docs assume. `entities.feed` with `session_chat_v1` (all five membership terms), the 8-state delivery ledger, the governed one-write PTY handshake, and the §14 injection templates all exist. The historical wake budget was removed by migrations `120`/`135`. The loop fails today at exactly three seams: **agents have no session-scoped credential** (they act as the loopback Owner), **`authored_from` provenance is an unwired resolver** (always null), and **the PTY delivery writes the raw body instead of the §14.4 envelope**. Close those three and the core round trip works.
 
 ---
 
@@ -69,7 +69,7 @@ The four send layers in the visual design (draft / mutation-pending / stored / d
 
 ### A.2 Reserve and dispatch (after commit, never inside it)
 
-The RPC emits one `deliveryIntent` per work-session anchor (`019:462-464`). Post-commit, the facade calls `messageDelivery.reserve(intent)` then `adapter.dispatch(...)` inside a `try/catch` with an **empty body** (`messages-handoffs.ts:336-357`) — a PTY outage can never roll back or disguise the stored message. Reservation (`reserve_session_message_delivery`, `019:676`) refuses dead sessions (`failed_permanent/session_not_live`) and enforces the wake budget: the 5th consecutive Teammate-authored reservation on an unordered session pair is `failed_permanent/automated_wake_limit` with inbox fallback and zero PTY bytes (`019:751-755`; SCM §10 — cap of 4, durable `session_wake_budgets` row locked in the reserving transaction). Member-authored sends are not budgeted. Self-wake is suppressed: a message is never delivered into the session that authored it (SCM §10 rule 5).
+The RPC emits one `deliveryIntent` per work-session anchor (`019:462-464`). Post-commit, the facade calls `messageDelivery.reserve(intent)` then `adapter.dispatch(...)` after storage commits, so a PTY outage can never roll back or disguise the stored message. Reservation refuses dead sessions (`failed_permanent/session_not_live`), refuses self-contact, and creates one durable row per `(message,target,attempt)`. Migration `135` removed the wake-budget table and copied pair version: claim/settle concurrency is the delivery row lock and legal transition guard, while the unique logical-attempt key prevents reservation forks.
 
 ### A.3 The one governed write
 
@@ -146,7 +146,7 @@ Dual-audience (§14.2) is respected by construction: the **launch manifest** (fu
 
 One composer — `@tm8/prompt`, zero-dependency, imported by both `@tm8/execution` (spawn) and the CLI (`worker init` re-read), so the injected prompt and the re-readable prompt cannot drift (`packages/cli/src/prompt.ts` is a pure re-export). Injection point: `withAgentPrompt(command, systemPrompt, env)` (`packages/execution/src/spawn/manifest.ts:266-275`):
 
-- **claude** (wired, Slice 1 done): `claude --append-system-prompt '<kernel+task>'` — a real Claude boots with identity + task and reports back into the graph.
+- **claude** (wired): `claude --append-system-prompt '<kernel>'`, then the task is submitted through the PTY closed loop; spawn writes `running` only after that first-turn settlement. Task/file identities ride the spawn assignment envelope, while bytes remain behind authenticated `tm8 file download`.
 - **codex / gemini / hermes** (Slice 2, G10): command returned **unchanged** — deliberately un-approximated. Intended mechanisms recorded at `manifest.ts:259-265`: codex `-c developer_instructions=<json>`; gemini has no system-prompt flag so system+task concat into `--prompt`; hermes via env/`--query`.
 
 Fallback for any provider: `tm8 worker init` prints the identical briefing from the manifest with zero network calls (`packages/cli/src/commands/worker-init.ts:30-56`) — but a provider that never received L0 doesn't know to run it, which is why Slice 2 matters for non-Claude.
@@ -252,7 +252,7 @@ Everything required by this design that does not exist in the tree today. Severi
 | G7 | ops | No operator surfacing when the delivery worker is unwired (`TM8_DELIVERY_DATABASE_URL` absent ⇒ deliveries silently expire at TTL) | `main.ts:129-138` | ○ |
 | G11 | server | Directive/coordinator manifest fields hardcoded null (post-G1A) — affects assignment-message framing for coordinator flows, not the Chat core | `manifest.ts:466-468` | ○ |
 
-Not gaps (verified shipped): `messages.post` batch + `parentMessageId` + `MessageBatchResult`; the full delivery ledger + wake budget + fallback fan-out; `promptInternal` principal guard + public `execution.prompt` refusal; `entities.feed` session_chat_v1 with via/dedup/cursors/around + embedded delivery summaries; `entities.context`; `message delivery` + `--wait settled`/exit 11; the retirement trap; kernel/templates/budgets in `@tm8/prompt`; WS event variants for messages/deliveries/activity.
+Not gaps (verified shipped): `messages.post` batch + `parentMessageId` + `MessageBatchResult`; the delivery ledger + fallback fan-out; `promptInternal` principal guard + public `execution.prompt` refusal; `entities.feed` session_chat_v1 with via/dedup/cursors/around + embedded delivery summaries; `entities.context`; `message delivery` + `--wait settled`/exit 11; the retirement trap; kernel/templates/budgets in `@tm8/prompt`; WS event variants for messages/deliveries/activity.
 
 ---
 

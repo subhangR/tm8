@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:4f48f15d8ac03dfcc5fce979ba12b627d2fe1af7ebd8028c397c0631eb7ed3ce",
+  "catalogDigest": "sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa",
   "catalog": {
-    "total": 163,
-    "v1": 161,
+    "total": 197,
+    "v1": 195,
     "reserved": 2,
-    "http": 162,
+    "http": 195,
     "ws": 1,
-    "registerableV1Http": 160,
+    "registerableV1Http": 193,
     "methods": {
-      "GET": 59,
-      "POST": 75,
-      "PATCH": 11,
-      "DELETE": 10,
-      "PUT": 7,
-      "WS": 1
+      "GET": 65,
+      "POST": 98,
+      "PATCH": 12,
+      "DELETE": 12,
+      "PUT": 8,
+      "WS": 2
     },
     "kinds": {
-      "read": 63,
-      "command": 99,
-      "stream": 1
+      "read": 69,
+      "command": 126,
+      "stream": 2
     },
-    "uniqueNames": 163,
-    "uniqueBindings": 163
+    "uniqueNames": 197,
+    "uniqueBindings": 196
   },
   "reservedOperations": [
     "search.query",
@@ -362,6 +362,48 @@
         "source": "server-router"
       },
       {
+        "operation": "spaces.taskWorkflows.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/task-workflows",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskWorkflows.upsert",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/task-workflows",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskWorkflows.delete",
+        "method": "DELETE",
+        "path": "/v2/spaces/:spaceId/task-workflows/:workflowId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.workflows.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/workflows",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.workflows.upsert",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workflows",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.workflows.delete",
+        "method": "DELETE",
+        "path": "/v2/spaces/:spaceId/workflows/:workflowId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "spaces.leaderboard",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/leaderboard",
@@ -614,9 +656,9 @@
         "source": "server-router"
       },
       {
-        "operation": "chat.threads.start",
+        "operation": "chat.start",
         "method": "POST",
-        "path": "/v2/chat/threads",
+        "path": "/v2/chats",
         "status": "registered",
         "source": "server-router"
       },
@@ -1272,9 +1314,23 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.password.change",
+        "method": "POST",
+        "path": "/v2/auth/password",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.invite.resolve",
         "method": "POST",
         "path": "/v2/auth/invite/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.invite.signup",
+        "method": "POST",
+        "path": "/v2/auth/invite/signup",
         "status": "registered",
         "source": "server-router"
       },
@@ -1289,6 +1345,13 @@
         "operation": "auth.claim.status",
         "method": "GET",
         "path": "/v2/auth/claim",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.claim.reissue",
+        "method": "POST",
+        "path": "/v2/auth/claim/reissue",
         "status": "registered",
         "source": "server-router"
       },
@@ -1333,11 +1396,186 @@
         "path": "/v2/execution/dispatch",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "containers.create",
+        "method": "POST",
+        "path": "/v2/containers",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.start",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/start",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.stop",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/stop",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.pause",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/pause",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.resume",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/resume",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.destroy",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/destroy",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.update",
+        "method": "PATCH",
+        "path": "/v2/containers/:containerId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.policy.set",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/policy",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.run",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/run",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.terminal.start",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/terminals",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.attach",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/attach",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.computer",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/computer",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.browser.endpoint",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/browser-endpoint",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.files.put",
+        "method": "PUT",
+        "path": "/v2/containers/:containerId/files",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.files.get",
+        "method": "GET",
+        "path": "/v2/containers/:containerId/files",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.logs",
+        "method": "GET",
+        "path": "/v2/containers/:containerId/logs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.expose",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/expose",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.unexpose",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/unexpose",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.proxy",
+        "method": "GET",
+        "path": "/v2/containers/:containerId/ports/:port/*",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.snapshot",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/snapshot",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.fork",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/fork",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.attention",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/attention",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.providers.list",
+        "method": "GET",
+        "path": "/v2/containers/providers",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "containers.pools.set",
+        "method": "POST",
+        "path": "/v2/containers/:containerId/commands/pool",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
       {
         "operation": "events.subscribe",
+        "method": "WS",
+        "path": "/v2/ws",
+        "status": "skeleton",
+        "durabilityClaim": false
+      },
+      {
+        "operation": "containers.stream",
         "method": "WS",
         "path": "/v2/ws",
         "status": "skeleton",
@@ -1545,7 +1783,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 132
+    "unimplementedV1Http": 165
   },
   "schemas": {
     "additive": {
@@ -2089,6 +2327,111 @@
           "spaces",
           "task",
           "axes",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskWorkflows.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskWorkflows.list",
+        "intentTags": [
+          "spaces",
+          "task",
+          "workflows",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskWorkflows.upsert",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskWorkflows.upsert",
+        "intentTags": [
+          "spaces",
+          "task",
+          "workflows",
+          "upsert"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskWorkflows.delete",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskWorkflows.delete",
+        "intentTags": [
+          "spaces",
+          "task",
+          "workflows",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.workflows.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.workflows.list",
+        "intentTags": [
+          "spaces",
+          "workflows",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.workflows.upsert",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.workflows.upsert",
+        "intentTags": [
+          "spaces",
+          "workflows",
+          "upsert"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.workflows.delete",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.workflows.delete",
+        "intentTags": [
+          "spaces",
+          "workflows",
           "delete"
         ],
         "inputSchemaRef": null,
@@ -2691,17 +3034,16 @@
         "publicComposite": null
       },
       {
-        "operation": "chat.threads.start",
-        "noun": "chat-thread",
+        "operation": "chat.start",
+        "noun": "chat",
         "exposure": "public",
-        "helpRef": "tm8://help/operation/chat.threads.start",
+        "helpRef": "tm8://help/operation/chat.start",
         "intentTags": [
           "chat",
-          "threads",
           "start"
         ],
-        "inputSchemaRef": "StartChatThreadInputSchema",
-        "resultSchemaRef": "StartChatThreadResultSchema",
+        "inputSchemaRef": "StartChatInputSchema",
+        "resultSchemaRef": "StartChatResultSchema",
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
@@ -4280,6 +4622,23 @@
         "publicComposite": null
       },
       {
+        "operation": "auth.password.change",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.password.change",
+        "intentTags": [
+          "auth",
+          "password",
+          "change"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "auth.invite.resolve",
         "noun": "auth",
         "exposure": "public",
@@ -4288,6 +4647,23 @@
           "auth",
           "invite",
           "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.invite.signup",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.invite.signup",
+        "intentTags": [
+          "auth",
+          "invite",
+          "signup"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -4321,6 +4697,23 @@
           "auth",
           "claim",
           "status"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.claim.reissue",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.claim.reissue",
+        "intentTags": [
+          "auth",
+          "claim",
+          "reissue"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -4424,6 +4817,413 @@
         ],
         "inputSchemaRef": "ExecutionDispatchInputSchema",
         "resultSchemaRef": "ExecutionDispatchResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.create",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.create",
+        "intentTags": [
+          "containers",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.start",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.start",
+        "intentTags": [
+          "containers",
+          "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.stop",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.stop",
+        "intentTags": [
+          "containers",
+          "stop"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.pause",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.pause",
+        "intentTags": [
+          "containers",
+          "pause"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.resume",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.resume",
+        "intentTags": [
+          "containers",
+          "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.destroy",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.destroy",
+        "intentTags": [
+          "containers",
+          "destroy"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.update",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.update",
+        "intentTags": [
+          "containers",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.policy.set",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.policy.set",
+        "intentTags": [
+          "containers",
+          "policy",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.run",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.run",
+        "intentTags": [
+          "containers",
+          "run"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.terminal.start",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.terminal.start",
+        "intentTags": [
+          "containers",
+          "terminal",
+          "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.attach",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.attach",
+        "intentTags": [
+          "containers",
+          "attach"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.stream",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.stream",
+        "intentTags": [
+          "containers",
+          "stream"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.computer",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.computer",
+        "intentTags": [
+          "containers",
+          "computer"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.browser.endpoint",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.browser.endpoint",
+        "intentTags": [
+          "containers",
+          "browser",
+          "endpoint"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.files.put",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.files.put",
+        "intentTags": [
+          "containers",
+          "files",
+          "put"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.files.get",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.files.get",
+        "intentTags": [
+          "containers",
+          "files",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.logs",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.logs",
+        "intentTags": [
+          "containers",
+          "logs"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.expose",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.expose",
+        "intentTags": [
+          "containers",
+          "expose"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.unexpose",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.unexpose",
+        "intentTags": [
+          "containers",
+          "unexpose"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.proxy",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.proxy",
+        "intentTags": [
+          "containers",
+          "proxy"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.snapshot",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.snapshot",
+        "intentTags": [
+          "containers",
+          "snapshot"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.fork",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.fork",
+        "intentTags": [
+          "containers",
+          "fork"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.attention",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.attention",
+        "intentTags": [
+          "containers",
+          "attention"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.providers.list",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.providers.list",
+        "intentTags": [
+          "containers",
+          "providers",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "containers.pools.set",
+        "noun": "container",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/containers.pools.set",
+        "intentTags": [
+          "containers",
+          "pools",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
@@ -5126,6 +5926,116 @@
         },
         "migration": {
           "strategy": "loop-detail"
+        }
+      },
+      "graph": {
+        "kind": "graph",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "graphs"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "graph-detail"
+        }
+      },
+      "chat": {
+        "kind": "chat",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "chats"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "chat-detail"
+        }
+      },
+      "container": {
+        "kind": "container",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "containers"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "container-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "containers.create",
+            "containers.start",
+            "containers.stop",
+            "containers.pause",
+            "containers.resume",
+            "containers.destroy",
+            "containers.update",
+            "containers.policy.set",
+            "containers.terminal.start",
+            "containers.attach"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "container-detail"
         }
       }
     },

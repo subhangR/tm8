@@ -185,13 +185,34 @@ describe('the strip affordance', () => {
     expect(view.queryByRole('button', { name: /project folder/ })).toBeNull();
   });
 
-  it('opens the picker from the strip when the port is present', async () => {
+  it('opens the picker from the ＋ tile menu when the port is present', async () => {
     const p = port();
     const view = render(
-      <AttachmentStrip anchorId={ANCHOR} files={[]} startUpload={vi.fn()} projectFolder={p} />,
+      /* A file, because an idle strip draws no ＋ at all since 2026-08-18 —
+         the tile this test is about only exists on a non-empty anchor. */
+      <AttachmentStrip
+        anchorId={ANCHOR}
+        files={[
+          {
+            fileEntityId: 'f1' as never,
+            name: 'notes.txt',
+            mime: 'text/plain',
+            sizeBytes: 12,
+            attributedTo: { id: 'a', displayName: 'ada', isAgent: false, avatar: null },
+            attributedAt: '2026-08-01T00:00:00.000Z',
+            sourceMissing: false,
+            edgeId: null,
+          },
+        ]}
+        startUpload={vi.fn()}
+        projectFolder={p}
+      />,
     );
 
-    fireEvent.click(view.getByRole('button', { name: '▱ From a project folder' }));
+    // Both paths wired ⇒ ＋ opens the two-item menu; the folder item opens
+    // the picker exactly as the old standing button did.
+    fireEvent.click(view.getByTestId('attachment-add'));
+    fireEvent.click(view.getByRole('menuitem', { name: /From a project folder/ }));
     await waitFor(() => expect(view.getByRole('dialog')).toBeTruthy());
     expect(p.projects).toHaveBeenCalled();
   });

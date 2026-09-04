@@ -7,7 +7,9 @@
  *   2. transport checks (./security.ts — S1 aside, deferred no-ops today)
  *   3. `/health` — the liveness probe, deliberately OUTSIDE the catalog and
  *      outside the envelope: it is infrastructure, not an operation
- *   4. narrowly matched support transports (raw FileUploadGrant PUT)
+ *   4. narrowly matched support transports (the `/p/` artifact-preview
+ *      route — capability-token auth, never cookie identity — and the raw
+ *      FileUploadGrant PUT)
  *   5. read + JSON-parse the body → `payload_too_large` / `invalid_input`
  *   6. route against the catalog → `not_found`
  *   7. resolve identity (S5 auto-owner today)
@@ -33,6 +35,7 @@ import type { Duplex } from 'node:stream';
 import { BASE_PATH, CONTRACT_VERSION, envelope } from '@tm8/contract';
 import type { ZodTypeAny } from 'zod';
 import { HandlerRegistry, INPUT_SCHEMAS } from '../facade/index.js';
+import { AuthRateLimiter } from './auth-rate-limit.js';
 import { readJsonBody } from './body.js';
 import type { ServerConfig } from './config.js';
 import { fail, notImplemented, sendWireError } from './errors.js';
@@ -42,10 +45,12 @@ import { Router } from './router.js';
 import {
   autoOwnerResolver,
   BASE_SECURITY_HEADERS,
+  checkHost,
   checkTransport,
   checkUpgradeTransport,
 } from './security.js';
 import type { StaticHandler } from './static.js';
+import { wsClientKey } from './ws-admission.js';
 import type { RemoteServerProxy } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
@@ -76,6 +81,17 @@ export interface FacadeServerOptions {
   readonly identityResolver?: IdentityResolver;
   readonly upgrades?: UpgradeTarget;
   readonly staticHandler?: StaticHandler;
+  /**
+   * Additional bundles served under their own URL prefixes, tried BEFORE
+   * `staticHandler`. Today that is the frozen 1.0 UI at `/ui-1.0/`.
+   *
+   * The order is load-bearing, not stylistic: `staticHandler` serves the
+   * product UI at the root and answers extension-less paths with its own
+   * index.html, so consulting it first would make `/ui-1.0/` render the 2.0
+   * shell with a 200 — the switch would silently do nothing, which is worse
+   * than a 404 because it looks like it worked.
+   */
+  readonly staticMounts?: readonly StaticHandler[];
   /** Non-catalog support transport: FileUploadGrant raw-byte PUT. */
   readonly fileUploadRoute?: W2FileUploadRoute;
   /**
@@ -92,6 +108,18 @@ export interface FacadeServerOptions {
   readonly voiceWebhookRoute?: VoiceWebhookRoute;
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
+  /**
+   * The artifact-preview renderer mounted same-origin (the default preview
+   * deployment): every `/p/...` request is handed to it wholesale. It
+   * authenticates by the capability token IN THE PATH and must never go
+   * through `resolveIdentity` — a preview is viewer-bound by its token, not
+   * by whoever's cookie happens to ride the request. It is dispatched after
+   * S2 (host allowlist) but BEFORE the rest of checkTransport — the sandboxed
+   * document's own fetches arrive as `Origin: null`, which S3 rightly refuses
+   * everywhere credentials live (see the dispatch site). The handler owns
+   * everything under `/p/`, refusals included, with its own hardened headers.
+   */
+  readonly artifactPreviewRoute?: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
   /**
    * Answers "can this node actually serve a read right now?" — in practice, a
    * `select 1` through the SAME pool every space-scoped read uses. `/health`
@@ -119,6 +147,14 @@ export interface FacadeServerOptions {
       nextRunAt: string | null;
     }>;
   } | undefined;
+
+  /**
+   * Overrides the auth rate limiter. Present so tests can inject a fake clock;
+   * production leaves it absent and gets one built from `config`. Pass `null`
+   * to run with no auth limiting at all — the escape hatch for a conformance
+   * harness that legitimately floods `auth.login`.
+   */
+  readonly authRateLimiter?: AuthRateLimiter | null;
 }
 
 export interface FacadeServer {
@@ -132,8 +168,15 @@ export interface FacadeServer {
 
 export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
   const { config, registry, staticHandler, upgrades } = opts;
+  const staticMounts = opts.staticMounts ?? [];
   const router = opts.router ?? new Router();
   const resolveIdentity = opts.identityResolver ?? autoOwnerResolver;
+  // `undefined` means "build the default"; `null` means "explicitly none".
+  // Defaulting to ON is the point: a limiter you have to remember to enable is
+  // one that is off on every node whose operator never read this file.
+  const authRateLimiter = opts.authRateLimiter === undefined
+    ? new AuthRateLimiter(config.authRateLimits ?? {})
+    : opts.authRateLimiter;
 
   const http = createServer((req, res) => {
     void handle(req, res).catch((err: unknown) => {
@@ -185,6 +228,25 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     const pathname = url.pathname;
 
     try {
+      // Artifact previews dispatch BEFORE checkTransport, deliberately — but
+      // AFTER S2: the host allowlist still applies (DNS-rebinding names are
+      // refused). What `/p/` skips is S3/S4/CSRF, the browser-origin gates
+      // that exist to protect COOKIE-backed endpoints: this route carries no
+      // ambient credentials at all (capability token in the path, GET/HEAD
+      // only, enforced by the handler). It MUST skip S3, because the
+      // sandboxed preview document is an opaque origin and its cors-mode
+      // fetch() of its OWN `/p/` files arrives as `Origin: null` — S3's
+      // refusal of exactly that value is what protects the cookie'd API, and
+      // it would otherwise refuse the bundle's own data fetches (found live,
+      // 2026-08-17). Every API path below still passes the full transport
+      // gate, so `Origin: null` remains refused where credentials live.
+      if (opts.artifactPreviewRoute && (pathname === '/p' || pathname.startsWith('/p/'))) {
+        const host = checkHost(req.headers, config);
+        if (host.refusal) throw fail(host.refusal.code, host.refusal.message);
+        await opts.artifactPreviewRoute(req, res);
+        return;
+      }
+
       const decision = checkTransport(method, req.headers, config);
       if (decision.refusal) throw fail(decision.refusal.code, decision.refusal.message);
 
@@ -255,12 +317,20 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // visible bursts. Do not reintroduce it as a fallback; a live PTY has one
       // delivery path and a second one desynchronizes the offset accounting.
 
+      // NOTE: the `/p/` artifact-preview dispatch lives at the TOP of this
+      // try block, ahead of checkTransport — see the comment there for why.
+
       const isApiPath = pathname === BASE_PATH || pathname.startsWith(`${BASE_PATH}/`);
 
       // Static assets never get a chance to shadow the API surface: an unknown
       // `/v2/...` path is an honest `not_found`, never an index.html with a 200.
-      if (!isApiPath && staticHandler && method === 'GET') {
-        if (await staticHandler.serve(pathname, res)) return;
+      if (!isApiPath && method === 'GET') {
+        // Mounted bundles first — each claims only its own prefix and falls
+        // through otherwise, so this cannot take a path the product UI owns.
+        for (const mount of staticMounts) {
+          if (await mount.serve(pathname, res)) return;
+        }
+        if (staticHandler && (await staticHandler.serve(pathname, res))) return;
       }
 
       if (method === 'PUT' && FILE_UPLOAD_SUPPORT_PATH.test(pathname) && opts.fileUploadRoute) {
@@ -290,10 +360,47 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       const match = router.match(method, pathname);
       if (!match) throw fail('not_found', `no operation bound to ${method} ${pathname}`);
 
-      const identity = await resolveIdentity(req.headers, {
-        remoteAddress: req.socket.remoteAddress,
-        disableAutoOwner: config.disableAutoOwner === true,
-      });
+      // BEFORE identity resolution, deliberately. Resolution reaches Postgres
+      // (`resolveBearerIdentity`) and, for the exchange operations, can run
+      // TWICE — so a flood that is going to be refused anyway must be refused
+      // before it can spend a connection. It is after routing because the
+      // limiter only guards the auth operations and needs `opName` to know.
+      authRateLimiter?.check(match.opName, wsClientKey(req), body);
+
+      let identity: Awaited<ReturnType<typeof resolveIdentity>>;
+      try {
+        identity = await resolveIdentity(req.headers, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        });
+      } catch (err) {
+        /*
+         * A CREDENTIAL EXCHANGE STANDS ON THE CREDENTIAL IN ITS BODY.
+         *
+         * Found live (2026-08-15, staging): a password reset revokes every
+         * session, the browser keeps the revoked token in its HttpOnly
+         * `tm8_session` cookie, fetch attaches it to every request — and this
+         * resolution refused `auth.login` with `invalid token` BEFORE the
+         * password was ever read. The correct new password was reported as
+         * wrong, and no client-side act short of manually deleting the cookie
+         * could ever break the loop (HttpOnly is out of script's reach).
+         *
+         * So for the two exchange operations only, a dead SESSION carrier is
+         * stripped and resolution runs again — landing on the loopback
+         * auto-owner or anonymous, exactly as if the stale cookie were absent.
+         * Every other operation keeps refusing: presenting an invalid token
+         * to a session-bearing call is still a refusal, not a downgrade.
+         */
+        const exchange = match.opName === 'auth.login' || match.opName === 'auth.signup';
+        if (!exchange || !(err instanceof Error && (err as { code?: string }).code === 'unauthenticated')) {
+          throw err;
+        }
+        const { authorization: _authorization, cookie: _cookie, ...bare } = req.headers;
+        identity = await resolveIdentity(bare, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        });
+      }
 
       const handler = registry.get(match.opName);
       if (!handler) throw notImplemented(match.opName);
@@ -322,7 +429,19 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         path: pathname,
       };
 
-      const result = await handler(ctx);
+      // The outcome, not just the attempt, feeds the per-principal failure
+      // counter — see auth-rate-limit.ts for why counting attempts there would
+      // be a lockout weapon rather than a defence. Any throw counts as a
+      // failure: `invalid_credentials` is the one that matters, and the others
+      // (a refused signup, a dead invite) are equally not-a-success.
+      let result: HandlerResult | unknown;
+      try {
+        result = await handler(ctx);
+      } catch (err) {
+        authRateLimiter?.recordOutcome(match.opName, body, true);
+        throw err;
+      }
+      authRateLimiter?.recordOutcome(match.opName, body, false);
       writeResult(res, requestId, result);
     } catch (err) {
       sendWireError(res, err, requestId);

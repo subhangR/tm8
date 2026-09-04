@@ -165,6 +165,25 @@ async function mintTask(title: string): Promise<string> {
   });
 }
 
+/** A finalized file metadata row. Bytes are immaterial to the spawn manifest. */
+async function mintFile(name: string, mime: string): Promise<string> {
+  return database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    const id = (await client.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+    await client.query(
+      `insert into public.entities(id,space_id,kind,parent_id,position,created_by)
+       values($1,$2,'file',null,0,$3)`,
+      [id, fixture.spaceId, fixture.teamMemberId],
+    );
+    await client.query(
+      `insert into public.files(entity_id,name,mime_type,size_bytes,storage_path,checksum_sha256)
+       values($1,$2,$3,0,$4,repeat('0',64))`,
+      [id, name, mime, `spaces/${fixture.spaceId}/${id}.bin`],
+    );
+    return id;
+  });
+}
+
 /** A work_session the fixture teammate participates in — the D10 author. */
 async function mintSession(): Promise<string> {
   return database.transaction(async (client) => {
@@ -356,6 +375,26 @@ describe('089 D9 — any holder, task working sets at spawn', () => {
   it('a spawn with no taskIds injects no task sets (persona set unchanged)', async () => {
     const memories = await injectedMemories();
     expect(memories).not.toContain('task context: deploy quirk');
+  });
+});
+
+describe('task file identities at spawn', () => {
+  it('carries file→attached_to→task metadata into the matching TaskContext', async () => {
+    const task = await mintTask('task with a file');
+    const file = await mintFile('evidence.pdf', 'application/pdf');
+    await drawEdge(file, task, 'attached_to', {});
+
+    const context = await graphPort().loadSpawnContext({} as never, {
+      spaceId: fixture.spaceId,
+      teamMemberId: fixture.teamMemberId,
+      taskIds: [task],
+    });
+
+    expect(context.tasks[0]?.attachments).toEqual([{
+      fileEntityId: file,
+      name: 'evidence.pdf',
+      mime: 'application/pdf',
+    }]);
   });
 });
 

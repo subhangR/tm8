@@ -323,6 +323,28 @@ describe('upload queue ledger', () => {
   });
 });
 
+describe('first run — no project linked', () => {
+  it('names the link-a-project path when only the Library root exists', async () => {
+    const port = stubPort({
+      roots: async () => [libraryRoot],
+      list: async () => ({ entries: [], truncated: false }),
+    });
+    render(<FilesExplorerScreen port={port} />);
+    // The rail says a project CAN live here and names the real way to add one.
+    const hint = await screen.findByTestId('fx-no-projects');
+    expect(hint.textContent).toContain('tm8 project link');
+    // The empty Library says what the Library IS, not a bare "empty".
+    const empty = await screen.findByTestId('fx-measured-empty');
+    expect(empty.textContent).toContain('It holds files shared across this space');
+  });
+
+  it('drops the hint once a project root is present', async () => {
+    render(<FilesExplorerScreen port={stubPort({ list: async () => ({ entries: [], truncated: false }) })} />);
+    await screen.findByTestId('files-explorer');
+    await waitFor(() => expect(screen.queryByTestId('fx-no-projects')).toBeNull());
+  });
+});
+
 describe('pure derivations', () => {
   it('formatSize renders a dash for null — not-known is never 0', () => {
     expect(formatSize(null)).toBe('—');

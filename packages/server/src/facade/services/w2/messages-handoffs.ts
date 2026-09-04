@@ -11,6 +11,7 @@ import {
   type HandoffRecordStatus,
   type HandoffView,
   type MessageDeliveryRecord,
+  type MessageChatTurnRecord,
   type MessageDeliveryStatus,
   type MessageDeliveryView,
   type MessageView,
@@ -34,13 +35,16 @@ import {
 } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { loadMessageViewsByIds } from '../../handlers/messages.js';
-import { dispatchSessionMessages, type MessageDeliveryPort } from './message-dispatch.js';
+import {
+  dispatchSessionMessages,
+  type DeliveryDisposition,
+  type MessageDeliveryPort,
+} from './message-dispatch.js';
 
 export interface ReservedMessageDelivery {
   readonly deliveryId: string;
   readonly messageId: string;
   readonly targetWorkSessionId: string;
-  readonly reservationVersion: number;
   readonly expiresAt: string;
   readonly content: string;
   readonly mode: 'send' | 'paste';
@@ -53,6 +57,22 @@ export interface MessageDeliveryIntent {
   readonly mode: 'send' | 'paste';
 }
 
+/**
+ * A chat turn the batch RPC queued (176). It is NOT a `MessageDeliveryIntent`:
+ * a chat's ledger is `chat_turns`, whose delivery is the orchestrator draining
+ * a queue rather than a write to a PTY, and `session_message_deliveries` could
+ * not hold it anyway — its target column FKs `work_sessions`. Discriminated on
+ * `kind` because both arrive in the same `deliveryIntents` array.
+ */
+export interface ChatTurnIntent {
+  readonly kind: 'chat_turn';
+  readonly messageId: string;
+  readonly chatId: string;
+  readonly turnId: string;
+}
+
+export type PostedIntent = MessageDeliveryIntent | ChatTurnIntent;
+
 export interface MessageDeliveryReservationIntent extends MessageDeliveryIntent {
   readonly requestId: string;
 }
@@ -62,6 +82,15 @@ export interface ReservedMessageDeliveryAttempt extends ReservedMessageDelivery 
   readonly principal: unknown;
 }
 
+/**
+ * A pre-reserved attempt that is settled WITHOUT touching the PTY. Used when
+ * the target session's pinned prompt policy cannot admit the rendered
+ * envelope. It still carries the same minted principal as a real dispatch.
+ */
+export interface RejectedMessageDeliveryAttempt extends ReservedMessageDeliveryAttempt {
+  readonly reason: string;
+}
+
 export interface MessageDeliveryDispatchOutcome {
   readonly outcome: 'delivered' | 'refused' | 'unknown';
   readonly reason?: string;
@@ -69,6 +98,7 @@ export interface MessageDeliveryDispatchOutcome {
 
 export interface PreReservedMessageDeliveryAdapter {
   dispatch(attempt: ReservedMessageDeliveryAttempt): Promise<MessageDeliveryDispatchOutcome>;
+  reject(attempt: RejectedMessageDeliveryAttempt): Promise<MessageDeliveryDispatchOutcome>;
 }
 
 export interface HandoffDispatch {
@@ -93,6 +123,14 @@ export interface W2MessagesHandoffsServiceOptions {
    * resulting session against the resolved actor before writing authored_from.
    */
   readonly resolveAuthoredFromWorkSessionId?: (ctx: RequestContext) => Promise<string | null>;
+  /**
+   * The CHAT half of the same provenance (176), and deliberately a separate
+   * seam: a message has exactly one source, so the two resolvers must not be
+   * one function that picks. This one has no envelope arm at all — a chat id is
+   * never accepted from request input, only from the bearer's own
+   * `runtime_chat_id`, which is the fact the SQL door authorizes against.
+   */
+  readonly resolveAuthoredFromChatId?: (ctx: RequestContext) => Promise<string | null>;
   /** Server-owned first-attempt PTY epoch; never accepted from request input. */
   readonly resolveTargetWorkSessionEpoch?: (
     targetWorkSessionId: string,
@@ -121,7 +159,7 @@ export interface W2MessagesHandoffsServiceOptions {
 interface BatchRpcResult {
   readonly messageBatchId: string;
   readonly messageIds: string[];
-  readonly deliveryIntents?: MessageDeliveryIntent[];
+  readonly deliveryIntents?: PostedIntent[];
 }
 
 interface SessionReplyRoute {
@@ -136,6 +174,11 @@ interface SessionReplyRoute {
   readonly threadParentMessageId: string | null;
   readonly threadRootMessageId: string;
   readonly body: string;
+  readonly attachments: ReadonlyArray<{
+    fileEntityId: string;
+    name: string;
+    mime?: string | null;
+  }>;
   readonly addressingKind: 'channel_mention' | 'direct_message' | 'anchored_message';
   readonly contextAnchors: ReadonlyArray<{ id: string; kind: string }>;
   readonly rollingControlMaxBytes: number;
@@ -388,6 +431,9 @@ export class W2MessagesHandoffsService {
     const sourceWorkSessionId = this.options.resolveAuthoredFromWorkSessionId
       ? await this.options.resolveAuthoredFromWorkSessionId(ctx)
       : null;
+    const sourceChatId = this.options.resolveAuthoredFromChatId
+      ? await this.options.resolveAuthoredFromChatId(ctx)
+      : null;
     const requestedAnchorIds = uniqueIds(input.anchorIds, 'anchorIds');
     const mentionIds = uniqueIds(input.mentionIds ?? [], 'mentionIds');
     const attachmentIds = uniqueIds(input.attachmentIds ?? [], 'attachmentIds');
@@ -427,6 +473,14 @@ export class W2MessagesHandoffsService {
         sourceWorkSessionId,
         input.actorId ?? null,
         input.clientMutationId,
+        // Per-turn chat mode (154): rides as an explicit RPC argument, written
+        // to messages.requested_chat_mode; only meaningful for a chat anchor,
+        // ignored otherwise.
+        input.mode ?? null,
+        // 176: the chat this message was authored FROM, off the bearer's own
+        // session row. It writes `authored_from(message -> chat)` and — because
+        // the self-guard is keyed on it — is what stops a chat waking itself.
+        sourceChatId,
       ]);
       // FOUR target classes come back from here, not one: the anchor when it
       // IS a work_session (072), the session being answered (076), the caller's
@@ -462,6 +516,12 @@ export class W2MessagesHandoffsService {
       return { result, messages, routes, parentsById };
     }));
 
+    // Per-target delivery outcomes, reported on the result below. Declared out
+    // here rather than inside the branch because BOTH arms owe the caller an
+    // answer: a node with a delivery runtime reports what the loop did, and a
+    // node without one reports that it could not try.
+    let dispositions: DeliveryDisposition[] = [];
+
     // The transaction above has committed. Dispatch may block on a PTY write,
     // so it must never execute while graph row locks are held.
     //
@@ -483,7 +543,7 @@ export class W2MessagesHandoffsService {
       // The loop itself now lives in message-dispatch.ts — unchanged, but no
       // longer owned by this handler, because 084's forge watcher posts nudges
       // from a background job and a second copy of a delivery loop would drift.
-      await dispatchSessionMessages({
+      dispositions = await dispatchSessionMessages({
         routes: stored.routes,
         parentsById: stored.parentsById,
         requestId: ctx.requestId,
@@ -491,6 +551,17 @@ export class W2MessagesHandoffsService {
         senderAttribution: senderAttributionFor(sourceWorkSessionId),
         delivery: this.options.messageDelivery as unknown as MessageDeliveryPort,
       });
+    } else if (stored.routes.length > 0) {
+      // NO DELIVERY RUNTIME, BUT ROUTES EXIST. This node stored a message that
+      // named live sessions and has no way to reach any of them — the honest
+      // degraded mode main.ts documents for the forge watcher. It used to be
+      // reported as an unqualified success; it is now reported as what it is.
+      dispositions = stored.routes.map((route) => ({
+        targetMessageId: route.targetMessageId,
+        targetWorkSessionId: route.targetWorkSessionId,
+        status: 'undelivered' as const,
+        reason: 'no_delivery_runtime',
+      }));
     }
 
     this.options.onMessagesCommitted?.(viewerIdentityId, stored.messages);
@@ -498,6 +569,16 @@ export class W2MessagesHandoffsService {
     return {
       messageBatchId: stored.result.messageBatchId,
       messages: stored.messages,
+      // THE FIELD THAT MAKES A SILENT DROP IMPOSSIBLE. Absent when the batch
+      // named no session at all (a plain post on a doc or a channel owes
+      // nobody a live copy, and an empty array there would read as a failure).
+      // Present the moment any route existed — including when every one of them
+      // failed, which is precisely the case that used to return a bare 200.
+      // `execution.dispatch` has always answered this question with
+      // `delivery: 'delivered' | 'undelivered'`; this is the same answer, per
+      // target, because one post can name several sessions and they can
+      // disagree.
+      ...(dispositions.length > 0 ? { delivery: dispositions } : {}),
     };
   };
 
@@ -589,7 +670,35 @@ export class W2MessagesHandoffsService {
           order by reserved_at asc,delivery_id asc limit ${limit}`,
         params,
       );
-      return { message, deliveries: rows.map(deliveryRecord) } satisfies MessageDeliveryView;
+      // 176 — THE CHAT ARM. A chat's delivery ledger is `chat_turns`, so
+      // without this a message that woke a chat reports zero deliveries and
+      // `message send --wait settled` reports nothing happened. It is a
+      // separate query rather than a union because the two ledgers answer
+      // different questions and share no columns worth reconciling.
+      //
+      // RLS does the authorization: `chat_turns_select` admits a row only when
+      // its chat is readable by this viewer, so a turn on a chat the caller
+      // cannot see is simply absent — never an error, and never a leak.
+      const turnRows = await q.query<{ chat_id: string; turn_id: string; state: string }>(
+        `select chat_id, turn_id, state
+           from public.chat_turns
+          where user_message_id = $1
+          order by queued_at asc, turn_id asc`,
+        [messageId],
+      );
+      return {
+        message,
+        deliveries: rows.map(deliveryRecord),
+        ...(turnRows.length > 0
+          ? {
+            chatTurns: turnRows.map((row) => ({
+              chatId: row.chat_id,
+              turnId: row.turn_id,
+              state: row.state as MessageChatTurnRecord['state'],
+            })),
+          }
+          : {}),
+      } satisfies MessageDeliveryView;
     });
   };
 

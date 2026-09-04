@@ -72,6 +72,34 @@ describe('seam-real: menu() — the ONE soft fallback (LLD C-4)', () => {
 });
 
 describe('seam-real: openSpace', () => {
+  it('discards retained history off-React and resumes from its high-water', async () => {
+    const delivered: number[] = [];
+    const { seam, pool } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        return ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' });
+      }
+      if (url.includes('/events')) {
+        return ok({
+          items: [{
+            type: 'entity.upsert', spaceId: 'sp-1', seq: 37,
+            occurredAt: '2026-07-28T12:00:00.000Z', schemaVersion: 1,
+            entity: { id: 'old' },
+          }],
+          nextCursor: '37',
+        });
+      }
+      return ok({});
+    });
+    seam.onEvent((event) => delivered.push(event.seq));
+    await seam.openSpace('sp-1');
+    expect(delivered).toEqual([]);
+    pool.last().openIt();
+    expect(pool.last().frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 37 },
+    ]);
+  });
+
   it('subscribes, resumes and starts the liveness cadence', async () => {
     const { seam, pool, f } = mk((url) =>
       url.includes('/execution/liveness')
@@ -87,7 +115,103 @@ describe('seam-real: openSpace', () => {
       { type: 'resume', spaceId: 'sp-1', since: 0 },
     ]);
     expect(f.calls.map((c) => c.url)).toContain('/v2/spaces/sp-1/execution/liveness');
-    expect(seam.liveness.statusOf({ id: 'ws-1', workStatus: 'running' })).toBe('live');
+    expect(seam.liveness.statusOf({ id: 'ws-1', status: 'running' })).toBe('live');
+  });
+
+  it('does not discard post-baseline events by rescanning history on a retry', async () => {
+    let eventPolls = 0;
+    const { seam } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        return ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' });
+      }
+      if (url.includes('/events')) {
+        eventPolls += 1;
+        return ok({ items: [], nextCursor: '0' });
+      }
+      return ok({});
+    });
+    await seam.openSpace('sp-1');
+    seam.closeSpace('sp-1');
+    await seam.openSpace('sp-1');
+    expect(eventPolls).toBe(1);
+
+    seam.invalidateSpaceBaseline?.('sp-1');
+    await seam.openSpace('sp-1');
+    expect(eventPolls).toBe(2);
+  });
+
+  /**
+   * One cold open, counting round trips. `hwm` is spread into the liveness
+   * reply, so `{}` reproduces a node that has no such field at all.
+   */
+  async function coldOpen(hwm: Record<string, unknown>): Promise<{
+    eventPolls: number; livenessReads: number; frames: Array<Record<string, unknown>>;
+    delivered: number[];
+  }> {
+    let eventPolls = 0;
+    let livenessReads = 0;
+    const delivered: number[] = [];
+    const { seam, pool } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        livenessReads += 1;
+        return ok({
+          liveEntityIds: [], nodeBootId: 'boot-A',
+          checkedAt: '2026-07-28T12:00:00.000Z', ...hwm,
+        });
+      }
+      if (url.includes('/events')) {
+        eventPolls += 1;
+        return ok({
+          items: [{
+            type: 'entity.upsert', spaceId: 'sp-1', seq: 37,
+            occurredAt: '2026-07-28T12:00:00.000Z', schemaVersion: 1,
+            entity: { id: 'old' },
+          }],
+          nextCursor: '37',
+        });
+      }
+      return ok({});
+    });
+    seam.onEvent((event) => delivered.push(event.seq));
+    await seam.openSpace('sp-1');
+    pool.last().openIt();
+    return { eventPolls, livenessReads, frames: pool.last().frames(), delivered };
+  }
+
+  it('seeds the cursor from the liveness eventHwm — ZERO bootstrap pages, ZERO extra round trips', async () => {
+    // The point of the mark: `openSpace` is TOLD where the log ends instead of
+    // paging 500 rows at a time until it finds out. At ~108k retained events
+    // the walk was ~217 sequential round trips to compute one integer.
+    const seeded = await coldOpen({ eventHwm: 4242 });
+    const walked = await coldOpen({ eventHwm: null });
+
+    expect(seeded.eventPolls).toBe(0);
+    expect(walked.eventPolls).toBeGreaterThan(0);
+    // ...and the mark rides a read `openSpace` already awaited, so the saving
+    // is not paid for elsewhere: the two paths make the SAME liveness reads.
+    expect(seeded.livenessReads).toBe(walked.livenessReads);
+    // History still never reaches Zustand/React — the property the walk
+    // existed to protect, now held by starting live delivery AT the mark.
+    expect(seeded.delivered).toEqual([]);
+    expect(seeded.frames).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 4242 },
+    ]);
+  });
+
+  it.each([
+    ['null — the node cannot establish the mark', { eventHwm: null }],
+    ['absent — an older node has no such field', {}],
+    ['not a seq — a string is not a mark', { eventHwm: '4242' }],
+  ])('does NOT read a missing eventHwm as zero: %s ⇒ the walk still runs', async (_label, hwm) => {
+    // Seeding 0 here would replay the entire retained log through React. The
+    // fallback is the expensive-but-correct answer, and it must survive.
+    const { eventPolls, frames } = await coldOpen(hwm);
+    expect(eventPolls).toBeGreaterThan(0);
+    expect(frames).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 37 },
+    ]);
   });
 
   it('SURVIVES a liveness read that fails — today every one of them 404s', async () => {
@@ -98,7 +222,7 @@ describe('seam-real: openSpace', () => {
     pool.last().openIt();
     await flush();
     expect(seam.getConnection()).toEqual({ phase: 'live' });
-    expect(seam.liveness.statusOf({ id: 'ws-1', workStatus: 'running' })).toBe('unknown');
+    expect(seam.liveness.statusOf({ id: 'ws-1', status: 'running' })).toBe('unknown');
   });
 
   it('rejects for a space with a RECORDED refusal rather than re-opening into silence', async () => {
@@ -299,6 +423,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).
       'previewArtifact',
+      // Amendment 12 (2026-08-17): the artifact viewer's other two ops gain
+      // their first UI callers — the revision switcher's read and download's
+      // raw zip bytes. Catalog READS riding the commands group deliberately;
+      // the amendment on `listArtifactRevisions` records why.
+      'listArtifactRevisions', 'exportArtifactRevision',
       'prompt', 'react',
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox
@@ -319,10 +448,22 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // in hand-maintained alphabetical order, because four insertions at four
       // different points is how a list like this acquires a silent duplicate.
       'createInvite', 'redeemInvite', 'revokeInvite', 'setMemberRole',
-      // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
-      // write half of the chat-home bridge. Sorts between spawn and
-      // startTerminal.
-      'startChatThread',
+      // W2 (2026-08-16): the task-axis registry's writes, over the catalog
+      // ops that existed all along (`spaces.taskAxes.*`) — the settings shell
+      // stops refusing with the measured-false AXES_UNREADABLE. The READ has
+      // no verb: axes ride `spaceSettings()`. Same `.sort()`-at-the-end
+      // posture as the membership four, for the same silent-duplicate reason.
+      'createTaskAxis', 'updateTaskAxis', 'deleteTaskAxis',
+      // W4 (2026-08-16): the task-workflow registry's writes, over
+      // `spaces.taskWorkflows.upsert|delete` (migration 132). The READ has no
+      // verb for the same reason as axes: workflows ride `spaceSettings()`.
+      'upsertTaskWorkflow', 'deleteTaskWorkflow',
+      // 176: `chat.start` — the write half of the chat-home bridge, and now the
+      // ONLY door a chat is born from. It replaces `startChatThread`, which
+      // configured an already-posted root message; this one creates the chat
+      // entity and posts its opening turn together. Sorts between spawn and
+      // startTerminal, exactly where its predecessor did.
+      'startChat',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
       // belongs and is a coincidence worth not relying on.
@@ -334,6 +475,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // one optional-field edit away from a terminal that spawns an agent.
       'startTerminal',
       'terminate',
+      // 2026-08-16 (attention history): `updateAttentionRequest` — the
+      // PER-REQUEST write. `resolveAttention` above is the bulk verb and
+      // cannot address one row or say 'dismissed', so a quarter of the status
+      // enum had no UI path.
+      'updateAttentionRequest',
       // Amendment 4 (2026-08-01): updateProfile — identity display (067).
       // The viewer's OWN profile row; the op names no subject by design.
       'updateProfile',

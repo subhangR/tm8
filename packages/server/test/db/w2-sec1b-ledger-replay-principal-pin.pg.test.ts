@@ -192,6 +192,49 @@ const APPLIED_MIGRATIONS: readonly string[] = migrationFiles();
  * signature: 020:31 drops `public.undo_command(text, uuid)` and recreates the
  * name with a different signature, and that is not a truncated chain.
  */
+/**
+ * Objects an EARLIER migration declares that a LATER one deliberately drops.
+ *
+ * The chain is forward-only: 015 and 037 remain the exact record of what an
+ * already-deployed database ran, so their `create` statements stay in the file
+ * text forever even after 135 removes what they made. Without this set the
+ * canary reads that text, finds the object absent from the catalog, and reports
+ * a truncated chain — which is the one thing it exists to detect, so a false
+ * positive here destroys the check's meaning rather than merely annoying.
+ *
+ * ENUMERATED, never a predicate. Every entry names the migration that drops it,
+ * so adding one is a deliberate act a reviewer can weigh, and an object that
+ * goes missing for any OTHER reason still fires. Do not replace this with a
+ * name pattern.
+ */
+const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
+  // 146 removes the wake-budget machinery, including the surrogate pin 120 left
+  // in place. See db/migrations/146_remove_wake_budget_machinery.sql.
+  ['public.session_wake_budgets', '146_remove_wake_budget_machinery.sql'],
+  ['internal.validate_wake_budget', '146_remove_wake_budget_machinery.sql'],
+  ['public.reset_session_wake_budget_for_member_reply', '146_remove_wake_budget_machinery.sql'],
+  ['internal.w1_refresh_wake_budget_cleanup_eligibility', '146_remove_wake_budget_machinery.sql'],
+  // 147's two TRANSITIONAL status_category writers. 147's own header says phase 3's
+  // doors are what replace them, and 150 is that phase: the birth seed becomes
+  // `internal.seed_entity_initial_status` (writes `status_id`, lets 149's trigger
+  // derive the category) and the maintenance trigger becomes
+  // `internal.bridge_task_status_to_state`. Both old functions are DROPPED rather
+  // than left orphaned, so that `entities.status_category` has exactly one
+  // authority. See db/migrations/150_doors_resolve_categories.sql.
+  ['internal.seed_entity_status_category', '150_doors_resolve_categories.sql'],
+  ['internal.sync_entity_status_category', '150_doors_resolve_categories.sql'],
+  // 176 makes a chat an ENTITY, so the whole message-thread model it replaces
+  // is dropped rather than left orphaned beside it: the binding table keyed on
+  // a root message id, the door that configured one, and the human-author-only
+  // enqueue trigger whose gate was the reported defect (a worker's reply found
+  // no `members` row and the message stayed inert context). Every one of these
+  // is declared by an earlier file and correctly absent from an applied chain.
+  // See db/migrations/176_chat_entity.sql.
+  ['public.chat_threads', '176_chat_entity.sql'],
+  ['public.start_chat_thread', '176_chat_entity.sql'],
+  ['internal.queue_chat_human_reply', '176_chat_entity.sql'],
+]);
+
 function declaredObjects(sql: string): string[] {
   const patterns = [
     /^create\s+table\s+(?:if\s+not\s+exists\s+)?([a-z_]+)\.([a-z0-9_]+)/gim,
@@ -291,7 +334,7 @@ describe.sequential('W2.SEC-1b ledger_replay principal pin', () => {
 
   function createTaskSql(): string {
     return `select public.create_task($1, $2, null, '', '{}'::jsonb, null, null, 'medium',
-                                      '[]'::jsonb, null, null, null, 'attached_to', $3) value`;
+                                      '[]'::jsonb, null, null, null, null, 'attached_to', $3) value`;
   }
 
   beforeAll(async () => {
@@ -352,6 +395,8 @@ describe.sequential('W2.SEC-1b ledger_replay principal pin', () => {
       let expectedCount = 0;
       for (const file of APPLIED_MIGRATIONS) {
         for (const object of declaredObjects(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'))) {
+          // A later migration dropping this on purpose is not a truncated chain.
+          if (DROPPED_BY_LATER_MIGRATION.has(object)) continue;
           expectedCount += 1;
           if (!present.has(object)) missing.push(`${file} -> ${object}`);
         }

@@ -189,6 +189,15 @@ describe('W5.C generator proof', () => {
     // 84 -> 87 (2026-08-12): the three Tier 2 command bodies bind.
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    expect(ENTRIES).toHaveLength(93); // + chat.threads.start disposition; +2 (118): spaces.members.updateRole, auth.invite.resolve
+    // +2 (141): AuthPasswordChangeInputSchema + AuthInviteSignupInputSchema.
+    // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert and
+    // RequiredCommandContextSchema binds .delete; .list is a READ and binds
+    // nothing, so three new ops move this by two.
+    // +19 (177): the container family has twenty commands and nineteen bind.
+    // `containers.files.put` carries a TAR STREAM, not JSON, so a strict object
+    // schema would refuse every legitimate upload — it is enumerated in
+    // UNBOUND_COMMAND_OPERATIONS instead. The family's five reads bind nothing,
+    // as reads do. MEASURED.
+    expect(ENTRIES).toHaveLength(118);
   });
 });

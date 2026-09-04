@@ -1,6 +1,6 @@
 import {
   CollabError,
-  type EdgeView,
+  type GraphEdgeView,
   type GraphQuery,
   type GraphResult,
 } from '@tm8/contract';
@@ -155,11 +155,17 @@ export async function queryGraph(
     (edge) => selected.has(edge.src_id) && selected.has(edge.dst_id),
   );
   const actors = await loadActors(q, visibleEdgeRows.map((edge) => edge.created_by));
-  const edges: EdgeView[] = visibleEdgeRows.map((edge) => ({
+  // ENDPOINTS AS IDS, NOT SUMMARIES. `visibleEdgeRows` is filtered to edges
+  // whose BOTH endpoints are in `selected` — which is exactly the id set that
+  // becomes `nodes` above — so every id here resolves inside this same
+  // response and a consumer never has to tolerate a dangling endpoint. That
+  // invariant is what makes the ids sufficient; embedding the summaries again
+  // cost ~1 MB of duplication on a 150-node space (see `GraphEdgeView`).
+  const edges: GraphEdgeView[] = visibleEdgeRows.map((edge) => ({
     id: edge.id,
     type: edge.type,
-    source: candidateById.get(edge.src_id)!,
-    target: candidateById.get(edge.dst_id)!,
+    sourceId: edge.src_id,
+    targetId: edge.dst_id,
     props: edge.props ?? {},
     createdBy: actorOf(actors, edge.created_by),
     createdAt: iso(edge.created_at),

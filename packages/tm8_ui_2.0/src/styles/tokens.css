@@ -1,0 +1,220 @@
+/* ==========================================================================
+   COLLAB V2 — DESIGN TOKENS  ·  "CALM" (neutral & signal), module-scoped.
+   The 2026-08-29 calm pass keeps the legible Figtree type system and replaces
+   the saturated Kinetic palette with neutral structure, one restrained blue
+   accent, and muted status signals. Borders carry grouping; shadows do not.
+   All tokens live under `.cv2-root` so the module never leaks styles into the
+   host app. Dark = deep slate via [data-theme="dark"] on .cv2-root or any
+   ancestor. Status is ALWAYS color + word, never color alone.
+   ========================================================================== */
+/* Self-hosted — see fonts.css. This used to be a fonts.googleapis.com @import,
+   which blocked first paint on a third-party round-trip and, offline, silently
+   dropped the whole type system to Georgia/system-ui. */
+@import './fonts.css';
+/* Meta Astryx design system + --pn-* bridge — see astryx-bridge.css header. */
+@import './astryx-bridge.css';
+
+.cv2-root {
+  /* --- 1 · neutral surfaces & ink ---------------------------------------- */
+  --pn-paper:    #F1F5F9;
+  --pn-surface:  #F7F9FB;
+  --pn-card:     #FFFFFF;
+  --pn-hover:    #F0F1F2;
+  --pn-active:   #E5E7E9;
+
+  --pn-line:     #D9DDE2;
+  --pn-line-2:   #BBC2CA;
+
+  --pn-ink:      #17191C;
+  --pn-ink-2:    #4D535A;
+  --pn-ink-3:    #70767D;
+  --pn-ink-4:    #AEB3B9;
+
+  /* --- 2 · quiet blue (the one accent) ------------------------------------ */
+  --pn-brand:      #3F6078;
+  --pn-brand-2:    #2F4B60;
+  --pn-brand-soft: rgba(63, 96, 120, 0.08);
+  --pn-brand-rgb:  63, 96, 120;
+  /* Focus ring = quiet blue (same hex as --pn-brand-2); consumed via var(--pn-focus). */
+  --pn-focus:      #2F4B60;
+  /* Gradient-capable components keep their API, but the calm palette does not
+     introduce a second decorative hue. */
+  --pn-accent-2:      #3F6078;
+  --pn-accent-2-soft: rgba(63, 96, 120, 0.08);
+
+  /* --- 3 · functional / status (restrained, word-paired) ------------------ */
+  --pn-run:    #367253;   --pn-run-soft:   rgba(54, 114, 83, 0.09);
+  /* Forge lifecycle keeps its meaningful purple, without the neon lift. */
+  --pn-pr-merged: #6E6080; --pn-pr-merged-soft: rgba(110, 96, 128, 0.10);
+  --pn-wait:   #8C651C;   --pn-wait-soft:  rgba(140, 101, 28, 0.10);
+  --pn-block:  #A44141;   --pn-block-soft: rgba(164, 65, 65, 0.09);
+  --pn-info:   #3F6078;   --pn-info-soft:  rgba(63, 96, 120, 0.09);
+  --pn-idle:   #70767D;   --pn-idle-soft:  rgba(112, 118, 125, 0.10);
+
+  /* Collab status semantics (pill tones map onto the functional ramp):
+     working=green · blocked=red · in_review=blue · stale=amber · done=green ·
+     open/idle=neutral grey. */
+  --cv2-status-working:      var(--pn-run);
+  --cv2-status-working-soft: var(--pn-run-soft);
+  --cv2-status-done:         var(--pn-run);
+  --cv2-status-done-soft:    var(--pn-run-soft);
+  --cv2-status-blocked:      var(--pn-block);
+  --cv2-status-blocked-soft: var(--pn-block-soft);
+  --cv2-status-review:       var(--pn-info);
+  --cv2-status-review-soft:  var(--pn-info-soft);
+  --cv2-status-stale:        var(--pn-wait);
+  --cv2-status-stale-soft:   var(--pn-wait-soft);
+  --cv2-status-idle:         var(--pn-idle);
+  --cv2-status-idle-soft:    var(--pn-idle-soft);
+
+  /* --- 4 · type ------------------------------------------------------------ */
+  /* PROSE vs INTERFACE — the seam, named for what it does.
+     It was `--pn-serif`, and that name was a promise the value never kept:
+     both it and `--pn-ui` resolve to the same Figtree stack, so the "serif
+     body, sans headings" contrast twenty-five stylesheets are written for has
+     never once rendered. Deleting the token would have thrown away fifty-four
+     deliberate authoring decisions about which text is READ and which text is
+     OPERATED; renaming it keeps every one of them and stops the lie.
+     Giving prose a genuinely distinct face is now a one-line change here
+     rather than a fifty-four-file edit — which is the point of a seam. */
+  --pn-prose: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pn-ui:    'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pn-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
+  /* Caps face: uppercase micro-labels (eyebrows, group labels, field caps).
+     Figtree bold caps per the Kinetic Elite reference; mono stays reserved
+     for DATA (ids, models, counts, timestamps). */
+  --pn-caps:  'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --pn-fs-display: 40px;
+  --pn-fs-h1: 28px;
+  --pn-fs-h2: 22px;
+  --pn-fs-h3: 18px;
+  --pn-fs-title: 15px;
+  --pn-fs-body: 14px;
+  --pn-fs-sm: 13px;
+  --pn-fs-label: 12px;
+  --pn-fs-micro: 11px;
+  --pn-fs-fine: 10px;
+  --pn-fs-tick: 9px;
+  --pn-fs-mono: 12.5px;
+  /* READING SIZE — for continuous prose a person actually reads, as opposed to
+     interface body text they scan. A transcript, a doc body, a long note. It is
+     a size larger than `--pn-fs-body` on purpose: 14px is right for a label
+     beside a control and tiring for four paragraphs. */
+  --pn-fs-read: 15px;
+
+  --pn-lh-tight: 1.18;
+  --pn-lh-snug: 1.35;
+  --pn-lh-body: 1.5;
+  --pn-lh-read: 1.62;
+
+  /* THE MEASURE. How wide a line of prose may get before it stops being
+     readable — the eye loses the return sweep somewhere past about 75
+     characters. A wide window should give a reader MARGIN, never longer lines,
+     and every surface that sets prose should reach for this rather than
+     inventing its own number. */
+  --pn-measure: 68ch;
+
+  --pn-track-mega: 0.12em;
+  --pn-track-label: 0.06em;
+  --pn-track-tight: -0.01em;
+
+  /* --- 5 · spacing (4px grid) ---------------------------------------------- */
+  --pn-space-1: 4px;
+  --pn-space-2: 8px;
+  --pn-space-3: 12px;
+  --pn-space-4: 16px;
+  --pn-space-5: 20px;
+  --pn-space-6: 24px;
+  --pn-space-8: 32px;
+  --pn-space-10: 40px;
+  --pn-space-12: 48px;
+  --pn-space-16: 64px;
+
+  /* The reading measure: panel body content is capped at this width and
+     centered, so a wide panel reads as a column instead of a wall. */
+  --pn-read-measure: 720px;
+
+  /* --- 6 · radii ------------------------------------------------------------ */
+  --pn-r-xs: 4px;
+  --pn-r-sm: 6px;
+  --pn-r-md: 8px;
+  --pn-r-lg: 12px;
+  --pn-r-pill: 999px;
+
+  /* --- 7 · elevation (border-first; every consumer already has a border) ----- */
+  --pn-sh-sm:  none;
+  --pn-sh-md:  none;
+  --pn-sh-lg:  none;
+  --pn-sh-pop: none;
+
+  /* --- 8 · motion (fast, mechanical, no bounce) ------------------------------ */
+  --pn-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --pn-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Spring — subtle overshoot, reserved for opt-in ENTRANCES (never status). */
+  --pn-ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
+  --pn-dur-fast: 120ms;
+  --pn-dur-base: 180ms;
+  --pn-dur-slow: 280ms;
+  --pn-dur-slower: 400ms;
+
+  /* module base */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink);
+  background: var(--pn-paper);
+}
+
+/* Dark: the same restrained signal system inverted into deep slate. */
+.cv2-root[data-theme="dark"],
+[data-theme="dark"] .cv2-root {
+  --pn-paper:   #0F1115;
+  --pn-surface: #14171C;
+  --pn-card:    #1A1E24;
+  --pn-hover:   #222529;
+  --pn-active:  #292D32;
+
+  --pn-line:    #34383E;
+  --pn-line-2:  #4A5058;
+
+  --pn-ink:     #ECEDEF;
+  --pn-ink-2:   #BEC2C7;
+  --pn-ink-3:   #92979E;
+  --pn-ink-4:   #5E646B;
+
+  --pn-brand:      #8BA5B8;
+  --pn-brand-2:    #A6BBC9;
+  --pn-brand-soft: rgba(139, 165, 184, 0.14);
+  --pn-brand-rgb:  139, 165, 184;
+  /* Focus ring = quiet blue (same hex as dark --pn-brand-2); consumed via var(--pn-focus). */
+  --pn-focus:      #A6BBC9;
+  --pn-accent-2:      #8BA5B8;
+  --pn-accent-2-soft: rgba(139, 165, 184, 0.14);
+
+  --pn-run:   #78AF8C;  --pn-run-soft:   rgba(120, 175, 140, 0.14);
+  --pn-pr-merged: #A69AB4; --pn-pr-merged-soft: rgba(166, 154, 180, 0.14);
+  --pn-wait:  #C5A05E;  --pn-wait-soft:  rgba(197, 160, 94, 0.14);
+  --pn-block: #D18787;  --pn-block-soft: rgba(209, 135, 135, 0.14);
+  --pn-info:  #8BA5B8;  --pn-info-soft:  rgba(139, 165, 184, 0.14);
+  --pn-idle:  #92979E;  --pn-idle-soft:  rgba(146, 151, 158, 0.16);
+
+  --pn-sh-sm:  none;
+  --pn-sh-md:  none;
+  --pn-sh-lg:  none;
+  --pn-sh-pop: none;
+}
+
+/* --- semantic type classes (scoped) ------------------------------------------ */
+.cv2-root .t-display { font-family: var(--pn-prose); font-weight: 700; font-size: var(--pn-fs-display); line-height: var(--pn-lh-tight); letter-spacing: -0.02em; color: var(--pn-ink); }
+.cv2-root .t-h1 { font-family: var(--pn-prose); font-weight: 700; font-size: var(--pn-fs-h1); line-height: var(--pn-lh-tight); letter-spacing: -0.015em; color: var(--pn-ink); }
+.cv2-root .t-h2 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h2); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
+.cv2-root .t-h3 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h3); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
+.cv2-root .t-title { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-title); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
+.cv2-root .t-body { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-body); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
+.cv2-root .t-secondary { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-sm); line-height: var(--pn-lh-body); color: var(--pn-ink-3); }
+.cv2-root .t-label { font-family: var(--pn-ui); font-weight: 500; font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
+.cv2-root .t-eyebrow { font-family: var(--pn-caps); font-weight: 700; font-size: var(--pn-fs-micro); text-transform: uppercase; letter-spacing: var(--pn-track-mega); color: var(--pn-ink-3); }
+.cv2-root .t-quote { font-family: var(--pn-prose); font-style: italic; font-weight: 400; font-size: var(--pn-fs-h3); line-height: 1.45; color: var(--pn-ink-2); }
+.cv2-root .t-mono { font-family: var(--pn-mono); font-weight: 400; font-size: var(--pn-fs-mono); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
+.cv2-root .t-code { font-family: var(--pn-mono); font-weight: 500; font-size: var(--pn-fs-mono); color: var(--pn-brand); }

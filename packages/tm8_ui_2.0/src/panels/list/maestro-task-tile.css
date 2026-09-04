@@ -1,0 +1,821 @@
+/* Direct port of Maestro's pn-tt task tile. The host supplies tm8 tokens. */
+.cv2-root .pn-stat {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.cv2-root .pn-stat--run { color: var(--pn-run); }
+.cv2-root .pn-stat--wait { color: var(--pn-wait); }
+.cv2-root .pn-stat--block { color: var(--pn-block); }
+.cv2-root .pn-stat--info { color: var(--pn-info); }
+.cv2-root .pn-stat--brand { color: var(--pn-brand); }
+.cv2-root .pn-stat--idle { color: var(--pn-idle); }
+
+/* THE DOT. Solid = in motion or settled (a running task is a green dot);
+   hollow = declared but not started. No ring around either — the ring was the
+   loudest thing in the row and said nothing the dot does not. */
+.cv2-root .pn-stat__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-sizing: border-box;
+}
+.cv2-root .pn-stat--hollow .pn-stat__dot {
+  background: transparent;
+  border: 1.5px solid currentColor;
+  opacity: 0.6;
+}
+/* Streaming keeps the dot steady and pings a halo off it, so "alive" is
+   legible without the mark itself blinking out of the row. */
+.cv2-root .pn-stat--streaming::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: pn-stat-ping 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  pointer-events: none;
+}
+@keyframes pn-stat-ping {
+  0% { transform: scale(1); opacity: 0.55; }
+  70%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* I3 — DATA WEARS MONO AT THE LABEL SIZE. `--pn-fs-label` (12px) replaces the
+   10.5px that made every badge read as debug fine print; mono stays, because
+   these chips carry machine facts — models, counts, dates. */
+.cv2-root .pn-tt .pn-badge {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.cv2-root .pn-tt .pn-badge--status-run { color: var(--pn-run); border-color: var(--pn-run); }
+.cv2-root .pn-tt .pn-badge--status-wait { color: var(--pn-wait); border-color: var(--pn-wait); }
+.cv2-root .pn-tt .pn-badge--status-block { color: var(--pn-block); border-color: var(--pn-block); }
+.cv2-root .pn-tt .pn-badge--status-info { color: var(--pn-info); border-color: var(--pn-info); }
+.cv2-root .pn-tt .pn-badge--status-brand { color: var(--pn-brand); border-color: var(--pn-brand); }
+/* I3 — THE STATUS WORD IS A WORD, NOT DATA. Mono is reserved for machine
+   facts; a state name is prose wearing its tone, so the five status badges
+   drop the mono face and speak UI at 600. `.pn-badge.pn-badge--status-*`
+   is (0,4,0) ON PURPOSE: the `.pn-tt__meta` metric coat below is (0,3,0)
+   and later in the file, so an equal-specificity rule here would lose its
+   font-family/size to it — the DEF-024/DEF-059 trap this file documents
+   twice already. Tone colour stays the rules above. */
+.cv2-root .pn-tt .pn-badge.pn-badge--status-run,
+.cv2-root .pn-tt .pn-badge.pn-badge--status-wait,
+.cv2-root .pn-tt .pn-badge.pn-badge--status-block,
+.cv2-root .pn-tt .pn-badge.pn-badge--status-info,
+.cv2-root .pn-tt .pn-badge.pn-badge--status-brand {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.cv2-root .pn-tt .pn-badge--priority-block { color: var(--pn-block); border-color: var(--pn-block); }
+.cv2-root .pn-tt .pn-badge--priority-wait { color: var(--pn-wait); border-color: var(--pn-wait); }
+.cv2-root .pn-tt .pn-badge--priority-info { color: var(--pn-info); border-color: var(--pn-info); }
+.cv2-root .pn-tt .pn-badge--priority-run { color: var(--pn-run); border-color: var(--pn-run); }
+.cv2-root .pn-tt .pn-badge__people { display: inline-flex; align-items: center; }
+.cv2-root .pn-tt .pn-badge__people .kit-avatar + .kit-avatar {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--pn-card);
+}
+.cv2-root .pn-tt .pn-toggle {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ONE CHIP METRIC FOR THE WHOLE EXPANDED BLOCK. `pn-badge` and `pn-toggle`
+   arrive from two different vocabularies and shipped with different radii,
+   heights, fonts and letter-spacing, so a single metarow rendered a rectangle,
+   a lozenge and a capsule side by side and read as broken rather than varied.
+   The facts still differ in COLOUR (tone) and CONTENT — they no longer differ
+   in shape. */
+.cv2-root .pn-tt__meta .pn-badge,
+.cv2-root .pn-tt__meta .pn-toggle {
+  height: 24px;
+  min-height: 24px;
+  padding: 0 8px;
+  gap: 5px;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-mono);
+  /* I3: the shared metric steps up from 10px with the collapsed badges —
+     one DATA size (`--pn-fs-label`) across both bands, still mono. */
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+/* Sized at the call site (`AvatarSize` 15); this only tightens the overlap so
+   a three-actor stack still fits the chip's inline padding. */
+.cv2-root .pn-tt__meta .pn-badge__people .kit-avatar + .kit-avatar {
+  margin-left: -5px;
+}
+
+/* NO FILL AT REST, for the same reason `lp__tile` carries none (panels.css):
+   the session row `pn-st` declares no background, so it shows `--pn-surface` —
+   the panel it sits in — and this rule painted `--pn-card`, which is literally
+   #FFFFFF. A task row was a pure white card on a warm paper panel beside a
+   session row that was not. */
+.cv2-root .pn-tt {
+  --tt-indent: 0px;
+  /* A HIDDEN CLUSTER TAKES NO TITLE WIDTH. The row keeps its ordinary end inset
+     at rest; hover, keyboard focus, open details and coarse-pointer layouts
+     promote the measured cluster width below into the active reserve. */
+  --tt-actions-reserve: 8px;
+  /* One slot: 22px control + 7px leading pad + 6px edge anchor. */
+  --tt-actions-revealed-reserve: 35px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  container-name: task-tile;
+  container-type: inline-size;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  box-shadow: none;
+  transition: background 120ms;
+}
+.cv2-root .pn-tt:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .pn-tt--active {
+  background: var(--pn-active);
+}
+.cv2-root .pn-tt--attention {
+  background: var(--pn-wait-soft);
+}
+.cv2-root .pn-tt--completed .pn-tt__title {
+  color: var(--pn-ink-4);
+  text-decoration: line-through;
+}
+/* ARCHIVED IS NOT COMPLETED (C2). Filing a row away dims it; it does not
+   strike it through, which is the mark this tile reserves for work that
+   finished. Same 0.62 the session tile has always used for the same fact. */
+.cv2-root .pn-tt--archived {
+  opacity: 0.62;
+}
+
+/* DEPTH IS THE WRAPPER, EXACTLY AS IT IS FOR SESSIONS. `lp__tree--control
+   .lp__children` now carries the same 19px inset and the same per-ancestor
+   hairline as `lp__tree--session` (see panels.css), so this tile draws no
+   indent and no guide line of its own — two implementations of "a tree" in one
+   panel is what made the two lists look unrelated. `--tt-indent` stays at 0 so
+   the rules further down that still reference it keep resolving. */
+.cv2-root .pn-tt[data-depth] { --tt-indent: 0px; }
+
+/* THE TASK ROW IS THE SESSION ROW. Same 6px/8px pad, same 6px gap, same 29px
+   floor. What actually made a task row half again as tall was that its 22px
+   action buttons sat IN the flex flow, so they set the row's height whether or
+   not they were visible; the session cluster is absolutely positioned and never
+   does. `pn-tt__actions` below now does the same, which is what lets this row
+   land on `--pn-listrow-h` instead of on its own tallest button.
+
+   `position: relative` is on the ROW, not the tile — the one deliberate
+   departure from `pn-st`, which anchors its cluster on the whole tile. A task
+   card expands (meta chips, launch flow) far more often than a session does,
+   and anchoring on the tile would drag the buttons to the centre of the
+   expanded card. At rest the two are pixel-identical. */
+/* `box-sizing` is NOT border-box by default in this app — there is no global
+   reset, every rule that needs it says so. Without it `min-height` sizes the
+   CONTENT box, so the 29px floor became 29px of content PLUS the 6px/6px pad
+   and the row measured 41px: the token was being honoured against the wrong
+   box, which is why a task row stayed half again a session row's height even
+   after both were pointed at the same number. `pn-st__main` never hit this
+   because it sets no min-height at all — it is simply 17px of content + 12px
+   of pad. With border-box the floor means the same thing for both. */
+.cv2-root .pn-tt__main {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: var(--pn-listrow-h);
+  /* At rest this is the ordinary 8px end inset. Reveal states swap in the
+     rendered cluster measurement without charging every other row for controls
+     that are both transparent and inert. */
+  padding: 6px var(--tt-actions-reserve) 6px calc(7px + var(--tt-indent));
+  cursor: pointer;
+}
+/* THE REVEALED RESERVE IS THE RENDERED CLUSTER, NOT A KIND INVENTORY.
+   RowActionCluster owns which controls exist and their order; these selectors
+   merely measure its direct slots. At the desktop gap, N slots consume 22N +
+   2(N-1) + 7px cluster padding + 6px edge anchor. Enumerating the bounded
+   registry surface keeps the arithmetic compatible with every browser we ship
+   without teaching this stylesheet that a task "has" particular verbs. */
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-revealed-reserve: 59px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-revealed-reserve: 83px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-revealed-reserve: 107px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-revealed-reserve: 131px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-revealed-reserve: 155px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-revealed-reserve: 179px; }
+.cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-revealed-reserve: 203px; }
+.cv2-root .pn-tt:hover .pn-tt__main,
+.cv2-root .pn-tt:focus-within .pn-tt__main,
+.cv2-root .pn-tt[data-details='open'] .pn-tt__main {
+  --tt-actions-reserve: var(--tt-actions-revealed-reserve);
+}
+.cv2-root .pn-tt__arrow {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--pn-ink-4);
+  background: var(--pn-hover);
+  border: none;
+  border-radius: 4px;
+  line-height: 0;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
+}
+/* Always visible on a row that HAS children, for the reason `.pn-st__arrow`
+   records and `.lp__disclosure` now shares: since trees ship collapsed
+   (2026-08-17) this chevron is the only thing on screen saying there is more
+   under this task, and hover-to-discover is not discovery. It owns a distinct
+   flex slot before the live status control: overlaying those two buttons made
+   the disclosure's higher stacking layer steal the status control's hit target
+   on every parent row. The empty form keeps the same slot, so titles and status
+   marks do not shift between parents and leaves. */
+.cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 0.55; }
+.cv2-root .pn-tt:hover .pn-tt__arrow:not(.pn-tt__arrow--empty),
+.cv2-root .pn-tt:focus-within .pn-tt__arrow:not(.pn-tt__arrow--empty),
+.cv2-root .pn-tt__arrow--expanded { opacity: 1; }
+/* The subtree arrow was a ONE-WAY DOOR on touch, exactly like `.lp__disclosure`:
+   hidden until hover, and otherwise revealed only by `--expanded`, so a finger
+   could close a subtree and never reopen it. */
+@media (pointer: coarse) {
+  .cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 1; }
+}
+.cv2-root .pn-tt__arrow:hover { color: var(--pn-ink-2); background: var(--pn-active); }
+.cv2-root .pn-tt__arrow svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  transition: transform 140ms;
+}
+.cv2-root .pn-tt__arrow--expanded svg { transform: rotate(90deg); }
+/* The empty arrow is decoration and preserves the disclosure column. */
+.cv2-root .pn-tt__arrow--empty { color: var(--pn-line); pointer-events: none; }
+.cv2-root .pn-tt__arrowCount {
+  display: none;
+}
+.cv2-root .pn-tt__status {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+/* THE STATUS COLUMN IS 16px, WHATEVER IS IN IT. The mark is a live control, so
+   while `capabilitiesOf(row.id)` is undefined it renders `CheckingPermission`,
+   whose loading vocabulary is a dashed, breathing ~30px pill. In a 16px column
+   that reads as the status dot blinking inside a dotted box AND widens the
+   column, shoving the title sideways the moment the detail lands. The wrapper
+   keeps its `title` and `aria-label`, so "not loaded yet" is still told — only
+   its chrome is dropped, and the dot it already carries sits where the dot
+   always sits. Same treatment `pn-tt__actions .hon-checking` already gets. */
+.cv2-root .pn-tt__status .hon-checking {
+  width: 16px;
+  height: 16px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  opacity: 1;
+  animation: none;
+}
+.cv2-root .pn-tt__status-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+/* THE TRUNCATION CONTRACT. The title is the only `flex: 1` child of the row
+   and every sibling is `flex: 0 0 auto`, so narrowing the panel compresses the
+   title and ellipsises it — it never spills past the tile and never pushes the
+   caret out of view. `min-width: 0` is what lets a flex item shrink below its
+   content width at all; `overflow`+`text-overflow` are what draw the `…`.
+   Removing any one of the three brings the overflow back. */
+.cv2-root .pn-tt__title {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  /* Session `pn-st__titleText` metrics, verbatim: 12.5/600. A task title used
+     to be 13/500 — bigger and lighter — so the two lists disagreed about both
+     size and weight on the one element the eye actually reads. */
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.3;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cv2-root .pn-tt__title:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.cv2-root .pn-tt__inline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+/* Linked external state is part of the collapsed card, not the Details
+   disclosure. Only cards carrying facts pay the second line; unlinked task
+   and session row-height parity stays untouched. */
+.cv2-root .pn-tt__badges {
+  min-width: 0;
+  /* 7px row inset + 16px status mark + 6px gap = title start. */
+  padding: 0 8px 5px 29px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.cv2-root .pn-tt .pn-av-group {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 6px;
+}
+.cv2-root .pn-tt .pn-av-group .kit-avatar { box-shadow: 0 0 0 2px var(--pn-card); }
+.cv2-root .pn-tt .pn-av-group .kit-avatar + .kit-avatar { margin-left: -7px; }
+/* Provenance reads quieter than assignment: a creator face must not be
+   mistaken for an owner of the work. Opacity only — no size change, because
+   the 15px canvas is what holds the row to the shared height floor. */
+.cv2-root .pn-tt .pn-av-group--creator .kit-avatar { opacity: 0.55; }
+
+/* HOVER REVEALS, IT DOES NOT RESIZE — `pn-st__actions`, rule for rule. The
+   cluster floats over the row's right edge on its own hover-coloured backing
+   instead of sitting in the flex flow. That keeps the original property (the
+   title truncates at the same point in all three states, so the list does not
+   twitch as the pointer travels down it) AND takes the 22px buttons out of the
+   row's height calculation, which is what made a task row taller than a session
+   row carrying the same anatomy. */
+.cv2-root .pn-tt__actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 7px;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--pn-hover);
+  transform: translate(3px, -50%);
+  transition:
+    opacity var(--pn-dur-base) var(--pn-ease-standard),
+    transform var(--pn-dur-base) var(--pn-ease-out);
+}
+.cv2-root .pn-tt:hover .pn-tt__actions,
+.cv2-root .pn-tt:focus-within .pn-tt__actions,
+.cv2-root .pn-tt[data-details='open'] .pn-tt__actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+/* DEF-030 / DEF-036 — ON TOUCH THIS CLUSTER DID NOT EXIST, AND THE FIX THAT
+   SAID IT DID MISSED THIS ONE OF THREE.
+
+   `56e1bc72` ("the row controls that were not merely hidden, but absent")
+   revealed `.lp__rowactions` in `panels.css` and `.pn-st__actions` beside it,
+   under `(pointer: coarse)`, for exactly the reason written there. There are
+   THREE containers carrying the `.lp__cluster` vocabulary, not two — the task
+   tile's is this one, and it was not in that commit. So the fix read as landed
+   while the tasks list, the busiest of the three phone list screens, kept
+   `opacity: 0` and `pointer-events: none` at rest.
+
+   That is what the `before-lanes` run measured: on `entity-list-tasks` at
+   phone-390, `inertCount` 67 — a COUNT FIELD, over 46 listRows — with the
+   sampled offenders `lp__rowaction` Archive / Change collections / Complete /
+   Run all at `pointer-events:none`. The two containers that WERE fixed reported
+   nothing, which is why one missing container looked like a finished fix.
+
+   THE EVIDENCE IS STATED AT THE STRENGTH IT ACTUALLY HAS. `inert[]` is capped
+   at six entries by the instrument, so those four names are EXAMPLES and not an
+   inventory; only `inertCount` speaks for the population, and it speaks about
+   size, never about content. The shot corroborates on the ~13 rows its viewport
+   contains, which is not all 46. What makes the claim hold for every row is
+   neither the array nor the shot but THIS FILE: the `opacity: 0` rule above is
+   unconditional on `.pn-tt__actions`, and the only rules that lifted it were
+   `:hover`, `:focus-within` and `[data-details='open']`. A rule with no state
+   qualifier applies to every instance, and that is the whole population.
+
+   BOTH SIGNALS, deliberately, and they are not the same question:
+     - `(pointer: coarse)` is the PRODUCT rule and is the sibling rules'
+       spelling verbatim — these rows are the phone's main screens and the
+       coarse tablet's, and the tablet runs the desktop shell.
+     - `[data-shell='mobile']` covers the phone shell reached by the user
+       override on a fine pointer, where the row actions are just as
+       unreachable by hover-in-a-list and the media query is false.
+   Neither implies the other, and a capture taken through the override seam
+   would have reported the coarse-only rule as unfixed. */
+@media (pointer: coarse) {
+  .cv2-root .pn-tt__main {
+    --tt-actions-reserve: var(--tt-actions-revealed-reserve);
+  }
+  .cv2-root .pn-tt__actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
+}
+.cv2-root[data-shell='mobile'] .pn-tt__actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+
+/* DEF-036 — THE FLOW HALF, WHICH REVEALING THE CLUSTER DOES NOT FIX BY ITSELF.
+
+   Un-inerting the buttons satisfies DEF-030's machine floor and would still
+   have left Archive unreachable, which is why the ledger files these as two
+   rows and closes them together. The cluster FLOATS over the row's right edge
+   on an opaque backing — a desktop hover affordance, where it appears under a
+   pointer that is already there and vanishes again. Revealed permanently on a
+   390px row it sits ON TOP OF the title it shares the line with: the title
+   would be legible for ~170px and then covered by an opaque box, and the tap
+   that opens the row would land on Archive instead. "Visible" and "reachable"
+   are two questions, and floating answers only the first.
+
+   So on the phone the cluster LEAVES THE FLOAT and takes its own line under the
+   title. The row gets taller. Per CONTRACT.md §7 that is the correct outcome
+   and not a cost — density is a desktop constraint — and it is the only
+   arrangement where the title is whole AND every action is at the bar.
+
+   THE ROW WAS ALREADY UNPINNED FOR THIS, which is the only reason it is safe:
+   `.pn-tt__main` is `min-height`, not `height`, and the gate's §7e floor
+   already made `.pn-tt__title` 44px tall, so the phone row is >= 44 before this
+   rule adds anything. Growing a 22px control inside a pinned 29px row is the
+   trap CONTRACT.md §6 names, and it is not the trap here. */
+.cv2-root[data-shell='mobile'] .pn-tt__main {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  /* The cluster is IN FLOW on the phone (position: static below), so the
+     desktop's `--tt-actions-reserve` right pad would reserve space for a
+     float that no longer floats. Back to the plain 8px end pad. */
+  padding-right: 8px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt__actions {
+  position: static;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 4px;
+  padding-left: 0;
+  transform: none;
+}
+/* DEF-059 — A DEFECT IN MY OWN CHANGE, FOUND AUDITING IT AFTER WRITING THE
+   COMMENT THAT DESCRIBES THE BUG.
+
+   `background: none` was declared inside the rule above, with a comment saying
+   the backing existed to keep the badges readable UNDER the floating cluster,
+   that in the flow there is nothing under it, and that a tinted strip across
+   the row would read as a second selected state. All true, and on two states
+   not what happened:
+
+     MINE   .cv2-root[data-shell='mobile'] .pn-tt__actions         (0,3,1)
+     LATER  .cv2-root .pn-tt--active .pn-tt__actions,
+            .cv2-root .pn-tt[data-details='open'] .pn-tt__actions  (0,3,1)
+     LATER  .cv2-root .pn-tt--active:hover .pn-tt__actions         (0,3,1)
+
+   EQUAL SPECIFICITY, LATER IN THE FILE, SO THEY WIN. On a selected row or one
+   with details open, the in-flow cluster got its tint back — a full-width
+   tinted band under the title, which is precisely the "second selected state"
+   my own comment says it must not be.
+
+   The DEF-024 trap exactly, in my own file, after I caught it in the chips band
+   and wrote a paragraph about it. Found only by auditing my phone rules for
+   later same-or-higher-specificity clashes on shared properties — the one check
+   aimed at this class. Two of its three hits were benign; this one was not. */
+.cv2-root[data-shell='mobile'] .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt--active .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt[data-details='open'] .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt--active:hover .pn-tt__actions {
+  background: none;
+}
+/* CROSS-LANE TIE, RULED. `.cv2-root .tch-panel-host .pn-tt__main` in Lane A's
+   `chat-home.css` is (0,3,0) and sets `padding: 7px 6px; gap: 5px`. My phone
+   rule above is also (0,3,0), in a different file, so the winner is emission
+   order — and `gap` expands to `row-gap`, the property I set, so a
+   name-only diff cannot see the collision at all.
+
+   THE RULING: the collision is between a pre-existing desktop-affecting rule
+   and a new phone-only one, and the NEW rule carries the extra specificity.
+   The burden sits on the change, not on the incumbent.
+
+   WHAT THIS OVERRIDES, STATED RATHER THAN SILENT: Lane A's `gap: 5px` is a
+   documented narrowing for the chat column's ~280px width, part of a coat that
+   also re-cuts the row inset to 7px/6px for disclosure-caret alignment. On the
+   phone this takes my 4px instead. I have no evidence about which value is
+   right in that host at 390 — the state is currently UNREACHABLE (the
+   instrument measured `panelHost: present FALSE` on chat-home at both widths)
+   — so this is a determinism fix and not a design decision. If the hosted list
+   ever renders on a phone, Lane A says which value it wants and I take it.
+   Deleting this rule reinstates the tie; changing its value is Lane A's call. */
+.cv2-root[data-shell='mobile'] .tch-panel-host .pn-tt__main {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+/* The bar, on both axes, for every control in the cluster — `min-*` rather
+   than `width`/`height` so `.lp__rowaction--wide` keeps its `width: auto` and
+   grows around its label instead of being squared off at 44. */
+.cv2-root[data-shell='mobile'] .pn-tt__actions .lp__rowaction,
+.cv2-root[data-shell='mobile'] .pn-tt__actions .pn-tt__ind {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+
+/* A selected or expanded row is not hovered, so the backing must match the row
+   it floats over rather than the hover tint. */
+.cv2-root .pn-tt--active .pn-tt__actions,
+.cv2-root .pn-tt[data-details='open'] .pn-tt__actions { background: var(--pn-active); }
+.cv2-root .pn-tt--active:hover .pn-tt__actions { background: var(--pn-hover); }
+/* REMOVED 2026-08-17 — this hid every cluster member after the first:
+     .pn-tt__actions > *:not(:first-child):not(.pn-tt__ind) { display: none }
+   It dated from when the control-card's only verb was Run, and it silently ate
+   whatever was added next. `complete` has been in this tile's DOM and invisible
+   ever since it was declared, and the collections icon joined it there. The
+   cluster is now a fixed, deliberate set (Collections · Run · Archive), so
+   there is nothing to suppress — and a rule that hides "everything I did not
+   anticipate" cannot tell a mistake from a feature. */
+/* The button vocabulary moved to `.lp__cluster` in panels.css — it was copied
+   here and into `.pn-st__actions`, and the copies had already drifted (the
+   session tile's had no border and a different hover). One cluster, one look. */
+.cv2-root .pn-tt__ind {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-tt__ind:hover { color: var(--pn-ink-2); background: var(--pn-active); }
+.cv2-root .pn-tt__ind svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+  transition: transform 140ms;
+}
+.cv2-root .pn-tt__ind--open svg { transform: rotate(180deg); }
+
+/* Expanded facts hang off the STATUS column, not the tile edge: 9px row pad +
+   16px caret + 8px gap. The chips therefore start on the same vertical as the
+   dot at every depth and every panel width (the indent and the narrow-container
+   overrides move both together). */
+.cv2-root .pn-tt__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 1px 10px 10px calc(29px + var(--tt-indent));
+}
+.cv2-root .pn-tt__metarow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.cv2-root .pn-tt__time {
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  /* I3: a date is DATA — same mono label size as the badges beside it. */
+  font-size: var(--pn-fs-label);
+  white-space: nowrap;
+}
+
+/* LaunchQuickConfig is tm8's data adapter inside Maestro's meta rows. */
+.cv2-root .pn-tt .lp__flow--control {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-sizing: border-box;
+}
+.cv2-root .pn-tt .lq { gap: 8px; }
+.cv2-root .pn-tt .lq__head { display: none; }
+.cv2-root .pn-tt .lq__row { gap: 7px; }
+.cv2-root .pn-tt .lq__field {
+  position: relative;
+  flex: 1 1 104px;
+  gap: 0;
+}
+.cv2-root .pn-tt .lq__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.cv2-root .pn-tt .lq__select {
+  appearance: auto;
+  min-height: 31px;
+  padding: 4px 8px;
+  background: var(--pn-card);
+  /* `appearance: auto` restores the native chevron here, so the base
+     .lq__select SVG chevron must not stack on top of it. */
+  background-image: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Keep the primary row readable when the panel itself is narrow, regardless
+   of viewport size (split panes can be much smaller than the window). */
+@container task-tile (max-width: 480px) {
+  .cv2-root .pn-tt__main {
+    gap: 7px;
+    /* The reveal-state reserve is inherited here too; resting rows keep 8px. */
+    padding-inline: calc(7px + var(--tt-indent)) var(--tt-actions-reserve);
+  }
+
+  .cv2-root .pn-tt__inline {
+    display: none;
+  }
+
+  /* Still hung off the status column — 7px pad + 16px caret + 7px gap. The
+     chips must not jump to the tile edge just because the panel narrowed. */
+  .cv2-root .pn-tt__meta {
+    padding-inline: calc(30px + var(--tt-indent)) 9px;
+  }
+
+  .cv2-root .pn-tt__badges {
+    padding-inline: calc(30px + var(--tt-indent)) 9px;
+  }
+
+}
+
+@container task-tile (max-width: 360px) {
+  .cv2-root .pn-tt__main {
+    gap: 5px;
+    padding-inline: calc(6px + var(--tt-indent)) var(--tt-actions-reserve);
+  }
+
+  /* Same rendered-slot measurement at the 1px compact gap: 22N + (N-1) +
+     7px cluster padding + 6px edge anchor. */
+  .cv2-root .pn-tt__main { --tt-actions-revealed-reserve: 35px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-revealed-reserve: 58px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-revealed-reserve: 81px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-revealed-reserve: 104px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-revealed-reserve: 127px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-revealed-reserve: 150px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-revealed-reserve: 173px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-revealed-reserve: 196px; }
+
+  .cv2-root .pn-tt__arrowCount {
+    display: none;
+  }
+
+  /* The title does NOT step down again here. A session row keeps 12.5px at
+     every panel width, so shrinking only the task title reopened the mismatch
+     exactly where the panel is narrow enough to show both lists side by side. */
+
+  .cv2-root .pn-tt__actions {
+    gap: 1px;
+  }
+
+  /* 6px pad + 16px caret + 5px gap. */
+  .cv2-root .pn-tt__meta {
+    padding-inline: calc(27px + var(--tt-indent)) 8px;
+  }
+
+  .cv2-root .pn-tt__badges {
+    padding-inline: calc(27px + var(--tt-indent)) 8px;
+  }
+
+  /* Depth costs title width, and at this size the title is all there is. */
+  .cv2-root .pn-tt[data-depth='1'] { --tt-indent: 11px; }
+  .cv2-root .pn-tt[data-depth='2'] { --tt-indent: 22px; }
+  .cv2-root .pn-tt[data-depth='3'] { --tt-indent: 30px; }
+  .cv2-root .pn-tt[data-depth='4'] { --tt-indent: 36px; }
+  .cv2-root .pn-tt[data-depth='5'] { --tt-indent: 40px; }
+}
+
+/* Run is the point of hovering a task row, so it survives almost to the floor.
+   It used to drop at 480px-wide panels (the threshold was 300px and a docked
+   Tasks panel is ~260px), which is why hover revealed only a caret. Below 200px
+   two 22px buttons plus the caret leave the title nothing, so Run yields — the
+   details caret is the one control that must never disappear. */
+@container task-tile (max-width: 200px) {
+  .cv2-root .pn-tt__actions > :first-child:not(.pn-tt__ind) {
+    display: none;
+  }
+  /* The first non-disclosure control is hidden above, so count the remaining
+     visible slots. A disclosure-only cluster keeps its one-slot floor. */
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(2):last-child) { --tt-actions-revealed-reserve: 35px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(3):last-child) { --tt-actions-revealed-reserve: 58px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(4):last-child) { --tt-actions-revealed-reserve: 81px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(5):last-child) { --tt-actions-revealed-reserve: 104px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(6):last-child) { --tt-actions-revealed-reserve: 127px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(7):last-child) { --tt-actions-revealed-reserve: 150px; }
+  .cv2-root .pn-tt__main:has(> .pn-tt__actions > :nth-child(8):last-child) { --tt-actions-revealed-reserve: 173px; }
+}
+.cv2-root .pn-tt .lq__profile {
+  align-self: flex-start;
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.cv2-root .pn-tt .lq__capacity,
+.cv2-root .pn-tt .lq__load { line-height: 1.45; }
+.cv2-root .pn-tt .lq__actions { align-items: center; }
+.cv2-root .pn-tt .lq__more {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 3px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  text-decoration: none;
+}
+.cv2-root .pn-tt .lq__launch {
+  min-height: 29px;
+  padding-inline: 12px;
+}
+
+/* I3 — ROW RICHNESS.
+   COUNT CHIPS ARE DATA: the `pn-st__count` vocabulary rides this tile's badge
+   band too (sessions chip, TileCountBadges), and panels.css sizes it 10px at
+   (0,2,0). Same mono label size as every other data badge, 600 so the number
+   reads at a glance. (0,3,0) outranks the base wherever the files land. */
+.cv2-root .pn-tt .pn-st__count {
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+
+/* KINDICON FAMILY TINT (I3). Every drawn kind mark on this tile (`kit-vicon`
+   — the sessions chip, the count-badge doors, PR chips) inherits the family
+   colour I2's `[data-family]` map stamps on the `.pn-tt` root as `--pnf`
+   (panels.css). The fallback keeps unfamilied contexts exactly as they were.
+   The action cluster is EXCLUDED: a control's glyph is chrome, not identity,
+   and tinting Collections would read as a fourth status. */
+.cv2-root .pn-tt .kit-vicon { color: var(--pnf, currentColor); }
+.cv2-root .pn-tt .lp__cluster .kit-vicon { color: inherit; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-stat--streaming::after { animation: none; opacity: 0.4; }
+  .cv2-root .pn-tt,
+  .cv2-root .pn-tt__actions,
+  .cv2-root .pn-tt__arrow svg,
+  .cv2-root .pn-tt__ind svg { transition: none; }
+}

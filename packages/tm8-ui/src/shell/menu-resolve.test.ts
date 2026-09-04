@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_MENU_WORKSPACE_KIND_SPINE, MenuConfigSchema } from '@tm8/contract';
 import type { MenuConfig } from '@tm8/contract';
 import { SHIPPED_DEFAULT_MENU, SHIPPED_DEFAULT_MENU_REVISION } from '../domain';
-import { VIEW_PRESENTATION, resolveMenu } from './menu-resolve';
+import { VIEW_PRESENTATION, isRaillessGroup, resolveMenu } from './menu-resolve';
 
 describe('the shipped default menu', () => {
   it('satisfies the frozen MenuConfig DTO (contract zod, not a local guess)', () => {
@@ -18,39 +18,125 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-11 intent clusters', () => {
+  it('encodes the shipped group spine — the revision-22 menu-backed tabs', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
+      // Revision 17 (2026-08-16, unified Home — task 01a00932): the Work and
+      // Channels groups retired and the conversation tab is renamed HOME.
+      // Home's screen lists chat threads OR any collection kind (the root
+      // column + the screen's own icon rail), so a Work tab beside it was a
+      // second door to every one of its lists, and Channels' contents await
+      // the redesigned Collab surface (a later feature). The group id under
+      // the Home label is still `chats` — ids are wire-stable, labels move.
       'Home',
-      // Revision 11 (2026-08-14, single-home ruling): Chats clusters the
-      // conversation surfaces; live voice rooms hang beneath it via the
-      // dynamic group, so the items-empty Voice label retired. Library folded
-      // into Workspace; Tracking became the Code caret; Collab's member row
-      // left for the palette and the kind switcher.
+      // Revision 22 (2026-09-03, migration 180): CHATS, seated after Home.
+      // Migration 176 made a chat an ENTITY with the core kind `chat`; this is
+      // the tab that lists it. Its group id is `conversations`, NOT `chats` —
+      // that id has belonged to the group labelled Home since 127, which is
+      // the whole reason Wave 1 left the menu alone rather than "swapping the
+      // Chats group" and deleting Home.
+      //
+      // It is also the ONE group in this spine whose item is a KIND rather
+      // than a view, which is what gives it a rail — see the railless
+      // assertion below, where it is the named exception.
       'Chats',
-      'Workspace',
-      'Code',
+      // Revision 19 (2026-08-16, migration 140 — task 01a00b46): WORK returns
+      // second in the row, and it is the three-panel workspace itself. 17
+      // retired a Work group that was a RAIL OF ROWS duplicating Home's
+      // lists; this one holds the single childless `workspace` view, so what
+      // the tab opens is a LAYOUT — side panel · center · side panel — that
+      // Home has no equivalent for. The railless assertion below covers it.
+      'Work',
+      // Revision 18 (2026-08-16, Craft P1 — task 01a00a31): the blueprint
+      // studio joins between Board and Graph, railless like both.
+      'Craft',
       'Graph',
+      // CodeBrain (2026-09-01, migration 173) — the first spine widening this
+      // snapshot took after it was frozen. It is here because the shipped
+      // default is pinned to the contract's DEFAULT_MENU_GROUP_SPINE, which
+      // the server seeder answers to as well; a client default that omitted
+      // the group would disagree with every seeded space.
+      'CodeBrain',
       'Settings',
+      'Help',
     ]);
   });
 
-  it('keeps Workspace as a caret view item with its eight leaves (RULING E)', () => {
-    const workspace = SHIPPED_DEFAULT_MENU.groups
-      .flatMap((g) => g.items)
-      .find((item) => item.ref === 'workspace');
-    expect(workspace?.type).toBe('view');
-    const children = workspace?.type === 'view' ? workspace.children ?? [] : [];
-    // Revision 11: channel left for the Chats group; file takes the freed
-    // eighth slot (the Library fold).
-    expect(children.map((c) => c.ref)).toEqual(DEFAULT_MENU_WORKSPACE_KIND_SPINE);
-    expect(children).toHaveLength(8);
+  it('draws a rail on the Chats tab ALONE — every other shipped group is a railless single view', () => {
+    // Home's surface draws its own icon rail inside the screen; the others are
+    // whole-centre views. A menu rail on any of them would be a column holding
+    // one row repeating the tab's own name — what made revision 13 retire the
+    // tab, solved by the shape rule instead.
+    //
+    // CHATS IS THE ONE EXCEPTION, AND IT IS THE SHAPE RULE ANSWERING, not an
+    // exemption: `isRaillessGroup` requires a lone childless VIEW item, and
+    // this group's one item is a KIND. So the rail it draws is the kind's own
+    // row — the registry mark, the label, and `spaces.counts`' number — beside
+    // the list, which is the arrangement every kind list in the product has.
+    // Asserted as an exact PARTITION rather than skipping the group, so a
+    // second railed tab arriving by accident still reds this.
+    const railed = SHIPPED_DEFAULT_MENU.groups.filter((g) => !isRaillessGroup(g));
+    expect(railed.map((g) => g.id)).toEqual(['conversations']);
+    for (const group of SHIPPED_DEFAULT_MENU.groups.filter((g) => isRaillessGroup(g))) {
+      expect(isRaillessGroup(group), group.id).toBe(true);
+    }
+    // The rule still answers false for a group with real rows — a
+    // server-authored menu keeps its rail; this is a config, not a rule change.
+    expect(
+      isRaillessGroup({
+        id: 'work',
+        label: 'Work',
+        items: [
+          { type: 'view', ref: 'workspace', children: [{ type: 'kind', ref: 'task' }] },
+          { type: 'kind', ref: 'project' },
+        ],
+      }),
+    ).toBe(false);
   });
 
-  it('carries exactly two caret items — Workspace and Code — depth exactly ≤1', () => {
+  it('keys railless on the SHAPE, so a Chats group with a second row draws a rail again', () => {
+    // The guarantee is one childless view item, not the `dashboard` ref alone.
+    // An operator who adds a row to this group has asked for a rail and gets
+    // one, rather than silently losing the row they just added.
+    expect(
+      isRaillessGroup({
+        id: 'chats',
+        label: 'Chats',
+        items: [
+          { type: 'view', ref: 'dashboard' },
+          { type: 'view', ref: 'feed' },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('carries no caret items — the Workspace caret retired with the Work group', () => {
     const withChildren = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .filter((item) => item.type === 'view' && (item.children?.length ?? 0) > 0);
-    expect(withChildren.map((item) => item.ref)).toEqual(['workspace', 'git']);
+    expect(withChildren).toEqual([]);
+    // RULING E's caret grammar survives for server-authored configs: a view
+    // item with children still validates (the resolver walks it), so a space
+    // that kept its Work group keeps its caret.
+    expect(
+      MenuConfigSchema.safeParse({
+        schemaVersion: 1,
+        revision: 1,
+        groups: [
+          {
+            id: 'work',
+            label: 'Work',
+            items: [
+              {
+                type: 'view',
+                ref: 'workspace',
+                children: DEFAULT_MENU_WORKSPACE_KIND_SPINE.map((ref) => ({ type: 'kind', ref })),
+              },
+            ],
+          },
+          { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+        ],
+      }).success,
+    ).toBe(true);
   });
 
   it('omits deferred features entirely (R7-5: never rows in the shipped config)', () => {
@@ -79,9 +165,16 @@ describe('the shipped default menu', () => {
     // posture as `graph`). The union is closed, so this list is how a widening
     // announces itself rather than silently shipping a ref with no glyph.
     // `messages` joined 2026-08-13 (the cross-entity conversation browser),
-    // same additive R4 widening as the two above.
+    // same additive R4 widening as the two above. `board` joined 2026-08-16
+    // (the task kanban tab), same posture; `craft` the same day (the
+    // blueprint studio, Craft P1), same posture again. `help` joined
+    // 2026-08-19 and entered the shipped spine in revision 20. `codebrain`
+    // joined 2026-09-01 (migration 173) — the first widening this snapshot took
+    // AFTER it was frozen as the 1.0 UI, and the one that proves the point of
+    // gating it again: the union widened, four exhaustive tables here stopped
+    // compiling, and nothing said so for three days because nothing looked.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['channels', 'dashboard', 'feed', 'files', 'git', 'graph', 'inbox', 'messages', 'settings', 'workspace'].sort(),
+      ['board', 'channels', 'codebrain', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );
   });
 });

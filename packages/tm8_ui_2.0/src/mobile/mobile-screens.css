@@ -1,0 +1,1394 @@
+/* ==========================================================================
+   PHONE SCREEN BODIES — the desktop floors, scoped OFF the phone, and the
+   sheet that replaces the third column.
+
+   Lane 1 owns the phone's CHROME (`mobile-chrome.css`: the header, the tab
+   bar, the palette). This file owns what is INSIDE the content region, and it
+   is a separate file for that reason rather than for tidiness — two lanes in
+   one stylesheet is a merge conflict on the one artefact whose failure mode is
+   a screen that silently looks wrong.
+
+   §14: colours resolve through `--pn-*` tokens only; the package `hex-ban`
+   test scans this file like every other.
+
+   ── THE SCOPE, AND WHY IT IS AN ATTRIBUTE ──────────────────────────────────
+
+   Every rule here is under `.cv2-root[data-shell='mobile']`. `GateApp` stamps
+   that attribute on the root it renders the phone shell into, and Lane 1
+   established it for the zoom lever. Three properties come out of it:
+
+     - SPECIFICITY WITHOUT `!important`. The desktop rules are `.cv2-root .ev-x`
+       (0,1,1); these are `.cv2-root[data-shell] .ev-x` (0,2,1) and win on
+       weight alone. Nothing is overridden by source order, so this file can be
+       imported anywhere in the cascade and still behave.
+     - THE DESKTOP VALUES ARE NEVER EDITED. Desktop is in daily use and is not
+       this lane. Every floor below is RESTATED under a narrower selector; the
+       original declaration is untouched, so reverting this lane is deleting a
+       file rather than restoring numbers from memory.
+     - IT FOLLOWS THE SHELL FORK, NOT THE WIDTH. `shellFor` is
+       `(pointer: coarse) && width < 500`. A `@media (max-width: 500px)` here
+       would restyle the DESKTOP shell in a narrow window — a shell no part of
+       this program is allowed to change.
+
+   NOT `:has()`. `.cv2-root:has(> [data-shell='mobile'])` reads better and fails
+   SILENTLY where it is unsupported — the rules simply never apply and the
+   screen looks exactly like the bug. Lane 1 hit this and the attribute is the
+   answer it landed on.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. THE SCREEN FILLS THE FRAME
+
+   `.ev-root` is `flex: 1` for the desktop, where its parent is a flex column.
+   The phone's parent is `main.mobile-frame__content`, a BLOCK — `flex: 1` means
+   nothing there, so the root took its CONTENT height and the bottom ~50% of
+   every Tasks/Sessions screen was dead paper. That is the "55 percent blank"
+   in the verification pass, and it is one missing height, not a layout to
+   redesign.
+
+   `height: 100%` resolves against the frame's `1fr` content track, which is a
+   definite height, so the list below can scroll INSIDE the screen instead of
+   scrolling the screen itself.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .ev-root,
+.cv2-root[data-shell='mobile'] .chv-root {
+  height: 100%;
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   2. THE FLOORS, SCOPED OFF THE PHONE
+
+   These are the desktop's reading widths, and each is right where it was
+   written. A 320px panel floor is what keeps a two-column entity readable at
+   1440; the same number on a 390px phone is what drew the Tasks list at 200px
+   with the detail pane behind it.
+
+   `min-width: 0` rather than a smaller floor: on one surface there is nothing
+   to protect the region FROM. The floors exist to arbitrate between columns
+   competing for one row, and a phone has one column, so the arbitration has no
+   subject. A phone-sized floor would be a second magic number to keep true.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .pn-panel,
+.cv2-root[data-shell='mobile'] .lp,
+.cv2-root[data-shell='mobile'] .chv-main,
+.cv2-root[data-shell='mobile'] .chv-aside {
+  min-width: 0;
+}
+
+/* The detail region is a fixed reading width solved in `EntityView`
+   (`--ev-detail`, floored at 380). On one surface it IS the surface, so it
+   takes the row instead of reserving a slice of it. */
+.cv2-root[data-shell='mobile'] .ev-detail,
+.cv2-root[data-shell='mobile'] .ev-aux {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* The channel aside is `min(440px, 42vw)` — 42% of a phone is not a column,
+   it is a squeeze. Same treatment. */
+.cv2-root[data-shell='mobile'] .chv-aside {
+  width: auto;
+  flex: 1;
+}
+
+/* --------------------------------------------------------------------------
+   3. EDGE TO EDGE, NOT A CARD IN A CORNER
+
+   `.lp` and `.pn-panel` draw a 1px border and a radius because on the desktop
+   they are OBJECTS sitting on paper beside other objects. On the phone the
+   panel IS the screen, and a screen with a rounded outline reads as a card
+   floating in a void — which is precisely what the Tasks screenshot showed.
+
+   The border-right on `.ev-list` goes for the same reason: it separated the
+   list from the detail column, and there is no detail column beside it now.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp,
+.cv2-root[data-shell='mobile'] .pn-panel {
+  border: none;
+  border-radius: 0;
+}
+
+.cv2-root[data-shell='mobile'] .ev-list {
+  border-right: none;
+}
+
+/* The aux column is inside a SHEET on the phone, and the sheet draws the
+   header — the crumb, the title, the close. The column's own head would stack
+   a second crumb row under the first, with an `esc` chip on a device that has
+   no Escape key: the exact look of a desktop column dropped into a phone
+   without being reconsidered. Its border-left separated it from a detail
+   column that is no longer beside it. */
+.cv2-root[data-shell='mobile'] .ev-aux__head {
+  display: none;
+}
+
+.cv2-root[data-shell='mobile'] .ev-aux {
+  border-left: none;
+}
+
+/* --------------------------------------------------------------------------
+   4. A ROW THAT CLIPS ITS OWN CONTENT THROUGH THE MIDDLE OF THE GLYPHS
+
+   `.lp__actions` is `height: 34px` with `overflow: hidden` — correct on a
+   desktop, where "Launch session ▸", its refusal banner and the Terminal
+   button sit on one line with room to spare. At 390px they wrap to two lines
+   inside a container that is still exactly 34px tall, so the second line is
+   sliced horizontally through the letterforms: the top 60% of "the verb
+   exists and its" is drawn and the rest is destroyed.
+
+   This is the defect no metric in this program can see. The text does not
+   cross the right edge, so `overflowCount` scores it 0. It is inside the card,
+   so the card ratio scores it fine. Its controls are the right size, so the
+   tap census passes it. It is only visible by LOOKING at the screen — which is
+   why the audit README says to open the screenshots, and why this rule exists.
+
+   `min-height` rather than `height`, and `wrap` rather than a smaller font:
+   the row's job is to hold whatever the host put in it, and a fixed height is
+   a promise about content this container does not get to make.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp__actions {
+  height: auto;
+  min-height: 34px;
+  flex-wrap: wrap;
+  overflow: visible;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+/* --------------------------------------------------------------------------
+   5. NO DRAG HANDLES
+
+   `EntityView` stops RENDERING the resizers on one surface, so this is a belt
+   for any other host that composes a `.kit-resizer` into the phone shell. An
+   8x384 handle was the single worst tap target on Tasks — it is a control for
+   an arrangement the phone does not have, and a thumb that finds it can only
+   be disappointed by it.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .kit-resizer {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   6. THE ONE SURVIVING BREAKPOINT, WHICH INVERTS UNDER A SHEET
+
+   `entity-view.css` keeps a single `@media (max-width: 1040px)` rule: with the
+   aux column open there is not enough room for three columns above their
+   floors, so the DETAIL yields. That is right for a desktop window dragged
+   narrow — the aux is what the viewer just asked for, and the detail is one
+   click away.
+
+   On the phone it is exactly backwards, and it took driving the sheet to see
+   it. The aux is no longer a column competing for the row; it is a sheet
+   COVERING the detail. The rule still fired (a phone is always under 1040px),
+   so opening the sheet unmounted the very thing the sheet was covering, and
+   the screen behind the scrim was blank grey. A sheet over nothing is not a
+   sheet — it is a navigation that lied about being one.
+
+   Restored rather than the media query weakened: the desktop rule is correct
+   where it was written and is not this lane's to change.
+   -------------------------------------------------------------------------- */
+@media (max-width: 1040px) {
+  .cv2-root[data-shell='mobile'] .ev-root[data-layout='columns']:not([data-aux='none']) .ev-detail {
+    display: flex;
+  }
+}
+
+/* ==========================================================================
+   7. THE TOUCH FLOOR — ONE BLOCK, THREE SCREENS, EIGHT LEDGER ROWS
+      DEF-013, 014, 015, 016, 017, 018, 019, 020.
+
+   THIS BLOCK EXISTS SO THAT THREE LANES DO NOT EACH WRITE IT.
+
+   Tasks, Sessions and Channels are not three screens with a similar control
+   strip — they are ONE component tree (`EntityView` hosting `EntityListPanel`),
+   so the `before-lanes` run counted the SAME under-44 control three times and
+   the raw "57 of 90" headline read as three lanes' worth of work. It is one
+   lane's worth, it is here, and `panels.css` is NOT TOUCHED: every floor below
+   is RESTATED under this file's narrower selector exactly as sections 1-6 do.
+   A lane that changes shell CSS after this lands is a defect, not a lane
+   decision — see `CONTRACT.md` §7.
+
+   ── THE TWO CONSTRAINTS, WHICH ARE ACCEPTANCE AND NOT ADVICE ──────────────
+
+   NO BLANKET `button { min-height: 44px }`. The phone shell renders
+   desktop-shared components, several of them inside sheets, and a blanket rule
+   inflates every dense one — which is how the fixed-height clipping documented
+   at length in section 4 gets re-triggered somewhere nobody is looking. Every
+   rule below names its class.
+
+   NO `::after` HIT-AREA EXTENSIONS. The instrument measures
+   `getBoundingClientRect()` OF THE ELEMENT, so a pseudo-element hit area is
+   invisible to it and to the after-run diff — it would score as fixed while the
+   thumb still missed. Real padding, real `min-block-size`, real boxes.
+
+   ── AND THE THIRD ONE, WHICH THIS FILE LEARNT THE HARD WAY ────────────────
+
+   A CONTAINER WITH A FIXED HEIGHT CLIPS A CONTROL YOU JUST GREW, AND NO METRIC
+   IN THIS PROGRAM CAN SEE IT. That is section 4's whole story: `.lp__actions`
+   is `height: 34px` + `overflow: hidden`, and its contents were sliced through
+   the middle of the glyphs while `overflowCount` scored the screen 0. There are
+   two more of those over these controls — `.lp__selector` (36px) and
+   `.lp__filters` (32px + `overflow: hidden`) — so they are unpinned FIRST,
+   below, before anything inside them is allowed to grow. Growing a control
+   inside a pinned box would have passed the tap census and produced a screen
+   with its filter bar cut in half.
+
+   Density is a desktop constraint. These rows get taller on a phone, and that
+   is the correct outcome rather than a cost.
+   ========================================================================== */
+
+/* --- 7a. UNPIN THE BOXES, BEFORE GROWING ANYTHING INSIDE THEM ------------- */
+
+/* `height` → `min-height`, for the same reason section 4 gives: the row's job
+   is to hold whatever the host put in it, and a fixed height is a promise about
+   content these containers do not get to make. `flex-wrap` because at 390px a
+   44px kind selector and a 44px view switcher no longer share one line. */
+.cv2-root[data-shell='mobile'] .lp__selector,
+.cv2-root[data-shell='mobile'] .lp--compact .lp__selector {
+  height: auto;
+  min-height: 36px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-block: 4px;
+  overflow: visible;
+}
+
+.cv2-root[data-shell='mobile'] .lp__filters {
+  height: auto;
+  min-height: 32px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-block: 4px;
+  /* The desktop `overflow: hidden` is a floor guard against a long chip pushing
+     the row wider than the panel. With the row allowed to WRAP, the guard has
+     nothing left to guard and is only a blade. */
+  overflow: visible;
+}
+
+/* Section 4 already unpinned `.lp__actions` for the wrapping-text defect. Its
+   floor is restated here only because `.lp__new` and `.lp__quick` (DEF-019) are
+   its children and a 34px floor under a 44px child would be a number that
+   silently stopped being true. */
+.cv2-root[data-shell='mobile'] .lp__actions {
+  min-height: var(--mobile-touch-min);
+}
+
+/* --- 7c. DEF-014 — the tier tabs (To Do / In Progress / Done / Cancelled) - */
+
+/* `.lp__tabs` is already `overflow-x: auto`, so taller and wider tabs scroll
+   rather than overflow — which is why this row can take the full floor on both
+   axes without putting anything past the right edge. */
+.cv2-root[data-shell='mobile'] .lp__tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding: 0 var(--pn-space-3);
+}
+
+/* --- 7d. DEF-015 — the filter-bar chips ---------------------------------- */
+
+.cv2-root[data-shell='mobile'] .lp__chip {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+/* --- 7e. DEF-016 — the button that OPENS a row --------------------------- */
+
+/* The primary action of a list screen, at 16px tall. Wide (336 at 390, 376 at
+   430) and hittable across, a third of a fingertip down.
+
+   `padding-block` AND NOT `display: flex`. These are `<button>`s carrying
+   `white-space: nowrap` + `overflow: hidden` + `text-overflow: ellipsis`, and
+   `text-overflow` does not apply to a flex container — making them flex to
+   centre the text would silently delete the truncation contract that
+   `maestro-task-tile.css` spends a paragraph explaining, and the failure would
+   be a title that spills instead of ellipsising. Padding grows the box and
+   leaves the text a block box to ellipsise inside. */
+.cv2-root[data-shell='mobile'] .pn-tt__title,
+.cv2-root[data-shell='mobile'] .lp__title {
+  min-block-size: var(--mobile-touch-min);
+  padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
+}
+
+/* --- 7e′. THE TITLE WAS LINE-BROKEN BEFORE IT WAS EVER SHRUNK ------------- */
+
+/* MEASURED on the live node, Tasks at 390x844 dpr3, 43 rows: heights were
+   `104 x17 · 121 x4 · 129 x1 · 152 x18 · 169 x3` — mean 130.8, and TWO rows
+   visible in a 398.8px list.
+
+   `.pn-tt__title` is `flex: 1 1 auto` — basis `auto`, so its flex basis is its
+   OWN CONTENT WIDTH, and a real title measures 425-464px. DEF-036 made
+   `.pn-tt__main` `flex-wrap: wrap` so the action cluster could take its own
+   line. In a WRAPPING flex container, line-breaking runs against the
+   hypothetical main size — BEFORE flex-shrink. So a 425px title beside the
+   44px status in 359px of room is put on the NEXT LINE, and only then shrunk
+   to fit it. `min-width: 0` permits shrinking; it does not prevent wrapping.
+
+   That is the entire cause of the 152px row — the one that reads as a bare
+   status circle floating alone above a gap, which is how it was reported. The
+   desktop container is `nowrap`, so this never happened there; jsdom has no
+   layout, so nothing in this repo could see it.
+
+   ONE DECLARATION, and it changes nothing else: `152 -> 104`, `169 -> 121`,
+   titles on their own line `18 -> 0`. No band moves; only the wrap.
+
+   THE ROW STAYS ONE LINE OF TITLE, which is a ruling and not an omission. A
+   two-line clamp fits inside the same 44px touch box for free (two 16.25px
+   lines is 32.5px) and would end every truncation on the screen — it was
+   built, measured and then withdrawn, because a list is for SCANNING and a
+   uniform one-line row is what makes a flick down it legible. The whole title
+   is one tap away and is already on the button's `title` attribute. 7e's
+   single-line `white-space: nowrap` + `text-overflow: ellipsis` therefore
+   stands, and this rule adds nothing to it but the basis. */
+.cv2-root[data-shell='mobile'] .pn-tt__title {
+  flex-basis: 0;
+}
+
+/* --- 7f. DEF-017 — the row state dot (16x16) ----------------------------- */
+
+/* THE COLUMN GROWS WITH THE CONTROL, and that is the load-bearing half.
+   `.pn-tt__status` is a 16px grid cell with `place-items: center`, so a 44px
+   button inside it would hang 14px past the cell on each side and be CLIPPED by
+   `.lp__tile`'s `overflow: hidden` — while `getBoundingClientRect()` still
+   reported a clean 44x44 and the instrument passed it. A tap target that
+   measures 44 and draws 16 is worse than one that measures 16, because it
+   closes the row while leaving the thumb exactly where it was.
+
+   Only the SIZE half of this control is here. The OCCLUSION half — the dot
+   covered by its own child svg on 13 rows — is DEF-006 and is Lane B's, in the
+   component. Both must flip; neither fixes the other. */
+.cv2-root[data-shell='mobile'] .pn-tt__status {
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+}
+
+.cv2-root[data-shell='mobile'] .lp__statedot {
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+}
+
+/* --- 7g. DEF-018 — the tree expand chevrons (16x16) ---------------------- */
+
+/* Nested channels cannot be expanded on a phone without this, and the control
+   is already `opacity: 1` under `(pointer: coarse)` — panels.css fixed the
+   VISIBILITY of it for touch and left the 16px box.
+
+   RE-ANCHORED TO THE ROW'S LEADING CORNER rather than grown around its own
+   centre. Growing in place would put the box 8px above and 7px left of the
+   tile, where `.lp__tile { overflow: hidden }` clips it — the same
+   measures-44-draws-16 trap as 7f. Anchored at the corner the whole 44x44 is
+   inside the tile and inside the row's own height, and `place-items: center`
+   re-centres the caret in it: the glyph moves ~7px right and ~8px down and
+   reads as a disclosure gutter, which is what it now is.
+
+   IT OVERLAPS THE ROW'S LEADING MARK, deliberately and knowingly. On the tree
+   rows this control appears on, that mark is the kind glyph — decoration, not a
+   control — so the overlap costs no affordance. It is NOT applied to the task
+   tile, whose leading slot is the live state trigger of 7f; those are different
+   trees and this rule reaches only the one that has a disclosure. */
+.cv2-root[data-shell='mobile'] .lp__disclosure {
+  top: 0;
+  left: 0;
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+}
+
+/* --- 7h. DEF-019 — kind selector and list actions (20-23px) -------------- */
+
+.cv2-root[data-shell='mobile'] .lp__kind,
+.cv2-root[data-shell='mobile'] .lp__quick,
+.cv2-root[data-shell='mobile'] .lp__new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+/* --- 7i. DEF-020 — the Inbox unread filter chip (48x16) ------------------ */
+
+/* Inbox is not any lane's surface — it is one of the five tab-bar promises, so
+   it is the shell's. Of its four under-44 elements exactly ONE is a tap-target
+   defect: the other three are `hon-disabled` and are excluded from the bar by
+   ledger RULE R2, because there is nothing there to tap. They are NOT grown
+   here, and that is the ruling rather than an omission — growing a dead control
+   to 44px produces a bigger dead control. Their defect is affordance
+   (DEF-031/032) and it is fixed in the component, not in a stylesheet.
+
+   `.ibx-chip` is unscoped in `inbox.css` (0,1,0); this selector is (0,3,0) and
+   wins on weight, so the desktop value is untouched exactly like every other
+   restatement in this file. */
+.cv2-root[data-shell='mobile'] .ibx-chip {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+
+/* ==========================================================================
+   7j. THE FOUR ROW VERBS MOVE BEHIND THE ROW'S OWN DISCLOSURE
+       — amends DEF-030 / DEF-036, and says so.
+
+   WHAT DEF-036 DID AND WHY IT WAS RIGHT AT THE TIME. `.pn-tt__actions` is a
+   desktop hover affordance: `opacity: 0; pointer-events: none` at rest,
+   revealed under `:hover`. On touch there is no hover, so the cluster did not
+   merely look hidden — it did not EXIST (`inertCount` 67 over 46 rows). The fix
+   revealed it under `(pointer: coarse)` and `[data-shell='mobile']`, and took
+   it out of the float onto its own line, because a permanently-revealed
+   floating cluster sits opaque on top of the title and steals the tap that
+   opens the row. Both halves were necessary and both are still here.
+
+   WHAT THAT COSTS, MEASURED. The extra line is 44px + 4px row-gap = **48px on
+   EVERY row** — 46% of a 104px row. The band is 359px wide and holds 228px of
+   buttons, so 131px (36%) of it is empty. Across the list it is the single
+   largest consumer of the phone's vertical budget: with it, THREE rows fit in
+   the 428px list; without it, SIX.
+
+   WHY IT IS NOT A HOVER FIX ANY MORE. Revealing a cluster on a pointer that is
+   already over the row costs a desktop reader nothing — it appears where they
+   are already looking and vanishes again. Pinning that same cluster open on
+   EVERY row of a touch list is a different thing wearing the same CSS: four
+   verbs the reader did not ask for, repeated 43 times, between them and the
+   next title. The affordance that made sense as a reveal does not make sense as
+   a permanent fixture.
+
+   THE AMENDMENT, AND THE LINE IT KEEPS. DEF-030's requirement is that these
+   verbs be REACHABLE ON TOUCH, and that requirement is met here: the row's
+   disclosure (`.pn-tt__ind`, grown to the 44px floor and moved onto the title's
+   line) opens the row, and the full cluster is there when it does. What is
+   given up is "visible without asking", which is a weaker promise than the one
+   the ledger rows were opened for. The verbs are ONE 44px TAP away, not gone,
+   and `pointer-events: auto` above is untouched — a row that is open behaves
+   exactly as it did.
+
+   NOT `display: none` ON THE CONTAINER. The container keeps the disclosure, so
+   it must stay laid out; only the verbs inside it are dropped, and only while
+   the row is closed. Hiding the container would take the opener with it and
+   leave a row that can never be expanded — the exact absence DEF-030 is about.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt:not([data-details='open']) .pn-tt__actions {
+  flex: 0 0 auto;
+}
+
+.cv2-root[data-shell='mobile'] .pn-tt:not([data-details='open']) .pn-tt__actions > *:not(.pn-tt__ind) {
+  display: none;
+}
+
+/* The opener carries the whole promise now, so it takes the whole floor. */
+.cv2-root[data-shell='mobile'] .pn-tt__ind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+
+/* ==========================================================================
+   7j′. THE SAME AMENDMENT, ON THE ANATOMY THAT DID NOT GET IT.
+
+   7j above is written about `.pn-tt__actions` — the MaestroTaskTile, which is
+   the tasks screen and nothing else. Sessions, channels, docs and every other
+   kind render the STANDARD tile, whose cluster is `.lp__rowactions`, and it
+   kept the pinned-open treatment: Archive · Collections · Run · disclosure,
+   four controls on every row of every list that is not Tasks.
+
+   It was worse there than the argument in 7j describes, because this cluster
+   never left the float. `position: absolute; right: 6px` on an OPAQUE
+   `--pn-hover` backing, revealed at rest by `panels.css`'s coarse-pointer and
+   shell-marker rules — so on a 390px channel row it sat ON TOP OF the meta it
+   shares the line with. Measured in the capture: `12 unread` rendered as
+   `12 unre` with the rest under the backing. Not clipped by an overflow rule,
+   which is why `overflowCount` reported 0 and the tap census reported only a
+   22x22 button: the text is laid out, measurable, and covered. Same class of
+   defect §4 documents, and the same reason only a screenshot finds it.
+
+   THE RULING (owner, 2026-08-19): the list is a list. These are quick actions
+   for AN ENTITY, so they belong on the entity, and this tile already renders
+   the full `EntityControlStrip` when the row opens — a strictly larger set of
+   verbs than the three the cluster was showing. Nothing is lost by dropping
+   them from the closed row; the promise DEF-030 was opened for is still met,
+   one 44px tap away, exactly as 7j meets it on the task tile.
+
+   THE SHAPE IS 7j's, RULE FOR RULE, because the two anatomies should not drift:
+   keep the container (it holds the opener), drop its other children while the
+   row is closed, and grow the opener to the floor. What is EXTRA here is the
+   un-floating — the task tile was already put in flow by
+   `maestro-task-tile.css`, and this one still needs it or the lone disclosure
+   goes on covering the meta it is meant to sit beside.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .lp__tile:not([data-details='open']) .lp__rowactions > *:not(.lp__rowaction--ind) {
+  display: none;
+}
+
+/* In the flow, not over the row. `background` is enumerated across the states
+   `panels.css` tints LATER at equal specificity — DEF-059's lesson, applied
+   before it could bite: a selected or flow-open row would otherwise get its
+   opaque strip back and cover the meta again on exactly the rows a reader is
+   most likely to be looking at. */
+.cv2-root[data-shell='mobile'] .lp__rowactions,
+.cv2-root[data-shell='mobile'] .lp__tile--selected .lp__rowactions,
+.cv2-root[data-shell='mobile'] .lp__tile--selected:hover .lp__rowactions,
+.cv2-root[data-shell='mobile'] .lp__tile[data-flow='open'] .lp__rowactions {
+  position: static;
+  transform: none;
+  padding-left: 0;
+  background: none;
+}
+
+/* The opener carries the whole promise here too, so it takes the whole floor.
+   `min-*`, not `width`/`height`, so `.lp__rowaction--wide` inside an OPEN row
+   still grows around its label instead of being squared off at 44. */
+.cv2-root[data-shell='mobile'] .lp__rowactions .lp__rowaction {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+
+/* AND THE OPENER LOSES ITS CHROME. `.lp__rowaction` is a bordered `--pn-card`
+   chip, which is right for three of them clustered together and wrong for one
+   alone: grown to the 44px floor it becomes a heavy boxed button parked at the
+   end of an otherwise quiet row, louder than the title it belongs to. The task
+   tile's `pn-tt__ind` is a bare chevron and this is the same control, so it
+   reads the same way. Only while CLOSED — an open row is back to a cluster of
+   peers and they should all look alike again. */
+.cv2-root[data-shell='mobile']
+  .lp__tile:not([data-details='open'])
+  .lp__rowactions
+  .lp__rowaction--ind {
+  background: none;
+  border-color: transparent;
+}
+
+
+/* ==========================================================================
+   7k. WHAT A ROW WITH NOTHING ON IT IS ACTUALLY PAYING FOR
+
+   MEASURED, a row carrying no badges: 56px, of which
+   `44 (the tap floor) + 6 + 6 (`.pn-tt__main` padding-block)`. The 44 is not
+   negotiable — it is this program's acceptance, and the title, the status mark
+   and the disclosure are all held to it. The 12 is.
+
+   So the padding drops to 2px and the empty row becomes 48px: still four
+   clear pixels between one 44px target and the next, and the rows themselves
+   never touch. That is the FLOOR for this row — 48 of 48 is now content and
+   tap area, and anything below it would have to come out of the 44, which is
+   a different decision than a layout one and is not this rule's to take.
+
+   The text inside the target is 16.25px, so the visible gap between one title
+   and the next is ~32px whatever this number is. Cutting the padding tightens
+   the LIST without tightening the TYPE.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt__main {
+  padding-block: 2px;
+}
+
+/* ==========================================================================
+   7l. THE ROW'S SECOND LINE STARTS UNDER THE ROW, NOT UNDER THE TITLE
+
+   `.pn-tt__badges` — the comment count, the terminal and the rest of the
+   linked-state chips — is indented by a hand-computed `29px`, and the
+   arithmetic is written above it in `maestro-task-tile.css`:
+   "7px row inset + 16px status mark + 6px gap = title start".
+
+   THAT ARITHMETIC IS TRUE ON THE DESKTOP AND FALSE HERE. §7f grows
+   `.pn-tt__status` from 16px to the 44px touch floor, so the title now starts
+   at 7 + 44 + 6 = 57px and the badges still start at 29 — 28px to the LEFT of
+   the title they belong to. On screen the chips hang out under the status
+   column in their own margin, reading as a separate row of the list rather
+   than as the second line of the one above them.
+
+   Restated from the same parts rather than as a new hard number, so it cannot
+   drift from §7f the way the original drifted from the 16px mark: the row
+   inset, the status column and the flex gap, each named where it is defined.
+   `--tt-indent` stays in the sum because a nested row's whole anatomy shifts
+   with it and the badge line has to shift too.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt__badges {
+  padding-inline-start: calc(7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + 6px);
+}
+
+
+/* ==========================================================================
+   8. THE CENSUS IS RENDERED THREE TIMES, AND THE PHONE PAYS FOR THE THIRD
+
+   The same four numbers reach the screen by three routes, all from one source:
+   `.lp__total` in the root bar ("657"), the four lifecycle TABS
+   ("To Do 266 / In Progress 105 / Done 273 / Cancelled 13"), and `.lp__foot`,
+   which spells them out again verbatim — "266 to do · 105 in progress ·
+   273 done · 13 cancelled" — 50px BELOW the tabs that already say them.
+
+   Measured at 390x844: `.lp__foot` is 29.3px, and it is PERMANENT. Scrolling
+   `.lp__body` to 1200 left it exactly where it was: the bands are static in a
+   fixed frame and the list is its own scroller, so this is 29.3px of a 398.8px
+   list surrendered on every frame to restate what is legible, unscrolled,
+   two thumb-widths higher.
+
+   On a desktop the footer is a status line at the bottom of a tall column and
+   it costs nothing anybody notices. On a phone it is 7% of the list.
+
+   HIDDEN, NOT DELETED, AND ONLY HERE. Nothing is removed from the tree and no
+   other shell changes: the count still has two renderings on the phone and all
+   three on the desktop, so this is the one route with no reader left to lose.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .lp__foot {
+  display: none;
+}
+
+
+/* ==========================================================================
+   THE SHEET
+
+   Structure lives in `mobile.css` (`.mobile-frame__sheet` — absolute, inset 0,
+   above the tab bar). This is its appearance and its pointer behaviour.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   THE EMPTY HOST MUST NOT EAT TAPS.
+
+   `.mobile-frame__sheet` covers the whole frame at `z-index: 30`, and the host
+   div inside it is always mounted so a portal has somewhere to land. Left
+   alone that is an invisible pane over the entire app: every tap on the tab
+   bar and every row press would land on nothing, and the app would read as
+   frozen while looking perfectly correct.
+
+   `pointer-events: none` on the host, `auto` on what is portalled in, is the
+   whole fix. It is stated HERE rather than in `mobile.css` because the
+   always-mounted host is this lane's decision, not the frame's.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .mobile-frame__sheet,
+.msheet-host {
+  pointer-events: none;
+}
+
+.msheet-host > * {
+  pointer-events: auto;
+}
+
+/* The scrim. It covers the TAB BAR too — a sheet that stopped at the chrome
+   would read as a panel, and `aria-modal` on it would be a lie. */
+.msheet {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.32);
+  animation: msheet-fade var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+/* Bottom-anchored, and capped so the screen underneath stays visible at the
+   top. That strip of context is the difference between a sheet and a
+   navigation: it is what says "this is over your place, not instead of it". */
+.msheet__panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* A FLOOR AS WELL AS A CAP. Sized to content alone, a thread with two
+     messages gave the composer ~30% of the screen and cut "…reference a
+     skill" through the descenders. The aux column it replaces is a READING
+     surface; a floor is what keeps it one when the content is short. */
+  height: 72%;
+  max-height: 88%;
+  /* KINETIC GLASS (Master Spec §6). The raised surface is translucent card
+     over a live blur, the same 92% + 12px recipe `shell/palette.css .pal`
+     ships — one glass, not two. Colour resolves through the token and the mix,
+     never a literal (§14). `-webkit-backdrop-filter` first, because the phone
+     this shell exists for is most often a WebKit. */
+  background: color-mix(in srgb, var(--pn-card) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--pn-line);
+  /* 28px is the spec's number for the sheet's top corners. The radius scale
+     tops out at --pn-r-lg (14px) and minting a token for one surface would be
+     a second scale, so the measured literal stays local — same D5 treatment
+     as the palette's 12px. */
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  box-shadow: var(--pn-sh-pop);
+  padding-bottom: var(--mobile-safe-bottom, 0px);
+  /* The entrance is the spec's 220ms slide-up. The duration ramp stops at
+     --pn-dur-base (180ms) and this surface travels the whole frame height, so
+     it is given the spec's own literal rather than a token that means
+     something faster. Reduced motion kills it below, end state kept. */
+  animation: msheet-rise 220ms var(--pn-ease-out);
+}
+
+/* THE VARIANT THAT GIVES UP THE STRIP, for the surfaces that carry a composer.
+   `MobileSheet.size` explains WHEN a host should ask for it; this is what it
+   costs.
+
+   IT INHERITS THE KEYBOARD SHRINK RATHER THAN RE-DERIVING IT, and the chain is
+   worth stating because `100%` is only correct if every link holds: the frame
+   is `calc(100dvh - var(--mobile-keyboard-inset))` and `position: relative`
+   (`mobile.css:95`), `.mobile-frame__sheet` is `inset: 0` against it
+   (`mobile.css:184`), and `.msheet` is `inset: 0` again against that. So this
+   100% is 100% of the part of the screen the keyboard is NOT sitting on,
+   already measured, with no second copy of the arithmetic to fall out of step.
+   `100dvh` here instead would have been the whole screen — and the composer
+   would have gone under the keyboard on precisely the surface this variant
+   exists to serve.
+
+   The top border and radius go with the strip. They drew this surface's edge
+   against the screen behind it; at full height there is no screen visible
+   behind it to draw an edge against, and a rounded corner sitting on the
+   frame's own top edge reads as a rendering fault rather than as a lifted
+   surface. The grabber, the title and the ✕ are what still say "sheet". */
+.msheet__panel[data-size='full'] {
+  height: 100%;
+  max-height: 100%;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* THE HOME-INDICATOR INSET IS FOR THE HOME INDICATOR, and while the keyboard is
+   up there is no home indicator to clear — the keyboard is drawn over it. This
+   is the same fact `.mobile-frame__tabbar` already zeroes for itself
+   (`mobile.css:147`), stated at the other surface that pads against the same
+   token. Left standing it is ~34px of blank paper between a composer's foot row
+   and the keyboard, on the one screen state where vertical room is scarcest —
+   and it is the full-height sheet, which has just spent the strip to buy that
+   room, that pays for it most visibly.
+
+   Keyed off `data-keyboard`, the marker attribute, NOT off the inline custom
+   property: a `[style*=…]` substring match would stop matching the first time
+   the number was formatted differently, and would do it silently. */
+.mobile-frame[data-keyboard='up'] .msheet__panel {
+  padding-bottom: 0;
+}
+
+.msheet__head {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  /* The top padding carries the grabber, which is absolutely placed so it
+     centres on the PANEL rather than on the space left over by the title. */
+  padding: 18px var(--pn-space-3) var(--pn-space-2) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+/* The drag affordance: a 36x4 hairline pill (Master Spec §6 numbers), drawn in
+   the hairline ink so it reads as furniture rather than as a control — the ✕
+   beside it is the real exit. */
+.msheet__grip {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 4px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-line-2);
+}
+
+.msheet__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+
+/* 44px, because this is the sheet's only guaranteed exit. The glyph stays
+   small; the TARGET is what has to be thumb-sized, and those are different
+   numbers — a 12px ✕ centred in 44px of button is correct. */
+.msheet__close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -10px -6px -10px 0;
+  appearance: none;
+  border: none;
+  background: none;
+  border-radius: var(--pn-r-md);
+  color: var(--pn-ink-3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.msheet__close:active {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+
+.msheet__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.msheet__body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   WHAT THE SHEET INHERITED FROM A DESKTOP THIRD COLUMN
+
+   `.ev-aux` was designed as a ~380px column on a pointer device, and the sheet
+   now renders it under a thumb. Its two navigation controls came across at
+   desktop density: the Connections view switch is `padding: 3px 10px` at 11px,
+   about 22px tall (`panels.css:886`), and every parent, child and peer is a
+   `.kit-chip` at `padding: 2px 8px`, about 20px (`kit.css:79`). Both sit
+   comfortably inside the frame and both are half the floor — on screen is not
+   the same as reachable, and for the controls that ARE the Connections tab the
+   difference is the whole tab.
+
+   PER NAMED CLASS AND ROOTED AT `.msheet`, per CONTRACT.md §6. Not
+   `button { min-height: 44px }`: the sheet is full of desktop-shared dense
+   components and a blanket rule inflates every one of them. Not an `::after`
+   hit area either — the mobile audit measures the element's OWN
+   `getBoundingClientRect()`, so a pseudo-element scores as fixed while the
+   thumb still misses.
+
+   `.kit-chip` is always a `<button>` (`kit/Chip.tsx:24`), so nothing inert is
+   being padded out here to look tappable.
+
+   The floor goes on the SMALLER side, which for both of these is the height;
+   the inline padding grows with it so that a 44px-tall control does not read
+   as a letterbox around 11px of text. */
+.cv2-root[data-shell='mobile'] .msheet .kit-chip {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+.cv2-root[data-shell='mobile'] .msheet .pn-viewswitch__opt {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+@keyframes msheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes msheet-rise {
+  from { transform: translateY(12%); }
+  to { transform: translateY(0); }
+}
+
+/* §  A sheet that SLIDES is telling you where it came from, and a viewer who
+   has asked for less motion still needs that answer — so the surface still
+   appears, it just stops travelling to get there. */
+@media (prefers-reduced-motion: reduce) {
+  .msheet,
+  .msheet__panel {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   THE FLOATING CREATE BUTTON, AND THE ROOM THE LIST RESERVES FOR IT
+
+   Owner answers A–D (2026-08-19). `EntityView` decides WHETHER it renders
+   (registry data — a kind with no wired create draws no FAB at all, absent
+   rather than inert); this decides where it sits and how big it is.
+
+   SCOPED `[data-shell='mobile']` LIKE EVERY RULE IN THIS FILE, so it is dead
+   on the desktop by construction rather than by a selector somebody has to
+   keep correct. `EntityView`'s own `oneSurface` guard means the element is not
+   even in the desktop DOM; this is the second half of the same statement.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   THE RESERVE IS A FRAME TOKEN, declared in `mobile.css` beside the other
+   chrome floors, because THREE regions compose against it and none of them
+   owns it: the list's bottom padding (below), this button's own offset, and
+   the frame's notice host. Only the button's SIZE is local — nothing else in
+   the frame needs to know how big it is, only how much room to leave.
+
+   Two hand-typed numbers is how a "fixed" overlap comes back the first time
+   one of them is nudged, which is the failure §7.3 already wrote this token
+   arrangement to prevent for the tab bar.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] {
+  --mobile-fab-size: 56px;
+}
+
+/* THE LAST ROW MUST NOT BE TRAPPED UNDER IT (answer D). A pinned control over
+   a scrolling list eats the final row unless the list ends above it, and no
+   metric in this program can see that: the row is present, laid out and
+   measurable, it is simply covered. */
+.cv2-root[data-shell='mobile'] .ev-list .lp__body {
+  padding-bottom: var(--mobile-fab-reserve);
+}
+
+/* THE COUNT LINE IS THE PIECE THE BODY'S RESERVE DOES NOT COVER, and it took a
+   measurement to see: `.lp__foot` sits BELOW `.lp__body`, so the body's bottom
+   padding pushes the rows clear and leaves the foot exactly where it was —
+   spanning the full width, 29px tall, with the button sitting on its right end.
+   It happens not to collide with today's fixture (the string ends at 272px and
+   the FAB starts at 322), which is precisely the kind of pass that stops being
+   true on somebody else's data: a longer kind label or a five-digit count runs
+   straight under it. The inline reserve makes the clearance structural rather
+   than lucky. */
+.cv2-root[data-shell='mobile'] .ev-list .lp__foot {
+  padding-inline-end: calc(var(--mobile-fab-size) + var(--pn-space-3) * 2);
+}
+
+.cv2-root[data-shell='mobile'] .ev-fab {
+  /* ABSOLUTE AGAINST `.ev-root`, NOT FIXED. `position: fixed` on this surface
+     is measured against the VIEWPORT, which is not the frame: the frame is
+     shortened by the soft-keyboard inset, so a fixed FAB stays put while the
+     screen it belongs to shrinks — and lands under the keyboard. The view root
+     is already the containing block the launch sheet and the edit dialog use
+     for exactly this reason. */
+  position: absolute;
+  inset-block-end: calc(var(--mobile-safe-bottom, 0px) + var(--pn-space-3));
+  inset-inline-end: var(--pn-space-3);
+  z-index: 15;
+
+  /* 56px on both sides — comfortably over the 44px floor, and REAL geometry.
+     No `::after` hit area anywhere near this control: the audit measures
+     `getBoundingClientRect()` OF THE ELEMENT, so a pseudo-element would score
+     as fixed while the thumb still missed. */
+  inline-size: var(--mobile-fab-size);
+  block-size: var(--mobile-fab-size);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  padding: 0;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-h3);
+  line-height: 1;
+  box-shadow: var(--pn-sh-pop);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform var(--pn-dur-fast) var(--pn-ease-standard),
+    background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+/* The pressed state wears the kit grammar's own brand-press ink
+   (`kit.css .k-btn--brand:active`), so the one primary verb on the phone
+   answers a press exactly as every Run/Launch verb on the desktop does —
+   same mix, same tokens, plus the touch-scale the desktop has no thumb for. */
+.cv2-root[data-shell='mobile'] .ev-fab:active {
+  transform: scale(0.94);
+  background: color-mix(in srgb, var(--pn-brand-2) 88%, var(--pn-ink));
+}
+
+.cv2-root[data-shell='mobile'] .ev-fab:focus-visible {
+  outline: 2px solid var(--pn-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root[data-shell='mobile'] .ev-fab {
+    transition: none;
+  }
+}
+
+
+/* ==========================================================================
+   9. THE LIST'S TOP CHROME — FIVE BANDS INTO TWO
+
+   MEASURED, NOT ESTIMATED. At 390x844 the entity list spent 366px above its
+   first row and 478px on the rows themselves: 43.4% of the screen was
+   apparatus. Five stacked bands, each individually defensible:
+
+     .lp__selector   53px   [◫ Tasks ▾] … 662
+     .lp__actions    55px   the New-task band
+     .lp__searchrow  44px   ⌕ Search tasks…
+     .lp__tierrow    50px   To Do / In Progress / Done / Cancelled
+     .lp__filterbar 101px   filter · people · collections · ↓ sort
+     ────────────────────
+                    366px
+
+   Every one of them earned its height on a 1440px column where 366px is a
+   quarter of the chrome and nobody notices. Stacked on a phone they are the
+   screen, and the list — the thing the viewer opened — is what is left over.
+
+   THE OWNER'S ARRANGEMENT (2026-08-19), and this file BUILDS it:
+
+     [☰]  TM8                    [○]   53px   the frame's header, untouched
+     [◫ Tasks ▾]  [⌕ Search…]    48px   two bands merged onto one row
+       ○     ◐     ✓     ⊘       48px   the same four tabs, as marks
+     ────────────────────────
+                               ~149px
+
+   WHERE THE MISSING THREE WENT, because nothing here is deleted:
+     - the kind TOTAL (`662`) → the drawer, beside the kind it counts;
+     - the New-task band → the floating ＋, which has been the phone's create
+       affordance since the drawer landed and made this band its second copy;
+     - the four narrowing verbs → the floating cluster beside it, each opening
+       its own bottom sheet. `.lp__filterbar` was 101px of permanent chrome for
+       four controls used once a session.
+
+   HIDDEN, NOT UNRENDERED. `EntityListPanel` is one component on nineteen kinds
+   and two shells; a phone-shaped DOM fork inside it is how the desktop list
+   acquires a second arrangement nobody is watching. The bands stay in the tree
+   with their desktop rules intact — the phone simply does not draw them, and
+   the controls that matter are re-hosted where a thumb can reach them.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   9a. THE PANEL BECOMES A GRID, so two bands can share one row
+
+   A flex COLUMN can only stack; putting the kind cell and the search field
+   side by side means either a new wrapper element in the shared component (a
+   DOM fork, see above) or a container that can place its existing children.
+   Grid places them, and it places them BY CLASS: every band is optional on
+   some kind or some mode — a board has no tier row, a host-owned selector has
+   no selector — and explicit placement is indifferent to which of them turn up.
+   Auto-placement is not: one absent band and everything below it shifts a row.
+
+   `minmax(0, 1fr)` on the search column, never `1fr`: a grid item's automatic
+   minimum is its CONTENT, so a long placeholder would push the track wider
+   than the panel and take the row with it.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  /* Rows 1-2 are the chrome, 3 is the lens note when a lens is on, 4 is the
+     list, 5 the (hidden) footer. `1fr` on the body is what makes the list the
+     one thing that grows — and `min-height: 0` inside it is what lets it
+     scroll rather than stretch its track. */
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  align-content: start;
+}
+
+.cv2-root[data-shell='mobile'] .lp .lp__selector {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.cv2-root[data-shell='mobile'] .lp .lp__searchrow {
+  grid-row: 1;
+  grid-column: 2;
+}
+
+.cv2-root[data-shell='mobile'] .lp .lp__tierrow {
+  grid-row: 2;
+  grid-column: 1 / -1;
+}
+
+.cv2-root[data-shell='mobile'] .lp .lp__lensnote {
+  grid-row: 3;
+  grid-column: 1 / -1;
+}
+
+.cv2-root[data-shell='mobile'] .lp .lp__body {
+  grid-row: 4;
+  grid-column: 1 / -1;
+  min-height: 0;
+}
+
+.cv2-root[data-shell='mobile'] .lp .lp__foot {
+  grid-row: 5;
+  grid-column: 1 / -1;
+}
+
+/* --------------------------------------------------------------------------
+   9b. THE THREE BANDS THAT LEAVE THE CHROME
+
+   `display: none` — a grid item with no box occupies no track, so these cost
+   nothing and stay in the tree for the desktop. Each has somewhere else to be
+   on this shell; a control with nowhere else to be is not hidden here.
+   -------------------------------------------------------------------------- */
+
+/* The New-task band. The floating ＋ is this verb, on the same `createFlow`
+   handle, permanently in reach of a thumb — so this band is a second copy of
+   a control the phone already has, charged 55px. */
+.cv2-root[data-shell='mobile'] .lp__actions {
+  display: none;
+}
+
+/* filter · people · collections · sort. Their triggers are `.ev-narrow` and
+   their BODIES are the same menus this bar has always rendered, portalled into
+   a bottom sheet — which is why the bar may be `display: none` at all: a
+   portal escapes a hidden subtree, so the sheet still mounts from inside it. */
+.cv2-root[data-shell='mobile'] .lp__filterbar {
+  display: none;
+}
+
+/* The kind total (`662`). It moves to the drawer, next to the kind whose count
+   it is, where it is one of a column of counts and can be compared. Wedged
+   into the corner of a 390px bar it was a number with nothing beside it. */
+.cv2-root[data-shell='mobile'] .lp__total {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   9c. ROW 2 — [◫ Tasks ▾] and the search field
+
+   48px, and BOTH halves reach it by real geometry: a 44px minimum plus 4px of
+   surrounding space, never a pseudo-element hit area. The audit measures
+   `getBoundingClientRect()` of the ELEMENT, so a `::after` would score as
+   fixed while the thumb still missed.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp .lp__selector {
+  min-height: 48px;
+  padding-block: 0;
+  padding-inline: var(--pn-space-2);
+  align-items: center;
+  /* 9a's own reason: this cell is one control now, and a wrap would put the
+     kind menu's trigger on a second line inside a 48px track. */
+  flex-wrap: nowrap;
+  /* The separator under the chrome belongs to the LAST band, and this is no
+     longer it: a border here would rule under column 1 only and stop halfway
+     across the screen. `.lp__tierrow` carries it. */
+  border-bottom: none;
+}
+
+.cv2-root[data-shell='mobile'] .lp .lp__searchrow {
+  /* No vertical margin: the 48px track IS the band, and the field is centred in
+     it by `align-self` rather than by margins that would push the track past 48.
+     Only the trailing inset survives, so the field stops where the gutter does. */
+  margin: 0 var(--pn-space-2) 0 0;
+  min-height: var(--mobile-touch-min);
+  align-self: center;
+}
+
+/* THE FIELD ITSELF, NOT ONLY THE BOX AROUND IT.
+   Measured before this rule: `.lp__searchrow` was already 44px and the `input`
+   inside it was 244x23 — the ONE remaining under-floor target on the Tasks
+   screen. A padded parent is not a hit area; a tap 8px above the text lands on
+   the div, and the input is the control. 44 on the input makes the row 46px
+   outer, which still fits inside the 48px track. */
+.cv2-root[data-shell='mobile'] .lp .lp__searchinput {
+  min-block-size: var(--mobile-touch-min);
+}
+
+/* The kind menu hangs off the selector, which was 36px when `top: 34px` was
+   written and is 48px now — the menu would have overlapped its own trigger by
+   14px. `top: 100%` is the same intent with no number to keep true. */
+.cv2-root[data-shell='mobile'] .lp .lp__kindmenu {
+  top: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   9d. ROW 3 — the four lifecycle marks
+
+   ONE ROW, FOUR EQUAL SHARES, NO SCROLLER. `To Do 266 · In Progress 105 ·
+   Done 273 · Cancelled 13` is ~430px of text on a 390px screen, so the row was
+   `overflow-x: auto` and the fourth tab was off-screen: a partition of a
+   single axis where one of the four positions could not be seen without
+   discovering that a band scrolls. As marks they are 97px each and all four
+   are simply there.
+
+   `flex: 1 1 0` with a 0 BASIS, not `flex: 1`: an auto basis distributes the
+   REMAINDER after content, and four identical glyphs happen to have identical
+   content — so it would look right here and stop being equal the moment a mark
+   changes. Equal by construction.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp .lp__tierrow {
+  min-block-size: 48px;
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+  /* AN INSET SHADOW, NOT A BORDER. This package has no `border-box` reset, so a
+     1px border ADDS to the 48px floor and the band measures 49 — a pixel of the
+     budget this lane exists to spend, paid for a hairline. A shadow draws the
+     same hairline and costs no layout. */
+  box-shadow: inset 0 -1px 0 0 var(--pn-line);
+}
+
+.cv2-root[data-shell='mobile'] .lp .lp__tierrow .lp__tab {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  min-block-size: 48px;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* THE MARK IS 20px IN A 48px TARGET. The target is the button — real padding
+   and a real `min-block-size` above — and the glyph is the ink inside it. */
+.cv2-root[data-shell='mobile'] .lp .lp__tab-glyph {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+/* THE ACTIVE POSITION IS MARKED TWICE, and it has to be. Colour alone fails a
+   viewer who cannot separate these two inks; the underline is the redundant
+   channel, and it is the bottom edge of the row it sits on rather than a
+   floating rule, so it reads as "this is where you are on the axis". */
+.cv2-root[data-shell='mobile'] .lp .lp__tierrow .lp__tab--active {
+  color: var(--pn-brand);
+  box-shadow: inset 0 -2px 0 0 var(--pn-brand);
+}
+
+/* --------------------------------------------------------------------------
+   9e. THE NARROWING CLUSTER — where `.lp__filterbar` went
+
+   BESIDE THE ＋, NOT ABOVE IT. Stacked, the two controls would need ~124px of
+   reserved scroll padding under the last row instead of 72px, and the reserve
+   is paid on every frame whether or not anybody is filtering. Side by side
+   they share the one reserve that is already there.
+
+   48px against the ＋'s 56px: over the touch floor with room to spare, and
+   visibly the SECONDARY of the two. Two 56px circles side by side would read
+   as two equal primary verbs.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .ev-narrow {
+  position: absolute;
+  inset-block-end: calc(var(--mobile-safe-bottom, 0px) + var(--pn-space-3));
+  inset-inline-end: calc(
+    var(--pn-space-3) + var(--mobile-fab-size) + var(--pn-space-2)
+  );
+  z-index: 15;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root[data-shell='mobile'] .ev-narrow__toggle {
+  inline-size: 48px;
+  block-size: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--pn-line);
+  padding: 0;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  box-shadow: var(--pn-sh-pop);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.cv2-root[data-shell='mobile'] .ev-narrow__toggle svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.cv2-root[data-shell='mobile'] .ev-narrow__toggle:focus-visible {
+  outline: 2px solid var(--pn-ink);
+  outline-offset: 2px;
+}
+
+/* The dial rises from the toggle. It is only in the DOM while it is open — a
+   collapsed dial that is merely transparent still eats the taps meant for the
+   rows underneath it. */
+.cv2-root[data-shell='mobile'] .ev-narrow__dial {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root[data-shell='mobile'] .ev-narrow__item {
+  min-block-size: var(--mobile-touch-min);
+  display: inline-flex;
+  align-items: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--pn-line);
+  padding-inline: var(--pn-space-3);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--pn-sh-pop);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.cv2-root[data-shell='mobile'] .ev-narrow__item:focus-visible {
+  outline: 2px solid var(--pn-ink);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   9f. THE MENU BODY, IN A SHEET
+
+   `.lp__filtermenu` cannot be reused as the sheet's container: it is
+   `position: absolute` at 176px wide with a 240px scroll cap, sized to HANG
+   off a 32px chip row. Inside a sheet that is a narrow floating card pinned to
+   the top-left of a full-width surface. Same body, own container.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp__sheetmenu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-block: var(--pn-space-2);
+}
+
+.cv2-root[data-shell='mobile'] .lp__sheetmenu .lp__kindopt {
+  min-block-size: var(--mobile-touch-min);
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  inline-size: 100%;
+  padding-inline: var(--pn-space-3);
+  text-align: start;
+}
+
+.cv2-root[data-shell='mobile'] .lp__sheetmenu .lp__filtergroup {
+  padding-inline: var(--pn-space-3);
+  padding-block: var(--pn-space-2) 2px;
+}
+
+.cv2-root[data-shell='mobile'] .lp__sheetmenu .lp__filterempty {
+  padding-inline: var(--pn-space-3);
+}
+
+/* ==========================================================================
+   10. THE BOARD ON A PHONE — COLUMNS SNAP, ONE PER FLICK
+
+   Master Spec §6: horizontal snap-scroll columns. The board's scroller class
+   (`.lp__board-cols`) and its columns live in `panels.css`, WHICH IS A SWEPT
+   FILE THIS WAVE MAY NOT EDIT — so the snap is delivered here, restated under
+   this file's own `[data-shell='mobile']` scope exactly as sections 1-9
+   restate every other desktop rule. Higher specificity, desktop untouched,
+   and reverting the phone behaviour is deleting this block.
+
+   `x mandatory`, NOT `both`: the scroller pans both axes (`overflow: auto` —
+   columns run off the bottom as well as the right), and snapping the Y axis
+   would fight the reader mid-column. Only the horizontal axis has positions
+   worth snapping to — a 236px column on a 390px screen is most of the screen,
+   and a flick should land ON a column, not between two.
+
+   `scroll-padding-inline-start` mirrors the scroller's own 8px gutter
+   (`panels.css .lp__board-cols` padding) so a snapped column sits at the
+   visible edge rather than 8px under it. Restated as the same number the
+   desktop rule ships; if that gutter moves, this is the one line to follow it.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp__board-cols {
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline-start: 8px;
+}
+
+.cv2-root[data-shell='mobile'] .lp__board-col {
+  scroll-snap-align: start;
+}

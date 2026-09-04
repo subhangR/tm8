@@ -19,14 +19,32 @@
  * or declare it body-less; an omission here is a to-do, not a decision.
  */
 import {
+  ContainersAttachInputSchema,
+  ContainersAttentionInputSchema,
+  ContainersBrowserEndpointInputSchema,
+  ContainersComputerInputSchema,
+  ContainersCreateInputSchema,
+  ContainersDestroyInputSchema,
+  ContainersExposeInputSchema,
+  ContainersForkInputSchema,
+  ContainersLifecycleInputSchema,
+  ContainersPolicySetInputSchema,
+  ContainersPoolsSetInputSchema,
+  ContainersRunInputSchema,
+  ContainersSnapshotInputSchema,
+  ContainersTerminalStartInputSchema,
+  ContainersUnexposeInputSchema,
+  ContainersUpdateInputSchema,
   AddMessageAttachmentsInputSchema,
   ArtifactsCreateInputSchema,
   ArtifactsPreviewStartInputSchema,
   ArtifactsPublishInputSchema,
   ArtifactsRestoreInputSchema,
   AuthClaimInputSchema,
+  AuthInviteSignupInputSchema,
   AuthLoginInputSchema,
   AuthLogoutInputSchema,
+  AuthPasswordChangeInputSchema,
   AuthSignupInputSchema,
   CollectionAddItemInputSchema,
   CollectionQuerySchema,
@@ -86,11 +104,13 @@ import {
   RemoveMessageAttachmentsInputSchema,
   SavedViewInputSchema,
   SendHandoffInputSchema,
-  StartChatThreadInputSchema,
+  StartChatInputSchema,
   ResolveEntityAttentionInputSchema,
   ServerConnectionCreateInputSchema,
   ServerConnectionDeleteInputSchema,
   TaskAxisInputSchema,
+  TaskWorkflowInputSchema,
+  WorkflowInputSchema,
   TrackingPrMergeInputSchema,
   TrackingRefreshInputSchema,
   InviteRoleSchema,
@@ -145,10 +165,16 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.logout': AuthLogoutInputSchema,
   // auth.claim.status takes no input; the catalog marks it a read.
   'auth.claim': AuthClaimInputSchema,
+  // auth.claim.reissue takes no request payload; the handler admits only the
+  // loopback auto-owner and reads nothing from the body.
+  'auth.password.change': AuthPasswordChangeInputSchema,
   // Claim-free, so strictness is the only control on this body: the schema has
   // exactly one member and `.strict()`, which turns a stray actorId into a 400
   // instead of a field nobody is in a position to check.
   'auth.invite.resolve': ResolveInviteInputSchema,
+  // Claim-free like resolve; `.strict()` is again the only control, refusing a
+  // stray actorId/clientMutationId this handler has no identity to check.
+  'auth.invite.signup': AuthInviteSignupInputSchema,
 
   // credentials (Tier B). All three command bodies are BOUND rather than
   // enumerated as unbound gaps, because strictness here is a security control
@@ -170,6 +196,10 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaces.taskAxes.create': TaskAxisInputSchema,
   'spaces.taskAxes.update': TaskAxisInputSchema,
   'spaces.taskAxes.delete': RequiredCommandContextSchema,
+  'spaces.taskWorkflows.upsert': TaskWorkflowInputSchema,
+  'spaces.taskWorkflows.delete': RequiredCommandContextSchema,
+  'spaces.workflows.upsert': WorkflowInputSchema,
+  'spaces.workflows.delete': RequiredCommandContextSchema,
   'spaces.members.updateRole': UpdateMemberRoleInputSchema,
   'spaces.invites.create': InviteCreateInputSchema,
   'spaces.invites.revoke': RequiredCommandContextSchema,
@@ -220,7 +250,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'messages.attachments.remove': RemoveMessageAttachmentsInputSchema,
   'handoffs.send': SendHandoffInputSchema,
   'handoffs.withdraw': WithdrawHandoffInputSchema,
-  'chat.threads.start': StartChatThreadInputSchema,
+  'chat.start': StartChatInputSchema,
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,
@@ -285,6 +315,34 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // custom entity kinds (T-L4)
   'entityKinds.create': EntityKindCreateInputSchema,
   'entityKinds.update': EntityKindUpdateInputSchema,
+
+  // containers (TM8-CONTAINERS-DESIGN §4.2)
+  //
+  // BOUND EVEN WHERE THE OPERATION IS NOT BUILT YET, and that ordering is the
+  // point. Validation runs AFTER the registry lookup (see the header), so an
+  // unbuilt op still answers 501 rather than 400 — but the moment its runtime
+  // lands, the shape is already enforced. Binding late is how `execution.resume`
+  // shipped with no server-side validation at all.
+  'containers.create': ContainersCreateInputSchema,
+  // The four share one shape; `destroy` adds force/keepSnapshot.
+  'containers.start': ContainersLifecycleInputSchema,
+  'containers.stop': ContainersLifecycleInputSchema,
+  'containers.pause': ContainersLifecycleInputSchema,
+  'containers.resume': ContainersLifecycleInputSchema,
+  'containers.destroy': ContainersDestroyInputSchema,
+  'containers.update': ContainersUpdateInputSchema,
+  'containers.policy.set': ContainersPolicySetInputSchema,
+  'containers.run': ContainersRunInputSchema,
+  'containers.terminal.start': ContainersTerminalStartInputSchema,
+  'containers.attach': ContainersAttachInputSchema,
+  'containers.computer': ContainersComputerInputSchema,
+  'containers.browser.endpoint': ContainersBrowserEndpointInputSchema,
+  'containers.expose': ContainersExposeInputSchema,
+  'containers.unexpose': ContainersUnexposeInputSchema,
+  'containers.snapshot': ContainersSnapshotInputSchema,
+  'containers.fork': ContainersForkInputSchema,
+  'containers.attention': ContainersAttentionInputSchema,
+  'containers.pools.set': ContainersPoolsSetInputSchema,
 };
 
 /**
@@ -319,4 +377,16 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   'interactionProfiles.retire',
   'teamMembers.interactionProfile.setDefault',
   'spaces.interactionProfile.setDefault',
+  // 141: GENUINELY body-less (the first clause above), not a gap. reissue takes
+  // no input — the loopback auto-owner gate and the node's unclaimed state are
+  // the whole of its authorization — and it is auth.*, which refuses
+  // actorId/clientMutationId, so there is no CommandContext to bind either. A
+  // strict empty schema would only break the no-body POST the CLI sends.
+  'auth.claim.reissue',
+  // containers (177): the ONE container command with no zod body, and it is
+  // the first clause above rather than a gap. `containers.files.put` carries a
+  // TAR STREAM, not JSON — its request body is bytes, and a strict object
+  // schema would refuse every legitimate upload. Its parameters travel in the
+  // path and the query.
+  'containers.files.put',
 ];

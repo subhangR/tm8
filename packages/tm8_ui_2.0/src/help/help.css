@@ -1,0 +1,872 @@
+/* Help — Classical / Letterpress field guide. App tokens only; no raw hex. */
+
+.hlp-root {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  color: var(--pn-ink);
+  background: var(--pn-paper);
+}
+
+.hlp-root--stacked { flex-direction: column; }
+
+.hlp-contents {
+  flex: 0 0 var(--hlp-contents, 376px);
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--pn-paper);
+  border-right: 1px solid var(--pn-line);
+  scrollbar-color: var(--pn-line-2) transparent;
+}
+
+.hlp-root--stacked > .hlp-contents {
+  flex: 1;
+  border-right: 0;
+}
+
+.hlp-contents__body {
+  min-height: 100%;
+  padding: 26px 20px 40px;
+}
+
+.hlp-masthead {
+  position: relative;
+  padding: 0 2px 24px;
+  border-bottom: 1px solid var(--pn-line-2);
+}
+
+.hlp-masthead::after {
+  content: none;
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  padding: 0 8px;
+  color: var(--pn-brand);
+  background: var(--pn-surface);
+  font-size: 8px;
+  transform: translateX(-50%);
+}
+
+.hlp-masthead__kicker,
+.hlp-reader__crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: .13em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.hlp-masthead__kicker span:nth-child(2),
+.hlp-reader__crumb span:nth-child(2) { display: none; }
+
+.hlp-masthead__title {
+  margin: 12px 0 6px;
+  color: var(--pn-ink);
+  font-family: var(--pn-prose);
+  font-size: 42px;
+  font-weight: 400;
+  letter-spacing: -.035em;
+  line-height: .98;
+}
+
+.hlp-masthead__lede {
+  max-width: 31ch;
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-prose);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.hlp-masthead__measure {
+  display: none;
+  margin: 14px 0 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.hlp-masthead__measure span { padding: 0 4px; color: var(--pn-brand); }
+
+.hlp-map { margin: 24px 2px 30px; }
+
+.hlp-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.hlp-rule::before,
+.hlp-rule::after { content: ''; flex: 1; height: 1px; background: var(--pn-line); }
+
+.hlp-map__list {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.hlp-map__item {
+  display: grid;
+  place-items: center;
+  min-height: 24px;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line);
+  border-radius: 2px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hlp-map__item--open { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+.hlp-library { display: flex; flex-direction: column; gap: 34px; }
+
+/* --- Search ---------------------------------------------------------------
+   The shelf is a 55-page reference as well as a reading order. Search sits
+   directly above that reference so a reader can ask in product language
+   without losing the chapter structure in the result. */
+.hlp-search {
+  margin: 28px 2px 30px;
+  padding: 14px;
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-card);
+}
+
+.hlp-search__heading {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 9px;
+}
+
+.hlp-search__heading label {
+  /* T9 LAW RECONCILIATION (rebase of #544): a search label is a UI LABEL —
+     ui face at the title token, not serif at a raw px size. */
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+}
+
+.hlp-search__heading span {
+  /* T9 LAW: 'N plates found' is a status SENTENCE (the count rides inside
+     it) — ui face at the label token; 8.5px mono read as debug output. */
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+}
+
+.hlp-search__control {
+  display: flex;
+  min-height: 42px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 4px;
+  background: var(--pn-paper);
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out), box-shadow var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-search__control:focus-within {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
+
+.hlp-search__control input {
+  min-width: 0;
+  flex: 1;
+  padding: 9px 11px;
+  color: var(--pn-ink);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.hlp-search__control input::placeholder { color: var(--pn-ink-4); }
+
+.hlp-search__control button,
+.hlp-search-empty button {
+  min-block-size: 40px;
+  padding: 0 11px;
+  color: var(--pn-brand);
+  border: 0;
+  background: transparent;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hlp-search__control button:focus-visible,
+.hlp-search-empty button:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
+
+.hlp-search-empty {
+  margin: 0 2px 30px;
+  padding: 22px 18px;
+  color: var(--pn-ink-3);
+  border: 1px dashed var(--pn-line-2);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.hlp-search-empty p {
+  margin: 0 0 5px;
+  color: var(--pn-ink);
+  font-family: var(--pn-prose);
+  font-size: 16px;
+}
+
+.hlp-search-empty span { display: block; font-size: 11px; line-height: 1.5; }
+.hlp-search-empty button { margin-top: 7px; }
+
+.hlp-chapter { scroll-margin-block: 20px; }
+
+.hlp-chapter__head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--pn-line-2);
+}
+
+.hlp-chapter__number {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-prose);
+  font-size: 18px;
+  font-style: italic;
+  line-height: 1;
+}
+
+.hlp-chapter__words { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+
+.hlp-chapter__eyebrow,
+.hlp-chapter__count {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.hlp-chapter__title {
+  margin: 0;
+  color: var(--pn-ink);
+  font-family: var(--pn-prose);
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -.015em;
+  line-height: 1.15;
+}
+
+.hlp-chapter__count { align-self: center; font-variant-numeric: tabular-nums; }
+
+.hlp-chapter__summary {
+  margin: 9px 0 12px 44px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-prose);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.hlp-list { display: flex; flex-direction: column; gap: 3px; list-style: none; margin: 0; padding: 0; }
+
+.hlp-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 18px;
+  gap: 9px;
+  align-items: start;
+  width: 100%;
+  min-block-size: 48px;
+  padding: 10px 9px;
+  color: var(--pn-ink);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-out), border-color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-row:hover { background: var(--pn-card); border-color: var(--pn-line); }
+.hlp-row--active { background: var(--pn-hover); border-color: var(--pn-line-2); }
+.hlp-row:focus-visible,
+.hlp-back:focus-visible,
+.hlp-step:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 2px; }
+
+.hlp-row__n {
+  padding-top: 2px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+}
+
+.cv2-root .hlp-row__mark { display: none; }
+.hlp-row--active .hlp-row__mark,
+.hlp-row--active .hlp-row__n,
+.hlp-row:hover .hlp-row__arrow { color: var(--pn-brand); }
+.hlp-row__text { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.hlp-row__title { font-family: var(--pn-ui); font-size: var(--pn-fs-body); font-weight: 600; line-height: 1.3; }
+.hlp-row__excerpt { display: -webkit-box; overflow: hidden; color: var(--pn-ink-2); font-family: var(--pn-ui); font-size: var(--pn-fs-sm); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.hlp-row__arrow { padding-top: 1px; color: var(--pn-ink-4); font-size: 13px; transition: color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out); }
+.hlp-row:hover .hlp-row__arrow { color: var(--pn-ink-2); }
+
+/* THE READER IS THE SCROLLER, not the plate. A frame sized to the pane scrolls
+   internally, which pins the header above it forever — two stacked headers and
+   a plate reading through a letterbox. Scrolling out here lets the header leave
+   with the rest of the document. `overscroll-behavior` keeps a plate's last
+   scroll from chaining out to the shell. */
+.hlp-reader {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  background: var(--pn-paper);
+  scrollbar-color: var(--pn-line-2) transparent;
+}
+
+.hlp-reader__head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 78px;
+  padding: 11px 18px 13px;
+  border-bottom: 1px solid var(--pn-line-2);
+  background: var(--pn-paper);
+  animation: hlp-arrive var(--pn-dur-slow) var(--pn-ease-out) both;
+}
+
+.hlp-reader__identity { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.hlp-reader__crumb { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.hlp-reader__title { overflow: hidden; margin: 1px 0 0; color: var(--pn-ink); font-family: var(--pn-prose); font-size: 21px; font-weight: 500; letter-spacing: -.015em; line-height: 1.2; white-space: nowrap; text-overflow: ellipsis; }
+.hlp-reader__progress { margin: 0; color: var(--pn-ink-3); font-family: var(--pn-mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.hlp-reader__steps { display: flex; flex: 0 0 auto; gap: 5px; }
+
+.hlp-step,
+.hlp-back {
+  display: inline-flex;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  align-items: center;
+  justify-content: center;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-paper);
+  font: inherit;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out), color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-step:hover:not(:disabled), .hlp-back:hover { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-hover); }
+.hlp-step:disabled { cursor: default; opacity: .38; }
+.hlp-back { gap: 5px; padding: 0 10px; }
+
+.hlp-progress-track { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; overflow: hidden; }
+.hlp-progress-track span { display: block; height: 100%; background: var(--pn-brand); transition: width var(--pn-dur-slow) var(--pn-ease-out); }
+/* `flex: 1 0 auto`, not `flex: 1`: the shorthand's `flex-basis: 0` would size
+   this to the pane and hand the plate a letterbox again. It grows to fill a
+   short plate and is its own height for a tall one. */
+.hlp-reader__body { display: flex; flex: 1 0 auto; min-height: 0; flex-direction: column; animation: hlp-page-in var(--pn-dur-base) var(--pn-ease-out) both; }
+.hlp-reader__body > * { flex: 1 0 auto; min-height: 0; }
+
+/* --- The plate ------------------------------------------------------------
+   The frame is the page: an artifact bundle is a whole document with its own
+   scroll, so it FILLS the reader and scrolls internally rather than growing the
+   pane. `border: 0` because the plate draws its own edges; a bordered frame
+   would double every plate's chrome. */
+.hlp-plate { display: flex; flex: 1 0 auto; min-height: 0; flex-direction: column; }
+
+/* BEFORE ITS HEIGHT IS KNOWN the frame fills the pane, so a plate never opens
+   as a sliver; once `data-measured` lands it is exactly its content's height
+   and the pane above scrolls it. `flex` must stop growing at that point or the
+   column would stretch it straight back to the pane. */
+.hlp-plate__frame {
+  display: block;
+  flex: 1 0 auto;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: var(--pn-paper);
+}
+
+.hlp-plate__frame[data-measured] { flex: 0 0 auto; }
+
+.hlp-plate__wait {
+  flex: 1;
+  margin: 0;
+  padding: 30px 24px;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+}
+
+.hlp-plate__colophon {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: baseline;
+  overflow: hidden;
+  margin: 0;
+  padding: 6px 14px;
+  color: var(--pn-ink-4);
+  border-top: 1px solid var(--pn-line-2);
+  background: var(--pn-paper);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+
+.hlp-plate__colophon span:nth-child(2) { color: var(--pn-brand); font-size: 7px; }
+.hlp-plate__colophon span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.hlp-plate__colophon code { font-family: inherit; font-size: inherit; }
+
+/* --- The home — the guide's master page -----------------------------------
+   A title spread, not a dashboard: centred hero answering "what is tm8", three
+   pillars, one verb, then the map. It fills the reader pane on a wide screen
+   and heads the single stacked surface on a phone. */
+.hlp-home {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 40px 40px 52px;
+  animation: hlp-page-in var(--pn-dur-base) var(--pn-ease-out) both;
+}
+
+.hlp-home__hero {
+  position: relative;
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--pn-line-2);
+  text-align: center;
+}
+
+.hlp-home__hero::after {
+  content: none;
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  padding: 0 10px;
+  color: var(--pn-brand);
+  background: var(--pn-paper);
+  font-size: 8px;
+  transform: translateX(-50%);
+}
+
+.hlp-home__kicker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: .14em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.hlp-home__kicker span:nth-child(even) { display: none; }
+
+.hlp-home__title {
+  margin: 18px 0 14px;
+  color: var(--pn-ink);
+  font-family: var(--pn-prose);
+  font-size: 46px;
+  font-weight: 400;
+  letter-spacing: -.035em;
+  line-height: .98;
+}
+
+.hlp-home__answer {
+  max-width: 34ch;
+  margin: 0 auto;
+  color: var(--pn-ink);
+  font-family: var(--pn-prose);
+  font-size: 21px;
+  font-style: italic;
+  line-height: 1.45;
+}
+
+.hlp-home__detail {
+  max-width: 58ch;
+  margin: 14px auto 0;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-prose);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.hlp-home__pillars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  list-style: none;
+  margin: 34px 0 0;
+  padding: 0;
+  background: var(--pn-line-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hlp-home__pillar { padding: 18px 18px 20px; background: var(--pn-paper); }
+
+.hlp-home__pillar h2 {
+  margin: 0 0 7px;
+  color: var(--pn-brand);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.hlp-home__pillar p {
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-prose);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.hlp-home__begin { display: flex; justify-content: center; margin: 30px 0 0; }
+
+.hlp-home__cta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 14px;
+  align-items: center;
+  min-block-size: 44px;
+  padding: 13px 20px;
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-paper);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-home__cta:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
+.hlp-home__cta:focus-visible,
+.hlp-card:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 2px; }
+.hlp-home__cta-verb { font-family: var(--pn-prose); font-size: 17px; font-weight: 500; letter-spacing: -.01em; }
+.hlp-home__cta-where { grid-row: 2; color: var(--pn-ink-3); font-family: var(--pn-caps); font-size: var(--pn-fs-fine); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.hlp-home__cta-arrow { grid-row: 1 / span 2; color: var(--pn-brand); font-size: 17px; transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
+.hlp-home__cta:hover .hlp-home__cta-arrow { color: var(--pn-brand-2); }
+
+.hlp-home__starts { margin: 38px 0 0; }
+
+.hlp-home__start-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hlp-start {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-block-size: 44px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-paper);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-start:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
+.hlp-start:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+.hlp-start__eyebrow {
+  color: var(--pn-brand);
+  font-family: var(--pn-caps);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.hlp-start__title {
+  margin-top: 5px;
+  font-family: var(--pn-prose);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -.015em;
+  line-height: 1.25;
+}
+
+.hlp-start__summary {
+  margin-top: 6px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-prose);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.hlp-start__foot {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 12px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hlp-start__foot span:last-child { color: var(--pn-brand); font-size: 13px; transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
+.hlp-start:hover .hlp-start__foot span:last-child { color: var(--pn-brand-2); }
+
+.hlp-home__map { margin: 38px 0 0; }
+
+.hlp-home__map-lede {
+  max-width: 52ch;
+  margin: 14px auto 20px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-prose);
+  font-size: 13.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.hlp-home__chapters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hlp-card {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-block-size: 44px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  position: relative;
+  padding: 14px 15px 12px;
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-paper);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out), background var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.hlp-card:hover:not(:disabled) { border-color: var(--pn-line-2); background: var(--pn-hover); }
+.hlp-card:disabled { cursor: default; opacity: .55; }
+
+.hlp-card__number {
+  position: absolute;
+  top: 10px;
+  right: 13px;
+  color: var(--pn-brand);
+  font-family: var(--pn-prose);
+  font-size: 21px;
+  font-style: italic;
+  line-height: 1;
+}
+
+.hlp-card__eyebrow {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.hlp-card__title {
+  padding-right: 30px;
+  font-family: var(--pn-prose);
+  font-size: 16.5px;
+  font-weight: 500;
+  letter-spacing: -.015em;
+  line-height: 1.2;
+}
+
+.hlp-card__summary {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-prose);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hlp-card__foot {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 9px;
+}
+
+.hlp-card__count {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.hlp-card__arrow { color: var(--pn-ink-4); font-size: 13px; transition: color var(--pn-dur-fast) var(--pn-ease-out), transform var(--pn-dur-fast) var(--pn-ease-out); }
+.hlp-card:hover:not(:disabled) .hlp-card__arrow { color: var(--pn-brand-2); }
+
+/* Stacked, the home heads the contents surface, whose body already pads. */
+.hlp-contents .hlp-home { max-width: none; padding: 6px 0 0; }
+.hlp-contents .hlp-home__hero::after { background: var(--pn-surface); }
+.hlp-contents .hlp-home__pillar { background: var(--pn-paper); }
+.hlp-contents .hlp-home__cta { background: var(--pn-paper); }
+.hlp-contents .hlp-card { background: var(--pn-paper); }
+.hlp-contents .hlp-start { background: var(--pn-paper); }
+.hlp-home + .hlp-search { margin-top: 36px; }
+
+.hlp-empty { max-width: 52ch; margin: 0; padding: 30px 24px; color: var(--pn-ink-3); font-family: var(--pn-prose); font-size: 14px; line-height: 1.6; }
+.hlp-empty code { color: var(--pn-ink-2); font-family: var(--pn-mono); font-size: .86em; }
+.hlp-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+.hlp-root--stacked .hlp-contents__body { padding: 24px 18px 44px; }
+.hlp-root--stacked .hlp-masthead__lede { max-width: 35ch; }
+.hlp-root--stacked .hlp-reader__head { align-items: flex-start; gap: 9px; min-height: 94px; padding: 8px 10px 12px; }
+.hlp-root--stacked .hlp-reader__identity { align-self: center; }
+.hlp-root--stacked .hlp-reader__title { max-width: 38vw; font-size: 16px; }
+.hlp-root--stacked .hlp-reader__crumb { max-width: 38vw; }
+.hlp-root--stacked .hlp-reader__steps { margin-left: auto; }
+
+/* Wide help already has the chapter library in its shelf. Repeating the
+   numbered map above it and the full map again on the home page makes the
+   navigation louder than the guide. The stacked surface keeps both because
+   it has no persistent shelf. */
+.hlp-root:not(.hlp-root--stacked) .hlp-map,
+.hlp-root:not(.hlp-root--stacked) .hlp-home__map,
+.hlp-root:not(.hlp-root--stacked) .hlp-chapter__summary,
+.hlp-root:not(.hlp-root--stacked) .hlp-chapter__count { display: none; }
+/* AND THE TRACK LIST HAS TO FOLLOW THE CELL THAT LEFT.
+   `.hlp-chapter__head` declares three explicit tracks (34px / minmax(0,1fr) /
+   auto) with a 10px gap, and the rule above removes the third item on this
+   surface. N explicit tracks always draw N-1 GAPS whether or not a track holds
+   anything — so the `auto` track collapsed to 0 and the 10px gap before it went
+   on rendering, leaving every chapter title stopping 10px short of its own
+   right edge. The `1fr` was resolving to W-54 instead of W-44.
+   This is the members-section grid trap in disguise: there the hidden cell
+   pushed a sibling into the wrong track and the symptom was a misplaced
+   control; here every cell is in the right place and the symptom is a phantom
+   gutter, which looks like nothing at all. Same cause, and the second form is
+   the one that survives review.
+   It hides four things and only THIS one is a grid child — `__summary` is a
+   sibling of `__head`, `__map` and `__home__map` are elsewhere — so exactly one
+   track list is restated. */
+.hlp-root:not(.hlp-root--stacked) .hlp-chapter__head {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+@keyframes hlp-arrive { from { opacity: .68; } to { opacity: 1; } }
+/* OPACITY ONLY. This used to lift 4px, which is a `transform` on an element
+   inside a scroll container — it made the plate a containing block, offset the
+   colophon past the pane's bottom edge, and clipped it by exactly those 4px in
+   any frame where the animation had not settled. A page arriving does not need
+   to move. */
+@keyframes hlp-page-in { from { opacity: .72; } to { opacity: 1; } }
+
+@media (max-width: 720px) {
+  .hlp-masthead__title { font-size: 38px; }
+  .hlp-chapter__summary { margin-left: 0; }
+  .hlp-home { padding: 34px 20px 48px; }
+  .hlp-contents .hlp-home { padding: 6px 0 0; }
+  .hlp-home__title { font-size: 42px; }
+  .hlp-home__answer { font-size: 18px; }
+  .hlp-home__start-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hlp-reader__head,
+  .hlp-reader__body,
+  .hlp-home { animation: none; }
+  .hlp-row,
+  .hlp-row__arrow,
+  .hlp-progress-track span,
+  .hlp-step,
+  .hlp-home__cta,
+  .hlp-home__cta-arrow,
+  .hlp-card,
+  .hlp-card__arrow,
+  .hlp-start,
+  .hlp-start__foot span:last-child,
+  .hlp-back { transition-duration: 0.01ms; }
+  .hlp-row:hover,
+  .hlp-row:hover .hlp-row__arrow,
+  .hlp-home__cta:hover,
+  .hlp-home__cta:hover .hlp-home__cta-arrow,
+  .hlp-start:hover,
+  .hlp-start:hover .hlp-start__foot span:last-child,
+  .hlp-card:hover:not(:disabled),
+  .hlp-card:hover:not(:disabled) .hlp-card__arrow { transform: none; }
+}

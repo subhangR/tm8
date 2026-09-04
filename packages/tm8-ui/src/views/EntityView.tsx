@@ -1,16 +1,19 @@
 /**
  * EntityView — the per-kind screen every rail kind-row opens.
  *
- * THE 2026-07-31 USER RULING, which supersedes D65's wide-list-in-the-middle:
- * an entity screen is a THREE-REGION READING SURFACE, not a list with a peek.
+ * THE 2026-08-15 WORK-TAB RULING (Phase 3, refs/03-workspace.png), which
+ * supersedes the 2026-07-31 centre-is-the-entity arrangement: the Work tab is
+ * a THREE-PANE surface whose CENTRE is the collection.
  *
- *   LEFT   the entity list panel — the SAME `EntityListPanel` the workspace
- *          uses (search, filter chips, lifecycle tabs, sections, tiles), at a
- *          fixed rail width. Not the wide `EntityTree`: the list is now a
- *          navigator, and a navigator wants search more than it wants width.
- *   CENTRE the COMPLETE entity — `EntityDetailPanel` with the whole remaining
- *          width, not a 440px aside. This is the screen's subject.
- *   RIGHT  the AUX column, opened by clicking something INSIDE the centre:
+ *   CENTRE the entity list / board — the SAME `EntityListPanel` the workspace
+ *          uses (search, filter chips, lifecycle tabs, sections, tiles),
+ *          taking the width the detail column does not. The collection is the
+ *          subject of this screen now; the rail beside it (MenuRail) holds the
+ *          collections and views, so this list no longer needs to be one.
+ *   RIGHT  the DETAIL PANEL — `EntityDetailPanel` at a viewer-set reading
+ *          width, opened by selecting a row. Empty, it holds the space-wide
+ *          attention triage rather than a blank.
+ *   FAR RIGHT the AUX column, opened by clicking something INSIDE the detail:
  *          a linked entity, Discussion, or Connections. Absent until asked
  *          for; it never reserves space it is not using.
  *
@@ -27,22 +30,26 @@
  * per-kind facts on this screen — tiles, sections, filters, body archetype —
  * were already registry DATA before this change.
  *
- * ESC WALKS DOWN ONE RUNG PER PRESS: aux → centre → list.
+ * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, EntityKind, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { EntityId, EntityKind, ExecutionSpawnInput } from '@tm8/contract';
 import {
   EntityDetailPanel,
   EntityListPanel,
   EmptyBody,
+  countConnections,
+  panelActionContext,
+  panelMenuItems,
   type ControlHost,
   type DetailReasons,
+  type ListPicker,
   type PanelTab,
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
-import { PanelResizer, useElementWidth, usePanelFlag, usePanelWidth } from '../kit';
-import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
-import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
+import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
+import { ConnectionsTab } from '../panels/detail/tabs';
+import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
@@ -59,6 +66,7 @@ import {
 } from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
+import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
@@ -67,15 +75,17 @@ import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useMembershipSurface } from './membershipSurface';
 import type { ContentSurface } from '../routes';
-import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
-import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
+import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
+import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
@@ -89,6 +99,14 @@ export interface EntityViewProps {
   reasons: DetailReasons;
   viewerMemberId?: string | null;
   onNotice(notice: Notice): void;
+  /**
+   * "Chat about this" — the row cluster's and the list header's verb, which is
+   * a NAVIGATION to Home's composer with the subject bound. Supplied by the
+   * shell (`chatAboutTarget`), because this screen takes navigation as a port
+   * and must not reach the global store. Absent ⇒ the verb renders refused
+   * with a reason rather than inert.
+   */
+  onChatAbout?(aboutId: EntityId | null): void;
   /** The rail row is the source of truth for WHICH kind; the in-panel kind
       switcher re-routes through it so the rail highlight never lies. */
   onKindChange?(kind: string): void;
@@ -120,11 +138,18 @@ export interface EntityViewProps {
   onLaunchDispatch?(request: DispatchSelection): void;
   /**
    * §1.1 mode wiring: the shell holds the layout mode (it is route state) and
-   * this screen passes it through to the panel. Absent ⇒ the panel's local
-   * fallback, exactly as before.
+   * this screen passes it through to the panel. Absent ⇒ the kind's registry
+   * default. READ-ONLY since the view switcher was removed (2026-08-19) —
+   * nothing on this screen writes a mode back, so there is no `onMode`.
    */
   mode?: CollectionMode;
-  onMode?(mode: CollectionMode): void;
+  /**
+   * W3 — the board's grouping, route state exactly like `mode`: the shell
+   * holds it and this screen passes it through. Absent ⇒ the panel's local
+   * fallback seeded from registry.
+   */
+  groupBy?: GroupByKey;
+  onGroupBy?(groupBy: GroupByKey): void;
 }
 
 /**
@@ -157,16 +182,14 @@ const AUX_TABS = new Set<PanelTab>(['discussion', 'connections']);
  * minus this floor, never from a breakpoint.
  * ------------------------------------------------------------------------- */
 
-/** The list rail is a navigator: wide enough to read a title, never a column. */
-export const EV_LIST_MIN = 220;
-export const EV_LIST_DEFAULT = 320;
 /** Same reading width the workspace's stacked panel uses — same content. */
 export const EV_AUX_MIN = 320;
 export const EV_AUX_DEFAULT = 420;
-/** The subject's floor. Nothing outbids the centre (D63's rule, one level up). */
+/** The subject's floor — the LIST now (Phase 3): nothing outbids the centre. */
 export const EV_CENTER_MIN = 420;
-/** Collapsed, the rail keeps a strip — a hidden panel with no way back is a trap. */
-export const EV_LIST_COLLAPSED = 34;
+/** The detail column: a reading panel, floored where its bodies stay legible. */
+export const EV_DETAIL_MIN = 380;
+export const EV_DETAIL_DEFAULT = 560;
 
 /**
  * THE CHROME BETWEEN THE COLUMNS IS PART OF THE BUDGET.
@@ -202,6 +225,18 @@ export function EntityView(props: EntityViewProps) {
    * restores what was open, and a different screen's stack is unreachable
    * from here.
    */
+  /*
+   * ONE SURFACE, OR THREE.
+   *
+   * Asked of the HOST, not of the window: `MobileShell` is only mounted when
+   * `shellFor` says phone, so it already holds this answer and a second,
+   * independently-timed copy here is how two shells drift apart. Off the phone
+   * this is `false` and every branch it guards below is unreachable — which is
+   * what lets this screen gain a phone arrangement without its desktop
+   * arrangement being touched at all.
+   */
+  const { oneSurface } = useMobileSurface();
+
   const screen = useScreenStack(screenKeyOf.kind(kind));
   const selectedId = screen.selected;
   const setSelectedId = useCallback(
@@ -214,6 +249,24 @@ export function EntityView(props: EntityViewProps) {
     [kind], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const [aux, setAux] = useState<AuxTarget | null>(null);
+  /*
+   * THE FOUR NARROWING CONTROLS, HELD HERE BECAUSE THEIR TRIGGERS MOVED HERE.
+   *
+   * `.lp__filterbar` is 101px of permanent chrome on a 844px phone — a fifth
+   * of the screen spent on four chips that are used once a session. It is
+   * `display: none` on the phone now and its four verbs hang off the floating
+   * cluster below, so the list keeps that height. The BODIES still belong to
+   * the panel (they are made of its filter specs, its people, its collections
+   * and its sort keys), so only the "which one is open" answer is lifted —
+   * the same route-vs-local shape `mode` and `groupBy` already use.
+   *
+   * ONE UNION, NOT FOUR BOOLEANS: on the phone each of these is a bottom
+   * sheet, and two at once is two scrims.
+   */
+  const [picker, setPicker] = useState<ListPicker | null>(null);
+  /* Whether the cluster is expanded. Collapsed it is one thumb-sized button;
+     four permanently-drawn pills would occlude the rows they narrow. */
+  const [dialOpen, setDialOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<PanelTab>('content');
   const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface>>({});
   const resolvingAttention = useRef(new Set<EntityId>());
@@ -261,15 +314,12 @@ export function EntityView(props: EntityViewProps) {
   /**
    * THE LAYOUT MODE IS RESOLVED HERE, not twice.
    *
-   * The panel carries the same controlled/uncontrolled pair, and if the screen
-   * read `props.mode` while the panel fell back to its OWN local state the two
-   * would disagree the moment a host mounts this view without `onMode` — the
-   * switcher would draw a board inside a rail sized for a list. Resolving once
-   * and passing the pair down leaves the panel's fallback unreachable.
+   * The panel applies the same registry fallback, and if the screen read
+   * `props.mode` while the panel fell back on its own the two could disagree —
+   * a board drawn inside a rail sized for a list. Resolving once and passing
+   * the value down leaves the panel's fallback unreachable.
    */
-  const [uncontrolledMode, setUncontrolledMode] = useState<CollectionMode>(config.defaultMode);
-  const mode = props.mode ?? uncontrolledMode;
-  const setMode = props.onMode ?? setUncontrolledMode;
+  const mode = props.mode ?? config.defaultMode;
   /**
    * THE BOARD IS THE WHOLE SCREEN, not a body inside the 320px rail.
    *
@@ -283,24 +333,22 @@ export function EntityView(props: EntityViewProps) {
   /*
    * THE COLUMN GEOMETRY — stored preference, measured clamp.
    *
-   * Two numbers per column, deliberately: `listPref.width` is what the viewer
-   * ASKED for and outlives a narrow window, while `listWidth` below it is what
-   * currently FITS. Clamping on write instead would let one narrow window
-   * silently overwrite a preference the viewer set on a wide one.
-   *
-   * The widths are keyed per kind, not per screen instance. Someone who wants a
-   * wide list for Tasks and a narrow one for Docs gets both, and the choice
-   * survives a reload the way the theme does.
+   * Two numbers per column, deliberately: `detailPref.width` is what the
+   * viewer ASKED for and outlives a narrow window, while `detailWidth` below
+   * it is what currently FITS. Clamping on write instead would let one narrow
+   * window silently overwrite a preference the viewer set on a wide one.
    */
   const rootRef = useRef<HTMLDivElement | null>(null);
   const rootWidth = useElementWidth(rootRef);
-  const listPref = usePanelWidth(`entity.${kind}.list`, EV_LIST_DEFAULT, EV_LIST_MIN);
+  /* ONE detail width for every kind — it is a READING width, like the aux
+     column's, not a per-collection preference the way the old list rail's was:
+     the content in it (a detail panel) has the same measure whatever the kind. */
+  const detailPref = usePanelWidth('entity.detail', EV_DETAIL_DEFAULT, EV_DETAIL_MIN);
   const auxPref = usePanelWidth('entity.aux', EV_AUX_DEFAULT, EV_AUX_MIN);
-  const [listCollapsed, setListCollapsed] = usePanelFlag(`entity.${kind}.list-collapsed`, false);
 
-  /* On the board the list IS the screen — it takes the whole width and there is
-     no centre to protect, so neither the drag nor the collapse applies. */
-  const listResizable = !boardMode && !listCollapsed;
+  /* On the board the list IS the whole screen — there is no detail column to
+     size, so the drag does not apply. */
+  const detailResizable = !boardMode;
   /*
    * BEFORE THE FIRST MEASUREMENT, THE WINDOW STANDS IN FOR THE ROOT.
    *
@@ -314,24 +362,26 @@ export function EntityView(props: EntityViewProps) {
   const outerWidth = rootWidth > 0
     ? rootWidth
     : (typeof window === 'undefined' ? 0 : window.innerWidth);
-  /* Every term the centre does NOT get: the other column's width, and the
-     separator + hairline each side column costs on top of it. The list keeps
-     its chrome while collapsed — the strip still has a border and the separator
-     is still mounted — so `SIDE_CHROME` is unconditional on that side. */
+  /* Every term the centre list does NOT get: each side column's width, plus
+     the separator + hairline that column costs on top of it (the WLT Σb term —
+     see the SIDE_CHROME comment above). */
   const auxRoom = aux ? auxPref.width + SIDE_CHROME : 0;
-  const listRoom = listCollapsed ? EV_LIST_COLLAPSED : EV_LIST_MIN;
-  const listMax = Math.max(EV_LIST_MIN, outerWidth - EV_CENTER_MIN - SIDE_CHROME - auxRoom);
-  const listWidth = listCollapsed
-    ? EV_LIST_COLLAPSED
-    : clampWidth(listPref.width, EV_LIST_MIN, listMax);
+  const detailMax = Math.max(
+    EV_DETAIL_MIN,
+    outerWidth - EV_CENTER_MIN - SIDE_CHROME - auxRoom,
+  );
+  const detailWidth = clampWidth(detailPref.width, EV_DETAIL_MIN, detailMax);
   const auxMax = Math.max(
     EV_AUX_MIN,
-    outerWidth - EV_CENTER_MIN - SIDE_CHROME - listRoom - SIDE_CHROME,
+    outerWidth - EV_CENTER_MIN - SIDE_CHROME - (EV_DETAIL_MIN + SIDE_CHROME),
   );
   const auxWidth = clampWidth(auxPref.width, EV_AUX_MIN, auxMax);
 
   /* Stable identity so the feed hook's effects do not re-run every render. */
-  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const channelFeedPort = useMemo(
+    () => channelFeedPortFromGateData(data, props.viewerMemberId),
+    [data, props.viewerMemberId],
+  );
 
   /* The list panel's Run expand, wired from the SAME source the workspace uses
      (`useLaunchPort`). Without this the expand rendered with `teammates ?? []`
@@ -347,12 +397,12 @@ export function EntityView(props: EntityViewProps) {
      Terminate button behaves identically wherever a session panel is opened. */
   /* A useCallback, not an inline arrow — see WorkspaceView for why an unstable
      reporter churns the whole dispatcher's identity every render. */
-  const notifyCloseFailed = useCallback(
+  const notifyTerminateFailed = useCallback(
     (_verb: ActionRef, _entityId: string, error: unknown) => {
       props.onNotice({
-        id: 'session-close-failed',
+        id: 'session-terminate-failed',
         tone: 'error',
-        title: 'Session could not be closed',
+        title: 'Session could not be terminated',
         body: String((error as { message?: string })?.message ?? error),
         ttlMs: 6_000,
       });
@@ -362,7 +412,7 @@ export function EntityView(props: EntityViewProps) {
   const primaries = usePanelPrimaries({
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
-    onError: notifyCloseFailed,
+    onError: notifyTerminateFailed,
   });
 
   /* D67 — the expanded row's state dropdown and archive control. Same executor
@@ -391,13 +441,16 @@ export function EntityView(props: EntityViewProps) {
       kind: config.kind,
       ctx,
       livenessOf: data.livenessOf,
-      capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
+      capabilitiesOf: (id) => data.capabilitiesOf(id),
       /* See WorkspaceView's copy: without this the expanded row's controls
          never learn their permissions and Archive never fires. */
       onNeedDetail: (id: string) => data.pull?.(id),
       onSetState: rowLifecycle.setState,
       onArchive: rowLifecycle.archive,
       onSetValue: rowLifecycle.setValue,
+      onSetAxis: rowLifecycle.setAxis,
+      taskAxes: data.taskAxes,
+      taskWorkflows: data.taskWorkflows,
       onAssign: rowLifecycle.assign,
       assignableActors: rowLifecycle.assignable,
       onMembership: rowLifecycle.membership,
@@ -534,6 +587,20 @@ export function EntityView(props: EntityViewProps) {
   });
 
   /**
+   * THE LIST'S DISPATCHERS, COMPOSED — the session-start verbs and
+   * `chat-about`, routed by which one names the verb.
+   *
+   * `wiredActions` is the union, so `HeaderActions` and `RowActionCluster`
+   * draw exactly the verbs something behind them can perform; a verb in
+   * neither list keeps its honest refusal rather than lighting up inert.
+   */
+  const chatAbout = useChatAbout({ open: props.onChatAbout });
+  const listActions = composeListActions([
+    { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+    { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+  ]);
+
+  /**
    * Titles for the attention list. Attention spans every kind, so the left
    * list (one kind) is not enough — the graph hydration is the widest set of
    * summaries already in memory. A miss returns undefined and the inbox reads
@@ -553,10 +620,6 @@ export function EntityView(props: EntityViewProps) {
     || messages === undefined
     || representedThreadMessageCount(messages) < detail.counters.messages
   )) props.data.pull?.(selectedId);
-  const selectedContent = detail?.content as unknown as {
-    interactionProfile?: WorkSessionInteractionProfileProjection | null;
-  } | undefined;
-  const recordedStatus = (detail?.state as unknown as { status?: string } | undefined)?.status;
 
   // The aux entity's own detail. Hydration is the same read-through the
   // centre uses — an unhydrated id renders the panel's loading state rather
@@ -711,40 +774,41 @@ export function EntityView(props: EntityViewProps) {
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
       }}
-      /* Same archetype fork as WorkspaceView, and it belongs in BOTH hosts:
-         this one was missed when channels became a collection, so opening a
-         channel from its `k/` list handed the SESSION chat surface a channel
-         anchor and the server refused it — "feed scope session_chat_v1 is not
-         applicable to a channel anchor". The kind literal stays out of it; the
-         registry's archetype decides. */
-      chatSurface={detail && getKind(detail.kind).panel.archetype === 'hub' ? (
-        <LazyChannelChatSurface
-          port={channelFeedPort}
-          channelId={selectedId}
-          connection={data.connection}
-          onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
-          threads={getKind(detail.kind).panel.threads === true}
-          anchorTitle={`${getKind(detail.kind).chip.glyph}${detail.title}`}
-        />
-      ) : detail ? (
-        <LazySessionChatSurface
-          seam={data.seam}
-          sessionId={selectedId}
-          spaceId={data.spaceId}
-          viewerMemberId={props.viewerMemberId ?? 'anonymous'}
-          connection={data.connection}
-          sessionExited={recordedStatus === 'exited' || recordedStatus === 'failed'}
-          defaultLimit={selectedContent?.interactionProfile?.feedPolicy.pageSize}
-          composerPolicy={selectedContent?.interactionProfile?.composerPolicy}
-          needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
-          attentionDetail={QUIET_SESSION_DETAIL}
-          onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
-          onSwitchToTerminal={() => {
-            setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
-          }}
-        />
-      ) : undefined}
+      /* The archetype fork lives in `conversationSurfaceFor` now, shared by ALL five
+         EntityDetailPanel hosts — this host was once the one that missed it
+         ("feed scope session_chat_v1 is not applicable to a channel anchor"),
+         and three others repeated the miss until the fork moved out. */
+      conversationSurface={conversationSurfaceFor(detail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort,
+        viewerMemberId: props.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
+        onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      })}
+      discussionSurface={conversationSurfaceFor(detail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort,
+        viewerMemberId: props.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
+        onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      }, 'discussion')}
+      attentionSection={detail ? attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId)) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      sessionStatsSurface={detail ? sessionStatsSurfaceFor(data.seam, selectedId) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
       graphSurface={
@@ -763,7 +827,6 @@ export function EntityView(props: EntityViewProps) {
          field added to `DiscussionPostInput` cannot be silently dropped by
          this adapter — which is exactly how `mentionIds` went unsent for as
          long as it did. */
-      onPostMessage={(post) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], ...post })}
       mentionOptions={data.mentionOptions}
       skillOptions={data.skillOptions}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
@@ -789,6 +852,28 @@ export function EntityView(props: EntityViewProps) {
     />
   ) : null;
 
+  /*
+   * The aux column's CONTAINER, chosen by arrangement.
+   *
+   * A function rather than two copies of the column, because the column's body
+   * is ~60 lines of ports wired to this screen's state. Two copies would be two
+   * things to keep in step, and the one that drifts would be the phone's —
+   * the arrangement nobody has open while they work.
+   */
+  const wrapAux = (column: ReactNode): ReactNode =>
+    oneSurface ? (
+      <MobileSheet
+        title={aux ? auxCrumb(aux, auxDetail?.title) : 'Related'}
+        size={auxSheetSize(aux)}
+        onDismiss={() => setAux(null)}
+        testId="entity-view-aux-sheet"
+      >
+        {column}
+      </MobileSheet>
+    ) : (
+      column
+    );
+
   return (
     <div
       className="ev-root"
@@ -798,14 +883,13 @@ export function EntityView(props: EntityViewProps) {
       data-mode={selectedId ? 'detail' : 'list'}
       data-aux={aux ? aux.sort : 'none'}
       data-layout={boardMode ? 'board' : 'columns'}
-      data-list-collapsed={listCollapsed && !boardMode ? true : undefined}
       /* The solved widths reach the stylesheet as custom properties rather than
          as inline widths on each column, so the CSS keeps owning the floors and
          the borders while this file owns the arithmetic. */
       style={{
-        '--ev-list': `${listWidth}px`,
+        '--ev-detail': `${detailWidth}px`,
         '--ev-aux': `${auxWidth}px`,
-        '--ev-list-min': `${EV_LIST_MIN}px`,
+        '--ev-detail-min': `${EV_DETAIL_MIN}px`,
         '--ev-aux-min': `${EV_AUX_MIN}px`,
       } as React.CSSProperties}
     >
@@ -860,47 +944,25 @@ export function EntityView(props: EntityViewProps) {
         targetTitle={marksHost?.title ?? 'this memory'}
         skillOptions={data.skillOptions}
       />
-      {/* COLLAPSED, THE RAIL IS A STRIP, NOT A DISAPPEARANCE (L6). The list is
-          how you change the subject of this screen; hiding it with no visible
-          way back would strand a viewer who collapsed it by accident. The strip
-          carries the reopen control and the kind's own label, so it says what
-          bringing it back would bring back. */}
-      {listCollapsed && !boardMode ? (
-        <section
-          className="ev-list ev-list--collapsed"
-          id="entity-view-list"
-          aria-label={`${config.labelPlural} list, collapsed`}
-        >
-          <button
-            type="button"
-            className="ev-list__toggle"
-            data-testid="entity-view-list-expand"
-            aria-expanded={false}
-            title={`Show the ${config.labelPlural.toLowerCase()} list`}
-            aria-label={`Show the ${config.labelPlural.toLowerCase()} list`}
-            onClick={() => setListCollapsed(false)}
-          >
-            <span aria-hidden>»</span>
-          </button>
-          <span className="ev-list__spine" aria-hidden>{config.labelPlural}</span>
-        </section>
-      ) : (
+      {/* THE CENTRE (Phase 3): the collection itself. The old collapse-to-a-
+          strip control retired with the flip — the list is the SUBJECT of the
+          screen now, and collapsing the subject would leave the screen with
+          nothing the viewer came for. The detail column is the one that opens
+          and closes, and it closes through its own ✕. */}
+      {/*
+        ONE SURFACE: THE LIST IS THE SCREEN, OR IT IS NOT THE SCREEN.
+
+        Not `display: none` — the list stays MOUNTED under a hidden column and
+        that is the wrong trade twice over. `display: none` drops the layout box
+        and takes the scroll offset with it, so the list is reset to the top
+        anyway; and a mounted list keeps its rows, its polling and its
+        subscriptions live behind a detail the viewer is actually reading. If
+        scroll restoration is wanted later it has to be state that survives an
+        unmount, which is a separate piece of work and not a side effect of
+        hiding a column.
+      */}
+      {oneSurface && selectedId ? null : (
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
-        {/* NOT OFFERED ON THE BOARD: there the list is the subject of the
-            screen, so collapsing it would leave nothing behind. */}
-        {boardMode ? null : (
-          <button
-            type="button"
-            className="ev-list__toggle ev-list__toggle--floating"
-            data-testid="entity-view-list-collapse"
-            aria-expanded
-            title={`Hide the ${config.labelPlural.toLowerCase()} list`}
-            aria-label={`Hide the ${config.labelPlural.toLowerCase()} list`}
-            onClick={() => setListCollapsed(true)}
-          >
-            <span aria-hidden>«</span>
-          </button>
-        )}
         <EntityListPanel
           kind={kind}
           rowsFor={data.rowsFor(kind)}
@@ -908,7 +970,13 @@ export function EntityView(props: EntityViewProps) {
           loadMore={data.loadMore(kind)}
           boardFor={data.boardFor(kind) as never}
           mode={mode}
-          onMode={setMode}
+          groupBy={props.groupBy}
+          onGroupBy={props.onGroupBy}
+          /* The open narrowing control. Held here because its TRIGGERS moved
+             here (see the state's own note) — the bodies are still the
+             panel's, and it still renders them. */
+          picker={picker}
+          onPicker={setPicker}
           members={data.members}
           ctx={ctx}
           createSlot={
@@ -931,18 +999,29 @@ export function EntityView(props: EntityViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
-          // Capability truth comes from the DETAIL, never the summary: a row
-          // whose detail is not hydrated genuinely has unknown capabilities
-          // and correctly stays refused (WorkspaceView states the same rule).
-          // `onNeedDetail` is how an expanded row leaves that state.
-          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          // Capability truth rides the SUMMARY (WorkspaceView states the rule
+          // in full). `data.capabilitiesOf` is the one authority — summary
+          // first, detail as fallback. Absence still means refused; it is just
+          // no longer the permanent state of every collapsed row.
+          capabilitiesOf={data.capabilitiesOf}
           onNeedDetail={(id) => data.pull?.(id)}
           selectedId={selectedId}
           onSelect={selectFromList}
           onKindChange={props.onKindChange}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onComplete={rowLifecycle.complete}
+          /* The session row's ⏻, from the SAME executor the detail panel's
+             Terminate uses. It was drawn here and on Home with no handler at
+             all — live, gated on liveness, and inert — because only
+             WorkspaceView passed one. A verb with a dedicated prop is dead on
+             every host that forgets it, so all three pass it now. */
+          onTerminate={primaries.terminate}
+          onResume={primaries.resume}
           onSetValue={rowLifecycle.setValue}
+          onSetAxis={rowLifecycle.setAxis}
+          taskAxes={data.taskAxes}
+          taskWorkflows={data.taskWorkflows}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
           onMembership={rowLifecycle.membership}
@@ -954,38 +1033,256 @@ export function EntityView(props: EntityViewProps) {
              honest disabled-with-reason state on hosts without one. */
           launch={launchPort}
           /* The header verbs (101) — see the same pair in `WorkspaceView`. */
-          onAction={sessionStart.onAction}
-          wiredActions={sessionStart.wiredActions}
+          onAction={listActions.onAction}
+          wiredActions={listActions.wiredActions}
         />
       </section>
       )}
 
-      {/* The rail's drag handle. It stays MOUNTED while the rail is collapsed
-          and refuses instead (`disabled`), because a control that vanishes and
-          reappears under the cursor is how a resize gesture gets lost. */}
-      {boardMode ? null : (
+      {/*
+        ── THE FLOATING CREATE BUTTON (owner answers A–D, 2026-08-19) ────────
+        A. IN ADDITION TO THE HEADER'S ＋, not instead of it. `[◫ Kind ＋ ▾]` is
+           untouched. Two create affordances on a phone is the owner's explicit
+           choice: the header ＋ is where you look when you are ALREADY thinking
+           about the kind, and the FAB is where your thumb is when you have just
+           finished reading the list.
+
+        B. THE SAME VERB, NOT A SECOND CREATE PATH. `createFlow` is the very
+           `useNewTask` handle the header's ＋ performs, with the same
+           `onCreated` that opens the new entity with its title focused (D3).
+           Writing a second path here is how the two drift into making
+           differently-shaped entities.
+
+        C. ABSENT, NOT INERT, for a kind with no wired create. The gate is
+           `config.list.quickCreate` — REGISTRY DATA, and deliberately the same
+           expression `createSlot` is gated on six lines above, so the FAB and
+           the header ＋ can never disagree about whether this kind can be born.
+           Commits, worktrees and PRs are observed rather than authored, and a
+           refused FAB would be a permanent 56px control that exists to say no.
+           The header ＋ still refuses out loud with its reason; that sentence
+           is said once, where there is room for it.
+
+        D. ALWAYS VISIBLE. No hide-on-scroll: a control that disappears while
+           you read is a control you have to go looking for, and the list
+           reserves room for it so the last row is never trapped underneath
+           (see `.ev-fab` in `mobile-screens.css`).
+
+        ONE SURFACE ONLY. `oneSurface` is false on every desktop mount by
+        construction, so this whole branch is unreachable there — the seam's own
+        safety argument. And it is not drawn over an OPEN entity: at that point
+        the list is unmounted and the screen is the entity, where a create
+        button would make something the surface cannot show.
+      */}
+      {oneSurface && !selectedId && config.list.quickCreate ? (
+        <button
+          type="button"
+          className="ev-fab"
+          data-testid="entity-view-fab"
+          aria-label={`New ${config.label.toLowerCase()}`}
+          onClick={() => void createFlow.create()}
+        >
+          <span aria-hidden>＋</span>
+        </button>
+      ) : null}
+
+      {/*
+        ── THE ENTITY'S OWN FAB — what the phone's tab row became ────────────
+
+        User ruling 2026-08-20. The panel bar cost ~90px of a 844px screen to
+        carry two navigational tabs and the kind's primary verbs; the tabs are
+        gone on this shell and their contents are here.
+
+        MOUNTED AT THE VIEW ROOT, BESIDE THE CREATE FAB, and that is the same
+        positioning argument `.ev-fab` records: the layer is `position: absolute`
+        against `.ev-root`, never `fixed`, because the frame SHRINKS by
+        `--mobile-keyboard-inset` and a fixed control stays where the viewport
+        was — under the soft keyboard. Mounting it inside the panel would have
+        resolved that `inset: 0` against a scrolling body instead.
+
+        IT CANNOT CO-EXIST WITH THE CREATE FAB. That one is gated
+        `!selectedId` and this one on `selectedId`: the list and the entity are
+        two different screens on this shell, never both.
+
+        WHAT IT CONTAINS IS `panelMenuItems`' ANSWER and nothing this file
+        decides — registry data, the same refusal precedence the desktop action
+        bar asks, and the same counts the desktop tab strip is given. No kind is
+        named here and no action id is (§15.2).
+      */}
+      {oneSurface && selectedId && detail ? (
+        <EntityFab
+          label={`${getKind(detail.kind).label} actions`}
+          items={panelMenuItems({
+            config: getKind(detail.kind),
+            /* Filled from the detail, so Terminate can see that a session has
+               ended — the same context the panel's own action bar is given. */
+            ctx: panelActionContext(
+              detail,
+              { ...ctx, entityId: selectedId },
+              data.livenessOf(selectedId),
+            ),
+            counts: {
+              discussion: messages?.length,
+              connections: countConnections(detail, data.connectionsOf(selectedId)),
+            },
+            /* THE EXISTING ROUTE, NOT A SECOND ONE. `onTabChange` already sends
+               both aux tabs to `setAux({sort:'tab'})`, and `wrapAux` wraps that
+               column in a `MobileSheet` on this shell. The menu is a new door
+               into it. */
+            onSelectTab: (tab) =>
+              setAux({ sort: 'tab', tab: tab as 'discussion' | 'connections' }),
+            onAction: panelActions.onAction,
+            wiredActions: panelActions.wiredActions,
+            /* D44's precedence: where the host mounts the full launch sheet, Run
+               opens it directly rather than the 300px inline expand, which
+               `mobile/CONTRACT.md` §4 rules does not survive a 390px screen —
+               and which now has no bar left to anchor to. */
+            ...(launchPort?.onFullOptions
+              ? { onOpenLaunch: launchPort.onFullOptions, launchSubjectId: selectedId }
+              : {}),
+          })}
+        />
+      ) : null}
+
+      {/*
+        ── THE NARROWING CLUSTER ────────────────────────────────────────────
+        The four verbs that used to be `.lp__filterbar`, a permanent 101px band
+        — a fifth of a 844px phone spent on controls that are touched once a
+        session, above a list that had 478px left for its rows. They float now,
+        collapsed to ONE button, and the band is gone from the chrome.
+
+        SEPARATE FROM THE CREATE FAB, not folded into it. Create is the verb a
+        thumb reaches for constantly and it stays ONE tap; putting it behind a
+        dial would tax the common action to pay for the rare ones. It is also
+        gated differently — a kind with no wired create still filters and sorts
+        — so one control gated on both would be wrong for half the kinds.
+
+        WORDS, NOT GLYPHS, unlike the lifecycle row. Those four are one axis
+        with an obvious order, which is what makes a glyph family readable;
+        these four are unrelated verbs over unrelated vocabularies, and a
+        funnel, a face, a folder and an arrow share nothing to read.
+
+        EACH ONE IS OFFERED ONLY WHEN IT HAS SOMETHING TO SAY — the same four
+        conditions `FilterRow` renders its chips under, read off the same
+        registry data, so the cluster and the (hidden) bar cannot disagree.
+      */}
+      {oneSurface && !selectedId ? (
+        <div className="ev-narrow" data-testid="entity-view-narrow">
+          {dialOpen ? (
+            <div className="ev-narrow__dial" role="group" aria-label="Narrow the list">
+              {config.list.filters.length > 0 ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-filters"
+                  onClick={() => {
+                    setPicker('filters');
+                    setDialOpen(false);
+                  }}
+                >
+                  filter
+                </button>
+              ) : null}
+              {data.members.length > 1 ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-people"
+                  onClick={() => {
+                    setPicker('people');
+                    setDialOpen(false);
+                  }}
+                >
+                  people
+                </button>
+              ) : null}
+              {config.list.membership && rowLifecycle.membershipSets !== undefined ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-sets"
+                  onClick={() => {
+                    setPicker('sets');
+                    setDialOpen(false);
+                  }}
+                >
+                  {config.list.membership.label.toLowerCase()}
+                </button>
+              ) : null}
+              {config.list.sort.length > 0 ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-sort"
+                  onClick={() => {
+                    setPicker('sort');
+                    setDialOpen(false);
+                  }}
+                >
+                  sort
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="ev-narrow__toggle"
+            data-testid="entity-view-narrow-toggle"
+            aria-expanded={dialOpen}
+            aria-label={dialOpen ? 'Close narrowing options' : 'Narrow the list'}
+            onClick={() => setDialOpen((open) => !open)}
+          >
+            <NarrowGlyph open={dialOpen} />
+          </button>
+        </div>
+      ) : null}
+
+      {/* The detail column's drag handle — the control the panel it sizes
+          hangs on, exactly as in the workspace. `side="right"` because the
+          column it controls sits to the handle's right.
+
+          NOT ON ONE SURFACE. It resizes a column against its neighbour, and
+          there is no neighbour. It measured 8x384 in the tap census — the
+          single worst target on Tasks, and a control a thumb can only be
+          disappointed by. */}
+      {boardMode || oneSurface ? null : (
         <PanelResizer
-          side="left"
-          label={`${config.labelPlural} list`}
-          controls="entity-view-list"
-          width={listWidth}
-          minWidth={EV_LIST_MIN}
-          maxWidth={listMax}
-          disabled={!listResizable}
-          onResize={listPref.setWidth}
-          onReset={listPref.reset}
+          side="right"
+          label={`${config.label} detail`}
+          controls="entity-view-detail"
+          width={detailWidth}
+          minWidth={EV_DETAIL_MIN}
+          maxWidth={detailMax}
+          disabled={!detailResizable}
+          onResize={detailPref.setWidth}
+          onReset={detailPref.reset}
         />
       )}
 
-      {/* NOT RENDERED ON THE BOARD. The board took this width; a centre that
+      {/* NOT RENDERED ON THE BOARD. The board took this width; a column that
           is only display:none would still mount the open entity's panel — its
           chat surface, its terminal, its polling — behind an invisible region. */}
-      {boardMode ? null : (
+      {/*
+        ON ONE SURFACE THIS RENDERS ONLY WHILE SOMETHING IS OPEN.
+
+        The empty-state arm below is the defect stated in one expression. With
+        nothing selected it mounts `AttentionInbox`, whose copy is written for a
+        column sitting BESIDE a list — "…your attention.", "…the list to open it
+        here." On the phone there was no list beside it, so that text was drawn
+        under the 200px list card and bled out of the right edge: a sentence
+        about a control the viewer could not see, pointing at a place that was
+        not there.
+
+        Withheld rather than hidden, for the same reason the list is: an
+        invisible `AttentionInbox` still runs its space-wide attention query on
+        every phone screen, and the phone is where that costs the most.
+      */}
+      {boardMode || (oneSurface && !selectedId) ? null : (
         <main className="ev-detail" aria-label={`${config.label} detail`} data-testid="entity-view-detail">
-          {/* The blank centre is the space-wide triage list, not a placeholder:
-              every entity waiting on a human, its requests combined into one row.
-              Deliberately NOT filtered to `kind` — attention lives on entities,
-              so a doc waiting on you must show while the Tasks list is open. */}
+          {/* The empty detail column is the space-wide triage list, not a
+              placeholder: every entity waiting on a human, its requests
+              combined into one row. Deliberately NOT filtered to `kind` —
+              attention lives on entities, so a doc waiting on you must show
+              while the Tasks list is open. */}
           {detailPanel ?? (
             <AttentionInbox
               seam={data.seam}
@@ -997,7 +1294,7 @@ export function EntityView(props: EntityViewProps) {
         </main>
       )}
 
-      {aux ? (
+      {aux && !oneSurface ? (
         <PanelResizer
           side="right"
           label="Related"
@@ -1010,22 +1307,52 @@ export function EntityView(props: EntityViewProps) {
         />
       ) : null}
 
-      {aux ? (
+      {/*
+        THE THIRD COLUMN, AS A SHEET.
+
+        Same panel, same ports, same body — only its CONTAINER changes. The
+        desktop promise of this column is that a reference opens BESIDE what
+        you are reading so you do not lose your place; a phone has no "beside",
+        and a sheet is that promise kept differently: the detail stays mounted
+        underneath and the reference covers it temporarily.
+
+        Which is why it is a SHEET and not a pushed screen. A push would put a
+        referenced entity into the screen stack, and backing out of it would
+        then walk that stack instead of returning the viewer to the paragraph
+        they tapped from.
+
+        THE COLUMN'S OWN HEAD IS NOT RENDERED HERE — the sheet draws one. Two
+        crumb rows stacked, with two ✕s and an `esc` chip on a device that has
+        no Escape key, is the clearest possible sign of a desktop column dropped
+        into a phone without being reconsidered.
+
+        NOT RENDERED rather than hidden. `mobile-screens.css` also carries a
+        `display: none` for it, and that rule is correct as far as the eye is
+        concerned — but jsdom loads no stylesheets, so NO vitest in this package
+        can see it. "Exactly one header, exactly one close control" was
+        therefore a claim nothing could hold, and two headers had already
+        shipped here once. Declining to render it is the same result stated
+        where a test can read it, which is what `aux-sheet-chrome.test.tsx`
+        asserts.
+      */}
+      {aux ? wrapAux(
         <aside className="ev-aux" id="entity-view-aux" aria-label="Related" data-testid="entity-view-aux">
-          <div className="ev-aux__head">
-            <span className="ev-aux__crumb">{auxCrumb(aux, auxDetail?.title)}</span>
-            <span className="ev-aux__spacer" />
-            <span className="ev-aux__esc">esc</span>
-            <button
-              type="button"
-              className="ev-aux__close"
-              aria-label="Close related panel"
-              data-testid="entity-view-aux-close"
-              onClick={() => setAux(null)}
-            >
-              ✕
-            </button>
-          </div>
+          {oneSurface ? null : (
+            <div className="ev-aux__head">
+              <span className="ev-aux__crumb">{auxCrumb(aux, auxDetail?.title)}</span>
+              <span className="ev-aux__spacer" />
+              <span className="ev-aux__esc">esc</span>
+              <button
+                type="button"
+                className="ev-aux__close"
+                aria-label="Close related panel"
+                data-testid="entity-view-aux-close"
+                onClick={() => setAux(null)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <div className="ev-aux__body">
             {aux.sort === 'entity' ? (
               /* The mount moved to `auxPanel.tsx` so a second host can render
@@ -1052,34 +1379,54 @@ export function EntityView(props: EntityViewProps) {
                 onClose={() => setAux(null)}
               />
             ) : detail && aux.tab === 'discussion' ? (
-              <DiscussionTab
-                messages={messages ?? []}
-                provenanceHollowReason={reasons.provenanceHollow}
-                canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
-                onPost={(post) => data.postMessage({
-                  clientMutationId: `post:${selectedId}:${Date.now()}`,
-                  anchorIds: [selectedId as EntityId],
-                  ...post,
-                })}
-                /* The aux column is the SAME composer as the panel's, so it
-                   gets the same subjects; the attach port is deliberately not
-                   forwarded here — this column is a bounded read of another
-                   entity's thread, and `attachments` is bound to the panel's
-                   own anchor above. Absent ⇒ the attach control says so. */
-                mentionOptions={data.mentionOptions}
-                skillOptions={data.skillOptions}
-              />
+              /*
+               * THE SIXTH CONVERSATION MOUNT, and the one no guard could see:
+               * it renders a tab body directly rather than through
+               * `EntityDetailPanel`, so `panel-host-wiring.test.ts` never
+               * scanned it. It drew the tab's own renderer over `messages.list`
+               * while the panel one column over drew `entities.feed` — the same
+               * conversation, two readings, on one screen.
+               *
+               * Now the same composition as everywhere else, on `selectedId` —
+               * this arm is the `{sort:'tab'}` variant, which HAS no id of its
+               * own: it is the selected entity's discussion, moved out of the
+               * tab strip so it can sit beside the document rather than
+               * replace it. (`AuxTarget`'s two sorts exist precisely because a
+               * tab has no entity to point at.)
+               */
+              conversationSurfaceFor(detail, selectedId as EntityId, {
+                seam: data.seam,
+                spaceId: data.spaceId,
+                connection: data.connection,
+                livenessOf: data.livenessOf,
+                channelFeedPort,
+                viewerMemberId: props.viewerMemberId,
+                nodeKey: data.nodeKey,
+                skillOptions: data.skillOptions,
+                onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+                onSwitchToTerminal: () => {
+                  setContentSurfaces((current) => ({ ...current, [selectedId as EntityId]: 'terminal' }));
+                },
+              }, 'discussion')
             ) : detail && aux.tab === 'connections' ? (
               <ConnectionsTab
                 detail={detail}
                 connections={data.connectionsOf(detail.id)}
                 onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+                /* The same canvas the panel's own Connections tab offers. A
+                   surface present in one column and missing from the other
+                   would read as a defect in the entity rather than a choice
+                   about this column — and the column is wide enough to be a
+                   real second reading of the same edges. */
+                graph={graphSurfaceFor(data.seam, detail.id, data.livenessOf, (id) =>
+                  setAux({ sort: 'entity', id: id as EntityId }),
+                )}
               />
             ) : (
               <EmptyBody sentence="The entity this panel belongs to is no longer open." />
             )}
           </div>
-        </aside>
+        </aside>,
       ) : null}
     </div>
   );
@@ -1088,4 +1435,49 @@ export function EntityView(props: EntityViewProps) {
 function auxCrumb(aux: AuxTarget, title: string | undefined): string {
   if (aux.sort === 'tab') return aux.tab;
   return title ?? 'loading…';
+}
+
+/**
+ * HOW MUCH OF THE PHONE FRAME THIS AUX TARGET NEEDS.
+ *
+ * The criterion is a COMPOSER, not a tab name — Discussion is the full-height
+ * one because it is the aux target you type into. The default sheet is 88% of
+ * a frame that is already `100dvh` minus the measured keyboard inset, so with
+ * the keyboard up "88%" is 88% of what the keyboard left: a composer, its foot
+ * row, and about two visible messages. Connections has nothing to type into and
+ * keeps the strip of screen underneath, which is what distinguishes a sheet
+ * from a navigation.
+ *
+ * The entity sort is `'default'` for the same reason and not by omission: it
+ * mounts `AuxEntityPanel`, a reading surface whose own composer — if the entity
+ * has one — lives behind that panel's tabs rather than under the sheet's foot.
+ */
+function auxSheetSize(aux: AuxTarget | null): 'default' | 'full' {
+  return aux?.sort === 'tab' && aux.tab === 'discussion' ? 'full' : 'default';
+}
+
+/**
+ * The narrowing cluster's own mark: a funnel closed, an ✕ open.
+ *
+ * SVG in a 16 viewBox with `currentColor`, the same idiom as the tile's
+ * chevrons and the lifecycle row's rings, and for the same reason — a
+ * typographic glyph sits on its own font's baseline, so `⌄` and `✕` land at
+ * different optical heights inside one round button.
+ *
+ * The ✕ is right HERE and nowhere else in this cluster: this is a dismiss, and
+ * the dismiss glyph is what this product already uses for one.
+ */
+function NarrowGlyph({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden focusable="false">
+      <path
+        d={open ? 'M4 4L12 12M12 4L4 12' : 'M2.5 3.5H13.5L9.25 8.5V13L6.75 11.5V8.5Z'}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }

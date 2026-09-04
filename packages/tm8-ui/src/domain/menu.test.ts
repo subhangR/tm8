@@ -7,10 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_MENU_CHATS_SPINE,
-  DEFAULT_MENU_CODE_KIND_SPINE,
   DEFAULT_MENU_GROUP_SPINE,
-  DEFAULT_MENU_WORKSPACE_KIND_SPINE,
   MenuConfigSchema,
   type MenuConfig,
 } from '@tm8/contract';
@@ -36,9 +33,9 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(unrenderableKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
   });
 
-  it('encodes the WLT §2 diagram, pinned to the contract spine', () => {
+  it('encodes the revision-20 tab row, pinned to the contract spine', () => {
     // DEFAULT_MENU_GROUP_SPINE is the ONE truth this default and the server
-    // seeder (db/migrations/093, tested by
+    // seeder (db/migrations/140, tested by
     // packages/server/test/db/menu-seeder-parity.pg.test.ts) are both pinned
     // to. Before the spine existed the two carried unjoined hand-copies, and
     // migration 059 dropped the voice group with every suite green — the
@@ -47,40 +44,75 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).toEqual(
       DEFAULT_MENU_GROUP_SPINE.map((g) => g.clientId),
     );
-    // The ordered kind spines are the second shared parity pin: the client
-    // fallback and SQL seeder each prove their hand-written copy against them.
-    // Revision 11: `channel` leads (the Chats group precedes Workspace), the
-    // Workspace caret swaps channel→file, and the Code caret carries the old
-    // Tracking collections.
-    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([
-      'channel',
-      ...DEFAULT_MENU_WORKSPACE_KIND_SPINE,
-      ...DEFAULT_MENU_CODE_KIND_SPINE,
-    ]);
-    expect(DEFAULT_MENU_WORKSPACE_KIND_SPINE).toHaveLength(8);
   });
 
-  it('clusters the conversation surfaces in Chats, pinned to the contract spine', () => {
-    const chats = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'chats');
-    expect(chats).toEqual({
-      id: 'chats',
-      label: 'Chats',
-      items: DEFAULT_MENU_CHATS_SPINE,
-    });
-  });
-
-  it('folds the Library into Workspace — file rows stay reachable, spells/collections go palette-only', () => {
-    // Revision 11: no Library group. The Files explorer VIEW rides beside the
-    // Workspace caret and the `file` KIND fills the caret's freed eighth slot
-    // (owner ruling R9 keeps both doors). `spell` and `collection` left the
-    // rail for the palette and the kind switcher — free refs, not deletions.
-    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('library');
-    const workspace = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'workspace');
-    expect(workspace?.items.map((i) => i.ref)).toEqual(['workspace', 'files']);
-    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toContain('file');
-    for (const gone of ['spell', 'collection', 'member']) {
-      expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).not.toContain(gone);
+  it('names EXACTLY ONE kind row — `chat`, and only because of what its tab is', () => {
+    // Revision 17: the Work and Channels groups retired, and with them every
+    // kind row the menu carried. The kinds did not lose their door — Home's
+    // root column and icon rail (domain/home-rail.ts) list every collection
+    // kind the registry offers, which is strictly MORE than the menu's frozen
+    // caps could ever name. A kind row reappearing here would be a second
+    // door beside a complete one.
+    /*
+     * REVISION 22 AMENDS THIS RULE, AND THE AMENDMENT IS NARROW.
+     *
+     * 17's law was "no kind rows", on the reasoning that Home's root column
+     * lists every collection kind the registry offers, so a menu row for one
+     * of them was a second door to a list Home already owns. That reasoning is
+     * intact and it is why this stays an exact-equality assertion rather than
+     * being relaxed to a subset: a second kind row landing here is still the
+     * defect 17 named.
+     *
+     * `chat` is admitted because the door it opens is NOT the one Home owns.
+     * Home's chats root is the two-pane CONVERSATION surface — a thread column
+     * and a transcript. This tab is the entity LIST: tiles with the queue's
+     * status pill, the four lifecycle tabs, sort, in-panel search and the row
+     * action cluster, opening a panel whose body is that same conversation.
+     * That is a different arrangement over the same rows, which is exactly the
+     * R9 two-doors posture the Board tab already sets against `task`.
+     *
+     * A VIEW REF WAS NOT AVAILABLE, and that is the other half of the reason.
+     * The Board precedent is a `board` MenuViewRef, and there is no `chats`
+     * view: adding one means widening the contract's closed `MenuViewRef`
+     * union AND a `menu_view_registry` row AND its check constraint — three
+     * server-side edits to reach a screen the kind list already renders.
+     */
+    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual(['chat']);
+    // Revision 19 (migration 140): a WORK group returns, and the assertion
+    // above is exactly why it can. What 17 retired was a rail of ROWS — the
+    // Workspace caret with its eight kinds, the three dev kinds, git — and
+    // every one of those was a kind door Home already owned. The group that
+    // came back carries NO kind rows at all: one childless `workspace` VIEW,
+    // which is the three-panel split pane, a layout Home does not offer.
+    // So `work` and `workspace` leave the retired lists below while the
+    // no-kind-rows rule that motivated 17 stays fully intact.
+    const ids = SHIPPED_DEFAULT_MENU.groups.map((g) => g.id);
+    for (const gone of ['workspace', 'channels', 'library', 'code', 'voice']) {
+      expect(ids).not.toContain(gone);
     }
+    // …and the retired VIEW refs are unrouted from the rail, not deleted:
+    // the frozen DTO still accepts a space putting any of them back.
+    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
+    for (const gone of ['git', 'messages', 'feed', 'inbox', 'channels']) {
+      expect(refs).not.toContain(gone);
+    }
+    expect(
+      MenuConfigSchema.safeParse({
+        schemaVersion: SHIPPED_DEFAULT_MENU.schemaVersion,
+        revision: 1,
+        groups: [
+          {
+            id: 'work',
+            label: 'Work',
+            items: [
+              { type: 'view', ref: 'workspace', children: [{ type: 'kind', ref: 'task' }] },
+              { type: 'view', ref: 'git' },
+            ],
+          },
+          { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+        ],
+      }).success,
+    ).toBe(true);
   });
 
   it('always contains settings (the fail-closed floor)', () => {
@@ -88,73 +120,79 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(refs).toContain('settings');
   });
 
+  it('retires Files and legacy Board from the default without deleting their menu capability', () => {
+    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((group) => group.items.map((item) => item.ref));
+    expect(refs).not.toContain('files');
+    expect(refs).not.toContain('board');
+    expect(refs.at(-1)).toBe('help');
+    expect(
+      MenuConfigSchema.safeParse({
+        schemaVersion: 1,
+        revision: 7,
+        groups: [
+          { id: 'legacy-board', label: 'My board', items: [{ type: 'view', ref: 'board' }] },
+          { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
+          { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
   /**
-   * Revision 11 (single-home ruling, 2026-08-14): Home is the one landing row.
-   * Messages moved to Chats beside the channel collection; Inbox left the rail
-   * for the top-bar bell (its rows also feed the Home page's NEEDS YOU and
-   * MENTIONS sections, so a rail row was a third door to the same fact).
+   * Revision 17 (task 01a00932): the tab is named HOME and the pair 14 pinned
+   * — the group exists AND it is railless — still holds, now for a stronger
+   * reason. The Home SCREEN carries its own icon rail (registry-derived,
+   * entities only, views/HomeRail.tsx); a menu rail beside it would be a
+   * second rail. The single-item shape is what `isRaillessGroup` keys on, and
+   * it is asserted here as a SHAPE; that the shape means "no rail" is proven
+   * in shell/menu-resolve.test.ts — domain/ does not borrow shell's predicate.
    */
-  it('keeps Home as the single landing row', () => {
-    const home = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'home');
-    expect(home?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
-    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('channels');
-    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('voice');
+  it('leads with a single-item Home group — the tab, with the screen owning its rail', () => {
+    const ids = SHIPPED_DEFAULT_MENU.groups.map((g) => g.id);
+    expect(ids[0]).toBe('chats');
+    // `home` is NOT the id: ids are the wire-stable half every resolver and
+    // upgrade guard keys on — 15 renamed the label to Collab, 17 to Home, and
+    // the id never moved.
+    expect(ids).not.toContain('home');
+
+    const chats = SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === 'chats');
+    expect(chats?.label).toBe('Home');
+    expect(chats?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
+    // ONE item, and childless — the shape the railless rule keys on. A second
+    // row here and the surface grows a third pane.
+    expect(chats?.items).toHaveLength(1);
+    expect(chats?.items[0]?.type === 'view' && chats.items[0].children).toBeUndefined();
   });
 
-  it('leaves feed, channels and inbox off the RAIL without dropping them from the union', () => {
-    // The distinction this test exists to hold: a ref can be unrouted from the
-    // rail without being deleted. `MenuViewRef` still carries all three, so the
-    // menu editor can offer them and a deep link still resolves.
-    //
-    // INBOX re-left this list on 2026-08-14: its screen stays mounted and the
-    // top-bar bell points at it — a rail row and a bell would be two doors in
-    // the chrome for one destination.
-    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
-    // The VIEW refs are gone; `channels` the view ref is not the same thing as
-    // `channel` the kind ref, which revision 11 put in the Chats group.
-    for (const gone of ['feed', 'channels', 'inbox']) expect(refs).not.toContain(gone);
-    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toContain('channel');
+  it('keeps every shipped menu group as a railless single-view tab', () => {
+    for (const [id, ref] of [
+      // Revision 19: Work is the three-panel workspace, and it holds the
+      // `workspace` VIEW alone. The childless single-item shape is the whole
+      // guarantee — give this item the eight caret children the pre-134 group
+      // carried and `isRaillessGroup` answers false, a menu rail appears left
+      // of the split, and the tab draws FOUR columns instead of three.
+      ['work', 'workspace'],
+      ['craft', 'craft'],
+      ['graph', 'graph'],
+      ['settings', 'settings'],
+      ['help', 'help'],
+    ] as const) {
+      const group = SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === id);
+      expect(group?.items).toEqual([{ type: 'view', ref }]);
+    }
   });
 
-  it('names Messages as a VIEW ref, never as a kind row', () => {
-    // Two independent mechanisms refuse `message` as a kind ref, and this test
-    // pins BOTH the refusal and the alternative. The registry row is
-    // `strategy: 'anchored'` with `slug: null`, so `isMenuEligibleKind` says no;
-    // and the database's own twin (`internal.w2_normalize_menu_payload`)
-    // rejects a `message` kind ref outright. A future edit that "simplifies"
-    // Messages into a kind row would fail closed in the rail AND be refused at
-    // the next menu write, so the view ref is not a preference — it is the only
-    // door.
-    expect(isMenuEligibleKind('message')).toBe(false);
-    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).not.toContain('message');
-    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
-    expect(refs).toContain('messages');
-  });
-
-  it('keeps depth at exactly ≤1 with Workspace and Code as the two caret VIEW items', () => {
+  it('carries no caret items — depth is zero everywhere (the carets retired with Work)', () => {
     const carets = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .filter((item) => item.type === 'view' && (item.children?.length ?? 0) > 0);
-    expect(carets.map((c) => c.ref)).toEqual(['workspace', 'git']);
-    for (const caret of carets) {
-      for (const child of caret.type === 'view' ? (caret.children ?? []) : []) {
-        expect('children' in child).toBe(false);
-      }
-    }
-  });
-
-  it('gives every kind row an icon — the collapsed 48px rail needs one', () => {
-    for (const ref of menuKindRefs(SHIPPED_DEFAULT_MENU)) {
-      expect(getKind(ref).icon.length).toBeGreaterThan(0);
-    }
+    expect(carets).toEqual([]);
   });
 
   it('omits R7-deferred features (they live in the palette, disabled)', () => {
     const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) =>
       g.items.flatMap((i) => [i.ref, ...(i.type === 'view' ? (i.children ?? []).map((c) => c.ref) : [])]),
     );
-    // Graph left the deferred set 2026-07-29 (user ruling): the ◉ view ships
-    // as a revision-2 menu row (GRAPH-VIEW-PLAN §2).
     for (const deferred of ['activity', 'leaderboard']) {
       expect(refs).not.toContain(deferred);
     }
@@ -162,7 +200,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(11);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(22);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

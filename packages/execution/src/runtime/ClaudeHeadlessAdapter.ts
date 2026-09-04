@@ -6,6 +6,7 @@ import { isAbsolute } from 'node:path';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type { Logger } from '../pty/types.js';
 import { redactSecretTokens } from '../spawn/secret-redaction.js';
+import { composeChatEnv } from './chat-env.js';
 import { AsyncTurnQueue } from './AsyncTurnQueue.js';
 import {
   AgentRuntimeError,
@@ -27,6 +28,11 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const DEFAULT_BOOT_SETTLEMENT_MS = 150;
 const DEFAULT_CLOSE_GRACE_MS = 1_000;
 const MAX_STDERR_CHARS = 16_384;
+const CLAUDE_BUILTIN_TOOLS = [
+  'Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch',
+  'NotebookEdit', 'TodoWrite', 'Task', 'TaskOutput', 'AskUserQuestion',
+  'EnterPlanMode', 'ExitPlanMode',
+] as const;
 
 type JsonObject = Record<string, unknown>;
 
@@ -67,6 +73,15 @@ export interface ClaudeHeadlessAdapterOptions {
   bootSettlementMs?: number;
   closeGraceMs?: number;
   onThreadExit?: (event: AgentThreadExit) => void | Promise<void>;
+  /**
+   * A node-level Claude Code plugin directory holding the tm8-curated skills.
+   * When set, the runtime loads it with `--plugin-dir` and ENABLES the slash-
+   * command surface (which is what `Skill` resolves through). When absent,
+   * `--disable-slash-commands` stays on and the `Skill` tool, though offered,
+   * finds nothing — so chat behaves exactly as before a dir is configured.
+   * NOT a settings source: this does not re-enable project hooks/permissions.
+   */
+  pluginDir?: string;
 }
 
 /**
@@ -85,6 +100,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   private readonly bootSettlementMs: number;
   private readonly closeGraceMs: number;
   private readonly onThreadExit: ClaudeHeadlessAdapterOptions['onThreadExit'];
+  private readonly pluginDir: string | undefined;
   private readonly threads = new Map<string, ThreadState>();
   /**
    * Same-process consistency hints for R8. The orchestrator's durable binding
@@ -101,6 +117,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     this.bootSettlementMs = options.bootSettlementMs ?? DEFAULT_BOOT_SETTLEMENT_MS;
     this.closeGraceMs = options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
     this.onThreadExit = options.onThreadExit;
+    this.pluginDir = options.pluginDir?.trim() || undefined;
     if (this.bootSettlementMs < 0 || !Number.isFinite(this.bootSettlementMs)) {
       throw new AgentRuntimeError('bootSettlementMs must be a finite non-negative number', 'invalid_input');
     }
@@ -139,12 +156,19 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     // key and leave a live-looking ghost behind.
     const config: StartAgentThreadInput = {
       ...input,
+      availableTools: [...input.availableTools],
       allowedTools: [...input.allowedTools],
       ...(input.env ? { env: { ...input.env } } : {}),
     };
 
     const args = this.buildArgs(config);
-    const childEnv: NodeJS.ProcessEnv = { ...this.env, ...config.env };
+    // ALLOW-LIST, never a wholesale copy. `{ ...this.env }` here handed the
+    // chat child the server's own environment, which on a deployed node
+    // carries `TM8_DATABASE_URL` — a SUPERUSER connection string, for which
+    // every RLS policy is advisory. That was inert only while chat had no way
+    // to read an environment variable; the full tool set is what makes it
+    // live. See chat-env.ts for the measurement and the argument.
+    const childEnv: NodeJS.ProcessEnv = { ...composeChatEnv(this.env), ...config.env };
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawnChild(this.command, args, {
@@ -312,10 +336,21 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       throw new AgentRuntimeError('mcpConfigPath must be absolute', 'invalid_input');
     }
     if (!Array.isArray(input.allowedTools) || input.allowedTools.length === 0) {
-      throw new AgentRuntimeError('allowedTools must name at least one pre-authorized TM8 tool', 'invalid_input');
+      throw new AgentRuntimeError('allowedTools must name at least one pre-authorized tool', 'invalid_input');
+    }
+    if (!Array.isArray(input.availableTools)) {
+      throw new AgentRuntimeError('availableTools must be an array', 'invalid_input');
     }
     if (input.resume !== undefined && input.resume !== 'post_interrupt') {
       throw new AgentRuntimeError("resume must be 'post_interrupt' when provided", 'invalid_input');
+    }
+    const visibleTools = new Set<string>();
+    for (const tool of input.availableTools) {
+      this.assertText(tool, 'availableTools entry');
+      if (visibleTools.has(tool)) {
+        throw new AgentRuntimeError(`availableTools contains duplicate '${tool}'`, 'invalid_input');
+      }
+      visibleTools.add(tool);
     }
     const tools = new Set<string>();
     for (const tool of input.allowedTools) {
@@ -358,12 +393,48 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       input.model,
       '--setting-sources',
       '',
-      '--disable-slash-commands',
+      // A curated plugin dir enables skills via the slash-command surface;
+      // without one, that surface stays disabled (unchanged prior behaviour).
+      ...(this.pluginDir
+        ? ['--plugin-dir', this.pluginDir]
+        : ['--disable-slash-commands']),
       '--mcp-config',
       input.mcpConfigPath,
       '--strict-mcp-config',
-      '--tools',
-      '',
+      // Chat is the human's orchestrating main thread and runs full-power,
+      // full-trust Claude Code (ruled): no interactive approvals, Bash
+      // unrestricted, workspace trusted.
+      //
+      // THIS COMMENT USED TO CLAIM the exfiltration surface on the per-thread
+      // token file was "covered by secret redaction of the tm8 token shape".
+      // That was FALSE AS WRITTEN and is removed rather than softened, because
+      // a false safety claim in the one place a future reader will look is
+      // worse than no claim. `redactSecretTokens` runs on exactly three paths
+      // in this file — provider error text, stderr, and spawn-failure detail —
+      // all of them ERROR paths. Assistant `text`, `thinking`, `tool_call.args`
+      // and `tool_result.content` are queued raw, and the output of
+      // `cat <thread>.mcp.json` is a tool_result.
+      //
+      // Nor would redaction be a control if it did run everywhere: it prevents
+      // accidental DISPLAY. With Bash and WebFetch both present under
+      // bypassPermissions, content injected through a repository file or a web
+      // page exfiltrates without the bytes crossing a channel redaction
+      // touches.
+      //
+      // What actually bounds this today: the child's environment is now an
+      // allow-list (chat-env.ts), so the node's own secrets are not in the
+      // process to begin with. What does NOT bound it: the `agent_runtime`
+      // token in that file is a general-purpose credential for the requesting
+      // human — the thread/Space/mode scope lives in the MCP client process,
+      // not in the server's authorization — so a stolen token is not confined
+      // by anything the server checks. Scoping it server-side off
+      // `runtimeThreadRootId` (already on the row, already resolved) is the fix
+      // and is deliberately NOT in this change.
+      '--permission-mode',
+      'bypassPermissions',
+      ...(input.availableTools.length > 0
+        ? ['--tools', input.availableTools.join(',')]
+        : ['--disallowed-tools', ...CLAUDE_BUILTIN_TOOLS]),
       '--allowed-tools',
       ...input.allowedTools,
       input.resume === 'post_interrupt' ? '--resume' : '--session-id',

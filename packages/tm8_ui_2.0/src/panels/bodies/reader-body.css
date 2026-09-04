@@ -1,0 +1,308 @@
+/* ==========================================================================
+   READER BODY — the reader archetype's interior.
+   Source: T0-4 "DOC" frame 2 (oracle lines 325-361); Z4 "READER (doc)"
+   (984-1027) and "DARK DOC" (1321-1352) cross-read for the same anatomy at
+   full width and for the dark pairing.
+
+   Colours are tokens (§14 — `src/hex-ban.test.ts` and
+   `panels/no-branching.test.ts` both scan this file). Canvas-measured
+   geometry and micro-type literals are kept verbatim per D5, each citing the
+   oracle declaration it came from.
+
+   The body ROOT is `.pn-body` (panels.css), not a class of this file's: the
+   oracle's body div is `padding:12px;display:flex;flex-direction:column;
+   gap:12px;overflow:auto` and `.pn-body` already is exactly that. Restating
+   it here would be a second source for one geometry.
+   ========================================================================== */
+
+/* --- outline (the table of contents) -------------------------------------- */
+/* WHAT THIS REPLACED, and why the oracle is departed from here. The canvas
+   draws the outline as a wrapped row of mono pills (`display:flex;gap:5px;
+   flex-wrap:wrap`, line 346) and this file reproduced it exactly. On a real
+   document — fourteen chapters, titles of six to nine words — that row wrapped
+   across five ragged lines whose entries began at arbitrary x positions, and
+   no amount of correct tokening made it legible as a table of contents. The
+   oracle's frame carries four short chapter names, which is the case the pill
+   row is right for.
+
+   So: a LIST, one entry per line (user ruling 2026-08-17). The pill treatment
+   is gone rather than restyled — a pill is a tag, and these are destinations.
+   Type stays in the outline's own quiet register (mono micro, ink-3) so the
+   reading column below it is still the loudest thing in the body. */
+.cv2-root .rd-toc {
+  /* The body is a 12px-gap flex column; the list needs no box of its own. */
+  display: block;
+}
+
+/* A HAIRLINE GUIDE down the left of the list.
+   The resting affordance, and a deliberately quiet one. The system's link
+   treatment is brand + underline (`md-link`), and worn by nineteen rows at once
+   it would make the table of contents the loudest thing in the body — the
+   reader archetype's one standing rule is that the reading column wins. The
+   guide instead marks the whole block as a navigational region, which is the
+   thing a reader needs to know at rest; that any single row is clickable is
+   told by the hover and focus states below, which are unmissable. --pn-line,
+   because it bounds a region. */
+.cv2-root .rd-toc__list {
+  margin: 0;
+  padding: 0 0 0 8px;
+  border-left: 1px solid var(--pn-line);
+  /* An <ol> for the semantics — screen readers get the count and the order —
+     with the marker suppressed: the labels ARE the document's own numbering
+     where it has any, and `1.` in front of a heading called "0. Correcting the
+     premise" reads as a contradiction. */
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.cv2-root .rd-toc__item {
+  display: flex;
+  /* The indent, stepped per depth. `data-depth` is capped at 3 by
+     MAX_OUTLINE_DEPTH in the component — an unbounded attribute selector
+     cannot be written, so the cap is not a nicety, it is what makes these
+     four rules total. */
+  padding-left: 0;
+}
+.cv2-root .rd-toc__item[data-depth='1'] { padding-left: 12px; }
+.cv2-root .rd-toc__item[data-depth='2'] { padding-left: 24px; }
+.cv2-root .rd-toc__item[data-depth='3'] { padding-left: 36px; }
+
+/* THE HEADING ON THE TABLE OF CONTENTS. `aria-label="Table of contents"` on the
+   <nav> told a screen reader what this block is and told a sighted reader
+   nothing — and "nothing indicates these are navigation" was half of the
+   reported defect. An eyebrow is the package's own existing word-for-a-region
+   (`t-eyebrow`, tokens.css) and costs one line. */
+.cv2-root .rd-toc__head {
+  margin: 0 0 4px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-4);
+}
+
+/* The row: full-width so the whole line is the hit target, not just the words.
+   A 2px-tall pill was a hard thing to hit with a mouse and impossible with a
+   thumb; this row is 22px and spans the column.
+
+   THE FACE WAS MONO AND IS NOW THE READING FACE (owner report 2026-08-31: the
+   outline "renders as flat grey MONOSPACE lines with no hierarchy"). Mono is
+   this package's face for things that were TYPED — a sha, a path, a command —
+   and these entries are the document's own SENTENCES, lifted out of it. At 10px
+   JetBrains Mono a nine-word chapter title is both wider and harder to read
+   than the same words in the reading face at 13. `--pn-prose` rather than
+   `--pn-ui` names what these words are; the two resolve to the same stack in
+   tokens.css today, so the visible change is mono → proportional, not a second
+   typeface arriving.
+
+   THE QUIET REGISTER IS NOT ABANDONED, it moves from FACE to WEIGHT: depth 0
+   carries full ink at 600 and each level down steps back, so the list has the
+   hierarchy the document has (see the depth rules below) while the reading
+   column stays the loudest thing in the body — the reader archetype's standing
+   rule, unchanged. */
+.cv2-root .rd-toc__row {
+  appearance: none;
+  background: none;
+  border: none;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* The touch floor. `min-height` rather than `height` so a label that wraps
+     (see `rd-toc__label`) grows the row instead of being sliced by it. */
+  min-height: 24px;
+  padding: 2px 6px;
+  border-radius: var(--pn-r-sm, 4px);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--pn-prose);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-2);
+}
+
+/* HIERARCHY, from the depth the component already computed and normalised.
+   The indent alone was carrying it, and an indent under a panel that clamps at
+   three levels is a 12px step nobody reads as structure. Weight and ink do the
+   work the `#` count means: a top-level section is a destination, a fourth-level
+   heading is a detail of one. */
+.cv2-root .rd-toc__item[data-depth='0'] > .rd-toc__row {
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .rd-toc__item[data-depth='2'] > .rd-toc__row,
+.cv2-root .rd-toc__item[data-depth='3'] > .rd-toc__row {
+  font-weight: 400;
+  color: var(--pn-ink-3);
+}
+
+/* Oracle hover for the chip it replaces: `color:#9A581F` (line 347) — brand-2,
+   plus the row's own recessed background, which is what tells a reader the
+   whole line is the target and not the text alone. */
+/* QUALIFIED BY THE ITEM so it outranks the per-depth ink above — the depth
+   rules need the `[data-depth]` attribute to select on, which lifts them to
+   (0,4,0), and a hover that loses to a resting colour is a hover that does not
+   exist. Same (0,4,0) here, declared later, which is the cheapest way to keep
+   the two in the order the design intends. */
+.cv2-root .rd-toc__item > .rd-toc__row:hover,
+.cv2-root .rd-toc__item > .rd-toc__row:focus-visible {
+  color: var(--pn-brand-2);
+  background: var(--pn-card);
+}
+/* The underline is on the LABEL, not the row: a row-wide border would draw
+   under the empty space to the right of a short title and read as a divider
+   between entries rather than as a link. Matches `md-link`'s offset so the two
+   link treatments in a doc agree. */
+.cv2-root .rd-toc__row:hover .rd-toc__label,
+.cv2-root .rd-toc__row:focus-visible .rd-toc__label {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Keyboard parity: `:focus-visible` alone would leave a TAP with no feedback
+   at all (it never matches a touch), so the hover rule above carries the
+   colour and this one only adds the ring. */
+.cv2-root .rd-toc__row:focus-visible {
+  outline: 2px solid rgba(var(--pn-brand-rgb), 0.5);
+  outline-offset: -1px;
+}
+
+/* THE LABEL WRAPS, up to two lines, and this is the one place the old chip was
+   actively lossy: `white-space:nowrap` + `text-overflow:ellipsis` on a pill
+   meant a long chapter title was cut mid-word with no way to read the rest.
+   Two lines and then an ellipsis keeps the list scannable without hiding what
+   the entry is. */
+.cv2-root .rd-toc__label {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* The honest absence when the record claims chapters the outline does not
+   hold. Mono micro, ink-4 — the same quiet register as the facts line below
+   it, deliberately NOT the reading column's voice. */
+.cv2-root .rd-absent {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+
+/* --- the reading column ----------------------------------------------------
+   THE RENDERED DOCUMENT. Its typography is `kit/markdown.css`'s `md-doc`
+   stance, not this file's — one document reads the same in the reader and in
+   the editor's preview or it is not a preview. What stays here is the reader's
+   own framing: the column must be able to SHRINK, because `.pn-body` is a flex
+   column and an item that cannot go below its content's min-content width is
+   how a body ends up scrolling sideways (the defect measured at the foot of
+   this file). `min-width: 0` is the floor that makes the wrap authoritative.
+
+   `.rd-md` had NO declaration at all before this — the class was passed by
+   ReaderBody and matched nothing in the package, so the reading column was
+   whatever `.md-root` happened to be. Naming it is what makes the reader's
+   stance reviewable. */
+.cv2-root .rd-md {
+  min-width: 0;
+}
+
+/* Oracle prose: `font-family:'Newsreader',Georgia,serif;font-size:15px;
+   line-height:1.7;color:#3A362E;text-wrap:pretty` (line 349). The Z4 frame
+   draws the same column at 16.5px/1.75 (line 1007) — that is the full-view
+   measure and belongs to a Z4 variant nobody has built yet, so the panel
+   values ship and the Z4 pair is recorded here rather than guessed at.
+
+   COLOUR — PENDING TOKEN, stated as a fallback rather than a hex. #3A362E
+   (light) / #D8D0BE (dark, line 1345) is a MEASURED pair that no token
+   carries: it is neither --pn-ink (#23201B / #EFE9DB) nor --pn-ink-2
+   (#5B564C / #BDB5A2), and it does not fall out of a color-mix of ink and
+   paper at any single ratio in both themes (checked: 88-89% lands 2-7 units
+   off per channel). `--pn-x-btn-ink-hover` happens to be the same light byte
+   for an unrelated reason (the ink-chip hover) — borrowing it would be the
+   mis-tokenisation that guard was built to prevent.
+
+   So: `--pn-x-prose-ink` is a COLOUR NEED reported to the coordinator, and
+   until it lands in canvas-extra.css this falls back to --pn-ink, which is
+   one step too strong in both themes. This comment states what was measured,
+   not what will happen. */
+.cv2-root .rd-prose {
+  margin: 0;
+  font-family: var(--pn-prose);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--pn-x-prose-ink, var(--pn-ink));
+  text-wrap: pretty;
+}
+
+/* Oracle quote: `border-left:2px solid #E7E3D9;padding:2px 0 2px 12px;
+   font-family:'JetBrains Mono';font-size:11px;color:#8E897B` (line 350).
+   The rule BOUNDS the quote block — --pn-line, not the soft row hairline,
+   per the hairline rule. No line-height: the oracle declares none, and an
+   invented one is exactly the eyeballed value D5 bans. */
+.cv2-root .rd-quote {
+  margin: 0;
+  border-left: 2px solid var(--pn-line);
+  padding: 2px 0 2px 12px;
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+
+/* --- the facts line -------------------------------------------------------- */
+/* Oracle: `display:flex;align-items:center;gap:8px;border-top:1px solid
+   #E7E3D9;padding-top:9px;font-family:'JetBrains Mono';font-size:10px;
+   color:#B7B2A4` (line 352). The rule separates the facts row from the
+   reading column — a region boundary inside the body, so --pn-line. */
+.cv2-root .rd-facts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--pn-line);
+  padding-top: 9px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .rd-facts__spacer {
+  flex: 1;
+}
+
+/* ══ THE PHANTOM HORIZONTAL SCROLLBAR ═══════════════════════════════════════
+   THE DEFECT, MEASURED on the deployed bundle at https://tm8.sh on 2026-08-31,
+   Firefox 1512×950, doc `01a04ee0` ("Frontend verification"):
+
+     .pn-body  clientWidth 558  scrollWidth 726  →  168px of horizontal scroll
+     the single box past the right edge:  span.hon-tip, +168px,
+       position:absolute · visibility:hidden · opacity:0
+
+   Setting `scrollLeft = 9999` moved it the full 168 and slid the ENTIRE reading
+   column left, cutting every line of prose at both edges — which is the state
+   the owner screenshotted and reported as "the prose is being cut off, not
+   wrapped". The prose wraps correctly; it was being SCROLLED out of view by a
+   tooltip nobody can see. The same 168 was measured on a second document
+   (`01a027ab`) and at a second pane width, so it is the facts line, not a
+   document: every doc in the space has it.
+
+   The prose was never the culprit and no width on the prose could have fixed
+   it. `.hon-tip` is `left: 0; width: max-content; max-width: 260px` — correct
+   for a control on the left of its row, and this control is the LAST item of a
+   row with a `flex: 1` spacer before it, so 260px of tooltip starts at the
+   right edge and lands outside the scroller. Anchoring it by its right edge
+   puts the same box inside the same column, still readable, contributing
+   nothing to the scroll region.
+
+   SCOPED TO THIS ROW, and reported rather than fixed globally: the mechanism is
+   general (any `.hon-tip` on a control near the right edge of a scrolling body
+   does this) and `honesty.css` belongs to another lane. `:not(.mobile-frame *)`
+   because the mobile spelling of this tooltip is `position: fixed` to the frame
+   and must keep its own geometry — restating it here is exactly what that
+   file's docblock warns against, so this rule simply does not apply there. */
+.cv2-root .rd-facts .hon-tip:not(.mobile-frame *) {
+  left: auto;
+  right: 0;
+}

@@ -432,10 +432,36 @@ chmod +x packages/cli/dist/index.js
 ln -sf index.js packages/cli/dist/tm8
 ok "tsc -b"
 
+# A stale `packages/tm8-ui/dist` SYMLINK (it used to point at ../tm8_ui_2.0/dist,
+# bridging a root-owned /etc/tm8/prod.env that named the old path) would make the
+# product build below write THROUGH it into the alternate package. Remove it
+# first; idempotent, and a no-op on a tree that never had one.
+if [[ -L packages/tm8-ui/dist ]]; then
+  rm -f packages/tm8-ui/dist
+  warn "removed the legacy packages/tm8-ui/dist symlink"
+fi
+
 info "ui (vite build — this is a SEPARATE build; \`bun run build\` is tsc only) …"
 (cd packages/tm8-ui && node_modules/.bin/vite build) \
   || die "vite build failed — prod is untouched and still serving the previous build"
 ok "vite build"
+
+# The ALTERNATE 2.0 UI, served at /ui-2.0/ for the version switch. It emits to
+# `dist-2.0`, NEVER `dist`: the product pointer TM8_UI_DIR names
+# packages/tm8-ui/dist, and a bundle built with `base: '/ui-2.0/'` sitting in a
+# directory the root pointer might name would white-screen the site rather than
+# fail loudly. See packages/tm8_ui_2.0/vite.config.ts.
+#
+# NOT `die` ON FAILURE, unlike the product UI: this bundle is optional. A deploy
+# that cannot build the alternate UI must still ship the product one — failing
+# the whole rollout over a rollback affordance would make the affordance more
+# dangerous than the thing it exists to protect against.
+info "ui 2.0 (the alternate UI at /ui-2.0/) …"
+if (cd packages/tm8_ui_2.0 && node_modules/.bin/vite build); then
+  ok "vite build (2.0)"
+else
+  warn "2.0 UI build failed — shipping without it; the version switch will report it unavailable"
+fi
 
 [[ -f "$NEXT/packages/server/dist/index.js"    ]] || die "build produced no packages/server/dist/index.js"
 [[ -f "$NEXT/packages/tm8-ui/dist/index.html"  ]] || die "build produced no packages/tm8-ui/dist/index.html"

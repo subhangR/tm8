@@ -116,7 +116,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // 139 -> 141 (2026-08-12): collection add/remove (public, with commands).
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows
     // (public, commandless — reachable via their noun shard).
-    expect(wanted).toHaveLength(160);
+    expect(wanted).toHaveLength(194); // 169 -> 194 (2026-09-03): +25 containers. MEASURED.
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
@@ -126,7 +126,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    expect(swept).toBe(163);
+    expect(swept).toBe(197);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -213,7 +213,7 @@ describe('exact operation lookup — TOTAL over all 138 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(163);
+    expect(seen.size).toBe(197);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 
@@ -353,12 +353,21 @@ describe('every dimensioned value names its dimension, on EVERY surface', () => 
     let mentioning = 0;
     for (const s of surfaces) {
       expect(s.text, s.name).not.toMatch(/--timeout <n>/);
-      if (!NAMES_TIMEOUT.test(s.text)) continue;
+      // `--timeout-ms` (containers, §14) is EXEMPT because it already satisfies
+      // the rule this sweep enforces: it names its dimension IN THE FLAG. It is
+      // also a different flag from the global `--timeout <seconds>` — it had to
+      // be renamed precisely because a per-command `--timeout` is unreachable
+      // (parseInvocation strips the global wherever it appears). Stripping it
+      // before the test keeps the sweep's teeth for the real `--timeout`: the
+      // `mentioning` pin below is unchanged at 6, which is what proves this
+      // strip hid none of the surfaces the sweep exists to catch.
+      const text = s.text.replaceAll(/(?:--|-l )timeout-ms/g, '<timeout-ms flag>');
+      if (!NAMES_TIMEOUT.test(text)) continue;
       mentioning++;
       // bash's `compgen -W` cannot carry per-option descriptions, so the
       // requirement is per-SURFACE rather than per-occurrence: a surface that
       // names the flag must also name its dimension somewhere a reader sees.
-      expect(s.text, `${s.name} names the timeout flag but never its unit`).toMatch(
+      expect(text, `${s.name} names the timeout flag but never its unit`).toMatch(
         /<seconds>|SECONDS/,
       );
     }

@@ -161,6 +161,32 @@ export const KIND_ART = {
   loop: ['M8 3.2a4.8 4.8 0 1 0 4.53 3.2M12.8 3.2v3.2h-3.2'],
   memory: ['M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z'],
 
+  /**
+   * Three nodes in an L, joined by edges — one row holding vertices AND the
+   * flow between them (Craft P1). Deliberately NOT `VIEW_ART.graph`'s
+   * triangle: that mark means the whole-space graph VIEW; this one means one
+   * blueprint entity.
+   */
+  graph: [
+    'M4.3 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
+    'M11.7 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
+    'M11.7 13.6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
+    'M6.1 4.2h3.8',
+    'M11.7 7.8v2.2',
+  ],
+
+  /**
+   * A speech bubble with a tail, and a second one behind it.
+   *
+   * NOT the message mark (one bubble) and not the channel mark (a hash): a chat
+   * is a CONVERSATION — two speakers, durable, with a life longer than any one
+   * message — and the two overlapping bubbles say exactly that at 16px.
+   */
+  chat: [
+    'M5.4 2.6h6.4a1.8 1.8 0 0 1 1.8 1.8v3.4a1.8 1.8 0 0 1-1.8 1.8H9.2L6.6 11.4V9.6H5.4a1.8 1.8 0 0 1-1.8-1.8V4.4a1.8 1.8 0 0 1 1.8-1.8z',
+    'M2.4 6.2v4.6a1.8 1.8 0 0 0 1.8 1.8h1v1.6',
+  ],
+
   /** A sealed package — an artifact is a published bundle, bytes and all. */
   artifact: ['M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z', 'M2.6 5.3 8 8.2l5.4-2.9', 'M8 8.2v5.4'],
 
@@ -248,6 +274,48 @@ export const VIEW_ART = {
     'M2.4 6.6h11l-1.1 5.4a1.2 1.2 0 0 1-1.18.98H4.7a1.2 1.2 0 0 1-1.18-.98z',
   ],
   /**
+   * Three columns of descending height — the kanban silhouette (Board tab,
+   * 2026-08-16). Deliberately NOT `KIND_ART.task`: the Board is a VIEW over
+   * the task collection, and the task kind row sits in the same rail idiom;
+   * the columns are the surface itself drawn, not the things on it.
+   */
+  board: [
+    'M2.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v9.2a.8.8 0 0 1-.8.8H3.4a.8.8 0 0 1-.8-.8z',
+    'M6.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v5.2a.8.8 0 0 1-.8.8H7.4a.8.8 0 0 1-.8-.8z',
+    'M10.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v3.2a.8.8 0 0 1-.8.8h-1.2a.8.8 0 0 1-.8-.8z',
+  ],
+  /**
+   * A pencil over a node — sketching a blueprint (Craft P1, 2026-08-16).
+   * Deliberately NOT `VIEW_ART.graph` (the whole-space graph view) and NOT
+   * `KIND_ART.graph` (one blueprint entity): this mark means the STUDIO —
+   * the surface where a graph is drawn, not the graph itself.
+   */
+  craft: [
+    'M3.9 5.9a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z',
+    'M13.2 5.4 10.6 2.8 4.6 8.8v2.6h2.6z',
+    'M9.4 4l2.6 2.6',
+  ],
+  /* CodeBrain — a node on a wire into a closing angle bracket. Copied
+     verbatim from `tm8_ui_2.0`'s table so the two packages draw one view one
+     way; this snapshot has no CodeBrain SCREEN, but a ref the rail can be
+     asked to render still needs a mark. */
+  codebrain: [
+    'M2.6 8h10.8',
+    'M4.4 8a1.4 1.4 0 1 0 0-.1z',
+    'M13.4 4.6 10.4 8l3 3.4',
+  ],
+  /**
+   * A question mark, hook and dot (Help, 2026-08-19). Deliberately NOT a
+   * circled `?` and NOT a lifebuoy: `KIND_ART.commit` is a bare ring and the
+   * artifact mark is a hexagon, so a ringed glyph at 16px would read as one of
+   * those with noise inside it. The bare hook is the one silhouette in this
+   * table nothing else claims, and it is the mark a reader already knows.
+   */
+  help: [
+    'M5.4 5.8a2.6 2.6 0 1 1 3.5 2.45c-.72.27-1.02.82-1.02 1.53v.72',
+    'M7.88 12.5a.78.78 0 1 0 0 1.56.78.78 0 0 0 0-1.56z',
+  ],
+  /**
    * A gear, drawn as a real toothed outline rather than as radial ticks
    * around a circle. The tick version is the shape a sun/brightness control
    * uses, and this app HAS a theme toggle — "settings" and "brightness" are
@@ -257,4 +325,67 @@ export const VIEW_ART = {
     'M6.93 2.15L9.07 2.15L8.67 3.55L10.67 4.38L11.38 3.11L12.89 4.62L11.62 5.33L12.45 7.33L13.85 6.93L13.85 9.07L12.45 8.67L11.62 10.67L12.89 11.38L11.38 12.89L10.67 11.62L8.67 12.45L9.07 13.85L6.93 13.85L7.33 12.45L5.33 11.62L4.62 12.89L3.11 11.38L4.38 10.67L3.55 8.67L2.15 9.07L2.15 6.93L3.55 7.33L4.38 5.33L3.11 4.62L4.62 3.11L5.33 4.38L7.33 3.55z',
     'M8 10.1a2.1 2.1 0 1 0 0-4.2 2.1 2.1 0 0 0 0 4.2z',
   ],
+} as const satisfies Record<string, KindArt>;
+
+/**
+ * THE WORK-SESSION CONTENT SURFACES — Terminal · Transcript · Git · Debug · Graph.
+ *
+ * A THIRD table rather than more entries in the other two, because these name
+ * neither a kind nor a rail view: they are the five panes of one panel. Keeping
+ * them apart is what lets `git` and `graph` REUSE a `VIEW_ART` mark by pointing
+ * at it — a deliberate shared silhouette, visible as one line here, instead of
+ * a second copy of the same path data that drifts the first time one is edited.
+ *
+ * WHY THE CHIPS BECAME MARKS AT ALL: the five labels were text, and together
+ * with a labelled Terminate they made `.pn-panelbar__end` wide enough that the
+ * four panel tabs — the flexible side of that row — scrolled "Connections" to a
+ * stub and "Activity" off the edge entirely, behind a hidden scrollbar. See
+ * `TabStrip` in `panels/detail/chrome.tsx`.
+ */
+export const SURFACE_ART = {
+  /**
+   * A PROMPT AND A CARET, with no window around them — deliberately NOT
+   * `KIND_ART.work_session`, which is a prompt INSIDE a terminal window.
+   *
+   * That mark means "a session", and it is already on screen a few pixels away
+   * in the panel header's own glyph slot. Reusing it here would put one
+   * silhouette on the thing and on one of its five parts — exactly the "ten of
+   * them are the same small blob" failure this file exists to prevent. Dropping
+   * the chrome and keeping the prompt says "the terminal ITSELF".
+   */
+  terminal: ['M3.4 4.6 7 8l-3.6 3.4', 'M8.6 11.6h4'],
+
+  /**
+   * A BUBBLE WITH LINES IN IT — what was said, written down.
+   *
+   * Distinct from both neighbours on purpose: `KIND_ART.message` is an EMPTY
+   * bubble (one message, the entity) and `VIEW_ART.messages` is two overlapping
+   * bubbles (every conversation in the space). This is one conversation with a
+   * body — the transcript file read back.
+   */
+  transcript: [
+    'M13.2 9.4a1.9 1.9 0 0 1-1.9 1.9H6.6L3.5 13.6V5a1.9 1.9 0 0 1 1.9-1.9h5.9a1.9 1.9 0 0 1 1.9 1.9z',
+    'M6.1 6.4h4.6',
+    'M6.1 8.6h2.8',
+  ],
+
+  /** The branch mark, shared with the Git VIEW because it is the same idea. */
+  git: VIEW_ART.git,
+
+  /**
+   * A LOG: three rows, each a leading tick and a line.
+   *
+   * Not a bug, and that is the honest choice rather than the obvious one. This
+   * surface is the session's CLI JOURNAL — the calls the agent made — so a bug
+   * mark would promise a debugger it is not. Not `KIND_ART.doc` either: no page
+   * outline, because a journal is a stream and not a sheet.
+   */
+  debug: ['M3.2 4.4h.01', 'M3.2 8h.01', 'M3.2 11.6h.01', 'M6 4.4h6.8', 'M6 8h6.8', 'M6 11.6h4.2'],
+
+  /**
+   * Nodes and edges, shared with the Graph VIEW. Both answer "what is connected
+   * to what"; this one is simply scoped to one session, and a different mark
+   * for the same question would be a distinction the reader has to invent.
+   */
+  graph: VIEW_ART.graph,
 } as const satisfies Record<string, KindArt>;

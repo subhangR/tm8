@@ -54,7 +54,7 @@ const MEMBER_BLOCKS: readonly ProfileBlockRef[] = [
     params: { tiles: 'taskDoneCount=tasks done,score=points,teamMembers=teammates' },
   },
   { block: 'items', label: 'TEAMMATES OWNED', params: { source: 'teamMembers' } },
-  { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'workStatus' } },
+  { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'status' } },
 ];
 
 /** The block list the `team_member` registry row is expected to carry. */

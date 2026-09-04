@@ -113,15 +113,45 @@ process.env['TM8_AGENT_CMD'] = 'echo-agent';
 
 export async function startWsE2eNode(
   label: string,
-  opts: { readonly startBackgroundJobs?: boolean } = {},
+  opts: {
+    readonly startBackgroundJobs?: boolean;
+    /**
+     * Wire the REAL message-delivery runtime, so a message posted to a live
+     * session actually reaches its terminal.
+     *
+     * OFF BY DEFAULT, and opt-in rather than automatic because it costs a
+     * second connection pool and a boot-time principal verification that most
+     * suites here have no use for.
+     *
+     * WHY IT EXISTS AT ALL: without it `main.ts` leaves `messageDelivery`
+     * undefined (it is gated on `execution && TM8_DELIVERY_DATABASE_URL`), so
+     * `messages.post` stores, routes, and dispatches NOTHING — and every
+     * assertion an e2e suite could make about steering a worker would pass
+     * against a node that cannot steer one. That gap is why the 2026-08-21
+     * delivery defect had no e2e coverage to fail.
+     */
+    readonly deliveryRuntime?: boolean;
+  } = {},
 ): Promise<WsE2eNode> {
   const database = await createW1ScratchDatabase(`wse2e_${label}`);
   const dataDir = await mkdtemp(join(tmpdir(), 'tm8-wse2e-'));
   let production: BootstrappedServer | undefined;
   let rpcDb: TestDb | undefined;
+  // `main.ts` reads this one off `process.env` directly rather than from the
+  // validated config, so it has to be set around the bootstrap call and put
+  // back afterwards — the variable is process-wide and other suites share it.
+  const priorDeliveryUrl = process.env['TM8_DELIVERY_DATABASE_URL'];
 
   try {
     database.apply(migrationFiles());
+    if (opts.deliveryRuntime === true) {
+      const deliveryUrl = new URL(database.url);
+      deliveryUrl.username = 'tm8_delivery_worker';
+      deliveryUrl.password = '';
+      process.env['TM8_DELIVERY_DATABASE_URL'] = deliveryUrl.toString();
+    } else {
+      delete process.env['TM8_DELIVERY_DATABASE_URL'];
+    }
     const configured = loadConfig({
       ...process.env,
       TM8_BIND: '127.0.0.1',
@@ -145,6 +175,11 @@ export async function startWsE2eNode(
     await database.destroy();
     await removeOwnedDataDir(dataDir);
     throw error;
+  } finally {
+    // Restore whatever the process had, so one suite's delivery node cannot
+    // point the next suite's boot at a dropped scratch database.
+    if (priorDeliveryUrl === undefined) delete process.env['TM8_DELIVERY_DATABASE_URL'];
+    else process.env['TM8_DELIVERY_DATABASE_URL'] = priorDeliveryUrl;
   }
 
   const baseUrl = production.url;

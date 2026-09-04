@@ -28,10 +28,11 @@ import type {
   AssignControl,
   CollectionMode,
   ContentBlockRef,
+  DateControl,
   FilterSpec,
   KindConfig,
   ListConfig,
-  LifecycleTier,
+  StatusCategoryTab,
   ListRowFacts,
   LiveTreatment,
   MembershipListControl,
@@ -65,21 +66,54 @@ export const ALL_MODES: readonly CollectionMode[] = ['list', 'board', 'tree', 'f
 
 const NOT_DELETED: QueryFilter = { deleted: 'exclude' };
 
-const TASK_OPEN_STATUSES = ['open', 'pulled', 'working', 'in_review', 'blocked'] as const;
-const TASK_CLOSED_STATUSES = ['done', 'cancelled'] as const;
+/* TASK_OPEN_STATUSES / TASK_CLOSED_STATUSES ARE GONE (phase 9's rename table).
+   They were a hand-kept bucketing of task status LITERALS — one of the six
+   incompatible bucketings the program set out to retire — and every reader of
+   them now reads `filters.category` instead, which is the same partition
+   expressed once, on the server, for every kind. A space that names its own
+   statuses is bucketed correctly without editing this file. */
 
+/**
+ * The per-status refinement chip — FINER than the tab row, never a rival to it.
+ * The tabs partition by category; this narrows to one status inside one.
+ *
+ * EACH OPTION CARRIES ITS CATEGORY ALONGSIDE ITS STATUS, and that second
+ * member is doing real work. `narrow()` detects a contradiction by
+ * INTERSECTING ARRAYS UNDER THE SAME KEY, so before phase 7 — when the tab
+ * also spoke `status` — picking `Done` on the Open tab produced an empty
+ * intersection and the panel said "these two contradict this tab" instead of
+ * going quietly blank. The tabs speak `category` now, and a `status` chip
+ * beside a `category` tab is two different keys: the merge would succeed, the
+ * server would answer honestly with nothing, and the user would be back in
+ * front of the unexplained empty list this refusal was built for.
+ *
+ * Declaring the category makes the relationship VISIBLE TO THE EXISTING RULE
+ * rather than adding a new one. On its own tab it narrows to itself and costs
+ * nothing (`['done'] ∩ ['done']`); on any other tab the intersection is empty
+ * and the refusal fires exactly as it always did.
+ *
+ * The mapping mirrors `TASK_STATE_CONTROL`'s and, through it, migration 147's.
+ */
 const statusFilter: FilterSpec = {
   id: 'status',
   label: 'Status',
   multi: true,
   options: [
-    { id: 'open', label: 'Open', filter: { workStatus: ['open'] } },
-    { id: 'pulled', label: 'Pulled', filter: { workStatus: ['pulled'] } },
-    { id: 'working', label: 'Working', filter: { workStatus: ['working'] } },
-    { id: 'in_review', label: 'In review', filter: { workStatus: ['in_review'] } },
-    { id: 'blocked', label: 'Blocked', filter: { workStatus: ['blocked'] } },
-    { id: 'done', label: 'Done', filter: { workStatus: ['done'] } },
-    { id: 'cancelled', label: 'Cancelled', filter: { workStatus: ['cancelled'] } },
+    { id: 'open', label: 'Open', filter: { status: ['open'], category: ['to_do'] } },
+    { id: 'pulled', label: 'Pulled', filter: { status: ['pulled'], category: ['to_do'] } },
+    { id: 'working', label: 'Working', filter: { status: ['working'], category: ['in_progress'] } },
+    {
+      id: 'in_review',
+      label: 'In review',
+      filter: { status: ['in_review'], category: ['in_progress'] },
+    },
+    { id: 'blocked', label: 'Blocked', filter: { status: ['blocked'], category: ['in_progress'] } },
+    { id: 'done', label: 'Done', filter: { status: ['done'], category: ['done'] } },
+    {
+      id: 'cancelled',
+      label: 'Cancelled',
+      filter: { status: ['cancelled'], category: ['cancelled'] },
+    },
   ],
 };
 
@@ -130,6 +164,58 @@ const TASK_PRIORITY_CONTROL: ValueControl = {
 };
 
 /**
+ * THE DUE DATE ON THE STRIP — user report 2026-08-28: "the task detail panel
+ * should have an option to select due date. is it already there in the model,
+ * i dont see it in the entity detail panel."
+ *
+ * It WAS in the model, end to end, and the answer to why they could not see it
+ * is the whole reason this control exists. Two facts compounded:
+ *
+ *   1. The only write surface was the `editFields` dialog behind the panel
+ *      header's `Edit` verb — one more field in a form, beside `Title`, where
+ *      nothing about the panel suggests a date lives.
+ *   2. `MetaGrid` draws a `Due` cell only when the field is SET, so on a task
+ *      with no due date — every task, until someone opens that dialog — the
+ *      panel says nothing about due dates at all. An unset optional field
+ *      rendered as absence is indistinguishable from an unmodelled one, which
+ *      is exactly the inference the report makes.
+ *
+ * So the due date joins status / priority / assignees ON THE STRIP, which is
+ * where a user goes to set a task's attributes and where they looked. The
+ * dialog row STAYS: it is the same registry `source` and the same patch, and
+ * removing it would take the field off the create-adjacent surface to gain
+ * nothing. This is not the duplication D67's amendment forbids — that was a
+ * dead COPY of a live control on one surface; both of these write.
+ */
+const TASK_DUE_CONTROL: DateControl = {
+  source: 'dueDate',
+  label: 'Due date',
+  /* Not "none": the strip's empty faces name their FIELD (`no priority`,
+     `no assignee`), so a row of them reads as a list of unset things rather
+     than a column of the same word four times. */
+  emptyLabel: 'no due date',
+};
+
+/**
+ * THE START DATE — migration 172, and the reason `dateControls` was written as
+ * a LIST rather than a `dueControl` singleton one commit earlier.
+ *
+ * Everything that makes the due date work is field-agnostic already:
+ * `RowDateControl` reads `state[control.source]`, the executor patches
+ * `content[source]`, the css keys off `lp__datesel`, and `MetaGrid` suppresses
+ * whatever `controlled` holds. So this is DATA, not a second control — which is
+ * the whole test of whether that generalisation was real.
+ *
+ * `start_date` is nullable exactly as `due_date` is, so clearing is the same
+ * explicit `null` through the same executor onto `p_clear_start_date`.
+ */
+const TASK_START_CONTROL: DateControl = {
+  source: 'startDate',
+  label: 'Start date',
+  emptyLabel: 'no start date',
+};
+
+/**
  * Assignment is an EDGE, and this is the only place that says which one.
  *
  * `assigned_to` is registered in the database with its legal endpoint kinds,
@@ -171,17 +257,22 @@ const CHANNEL_MEMBER_CONTROL: AssignControl = {
 };
 
 const TASK_STATE_CONTROL: StateControl = {
-  source: 'workStatus',
+  source: 'status',
+  filterKey: 'status',
   label: 'State',
   command: 'set-state',
+  /* `category` MIRRORS `internal.work_status_category()` (migration 147) and
+     the server's `WORK_STATUS_CATEGORY` — the ruled mapping, including its two
+     judgement calls: `pulled` is `to_do` (claimed is not started) and
+     `blocked` is `in_progress` (started, and stuck is not un-started). */
   options: [
-    { id: 'open' },
-    { id: 'pulled' },
-    { id: 'working' },
-    { id: 'in_review' },
-    { id: 'blocked' },
-    { id: 'done', via: 'complete' },
-    { id: 'cancelled' },
+    { id: 'open', category: 'to_do' },
+    { id: 'pulled', category: 'to_do' },
+    { id: 'working', category: 'in_progress' },
+    { id: 'in_review', category: 'in_progress' },
+    { id: 'blocked', category: 'in_progress' },
+    { id: 'done', category: 'done', via: 'complete' },
+    { id: 'cancelled', category: 'cancelled' },
   ],
 };
 
@@ -194,14 +285,37 @@ const TASK_STATE_CONTROL: StateControl = {
  */
 const SESSION_STATE_CONTROL: StateControl = {
   source: 'status',
+  filterKey: 'sessionStatus',
   label: 'State',
   command: 'set-state',
+  /* A session's OBSERVED lifecycle, bucketed. `failed` is `done` and not
+     `cancelled`: under this model failure is a RUNTIME FACT that gets a badge
+     (design invariant 4), and the run itself did reach its end — nobody
+     cancelled it. `idle` is in_progress: an idle session is still alive.
+
+     THIS TABLE IS A MIRROR, as of migration 155. The WRITER is
+     `internal.session_status_category`, and the server's own copy is
+     `SESSION_STATUS_CATEGORY` (packages/server/src/facade/status.ts) — the same
+     three-artifact arrangement 147 made for `work_status`. Nothing here
+     computes a row's tab; `EntitySummary.category` arrives with the row. These
+     categories only narrow the STATUS FILTER CHIP to the open tab, so a copy
+     that disagreed would offer `exited` as a filter under In Progress.
+
+     `spawning` MOVED from `in_progress` to `to_do` with 155, and it is not a
+     taste call. `public.execution_resume` returns an exited session to
+     `spawning`; under `to_do` that is the ruled `done -> to_do` REOPEN, and
+     under `in_progress` it is `done -> in_progress`, which
+     `internal.category_transition_allowed` refuses outright — the bridge would
+     have made every resume in the product a 23514. It is also 147's own
+     `pulled -> to_do` ruling ("claimed is not started") applied to the same
+     shape of fact: a spawning session has been ASKED for, and some have been
+     asking for days. */
   options: [
-    { id: 'spawning' },
-    { id: 'running' },
-    { id: 'idle' },
-    { id: 'exited' },
-    { id: 'failed' },
+    { id: 'spawning', category: 'to_do' },
+    { id: 'running', category: 'in_progress' },
+    { id: 'idle', category: 'in_progress' },
+    { id: 'exited', category: 'done' },
+    { id: 'failed', category: 'done' },
   ],
   readOnlyReason:
     'A session’s state is observed, not chosen — the node reports it from the process. Use Terminate to stop a live session.',
@@ -214,20 +328,23 @@ const readyToPullFilter: FilterSpec = {
 };
 
 /**
- * THE `deleted` CHIP IS GONE, AND ITS ABSENCE IS THE FIX.
+ * THE `deleted` CHIP IS BACK, AS `archivedFilter`, AND PHASE 7 IS WHY.
  *
- * It offered `Hide deleted` / `Deleted only` — the two values the lifecycle
- * TABS already are: Open and Done both carry `deleted: 'exclude'`, Archived
- * carries `deleted: 'only'`. `deleted` is a scalar, so a chip and a tab naming
- * it could only ever CONTRADICT each other, and the merge resolved that by
- * letting whichever applied last win. Choosing `Deleted only` on the Open tab
- * silently showed archived rows under a tab labelled Open; choosing
- * `Hide deleted` on the Archived tab emptied it with no explanation.
+ * It was deleted for a good reason that has now stopped being true. It used to
+ * name the same axis the TAB ROW named — Open and Done carried
+ * `deleted: 'exclude'`, Archived carried `deleted: 'only'` — and since
+ * `deleted` is a scalar the two controls could only agree or overrule each
+ * other. Choosing `Deleted only` on the Open tab silently showed archived rows
+ * under a tab labelled Open. A chip that can only contradict the tab is not a
+ * filter, it is a second control for one axis.
  *
- * A chip that can only agree with the tab or overrule it is not a filter, it
- * is a second control for the same axis. Deleting it leaves one control per
- * axis, which is also what makes `narrow`'s contradiction rule safe to apply
- * strictly below.
+ * Phase 7 removed the archive TAB, because archived is `deleted_at` and status
+ * is a workflow position — orthogonal axes, and a tab row is a partition of
+ * ONE axis. With the tabs now unanimously `deleted: 'exclude'`, the chip is
+ * the only control naming `deleted`, and it composes instead of contradicting:
+ * "archived, in progress" is a question the old tab row could not ask at all.
+ *
+ * One control per axis, still. The axis just moved.
  */
 
 /**
@@ -276,6 +393,7 @@ const BY_UPDATED: SortSpec = { key: 'updatedAt_desc', label: 'Recently modified'
 const BY_CREATED: SortSpec = { key: 'createdAt_desc', label: 'Newest' };
 const BY_POSITION: SortSpec = { key: 'position', label: 'Manual order' };
 const BY_DUE: SortSpec = { key: 'dueDate', label: 'Due date' };
+const BY_START: SortSpec = { key: 'startDate', label: 'Start date' };
 const BY_PRIORITY: SortSpec = { key: 'priority', label: 'Priority' };
 
 /**
@@ -289,11 +407,12 @@ const also = (spec: SortSpec): SortSpec => ({ ...spec, default: false });
 /**
  * THE FOUR SORTS EVERY ENTITY CAN ANSWER.
  *
- * `dueDate` and `priority` are missing on purpose: server-side both coalesce
- * absent values to a sentinel (`9999-12-31`, rank 3), so on a kind with no due
- * date every row ties and the list falls through to its id tiebreak. That
- * renders as "sorted" and is shuffled — the same class of lie as a saturated
- * page calling itself complete. A kind opts INTO those two by having them.
+ * The DATE sorts and `priority` are missing on purpose: server-side all three
+ * coalesce absent values to a sentinel (`9999-12-31`, rank 3), so on a kind
+ * with no due date every row ties and the list falls through to its id
+ * tiebreak. That renders as "sorted" and is shuffled — the same class of lie
+ * as a saturated page calling itself complete. A kind opts INTO them by
+ * having them.
  */
 const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CREATED, BY_POSITION];
 
@@ -332,73 +451,115 @@ const COLLECTIONS_BLOCK: ContentBlockRef = {
 };
 
 /** The shape every kind gets before its own divergence is layered on. */
-function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): ListConfig {
+function baseList(
+  overrides: Partial<Omit<ListConfig, 'categories'>> &
+    Pick<ListConfig, 'tile'> & {
+      /**
+       * `null` means THIS KIND HAS NO WORKFLOW TO PROJECT — see the fact-kind
+       * ruling below. Omitted still means "the ruled four".
+       */
+      categories?: readonly StatusCategoryTab[] | null;
+    },
+): ListConfig {
   return {
     quickCreate: true,
-    filters: [assigneeFilter, attentionFilter],
     sort: DEFAULT_SORT,
-    // Universal by DEFAULT (D41): a kind opts into a richer partition, never
-    // out of having tiers at all. A row that forgot them would silently lose
-    // its tabs, so absence is not an available state.
-    lifecycle: statelessTiers(),
     // Universal for the same reason: `contains` accepts every dst kind, so
     // every list can be lensed by a collection and every row added to one.
     membership: COLLECTION_MEMBERSHIP,
     ...overrides,
+    /* APPENDED AFTER THE OVERRIDES, DELIBERATELY. `filters` is a whole-array
+       override — task and work_session both replace it — so a default entry
+       is not a default at all, it is a suggestion two kinds ignore. The
+       archive filter is universal by the same ruling the tabs are (it is the
+       tab that was removed), so it is layered on top where a kind cannot drop
+       it by declaring its own chips. Last in the row on purpose: it is an
+       envelope disposition, not a property of the work. */
+    filters: [...(overrides.filters ?? [assigneeFilter, attentionFilter]), archivedFilter],
+    /* APPENDED AFTER THE OVERRIDES for the same reason `filters` is, and
+       carrying the one ruling that changed here.
+
+       D41 used to read: a kind opts INTO a richer partition, never out of
+       having tabs at all. That was right while the four buckets meant one
+       thing. Phase 5 (migration 152) gave them a second job — `is_resolved`
+       answers `status_category = 'done'` — and for the five FACT KINDS the two
+       jobs came apart. `152_universal_status.sql` seeds commit, message, file,
+       memory and artifact to `done` deliberately, because a fact about the past
+       must not block a `depends_on` forever. That `done` is a resolution
+       predicate, NOT a lifecycle position: a memory is a recorded observation,
+       not an intention, and it was never `to_do`.
+
+       So those kinds were handed a four-stage tab row for a workflow they do
+       not have — and, because the row defaults to `tabs[0]`, every one of them
+       opened on To Do and showed NOTHING. All 24 memories in the production
+       space were invisible on arrival; that is the bug this fixes, and it was a
+       filter the whole time, not a failed read.
+
+       `null` is therefore now an available state, and it means what absence
+       always should have: no workflow to project, so no row. Every consumer
+       already degrades correctly — `CategoryTabs` returns null for empty tabs,
+       and `EntityTree` falls back to the unfiltered `{deleted:'exclude'}`. */
+    categories:
+      overrides.categories === null ? undefined : (overrides.categories ?? CATEGORY_TABS),
   };
 }
 
 
 // ---------------------------------------------------------------------------
-// Lifecycle tiers (D41) — Open / Done / Archived, universal on collection kinds
+// Category tabs (D41 + PHASE 7) — the closed four, identical on every kind
 // ---------------------------------------------------------------------------
 
 /**
- * `archived` is the honest one: `deleted: 'only'` is a real `CollectionQuery`
- * member, so the archive tier is a genuine query for EVERY kind rather than an
- * invention. `open`/`done` are only expressible where the kind carries a state
- * axis the contract knows — task via `workStatus`, work_session via
- * `sessionStatus` (D56). Everywhere else `done` is declared UNSUPPORTED with its
- * reason: the tab renders, its count is honestly zero, and nothing fabricates
- * a completion concept the backend cannot answer for.
+ * THE FOUR TABS. One declaration, every kind, because `filters.category` asks
+ * a question every kind can now answer (phase 5 gave all twenty a workflow).
+ *
+ * THIS FILE USED TO HOLD THREE DIFFERENT TAB ROWS — `TASK_TIERS` keyed on
+ * `status` literals, `SESSION_TIERS` keyed on `sessionStatus` literals, and
+ * `statelessTiers()` keyed on categories — that were meant to mean the same
+ * thing and could not, because two of them named a per-kind vocabulary. A
+ * session that FAILED counted as Done; a task that was CANCELLED counted as
+ * Done; a custom status nobody listed counted as neither. The category is the
+ * one axis every kind shares, so it is the one axis the tab row runs on, and a
+ * space that invents `Triaged` files it under a tab without touching this file.
+ *
+ * `deleted: 'exclude'` on all four: archived rows are reached through the
+ * ARCHIVE FILTER, which composes with whichever category tab is open. See
+ * `archivedFilter` below and `StatusCategoryTab`'s docblock for why archived
+ * cannot be a tab.
  */
-const ARCHIVED_TIER: LifecycleTier = {
+const CATEGORY_TABS: readonly StatusCategoryTab[] = [
+  { id: 'to_do', label: 'To Do', filter: { category: ['to_do'], deleted: 'exclude' } },
+  {
+    id: 'in_progress',
+    label: 'In Progress',
+    filter: { category: ['in_progress'], deleted: 'exclude' },
+  },
+  { id: 'done', label: 'Done', filter: { category: ['done'], deleted: 'exclude' } },
+  { id: 'cancelled', label: 'Cancelled', filter: { category: ['cancelled'], deleted: 'exclude' } },
+];
+
+/**
+ * ARCHIVED, AS A FILTER CHIP — the other half of retiring the archive tab.
+ *
+ * `deleted` is a SCALAR clause, so `narrow()`'s later-wins rule lets this
+ * option override the `exclude` every category tab carries; picking it inside
+ * the In Progress tab asks for archived in-progress rows, which the tab row
+ * could never express. Not `multi`: `deleted` takes one value, and offering
+ * two mutually exclusive options as though they combined would be a lie about
+ * the query.
+ *
+ * Two options rather than one toggle because "only archived" and "archived
+ * too" are different questions and the row should not make the user guess
+ * which one a single chip means.
+ */
+const archivedFilter: FilterSpec = {
   id: 'archived',
   label: 'Archived',
-  filter: { deleted: 'only' },
+  options: [
+    { id: 'only', label: 'Archived only', filter: { deleted: 'only' } },
+    { id: 'include', label: 'Include archived', filter: { deleted: 'include' } },
+  ],
 };
-
-const NO_DONE_REASON =
-  'This kind has no completion state on this node — the contract records no done/closed concept for it, so nothing can honestly land here.';
-
-/** The default tiers for a kind with no state axis: open, an honest-empty done, archived. */
-function statelessTiers(): readonly LifecycleTier[] {
-  return [
-    { id: 'open', label: 'Open', filter: NOT_DELETED },
-    { id: 'done', label: 'Done', filter: NOT_DELETED, unsupported: NO_DONE_REASON },
-    ARCHIVED_TIER,
-  ];
-}
-
-const TASK_TIERS: readonly LifecycleTier[] = [
-  { id: 'open', label: 'Open', filter: { workStatus: [...TASK_OPEN_STATUSES], deleted: 'exclude' } },
-  { id: 'done', label: 'Done', filter: { workStatus: [...TASK_CLOSED_STATUSES], deleted: 'exclude' } },
-  ARCHIVED_TIER,
-];
-
-// D56 — the D20 workaround is GONE. `CollectionQuery.filters.sessionStatus`
-// exists now (contract dd41e89), so these are ordinary contract filters the
-// seam executes untranslated, exactly like the task tiers beside them. No
-// client-side partition, no structural read on the row, nothing to remember.
-const SESSION_TIERS: readonly LifecycleTier[] = [
-  {
-    id: 'open',
-    label: 'Open',
-    filter: { sessionStatus: ['spawning', 'running', 'idle'], deleted: 'exclude' },
-  },
-  { id: 'done', label: 'Done', filter: { sessionStatus: ['exited', 'failed'], deleted: 'exclude' } },
-  ARCHIVED_TIER,
-];
 
 // ---------------------------------------------------------------------------
 // work_session liveness presentation (R-UI-5: PRESENTS the seam verdict,
@@ -489,13 +650,13 @@ const ROWS: readonly KindConfig[] = [
   // -- task -----------------------------------------------------------------
   {
     kind: 'task',
-    launchable: true,
     label: 'Task',
     labelPlural: 'Tasks',
     icon: '◻',
     iconArt: KIND_ART.task,
     /**
-     * TITLE AND DUE DATE — the write surface `dueDate` never had.
+     * TITLE AND THE TWO DATES — the write surface `dueDate` never had, and the
+     * one `startDate` is born with rather than waiting for its own report.
      *
      * The due date was modelled end to end and reachable from nowhere: the
      * column, the `PatchTaskInput` member, the `::date` sort and the read
@@ -523,6 +684,16 @@ const ROWS: readonly KindConfig[] = [
       { target: 'title', label: 'Title', required: true, placeholder: 'What needs doing' },
       {
         target: 'content',
+        source: 'startDate',
+        /* Same split halves as `dueDate` below — projected onto `state`, absent
+           from `contentOf` — so the same `readFrom`. Without it the dialog
+           opens blank on a task that HAS a start date and Save clears it. */
+        readFrom: 'state',
+        label: 'Start date',
+        valueType: 'date',
+      },
+      {
+        target: 'content',
         source: 'dueDate',
         /*
          * WRITTEN to `content.dueDate`, READ from `state.dueDate`. The server
@@ -548,7 +719,7 @@ const ROWS: readonly KindConfig[] = [
     hiddenModes: [],
     chip: {
       glyph: '◻',
-      tintBy: 'workStatus',
+      tintBy: 'status',
       tones: {
         open: 'idle',
         pulled: 'info',
@@ -559,27 +730,23 @@ const ROWS: readonly KindConfig[] = [
         cancelled: 'idle',
       },
     },
-    card: { fields: ['workStatus', 'priority', 'assignees', 'acceptance'] },
+    card: { fields: ['status', 'priority', 'assignees', 'acceptance'] },
     list: baseList({
-      sections: [
-        {
-          id: 'current',
-          label: 'Current',
-          filter: { workStatus: [...TASK_OPEN_STATUSES], deleted: 'exclude' },
-        },
-        {
-          id: 'completed',
-          label: 'Completed',
-          filter: { workStatus: [...TASK_CLOSED_STATUSES], deleted: 'exclude' },
-          collapsedByDefault: true,
-        },
-      ],
+      /* THE `Current` / `Completed` SECTIONS ARE GONE (phase 7).
+         They partitioned the task list on exactly the axis the tab row now
+         partitions it on, so under four category tabs they were the deleted
+         `deleted` chip's defect again in a different control: every row in the
+         Done tab fell into a `Completed` section that is `collapsedByDefault`,
+         so opening Done would have shown a collapsed heading and no work. One
+         control per axis — the tabs own this one. Sections remain in the type
+         for triage grouping that is NOT the status axis. */
       tree: { by: 'hierarchy', guideLines: true },
       tile: {
         anatomy: 'control-card',
         badges: [
-          { source: 'workStatus' },
+          { source: 'status' },
           { source: 'priority' },
+          { source: 'axes' },
           { source: 'assignees' },
           { source: 'acceptance' },
           { source: 'blocked' },
@@ -587,18 +754,31 @@ const ROWS: readonly KindConfig[] = [
           { source: 'workingActors' },
         ],
       },
-      lifecycle: TASK_TIERS,
       primaryActions: ['run', 'coordinate'],
       filters: [assigneeFilter, taskAttentionFilter, statusFilter, readyToPullFilter],
-      sort: [...DEFAULT_SORT, BY_DUE, BY_PRIORITY],
+      /* `BY_START` beside `BY_DUE`, in the order the two dates read: a task
+         starts and then it is due. Both are offered because the task kind is
+         the one that HAS them — the opt-in the `DEFAULT_SORT` note describes. */
+      sort: [...DEFAULT_SORT, BY_START, BY_DUE, BY_PRIORITY],
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
       valueControls: [TASK_PRIORITY_CONTROL],
+      /* Start before due — the order they read as a pair, and the order the
+         strip draws them in. */
+      dateControls: [TASK_START_CONTROL, TASK_DUE_CONTROL],
+      /* The per-space `type` taxonomy (and any axis the space defines). The
+         vocabulary is server data, not a static options list — see the
+         `ListConfig.axisControls` docblock for why this is not a
+         `ValueControl`. */
+      axisControls: { source: 'axes' },
       assignControl: TASK_ASSIGN_CONTROL,
-      // A2: the board groups by the same field the state picker writes. The
+      // A2: the board's DEFAULT grouping — the field the state picker
+      // writes. Since W3 this is a seed, not a pin: the board's own picker
+      // offers `status`, `assignee`, and `axis:<name>` per axis the
+      // SPACE defines, and the choice rides the route (`q.groupBy`). The
       // server computes the groups (collections.ts groupItems); the client
       // never groups (L3).
-      board: { groupBy: 'workStatus' },
+      board: { groupBy: 'status' },
       // D44: every task ROW gets Run, not just the panel primary. It resolves
       // to the same ActionRef the panel and palette use, and its `flow:'launch'`
       // marker means the row opens the launch config rather than bare-spawning.
@@ -653,7 +833,7 @@ const ROWS: readonly KindConfig[] = [
       // gate honesty). A registry field, so the panel never asks the kind.
       gitSection: true,
       statusPill: {
-        source: 'workStatus',
+        source: 'status',
         tones: {
           open: 'idle',
           pulled: 'info',
@@ -692,7 +872,27 @@ const ROWS: readonly KindConfig[] = [
     },
     card: { fields: ['sessionStatus', 'agentTool', 'model', 'activityAt'] },
     list: baseList({
-      lifecycle: SESSION_TIERS,
+      /**
+       * OPEN ON THE LIVE ONES — the reported defect, stated as data.
+       *
+       * A session's category is OBSERVED, not authored: 155 derives it from the
+       * process (spawning→to_do, running/idle→in_progress, exited/failed→done).
+       * `spawning` is the sub-second gap between "asked for" and "started", so
+       * To Do holds a session only by accident of timing, and NEVER holds a
+       * running one. Landing there is landing on an empty screen — 477 sessions
+       * on the launch node, To Do 0 / In Progress 6 / Done 471 — which is
+       * exactly the report: "doesn't show me live sessions."
+       *
+       * In Progress rather than Done, though Done is where 471 of the 477 are:
+       * the question this list opens on is "what is running", not "what has
+       * ever run". Done is one click away and remembered per kind once picked.
+       *
+       * NOT A NEW FILTER, and deliberately so. `filters.sessionStatus` already
+       * exists and already works (contract A22, server `ws.status = any(...)`);
+       * what was broken was never the vocabulary's ability to say `running`,
+       * only which band this panel opened on. See the PR body.
+       */
+      defaultCategory: 'in_progress',
       tree: { by: 'hierarchy', guideLines: true, messagePulse: true },
       tile: {
         anatomy: 'session-tree',
@@ -738,6 +938,59 @@ const ROWS: readonly KindConfig[] = [
       // control renders NULL while clean, so the compact row is unaffected and
       // the earlier ruling's premise no longer holds.
       inlineEdit: { title: true },
+      /**
+       * THE TICK IS BACK, AND NOW IT IS A REAL VERB — USER RULING 2026-08-19:
+       * "we need the tick mark there, tick marks the session done, but does not
+       * close it … i want to mark sessions done, but not close them to revisit
+       * later, this is through the tick mark."
+       *
+       * #423 removed `complete` from this array, and the removal was right for
+       * the reasons it gave: the server refused the affordance, the door
+       * selected `where kind = 'task'`, and there was nothing for it to write.
+       * All three were true. NONE of them was a statement that the verb is
+       * meaningless for a session — they were a statement that nobody had
+       * built it. Migration 156 and the session arm of `entities.commands.
+       * complete` build it, so the ruling that removed it ("a refused control
+       * is not a control") no longer applies: it is not refused.
+       *
+       * WHAT IT MEANS HERE, and why it is not Terminate wearing a tick. The two
+       * verbs answer different questions and now sit side by side saying so:
+       *
+       *   terminate  ends the PROCESS. Destructive, irreversible, and the row
+       *              lands in Done because it genuinely finished.
+       *   complete   ends the ROW'S CLAIM ON YOUR ATTENTION. The process keeps
+       *              running, the terminal keeps streaming, and the session
+       *              files itself under Done so you can come back to it.
+       *
+       * A session's STATUS remains observed — `SESSION_STATE_CONTROL.
+       * readOnlyReason` still holds and this writes nothing to it. What the
+       * tick authors is the ENVELOPE's category, which is a different column
+       * and a different question: the node says what the process is doing, the
+       * user says whether they are done with it.
+       *
+       * IT IS A TOGGLE (ruled 2026-08-19 over the one-way alternative): ticking
+       * a done session reopens it and the category goes back to following the
+       * process. `expectedVersion` is what makes a toggling command safe — a
+       * double submit is a version conflict, not a silent flip back.
+       *
+       * AND ON A FINISHED RUN IT IS NOT DRAWN AT ALL (ruled 2026-08-19, with
+       * the process control below). Both verbs above are declared for the row
+       * a session spends its ACTIVE life as; once the run has ended the tick
+       * has no subject — "is this row's claim on my attention over?" is
+       * structurally, permanently yes — so `RowActionCluster` drops it and
+       * swaps Terminate for Resume, leaving ONE control rather than two with
+       * one greyed. Measured before that: `exited` drew a refused Terminate
+       * beside a tick that dispatched, wrote, and moved nothing.
+       *
+       * `resume` IS NOT IN THIS ARRAY, and that is a decision rather than an
+       * omission. `rowActions` is STATIC per-kind data and `ActionAvailability`
+       * has no `hidden` (a rowActions entry cannot hide itself), so a fifth
+       * entry here would render a permanently refused Resume beside a live
+       * Terminate on every running session — the "a refused control is not a
+       * control" ruling that took the tick out in the first place. The swap is
+       * per-ROW state, so the component that sees the row owns it; this array
+       * keeps saying which verbs the kind HAS.
+       */
       rowActions: ['complete', 'terminate'],
       stateControl: SESSION_STATE_CONTROL,
     }),
@@ -745,16 +998,23 @@ const ROWS: readonly KindConfig[] = [
       archetype: 'terminal',
       // USER RULING 2026-07-29: terminal panels use the same compact two-row
       // geometry as tasks. Keep the destructive session verb at the right of
-      // the tab row; Complete remains available from `rowActions`, where it
-      // does not squeeze the title/tabs/window controls or the terminal canvas.
+      // the tab row, where it does not squeeze the title/tabs/window controls
+      // or the terminal canvas. (This note used to add "Complete remains
+      // available from rowActions" — it does not, and never did: see the
+      // rowActions block above for the three things that refused it.)
+      //
+      // ONE ENTRY, TWO VERBS — the process control, exactly as in the row
+      // cluster: `ActionBar` draws Resume in this slot once the run has ended.
+      // The panel had the identical hole and it is the worse place for it, a
+      // user who opens a dead session looks here first. Declared as the one
+      // verb for the same reason `rowActions` omits `resume`: this array is
+      // static per-kind and listing both would put a permanently refused
+      // control beside the live one.
       primaries: ['terminate'],
       statusPill: {
         source: 'sessionStatus',
         tones: { spawning: 'wait', running: 'run', idle: 'info', exited: 'idle', failed: 'block' },
       },
-      // Availability is still pin-projected at the panel mount: the registry
-      // declares the complete work-session surface vocabulary, not permission.
-      contentSurfaces: ['terminal', 'chat'],
       // Already excluded from strip/footer via the terminal archetype arm;
       // the flag states the reason structurally: this body ends at a composer.
       composition: 'chat',
@@ -766,7 +1026,6 @@ const ROWS: readonly KindConfig[] = [
   // -- doc ------------------------------------------------------------------
   {
     kind: 'doc',
-    launchable: true,
     label: 'Doc',
     labelPlural: 'Docs',
     icon: '▤',
@@ -955,6 +1214,9 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'messageAuthor' }, { source: 'points' }] },
       sort: [BY_CREATED, BY_ACTIVITY],
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'MESSAGE' }] },
   },
@@ -996,7 +1258,7 @@ const ROWS: readonly KindConfig[] = [
           params: { tiles: 'taskDoneCount=tasks done,score=points,teamMembers=teammates' },
         },
         { block: 'items', label: 'TEAMMATES OWNED', params: { source: 'teamMembers' } },
-        { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'workStatus' } },
+        { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'status' } },
       ],
     },
   },
@@ -1004,7 +1266,6 @@ const ROWS: readonly KindConfig[] = [
   // -- team_member ----------------------------------------------------------
   {
     kind: 'team_member',
-    launchable: true,
     label: 'Teammate',
     labelPlural: 'Teammates',
     icon: '◆',
@@ -1075,7 +1336,6 @@ const ROWS: readonly KindConfig[] = [
   // -- pull_request ---------------------------------------------------------
   {
     kind: 'pull_request',
-    launchable: true,
     label: 'Pull request',
     labelPlural: 'Pull requests',
     icon: '⑂',
@@ -1130,6 +1390,9 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'repository' }, { source: 'sha' }] },
       sort: [BY_CREATED, BY_ACTIVITY],
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
       archetype: 'generic',
@@ -1158,6 +1421,9 @@ const ROWS: readonly KindConfig[] = [
       tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'mimeType' }, { source: 'sizeBytes' }] },
       inlineEdit: { title: true },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
       archetype: 'generic',
@@ -1272,7 +1538,6 @@ const ROWS: readonly KindConfig[] = [
   // -- project (restricted: generic create/patch/delete/move refused) -------
   {
     kind: 'project',
-    launchable: true,
     label: 'Project',
     labelPlural: 'Projects',
     icon: '⬢',
@@ -1360,7 +1625,6 @@ const ROWS: readonly KindConfig[] = [
   // -- memory (scope-carrying claims; staleness derived server-side) --------
   {
     kind: 'memory',
-    launchable: true,
     label: 'Memory',
     labelPlural: 'Memories',
     icon: '◈',
@@ -1374,6 +1638,9 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       quickCreate: false,
       tile: { badges: [{ source: 'messages' }] },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     /*
      * PROFILE, not generic — and this is the archetype working as designed
@@ -1443,13 +1710,146 @@ const ROWS: readonly KindConfig[] = [
     palette: { createLabel: 'New memory' },
   },
 
+  // -- graph (Craft P1: ONE ROW holds vertices AND edges — the blueprint) --
+  {
+    kind: 'graph',
+    label: 'Graph',
+    labelPlural: 'Graphs',
+    icon: '⬡',
+    iconArt: KIND_ART.graph,
+    slug: 'graphs',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⬡', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      // The generic placeholder flow CAN mint a graph: title + the 'entity'
+      // default type is a valid empty blueprint the craft chat then grows.
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    /*
+     * GENERIC, WITH THE CANVAS FIRST — this reverses the P1 ruling that the
+     * canvas "lives on the Craft screen, not in the side panel".
+     *
+     * That ruling was made for a real reason, but the reason was the HEADER,
+     * not the canvas: the studio's pane header cost one row and the panel's
+     * cost three, so nobody would spend a Craft column on panel chrome. With
+     * the studio's header and the panel bar both at 30px the objection is
+     * gone, and what remains is the plain fact that a graph was rendering two
+     * different ways — a picture in Craft, a fields list everywhere else.
+     *
+     * It is CHEAP because R1 made it cheap: one row holds the vertices AND
+     * the edges, so `blueprintView` is a pure fold of `detail.content` with
+     * no seam, no per-node connections read and no host prop to wire through
+     * five mount sites. The block is READ-ONLY; Craft remains the place a
+     * blueprint is edited, and `edit` is still the door.
+     */
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'blueprint' }, { block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK],
+      /* §15.1: declared fields must be reachable — edit is the door. */
+      primaries: ['edit'],
+    },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Launch flow' },
+    ],
+  },
+
+  /*
+   * -- chat (migration 176: a conversation with a teammate, as an entity) --
+   *
+   * WAVE 2 MAKES THIS THE REAL ROW. Wave 1 shipped the honest minimum — a
+   * generic fields body and a one-badge tile — because `registry.test.ts`
+   * asserts totality over `CoreEntityKindSchema` and a kind with no row is a
+   * build failure. The surfaces are here now.
+   *
+   *   * `panel.archetype: 'conversation'` — the body IS the transcript and its
+   *     composer, with nothing above it. See the archetype's own docblock in
+   *     `types.ts` for why this is neither `hub` (which hangs a feed beneath
+   *     front-door regions a chat does not have) nor `terminal`.
+   *   * `panel.conversation: 'chat-thread'` — WHICH conversation, as registry
+   *     DATA, so `defaultConversationSurfaceKind` never reads a kind literal.
+   *   * `composition: 'chat'` — the body ends at its composer, so no strip, no
+   *     attention section, no footer under it. The same declaration `channel`
+   *     and `work_session` carry, for the same reason.
+   *   * `panel.threads` is ABSENT, i.e. false: a chat is FLAT (176 §1.3 — every
+   *     turn is a root message on the chat and the user→agent pairing lives in
+   *     `chat_turns`). A thread pane here would offer to branch a conversation
+   *     the data model cannot branch.
+   *   * `quickCreate: false` — a chat is born from `chat.start`, which needs a
+   *     teammate, a model and a mode. The placeholder-only generic flow cannot
+   *     supply them, and `chat` is excluded from `CreatableEntityKind` for
+   *     exactly that reason. A refused Create control is not a control (the
+   *     `work_session` ruling above, same shape). The list header points at the
+   *     composer instead — see `quickLaunch` below.
+   *   * `rowActions` names NO verbs of its own. `run` arrives by derivation
+   *     (`applyLaunch`) and `chat-about` by derivation (`applyChatAbout`), and
+   *     a chat has no third verb a row can perform: it cannot be completed
+   *     (no category vocabulary of its own) and it cannot be terminated (the
+   *     runtime is stopped from the composer, which knows whether a turn is in
+   *     flight).
+   *
+   * THE TILE PRINTS WHAT THE ROW ACTUALLY CARRIES. `model`, `mode`,
+   * `turnState` and `lastTurnAt` are all on `state` (contract `kind: 'chat'`).
+   * The TEAMMATE'S NAME is not — the state carries `teammateId` and nothing
+   * else, and a tile that rendered a uuid would be worse than one that renders
+   * nothing. The name is visible where the conversation is (the thread header
+   * resolves it through `listTeammates`), and putting it on the row needs one
+   * server-side join in `entity-read.ts`'s chat arm. Recorded rather than
+   * faked.
+   */
+  {
+    kind: 'chat',
+    label: 'Chat',
+    labelPlural: 'Chats',
+    icon: '❝',
+    iconArt: KIND_ART.chat,
+    slug: 'chats',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '❝', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: {
+        badges: [
+          { source: 'chatTurnState' },
+          { source: 'model' },
+          { source: 'chatMode' },
+          { source: 'chatLastTurnAt' },
+          { source: 'messages' },
+        ],
+      },
+      // The header verb is the ONE door a chat is actually born through, and
+      // it is `chat-about` rather than `create` for the same reason
+      // `quickCreate` is false: the composer is the configuration.
+      //
+      // `quickStart`, NOT `quickLaunch` — the two are not interchangeable and
+      // the difference is exactly this verb's shape: `quickLaunch` carries
+      // `flow: 'launch'` and EXPANDS the spawn config in place, while this one
+      // commits on click (it navigates to the composer). Declared as
+      // `quickLaunch` it would open a five-section execution card for a chat.
+      //
+      // At the HEADER there is no row, so the verb opens a chat about nothing
+      // — which is bare Home's new conversation, the honest reading of "start
+      // a chat" from a list of chats. See the action's availability: a subject
+      // is optional, not required.
+      quickStart: 'chat-about',
+      inlineEdit: { title: true },
+    }),
+    panel: {
+      archetype: 'conversation',
+      conversation: 'chat-thread',
+      composition: 'chat',
+    },
+  },
+
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',
-    // NOT launchable: "Run" on a loop would mean "run the loop entity", but a
-    // loop's whole job is to run something ELSE on a period. Its primary
-    // actions are enable/disable and fire-now, which are patches, not launches.
-    launchable: false,
     label: 'Loop',
     labelPlural: 'Loops',
     icon: '↻',
@@ -1537,7 +1937,6 @@ const ROWS: readonly KindConfig[] = [
   // -- artifact (versioned bundle; bytes served via preview/export, not here) --
   {
     kind: 'artifact',
-    launchable: true,
     label: 'Artifact',
     labelPlural: 'Artifacts',
     icon: '❖',
@@ -1554,22 +1953,46 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       quickCreate: false,
       tile: { badges: [] },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
-      // Same shape `file` uses: a preview block first, then the detail fields.
+      /*
+       * THE PANEL IS THE FRAME, AND NOW IT IS ONLY THE FRAME — owner ruling
+       * 2026-08-20, closing what the 2026-08-18 ruling started.
+       *
+       * That pass took the banner, the PREVIEW eyebrow and the empty ＋ tile,
+       * and the screen still read as a small window with a filing cabinet under
+       * it: DETAILS (five rows of manifest bookkeeping), COLLECTIONS (chips
+       * plus an add control), the attachment strip and the footer together held
+       * ~320px below a frame floored at 420. `composition: 'frame'` retires the
+       * last three at once, and the two blocks come off here.
+       *
+       * NOTHING IS STRANDED BY THE TWO BLOCKS LEAVING, which is why they could
+       * go rather than shrink:
+       *   · COLLECTIONS was `contains`/incoming — the same edge the CONNECTIONS
+       *     TAB lists, so the membership is still on screen, one tab over. The
+       *     WRITE side lives on the collection's own panel ("+ add entity",
+       *     membership/outgoing), so adding an artifact to a collection is
+       *     untouched.
+       *   · Of DETAILS' rows, revision · file count · total size are already in
+       *     the frame's accessible name, and entrypoint · manifest sha256 ride
+       *     the revision picker's tooltip (see `ArtifactPreviewBlock`).
+       *
+       * The viewer block still carries NO label: an eyebrow reading PREVIEW
+       * over a frame that is visibly a preview is a row of height spent on a
+       * word, and this panel's whole job is the frame.
+       */
       archetype: 'generic',
-      blocks: [
-        { block: 'artifact-preview', label: 'PREVIEW' },
-        { block: 'fields', label: 'DETAILS' },
-        COLLECTIONS_BLOCK,
-      ],
+      composition: 'frame',
+      blocks: [{ block: 'artifact-preview' }],
     },
   },
 
   // -- worktree (server-provisioned Git checkout; lifecycle rides patch) ----
   {
     kind: 'worktree',
-    launchable: true,
     label: 'Worktree',
     labelPlural: 'Worktrees',
     icon: '⎇',
@@ -1631,21 +2054,56 @@ const ROWS: readonly KindConfig[] = [
 ];
 
 /**
- * `launchable: true` → the `run` action, in every place that renders one.
+ * The ONE authority for "which kinds cannot launch" — a DENYLIST, because the
+ * answer is now "all of them but one".
+ *
+ * `derive_task_for_entity` (064) raises for `work_session` and auto-derives a
+ * "Work on: <title>" task for every other live kind, so the backend's answer to
+ * "can I point an agent at this?" is yes-except-one. Expressing that as ~20
+ * hand-written `launchable: true` rows made the common case the one you had to
+ * remember, and the flag was in fact missing from eleven kinds that the server
+ * would have happily launched — Run simply did not appear on them.
+ *
+ * Inverted, `launchable` stops being an input a row can forget and becomes
+ * DERIVED OUTPUT of this set (see below), so a new kind is launchable by
+ * default and opting out is a deliberate, visible edit in one place.
+ */
+const NOT_LAUNCHABLE: ReadonlySet<string> = new Set([
+  // The only refusal, and it is the BACKEND's: `derive_task_for_entity` raises
+  // for `work_session`. A session is a run — it is not something you run.
+  'work_session',
+  //
+  // `graph` and `loop` were here briefly, carried over from the `launchable:
+  // false` rows this set replaced. Owner ruling 2026-08-17: both launch. Their
+  // old rationale argued that Run MEANS something else on those kinds (a graph
+  // is orchestrated from the Craft tab; a loop's job is to run something else
+  // on a period) — but that is an argument about which verb should be PRIMARY,
+  // not about whether an agent can be pointed at the row, and the server will
+  // derive a task for either. Whatever else a kind offers, "work on this" is
+  // still a coherent thing to ask for.
+]);
+
+/**
+ * `run` — the launch action, in every place that renders one.
  *
  * The Run button is drawn from three independent arrays — `list.rowActions` (the
  * tile), `panel.primaries` (the detail header) and `palette.primaryAction` — and
  * before this every one of them was hand-written under `kind: 'task'`. That made
  * "which kinds can launch?" a question with three possible answers and no
  * authority, and adding a kind meant remembering all three. Deriving them here
- * means a kind opts in ONCE and cannot end up half-wired.
+ * means a kind cannot end up half-wired.
  *
  * Additive and idempotent: a row that already names `run` keeps its own ordering
- * (task lists `['run','complete']`, which is deliberate — Run leads), and a row
- * without the flag is returned untouched rather than rebuilt.
+ * (task lists `['run','complete']`, which is deliberate — Run leads), and a
+ * denied row is returned untouched rather than rebuilt.
+ *
+ * `launchable` is written here rather than read here: it is the derived answer
+ * to `NOT_LAUNCHABLE`, kept on the config so a consumer can still ask a kind
+ * whether it launches without importing the set.
  */
 function applyLaunch(row: KindConfig): KindConfig {
-  if (!row.launchable) return row;
+  if (NOT_LAUNCHABLE.has(row.kind)) return { ...row, launchable: false };
+  row = { ...row, launchable: true };
   const withRun = (actions: readonly ActionRef[] | undefined): ActionRef[] =>
     actions?.includes('run') ? [...actions] : ['run', ...(actions ?? [])];
   return {
@@ -1656,7 +2114,43 @@ function applyLaunch(row: KindConfig): KindConfig {
   };
 }
 
-const KINDS: readonly KindConfig[] = ROWS.map(applyLaunch);
+/**
+ * `chat-about` — "open a chat about this", on every row that can BE talked
+ * about, which is every row.
+ *
+ * DERIVED FOR THE SAME REASON `run` IS. The verb is drawn from the tile's
+ * `list.rowActions`, and writing it into nineteen arrays by hand would make
+ * "which kinds can you open a chat about?" a question with nineteen possible
+ * answers and no authority — the exact drift `applyLaunch` was extracted to
+ * end. Here it has one answer, and it is the graph's: `about` is registered
+ * with `dst_kinds = array['*']` (migration 056:203), so every kind is a legal
+ * subject and no per-kind list belongs in this package.
+ *
+ * TWO EXCLUSIONS, both structural rather than editorial:
+ *
+ *   · `message` — `strategy: 'anchored'` with `slug: null`. It has no
+ *     collection surface, so it has no tile for the verb to sit on; declaring
+ *     it would be a control on a list that does not exist.
+ *   · `chat` itself — the verb OPENS a chat, and a chat about a chat is a
+ *     nesting nobody asked for. Its row still gets the HEADER verb
+ *     (`quickStart`), which is where starting a conversation belongs on a list
+ *     of conversations.
+ *
+ * Appended LAST rather than prepended: `run` leads the cluster by ruling
+ * (`RULED_ORDER`), and an unranked verb keeps its declared position, so this
+ * lands after the kind's own verbs and before the tail's process control.
+ * Idempotent — a row that already names it keeps its own ordering.
+ */
+const NO_CHAT_ABOUT: ReadonlySet<string> = new Set(['message', 'chat']);
+
+function applyChatAbout(row: KindConfig): KindConfig {
+  if (NO_CHAT_ABOUT.has(row.kind)) return row;
+  const declared = row.list.rowActions ?? [];
+  if (declared.includes('chat-about')) return row;
+  return { ...row, list: { ...row.list, rowActions: [...declared, 'chat-about'] } };
+}
+
+const KINDS: readonly KindConfig[] = ROWS.map(applyLaunch).map(applyChatAbout);
 
 const BY_KIND: ReadonlyMap<string, KindConfig> = new Map(KINDS.map((row) => [row.kind, row]));
 

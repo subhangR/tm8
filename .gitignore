@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 *.tsbuildinfo
 .DS_Store
@@ -9,3 +9,16 @@ target/
 coverage/
 test-results/
 playwright-report/
+dist-base/
+dist-mine/
+# The alternate UI bundle. `dist/` above does not cover it: the mounted bundle
+# is built to its own outDir on purpose, so that a stale TM8_UI_DIR pointing at
+# the alternate package fails loudly instead of serving an index whose every
+# asset 404s (packages/tm8_ui_2.0/vite.config.ts says why at length).
+#
+# `dist-2.0` since 2026-09-03, when the roles swapped and packages/tm8-ui took
+# the root back. `dist-1.0` stays listed: it is what the alternate bundle was
+# called while packages/tm8_ui_2.0 held the root, and a checkout that predates
+# the swap still has one on disk.
+dist-1.0/
+dist-2.0/

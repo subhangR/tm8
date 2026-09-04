@@ -62,7 +62,9 @@ export interface ResolvedAuthSession {
   actingAsTeamMemberId: string | null;
   workSessionId: string | null;
   runtimeMemberId: string | null;
+  /** Pre-176 credentials only; a chat is an entity now and binds through runtimeChatId. */
   runtimeThreadRootId: string | null;
+  runtimeChatId: string | null;
   expiresAt: string;
   label: string | null;
 }
@@ -89,6 +91,7 @@ interface SessionRowJson {
   work_session_id?: string | null;
   runtime_member_id?: string | null;
   runtime_thread_root_id?: string | null;
+  runtime_chat_id?: string | null;
   label: string | null;
   created_at: string;
   expires_at: string;
@@ -143,7 +146,7 @@ export interface IssuedAgentRuntimeSession {
   token: string;
   sessionId: string;
   runtimeMemberId: string;
-  runtimeThreadRootId: string;
+  runtimeChatId: string;
   actingAsTeamMemberId: string;
   expiresAt: string;
 }
@@ -199,37 +202,37 @@ export async function revokeAgentSession(
 export async function issueAgentRuntimeSession(
   db: Db,
   claims: DbClaims,
-  input: { threadRootId: string; teamMemberId: string; label?: string | null },
+  input: { chatId: string; teamMemberId: string; label?: string | null },
 ): Promise<IssuedAgentRuntimeSession> {
   const secret = generateSecret();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS.agent_runtime).toISOString();
   const session = await db.rpc<SessionRowJson>(claims, 'issue_agent_runtime_session', [
-    input.threadRootId,
+    input.chatId,
     input.teamMemberId,
     hashToken(secret),
     expiresAt,
-    input.label ?? `chat:${input.threadRootId}`,
+    input.label ?? `chat:${input.chatId}`,
   ]);
-  if (!session.runtime_member_id || !session.runtime_thread_root_id) {
+  if (!session.runtime_member_id || !session.runtime_chat_id) {
     throw new CollabError('upstream_unavailable', 'agent runtime session returned no attribution');
   }
   return {
     token: formatToken(session.id, secret),
     sessionId: session.id,
     runtimeMemberId: session.runtime_member_id,
-    runtimeThreadRootId: session.runtime_thread_root_id,
+    runtimeChatId: session.runtime_chat_id,
     actingAsTeamMemberId: input.teamMemberId,
     expiresAt: session.expires_at,
   };
 }
 
-/** Idempotently revoke every live runtime credential owned by a thread root. */
+/** Idempotently revoke every live runtime credential owned by a chat. */
 export async function revokeAgentRuntimeSession(
   db: Db,
   claims: DbClaims,
-  threadRootId: string,
+  chatId: string,
 ): Promise<void> {
-  await db.rpc(claims, 'revoke_agent_runtime_session', [threadRootId]);
+  await db.rpc(claims, 'revoke_agent_runtime_session', [chatId]);
 }
 
 /** One message and one code for every rejection: a caller holding a bad credential learns nothing. */
@@ -510,4 +513,135 @@ export async function claimNode(
     },
     requestId,
   );
+}
+
+/* ── password change (docs/identity/FIRST-RUN-CLAIM-DESIGN.md §10.3) ──────── */
+
+export interface ChangePasswordInput {
+  accountId: string;
+  identityId: string;
+  username: string;
+  currentPassword: string;
+  newPassword: string;
+  /** The session to keep alive; null for a loopback auto-owner (no session). */
+  keepSessionId: string | null;
+}
+
+/**
+ * Rotate the caller's OWN credential — CHANGE, not reset.
+ *
+ * The current password is proven with the same claim-free credential read and
+ * constant-work scrypt the login path uses. Requiring it even though the caller
+ * is already authenticated is the whole security posture of this operation: a
+ * walk-up on an unlocked screen, or a stolen live session, must not be able to
+ * silently re-credential the account and lock the real owner out. There is no
+ * reset-without-the-old-password variant — that needs an out-of-band capability
+ * this lane deliberately does not invent.
+ *
+ * The write is 007's `set_account_credential` under the caller's own claims (an
+ * account may set its own credential without node admin), and then every OTHER
+ * live session is revoked while the one making the change is spared. Both run in
+ * one transaction so a credential is never rotated without its session sweep.
+ */
+export async function changePassword(
+  db: Db,
+  input: ChangePasswordInput,
+  requestId?: string,
+): Promise<{ accountId: string; revokedOtherSessions: number }> {
+  const row = await db.rpc<ResolvedCredential | null>({}, 'resolve_account_credential', [
+    input.username,
+  ]);
+
+  const verifier = row?.passwordHash ?? UNMATCHABLE_VERIFIER;
+  const ok = await hasher.verify(input.currentPassword, verifier);
+  // No stored credential means an unclaimed loopback owner: there is no password
+  // to change — they claim, they do not rotate. Same uniform refusal as a wrong
+  // current password, so neither state is enumerable.
+  if (!row || !row.passwordHash || !ok) throw invalidCredentials();
+  if (row.status !== 'active') throw invalidCredentials();
+  // The credential the caller proved must belong to the account they are
+  // authenticated as. It always should; a mismatch means the username resolved
+  // to someone else's row, which must never rotate under this caller's identity.
+  if (row.accountId !== input.accountId) throw invalidCredentials();
+
+  const newHash = await hasher.hash(input.newPassword);
+  const claims = { identityId: input.identityId, ...(requestId ? { requestId } : {}) };
+  const revoked = await db.tx(claims, async (q) => {
+    await q.rpc('set_account_credential', [input.accountId, newHash, hasher.algorithm]);
+    return q.rpc<number>('revoke_account_sessions_except', [
+      input.accountId,
+      input.keepSessionId,
+    ]);
+  });
+
+  return { accountId: input.accountId, revokedOtherSessions: revoked ?? 0 };
+}
+
+/* ── invite-bound self-signup (docs/identity/FIRST-RUN-CLAIM-DESIGN.md D5) ── */
+
+export interface SignupViaInviteInput {
+  code: string;
+  username: string;
+  password: string;
+  displayName?: string | null;
+  email?: string | null;
+  kind?: 'browser' | 'cli';
+}
+
+export interface IssuedInviteSignup extends IssuedLogin {
+  spaceId: string;
+  memberId: string;
+}
+
+/**
+ * Redeem an invite that CREATES the account — the last piece of D5.
+ *
+ * CLAIM-FREE: the invited person has no identity until this call, so the code is
+ * the only authorization, exactly as it is for `auth.invite.resolve`.
+ * `signup_via_invite` creates the account, the profile, the membership and
+ * consumes the invite atomically, hard-coding a non-admin non-owner account.
+ *
+ * Then it SIGNS THEM IN by delegating to `loginWithPassword` with the credential
+ * just set — the same pattern `claimNode` follows, and for the same reason: TTL
+ * selection, the profile read, the disabled-account check and session issuance
+ * are all proven on the login path, and a second copy would be a second place
+ * for them to drift.
+ */
+export async function signupViaInvite(
+  db: Db,
+  input: SignupViaInviteInput,
+  requestId?: string,
+): Promise<IssuedInviteSignup> {
+  const identityId = `id_${randomUUID()}`;
+  const passwordHash = await hasher.hash(input.password);
+
+  const created = await db.rpc<{
+    account: AccountRowJson;
+    spaceId: string;
+    memberId: string;
+  } | null>({}, 'signup_via_invite', [
+    input.code,
+    identityId,
+    input.username,
+    input.displayName ?? null,
+    input.email ?? null,
+    hasher.algorithm,
+    passwordHash,
+  ]);
+  if (!created) {
+    throw new CollabError('upstream_unavailable', 'signup_via_invite returned no row');
+  }
+
+  const issued = await loginWithPassword(
+    db,
+    {
+      username: input.username,
+      password: input.password,
+      ...(input.kind ? { kind: input.kind } : {}),
+      label: 'invite signup',
+    },
+    requestId,
+  );
+
+  return { ...issued, spaceId: created.spaceId, memberId: created.memberId };
 }

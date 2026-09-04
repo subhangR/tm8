@@ -534,11 +534,24 @@
   opacity: 1;
   visibility: visible;
 }
+/* TAP — the third trigger. Neither rule above can fire on a touch device, and
+   this refusal is on the SIGN-IN screen: a user who cannot read the reason
+   cannot get into the product. Set by useReasonDisclosure; same treatment as
+   `.hon-tip`, which is the same vocabulary. */
+.cv2-root .auth-inline-refusal[data-reason-open='true'] > .auth-tip {
+  opacity: 1;
+  visibility: visible;
+}
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .auth-tip {
     transition: none;
   }
 }
+/* The PHONE presentation — docked to the frame instead of anchored to the
+   control, because `left: 0` + 260px is the same viewport-blind geometry
+   `.hon-tip` had — is written ONCE, in honesty.css, over all three spellings of
+   this tooltip. Three copies of a geometry derived from the frame's tokens is
+   three things to drift when a token moves. Do not restate it here. */
 .cv2-root .auth-tip__cause {
   font-size: 11px;
   font-weight: 600;

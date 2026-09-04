@@ -548,3 +548,276 @@ describe('readSessionTranscript — codex', () => {
     expect(page.stats.tools).toEqual([{ name: 'shell', count: 1 }]);
   });
 });
+
+/**
+ * PAGING BACK — the byte cursor, and the one property the client's whole
+ * accumulation rests on.
+ *
+ * These write transcripts LARGER than the reader's 256 KiB starting window on
+ * purpose. A fixture that fits in one window cannot exercise a cursor at all:
+ * every page would be the whole file, `hasOlder` would be false on the first
+ * read, and a reader that had lost the ability to page would still pass.
+ */
+describe('readSessionTranscript — paging back by byte offset', () => {
+  /** ~4 KiB of tool traffic per turn, so 200 turns overrun several windows. */
+  const padded = (at: string, i: number) => ({
+    type: 'assistant',
+    timestamp: at,
+    message: {
+      role: 'assistant',
+      model: 'claude-opus-5',
+      content: [{ type: 'tool_use', name: 'Bash', input: { command: 'x'.repeat(4000), i } }],
+    },
+  });
+
+  /**
+   * Non-ASCII in the prose is deliberate. The window boundary is found in the
+   * BUFFER because a seek can land inside a multi-byte character; if that ever
+   * regresses to string arithmetic, the cursor drifts off the record boundary
+   * and this file is what notices.
+   */
+  const text = (i: number) => `turn ${String(i)} — ünïcode ✅ 日本語`;
+  /** What a window's entries reduce to: one marker per turn, order preserved. */
+  const markers = (page: { entries: { text: string }[] }): string[] =>
+    page.entries.map((e) => e.text.split(' ///')[0] ?? '');
+
+  /**
+   * EVERY RECORD IS PROSE, AND EVERY RECORD IS FAT — both deliberate, and the
+   * second was learned by mutating the reader rather than reasoned about.
+   *
+   * A transcript that alternates small prose with large TOOL records looks more
+   * realistic and is a far weaker test. The cursor can then be wrong by a
+   * kilobyte and lose nothing but tool traffic, so the concatenation below
+   * still matches and the defect ships: mutating `windowStart` to drop the
+   * partial-record correction passed 27 of 27 against exactly that fixture.
+   * With every record prose and ~4 KiB wide, any byte the cursor is wrong by
+   * costs a turn the walk can no longer see.
+   */
+  const prose = (at: string, i: number) => claudeText(at, `${text(i)} ///${'x'.repeat(4000)}`);
+
+  async function bigTranscript(home: string, turns: number): Promise<void> {
+    const lines: unknown[] = [];
+    for (let i = 0; i < turns; i += 1) {
+      lines.push(prose(new Date(Date.UTC(2026, 7, 7, 10, 0, i)).toISOString(), i));
+    }
+    await writeClaude(home, 'n1', lines);
+  }
+
+  const read = (home: string, over: Record<string, unknown> = {}) =>
+    readSessionTranscript({
+      sessionId: 's1',
+      agentTool: 'claude-code',
+      nativeSessionId: 'n1',
+      cwd: CWD,
+      home,
+      ...over,
+    });
+
+  /**
+   * THE PROPERTY, stated as strongly as it can be: walking the cursor from the
+   * tail to byte 0 reproduces the ENTIRE transcript, in order, with nothing
+   * read twice and nothing skipped.
+   *
+   * An overlap shows up as a duplicate; a gap shows up as a missing turn. Both
+   * fail the same `toEqual`, which is the point — the client concatenates these
+   * windows with no dedupe, so either defect reaches the reader directly.
+   */
+  it('walks from the tail to byte 0 and reproduces every turn exactly once', async () => {
+    const home = await makeHome();
+    await bigTranscript(home, 200);
+
+    const walked: string[] = [];
+    let cursor: number | undefined;
+    let pages = 0;
+    for (;;) {
+      const page: Awaited<ReturnType<typeof read>> = await read(
+        home, cursor === undefined ? { last: 20 } : { last: 20, before: cursor },
+      );
+      walked.unshift(...markers(page));
+      pages += 1;
+      if (!page.hasOlder) break;
+      expect(page.windowStart).not.toBeNull();
+      // Strictly backwards. A cursor that failed to advance would loop here
+      // forever, so the walk is also its own liveness proof.
+      if (cursor !== undefined) expect(page.windowStart!).toBeLessThan(cursor);
+      cursor = page.windowStart!;
+      expect(pages).toBeLessThan(60);
+    }
+
+    expect(walked).toEqual(Array.from({ length: 200 }, (_, i) => text(i)));
+    // More than one window, or the property was never exercised.
+    expect(pages).toBeGreaterThan(1);
+  });
+
+  /**
+   * The tail's own cursor has to account for the `last` SLICE, not just the
+   * window it read. The window holds far more turns than 20; if the page
+   * reported the window's first byte, the turns the slice dropped would sit
+   * below the next page's start and be unreachable forever.
+   */
+  it('reports a cursor that reaches the turns its own `last` slice dropped', async () => {
+    const home = await makeHome();
+    await bigTranscript(home, 200);
+
+    const tail = await read(home, { last: 5 });
+    expect(markers(tail)).toEqual([195, 196, 197, 198, 199].map(text));
+    const older = await read(home, { last: 5, before: tail.windowStart! });
+    // Exactly the five before them: abutting, not overlapping, not skipping.
+    expect(markers(older)).toEqual([190, 191, 192, 193, 194].map(text));
+  });
+
+  it('says a window that reaches the first byte has nothing older', async () => {
+    const home = await makeHome();
+    await writeClaude(home, 'n1', [claudeText('2026-08-07T10:00:00.000Z', 'only turn')]);
+    const page = await read(home);
+    expect(page.windowStart).toBe(0);
+    expect(page.hasOlder).toBe(false);
+  });
+
+  it('offers no cursor at all for a transcript it could not find', async () => {
+    const home = await makeHome();
+    const page = await read(home);
+    expect(page.available).toBe(false);
+    // Null, not 0: 0 is a real offset — the start of a file that was opened.
+    expect(page.windowStart).toBeNull();
+    expect(page.hasOlder).toBe(false);
+  });
+
+  /**
+   * A window can be full of valid records and say NOTHING — a stretch of pure
+   * tool traffic parses perfectly and yields no prose. `readTail` only widens a
+   * window that parses to zero RECORDS, so without the backward walk a reader
+   * would click "earlier turns" and watch an empty page arrive.
+   */
+  it('keeps walking backwards through a stretch that holds no prose at all', async () => {
+    const home = await makeHome();
+    const lines: unknown[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      lines.push(claudeText(new Date(Date.UTC(2026, 7, 7, 9, 0, i)).toISOString(), `old ${String(i)}`));
+    }
+    // ~600 KiB of tool traffic, over two whole starting windows of silence.
+    for (let i = 0; i < 150; i += 1) {
+      lines.push(padded(new Date(Date.UTC(2026, 7, 7, 10, 0, i)).toISOString(), i));
+    }
+    lines.push(claudeText('2026-08-07T11:00:00.000Z', 'newest'));
+    await writeClaude(home, 'n1', lines);
+
+    const tail = await read(home, { last: 3 });
+    expect(tail.entries.map((e) => e.text)).toEqual(['newest']);
+    const older = await read(home, { last: 3, before: tail.windowStart! });
+    expect(older.entries.map((e) => e.text)).toEqual(['old 2', 'old 3', 'old 4']);
+  });
+
+  /**
+   * `stuck` is a claim about NOW — "this agent has said nothing for 30 seconds"
+   * — and a historical window is describing bytes written hours ago. Letting a
+   * page-back carry it would put a live-looking alarm on a reader who is simply
+   * scrolling up.
+   */
+  it('refuses to make a liveness claim about a historical window', async () => {
+    const home = await makeHome();
+    // One word, then 100 fat tool calls — enough to push the prose out of the
+    // tail window entirely, so BOTH reads see a stretch the heuristic fires on
+    // and only the difference between them is under test.
+    const lines: unknown[] = [claudeText('2026-08-07T10:00:00.000Z', 'starting')];
+    for (let i = 0; i < 100; i += 1) {
+      lines.push(padded(new Date(Date.UTC(2026, 7, 7, 10, 1, i)).toISOString(), i));
+    }
+    await writeClaude(home, 'n1', lines);
+    const now = Date.parse('2026-08-07T12:00:00.000Z');
+
+    const tail = await read(home, { last: 3, now });
+    // The tail is entitled to the claim, and makes it — otherwise this test
+    // would pass on a reader that had simply stopped detecting anything.
+    expect(tail.stuck).not.toBeNull();
+    expect(tail.hasOlder).toBe(true);
+
+    const older = await read(home, { last: 3, now, before: tail.windowStart! });
+    // The same bytes the heuristic would fire on, read as history: silent.
+    expect(older.entries.map((e) => e.text)).toEqual(['starting']);
+    expect(older.stuck).toBeNull();
+  });
+});
+
+/**
+ * REGRESSIONS FROM REVIEW (PR #452). Both shipped green and both lost a turn.
+ */
+describe('readSessionTranscript — the cursor cannot split a record', () => {
+  const CWD_R = CWD;
+  async function plant(home: string, lines: unknown[]): Promise<void> {
+    const dir = join(home, '.claude', 'projects', encodeClaudeProjectDir(CWD_R));
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'n1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'));
+  }
+  const read = (home: string, over: Record<string, unknown>) =>
+    readSessionTranscript({
+      sessionId: 's1', agentTool: 'claude-code', nativeSessionId: 'n1', cwd: CWD_R, home, ...over,
+    });
+
+  /** ONE record, TWO prose entries — the shape the slice used to cut through. */
+  const twoTexts = (at: string, a: string, b: string) => ({
+    type: 'assistant',
+    timestamp: at,
+    message: {
+      role: 'assistant',
+      model: 'claude-opus-5',
+      content: [
+        { type: 'text', text: a },
+        { type: 'tool_use', name: 'Bash', input: {} },
+        { type: 'text', text: b },
+      ],
+    },
+  });
+
+  /**
+   * A `last` slice landing BETWEEN two entries of one record used to report
+   * that record's offset as the cursor, so the next page excluded the record
+   * whole — including the entry the slice had just dropped. Unreachable
+   * forever, in the one feature whose point is that nothing is.
+   *
+   * `last` bounds TURNS; the cursor is a position in BYTES; a byte offset
+   * cannot name a place inside a record. The page widens to the record
+   * boundary instead, and is allowed to come back longer than `last`.
+   */
+  it('widens the page rather than cutting a multi-entry record in half', async () => {
+    const home = await makeHome();
+    await plant(home, [
+      claudeText('2026-08-07T10:00:00.000Z', 'E0'),
+      claudeText('2026-08-07T10:00:01.000Z', 'E1'),
+      twoTexts('2026-08-07T10:00:02.000Z', 'E2', 'E3'),
+      claudeText('2026-08-07T10:00:03.000Z', 'E4'),
+      claudeText('2026-08-07T10:00:04.000Z', 'E5'),
+    ]);
+
+    const walked: string[] = [];
+    let cursor: number | undefined;
+    for (let i = 0; i < 10; i += 1) {
+      const page = await read(home, cursor === undefined ? { last: 3 } : { last: 3, before: cursor });
+      walked.unshift(...page.entries.map((e) => e.text));
+      if (!page.hasOlder) break;
+      cursor = page.windowStart!;
+    }
+    // E2 was the casualty: it shared a record with E3, and the slice kept E3.
+    expect(walked).toEqual(['E0', 'E1', 'E2', 'E3', 'E4', 'E5']);
+  });
+
+  /**
+   * `partial` answers "are these COUNTS windowed", which is not `hasOlder`'s
+   * question. Deriving it from the entry cursor made a whole-file read claim
+   * partial counts — and `packages/cli` prints "(tail only — these counts
+   * cover the part of the transcript that was read)" straight over them.
+   */
+  it('does not call complete counts partial just because turns were sliced', async () => {
+    const home = await makeHome();
+    await plant(home, Array.from({ length: 25 }, (_, i) =>
+      claudeText(`2026-08-07T10:00:${String(i).padStart(2, '0')}.000Z`, `turn ${String(i)}`)));
+
+    const page = await read(home, { last: 5 });
+    expect(page.entries).toHaveLength(5);
+    // The whole file fitted in one window, so the counts cover the whole file.
+    expect(page.stats?.assistantMessages).toBe(25);
+    expect(page.stats?.partial).toBe(false);
+    // ...and there ARE turns above the five shown. Two fields, two questions.
+    expect(page.hasOlder).toBe(true);
+  });
+});

@@ -1,0 +1,23 @@
+{
+ "space": "019fbd5a-3c5b-71ea-9b91-1d3baa50da25",
+ "root": "01a057c5-c9f3-763e-8073-68d723407602",
+ "members": {
+  "triage": "01a057c5-ccce-7214-8d97-3306eb59ecf5",
+  "explore-similar": "01a057c6-36b2-7675-9f12-6e25a34cfe45",
+  "explore-arch": "01a057c6-489d-7ffc-8070-c7787f6081f1",
+  "explore-surface": "01a057c6-5c65-7a6f-a560-aa92baa7afbe",
+  "clarify": "01a057c6-72ed-7aeb-98eb-5f62d37ed77c",
+  "arch-minimal": "01a057c6-87d9-790f-a2db-d1c81c0db2fb",
+  "arch-clean": "01a057c6-9b66-7e2e-9391-b464b90d8e5c",
+  "arch-pragmatic": "01a057c6-af04-73b5-a098-5d65bdee96d7",
+  "implement": "01a057c6-c294-7235-adad-d37b361dee34",
+  "rev-guidelines": "01a057c6-d83f-7d2e-a82d-5283fd677130",
+  "rev-bugs": "01a057c6-e8b3-7d54-9fdd-9e61f6198998",
+  "rev-tests": "01a057c6-f8fc-7036-b140-d7091550f2ab",
+  "rev-silent": "01a057c7-0cbb-78bc-a121-e948da29e2ad",
+  "rev-types": "01a057c7-2120-7061-b2cc-f2655bc85d72",
+  "rev-history": "01a057c7-3541-7468-9202-4455ba97bd08",
+  "grader": "01a057c7-47c8-7465-b55e-1b4a4d77e965",
+  "ship": "01a057c7-58ef-7149-857a-c1e8602d2684"
+ }
+}

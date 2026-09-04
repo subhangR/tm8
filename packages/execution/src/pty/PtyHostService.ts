@@ -105,6 +105,10 @@ interface PendingPromptDelivery {
    *  {@link PtyHostOptions.onPromptSettled}). Undefined admits the delivery exactly
    *  as before — no completion signal fires for it. */
   deliveryId?: string;
+  /** Spawn's first turn requires proof that the agent emitted something before
+   * tm8 treats terminal silence as a ready composer. Ordinary prompt delivery
+   * preserves support for quiet line-oriented processes. */
+  requireReadyOutput?: boolean;
 }
 
 /** Outcome `writePromptToEntry`'s closed loop concluded with, reported through
@@ -211,6 +215,55 @@ const PROMPT_SUBMIT_BACKOFF_MS = [
  *  cursor?" anchor. Short enough to survive composer wrapping, long enough to be
  *  distinctive. */
 const PROMPT_TAIL_TOKEN_MAX = 24;
+
+// --- Arrival confirmation (spawn's first turn only) --------------------------
+//
+// THE BUG THIS CLOSES. The verify loop below can only ask "is our text still at
+// the cursor?", and it answers a MISSING body and a SUBMITTED body identically:
+// both are "not there". So a first turn written into a composer that had not yet
+// been drawn — the readiness gate releases on 1500ms of silence, and a booting
+// claude-code can fall that quiet several seconds before its composer accepts
+// input — was reported `delivered`, the session transitioned to `running`, and
+// the agent sat at an EMPTY prompt forever. Observed on live sessions
+// 01a035b9 and 01a035d3 (2026-08-24): both launch records hold a complete,
+// correct `<tm8_task_prompt>`; neither agent's transcript contains it, and the
+// operator had to paste the task in by hand.
+//
+// The fix is to require POSITIVE evidence that the body reached the composer
+// before pressing Enter, and to treat "never arrived" as its own outcome rather
+// than folding it into `delivered`.
+/** How long to wait for a freshly-written body to become visible at the cursor
+ *  (as its own text, or as a `[Pasted text …]` placeholder) before concluding it
+ *  never reached the composer. Generously past the composer redraw a healthy
+ *  agent needs, so a slow-but-working paste is never mistaken for a lost one. */
+const PROMPT_BODY_VISIBLE_TIMEOUT_MS = 4000;
+/** Poll interval for the arrival check. Reads a small cursor band off the
+ *  already-parsed mirror, so this is cheap. */
+const PROMPT_BODY_POLL_MS = 150;
+/** Total body writes (initial + rewrites) before giving up on arrival.
+ *
+ *  Rewriting is SAFE here in a way that resending after an Enter never is: this
+ *  path has not pressed Enter even once, so an unarrived body cannot have been
+ *  submitted and cannot duplicate an agent turn. A composer that was not ready
+ *  on the first attempt is usually ready a second later, which is what turns
+ *  this from a loud failure back into a working session. */
+const PROMPT_BODY_WRITE_ATTEMPTS = 3;
+/** Ceiling on the fresh readiness wait taken before each REWRITE. Much shorter
+ *  than the cold cap: we already know the agent is alive and talking, we are
+ *  only waiting for its composer to finish drawing — and this window is spent
+ *  inside the caller's first-prompt settlement budget, which has to cover the
+ *  cold gate and the whole submit-verify loop as well. See
+ *  `SpawnService.firstPromptSettlementMs` for that arithmetic. */
+const PROMPT_BODY_REWRITE_READY_TIMEOUT_MS = 5000;
+/** Ceiling on waiting for the agent to assert bracketed paste before a
+ *  MULTI-LINE first body. Not a readiness signal (see TerminalStateMirror) — it
+ *  is a framing precondition: written raw, every newline in the body is a
+ *  separate Enter, so a multi-line prompt types itself into the composer as a
+ *  burst of half-prompt submissions. Agents that assert the mode do so within
+ *  their first ~300 bytes, so this window costs nothing; agents that never
+ *  assert it (echo-agent, a plain shell) fall through to the raw write they
+ *  have always taken. */
+const PROMPT_BRACKETED_PASTE_WAIT_MS = 2000;
 
 /** Bracketed-paste framing the agent asked for when {@link TerminalStateMirror.bracketedPaste}. */
 const BRACKETED_PASTE_START = '\x1b[200~';
@@ -732,6 +785,8 @@ export class PtyHostService {
    *
    * @param deliveryId Correlation id for the two-signal completion callback.
    *   Omit to admit the delivery exactly as before with no completion signal.
+   * @param requireReadyOutput Spawn's first turn sets this true so a child that
+   *   never emits a byte cannot be mistaken for a ready interactive agent.
    * @returns false only when a queue bound rejects the new delivery.
    */
   async deliverPrompt(
@@ -739,6 +794,7 @@ export class PtyHostService {
     content: string,
     mode: 'send' | 'paste',
     deliveryId?: string,
+    requireReadyOutput = false,
   ): Promise<boolean> {
     const bytes = Buffer.byteLength(content, 'utf8');
     if (bytes > MAX_PENDING_PROMPT_BYTES_PER_SESSION) {
@@ -781,7 +837,7 @@ export class PtyHostService {
       return false;
     }
 
-    queue.deliveries.push({ content, mode, bytes, deliveryId });
+    queue.deliveries.push({ content, mode, bytes, deliveryId, requireReadyOutput });
     queue.bytes += bytes;
     this.drainPendingPrompts(sessionId);
     return true;
@@ -812,7 +868,23 @@ export class PtyHostService {
           const delivery = queue.deliveries.shift();
           if (!delivery) return;
           queue.bytes -= delivery.bytes;
-          const result = await this.writePromptToEntry(sessionId, entry, delivery);
+          let result: PromptDeliveryOutcome;
+          try {
+            result = await this.writePromptToEntry(sessionId, entry, delivery);
+          } catch (error) {
+            // The delivery has already left the FIFO. If the write path throws
+            // here, kill/exit cleanup cannot find it in `queue.deliveries` and
+            // therefore cannot settle a caller waiting on its deliveryId. The
+            // old outer catch logged the exception and leaked that wait forever.
+            // Convert the exception into an honest UNKNOWN outcome for this one
+            // item, then keep draining the remaining FIFO.
+            this.logger.error(
+              'PtyHostService: pending prompt delivery failed',
+              error instanceof Error ? error : new Error(String(error)),
+              { sessionId, deliveryId: delivery.deliveryId },
+            );
+            result = { outcome: 'unknown', reason: 'pty_prompt_write_failed' };
+          }
           // Completion signal (second of the two signals; admission already
           // resolved deliverPrompt's own promise). Only fires when the caller
           // supplied a deliveryId — omitting one keeps a delivery exactly as
@@ -946,21 +1018,125 @@ export class PtyHostService {
       entry,
       cold ? PROMPT_COLD_IDLE_MS : PROMPT_IDLE_MS,
       cold ? PROMPT_COLD_READY_TIMEOUT_MS : PROMPT_WARM_READY_TIMEOUT_MS,
+      cold && delivery.requireReadyOutput === true,
     );
     if (this.sessions.get(sessionId) !== entry || entry.exited) {
       return { outcome: 'unknown', reason: 'session_replaced_or_exited' };
     }
+    // Silence is not readiness. A process that stays alive but never emits one
+    // byte (hung wrapper, credential dialog on a non-PTY channel, inert child)
+    // used to become `bootSettled` merely because 1500ms elapsed, after which
+    // we wrote into a terminal with no evidence that an agent existed. The
+    // initial spawn receipt now depends on this result, so make the cold path
+    // name that exact failure instead of treating a silent process as ready.
+    if (cold && delivery.requireReadyOutput === true && !entry.everSpoke) {
+      return { outcome: 'unknown', reason: 'agent_never_became_ready' };
+    }
 
-    // 2) Content framing. Wrap in bracketed paste iff the agent turned it on.
-    const framed = this.frameBody(entry, body);
-    if (framed) this.writeChunked(entry, framed);
+    // The anchor for both the arrival check below and the submit verification
+    // that follows it. Computed once so the two agree by construction on what
+    // "our text" looks like on screen.
+    const tailToken = this.computeTailToken(body);
+
+    // ARRIVAL CONFIRMATION applies to a spawn's FIRST TURN ONLY
+    // (`requireReadyOutput`), which is the delivery that races a booting agent
+    // and the one whose silent loss strands a whole session. Steady-state
+    // prompts go to an agent already proven interactive and keep the exact path
+    // they have always taken. A body with no printable anchor (pure control
+    // chars) cannot be looked for, so it keeps the blind path too.
+    const confirmArrival = delivery.requireReadyOutput === true && tailToken !== '';
+
+    if (confirmArrival && body.includes('\n')) {
+      // Framing precondition, not readiness — see PROMPT_BRACKETED_PASTE_WAIT_MS.
+      await this.waitForBracketedPaste(entry, PROMPT_BRACKETED_PASTE_WAIT_MS);
+      if (this.sessions.get(sessionId) !== entry || entry.exited) {
+        return { outcome: 'unknown', reason: 'session_replaced_or_exited' };
+      }
+    }
+
+    // 2) Content framing and the write. Wrap in bracketed paste iff the agent
+    //    turned it on. When arrival must be confirmed, rewrite a body that never
+    //    showed up — no Enter has been pressed, so nothing can be duplicated.
+    let arrived = !confirmArrival;
+    for (let attempt = 1; attempt <= PROMPT_BODY_WRITE_ATTEMPTS; attempt += 1) {
+      const framed = this.frameBody(entry, body);
+      if (framed) this.writeChunked(entry, framed);
+      if (!confirmArrival) break;
+
+      arrived = await this.waitForBodyAtCursor(entry, tailToken);
+      if (this.sessions.get(sessionId) !== entry || entry.exited) {
+        return { outcome: 'unknown', reason: 'session_replaced_or_exited' };
+      }
+      if (arrived) break;
+      if (attempt === PROMPT_BODY_WRITE_ATTEMPTS) break;
+
+      this.logger.warn('PtyHostService: first prompt body never reached the composer, rewriting', {
+        sessionId,
+        attempt,
+      });
+      // Wait for the composer to settle again before trying once more, rather
+      // than firing the same bytes into the same unready terminal.
+      await this.waitForOutputIdle(
+        entry,
+        PROMPT_COLD_IDLE_MS,
+        PROMPT_BODY_REWRITE_READY_TIMEOUT_MS,
+        true,
+      );
+      if (this.sessions.get(sessionId) !== entry || entry.exited) {
+        return { outcome: 'unknown', reason: 'session_replaced_or_exited' };
+      }
+    }
+
+    if (!arrived) {
+      // NEVER press Enter here. The body demonstrably is not in the composer, so
+      // an Enter would either do nothing or confirm whatever IS focused — and
+      // reporting `delivered` is what made this failure invisible in the first
+      // place. Name it instead: SpawnService turns this into a failed session
+      // with a readable reason rather than a `running` one nobody can debug.
+      this.logger.error(
+        'PtyHostService: first prompt never reached the composer',
+        new Error('prompt_delivery_failed'),
+        { sessionId, reason: 'body_never_reached_composer', attempts: PROMPT_BODY_WRITE_ATTEMPTS },
+      );
+      return { outcome: 'unknown', reason: 'body_never_reached_composer' };
+    }
 
     // Paste mode never submits — the human presses Enter — so writing the body
     // IS this delivery's whole job; nothing further to verify.
     if (delivery.mode === 'paste') return { outcome: 'delivered' };
 
     // 3) Submit + verify + bounded Enter-only retry (send mode).
-    return this.submitWithVerify(sessionId, entry, body);
+    return this.submitWithVerify(sessionId, entry, body, tailToken);
+  }
+
+  /**
+   * Resolve once our just-written body is VISIBLE at the cursor, or once
+   * {@link PROMPT_BODY_VISIBLE_TIMEOUT_MS} has elapsed without ever seeing it.
+   *
+   * Reuses the same cursor-band read the submit verifier uses, so "arrived" and
+   * "still parked" are the same observation asked at two different moments —
+   * which is exactly what lets `delivered` mean something: the verifier's "our
+   * text is gone" only implies submission once we have seen it present.
+   */
+  private async waitForBodyAtCursor(entry: PtyEntry, tailToken: string): Promise<boolean> {
+    const deadline = Date.now() + PROMPT_BODY_VISIBLE_TIMEOUT_MS;
+    for (;;) {
+      if (entry.exited) return false;
+      if (await this.promptStillAtCursor(entry, tailToken)) return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, PROMPT_BODY_POLL_MS));
+    }
+  }
+
+  /** Resolve once the mirrored agent has asserted bracketed-paste mode, or once
+   *  `timeoutMs` has elapsed. Returns whether the mode is on. */
+  private async waitForBracketedPaste(entry: PtyEntry, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if (entry.exited || entry.state.bracketedPaste) return entry.state.bracketedPaste;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, PROMPT_BODY_POLL_MS));
+    }
   }
 
   /** Wrap `body` in bracketed-paste markers when the mirrored agent enabled that
@@ -1004,6 +1180,7 @@ export class PtyHostService {
     entry: PtyEntry,
     idleMs: number,
     timeoutMs: number,
+    requireFirstOutput = false,
   ): Promise<void> {
     const start = Date.now();
     for (;;) {
@@ -1011,14 +1188,19 @@ export class PtyHostService {
       const idle = Date.now() - entry.lastOutputAt;
       // Latch boot completion on any genuinely long quiet stretch, whichever gate
       // observed it: a PTY this quiet has finished starting its agent.
-      if (idle >= PROMPT_COLD_IDLE_MS) entry.bootSettled = true;
-      if (idle >= idleMs) return;
+      const outputProven = !requireFirstOutput || entry.everSpoke;
+      if (outputProven && idle >= PROMPT_COLD_IDLE_MS) entry.bootSettled = true;
+      if (outputProven && idle >= idleMs) return;
       const remaining = timeoutMs - (Date.now() - start);
       if (remaining <= 0) return;
       // Sleep just long enough to reach idleMs for the current quiet stretch, but
       // never past the overall ceiling. New output resets lastOutputAt and the
       // next iteration recomputes a fresh (larger) wait.
-      const wait = Math.max(1, Math.min(idleMs - idle, remaining));
+      // Before the first byte there is no quiet-stretch endpoint to wait for;
+      // poll coarsely for evidence instead of spinning 1ms timers after
+      // `idleMs` has elapsed.
+      const untilReadyCheck = outputProven ? idleMs - idle : 100;
+      const wait = Math.max(1, Math.min(untilReadyCheck, remaining));
       await new Promise((resolve) => setTimeout(resolve, wait));
     }
   }
@@ -1044,15 +1226,15 @@ export class PtyHostService {
     sessionId: string,
     entry: PtyEntry,
     body: string,
-  ): Promise<PromptDeliveryOutcome> {
-    const isLive = (): boolean =>
-      this.sessions.get(sessionId) === entry && !entry.exited;
-
     // The anchor we look for at the cursor: the last run of visible characters of
     // the body, ANSI/control-stripped and whitespace-collapsed. An empty token
     // (e.g. a body of pure control chars) means we cannot verify — we then submit
-    // exactly once and never guess with a second blind Enter.
-    const tailToken = this.computeTailToken(body);
+    // exactly once and never guess with a second blind Enter. Passed in so the
+    // arrival check and this verification share one definition of "our text".
+    tailToken: string,
+  ): Promise<PromptDeliveryOutcome> {
+    const isLive = (): boolean =>
+      this.sessions.get(sessionId) === entry && !entry.exited;
 
     // Let the composer START echoing the paste before we commit it. The floor is
     // unconditional because the idle wait below cannot supply one: we arrive here

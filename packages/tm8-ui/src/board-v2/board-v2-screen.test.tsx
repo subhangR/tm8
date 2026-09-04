@@ -1,0 +1,348 @@
+// @vitest-environment jsdom
+/**
+ * BOARD V2, MOUNTED — GateApp over the fixture seam at `#/s/{s}/board-v2`,
+ * the same harness the v1 board proved. What these cases pin:
+ *
+ *  · the closed category skeleton in reading order, every column a REAL
+ *    `filters.category` read (the fixture applies the predicate for real);
+ *  · the kind selector making the board universal: a kind that carries no
+ *    status WORD still lands under a real category — phase 5 (migration 152)
+ *    gave every kind a status and refuses to apply while any row lacks one —
+ *    and the categories it is NOT in stay empty rather than borrowing it. The
+ *    'No status yet' column is a pre-phase-5 vestige and now renders for no
+ *    kind, which is why it is asserted ABSENT rather than populated;
+ *  · a real drag commit for tasks THROUGH the category drop seam (fallback
+ *    'open', since the fixture space resolves to the global default);
+ *  · a REFUSED move for a kind that cannot move yet — visible, with the
+ *    reason, never a silent no-op;
+ *  · archived as a FILTER that reaches the seam, never a column;
+ *  · workflow columns: the global default's states, banded by category.
+ *
+ * Fixture dataset (fixtures/entities.ts), non-deleted tasks — all three sit
+ * in `in_progress` under the ruled mapping:
+ *   '4f8c2a9e…'                              in_review → in_progress
+ *   'Session tree guide lines'               working   → in_progress
+ *   'Wire palette to real command registry'  blocked   → in_progress
+ */
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, waitFor, within, type RenderResult } from '@testing-library/react';
+import { GateApp } from '../views/GateApp';
+import { resetNav } from '../stores/navStore';
+import { screenStackStore } from '../stores/screenStackStore';
+import { createMemoryTarget } from '../routes';
+import { FIXTURE_SPACE_ID } from '../fixtures';
+
+const SPACE = FIXTURE_SPACE_ID;
+const GUIDE = 'Session tree guide lines';
+const CATEGORY_KEYS = ['to_do', 'in_progress', 'done', 'cancelled'];
+
+/** The router-mount storage double — this runner's localStorage lacks setItem. */
+function installStorage(): void {
+  const map = new Map<string, string>();
+  const store = {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => void map.set(k, String(v)),
+    removeItem: (k: string) => void map.delete(k),
+    clear: () => map.clear(),
+    key: (i: number) => [...map.keys()][i] ?? null,
+    get length() {
+      return map.size;
+    },
+  };
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: store });
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: store });
+}
+
+beforeEach(() => {
+  installStorage();
+  resetNav();
+  screenStackStore.getState().clearAll();
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+async function mountBoard(): Promise<RenderResult> {
+  const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/board-v2`)} />);
+  await waitFor(() => view.getByTestId('board-v2-screen'));
+  // Loaded, not just mounted: skeletons gone means the first reads answered.
+  await waitFor(() => expect(view.queryAllByTestId('b2-skeleton')).toHaveLength(0));
+  return view;
+}
+
+const columnKeys = (view: RenderResult): string[] =>
+  view.getAllByTestId('b2-column').map((c) => c.getAttribute('data-column') ?? '');
+
+/** Every axis is a dropdown: its options do not exist until it is open. */
+const openAxis = (view: RenderResult, testId: string) => {
+  fireEvent.click(view.getByTestId(testId));
+  return view.getByTestId(`${testId}-menu`);
+};
+
+const column = (view: RenderResult, key: string) => {
+  const col = view.getAllByTestId('b2-column').find((c) => c.getAttribute('data-column') === key);
+  expect(col).toBeDefined();
+  return within(col!);
+};
+
+describe('the category board', () => {
+  it('renders the closed four in reading order; empty categories included, no uncategorised column for a fully-categorised kind', async () => {
+    const view = await mountBoard();
+    /* The uncategorised column earns its width only when it has something to
+       say — every fixture task carries a category, so it must be absent. */
+    expect(columnKeys(view)).toEqual(CATEGORY_KEYS);
+    // Cards landed where the SERVER's category says; empties say so in words.
+    // `to_do` HOLDS A CARD NOW (`taskQueued`, added with the four category
+    // tabs — the fixtures had no unstarted task at all), so the empty-column
+    // sentence is measured on `cancelled`, whose only member is archived.
+    expect(column(view, 'in_progress').getByText(GUIDE)).toBeTruthy();
+    expect(column(view, 'to_do').getByText('Name the empty states')).toBeTruthy();
+    expect(column(view, 'cancelled').getByText('nothing in Cancelled')).toBeTruthy();
+    view.unmount();
+  });
+
+  it('the title search narrows cards without touching the seam', async () => {
+    const view = await mountBoard();
+    fireEvent.change(view.getByLabelText('Filter cards by title'), { target: { value: 'guide' } });
+    await waitFor(() => expect(view.getAllByTestId('b2-card')).toHaveLength(1));
+    expect(view.getByText(GUIDE)).toBeTruthy();
+    view.unmount();
+  });
+
+  it('COMMITS a drag: optimistic move, real write through the category drop seam, fresh read agrees', async () => {
+    const view = await mountBoard();
+    const card = view.getAllByTestId('b2-card').find((c) => c.textContent?.includes(GUIDE))!;
+    const target = view
+      .getAllByTestId('b2-column')
+      .find((c) => c.getAttribute('data-column') === 'to_do')!;
+
+    const dataTransfer = {
+      data: new Map<string, string>(),
+      setData(type: string, v: string) {
+        this.data.set(type, v);
+      },
+      getData(type: string) {
+        return this.data.get(type) ?? '';
+      },
+      effectAllowed: 'move',
+      dropEffect: 'move',
+    };
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+
+    // Optimistically there at once…
+    expect(column(view, 'to_do').getByText(GUIDE)).toBeTruthy();
+    /* …and STILL there once the write's event-driven re-read lands (the seam
+       wrote `open`, the ruled mapping derives to_do) with the source column
+       empty of it — a refused write would have snapped it home, so
+       persistence through settle IS the commit evidence. */
+    await waitFor(() => {
+      expect(column(view, 'to_do').getByText(GUIDE)).toBeTruthy();
+      expect(column(view, 'in_progress').queryByText(GUIDE)).toBeNull();
+    });
+    view.unmount();
+  });
+
+  it('§8.1 — mod+arrow moves the focused card through the SAME dispatch', async () => {
+    const view = await mountBoard();
+    const body = view.getByLabelText('Tasks board');
+    // Focus starts at To Do (empty); walk right to In Progress, walk DOWN to
+    // the guide-lines card (order is the server's), then move it one LEFT.
+    fireEvent.keyDown(body, { key: 'ArrowRight' });
+    const focusedIsGuide = () =>
+      view
+        .getAllByTestId('b2-card')
+        .some((c) => c.className.includes('b2__card--focused') && c.textContent?.includes(GUIDE));
+    for (let i = 0; i < 4 && !focusedIsGuide(); i += 1) {
+      fireEvent.keyDown(body, { key: 'ArrowDown' });
+    }
+    expect(focusedIsGuide()).toBe(true);
+    fireEvent.keyDown(body, { key: 'ArrowLeft', ctrlKey: true });
+    await waitFor(() => {
+      expect(column(view, 'to_do').getByText(GUIDE)).toBeTruthy();
+      expect(column(view, 'in_progress').queryByText(GUIDE)).toBeNull();
+    });
+    view.unmount();
+  });
+});
+
+describe('the universal kind selector', () => {
+  it('a kind carrying no status WORD still lands under a real category — after phase 5 there is no statusless kind', async () => {
+    const view = await mountBoard();
+    openAxis(view, 'b2-kind');
+    fireEvent.click(view.getByTestId('b2-kind-doc'));
+    /*
+     * THIS CASE ASSERTED THE OPPOSITE AND IS REVERSED DELIBERATELY, not
+     * loosened and not deleted. It read: "a statusless kind shows its rows in
+     * the honest No-status-yet column, and nothing borrows a category", on the
+     * premise that a kind whose rows carry no status word has no category for
+     * the four reads to match.
+     *
+     * PHASE 5 (migration 152) ended that premise, and the record of the
+     * reversal belongs here because this case IS where the old one was
+     * written down. Birth widened from `kind = 'task'` to EVERY kind, the
+     * backfill gave every pre-existing row of every kind a status, and the
+     * migration REFUSES TO APPLY while any row still has a null
+     * `status_category`:
+     *
+     *     raise exception '152: % entities have a status but no category'
+     *
+     * So a doc HAS a category on any live node — `to_do`, its seed, since docs
+     * are not one of the facts-about-the-past kinds — and the fixture says so
+     * too now that `categoryOf` mirrors 152's seeding table instead of
+     * modelling a phase-1 node.
+     *
+     * The uncategorised column therefore earns no width here, for exactly the
+     * reason it earns none on a fully-categorised task board above: it renders
+     * only when it has something to say. That it is now silent for EVERY kind
+     * is the honest report, not a regression.
+     */
+    await waitFor(() => expect(columnKeys(view)).toEqual(CATEGORY_KEYS));
+    await waitFor(() =>
+      expect(column(view, 'to_do').getAllByTestId('b2-card').length).toBeGreaterThan(0));
+    // And still nothing BORROWS: the categories no doc is in stay empty, which
+    // is the half of the original assertion that survives phase 5 unchanged.
+    expect(column(view, 'in_progress').queryAllByTestId('b2-card')).toHaveLength(0);
+    expect(column(view, 'done').queryAllByTestId('b2-card')).toHaveLength(0);
+    view.unmount();
+  });
+
+  it('a kind that cannot move yet REFUSES the drop visibly — with the reason, not a silent no-op', async () => {
+    const view = await mountBoard();
+    openAxis(view, 'b2-kind');
+    fireEvent.click(view.getByTestId('b2-kind-doc'));
+    await waitFor(() =>
+      expect(column(view, 'to_do').getAllByTestId('b2-card').length).toBeGreaterThan(0));
+
+    const body = view.getByLabelText('Docs board');
+    /* THE COLUMN MOVED, THE ASSERTION DID NOT. This walked four columns right
+       to reach 'No status yet' and pushed LEFT out of it. Docs sit in To Do
+       now — their phase-5 seed — and To Do is where focus already is, because
+       a kind switch resets it to {col: 0, row: 0} (BoardV2Screen.tsx:203). So
+       the push is one step RIGHT, into In Progress.
+
+       What is being pinned is unchanged and is the whole point of the case:
+       docs have a status since phase 5 but no settable CONTROL yet, so the
+       move must REFUSE VISIBLY WITH ITS REASON rather than no-op. The comment
+       this case already carried — "docs have a status from phase 5 (migration
+       152) but no settable CONTROL yet" — was true when it was written and
+       sat one line under an assertion that docs were uncategorised. Only one
+       of those two could be right. */
+    fireEvent.keyDown(body, { key: 'ArrowRight', ctrlKey: true });
+    const refusal = await waitFor(() => view.getByTestId('b2-refusal'));
+    expect(refusal.textContent).toMatch(/no settable control yet/i);
+    // And nothing moved: every doc still sits in To Do.
+    expect(column(view, 'in_progress').queryAllByTestId('b2-card')).toHaveLength(0);
+    view.unmount();
+  });
+});
+
+describe('archived is a filter, never a column', () => {
+  it('the toggle swaps the whole board onto `deleted: only` through the seam', async () => {
+    const view = await mountBoard();
+    expect(columnKeys(view)).toEqual(CATEGORY_KEYS);
+    fireEvent.click(view.getByTestId('b2-filter-archived'));
+    /* The live GUIDE task is not archived, so it must leave the board — proof
+       the filter reached the seam — and the columns stay the categories:
+       archived never becomes one. */
+    await waitFor(() => expect(view.queryByText(GUIDE)).toBeNull());
+    expect(columnKeys(view).every((k) => k !== 'archived')).toBe(true);
+    fireEvent.click(view.getByTestId('b2-filter-archived'));
+    await waitFor(() => expect(view.getByText(GUIDE)).toBeTruthy());
+    view.unmount();
+  });
+});
+
+describe('workflow columns', () => {
+  it('the resolved workflow’s states become the columns, banded by category, cards placed by real reads', async () => {
+    const view = await mountBoard();
+    /* The fixture space defines no task workflows, so the kind resolves to
+       the ONE global default — four display-named states, one per category,
+       exactly queryable through the category predicate itself. */
+    const toggle = await waitFor(() => {
+      const t = view.getByTestId('b2-workflow-toggle');
+      expect(t.tagName).toBe('BUTTON');
+      return t;
+    });
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(columnKeys(view)).toEqual([
+        'wfs-default-to_do',
+        'wfs-default-in_progress',
+        'wfs-default-done',
+        'wfs-default-cancelled',
+      ]));
+    expect(view.getAllByTestId('b2-col-band').length).toBe(4);
+    expect(column(view, 'wfs-default-in_progress').getByText(GUIDE)).toBeTruthy();
+    view.unmount();
+  });
+});
+
+describe('the client-appended tab', () => {
+  it('is the only Board tab, sits after Work, opens v2, and reads current there', async () => {
+    const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/home`)} />);
+    await waitFor(() => view.getByTestId('space-tab-bar'));
+    const tabs = view.getAllByRole('tab').map((t) => t.textContent);
+    expect(tabs.filter((label) => label === 'Board')).toHaveLength(1);
+    expect(tabs.indexOf('Board')).toBe(tabs.indexOf('Work') + 1);
+    expect(tabs).not.toContain('Board v2');
+
+    fireEvent.click(view.getByRole('tab', { name: 'Board' }));
+    await waitFor(() => view.getByTestId('board-v2-screen'));
+    expect(view.getByRole('tab', { name: 'Board' }).getAttribute('aria-selected')).toBe('true');
+    view.unmount();
+  });
+});
+
+describe('a card opens its entity ON the board', () => {
+  it('presses a card into the shared detail panel WITHOUT leaving the board, and Esc gives the board back', async () => {
+    const view = await mountBoard();
+    expect(view.queryByTestId('b2-entity-panel')).toBeNull();
+
+    /* The state the old handoff destroyed: a board narrowed to one card. If
+       pressing it navigates, this search box is gone with the screen. */
+    fireEvent.change(view.getByLabelText('Filter cards by title'), { target: { value: 'guide' } });
+    await waitFor(() => expect(view.getAllByTestId('b2-card')).toHaveLength(1));
+
+    fireEvent.click(within(view.getAllByTestId('b2-card')[0]!).getByText(GUIDE));
+
+    // The panel is open, and the board it opened over is still underneath.
+    await waitFor(() => view.getByTestId('b2-entity-panel'));
+    expect(view.getByTestId('board-v2-screen')).toBeTruthy();
+    expect(columnKeys(view)).toEqual(CATEGORY_KEYS);
+    expect((view.getByLabelText('Filter cards by title') as HTMLInputElement).value).toBe('guide');
+    // It is the app's ONE panel, not a board-local summary.
+    await waitFor(() =>
+      expect(within(view.getByTestId('b2-entity-panel')).getAllByText(GUIDE).length)
+        .toBeGreaterThan(0),
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(view.queryByTestId('b2-entity-panel')).toBeNull());
+    expect(view.getByTestId('board-v2-screen')).toBeTruthy();
+    view.unmount();
+  });
+
+  it('publishes the column count so the panel can be exactly one column wide', async () => {
+    const view = await mountBoard();
+    const stage = view.getByTestId('board-v2-screen').querySelector('.b2__stage') as HTMLElement;
+    // Four category columns ⇒ the panel's width calc divides by four.
+    expect(stage.style.getPropertyValue('--b2-cols')).toBe(String(CATEGORY_KEYS.length));
+    view.unmount();
+  });
+});
+
+describe('the create control', () => {
+  it('renders a live ＋ New control that follows the selected kind', async () => {
+    const view = await mountBoard();
+    const control = view.getByTestId('b2-new-task');
+    expect(control.tagName).toBe('BUTTON');
+    expect(control.textContent).toContain('New task');
+    openAxis(view, 'b2-kind');
+    fireEvent.click(view.getByTestId('b2-kind-doc'));
+    await waitFor(() => expect(view.getByTestId('b2-new-task').textContent).toContain('New doc'));
+    view.unmount();
+  });
+});

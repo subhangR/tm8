@@ -57,7 +57,7 @@ describe('the strip renders what is attached, and nothing when nothing is', () =
     expect(screen.queryAllByTestId('attachment-item')).toHaveLength(0);
   });
 
-  it('thumbnails an image and chips everything else', () => {
+  it('thumbnails an image tile and gives everything else the glyph face', () => {
     render(
       <AttachmentStrip
         anchorId={'e1' as never}
@@ -75,12 +75,15 @@ describe('the strip renders what is attached, and nothing when nothing is', () =
 
     const img = screen.getByAltText('shot.png') as HTMLImageElement;
     expect(img.getAttribute('src')).toBe('/v2/files/f-png/download');
-    // The size guard, asserted on the element so it survives a missing sheet.
-    expect(img.style.maxWidth).toBe('100%');
-    expect(img.style.maxHeight).toBe('160px');
+    // The size guard, asserted on the element so it survives a missing sheet:
+    // a 5000px photo fills the uniform tile instead of blowing it out.
+    expect(img.style.width).toBe('100%');
+    expect(img.style.height).toBe('100%');
+    expect(img.style.objectFit).toBe('cover');
 
+    // The non-image tile: name below, full `name · size` on the tile itself.
     expect(screen.getByText('spec.pdf')).toBeTruthy();
-    expect(screen.getByText('2K')).toBeTruthy();
+    expect(items[1]!.getAttribute('title')).toBe('spec.pdf · 2K');
   });
 
   it('NEVER renders an <img> for image/svg+xml — the server refuses it inline', () => {
@@ -103,17 +106,19 @@ describe('the strip renders what is attached, and nothing when nothing is', () =
   });
 
   it('says so rather than linking nowhere when no href resolver is supplied', () => {
+    // Download lives in the lightbox now — open before asserting.
     render(
       <AttachmentStrip
         anchorId={'e1' as never}
         files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
       />,
     );
+    fireEvent.click(screen.getByTestId('attachment-item'));
     expect(document.querySelectorAll('a')).toHaveLength(0);
     expect(screen.getByText('no download here')).toBeTruthy();
   });
 
-  it('links a downloadable file with its own name', () => {
+  it('links a downloadable file with its own name — inside the lightbox', () => {
     render(
       <AttachmentStrip
         anchorId={'e1' as never}
@@ -121,7 +126,10 @@ describe('the strip renders what is attached, and nothing when nothing is', () =
         files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
       />,
     );
-    const link = document.querySelector('a') as HTMLAnchorElement;
+    fireEvent.click(screen.getByTestId('attachment-item'));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    const link = dialog.querySelector('a') as HTMLAnchorElement;
     expect(link.getAttribute('href')).toBe('/v2/files/f1/download');
     expect(link.getAttribute('download')).toBe('notes.txt');
   });
@@ -174,6 +182,8 @@ describe('uploading through the REAL seam lifecycle', () => {
 
 describe('removing an attachment cuts the LINK, not the file', () => {
   it('offers Remove only for a row that was reached through an edge', () => {
+    // Remove lives in the lightbox now (which is why tiles carry no hover ×):
+    // open each tile's lightbox before asserting — open, never delete.
     render(
       <AttachmentStrip
         anchorId={'e1' as never}
@@ -187,7 +197,12 @@ describe('removing an attachment cuts the LINK, not the file', () => {
         ]}
       />,
     );
+    const items = screen.getAllByTestId('attachment-item');
+    fireEvent.click(items[0]!);
     expect(screen.getAllByTestId('attachment-detach')).toHaveLength(1);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    fireEvent.click(items[1]!);
+    expect(screen.queryByTestId('attachment-detach')).toBeNull();
   });
 
   it('draws NO Remove at all when the host wired no detach', () => {
@@ -215,14 +230,17 @@ describe('removing an attachment cuts the LINK, not the file', () => {
         files={[row({ fileEntityId: 'f-9', name: 'a.txt', mime: 'text/plain', edgeId: 'edge-9' })]}
       />,
     );
+    fireEvent.click(screen.getByTestId('attachment-item'));
     fireEvent.click(screen.getByTestId('attachment-detach'));
     // The file id would delete SOME OTHER edge, or nothing, and read as a dead
     // button either way.
     expect(onDetach).toHaveBeenCalledWith('edge-9');
     await waitFor(() => expect(onDetached).toHaveBeenCalledTimes(1));
+    // Success closes the lightbox — the act completed, nothing to keep open.
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('states a refusal on the row instead of leaving a dead button', async () => {
+  it('states a refusal in the OPEN lightbox instead of leaving a dead button', async () => {
     const onDetach = vi.fn().mockRejectedValue(Object.assign(new Error('no'), { code: 'forbidden' }));
     render(
       <AttachmentStrip
@@ -232,11 +250,14 @@ describe('removing an attachment cuts the LINK, not the file', () => {
         files={[row({ fileEntityId: 'f-9', name: 'a.txt', mime: 'text/plain', edgeId: 'edge-9' })]}
       />,
     );
+    fireEvent.click(screen.getByTestId('attachment-item'));
     fireEvent.click(screen.getByTestId('attachment-detach'));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('do not have permission');
-    // The row stays: nothing was removed, so nothing may disappear.
-    expect(screen.getByText('a.txt')).toBeTruthy();
+    // Failure keeps the lightbox OPEN, and the tile stays: nothing was
+    // removed, so nothing may disappear.
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getAllByText('a.txt').length).toBeGreaterThan(0);
   });
 
   it('deletes the edge from BOTH endpoints through the REAL seam', async () => {
@@ -278,5 +299,180 @@ describe('removing an attachment cuts the LINK, not the file', () => {
     const spaces = await seam.spaces();
     const port = attachmentsPortFromSeam(seam, spaces[0]!.id);
     await expect(port.detach('edge-that-never-was')).rejects.toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE ＋ TILE AND THE LIGHTBOX — the 2026-08-16 addendum's own contracts
+// ---------------------------------------------------------------------------
+
+describe('the ＋ tile', () => {
+  it('is an ICON on an empty anchor — one 28px paperclip, not a dashed tile and not nothing', () => {
+    // Owner ruling 2026-08-19, narrowing 2026-08-18. The addendum's "the ＋
+    // tile IS the empty state" cost ~140px of dashed box on every entity that
+    // never had a file, so it went; but what replaced it was DROP ALONE, and a
+    // touch screen has no drag — the report that reopened this was "attach
+    // option not visible in entity detail screen". The tile stays gone, its
+    // affordance comes back as an icon. The ROOT still survives idle for the
+    // drop listeners (`rootRef.current.closest(...)`).
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[]}
+        projectFolder={{ projects: vi.fn(), list: vi.fn(), attach: vi.fn() } as never}
+      />,
+    );
+    const add = screen.getByTestId('attachment-add');
+    // Named for assistive tech, wordless on screen — no 'attach' label row,
+    // which is what made the tile tall.
+    expect(add.getAttribute('aria-label')).toBe('Attach a file');
+    expect(add.textContent).toBe('📎');
+    expect(add.className).toContain('fn-tile--clip');
+    expect(add.className).not.toContain('fn-tile--plus');
+    expect(screen.queryByText(/no attachments/i)).toBeNull();
+    const root = screen.getByTestId('attachment-strip');
+    expect(root.dataset.idle).toBe('true');
+    expect(root.className).toContain('fn-tiles--idle');
+  });
+
+  it('taps straight through to the one wired path while idle — no menu in the way', async () => {
+    const projects = vi.fn().mockResolvedValue([]);
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[]}
+        projectFolder={{ projects, list: vi.fn(), attach: vi.fn() } as never}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('attachment-add'));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  });
+
+  it('opens the device picker from the idle icon — the mobile path', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[]}
+        startUpload={() => { throw new Error('unused'); }}
+      />,
+    );
+    const input = screen.getByTestId('attachment-file-input') as HTMLInputElement;
+    // No `accept`, no `capture`: the phone's own sheet then offers camera,
+    // photo library and files, and narrowing it here removes the user's
+    // choices.
+    expect(input.getAttribute('accept')).toBeNull();
+    expect(input.getAttribute('capture')).toBeNull();
+    const clicked = vi.spyOn(input, 'click');
+    fireEvent.click(screen.getByTestId('attachment-add'));
+    expect(clicked).toHaveBeenCalledTimes(1);
+  });
+
+  it('becomes the labelled tile once the anchor has a file — the tile grammar its neighbours use', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
+        startUpload={() => { throw new Error('unused'); }}
+      />,
+    );
+    const add = screen.getByTestId('attachment-add');
+    expect(add.className).toContain('fn-tile--plus');
+    expect(add.textContent).toContain('attach');
+  });
+
+  it('comes back the moment the anchor has a file, and acts directly with one wired path', async () => {
+    const projects = vi.fn().mockResolvedValue([]);
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
+        projectFolder={{ projects, list: vi.fn(), attach: vi.fn() } as never}
+      />,
+    );
+    expect(screen.getByTestId('attachment-strip').dataset.idle).toBeUndefined();
+    // One wired path ⇒ no menu, straight to the picker: a one-item menu is a
+    // click tax.
+    fireEvent.click(screen.getByTestId('attachment-add'));
+    expect(screen.queryByRole('menu')).toBeNull();
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  });
+
+  it('opens the two-item menu when both paths are wired, and Esc returns focus to ＋', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        /* One file, because the ＋ is gated on a non-idle strip now. */
+        files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
+        startUpload={() => { throw new Error('unused'); }}
+        projectFolder={{ projects: vi.fn(), list: vi.fn(), attach: vi.fn() } as never}
+      />,
+    );
+    const plus = screen.getByTestId('attachment-add');
+    fireEvent.click(plus);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(2);
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(plus);
+  });
+});
+
+describe('the lightbox', () => {
+  it('opens from a tile, closes on Esc, and returns focus to the originating tile', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        downloadHref={href}
+        files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
+      />,
+    );
+    const tile = screen.getByTestId('attachment-item');
+    fireEvent.click(tile);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(dialog.getAttribute('aria-labelledby')).toBeTruthy();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps Remove in the tab order while a detach is in flight — busy, never disabled', async () => {
+    // A natively disabled control leaves the tab order mid-trap and the next
+    // Tab walks out of an aria-modal dialog. Busy instead: focusable, guarded.
+    let resolveDetach: () => void = () => {};
+    const onDetach = vi.fn(() => new Promise<void>((resolve) => { resolveDetach = resolve; }));
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        downloadHref={href}
+        onDetach={onDetach}
+        files={[row({ fileEntityId: 'f1', name: 'a.txt', mime: 'text/plain', edgeId: 'edge-1' })]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('attachment-item'));
+    const remove = screen.getByTestId('attachment-detach');
+    fireEvent.click(remove);
+    expect(remove.hasAttribute('disabled')).toBe(false);
+    expect(remove.getAttribute('aria-busy')).toBe('true');
+    // The guard, not the disabled attribute, is what stops a second fire.
+    fireEvent.click(remove);
+    expect(onDetach).toHaveBeenCalledTimes(1);
+    resolveDetach();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('renders file info — never an <img> — for SVG, in the large frame as in the tile', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        downloadHref={href}
+        files={[row({ fileEntityId: 'f-svg', name: 'logo.svg', mime: 'image/svg+xml' })]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('attachment-item'));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.querySelectorAll('img')).toHaveLength(0);
+    expect(dialog.textContent).toContain('image/svg+xml');
+    // The bytes are still reachable the honest way: a download link, not an
+    // inline render.
+    expect(dialog.querySelector('a')?.getAttribute('download')).toBe('logo.svg');
   });
 });

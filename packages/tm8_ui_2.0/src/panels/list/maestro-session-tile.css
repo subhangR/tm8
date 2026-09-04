@@ -1,0 +1,61 @@
+/* I3 — ROW RICHNESS for the session tile (`pn-st`).
+   The pn-st BASE anatomy lives in panels.css (lane I2's file); this file is
+   the impression coat only and touches nothing structural — no box metrics,
+   no backgrounds, no state fills. Every selector nests under `.pn-st` so it
+   lands at (0,3,0) and outranks the base's (0,2,0) rules whatever order the
+   two stylesheets are emitted in — a cross-file equal-specificity tie is the
+   DEF-024 trap maestro-task-tile.css documents, and this file refuses to
+   enter one. Colour resolves through tokens only (§14 hex ban). */
+
+/* THE TITLE IS THE ROW'S ONE LOUD THING: 600-weight ink, restated here so
+   the session list can never drift lighter than the task tile's 600 title
+   (`.pn-tt__title` carries the same pair in maestro-task-tile.css). */
+.cv2-root .pn-st .pn-st__titleText {
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
+/* DATA WEARS MONO AT THE LABEL SIZE. The model chip shipped at 9px — below
+   legibility, which is exactly the "flat gray fine print" impression this
+   pass exists to end. Mono STAYS: a model id is a machine fact, and mono is
+   the data voice — `--pn-fs-label` is the one size that voice speaks at on
+   rows (same as the task tile's badges). No `color` here on purpose: the
+   base's ink-3 keeps the chip quieter than the 600 ink title beside it. */
+.cv2-root .pn-st .pn-st__model {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+
+/* Count badges are data too — same mono label size, 600 so the number reads
+   at a glance. (The same vocabulary on the task tile gets the same coat in
+   maestro-task-tile.css; one look, two files, because the base is I2's.) */
+.cv2-root .pn-st .pn-st__count {
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+
+/* THE STATUS WORD IS A WORD, NOT DATA. The tags say states — 'done', 'needs
+   attention', 'archived' — and shipped as 9px uppercase mono, i.e. dressed
+   as machine output. They drop the mono face and the shout and speak UI at
+   600, one size up. DELIBERATELY NO `color`: the tone rules
+   (`.pn-st__tag--done` green, `--attention` amber, base ink-3) live in
+   panels.css at (0,2,0), and a colour here at (0,3,0) would silently beat
+   every one of them — the exact one-fact-two-colours drift tile-badges.ts
+   exists to prevent. */
+.cv2-root .pn-st .pn-st__tag {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+/* KINDICON FAMILY TINT (I3). Every drawn kind mark on this tile (`kit-vicon`
+   — the sessions chip, the count-badge doors, PR chips in the badge band)
+   inherits the family colour I2's `[data-family]` map stamps on the `.pn-st`
+   root as `--pnf` (panels.css). The fallback keeps unfamilied contexts
+   exactly as they were. The action cluster is EXCLUDED at (0,4,0): a
+   control's glyph is chrome, not identity. */
+.cv2-root .pn-st .kit-vicon { color: var(--pnf, currentColor); }
+.cv2-root .pn-st .lp__cluster .kit-vicon { color: inherit; }

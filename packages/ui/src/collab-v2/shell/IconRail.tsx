@@ -44,7 +44,12 @@ export function IconRail({ facade }: IconRailProps) {
           >
             {initials(space.name)}
             {active && <span className="cv2-iconrail__marker" aria-hidden="true" />}
-            {!active && space.unreadTotal > 0 && <span className="cv2-iconrail__dot" aria-hidden="true" />}
+            {/* `unreadTotal` is `number | null` and null means NOT MEASURED, not
+                zero — no dot is the right rendering of "we did not count", the
+                same as it is of "nothing unread". `?? 0` would be a lie only if
+                it were drawn as a number; here it decides whether to draw at
+                all, and both unmeasured and zero decide the same way. */}
+            {!active && (space.unreadTotal ?? 0) > 0 && <span className="cv2-iconrail__dot" aria-hidden="true" />}
           </button>
         );
       })}

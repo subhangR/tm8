@@ -1,0 +1,10 @@
+{
+  "//": "Test-file typecheck gate (fe->a0 11): the main tsconfig excludes *.test.* (vitest compiles them, but vitest does NOT typecheck), so without this config test-file type errors are invisible to every gate. Run: bunx tsc -p tsconfig.test.json. `types` adds node for the tokens byte-equality test's node:fs/node:url imports; include/exclude do not merge with extends, so the empty exclude is what pulls tests in.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src"],
+  "//exclude": "src/data is bridge-owned and runs under the bridge's own gates with its own lib assumptions — this config must not impose A0's lib/strictness on that lane.",
+  "exclude": ["src/data"]
+}

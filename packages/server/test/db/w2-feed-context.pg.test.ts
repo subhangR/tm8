@@ -86,6 +86,9 @@ interface Fixture {
   authoredMessageId: string;
   subjectActivityId: string;
   causedActivityId: string;
+  chatId: string;
+  chatTurnOneId: string;
+  chatTurnTwoId: string;
 }
 
 interface CatalogSnapshot {
@@ -154,7 +157,10 @@ async function seed(): Promise<Fixture> {
               internal.new_id()::text as "sessionReplyId",
               internal.new_id()::text as "authoredMessageId",
               internal.new_id()::text as "subjectActivityId",
-              internal.new_id()::text as "causedActivityId"`,
+              internal.new_id()::text as "causedActivityId",
+              internal.new_id()::text as "chatId",
+              internal.new_id()::text as "chatTurnOneId",
+              internal.new_id()::text as "chatTurnTwoId"`,
     )).rows[0]!;
 
     await client.query(
@@ -223,6 +229,42 @@ async function seed(): Promise<Fixture> {
         ids.rootMessageId, ids.replyMessageId, ids.sessionMessageId, ids.sessionReplyId,
         ids.authoredMessageId, ids.taskId, ids.sessionId, ids.teammateId, ids.otherTaskId,
       ],
+    );
+
+    // 176 — A CHAT, WITH ITS TURNS ANCHORED FLAT ON IT.
+    //
+    // Built by hand rather than through `start_chat` because this suite is a
+    // proof about the FEED, and the door would drag a launch config, a
+    // credential and a native session id into a fixture that needs none of
+    // them. What matters is the shape 176 produced: a `chat` entity, and every
+    // turn a ROOT message (`root_message_id is null`) anchored on it — which is
+    // why `direct_v1` must return both, and why a `channel_threads_v1`-style
+    // roots-only filter would be indistinguishable from correct here.
+    await client.query(
+      `insert into public.entities(id,space_id,kind,created_by,visibility)
+       values ($1,$2,'chat',$3,'space')`,
+      [ids.chatId, ids.spaceId, ids.memberId],
+    );
+    await client.query(
+      `insert into public.chats(entity_id,space_id,title,teammate_id,model,provider,agent_tool,
+                                chat_mode,workdir_mode,cwd,native_session_id,
+                                configured_by_identity_id,configured_by_member_id,
+                                client_mutation_id)
+       values ($1,$2,'G13 chat',$3,'opus','anthropic','claude-code','ask','scratch',
+               '/tmp/g13-chat',internal.new_id(),$4,$5,'g13-chat-1')`,
+      [ids.chatId, ids.spaceId, ids.teammateId, ids.identityMember, ids.memberId],
+    );
+    await client.query(
+      `insert into public.entities(id,space_id,kind,parent_id,created_by,visibility)
+       values ($1,$3,'message',null,$4,'space'),
+              ($2,$3,'message',null,$4,'space')`,
+      [ids.chatTurnOneId, ids.chatTurnTwoId, ids.spaceId, ids.teammateId],
+    );
+    await client.query(
+      `insert into public.messages(entity_id,anchor_id,root_message_id,author_id,body,created_at)
+       values ($1,$3,null,$4,'ship the lane', timestamptz '2026-07-26T09:50:00Z'),
+              ($2,$3,null,$4,'on it',         timestamptz '2026-07-26T09:55:00Z')`,
+      [ids.chatTurnOneId, ids.chatTurnTwoId, ids.chatId, ids.teammateId],
     );
 
     // `authored_from` is writer-gated to `message_recorder` (015:618). That gate
@@ -488,6 +530,44 @@ describe.sequential('W2.G13 feed scope branches on the full chain', () => {
       fixture.sessionReplyId,
       fixture.sessionMessageId,
     ]);
+  });
+
+  /**
+   * 176 — the scope a chat anchor resolves to, on the real chain.
+   *
+   * `defaultScopeFor` has arms for work_session, channel, message and task; a
+   * chat takes `direct_v1`, whose `FEED_SCOPE_ANCHOR_KINDS` entry is `any`. So
+   * the question this answers is not "is there a chat arm" — there is none to
+   * write — but "does the arm a chat FALLS INTO return its conversation", and
+   * that turns entirely on 176 having re-anchored the turns FLAT.
+   */
+  it('direct_v1 on a CHAT anchor returns every turn, because 176 made them all roots', async () => {
+    const rows = await page(fixture.identityMember, fixture.chatId, 'direct_v1');
+    expect(rows.map((row) => [row.item_id, row.via])).toEqual([
+      [fixture.chatTurnTwoId, ['anchored']],
+      [fixture.chatTurnOneId, ['anchored']],
+    ]);
+
+    // The pre-176 shape is what makes this worth asserting: when a chat WAS a
+    // thread, its turns were replies under a root and `anchored` (which is
+    // `root_message_id is null`) would have returned the root alone. Both turns
+    // arriving through `anchored` IS the flat re-anchor, observed.
+    expect(rows.every((row) => row.via.join() === 'anchored')).toBe(true);
+  });
+
+  it('gives a chat anchor its OWN feed — no other anchor bleeds in', async () => {
+    const rows = await page(fixture.identityMember, fixture.chatId, 'direct_v1');
+    const ids = rows.map((row) => row.item_id);
+    for (const foreign of [
+      fixture.rootMessageId, fixture.replyMessageId,
+      fixture.sessionMessageId, fixture.authoredMessageId,
+      fixture.subjectActivityId, fixture.causedActivityId,
+    ]) {
+      expect(ids).not.toContain(foreign);
+    }
+    // And symmetrically: the task's feed did not gain the chat's turns.
+    const task = await page(fixture.identityMember, fixture.taskId, 'direct_v1');
+    expect(task.map((row) => row.item_id)).not.toContain(fixture.chatTurnOneId);
   });
 
   it('reverses cleanly for order=oldest and pages on the keyset in both directions', async () => {

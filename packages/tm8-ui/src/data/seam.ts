@@ -198,12 +198,18 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
-  StartChatThreadInput,
-  StartChatThreadResult,
+  StartChatInput,
+  StartChatResult,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceSummary,
+  TaskAxis,
+  TaskAxisInput,
+  TaskWorkflow,
+  Workflow,
+  TaskWorkflowInput,
+  UpdateAttentionRequestInput,
   TrackingPrMergeInput,
   TrackingPrMergeResult,
   WorkInput,
@@ -243,6 +249,18 @@ export interface LivenessSnapshot {
   nodeBootId: string;
   checkedAt: string;
   capacity?: { used: number; total: number };
+  /**
+   * The durable event high-water mark for this space WITHIN THIS BOOT, or null
+   * when the node could not establish it (unbound identity, non-member). A
+   * node that predates the field omits it, which means exactly the same thing
+   * — `ops.liveness` normalizes absence to null so consumers see one shape.
+   *
+   * `openSpace` seeds the event cursor from this instead of paging the whole
+   * retained log to arrive at the same number. NEVER read a missing value as
+   * 0: 0 means "the start of the log", which is the one place this exists to
+   * avoid going.
+   */
+  eventHwm?: number | null;
 }
 
 /**
@@ -270,6 +288,32 @@ export interface IdentityView {
   status: string;
   actingAs: string | null;
   memberships: Array<{ spaceId: string; memberId: string; role: string }>;
+}
+
+/**
+ * One published bundle revision, as `artifacts.revisions.list` answers it.
+ * MIRRORS THE SERVER WIRE SHAPE (`revisionDto`) rather than importing a
+ * contract DTO, because the contract declares NONE for this response — the
+ * catalog row exists (`artifacts.revisions.list`, v1) but its output type was
+ * never written down. Recorded as a contract gap under Amendment 12; when the
+ * DTO lands in `@tm8/contract`, this declaration must move there and this
+ * one must die, not diverge.
+ */
+export interface ArtifactRevisionSummary {
+  revisionNumber: number;
+  manifestSha256: string;
+  entrypoint: string;
+  fileCount: number;
+  totalSizeBytes: number;
+  sourceProvenance: Record<string, unknown> | null;
+  createdAt: string;
+  /** Identity id of the publisher, or null when unrecorded. */
+  publishedBy: string | null;
+}
+
+/** `artifacts.revisions.list` — newest first, exactly as the server orders it. */
+export interface ArtifactRevisionsList {
+  revisions: ArtifactRevisionSummary[];
 }
 
 /** Cursor-paged read options. */
@@ -318,13 +362,27 @@ export interface JournalOpts {
 }
 
 /**
- * The DEBUG transcript read's window. There is NO cursor: the server reads a
- * tail, so "older" is not a page you can walk — asking for more turns widens
- * the same window rather than stepping back through history.
+ * The transcript read's window, and its BYTE cursor.
+ *
+ * `before` is what makes this a page rather than a tail: the server reads the
+ * window ENDING at that byte, and every page reports the `windowStart` to pass
+ * back for the one before it. Byte offsets, not the journal's line ordinals —
+ * a transcript is append-only so a byte never moves, and this reader exists to
+ * avoid the full scan an ordinal cursor would need on a file that can run to
+ * tens of megabytes.
+ *
+ * Windows ABUT: the server's cursor lands on a record boundary, so
+ * concatenating pages needs no dedupe and leaves no gap. Raising `last` is NOT
+ * the same thing — it widens one window into a server cap, it does not step.
  */
 export interface TranscriptOpts {
   /** Newest turns to return; server default is 20, max 200. */
   last?: number;
+  /**
+   * Read the window ending at this byte instead of at EOF — a previous page's
+   * `windowStart`. Only send it when that page said `hasOlder`.
+   */
+  before?: number;
   /**
    * Also scan the whole transcript for Edit/Write tool calls and attach
    * `fileChanges` — "what did this session change", without a worktree,
@@ -369,6 +427,8 @@ export interface Seam {
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
   openSpace(spaceId: SpaceId): Promise<void>;
   closeSpace(spaceId: SpaceId): void;
+  /** Force the next open to establish a fresh off-React baseline after resync. */
+  invalidateSpaceBaseline?(spaceId: SpaceId): void;
   dispose(): void;
 
   // -- event stream & connection honesty (LLD §6) ----------------------------
@@ -400,6 +460,14 @@ export interface Seam {
   menu(spaceId: SpaceId): Promise<MenuConfig | null>;
   /** Launch-default provenance and other member-authorized space settings. */
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
+  /**
+   * The category-model workflows (`spaces.workflows.list`, migration 149):
+   * the ONE global default (spaceId null) plus this space's own. Distinct
+   * from `spaceSettings().taskWorkflows` — those are the LEGACY status-subset
+   * rules that phase 6 retires; these are the named state/transition sets the
+   * universal board's columns are built from.
+   */
+  workflows(spaceId: SpaceId): Promise<Workflow[]>;
   /**
    * Amendment 11 — the one read on this seam that answers BEFORE the caller is
    * anybody (migration 118, `spaces.invites.preview`).
@@ -474,6 +542,13 @@ export interface Seam {
     createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult>;
     createProject(input: ProjectCreateInput): Promise<ProjectResource>;
     linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
+    /**
+     * Every project on the node, unscoped — `projects.list` without a
+     * `spaceId`. `working_dir` is node-globally unique, so when
+     * `createProject` refuses because the folder already HAS a project, this
+     * is how onboarding finds that project to link instead of dead-ending.
+     */
+    listProjects(): Promise<ProjectResource[]>;
   };
   /**
    * Reading an ALREADY-CONNECTED project folder, for the same reason
@@ -536,7 +611,11 @@ export interface Seam {
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;
   /** Connections tab, and the edge-id lookup behind any edge REMOVAL. */
   connections(id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>>;
-  /** Activity tab. */
+  /**
+   * The entity's activity rows. Backed the Activity tab until that tab was
+   * removed (2026-08-19); the op stays because the channel feed and the CLI
+   * read the same rows, and it is the read a future audit surface would take.
+   */
   activity(id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>>;
   /**
    * Discussion tab, and — with `rootMessageId` — a thread's branch.
@@ -728,14 +807,35 @@ export interface Seam {
     ): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
     /**
-     * Amendment 10 (with `home` above): the contract's `chat.threads.start`
-     * — the write half of the chat-home bridge. Input is an ALREADY-POSTED
-     * root message id; the op never creates messages and triggers turn 1.
+     * `chat.start` (176) — the write half of the chat-home bridge, and now the
+     * ONLY door a chat is born from. It creates the chat entity and posts its
+     * opening turn in one transaction; there is no root message to post first.
      */
-    startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult>;
+    startChat(input: StartChatInput): Promise<StartChatResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;
+    /**
+     * Write ONE attention request, addressed by its own id.
+     *
+     * The sibling above is the BULK verb: `resolveEntity` flips every open row
+     * on an entity at once, has no per-request granularity and no way to say
+     * `dismissed`. That was the only write this seam carried, which is why
+     * `dismissed` — a full quarter of the status enum (migration 050:16-17) —
+     * had no UI path at all: nothing could reach it, and a queue item could
+     * only ever be *satisfied*, never *declined*.
+     *
+     * OPTIMISTICALLY LOCKED, and the version is the caller's problem: the RPC
+     * raises 40001 when `expectedVersion` is stale (050:128-132), and a stale
+     * version is the EXPECTED case here rather than a rare race — the bulk
+     * resolve that fires when you open an entity bumps `version` on every row
+     * it touches. A caller holding rows fetched before that must refetch, not
+     * retry.
+     */
+    updateAttentionRequest(
+      requestId: string,
+      input: UpdateAttentionRequestInput,
+    ): Promise<AttentionRequestMutationResult>;
     /**
      * Amendment 4: write the VIEWER'S OWN profile row — the DTO names no
      * subject by design (`identity.profile.update`, contract.ts). All fields
@@ -773,6 +873,39 @@ export interface Seam {
     /** Kill a live code. The row survives, revoked, so the list stays truthful. */
     revokeInvite(spaceId: SpaceId, inviteId: string, ctx?: CommandContext): Promise<SpaceInviteView>;
     /**
+     * The task-axis registry's writes (W2, 2026-08-16) — over catalog ops
+     * that existed all along (`spaces.taskAxes.create|update|delete`): new
+     * SEAM verbs only, zero catalog change.
+     *
+     * The READ deliberately has no verb here: axes ride `spaceSettings()`,
+     * the same round trip the settings shell already makes for invites.
+     *
+     * Every rule lives in SQL and is surfaced, never copied: space-admin
+     * authorization, name/value validation, and the three in-use refusals
+     * (delete / rename / value-removal while any task carries the axis) come
+     * back as the server's own words. `update` takes the WHOLE row shape —
+     * `w2_update_task_axis` has no sparse form.
+     */
+    createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis>;
+    updateTaskAxis(spaceId: SpaceId, axisId: string, input: TaskAxisInput): Promise<TaskAxis>;
+    deleteTaskAxis(spaceId: SpaceId, axisId: string, ctx: CommandContext): Promise<{ axisId: string }>;
+    /**
+     * The task-workflow registry's writes (W4, migration 132) — the same
+     * posture as the axis three above: new seam verbs over catalog ops
+     * (`spaces.taskWorkflows.upsert|delete`), the READ rides `spaceSettings()`
+     * (`SpaceSettings.taskWorkflows`), and every rule lives in SQL and is
+     * surfaced, never copied — space-admin authorization, the duplicate-status
+     * refusal (22023), the structural {open,working,done} check (23514), and
+     * the per-status trigger refusal on the tasks themselves.
+     *
+     * `upsert` rather than create+update because the natural key is
+     * (space, typeValue) and the UI edits one row per value. Deleting a rule
+     * is never data loss: it widens the vocabulary back to the seven and no
+     * task row changes.
+     */
+    upsertTaskWorkflow(spaceId: SpaceId, input: TaskWorkflowInput): Promise<TaskWorkflow>;
+    deleteTaskWorkflow(spaceId: SpaceId, workflowId: string, ctx: CommandContext): Promise<{ workflowId: string }>;
+    /**
      * Redeem a code as the CURRENT viewer. Distinct from `previewInvite` below
      * in the way that matters: this one requires you to be somebody.
      */
@@ -786,6 +919,33 @@ export interface Seam {
      * render previews", never fabricate a URL.
      */
     previewArtifact(id: EntityId, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
+    /**
+     * Amendment 12 (2026-08-17, artifact viewer): the artifact detail block
+     * grew from metadata-plus-Run into a real viewer, and the two remaining
+     * artifact catalog ops gain their first UI callers — the revision
+     * switcher (`artifacts.revisions.list`) and download-as-zip
+     * (`artifacts.export`).
+     *
+     * Both sit in THIS group despite being catalog reads, for the zero-churn
+     * reason Amendment 2 put `previewArtifact` here: every detail-panel host
+     * threads exactly `seam.commands` into `EntityDetailPanel`, and the
+     * artifact block's port is a structural subset of this group — a second
+     * prop through every host is precisely the adapter D57.1 warns about.
+     *
+     * CONTRACT GAP (recorded, not papered over): the contract has no DTO for
+     * the revisions-list response; `ArtifactRevisionsList` above mirrors the
+     * server's wire shape and must move into `@tm8/contract` when its DTO
+     * lands.
+     */
+    listArtifactRevisions(id: EntityId): Promise<ArtifactRevisionsList>;
+    /**
+     * `artifacts.export` answers RAW ZIP BYTES — no JSON envelope — so this
+     * is the one member here that resolves a `Blob`; the caller turns it into
+     * an object-URL download. A seam METHOD rather than an href builder (the
+     * `files.downloadHref` idiom) because the export route must carry the
+     * viewer's Authorization header, which an `<a href>` cannot send.
+     */
+    exportArtifactRevision(id: EntityId, revisionNumber: number): Promise<Blob>;
     spawn(input: ExecutionSpawnInput): Promise<CommandResult>;
     /**
      * `execution.terminal.start` — a VANILLA TERMINAL (101): a shell session
@@ -921,7 +1081,7 @@ export interface Seam {
     /** THE predicate — the only place liveness truth is computed (R-UI-5).
      *  Accepts both vocabularies (Amendment 1): tasks carry WorkStatus, work
      *  sessions carry WorkSessionStatus — 'running' lives in the latter. */
-    statusOf(session: { id: EntityId; workStatus: WorkStatus | WorkSessionStatus | null }): SessionLiveness;
+    statusOf(session: { id: EntityId; status: WorkStatus | WorkSessionStatus | null }): SessionLiveness;
   };
 }
 

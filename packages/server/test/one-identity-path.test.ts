@@ -95,7 +95,7 @@ describe('one identity path (R2 / claims contract)', () => {
   // WHY BY NAME AND NOT BY PATTERN. The previous form of this guard matched
   // "code contains set_config AND contains tm8." — a TEXTUAL PROXY for "binds
   // caller identity". The proxy drifted from the property the day a delivery
-  // service began binding tm8.principal_type and five tm8.delivery_* claims, and
+  // service began binding tm8.principal_type and four tm8.delivery_* claims, and
   // the guard reported a violation of a rule nobody had broken. MATCHING A PREFIX
   // IS WHAT PRODUCED THAT FALSE RED, so the sharpened form enumerates.
   //
@@ -147,14 +147,13 @@ describe('one identity path (R2 / claims contract)', () => {
         'delivery_message_id',
         'delivery_target_work_session_id',
         'delivery_expires_at',
-        'delivery_pair_budget_version',
       ],
       reason:
         'The system delivery adapter. Permitted on four facts, each checkable: ' +
         '(1) the namespaces are DISJOINT from the caller-identity claims — this file ' +
         'binds none of identity_id/actor_id/node_admin/request_id, and db/client.ts ' +
         'binds none of the delivery claims; (2) they are ACTIVELY EXCLUSIVE, because ' +
-        'internal.require_delivery_principal (015:1348-1355) raises 42501 unless the ' +
+        'internal.require_delivery_principal (135) raises 42501 unless the ' +
         'role is the delivery worker AND principal_type is system_delivery_adapter, so ' +
         'a delivery transaction carrying caller claims is refused BY THE DATABASE; ' +
         '(3) assuming the delivery role fails LOUDLY from tm8_app rather than falling ' +

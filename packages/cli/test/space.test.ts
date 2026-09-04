@@ -228,6 +228,39 @@ const ROWS: ReadonlyArray<{
     method: 'DELETE',
     params: { spaceId: SPACE, axisId: AXIS },
   },
+  { op: 'spaces.taskWorkflows.list', argv: ['space', 'task-workflow', 'list'], method: 'GET', params: { spaceId: SPACE } },
+  {
+    op: 'spaces.taskWorkflows.upsert',
+    argv: ['space', 'task-workflow', 'set', 'code', '--status', 'open', '--status', 'working', '--status', 'done'],
+    method: 'POST',
+    params: { spaceId: SPACE },
+  },
+  {
+    op: 'spaces.taskWorkflows.delete',
+    argv: ['space', 'task-workflow', 'delete', AXIS, '--yes'],
+    method: 'DELETE',
+    params: { spaceId: SPACE, workflowId: AXIS },
+  },
+  { op: 'spaces.workflows.list', argv: ['space', 'workflow', 'list'], method: 'GET', params: { spaceId: SPACE } },
+  {
+    op: 'spaces.workflows.upsert',
+    // A whole workflow in one call, including the initial-state marker — the
+    // shape the door actually takes, not a stub that would pass without it.
+    argv: [
+      'space', 'workflow', 'set', 'Epic flow', '--kind', 'c:epic',
+      '--state', 'Draft:to_do:initial', '--state', 'Committed:in_progress',
+      '--state', 'Shipped:done', '--state', 'Dropped:cancelled',
+      '--transition', 'Committed->Shipped',
+    ],
+    method: 'POST',
+    params: { spaceId: SPACE },
+  },
+  {
+    op: 'spaces.workflows.delete',
+    argv: ['space', 'workflow', 'delete', AXIS, '--yes'],
+    method: 'DELETE',
+    params: { spaceId: SPACE, workflowId: AXIS },
+  },
   { op: 'spaces.leaderboard', argv: ['space', 'leaderboard', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.awards', argv: ['space', 'award', 'list'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.menu.get', argv: ['space', 'menu', 'get'], method: 'GET', params: { spaceId: SPACE } },
@@ -256,15 +289,16 @@ const READS = [
   ['space', 'invite', 'list'],
   ['space', 'invite', 'resolve'],
   ['space', 'task-axis', 'list'],
+  ['space', 'task-workflow', 'list'],
   ['space', 'leaderboard', 'get'],
   ['space', 'award', 'list'],
   ['space', 'menu', 'get'],
 ] as const;
 
 describe('the registered command set', () => {
-  it('registers all 24 Space rows and nothing that is not in the projection', async () => {
+  it('registers all 27 Space rows and nothing that is not in the projection', async () => {
     const paths = (await spaceCommands()).map((c) => c.path.join(' '));
-    expect(paths).toHaveLength(24);
+    expect(paths).toHaveLength(30);
     expect(new Set(paths).size).toBe(paths.length);
     for (const p of paths) {
       expect(isCommandPath(p.split(' ')), `${p} is wired but absent from the projection`).toBe(true);
@@ -301,8 +335,8 @@ describe('every row binds its path from the catalog', () => {
       checked++;
     }
     // Vacuity guard: a loop that silently iterates zero rows passes everything.
-    expect(checked).toBe(24);
-    expect(ROWS).toHaveLength(24);
+    expect(checked).toBe(30); // +3 (148): workflow list|set|delete
+    expect(ROWS).toHaveLength(30);
   });
 });
 
@@ -317,7 +351,7 @@ describe('mutation identity (§7.4)', () => {
       expect(seen, path.join(' ')).toHaveLength(0);
       checked++;
     }
-    expect(checked).toBe(12); // +1 (118): `space invite resolve`
+    expect(checked).toBe(13); // +1 (118): `space invite resolve`; +1 (W4/132): task-workflow list
   });
 
   it('a mutation generates a UUIDv7 when --mutation-id is omitted', async () => {

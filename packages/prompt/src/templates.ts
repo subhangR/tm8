@@ -45,6 +45,25 @@ export const DISCOVERY_PROMPT_FORM = {
 
 const NONE = 'none';
 
+/**
+ * The two entity kinds a coordinated worker can be told to report to.
+ *
+ * `work_session` is the original and still the default: a coordinator agent at
+ * a PTY. `chat` arrived with migration 176, which made a chat an entity that
+ * may parent a work session — a chat that spawns a worker IS its coordinator,
+ * and the id in `coordinator_session_id` is then the chat's own entity id.
+ * The transport is identical (`tm8 message send --to <id>`); what differs is
+ * who reads the result, which is exactly what a worker must be told.
+ */
+export const COORDINATOR_KINDS = ['work_session', 'chat'] as const;
+
+export type CoordinatorKind = (typeof COORDINATOR_KINDS)[number];
+
+/** Anything unrecognised — including absent — is the pre-176 meaning. */
+export function coordinatorKindOf(value: string | null | undefined): CoordinatorKind {
+  return value === 'chat' ? 'chat' : 'work_session';
+}
+
 function attr(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return NONE;
   return escapeAttr(value);
@@ -68,6 +87,14 @@ export interface BootstrapControlFacts {
   resolvedProfileHash: string;
   taskId?: string | null;
   coordinatorSessionId?: string | null;
+  /**
+   * WHAT the coordinator id names. Since migration 176 a chat is an entity and
+   * may parent a work session, so a worker's return address is no longer always
+   * a work_session — and a worker that assumes it is will look for a terminal
+   * that does not exist. Absent reads as `work_session`, which is what every
+   * pre-176 manifest meant.
+   */
+  coordinatorKind?: CoordinatorKind | null;
 }
 
 function identityLine(f: BootstrapControlFacts): string {
@@ -82,19 +109,38 @@ function profileLine(f: BootstrapControlFacts): string {
   return `  <interaction_profile id="${attr(f.profileId)}" profile_version="${attr(f.profileVersion)}" pin_revision="${attr(f.pinRevision)}" resolved_hash="${attr(f.resolvedProfileHash)}" />`;
 }
 
+/**
+ * The `<reply_address>` sentence, which is the one line that has to be RIGHT
+ * about what the coordinator is.
+ *
+ * A worker whose coordinator is a chat used to be told nothing at all — the id
+ * was rendered as a work session and the worker had no way to know otherwise.
+ * The transport is the same command either way, so the chat arm exists to
+ * answer the two questions a worker actually asks about an id it did not
+ * choose: does `message send` reach it, and does anyone read what arrives.
+ */
+function replyAddressLine(coordinatorSessionId: string, kind: CoordinatorKind): string {
+  const id = attr(coordinatorSessionId);
+  const chat = kind === 'chat'
+    ? ' Your coordinator is a CHAT, not a work session: that id is the chat\'s own '
+      + 'entity id, your message lands in its transcript and runs its next turn, and the '
+      + 'human reading that chat sees it.'
+    : '';
+  return `  <reply_address session_id="${id}" coordinator_kind="${kind}">Report completion `
+    + `or blockage with \`tm8 message send --to ${id}\`.${chat} Never send that report to `
+    + 'the assignment or task anchor.</reply_address>';
+}
+
 export function workerBootstrapControl(f: BootstrapControlFacts): string {
   const coordinatorSessionId = f.coordinatorSessionId?.trim() || null;
+  const coordinatorKind = coordinatorKindOf(f.coordinatorKind);
   return [
     '<trusted_control type="tm8.worker-bootstrap" version="1">',
     identityLine(f),
     workspaceLine(f),
     profileLine(f),
-    `  <assignment primary_task_id="${attr(f.taskId)}" coordinator_session_id="${attr(f.coordinatorSessionId)}" />`,
-    ...(coordinatorSessionId
-      ? [
-          `  <reply_address session_id="${attr(coordinatorSessionId)}">Report completion or blockage with \`tm8 message send --to ${attr(coordinatorSessionId)}\`. Never send that report to the assignment or task anchor.</reply_address>`,
-        ]
-      : []),
+    `  <assignment primary_task_id="${attr(f.taskId)}" coordinator_session_id="${attr(f.coordinatorSessionId)}" coordinator_kind="${coordinatorSessionId ? coordinatorKind : NONE}" />`,
+    ...(coordinatorSessionId ? [replyAddressLine(coordinatorSessionId, coordinatorKind)] : []),
     `  <discovery root="${DISCOVERY_PROMPT_FORM.root}" actions="${DISCOVERY_PROMPT_FORM.actions}" context="${DISCOVERY_PROMPT_FORM.context}" />`,
     '  <rule>Fetch the bounded assignment snapshot before acting. Current server permissions and entity versions govern every mutation.</rule>',
     '  <git>If you create a pull request or a meaningful commit for your task, link it immediately: `tm8 task link-pr TASK_ID PR_URL` / `tm8 task link-commit TASK_ID COMMIT_URL`. An unlinked PR is invisible to tm8 — no chips, no CI nudges, and a pr_merged gate can never pass against it. After linking, tracking is automatic.</git>',
@@ -161,7 +207,7 @@ export interface DispatcherBootstrapControlFacts extends BootstrapControlFacts {
 
 function rosterBlock(f: DispatcherBootstrapControlFacts): string[] {
   if (f.roster === undefined) {
-    return ['  <roster loaded="false">Read the roster with `tm8 entity list --kind team_member` before choosing.</roster>'];
+    return ['  <roster loaded="false">Read the roster with `tm8 entity query --kind team_member` before choosing.</roster>'];
   }
   if (f.roster.length === 0) {
     return ['  <roster loaded="true" count="0">This space has no teammates to dispatch to. Say so; do not create one.</roster>'];
@@ -256,6 +302,8 @@ export interface TaskAssignmentFacts {
   body: string;
   truncated?: boolean;
   fetchRef?: string | null;
+  /** Files attached directly to the task; manifest identity only, never bytes. */
+  attachments?: readonly SessionInputAttachment[];
   /**
    * When the task was DERIVED from a thread message (064/099): the thread's
    * root message id, rendered into <source>/<thread> so the assignment names
@@ -268,12 +316,14 @@ export interface TaskAssignmentFacts {
 
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
   const replyAnchorId = f.replyAnchorId ?? f.taskId;
+  const attachments = attachmentManifest(f.attachments ?? []);
   const control = [
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
     `  <source anchor_id="${attr(f.taskId)}" anchor_kind="task" message_id="${attr(f.threadRootMessageId)}"${f.threadChannelId ? ` channel_id="${attr(f.threadChannelId)}"` : ''} />`,
     '  <context />',
+    ...attachments.control,
     `  <thread parent_message_id="none" root_message_id="${attr(f.threadRootMessageId)}" />`,
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(replyAnchorId)}" parent_message_id="none" />`,
@@ -286,7 +336,8 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     ...(f.truncated === undefined ? {} : { truncated: f.truncated }),
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
-  return `${control}\n${data}`;
+  const attachmentNames = attachments.names === '' ? '' : `\n${attachments.names}`;
+  return `${control}\n${data}${attachmentNames}`;
 }
 
 // -- §14.4 incoming message ---------------------------------------------------
@@ -326,6 +377,28 @@ export interface IncomingMessageFacts {
    */
   parentBody?: string;
   parentAuthorDisplay?: string;
+  /**
+   * The files the sender attached to THIS message copy. A manifest, never
+   * contents: ids and names, so the agent can fetch what it needs with
+   * `tm8 file download`. Absent and empty render identically (`count="0"`) —
+   * an element that is sometimes missing is one a model stops looking for.
+   */
+  attachments?: readonly SessionInputAttachment[];
+}
+
+/**
+ * One attached file, as the delivery names it.
+ *
+ * `name` is AUTHOR-CONTROLLED. §18.2 explicitly classifies user-supplied labels
+ * and paths as untrusted, so names render in a sibling `attachment-names`
+ * untrusted-data block. The control manifest carries only server-validated
+ * entity ids and declared mime values. File CONTENT is fetched later, by a
+ * command the agent chooses to run, and arrives as untrusted tool output.
+ */
+export interface SessionInputAttachment {
+  fileEntityId: string;
+  name: string;
+  mime?: string | null;
 }
 
 /** Excerpt ceiling for the parent-message block — keeps the worst case well
@@ -333,7 +406,48 @@ export interface IncomingMessageFacts {
  * budget instead. */
 const PARENT_EXCERPT_MAX_CHARS = 1500;
 
+/**
+ * The manifest is bounded twice over. 16 is the contract's own ceiling
+ * (`attachmentIds` is a 0..16 unique array), so a longer list means a caller
+ * built the facts by hand; it is clamped rather than trusted, and the surplus
+ * is DECLARED rather than dropped in silence. The name cap is what keeps a
+ * 4KB filename from pushing an otherwise-deliverable message over its byte
+ * budget — where the dispatch loop's only move is to skip the delivery, which
+ * is the exact silent drop this element exists to end.
+ */
+const ATTACHMENT_MANIFEST_MAX = 16;
+const ATTACHMENT_NAME_MAX_CHARS = 200;
+
+function attachmentManifest(all: readonly SessionInputAttachment[]): {
+  control: string[];
+  names: string;
+} {
+  if (all.length === 0) return { control: ['  <attachments count="0" />'], names: '' };
+  const shown = all.slice(0, ATTACHMENT_MANIFEST_MAX);
+  const omitted = all.length - shown.length;
+  const open =
+    `  <attachments count="${all.length}"` +
+    (omitted > 0 ? ` omitted="${omitted}"` : '') +
+    ' fetch_with="tm8 file download &lt;file-entity-id&gt; --output &lt;path&gt;">';
+  const named = shown.map((file) => {
+      const name = file.name.length > ATTACHMENT_NAME_MAX_CHARS
+        ? `${file.name.slice(0, ATTACHMENT_NAME_MAX_CHARS)}…`
+        : file.name;
+      return { fileEntityId: file.fileEntityId, name };
+    });
+  return {
+    control: [
+      open,
+      ...shown.map((file) =>
+        `    <file entity_id="${attr(file.fileEntityId)}" mime="${attr(file.mime)}" />`),
+      '  </attachments>',
+    ],
+    names: untrustedData({ type: 'attachment-names', body: JSON.stringify(named) }),
+  };
+}
+
 export function incomingMessageInjection(f: IncomingMessageFacts): string {
+  const attachments = attachmentManifest(f.attachments ?? []);
   const context = f.contextAnchors?.length
     ? [
         '  <context>',
@@ -348,6 +462,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
     `  <source anchor_id="${attr(f.sourceAnchorId)}" anchor_kind="${attr(f.sourceAnchorKind)}" message_id="${attr(f.sourceMessageId)}" />`,
     ...context,
+    ...attachments.control,
     `  <thread parent_message_id="${attr(f.threadParentMessageId)}" root_message_id="${attr(f.threadRootMessageId ?? f.sourceMessageId)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/reply" context_message_id="${attr(f.messageId)}" anchor_id="${attr(f.sourceAnchorId)}" parent_message_id="${attr(f.sourceMessageId)}" />`,
     `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,
@@ -359,6 +474,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     ...(f.truncated === undefined ? {} : { truncated: f.truncated }),
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
+  const attachmentNames = attachments.names === '' ? '' : `\n${attachments.names}`;
   let parent = '';
   if (f.parentBody !== undefined && f.parentBody !== '') {
     const cut = f.parentBody.length > PARENT_EXCERPT_MAX_CHARS;
@@ -372,7 +488,10 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
       },
     })}`;
   }
-  return assertWithinBudget('incomingMessageInjection', `${control}\n${data}${parent}`);
+  return assertWithinBudget(
+    'incomingMessageInjection',
+    `${control}\n${data}${attachmentNames}${parent}`,
+  );
 }
 
 // -- §14.6 entity handoff -----------------------------------------------------

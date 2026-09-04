@@ -1,0 +1,232 @@
+/* ==========================================================================
+   DIFF — the rendered change, one stylesheet for every surface that shows a
+   diff (session panels, task detail, review).
+
+   Colour is tokens only — the package hex guard scans this file — and the
+   add/remove ramp reuses the functional tones rather than inventing a green
+   and a red: `--pn-run` is already "this happened", `--pn-block` already
+   "this went away". Nothing here needs a new palette entry.
+
+   BOX-SIZING IS DECLARED, NOT ASSUMED. This package has no global border-box
+   reset, so every padded box here states its own — a diff row whose width is
+   content + padding overflows the scroller by exactly the padding and the
+   horizontal scrollbar then lies about how long the longest line is.
+   ========================================================================== */
+
+.cv2-root .kit-diff {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+  min-width: 0;
+}
+
+/* --- summary + file list -------------------------------------------------- */
+.cv2-root .kit-diff__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .kit-diff__count {
+  letter-spacing: var(--pn-track-label);
+}
+
+/* The counts are the one place a number carries meaning on its own, so they
+   keep their sign: "+12" reads as twelve added with the colour removed. */
+.cv2-root .kit-diff__add-total {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-run);
+}
+.cv2-root .kit-diff__del-total {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-block);
+}
+
+.cv2-root .kit-diff__notice,
+.cv2-root .kit-diff__empty {
+  margin: 0;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border-radius: 6px;
+}
+
+.cv2-root .kit-diff__files {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cv2-root .kit-diff__file-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 9px;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .kit-diff__files > li:first-child .kit-diff__file-link {
+  border-top: 0;
+}
+.cv2-root .kit-diff__file-link:hover {
+  background: var(--pn-hover);
+}
+/* Kit focus grammar (see kit.css .kit-chip:focus-visible). -1px offset keeps
+   the ring inside the file list's rounded clip (`overflow: hidden` on
+   .kit-diff__files would swallow an outward ring on the edge rows). */
+.cv2-root .kit-diff__file-link:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -1px;
+}
+
+.cv2-root .kit-diff__file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  /* The tail of a path is what identifies it; clip the head. */
+  direction: rtl;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- one file ------------------------------------------------------------- */
+.cv2-root .kit-diff__file {
+  margin-bottom: 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cv2-root .kit-diff__file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+/* The scroller. `overflow-x` lives HERE and not on the row, so one long line
+   scrolls the file rather than each row scrolling independently — the line
+   numbers stay put beside the code they belong to. */
+.cv2-root .kit-diff__body {
+  overflow-x: auto;
+  background: var(--pn-card);
+}
+
+.cv2-root .kit-diff__hunk {
+  box-sizing: border-box;
+  padding: 3px 9px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-info);
+  background: var(--pn-info-soft);
+  white-space: pre;
+}
+
+.cv2-root .kit-diff__row {
+  display: flex;
+  align-items: flex-start;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  line-height: 1.5;
+  /* min-content so a row wider than the scroller stretches the scroll area
+     instead of being squeezed to the viewport width. */
+  min-width: min-content;
+}
+
+.cv2-root .kit-diff__num {
+  flex: none;
+  box-sizing: border-box;
+  width: 44px;
+  padding: 0 6px;
+  text-align: right;
+  color: var(--pn-ink-4);
+  user-select: none;
+}
+
+.cv2-root .kit-diff__marker {
+  flex: none;
+  box-sizing: border-box;
+  width: 16px;
+  text-align: center;
+  color: var(--pn-ink-3);
+  user-select: none;
+  white-space: pre;
+}
+
+.cv2-root .kit-diff__code {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  padding-right: 10px;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.cv2-root .kit-diff__row--add {
+  background: var(--pn-run-soft);
+}
+.cv2-root .kit-diff__row--add .kit-diff__marker,
+.cv2-root .kit-diff__row--add .kit-diff__code {
+  color: var(--pn-run);
+}
+
+.cv2-root .kit-diff__row--del {
+  background: var(--pn-block-soft);
+}
+.cv2-root .kit-diff__row--del .kit-diff__marker,
+.cv2-root .kit-diff__row--del .kit-diff__code {
+  color: var(--pn-block);
+}
+
+.cv2-root .kit-diff__row--context .kit-diff__code {
+  color: var(--pn-ink-2);
+}
+
+/* --- the cap's own control ------------------------------------------------ */
+.cv2-root .kit-diff__more {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  background: var(--pn-hover);
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand-2);
+  letter-spacing: var(--pn-track-label);
+  text-align: center;
+  cursor: pointer;
+}
+.cv2-root .kit-diff__more:hover {
+  background: var(--pn-active);
+}
+/* Same grammar, same inward offset — this bar is the last child of the same
+   rounded, clipped file box. */
+.cv2-root .kit-diff__more:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -1px;
+}

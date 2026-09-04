@@ -1,0 +1,427 @@
+// @vitest-environment jsdom
+/**
+ * Regression tests for the chat-home stability fixes: the done-during-read
+ * phase race, lost mid-read frames, the missing detail-loading indicator,
+ * plain-Enter send, and multiplayer frames referencing unseen messages.
+ */
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import type { EntityId } from '@tm8/contract';
+import { ChatHomeScreen } from './ChatHomeScreen';
+import { createChatHomeFixturePort } from './fixtures';
+import type { ChatHomePort, ChatModelOption } from './types';
+
+const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
+const THREAD_ID = '019f0000-0000-7000-8000-000000000010' as EntityId;
+const MODELS: ChatModelOption[] = [
+  { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
+];
+
+/** Wraps a port so each readThread call can be released by the test. */
+function gateReads(port: ChatHomePort): { port: ChatHomePort; release(): void; reads(): number } {
+  let pending: Array<() => void> = [];
+  let count = 0;
+  return {
+    port: {
+      ...port,
+      readThread: async (rootId) => {
+        count += 1;
+        await new Promise<void>((resolve) => pending.push(resolve));
+        return port.readThread(rootId);
+      },
+    },
+    release: () => {
+      const waiting = pending;
+      pending = [];
+      for (const resolve of waiting) resolve();
+    },
+    reads: () => count,
+  };
+}
+
+/** Holds the opening roster read while the rest of Home is free to settle. */
+function gateTeammates(port: ChatHomePort): { port: ChatHomePort; release(): void } {
+  let releaseRead = (): void => {};
+  const hold = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  return {
+    port: {
+      ...port,
+      listTeammates: async (spaceId) => {
+        await hold;
+        return port.listTeammates(spaceId);
+      },
+    },
+    release: releaseRead,
+  };
+}
+
+describe('Chat Home stability', () => {
+  it('shows a loading indicator while the thread snapshot is read', async () => {
+    const { port } = createChatHomeFixturePort();
+    const gated = gateReads(port);
+    const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getByTestId('chat-detail-loading')).toBeTruthy());
+    await waitFor(() => {
+      act(() => gated.release());
+      expect(view.queryByTestId('chat-detail-loading')).toBeNull();
+    });
+  });
+
+  it('never calls the teammate roster empty before its opening read settles', async () => {
+    const { port } = createChatHomeFixturePort([]);
+    const gated = gateTeammates(port);
+    const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getByText('Loading agent teammates…')).toBeTruthy());
+    expect(view.queryByText('No agent teammate is available in this space.')).toBeNull();
+
+    /* The select owns its own empty note. Opening it during the same wait must
+       stay a loading fact too, rather than exposing a second false empty. */
+    fireEvent.click(view.getByTestId('tch-teammate'));
+    expect(view.queryByText('No agent teammate is available in this space.')).toBeNull();
+    expect(view.getAllByText('Loading agent teammates…')).toHaveLength(2);
+
+    act(() => gated.release());
+    await waitFor(() => expect(view.getByRole('option', { name: /Forge/ })).toBeTruthy());
+    expect(view.queryByText('No agent teammate is available in this space.')).toBeNull();
+  });
+
+  it('states that the teammate roster is empty only after a successful empty read', async () => {
+    const { port } = createChatHomeFixturePort([]);
+    const emptyRoster: ChatHomePort = {
+      ...port,
+      listTeammates: async () => [],
+    };
+    const view = render(<ChatHomeScreen port={emptyRoster} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() =>
+      expect(view.getByText('No agent teammate is available in this space.')).toBeTruthy(),
+    );
+    expect(view.queryByText('Loading agent teammates…')).toBeNull();
+  });
+
+  it('uses a Latin-safe plus in both attachment-control branches', () => {
+    const { port } = createChatHomeFixturePort([]);
+    const wired = render(
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        attach={() => { throw new Error('unused'); }}
+      />,
+    );
+    const enabled = wired.getByRole('button', { name: 'Attach a file' });
+    expect(enabled.textContent).toBe('+');
+    expect(enabled.textContent).not.toContain('\uFF0B');
+    wired.unmount();
+
+    const refused = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    const disabled = refused.getByRole('button', { name: 'Attach a file' });
+    expect(disabled.textContent).toContain('+');
+    expect(disabled.textContent).not.toContain('\uFF0B');
+  });
+
+  it('settles to idle when the done frame lands during the post-turn read', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const gated = gateReads(port);
+    const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
+    act(() => gated.release());
+    // Scoped to the PANEL row. The working-set tab strip forced this (it made
+    // a bare text query match twice) and revision 14 removed the strip again,
+    // but the scoping is KEPT: the panel row is precisely what "the thread has
+    // loaded into the list" means here, where a bare query would also accept
+    // the conversation head. Same for the two cases below.
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Quick follow-up.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+
+    const messageId = '019f0000-0000-7000-8000-0000000000aa' as EntityId;
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId,
+        seq: 0,
+        part: { kind: 'text', text: 'Fast answer.' },
+      });
+      controls.emit({
+        type: 'chat.turn.done',
+        threadRootId: THREAD_ID,
+        messageId,
+        usage: { output_tokens: 5 },
+      });
+    });
+    act(() => gated.release());
+
+    await waitFor(() => expect(view.getByText('Fast answer.')).toBeTruthy());
+    expect(view.queryByTestId('tch-send-working')).toBeNull();
+    expect(view.queryByTestId('chat-thinking')).toBeNull();
+  });
+
+  it('sends on plain Enter and keeps Shift+Enter as a newline', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
+
+    const composer = view.getByLabelText('Message the chat agent');
+    fireEvent.change(composer, { target: { value: 'Line one' } });
+    fireEvent.keyDown(composer, { key: 'Enter', shiftKey: true });
+    expect(controls.posts).toHaveLength(0);
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+    expect(controls.posts[0]?.body).toBe('Line one');
+  });
+
+  it('re-reads the thread when a frame references a message it has never seen', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    let reads = 0;
+    const counting: ChatHomePort = {
+      ...port,
+      readThread: async (rootId) => {
+        reads += 1;
+        return port.readThread(rootId);
+      },
+    };
+    const view = render(<ChatHomeScreen port={counting} spaceId={SPACE_ID} models={MODELS} />);
+    // Wait for the transcript itself, not the sidebar title, so the detail
+    // snapshot is loaded before the foreign frame arrives.
+    await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
+    await waitFor(() => expect(view.getByTestId('chat-usage-card')).toBeTruthy());
+    const readsBefore = reads;
+
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId: '019f0000-0000-7000-8000-0000000000bb' as EntityId,
+        seq: 0,
+        part: { kind: 'text', text: 'Reply to another member.' },
+      });
+    });
+
+    await waitFor(() => expect(reads).toBe(readsBefore + 1));
+    // The streamed part survives the refresh snapshot via frame replay.
+    await waitFor(() => expect(view.getByText('Reply to another member.')).toBeTruthy());
+  });
+
+  it('marks a sidebar thread live when its frames stream while it is not active', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
+
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId: '019f0000-0000-7000-8000-0000000000cc' as EntityId,
+        seq: 0,
+        part: { kind: 'text', text: 'Working…' },
+      });
+    });
+    await waitFor(() => expect(view.getAllByLabelText('Agent is working').length).toBeGreaterThan(0));
+  });
+});
+
+describe('Chat Home cross-thread and multiplayer safety', () => {
+  it('does not paint a posted thread over the screen after switching away mid-send', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const gated = gateReads(port);
+    const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => {
+      act(() => gated.release());
+      expect(view.getByTestId('chat-usage-card')).toBeTruthy();
+    });
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Posted into thread A.' },
+    });
+    fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+
+    // Switch to the new-thread composer while the post-send read is gated.
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    await waitFor(() => expect(view.getByText(/New chat — pick a mode/)).toBeTruthy());
+    act(() => gated.release());
+
+    // Thread A's snapshot must not overwrite the new-thread screen.
+    await waitFor(() => expect(view.getByText(/New chat — pick a mode/)).toBeTruthy());
+    expect(view.queryByTestId('chat-usage-card')).toBeNull();
+  });
+
+  it('keeps the composer usable while another participant’s turn streams', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => expect(view.getByTestId('chat-usage-card')).toBeTruthy());
+
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId: '019f0000-0000-7000-8000-0000000000ff' as EntityId,
+        seq: 0,
+        part: { kind: 'text', text: 'Someone else’s agent is answering.' },
+      });
+    });
+
+    await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
+    const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(false);
+    fireEvent.change(composer, { target: { value: 'I can still type and send.' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+    expect(controls.posts[0]?.body).toBe('I can still type and send.');
+  });
+});
+
+describe('Chat Home snapshot reconciliation', () => {
+  it('never loses streamed content to a read that snapshotted before the stream', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    // Capture the snapshot IMMEDIATELY but delay resolution — the hostile
+    // ordering: snapshot predates the frames, resolution postdates them.
+    let holds: Array<() => void> = [];
+    let arm = false;
+    const hostile: ChatHomePort = {
+      ...port,
+      readThread: async (rootId) => {
+        const snapshot = await port.readThread(rootId);
+        if (arm) await new Promise<void>((resolve) => holds.push(resolve));
+        return snapshot;
+      },
+    };
+    const view = render(<ChatHomeScreen port={hostile} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => expect(view.getByTestId('chat-usage-card')).toBeTruthy());
+
+    arm = true;
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Race me.' },
+    });
+    fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+
+    const messageId = '019f0000-0000-7000-8000-00000000abab' as EntityId;
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId,
+        seq: 0,
+        part: { kind: 'text', text: 'Streamed after the snapshot.' },
+      });
+      controls.emit({
+        type: 'chat.turn.done',
+        threadRootId: THREAD_ID,
+        messageId,
+        usage: { output_tokens: 3 },
+      });
+    });
+    await waitFor(() => expect(view.getByText('Streamed after the snapshot.')).toBeTruthy());
+
+    // Resolve the stale read: the streamed answer must survive it.
+    act(() => {
+      const waiting = holds;
+      holds = [];
+      for (const release of waiting) release();
+    });
+    await waitFor(() => expect(view.getByText('Streamed after the snapshot.')).toBeTruthy());
+    expect(view.queryByTestId('tch-send-working')).toBeNull();
+  });
+
+  it('keeps a newly typed draft when an older thread’s send resolves late', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const gated = gateReads(port);
+    const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => {
+      act(() => gated.release());
+      expect(view.getByTestId('chat-usage-card')).toBeTruthy();
+    });
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Sent into thread A.' },
+    });
+    fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: 'Fresh draft for a new conversation.' } });
+    act(() => gated.release());
+
+    await waitFor(() => expect(composer.value).toBe('Fresh draft for a new conversation.'));
+  });
+});
+
+describe('Chat Home entity chip suppression', () => {
+  it('never chips this thread’s own messages but keeps foreign entity chips', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
+
+    const ownMessageId = '019f0000-0000-7000-8000-000000000011';
+    const foreignId = '019f0000-0000-7000-8000-00000000dddd';
+    const messageId = '019f0000-0000-7000-8000-0000000000ee' as EntityId;
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId,
+        seq: 0,
+        part: {
+          kind: 'tool_call',
+          toolCallId: 'tc-sup',
+          name: 'tm8_read',
+          args: { ids: [ownMessageId, foreignId] },
+          state: 'completed',
+        },
+      });
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId,
+        seq: 1,
+        part: {
+          kind: 'tool_result',
+          toolCallId: 'tc-sup',
+          content: { entity: { id: foreignId, kind: 'task', title: 'Foreign task' } },
+        },
+      });
+    });
+
+    /* The chips are gone (S3/S4) — the surviving surface is the ledger's
+       counted read line, and the suppression rule survives by CONSTRUCTION:
+       ruling 2 counts only full summaries in RESULTS, and the own message id
+       appeared only in the call's args. One foreign task read ⇒ 'Read 1
+       task', and the own id surfaces nowhere. */
+    /* The sentence stays exact; S3b's aria-hidden expansion caret is
+       affordance chrome and is stripped before comparing. */
+    const sentenceOf = (line: HTMLElement): string => {
+      const clone = line.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
+      return clone.textContent ?? '';
+    };
+    await waitFor(() =>
+      expect(
+        view.getAllByTestId('chat-ledger-reads').some((line) => sentenceOf(line) === 'Read 1 task'),
+      ).toBe(true),
+    );
+    expect(view.container.textContent).not.toContain('000000000011');
+  });
+});

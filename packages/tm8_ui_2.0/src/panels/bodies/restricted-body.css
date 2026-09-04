@@ -1,0 +1,218 @@
+/* ==========================================================================
+   RESTRICTED BODY — the `restricted` archetype's interior.
+   Source: T0-4 Entity Detail Panels Hi-Fi, frame "Governed & fallback kinds",
+   the INTERACTION PROFILE card (oracle lines 714–762; the body region is
+   734–758). Every value below is EXTRACTED from that markup's inline styles
+   with the line cited; nothing here is eyeballed.
+
+   COLOURS ARE TOKENS ONLY — §14, and the package guard at src/hex-ban.test.ts
+   scans this file. The oracle's bytes map onto the ramp exactly:
+     #FFFFFF = --pn-card · #E7E3D9 = --pn-line · #D8D3C6 = --pn-line-2
+     #F0EDE4 = --pn-x-hairline-soft · #23201B = --pn-ink · #5B564C = --pn-ink-2
+     #8E897B = --pn-ink-3 · #B7B2A4 = --pn-ink-4 · #BD8A2A = --pn-wait
+   THE THREE TINTS THE RAMP HAS NO ENTRY FOR, all on the banners:
+     rgba(162,156,142,.14) — retired fill  (line 736)
+     rgba(189,138,42,.09)  — draft fill    (line 739)
+     rgba(189,138,42,.4)   — draft edge    (line 739)
+   They are DERIVED from --pn-idle / --pn-wait with color-mix at the oracle's
+   own alphas, not measured as new colours and not hand-typed as hex. That is
+   deliberate, and it is why no --pn-x-* token is added: a color-mix over a
+   token follows the token through the theme flip, where a second measured
+   constant would need a dark twin and could drift from its parent. The
+   precedent is panels.css:547-548, deriving this same shape from --pn-wait.
+   Consequence, stated rather than assumed: in dark these resolve from the
+   dark ramp — NOT VERIFIED BY EYE (see the handover's NOT-CHECKED).
+
+   THE BANNER TONE IS DATA. The fill/edge/word colour are selected by
+   `data-tone`, whose value is the REGISTRY's `statusPill.tones[status]` — so
+   the banner and the chrome's status pill cannot disagree about what a
+   lifecycle state looks like, and a fourth lifecycle member needs no CSS.
+
+   THE HAIRLINE RULE: --pn-line BOUNDS a component (the preview card, the
+   field table, each banner); --pn-x-hairline-soft SEPARATES repeated siblings
+   inside one (the field rows, line 746). Both sides are the oracle's own
+   bytes, which is the rule predicting a case its author did not reason about.
+
+   The micro-type literals (11.5/10.5/10px) are D5-verbatim: the global scale
+   is the single `zoom` lever on .cv2-root, never a per-element bump.
+   ========================================================================== */
+
+.cv2-root .rs-body {
+  min-width: 0;
+}
+
+/* A block and its eyebrow. The oracle spends this gap as padding-bottom:5px
+   on the eyebrow (lines 742, 751); as a flex gap it is the same 5px and it
+   survives the eyebrow being absent. */
+.cv2-root .rs-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* ---- LIFECYCLE BANNER (lines 735–740) ---------------------------------- */
+
+.cv2-root .rs-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+}
+.cv2-root .rs-banner__word {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+  flex: none;
+}
+.cv2-root .rs-banner__note {
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* Tone variants keep a single semantic word coloured; the bounded banner
+   itself stays neutral in every state. */
+.cv2-root .rs-banner[data-tone='wait'] {
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
+}
+.cv2-root .rs-banner[data-tone='wait'] .rs-banner__word {
+  color: var(--pn-wait);
+}
+.cv2-root .rs-banner[data-tone='run'] {
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
+}
+.cv2-root .rs-banner[data-tone='run'] .rs-banner__word {
+  color: var(--pn-run);
+}
+.cv2-root .rs-banner[data-tone='block'] {
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
+}
+.cv2-root .rs-banner[data-tone='block'] .rs-banner__word {
+  color: var(--pn-block);
+}
+
+/* ---- PREVIEW (lines 741–744) ------------------------------------------- */
+
+/* A bounded card, so --pn-line (line 743: 1px #E7E3D9, radius 8, padding
+   9/11, mono 10.5/1.65 at ink-2). */
+.cv2-root .rs-preview {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  line-height: 1.65;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  text-wrap: pretty;
+}
+/* The absence keeps the card's SHAPE — so the region reads as a thing that
+   exists and has nothing in it, not as a layout that failed — and drops the
+   card fill, so it cannot be mistaken for content. */
+.cv2-root .rs-preview--hollow {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--pn-line-2);
+}
+
+/* ---- FIELD ROWS (lines 745–749) ---------------------------------------- */
+
+.cv2-root .rs-fields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cv2-root .rs-fields__row {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  /* SEPARATES repeated siblings inside one bounded component — the soft
+     hairline, and the oracle's own #F0EDE4 (line 746). */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+/* The oracle's last row carries no rule (line 748) — a trailing divider
+   inside a bounded box draws a second edge next to the border. */
+.cv2-root .rs-fields__row:last-child {
+  border-bottom: 0;
+}
+.cv2-root .rs-fields__key {
+  width: 84px;
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .rs-fields__value {
+  margin: 0;
+  color: var(--pn-ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- REFUSALS ---------------------------------------------------------- */
+
+/* NOT DRAWN BY THE ORACLE as a body region: the canvas states the refusals in
+   the action bar's caption (line 727), and the chrome owns that bar. This
+   region carries the refusals the chrome has no control for (edit, delete),
+   in the panel family's own caption voice. Flagged as AUTHORED, not
+   extracted — see the handover. */
+.cv2-root .rs-refusals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cv2-root .rs-refusals__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  line-height: 1.5;
+}
+.cv2-root .rs-refusals__verb {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+  /* The verb reads as unavailable without being a control: struck, at the
+     disabled weight D32 takes from what T1-4 DRAWS rather than from what its
+     annotation says. */
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.cv2-root .rs-refusals__why {
+  text-wrap: pretty;
+}
+
+/* ---- PIN PROVENANCE (line 757) ----------------------------------------- */
+
+.cv2-root .rs-provenance {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--pn-ink-4);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.cv2-root .rs-provenance__count {
+  color: var(--pn-ink-2);
+}

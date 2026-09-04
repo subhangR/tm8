@@ -68,6 +68,7 @@ import {
   type W2ProjectFolderUploadHandlerDeps,
 } from './handlers/w2/project-folder-uploads.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
+import { registerW2ContainerHandlers } from './handlers/w2/containers.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
 import { registerExecutionGitHandlers } from './services/execution-git.js';
@@ -116,6 +117,8 @@ export interface RegisterFacadeHandlersDeps {
    * against the pinned one.
    */
   readonly resolveAuthoredFromWorkSessionId?: W2MessagesHandoffsServiceOptions['resolveAuthoredFromWorkSessionId'];
+  /** 176's chat twin. Defaults below to the bearer's own `runtime_chat_id`. */
+  readonly resolveAuthoredFromChatId?: W2MessagesHandoffsServiceOptions['resolveAuthoredFromChatId'];
   /**
    * Tier B per-member credentials (sub-doc 11 §D).
    *
@@ -211,6 +214,11 @@ export function registerFacadeHandlers(
     ...(deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {}),
     resolveAuthoredFromWorkSessionId: deps.resolveAuthoredFromWorkSessionId
       ?? (async (ctx) => (ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null)),
+    // NO envelope arm, unlike the session resolver above. A chat id is never
+    // accepted from request input — only from the bearer's own session row —
+    // so there is nothing to reconcile and nothing a caller can assert.
+    resolveAuthoredFromChatId: deps.resolveAuthoredFromChatId
+      ?? (async (ctx) => (ctx.identity.kind === 'bearer' ? ctx.identity.runtimeChatId ?? null : null)),
     ...(deps.chat ? {
       onMessagesCommitted: (identityId, messages) => {
         void deps.chat!.orchestrator.wakeForMessages(identityId, messages);
@@ -232,6 +240,25 @@ export function registerFacadeHandlers(
   registerW2EntityKindsProfileHandlers(registry, facade);
   registerW2FeedContextHandlers(registry, facade);
   registerW2MenuDefaultChannelHandlers(registry, facade);
+
+  /**
+   * Containers (177). REGISTERED UNCONDITIONALLY, unlike `files` or the
+   * credential seam above, and the difference is deliberate.
+   *
+   * Those are conditional because a composition with no PTY host cannot
+   * honestly answer them — but "cannot answer" still has to mean 501, and for
+   * them the registry's own fall-through would give 404 for operations this
+   * node genuinely does not implement in that build. The container family is
+   * the opposite case: all 25 rows ARE part of what this node implements, and
+   * what varies is whether the RUNTIME is enabled. So the family always
+   * registers and answers 501 from inside — `TM8_CONTAINERS=off`, a phase that
+   * has not shipped, or no service composed are three reasons with one honest
+   * code, and none of them is "this operation does not exist".
+   *
+   * The service argument is absent in P0: the runtime ops answer 501 through
+   * the gate. Wiring the real `ContainerService` here is phase 1's line.
+   */
+  registerW2ContainerHandlers(registry, { config: deps.config });
 
   /**
    * Tier B credentials. Conditional on the seam for the same reason `files` is:

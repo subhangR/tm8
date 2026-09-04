@@ -11,6 +11,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  MOUNTED_OPERATIONS,
   ERROR_STATUS,
   OPERATIONS,
   RESERVED_OPERATIONS,
@@ -52,12 +53,34 @@ describe('router (catalog-driven)', () => {
     }
   });
 
-  it('no two operations share a method + path (silent shadowing tripwire)', () => {
+  it('no two MOUNTED operations share a method + path (silent shadowing tripwire)', () => {
+    // Over MOUNTED_OPERATIONS, because that is the set the router compiles and
+    // therefore the only set where a shared binding can shadow anything.
+    // An alias row deliberately re-declares an existing binding so a family's
+    // socket is discoverable under its own name; it is never mounted.
     const seen = new Set<string>();
-    for (const op of OPERATIONS) {
+    for (const op of MOUNTED_OPERATIONS) {
       const key = `${op.method} ${op.path}`;
-      expect(seen.has(key), `duplicate catalog binding: ${key}`).toBe(false);
+      expect(seen.has(key), `duplicate mounted binding: ${key}`).toBe(false);
       seen.add(key);
+    }
+  });
+
+  it('every alias shares its target\'s binding exactly, and is not mounted', () => {
+    // The teeth. Without this, `aliasOf` would be a way for any duplicate to
+    // opt out of the tripwire above; with it, an alias must name a real
+    // operation and match its binding, so a copy-paste duplicate still fails.
+    const mounted = new Set(MOUNTED_OPERATIONS.map((op) => op.name));
+    const aliases = OPERATIONS.filter((op) => 'aliasOf' in op);
+    expect(aliases.length).toBeGreaterThan(0);
+    for (const alias of aliases) {
+      const target = OPERATIONS.find(
+        (op) => op.name === (alias as { aliasOf: string }).aliasOf,
+      );
+      expect(target, `alias ${alias.name} names a real operation`).toBeDefined();
+      expect(`${alias.method} ${alias.path}`).toBe(`${target!.method} ${target!.path}`);
+      expect(mounted.has(alias.name), `${alias.name} must not be mounted`).toBe(false);
+      expect(mounted.has(target!.name), `${target!.name} must be mounted`).toBe(true);
     }
   });
 

@@ -9,18 +9,22 @@ describe('rich turn projection', () => {
     const projected = projectTurnParts(assistant.parts);
     const tools = projected.filter((part) => part.kind === 'tool');
 
-    expect(tools).toHaveLength(1);
+    /* Two calls in the fixture turn — the read (three append-only state
+       parts folding to ONE card, the projection under test) and the spawn
+       (call + result). Still one PROJECTED part per toolCallId. */
+    expect(tools).toHaveLength(2);
     expect(tools[0]).toMatchObject({
       toolCallId: 'tool-1',
       state: 'completed',
       result: { tasks: 7, blocked: 1 },
     });
+    expect(tools[1]).toMatchObject({ toolCallId: 'tool-2', state: 'completed' });
   });
 
   it('deduplicates a replayed delta by durable sequence', () => {
     const frame = {
       type: 'chat.turn.delta' as const,
-      threadRootId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
+      chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
       messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
       seq: 7,
       part: { kind: 'text' as const, text: 'streamed once' },
@@ -34,7 +38,7 @@ describe('rich turn projection', () => {
     expect(hasUsage({})).toBe(false);
     const next = mergeChatTurnFrame(CHAT_HOME_FIXTURE_THREAD, {
       type: 'chat.turn.done',
-      threadRootId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
+      chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
       messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
       usage: {},
     });

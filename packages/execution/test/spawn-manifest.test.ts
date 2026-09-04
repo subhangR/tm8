@@ -13,9 +13,11 @@ import {
   composeEnv,
   composeManifest,
   resolveCommandNetworkPolicy,
+  resolveCoordinatorKind,
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
   resolveWorkdir,
+  supportsPositionalPrompt,
   withAgentPrompt,
 } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
@@ -334,6 +336,39 @@ describe('resolveWorkdir', () => {
     const resolved = resolveWorkdir(base, ctx, { ...opts, sessionIdHint: 'sess-9' });
     expect(resolved.path).toBe('/tmp/tm8-scratch/sess-9');
   });
+
+  /**
+   * THE FOURTH COMBINATION, which used to be the only unguarded one.
+   *
+   * `scratch` with a project throws. `worktree` without a project throws.
+   * `project` WITHOUT a project fell through to the projectless return and came
+   * back as `.../scratch/pending` — while still reporting `mode: 'project'`.
+   * Nothing failed, so the session spawned, the row recorded `project`, and the
+   * agent ran in a scratch directory instead of the repository it was asked for.
+   *
+   * The operator's report was "my sessions are not starting from /root/strykr".
+   */
+  it('refuses project mode when there is no project, rather than silently using scratch', () => {
+    const ctx = context();
+    ctx.project = null;
+    const request = { ...base, workdir: { mode: 'project' as const } };
+
+    expect(() => resolveWorkdir(request, ctx, opts)).toThrow(/"project" requires a project/);
+  });
+
+  it('leaves the DEFAULT untouched, which is why the guard is safe to add', () => {
+    // An unspecified mode already resolves to `project` only when one exists, so
+    // a caller that simply does not know is unaffected by the guard above. Only
+    // a caller explicitly asking for a project it does not have now fails.
+    const ctx = context();
+    ctx.project = null;
+    expect(() => resolveWorkdir(base, ctx, opts)).not.toThrow();
+    expect(resolveWorkdir(base, ctx, opts).mode).toBe('scratch');
+
+    const withProject = context();
+    expect(resolveWorkdir(base, withProject, opts).mode).toBe('project');
+    expect(resolveWorkdir(base, withProject, opts).path).toBe('/tmp/tm8-fixture');
+  });
 });
 
 describe('buildAgentCommand', () => {
@@ -439,6 +474,30 @@ describe('buildAgentCommand', () => {
     expect(
       withAgentPrompt('my-agent', { system: 'PROMPT', task: 'TASK' }, launch, { TM8_AGENT_CMD: 'my-agent' }),
     ).toBe('my-agent');
+  });
+
+  /**
+   * `supportsPositionalPrompt` is what SpawnService consults to decide whether
+   * it still has to hand the first turn to the PTY. If it and `withAgentPrompt`
+   * ever disagreed, the assignment would be delivered twice (duplicate first
+   * turn) or not at all (the empty-session bug) — so they are pinned together,
+   * against the same launches, here.
+   */
+  it('agrees with withAgentPrompt about which launches carry the task in argv', () => {
+    const codexLaunch = { ...launch, agentTool: 'codex' as const, model: 'gpt-5-codex' };
+    const cases = [
+      { launch, env: {}, positional: true },
+      { launch: codexLaunch, env: {}, positional: true },
+      { launch, env: { TM8_AGENT_CMD: 'echo-agent' }, positional: false },
+      { launch, env: { TM8_AGENT_CMD: 'my-agent' }, positional: false },
+    ];
+    for (const { launch: l, env, positional } of cases) {
+      expect(supportsPositionalPrompt(l, env)).toBe(positional);
+      const base = buildAgentCommand(l, env);
+      const embedded = withAgentPrompt(base, { system: 'SYS', task: 'TASK' }, l, env);
+      // "Carries the task in argv" is exactly "the command grew a 'TASK' tail".
+      expect(embedded.endsWith(`'TASK'`)).toBe(positional);
+    }
   });
 
   /**
@@ -768,6 +827,70 @@ describe('composeManifest', () => {
     );
   });
 
+  /**
+   * 176 — the parent of a coordinated worker may be a CHAT.
+   *
+   * `resolveCoordinatorSessionId` stays a string by design: the id and what it
+   * names are two facts, and the kind arrives on the SpawnContext because a
+   * spawn's parent is graph state the loader reads, not something the caller
+   * asserts about someone else's row.
+   */
+  describe('the coordinator kind (176)', () => {
+    const coordinated = {
+      sessionId: 'sess-chat-parent',
+      request: { ...base, parentSessionId: 'chat-1' },
+      launch: {
+        mode: 'coordinated-worker' as const,
+        model: 'opus',
+        agentTool: 'claude-code',
+        permissionMode: 'bypassPermissions' as const,
+      },
+      workdir: { mode: 'project' as const, path: '/tmp/tm8-fixture' },
+      command: "claude --model 'opus'",
+      baseUrl: 'http://127.0.0.1:4610',
+    };
+
+    it('carries a chat parent through to the manifest coordinator block', () => {
+      const manifest = composeManifest({
+        ...coordinated,
+        context: { ...context(), parentKind: 'chat' },
+      });
+      expect(manifest.coordinator).toEqual({ sessionId: 'chat-1', kind: 'chat' });
+    });
+
+    it('reads a parent the loader could not resolve as the pre-176 meaning', () => {
+      // Never a refused launch and never a blank: the return ADDRESS is what a
+      // coordinated mode requires, and that guard is resolveCoordinatorSessionId's.
+      for (const parentKind of [undefined, null] as const) {
+        const manifest = composeManifest({
+          ...coordinated,
+          context: { ...context(), parentKind },
+        });
+        expect(manifest.coordinator).toEqual({
+          sessionId: 'chat-1',
+          kind: 'work_session',
+        });
+      }
+    });
+
+    it('emits no coordinator at all for an uncoordinated mode, chat parent or not', () => {
+      const manifest = composeManifest({
+        ...coordinated,
+        launch: { ...coordinated.launch, mode: 'worker' },
+        context: { ...context(), parentKind: 'chat' },
+      });
+      expect(manifest.coordinator).toBeNull();
+    });
+
+    it('folds an unrecognised parent kind rather than passing it through', () => {
+      expect(resolveCoordinatorKind('chat')).toBe('chat');
+      expect(resolveCoordinatorKind('work_session')).toBe('work_session');
+      expect(resolveCoordinatorKind(null)).toBe('work_session');
+      expect(resolveCoordinatorKind(undefined)).toBe('work_session');
+      expect(resolveCoordinatorKind('channel' as never)).toBe('work_session');
+    });
+  });
+
   it('persists the effective Codex command-network policy separately from posture', () => {
     const codexLaunch = {
       mode: 'worker' as const,
@@ -821,7 +944,10 @@ describe('composeManifest', () => {
 
     expect(manifest.manifestVersion).toBe('1');
     expect(manifest.mode).toBe('coordinated-worker');
-    expect(manifest.coordinator).toEqual({ sessionId: 'coord-session-1' });
+    expect(manifest.coordinator).toEqual({
+      sessionId: 'coord-session-1',
+      kind: 'work_session',
+    });
     expect(manifest.launch.permissionMode).toBe('bypassPermissions');
     expect(manifest.launch.commandNetwork).toEqual({
       mode: 'provider-default',
@@ -856,7 +982,7 @@ describe('composeManifest', () => {
         title: 'wire the prompt seam',
         description: '',
         priority: 'high',
-        workStatus: 'open',
+        status: 'open',
         acceptanceCriteria: [],
       },
     ];

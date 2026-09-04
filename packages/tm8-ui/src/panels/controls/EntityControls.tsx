@@ -14,7 +14,7 @@
  *
  * The DETAIL PANEL then turned out to hold the third copy. Its `MetaGrid`
  * rendered `priority`, `assignees` and `dueDate` as `<span>`s and its header
- * rendered `workStatus` as a read-only `Pill`, so the surface a user lands on
+ * rendered `status` as a read-only `Pill`, so the surface a user lands on
  * the instant they press "+ New task" — the generic-create pattern commits the
  * entity immediately and opens its panel — was the one surface with no way to
  * set any of them. That is the defect as the user reported it: "while creating
@@ -41,27 +41,43 @@
  */
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { CSSProperties, ReactNode, RefObject } from 'react';
+import type { ReactNode } from 'react';
 import type {
   ActorSummary,
   Connections,
   EntityCapabilities,
   EntityKind,
   EntitySummary,
+  StatusCategory,
+  TaskAxis,
+  TaskWorkflow,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type {
   ActionContext,
   ActionRef,
   AssignControl,
+  DateControl,
   KindConfig,
   MembershipListControl,
   StateControl,
   StatusPillSpec,
   ValueControl,
 } from '../../domain';
-import { KindIcon, REASONS, getKind, resolveAction } from '../../domain';
-import { Avatar, type PillTone } from '../../kit';
+import {
+  KindIcon,
+  PROCESS_CONTROL,
+  REASONS,
+  getKind,
+  hasEnded,
+  offWorkflowType,
+  processControlFor,
+  resolveAction,
+  workflowRefusalText,
+  workflowTypeOf,
+  workflowVocabularyOf,
+} from '../../domain';
+import { Avatar, useMenuAnchor, type PillTone } from '../../kit';
 import {
   CheckingPermission,
   DisabledAction,
@@ -88,6 +104,21 @@ export interface ControlSubject {
   state: unknown;
   /** The tombstone bit every kind carries. Flips archive ⇄ restore. */
   deletedAt?: string | null;
+  /**
+   * WHICH TAB THIS ROW IS UNDER — `EntitySummary.category`, which arrives with
+   * the row and is what the four tabs partition on.
+   *
+   * Here so a verb can refuse itself on a row that has already reached its
+   * end, without asking the seam a second question. `terminate` is the case:
+   * it used to be gated on a `live` LIVENESS verdict, which refused it on
+   * every stale or unknown session — rows that are exactly the ones a user
+   * needs to be able to retire (user report 2026-08-19).
+   *
+   * Optional and structural: every `EntitySummary` already carries it, so the
+   * list hosts needed no change; only `subjectOf` in EntityDetailPanel, which
+   * builds a subject by hand, had to start passing it.
+   */
+  category?: StatusCategory;
 }
 
 /**
@@ -133,13 +164,77 @@ export interface ControlHost {
   onSetState?: (entityId: string, next: string, via: ActionRef) => void;
   onArchive?: (ref: ActionRef, entityId: string) => void;
   /**
+   * Session close. A dedicated prop for the same reason `onArchive` is one:
+   * the list's `onAction` is the session-START dispatcher, so terminate has to
+   * be handed its real executor or it draws live and does nothing.
+   */
+  onTerminate?: (entityId: string) => void;
+  /**
+   * Session RE-open — the other half of the tail slot, and a dedicated prop
+   * for exactly the reason terminate is one: `props.onAction` is the
+   * session-START dispatcher, whose switch has never known this verb, so a
+   * resume routed through it would draw live and be swallowed.
+   *
+   * Absent ⇒ the swapped-in Resume renders its honest not-wired refusal
+   * rather than a live button, which is `RowAction`'s fallback and not a
+   * special case here.
+   */
+  onResume?: (entityId: string) => void;
+  /**
+   * The tick. A dedicated prop for exactly the reason the two above are.
+   *
+   * `complete` is declared in `list.rowActions` and so reached the general
+   * `onAction`, which every host wires to `useSessionStart.onAction` — a
+   * SWITCH over `SESSION_START_ACTIONS` whose `default:` returns. So the tick
+   * passed its capability gate, drew live, dispatched, and was swallowed one
+   * frame later by a dispatcher that has never known the verb. That is the
+   * third and last of the three ways it was dead.
+   *
+   * It is NOT `onSetState(id, 'done', 'complete')` reached through the state
+   * control: the same executor, yes, but the tick is a one-click verb on a
+   * collapsed row where there is no state control to reach it through.
+   */
+  onComplete?: (entityId: string) => void;
+  /**
    * `label` rides along beside `source` because a failure notice is USER copy:
    * `source` is the wire field name, and titling a notice with it produced
    * "priority could not be changed" — lowercase mid-sentence. Both come off the
    * same registry `ValueControl`, whose `label` is required, so it is required
    * here too; an optional fourth argument would let a host silently drop it.
+   *
+   * `null` IS A CLEAR, and only a `dateControls` field can send one: a
+   * `ValueControl`'s enum has nothing in the contract that clears it, while
+   * `tasks.due_date` is nullable and "no due date" is a value the database
+   * holds. It rides this executor rather than a second one because the PATCH
+   * is identical — `content[source]`, version-guarded — and a parallel
+   * executor would be a second place to forget the version guard.
    */
-  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+  onSetValue?: (entityId: string, source: string, next: string | null, label: string) => void;
+  /**
+   * A registry `axisControls` write — ONE axis of the row's `state.axes`
+   * record. `null` clears the axis back to unset, which is a real state the
+   * picker offers (`no <axis>`), unlike `onSetValue` whose fields have no
+   * contract-level clear. The executor merges into the stored record before
+   * patching, because the server replaces the jsonb wholesale.
+   */
+  onSetAxis?: (entityId: string, axisName: string, next: string | null, label: string) => void;
+  /**
+   * The space's axis registry, for the `axisControls` pickers — PER-SPACE
+   * DATA from `spaceSettings().taskAxes`, hydrated by the host like the
+   * assign roster. Empty means the space defines none, and the strip renders
+   * no axis controls at all (an empty picker would fabricate a taxonomy).
+   */
+  taskAxes?: readonly TaskAxis[];
+  /**
+   * The space's workflow registry (W4, 132) — PER-SPACE DATA riding the same
+   * `spaceSettings()` read as `taskAxes`, hydrated by the host the same way.
+   * The state control uses it to NARROW for usability only: an option outside
+   * the row's type vocabulary renders disabled-with-reason (never hidden —
+   * "the control does not change shape"), and a CURRENT value outside it
+   * draws the derived off-workflow mark. The DATABASE trigger remains the
+   * gate; absent or empty means nothing narrows, which is today exactly.
+   */
+  taskWorkflows?: readonly TaskWorkflow[];
   onAssign?: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
   assignableActors?: readonly ActorSummary[];
   /**
@@ -177,11 +272,11 @@ export interface ControlHost {
  *
  * WHY ARCHIVE SITS BESIDE THE DROPDOWN RATHER THAN INSIDE IT. They are two
  * different layers, and the ruling names both: the dropdown writes the kind's
- * OWN state (a task's `workStatus`), while archive writes the TOMBSTONE
+ * OWN state (a task's `status`), while archive writes the TOMBSTONE
  * (`entities.deleted_at`) that every kind shares and that the Archived
  * lifecycle tier queries as `deleted: 'only'`. Folding "Archived" into the
  * state list would claim it is a work status — it is not, a task keeps its
- * `workStatus` across an archive/restore round-trip (verified on this node),
+ * `status` across an archive/restore round-trip (verified on this node),
  * and only 5 of 19 kinds have a state list to fold it into at all.
  *
  * ARCHIVE FLIPS TO RESTORE ON `deletedAt`, which is a STRUCTURAL read of the
@@ -203,6 +298,286 @@ export interface ControlHost {
  * `variant` decides only how they sit. A second copy of the controls, shaped
  * like chips, is exactly the duplication that produced the bug.
  */
+/**
+ * THE hover cluster, for all three tile anatomies:
+ * `[archive] [collection] [tick] [run ▶] [copy] … [terminate ⏻] [chevron]`.
+ *
+ * ## Why a component and not three registry arrays
+ *
+ * The cluster used to be assembled inline at each anatomy's call site, and the
+ * three drifted exactly as you would expect: the standard tile and the
+ * control-card grew the membership icon on different days and in different
+ * ORDER, and the session tile never rendered the registry at all — its
+ * `rowActions: ['complete','terminate']` had gone unrendered since it was
+ * declared. Order is a design ruling, and a ruling that lives in three JSX
+ * literals is a ruling three files can break independently. It lives here now,
+ * once — see `RULED_ORDER` and `TAIL_ORDER` below.
+ *
+ * Deriving the cluster into `list.rowActions` instead — the `applyLaunch`
+ * shape — was the other candidate, and it does not work for these two verbs:
+ *
+ *   - **Collections** is not an `ActionRef` at all. It is `RowMembershipControl`
+ *     driven by `list.membership`, a picker with its own popover, its own
+ *     `onMembership` executor and its own three-way capability rendering. There
+ *     is no bare verb to dispatch, and minting a `collect` ActionRef beside it
+ *     would put TWO collections controls in one strip.
+ *   - **Archive** must reach `props.onArchive`, not the general `onAction`
+ *     dispatcher (see that prop's docblock — routing it through `onAction`
+ *     lights unrelated header verbs). It also HIDES rather than disables, and a
+ *     `rowActions` entry cannot hide itself.
+ *
+ * So `rowActions` stays what it is — the kind's own middle verbs, Run first —
+ * and this component owns the invariant frame around them.
+ *
+ * The disclosure chevron is the `trailing` slot rather than part of the frame:
+ * every anatomy genuinely has its own (different class, different state
+ * source, and the control-card's is a `pn-tt__ind` that the CSS sizes apart).
+ * Its POSITION is still fixed here, which is the part that was drifting.
+ */
+/**
+ * THE RULED LEFT-TO-RIGHT ORDER of the cluster's registry verbs.
+ *
+ * OWNER RULING 2026-08-18: `[archive] [collection] [tick] [run ▶] [copy] …
+ * [terminate ⏻] [chevron]`. Archive leads — it is the verb a user reaches for
+ * on a row they have finished with, and it was buried at the far end behind
+ * two verbs that act on the row rather than retiring it. The tick precedes
+ * Run: completing is the commoner act on a task list, and Run is the one that
+ * opens a sheet.
+ *
+ * A kind's `list.rowActions` still declares WHICH verbs it has; this decides
+ * where they sit. The two are deliberately separate — the registry's array is
+ * per-kind data and the order is one cross-kind ruling, so putting the ruling
+ * in the arrays would be the same "one ruling, three literals" drift that made
+ * this component exist. A verb named in neither list keeps its declared
+ * position, between the ranked ones and the tail.
+ */
+const RULED_ORDER: readonly ActionRef[] = ['complete', 'run'];
+
+/**
+ * The verbs that sit AFTER the anatomy's own affordances, hard right.
+ *
+ * ONE SLOT, TWO VERBS — THE PROCESS CONTROL (user ruling 2026-08-19). The slot
+ * holds `terminate` while a run could still be answering and `resume` once it
+ * has ended; `hasEnded` decides, and only ever one of them is drawn.
+ *
+ * It is declared as `['terminate']` and not as the pair because `TAIL_ORDER`
+ * answers a POSITIONAL question — which of a kind's declared verbs sit hard
+ * right — and `resume` is never declared by a kind (see the swap below, and
+ * the ruling recorded on work_session's `rowActions`). Adding it here would
+ * put a second, permanently refused control in the tail of every session row.
+ *
+ * Neither half is a lifecycle verb under this model — one kills a live PTY
+ * this instant, the other boots a real agent process — so they are kept away
+ * from the verbs that move a row through its life.
+ */
+const TAIL_ORDER: readonly ActionRef[] = ['terminate'];
+
+/** Rank within `RULED_ORDER`; unnamed verbs sort after all named ones, stably. */
+const rankOf = (ref: ActionRef): number => {
+  const at = RULED_ORDER.indexOf(ref);
+  return at === -1 ? RULED_ORDER.length : at;
+};
+
+export function RowActionCluster({
+  row,
+  props,
+  config,
+  openFlow,
+  onFlow,
+  onOpenLaunch,
+  anatomyActions,
+  trailing,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  config: KindConfig;
+  openFlow?: ActionRef | null;
+  onFlow?: (ref: ActionRef | null) => void;
+  /** The launch config's escape to the full sheet, for `flow: 'launch'` verbs. */
+  onOpenLaunch?: (entityId: string) => void;
+  /**
+   * The anatomy's OWN affordances — the session tile's Copy, today — handed
+   * DOWN rather than drawn beside this cluster.
+   *
+   * They sit inside the ruled order (`… [run ▶] [copy] … [terminate ⏻] …`), so
+   * an anatomy that renders them after the cluster cannot honour it: Copy would
+   * land to the right of Terminate. This slot is what lets one component own
+   * the whole sequence while the button that knows how to copy a session id
+   * stays in the tile that knows the id.
+   */
+  anatomyActions?: ReactNode;
+  /** The anatomy's own details disclosure — always last. */
+  trailing?: ReactNode;
+}) {
+  const list = config.list;
+  const archived = row.deletedAt != null;
+  const capabilities = props.capabilitiesOf?.(row.id);
+
+  /**
+   * HIDE on a definite refusal; RENDER (refused, with a reason) while unknown.
+   *
+   * The ruling is that Archive is absent exactly where the server refuses it,
+   * and `canDelete` is the only thing allowed to decide that — never a kind
+   * list in this package, which would be a second copy of a rule the DB
+   * already owns and would rot the first time a kind changed. Measured against
+   * `delete_entity` (migration 017): it refuses `member`, `message`,
+   * `work_session`, `project` and `interaction_profile`, and the server's
+   * capability rule now returns `canDelete: false` for exactly those five.
+   *
+   * `undefined` is NOT a refusal and must not hide, or the icon pops in a beat
+   * after the row and the strip reflows under the pointer. Since capabilities
+   * ride the summary this is a genuinely rare state — an entity in neither
+   * cache, or a node too old to send the field — so the honest treatment is to
+   * draw the slot and let `RowAction` refuse it with its reason. The row keeps
+   * its geometry either way.
+   */
+  const archiveRefused = capabilities !== undefined && !capabilities.canDelete;
+
+  const declared = list.rowActions ?? [];
+
+  /**
+   * HAS THIS ROW'S RUN ENDED — the process control's swap, and the one place
+   * it is decided (user ruling 2026-08-19; see `TAIL_ORDER` above).
+   *
+   * SCOPED TO ROWS THAT HAVE A PROCESS, which is what `terminate` in the
+   * declared list means. Without that guard `hasEnded` is true of every
+   * completed TASK too — `category: 'done'`, and `livenessOf` answers nothing
+   * live for a non-session — and the tick would vanish from every done task,
+   * taking the untick with it. The ruling is about a finished RUN; a row with
+   * no run cannot have finished one.
+   *
+   * It answers TWO questions, deliberately from one predicate:
+   *   · the tail slot draws Resume instead of Terminate, and
+   *   · the tick is not emitted at all.
+   * The second is why this cannot be an availability verdict: `ActionAvailability`
+   * has no `hidden`, and a `rowActions` entry cannot hide itself. Absence
+   * rather than disabled-with-reason is the ruling — the tick on a finished
+   * run has no SUBJECT to toggle, so there is no refusal to explain — and it
+   * is the same ruling Archive already follows two blocks below.
+   *
+   * The 2→1 jitter when a hovered row dies is ACCEPTED, not designed around:
+   * the shift is a welcome signal that the session just ended.
+   */
+  const rowProcess = { category: row.category, liveness: props.livenessOf?.(row.id) };
+  const endedRun = declared.includes(PROCESS_CONTROL.running) && hasEnded(rowProcess);
+
+  /* `sort` is stable in every engine this ships to (ES2019 requires it), which
+     is what lets an unranked verb keep its declared position. */
+  const middle = declared
+    .filter((ref) => !TAIL_ORDER.includes(ref))
+    .filter((ref) => !(endedRun && ref === 'complete'))
+    .sort((a, b) => rankOf(a) - rankOf(b));
+  const tail = declared
+    .filter((ref) => TAIL_ORDER.includes(ref))
+    .map((ref) => processControlFor(ref, rowProcess));
+
+  /**
+   * The dedicated executor for a verb the general `onAction` cannot perform.
+   *
+   * FOUR verbs are in this position and all four for one reason: the list's
+   * `onAction` is the session-START dispatcher (see the hosts:
+   * `onAction={sessionStart.onAction}`), a switch whose `default:` returns. A
+   * verb routed through it draws live — it passed its capability gate — and
+   * does nothing. `archive` was given its own prop first, `terminate` second,
+   * and the tick was left behind: it dispatched into that `default:` for as
+   * long as it has existed.
+   *
+   * Returning `undefined` for an unwired verb is load-bearing: `RowAction`
+   * falls back to `props.onAction`, and with neither it refuses with
+   * NOT_WIRED_REASON rather than drawing a live control.
+   */
+  const executorFor = (ref: ActionRef): ((ref: ActionRef, entityId: string) => void) | undefined => {
+    if (ref === 'terminate' && props.onTerminate) return (_ref, id) => props.onTerminate?.(id);
+    if (ref === 'resume' && props.onResume) return (_ref, id) => props.onResume?.(id);
+    if (ref === 'complete' && props.onComplete) return (_ref, id) => props.onComplete?.(id);
+    return undefined;
+  };
+
+  const verb = (ref: ActionRef) => (
+    <RowAction
+      key={ref}
+      ref_={ref}
+      row={row}
+      props={props}
+      openFlow={openFlow}
+      onFlow={onFlow}
+      onOpenLaunch={onOpenLaunch}
+      onRun={executorFor(ref)}
+    />
+  );
+
+  return (
+    <>
+      {/* ARCHIVE LEADS (owner ruling 2026-08-18). Still HIDDEN and not greyed
+          where the server refuses deletion, which is every session row — so
+          the first icon of the cluster genuinely differs between a task and a
+          session, and that is the ruling working rather than a defect. */}
+      {archiveRefused ? null : (
+        <RowAction
+          ref_={archived ? 'restore' : 'archive'}
+          row={row}
+          props={props}
+          /* The dedicated executor, exactly as the expanded strip uses. */
+          onRun={props.onArchive}
+          glyph={archived ? <RestoreIcon /> : <BinIcon />}
+        />
+      )}
+      {list.membership ? (
+        <RowMembershipControl row={row} props={props} control={list.membership} variant="icon" />
+      ) : null}
+      {middle.map(verb)}
+      {anatomyActions}
+      {tail.map(verb)}
+      {trailing}
+    </>
+  );
+}
+
+/**
+ * DOES THIS HOST WIRE ANY CONTROL THIS KIND DECLARES — the second half of the
+ * 2026-08-18 ruling, and the one that answers for a WHOLE band rather than a
+ * slot.
+ *
+ * `ChannelView` and `GraphScreen` mount `EntityDetailPanel` with no `controls`
+ * prop at all, so the strip fell back to `{ kind, ctx }` and every control in
+ * it rendered NOT-WIRED. Measured on a channel through that exact shape: four
+ * slots, four refusals, zero live — a 37px band that could not do anything at
+ * all. Each refusal was individually honest; the band was the lie, because it
+ * looked like a place where work happens.
+ *
+ * DECLARATION *AND* WIRING, and neither alone. The registry says which controls
+ * the kind HAS; the host says which of them it can actually perform. A band is
+ * worth its row only where those two overlap.
+ *
+ * NOT ON CAPABILITIES. `capabilitiesOf` is `undefined` until the row's detail
+ * lands, so folding it in here would flap the whole band in and out as reads
+ * settle. A control the viewer may not use still renders — refused, with its
+ * reason — because that IS a thing they tried to do. This asks the stabler
+ * question: is anyone home to receive the write.
+ *
+ * ARCHIVE IS DELIBERATELY NOT IN THE SET. Every kind has a tombstone, so
+ * counting it would put a bare Archive bar under every panel in the app — the
+ * exact outcome `controlsFor` was written to prevent (EntityDetailPanel.tsx).
+ * This predicate NARROWS that gate; it never widens it, and callers keep both.
+ */
+export function stripHasLiveControl(props: ControlHost, config: KindConfig): boolean {
+  const list = config.list;
+  return (
+    (list.stateControl !== undefined
+      && list.stateControl.readOnlyReason === undefined
+      && props.onSetState !== undefined)
+    || ((list.valueControls?.length ?? 0) > 0 && props.onSetValue !== undefined)
+    || ((list.dateControls?.length ?? 0) > 0 && props.onSetValue !== undefined)
+    || (list.axisControls !== undefined
+      && (props.taskAxes?.length ?? 0) > 0
+      && props.onSetAxis !== undefined)
+    || (list.assignControl !== undefined && props.onAssign !== undefined)
+    || (list.membership !== undefined
+      && props.onMembership !== undefined
+      && props.connectionsOf !== undefined)
+  );
+}
+
 export function EntityControlStrip({
   row,
   props,
@@ -263,14 +638,51 @@ export function EntityControlStrip({
       className={chips ? 'lp__rowdetail lp__rowdetail--chips' : 'lp__rowdetail'}
       onClick={(e) => e.stopPropagation()}
     >
-      {line(
-        control?.label ?? 'State',
-        <RowStateControl row={row} props={props} control={control} pill={config.panel.statusPill} />,
-      )}
+      {/* USER RULING 2026-08-18 — "just taking up height in most places".
+          A kind that HAS no state gets no state slot, where it used to get a
+          permanently dead `no state` badge. This is D67's own law applied to
+          the disclosure rather than to the control: the collapsed row already
+          carries the kind's status mark, so the strip's copy said the same
+          thing a second time, in a slot, forever, on 14 of 19 kinds.
+
+          IT IS NOT THE OTHER THREE REFUSALS. A kind that HAS a state still
+          draws it when the node observes it (`readOnlyReason`), while
+          permissions load, and when the host left the write unwired — those
+          are things a user tried to do and must be told about. "This kind
+          never had a state" is not; nothing was attempted and nothing can be.
+          `RowStateControl` now REQUIRES a control, so the distinction is the
+          compiler's rather than this call site's to remember. */}
+      {control
+        ? line(
+            control.label,
+            <RowStateControl
+              row={row}
+              props={props}
+              control={control}
+              pill={config.panel.statusPill}
+            />,
+          )
+        : null}
 
       {(list.valueControls ?? []).map((value) =>
         line(value.label, <RowValueControl row={row} props={props} control={value} />),
       )}
+
+      {/* Directly after the enum pickers and before the axes, so the strip
+          reads status → priority → due → axes: the kind's OWN registry-declared
+          fields together, then the per-space vocabulary the host hydrates. */}
+      {(list.dateControls ?? []).map((date) =>
+        line(date.label, <RowDateControl row={row} props={props} control={date} />),
+      )}
+
+      {/* One picker per axis the SPACE defines — none defined, none drawn.
+          Registry presence only marks the kind whose state carries `axes`;
+          the vocabulary is the host's `taskAxes` data. */}
+      {list.axisControls
+        ? (props.taskAxes ?? []).map((axis) =>
+            line(axisLabel(axis.name), <RowAxisControl row={row} props={props} axis={axis} />),
+          )
+        : null}
 
       {list.assignControl
         ? line(
@@ -410,6 +822,254 @@ function RowValueControl({
 }
 
 /**
+ * THE `YYYY-MM-DD` AN `<input type="date">` WILL ACCEPT, or `''`.
+ *
+ * The stored value reaches us in TWO shapes, and this is not defensiveness:
+ * the read projection returns a date-only string (`entity-read.ts` `dateOnly`)
+ * while the event projector returns a full ISO timestamp (`projector.ts`
+ * `iso`), so a row hydrated from a live event carries `2026-09-01T00:00:00Z`
+ * where the same row fetched by id carries `2026-09-01`. A date input silently
+ * renders BLANK on a value it cannot parse, so without this the control would
+ * go empty the moment an event echoed a save — reading as "the write cleared
+ * it" one frame after a write that did not.
+ *
+ * Truncating rather than parsing is deliberate: a due date is a CALENDAR day,
+ * and `new Date(...)` would push it across a day boundary for any viewer west
+ * of the stored zero hour.
+ */
+function dateInputValue(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const head = raw.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(head) ? head : '';
+}
+
+/**
+ * The picker for a registry-declared `DateControl` — a task's due date, today.
+ *
+ * `RowValueControl`'s anatomy and its three refusals verbatim (not loaded,
+ * refused, not wired), over a different input and with one write the enum
+ * pickers do not have.
+ *
+ * WHY A NATIVE `<input type="date">` AND NOT A DRAWN CALENDAR. The kit has no
+ * calendar, and a hand-rolled one is a month grid, a keyboard model, a locale
+ * and a focus trap — four things to get wrong in a control that sits inside a
+ * row. The native input already carries all four, plus the platform's own date
+ * format for the viewer's locale, which is a fact this app has no business
+ * deciding. The wire format is unaffected: the element's `value` is
+ * `YYYY-MM-DD` regardless of how it is DISPLAYED, which is exactly what the
+ * `date` column wants.
+ *
+ * CLEARING IS A REAL WRITE, and the one place this diverges from
+ * `RowValueControl`. Emptying the field sends an explicit `null` — see
+ * `ControlHost.onSetValue` and the `DateControl` docblock for why the server
+ * reads nothing else as a clear. `RowAxisControl` has the same property for
+ * the same reason and offers it as a `no <axis>` option; here the input's own
+ * clear affordance already is one, so no synthetic option is invented.
+ */
+function RowDateControl({
+  row,
+  props,
+  control,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  control: DateControl;
+}) {
+  const inputId = useId();
+  /* Read by registry-declared NAME off `state`, exactly as `RowValueControl`
+     reads priority — so this file never learns that `dueDate` is the one field
+     whose read half and write half live in different places. */
+  const current = dateInputValue((row.state as unknown as Record<string, unknown>)[control.source]);
+  const verb = `Set ${control.label.toLowerCase()}`;
+
+  /* `data-source` on the REFUSED pill as well as on the live input, the same
+     hook and the same reason as `RowValueControl`: the two are one control in
+     two states, and a hook on only the enabled one lets a refusal go
+     unasserted. */
+  const currentPill = (
+    <span className="lp__statesel kit-pill--idle" data-source={control.source}>
+      {current === '' ? control.emptyLabel : current}
+    </span>
+  );
+
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label={verb} />;
+  }
+
+  /* `canEdit` — the value travels in the kind's content patch, which the
+     server authorizes as an edit and not as its own verb. */
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id)?.canEdit === false) {
+    return (
+      <DisabledAction label={verb} reason={toReason(REASONS.cannotEdit)}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (!props.onSetValue) {
+    return (
+      <DisabledAction label={verb} reason={NOT_WIRED_REASON}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  return (
+    /* `--date` SUPPRESSES THE WRAPPER'S CARET. That pseudo-element exists
+       because a `<select>` styled as a pill loses its native affordance and
+       becomes indistinguishable from the badge beside it; a date input keeps
+       its own calendar indicator, so the caret would be a second, wrong glyph
+       claiming it is a dropdown. */
+    <span className="lp__statewrap lp__statewrap--date">
+      <input
+        id={inputId}
+        type="date"
+        className="lp__statesel lp__statesel--live lp__datesel kit-pill--idle"
+        aria-label={`${verb} for ${row.title}`}
+        data-testid="row-date-input"
+        data-source={control.source}
+        /* The unset field is marked STRUCTURALLY rather than by a second face:
+           the stylesheet dims the browser's own `dd/mm/yyyy` placeholder off
+           it, and the word the registry chose reaches a screen reader through
+           `title` — which is also the sighted hover, so the two agree. */
+        data-empty={current === '' ? 'true' : undefined}
+        title={current === '' ? control.emptyLabel : undefined}
+        value={current}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === current) return;
+          /* An emptied box is a CLEAR, not a write of `''`: the column is
+             `date`, and an empty string is not one. */
+          props.onSetValue?.(row.id, control.source, next === '' ? null : next, control.label);
+        }}
+      />
+    </span>
+  );
+}
+
+/** User copy for an axis whose NAME is data ("type" → "Type"). */
+function axisLabel(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * The picker for ONE per-space task axis (`state.axes[name]`).
+ *
+ * `RowValueControl`'s anatomy and refusals, with three deliberate
+ * differences, each forced by axes being DATA rather than registry config:
+ *
+ * 1. The vocabulary is the axis row's `axisValues`, straight from the node's
+ *    own registry — the same list `internal.validate_task_axes` enforces, so
+ *    the picker can only offer what the trigger will accept.
+ * 2. UNSET IS SELECTABLE. `no <axis>` is a real option that clears the value,
+ *    because clearing is a legal write here (the executor drops the key from
+ *    the record), unlike priority where nothing in the contract clears.
+ * 3. `axisValues: []` means FREE TEXT per the DB comment (001:537-550). This
+ *    control is a picker and cannot offer an open vocabulary, so it refuses
+ *    with that named reason instead of drawing an empty select that looks
+ *    like "no legal values". The CLI (`tm8 task axis`) writes free text.
+ */
+function RowAxisControl({
+  row,
+  props,
+  axis,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  axis: TaskAxis;
+}) {
+  const selectId = useId();
+  const label = axisLabel(axis.name);
+  const record = (row.state as unknown as Record<string, unknown>).axes;
+  const raw =
+    record !== null && typeof record === 'object'
+      ? (record as Record<string, unknown>)[axis.name]
+      : undefined;
+  const current = typeof raw === 'string' ? raw : '';
+  const emptyLabel = `no ${axis.name}`;
+
+  const currentPill = (
+    <span className="lp__statesel kit-pill--idle" data-source={`axis:${axis.name}`}>
+      {current || emptyLabel}
+    </span>
+  );
+
+  if (axis.axisValues.length === 0) {
+    return (
+      <DisabledAction
+        label={`Change ${axis.name}`}
+        reason={{
+          cause: `The ${axis.name} axis takes free text, not a fixed list`,
+          remedy: 'set it from the CLI: tm8 task axis <task-id> ' + axis.name + ' <value>',
+        }}
+      >
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label={`Change ${axis.name}`} />;
+  }
+
+  /* `canEdit`, exactly as `RowValueControl`: the value travels in the kind's
+     content patch, which the server authorizes as an edit. */
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id)?.canEdit === false) {
+    return (
+      <DisabledAction label={`Change ${axis.name}`} reason={toReason(REASONS.cannotEdit)}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (!props.onSetAxis) {
+    return (
+      <DisabledAction label={`Change ${axis.name}`} reason={NOT_WIRED_REASON}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  const known = axis.axisValues.includes(current);
+  return (
+    <span className="lp__statewrap">
+      <select
+        id={selectId}
+        className="lp__statesel lp__statesel--live kit-pill--idle"
+        aria-label={`Change ${axis.name} for ${row.title}`}
+        data-testid="row-axis-select"
+        data-source={`axis:${axis.name}`}
+        value={current}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === current) return;
+          props.onSetAxis?.(row.id, axis.name, next === '' ? null : next, label);
+        }}
+      >
+        {/* Unset is a real, REACHABLE state here — the one honest difference
+            from RowValueControl's disabled empty option. */}
+        <option value="">{emptyLabel}</option>
+        {/* A stored value outside today's vocabulary still shows the truth
+            (the axis was re-valued since this task was written); it is
+            offered only as the current state, not as a choice. */}
+        {!known && current !== '' ? (
+          <option value={current} disabled>
+            {current}
+          </option>
+        ) : null}
+        {axis.axisValues.map((v) => (
+          <option key={v} value={v}>
+            {v}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/**
  * THE MENU LEAVES ITS TILE — a portal with FIXED coordinates, measured on
  * open. The first fix for "the drop downs are going under the screen" flipped
  * an absolutely-positioned menu upward, and it was not enough, because the
@@ -426,61 +1086,11 @@ function RowValueControl({
  * space above is taller. Fixed coordinates do not travel, so any outside
  * scroll or a resize closes the menu rather than letting it drift off its
  * row; scrolls INSIDE the menu (its own overflow-y) are its own business.
+ *
+ * The measurement itself now lives in `kit/useMenuAnchor` — the Board tab's
+ * filter selects are the same affordance and must not carry a second copy of
+ * this reasoning.
  */
-interface MenuAnchor {
-  style: CSSProperties;
-  host: HTMLElement;
-}
-
-function useMenuAnchor(
-  open: boolean,
-  boxRef: RefObject<HTMLElement | null>,
-  menuRef: RefObject<HTMLElement | null>,
-  onClose: () => void,
-): MenuAnchor | null {
-  const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
-  useEffect(() => {
-    if (!open) {
-      setAnchor(null);
-      return;
-    }
-    const el = boxRef.current;
-    const box = el?.getBoundingClientRect();
-    if (!el || !box) return;
-    const host = (el.closest('.cv2-root') as HTMLElement | null) ?? document.body;
-    // 214 = the menu's own max-height (210, panels.css) + its 4px offset.
-    const below = window.innerHeight - box.bottom;
-    const up = below < 214 && box.top > below;
-    setAnchor({
-      host,
-      style: {
-        position: 'fixed',
-        // Clamped so a trigger at the right edge cannot push the menu's
-        // 170px minimum off-screen.
-        left: Math.max(8, Math.min(box.left, window.innerWidth - 178)),
-        ...(up
-          ? { top: 'auto', bottom: window.innerHeight - box.top + 4 }
-          : { top: box.bottom + 4 }),
-        zIndex: 1000,
-      },
-    });
-    const close = (event: Event) => {
-      if (
-        menuRef.current
-        && event.target instanceof Node
-        && menuRef.current.contains(event.target)
-      ) return;
-      onClose();
-    };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [open, boxRef, menuRef, onClose]);
-  return anchor;
-}
 
 /**
  * The assignee picker.
@@ -854,46 +1464,85 @@ function RestoreIcon() {
 /**
  * The state dropdown, or the honest reason there is not one.
  *
- * FOUR DISTINCT REFUSALS, kept apart because collapsing them is how a UI
+ * THREE DISTINCT REFUSALS, kept apart because collapsing them is how a UI
  * starts lying about which thing is missing:
  *
- *   no `stateControl`  — this KIND has no state to set (14 of 19 core kinds).
  *   `readOnlyReason`   — it HAS a state, but the node observes it (sessions).
  *   capabilities absent — not refused, still LOADING (the CheckingPermission
  *                        vocabulary, never the disabled one).
  *   no `onSetState`    — the host did not wire the write; disabled-with-reason
  *                        rather than a select that silently drops the change.
+ *
+ * THERE WERE FOUR. The fourth was "this KIND has no state to set", drawn as a
+ * dead `no state` badge for 14 of 19 kinds — removed by USER RULING 2026-08-18
+ * (see the strip's own note). `control` is REQUIRED now rather than optional,
+ * so that refusal cannot come back by a caller passing `undefined`: the two
+ * call sites both hold a control already (the strip guards on it, and the
+ * tile's dot is gated on `list.stateControl && !treatment`). The other three
+ * survive because each is a thing a user tried to do.
+ *
+ * TWO ANATOMIES, ONE CONTROL — the same pairing `RowMembershipControl` makes,
+ * for the same reason (user ruling 2026-08-16: "there is a status button on
+ * the task tile... clicking on that should move it to done"). `select` is the
+ * expanded strip's dropdown, unchanged; `dot` is the COLLAPSED tile's status
+ * mark, which until now was an inert `<span>` that looked pressable and was
+ * not. Same options, same gates, same refusal words — a second copy is exactly
+ * the duplication D67 removed once already.
+ *
+ * THE MENU OFFERS THE WHOLE VOCABULARY, not a `done` toggle. `set_work_state`
+ * accepts any value from any other, so a control that only ever wrote `done`
+ * would misname itself on six of seven values and have no way back; and `done`
+ * in particular routes through `complete`, which carries the acceptance gate —
+ * a refusal needs somewhere to be SAID, which a bare dot has not got. The
+ * unconditional one-click Complete already exists as a row action beside it.
  */
-function RowStateControl({
+export function RowStateControl({
   row,
   props,
   control,
   pill,
+  variant = 'select',
+  glyph,
 }: {
   row: ControlSubject;
   props: ControlHost;
-  control: StateControl | undefined;
+  /** REQUIRED — see the note above; a kind with no state draws no control. */
+  control: StateControl;
   /** The kind's existing value→word / value→tone map. The ONLY source for both. */
   pill: StatusPillSpec | undefined;
+  /** `dot` for the collapsed tile's status mark. */
+  variant?: 'select' | 'dot';
+  /**
+   * The tile's own status mark, passed in rather than drawn here: the tile
+   * resolves which mark to draw against liveness precedence, and a refusal
+   * must carry the SAME mark as the live control or the row changes shape at
+   * the moment it refuses.
+   */
+  glyph?: ReactNode;
 }) {
   const selectId = useId();
+  const dot = variant === 'dot';
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismissable(open, [boxRef, menuRef], close);
+  const anchor = useMenuAnchor(open, boxRef, menuRef, close);
   const wordFor = (value: string): string =>
     pill?.labels?.[value] ?? value.replace(/_/g, ' ');
   const toneFor = (value: string): PillTone => pill?.tones?.[value] ?? 'idle';
-
-  if (!control) {
-    return (
-      <DisabledAction
-        label="Change state"
-        reason={{
-          cause: `${getKind(props.kind).label} has no state to set on this node`,
-          remedy: 'the contract records no status field for this kind, so nothing could be written',
-        }}
-      >
-        <span className="lp__statesel lp__statesel--absent">no state</span>
+  const label = `Change state for ${row.title}`;
+  /* The refusal FORM follows the anatomy, not the reason: prose under a strip
+     control, which has room for it; a tooltip on a 16px mark, which has not.
+     Both are DisabledWithReason — the split is the one that primitive names. */
+  const refuse = (reason: UnavailableReason, face: ReactNode) =>
+    dot ? (
+      <DisabledIconControl label={label} glyph={glyph} reason={reason} />
+    ) : (
+      <DisabledAction label="Change state" reason={reason}>
+        {face}
       </DisabledAction>
     );
-  }
 
   // Structural read of the state envelope: the registry names the FIELD, so no
   // kind is named here and a new stateful kind needs no edit to this file.
@@ -906,16 +1555,38 @@ function RowStateControl({
     </span>
   );
 
+  /**
+   * W4 — the workflow NARROWING, usability only (the trigger of 132 is the
+   * gate). `vocabulary` is null when nothing narrows this row — no `type`
+   * value, no rule for it, or no workflows at all — which is today exactly.
+   * A forbidden option renders DISABLED-WITH-REASON, never hidden: the
+   * registry's own ruling is that when a workflow lands "it narrows THIS
+   * list; the control does not change shape".
+   */
+  const vocabulary = workflowVocabularyOf(props.taskWorkflows, row.state);
+  const typeValue = workflowTypeOf(row.state);
+  const barred = (id: string): boolean =>
+    vocabulary !== null && id !== current && !vocabulary.includes(id);
+  /**
+   * OFF-WORKFLOW is a DERIVED fact (owner ruling): the CURRENT status sits
+   * outside the type's vocabulary — reachable by re-typing — and is flagged,
+   * never stored, never rewritten, never refused. The refusal FORM follows
+   * the anatomy exactly as `refuse` above: a caption under the strip's
+   * select, title text on the 16px tile mark.
+   */
+  const offType = offWorkflowType(props.taskWorkflows, row.state, current);
+  const offWords = offType === null ? null : `off workflow — ${workflowRefusalText(offType, current)}`;
+
   if (control.readOnlyReason) {
-    return (
-      <DisabledAction label="Change state" reason={toReason(control.readOnlyReason)}>
-        {currentPill}
-      </DisabledAction>
-    );
+    return refuse(toReason(control.readOnlyReason), currentPill);
   }
 
   if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label="Change state" />;
+    return dot ? (
+      <CheckingPermission label={label} glyph={glyph} />
+    ) : (
+      <CheckingPermission label="Change state" />
+    );
   }
 
   const availability = resolveAction(control.command).availability({
@@ -927,25 +1598,113 @@ function RowStateControl({
   });
 
   if (availability.kind === 'disabled') {
-    return (
-      <DisabledAction label="Change state" reason={toReason(availability.reason)}>
-        {currentPill}
-      </DisabledAction>
-    );
+    return refuse(toReason(availability.reason), currentPill);
   }
 
   if (!props.onSetState) {
+    return refuse(NOT_WIRED_REASON, currentPill);
+  }
+
+  if (dot) {
+    const word = current === '' ? 'unknown' : wordFor(current);
     return (
-      <DisabledAction label="Change state" reason={NOT_WIRED_REASON}>
-        {currentPill}
-      </DisabledAction>
+      <span className="lp__assignwrap" ref={boxRef}>
+        <button
+          type="button"
+          className="lp__statedot"
+          data-testid="row-state-trigger"
+          /* The trigger carries the CURRENT value in its name and its tooltip,
+             so a value the registry does not list — which the menu has no row
+             for — is still stated rather than silently unrepresented. The
+             off-workflow fact rides the same tooltip: a 16px mark has no room
+             for a caption, so the tile's refusal form is title text. */
+          title={offWords === null ? `${word} — change state` : `${word} — change state · ${offWords}`}
+          aria-expanded={open}
+          aria-haspopup="true"
+          aria-label={offWords === null ? `${label}, currently ${word}` : `${label}, currently ${word}, ${offWords}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
+        >
+          {glyph}
+        </button>
+        {open && anchor
+          ? createPortal(
+              <span
+                ref={menuRef}
+                className="lp__assignmenu"
+                style={anchor.style}
+                /* Radio, not the membership menu's toggles: these values are
+                   mutually exclusive, and exactly one is always true. */
+                role="radiogroup"
+                aria-label={`State for ${row.title}`}
+              >
+                {control.options.map((o) => {
+                  const on = o.id === current;
+                  const off = barred(o.id);
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      role="radio"
+                      className={on ? 'lp__assignopt lp__assignopt--on' : 'lp__assignopt'}
+                      data-testid="row-state-option"
+                      data-state={o.id}
+                      aria-checked={on}
+                      /* W4 — disabled-with-reason, never hidden: aria-disabled
+                         (not `disabled`) so a keyboard user can still reach
+                         the row, exactly as the honesty kit's refusals do. The
+                         menu stays open on the dead click so the reason can be
+                         read.
+
+                         THE REASON IS VISIBLE NOW, not a `title`. It used to
+                         rely on a hover tooltip, which a finger cannot produce
+                         — so on touch this row was greyed out and mute. It is
+                         written into the row itself rather than disclosed,
+                         because it is one short uniform sentence and this row
+                         lives inside a popover: a disclosure nested in a menu
+                         is a second layer to dismiss for a fact that fits on
+                         the line. Matches the `<select>` spelling below. */
+                      aria-disabled={off ? 'true' : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (off) return;
+                        setOpen(false);
+                        if (on) return;
+                        // The option's own `via` wins, exactly as in the
+                        // select: `done` must reach the completion verb.
+                        props.onSetState?.(row.id, o.id, o.via ?? control.command);
+                      }}
+                    >
+                      {/* WORDS ONLY, exactly as the select's options are. A
+                          dot per row would have to invent a tone AND a fill
+                          for a value no record holds — `renderBadge` derives
+                          both from a row, and there is no row to derive them
+                          from until the value is chosen. The mark stays where
+                          it is a fact: on the trigger. */}
+                      <span className="lp__assignopt-name">
+                        {off ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
+                      </span>
+                      <span className="lp__assignopt-mark" aria-hidden>
+                        {on ? '✓' : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </span>,
+              anchor.host,
+            )
+          : null}
+      </span>
     );
   }
 
   return (
-    // The wrapper exists ONLY to own the caret: see `.lp__statewrap::after`.
-    // The select cannot draw its own, because the pill tone class it carries
-    // sets the `background` shorthand and would reset any background-image.
+    <>
+    {/* The wrapper exists ONLY to own the caret: see `.lp__statewrap::after`.
+        The select cannot draw its own, because the pill tone class it carries
+        sets the `background` shorthand and would reset any background-image. */}
     <span className="lp__statewrap">
     <select
       id={selectId}
@@ -968,13 +1727,38 @@ function RowStateControl({
       {!control.options.some((o) => o.id === current) && current !== '' ? (
         <option value={current}>{wordFor(current)}</option>
       ) : null}
+      {/* W4 — an option outside the row's type vocabulary is DISABLED with its
+          reason attached, never hidden: "the control does not change shape"
+          (the registry's own ruling), and the database trigger is the real gate
+          behind this usability narrowing.
+
+          THE REASON IS IN THE OPTION'S OWN LABEL, and it used to be in `title`.
+          `title` on an `<option>` is rendered by NO browser — not as a tooltip
+          on desktop, and certainly not in the native picker a phone opens. So
+          this was not a touch defect that happened to also be ugly: the reason
+          was unreachable on every platform, by every input, since it was
+          written. A greyed-out row the user cannot interrogate is exactly the
+          silent refusal L6 exists to forbid.
+
+          Option TEXT is the one thing every select renders, native picker
+          included, so the reason travels there. It is short and uniform by
+          construction — `workflowRefusalText` is "type X does not allow Y" and Y
+          is already this option's label — so the suffix says only the part the
+          label does not: which type is refusing. */}
       {control.options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {wordFor(o.id)}
+        <option key={o.id} value={o.id} disabled={barred(o.id)}>
+          {barred(o.id) ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
         </option>
       ))}
     </select>
     </span>
+    {/* W4 — the derived off-workflow mark: caption voice, honesty kit. */}
+    {offWords !== null ? (
+      <span className="hon-caption" role="note" data-testid="row-state-offworkflow">
+        {offWords}
+      </span>
+    ) : null}
+    </>
   );
 }
 
@@ -1040,6 +1824,9 @@ export function RowAction({
     kind: row.kind,
     capabilities: props.capabilitiesOf?.(row.id) ?? null,
     liveness: props.livenessOf?.(row.id),
+    /* The row's OWN tab, so a verb can refuse itself on a finished row without
+       a second seam question. See `ControlSubject.category`. */
+    ...(row.category ? { category: row.category } : {}),
   };
 
   /**
@@ -1112,6 +1899,11 @@ export function RowAction({
         .join(' ')}
       title={def.label}
       aria-label={def.label}
+      /* The verb, on the element. CSS needs it (a destructive verb in the
+         cluster must read as destructive without every anatomy hand-rolling a
+         button), and a test asserting cluster ORDER needs something stabler
+         than the label text. */
+      data-action={ref_}
       aria-expanded={opensFlow ? expanded : undefined}
       onClick={(e) => {
         e.stopPropagation();

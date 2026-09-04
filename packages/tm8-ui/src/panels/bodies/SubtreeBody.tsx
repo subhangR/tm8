@@ -8,7 +8,13 @@ import type { FileUploadTask } from '../../files/upload';
 import { ProseField, type TriggerOption } from '../../rich-input';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
-import { MemorySetBlock, type MemoryAuthoring } from './MemorySetBlock';
+import {
+  CollapsibleSection,
+  EmptySectionsToggle,
+  useEmptySectionsRevealed,
+  useRegisterEmptySection,
+} from './CollapsibleSection';
+import { MemorySetBlock, edgesOf, type MemoryAuthoring } from './MemorySetBlock';
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import './subtree-body.css';
@@ -134,6 +140,13 @@ export interface SubtreeBodyProps {
   attach?: (file: File) => FileUploadTask;
   /** An upload landed — the host refetches so the attachment strip updates. */
   onAttached?: () => void;
+  /**
+   * The attachment tiles, BUILT by `EntityDetailPanel` (so the strip stays
+   * kind-agnostic and no archetype can forget it) and PLACED here, at the
+   * bottom of the description block — the 2026-08-16 addendum's position.
+   * Never a fold, never part of the empty set.
+   */
+  attachmentSlot?: ReactNode;
 }
 
 export function SubtreeBody({
@@ -154,6 +167,7 @@ export function SubtreeBody({
   skillOptions,
   attach,
   onAttached,
+  attachmentSlot,
 }: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
@@ -187,9 +201,27 @@ export function SubtreeBody({
    */
   const membership = (blocks ?? []).find((b) => b.block === 'membership');
 
+  /*
+   * EMPTINESS, per fold (approved design, 2026-08-16). A fold is empty when
+   * it has NO DATA ROWS — a live, unused affordance ("＋ add child…") may hide
+   * behind the reveal toggle, but a DISABLED-WITH-REASON affordance never
+   * counts as empty: hiding a refusal hides its reason, the exact failure the
+   * honesty rules exist to prevent. So each verdict below asks both "are there
+   * rows?" and "would hiding this swallow a refusal?".
+   */
+  const memoryEdgeCount = memorySet ? edgesOf(detail, memorySet.params ?? {}).length : 0;
+  const memoriesEmpty =
+    memoryEdgeCount === 0 && (memoryAuthoring == null || !memoryAuthoring.refusal);
+  const membershipEdgeCount = membership ? edgesOf(detail, membership.params ?? {}).length : 0;
+  // MembershipBlock ALWAYS draws its add control — absent authoring renders it
+  // disabled-with-reason — so only a LIVE authoring lane can leave the section
+  // genuinely empty.
+  const membershipEmpty =
+    membershipEdgeCount === 0 && membershipAuthoring != null && !membershipAuthoring.refusal;
+
   return (
     <div
-      className="pn-body sb-body"
+      className="pn-body pn-body--measured sb-body"
       id="tabpanel-content"
       role="tabpanel"
       aria-labelledby="tab-content"
@@ -204,7 +236,11 @@ export function SubtreeBody({
         skillOptions={skillOptions}
         attach={attach}
         onAttached={onAttached}
+        attachmentSlot={attachmentSlot}
       />
+      {/* Keyed by entity: the `+N more` overflow must not ride from one task
+          onto the next in the same panel slot. */}
+      <RunsStrip key={detail.id} runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
       <AcceptanceSection
         detail={detail}
         draft={criteriaDraft}
@@ -217,38 +253,65 @@ export function SubtreeBody({
         onOpenEntity={onOpenEntity}
         onAddChild={onAddChild}
       />
-      <RunsSection runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
+      {gitSection ? (
+        /*
+         * The git section is SELF-FETCHING and opaque here, so this body
+         * cannot measure its emptiness or its tracked-PR count — it defaults
+         * OPEN (the roster's "open when tracked PRs exist", approximated
+         * upward) and never joins the empty set: a pr_merged gate refusal
+         * lives inside it, and a fold that hid one would be hiding a refusal.
+         */
+        <CollapsibleSection id="git" label="GIT" empty={false} defaultOpen>
+          {gitSection}
+        </CollapsibleSection>
+      ) : null}
       {memorySet ? (
-        <section className="sb-section" data-testid="memory-set-section">
-          <Eyebrow faint>{memorySet.label ?? 'MEMORIES'}</Eyebrow>
+        <CollapsibleSection
+          id="memories"
+          label={memorySet.label ?? 'MEMORIES'}
+          count={memoryEdgeCount}
+          empty={memoriesEmpty}
+          testId="memory-set-section"
+        >
           <MemorySetBlock
             detail={detail}
             params={memorySet.params ?? {}}
             onOpenEntity={onOpenEntity}
             authoring={memoryAuthoring}
           />
-        </section>
+        </CollapsibleSection>
       ) : null}
       {peerRows.map((block, i) => (
-        <section className="sb-section" data-testid="peer-rows-section" key={`${block.block}:${i}`}>
-          <Eyebrow faint>{block.label ?? 'RELATED'}</Eyebrow>
+        <CollapsibleSection
+          id={i === 0 ? 'peers' : `peers-${i}`}
+          label={block.label ?? 'RELATED'}
+          count={edgesOf(detail, block.params ?? {}).length}
+          empty={edgesOf(detail, block.params ?? {}).length === 0}
+          testId="peer-rows-section"
+          key={`${block.block}:${i}`}
+        >
           <PeerRowsBlock detail={detail} params={block.params ?? {}} onOpenEntity={onOpenEntity} />
-        </section>
+        </CollapsibleSection>
       ))}
       {membership ? (
-        <section className="sb-section" data-testid="membership-section">
-          <Eyebrow faint>{membership.label ?? 'COLLECTIONS'}</Eyebrow>
+        <CollapsibleSection
+          id="collections"
+          label={membership.label ?? 'COLLECTIONS'}
+          count={membershipEdgeCount}
+          empty={membershipEmpty}
+          testId="membership-section"
+        >
           <MembershipBlock
             detail={detail}
             params={membership.params ?? {}}
             onOpenEntity={onOpenEntity}
             authoring={membershipAuthoring}
           />
-        </section>
+        </CollapsibleSection>
       ) : null}
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
-      {gitSection ?? null}
       {notices.length > 0 ? (
+        /* NEVER folded — a folded notice is a notice that was not delivered. */
         <div className="sb-notices" data-testid="subtree-notices">
           {notices.map((block, i) => {
             const text = typeof block.params?.text === 'string' ? block.params.text : null;
@@ -260,6 +323,7 @@ export function SubtreeBody({
           })}
         </div>
       ) : null}
+      <EmptySectionsToggle />
     </div>
   );
 }
@@ -277,7 +341,9 @@ export function SubtreeBody({
  *     draws in full — counting them twice is the same drift;
  *   · the rest have composed cells below.
  */
-const COMPOSED_KEYS = new Set(['kind', 'acceptance', 'assignees', 'priority', 'dueDate', 'axes']);
+const COMPOSED_KEYS = new Set([
+  'kind', 'acceptance', 'assignees', 'priority', 'dueDate', 'startDate', 'axes',
+]);
 
 function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity?: (id: string) => void }) {
   const state = detail.state as unknown as Record<string, unknown>;
@@ -309,6 +375,7 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
   const controlled = new Set<string>(
     [
       ...(config.list.valueControls ?? []).map((c) => c.source),
+      ...(config.list.dateControls ?? []).map((c) => c.source),
       ...(config.list.assignControl ? [config.list.assignControl.source] : []),
     ],
   );
@@ -367,7 +434,21 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
     });
   }
 
-  if (typeof state.dueDate === 'string' && state.dueDate.length > 0) {
+  /* Suppressed on a kind whose strip now OWNS the date (task, via
+     `dateControls`) for the D67 reason the `controlled` note above gives: the
+     read-only cell beside a live picker of the same fact is the confusion, not
+     the redundancy. A kind that declares no date control keeps this cell,
+     because for that kind it is the only truth available. */
+  /* Start date, same shape and same suppression as `Due` below. It is on
+     `COMPOSED_KEYS` for the reason the rest of that set is: without it the
+     fallback loop at the foot of this function would draw a raw `Start Date`
+     cell UNDER the live picker — the precise duplication the suppression above
+     exists to prevent, arriving through the generic path instead of this one. */
+  if (typeof state.startDate === 'string' && state.startDate.length > 0 && !controlled.has('startDate')) {
+    cells.push({ key: 'startDate', label: 'Start', value: <span className="sb-grid__mono">{state.startDate}</span> });
+  }
+
+  if (typeof state.dueDate === 'string' && state.dueDate.length > 0 && !controlled.has('dueDate')) {
     cells.push({ key: 'dueDate', label: 'Due', value: <span className="sb-grid__mono">{state.dueDate}</span> });
   }
 
@@ -436,6 +517,7 @@ function DescriptionEditor({
   skillOptions,
   attach,
   onAttached,
+  attachmentSlot,
 }: {
   detail: EntityDetail;
   draft?: string;
@@ -444,6 +526,7 @@ function DescriptionEditor({
   skillOptions?: readonly TriggerOption[];
   attach?: (file: File) => FileUploadTask;
   onAttached?: () => void;
+  attachmentSlot?: ReactNode;
 }) {
   const content = detail.content as unknown as Record<string, unknown>;
   const persisted =
@@ -478,7 +561,10 @@ function DescriptionEditor({
   }, [value, showEditor]);
 
   return (
-    <div className="sb-description" data-testid="task-description-editor">
+    /* `data-attachment-drophost`: this body opts its description block in as
+       the attachment strip's drop target — the strip finds the marker, never
+       a body class name, so it stays agnostic of its host's anatomy. */
+    <div className="sb-description" data-testid="task-description-editor" data-attachment-drophost="">
       <div className="sb-description__head">
         <span className="sb-description__label">Description</span>
         <StanceControl
@@ -516,6 +602,10 @@ function DescriptionEditor({
       ) : (
         <Markdown source={value} className="pn-prose" testId="task-description-view" />
       )}
+      {/* The attachment tiles are the LAST thing inside the description block
+          (2026-08-16 addendum) — the files sit with the prose they belong to,
+          and the whole block is their drop target. */}
+      {attachmentSlot ?? null}
     </div>
   );
 }
@@ -591,10 +681,14 @@ function AcceptanceSection({
   const editable = onChange != null && unavailableReason == null;
 
   return (
-    <section className="sb-section" data-testid="acceptance-section">
-      <Eyebrow faint>
-        ACCEPTANCE · {completed}/{criteria.length}
-      </Eyebrow>
+    <CollapsibleSection
+      id="acceptance"
+      label="ACCEPTANCE"
+      count={`${completed}/${criteria.length}`}
+      empty={criteria.length === 0}
+      defaultOpen={criteria.length > 0}
+      testId="acceptance-section"
+    >
       {criteria.length === 0 ? (
         <p className="pn-section__empty">No acceptance criteria on this yet.</p>
       ) : (
@@ -657,7 +751,7 @@ function AcceptanceSection({
           })}
         </div>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -700,10 +794,20 @@ function SubtreeSection({
     ? null
     : (config.panel.capabilityReasons?.canAddChild ??
       'This entity does not accept children for you — the server withheld the capability.');
+  const addChildLive = onAddChild != null && addChildReason == null;
 
   return (
-    <section className="sb-section" data-testid="subtree-section">
-      <Eyebrow faint>SUBTREE · {childWork.length}</Eyebrow>
+    <CollapsibleSection
+      id="subtree"
+      label="SUBTREE"
+      count={childWork.length}
+      /* No rows AND a live add affordance ⇒ empty (the affordance survives
+         behind the reveal). A refused add affordance keeps the fold visible:
+         hiding it would hide the refusal's reason. */
+      empty={childWork.length === 0 && addChildLive}
+      defaultOpen={childWork.length > 0}
+      testId="subtree-section"
+    >
       {childWork.length === 0 ? (
         <p className="pn-section__empty">No child work under this yet.</p>
       ) : (
@@ -721,7 +825,7 @@ function SubtreeSection({
           {detail.hierarchy.children.items.length} of {total} loaded.
         </p>
       ) : null}
-      {onAddChild && !addChildReason ? (
+      {addChildLive ? (
         <button type="button" className="sb-addchild" onClick={onAddChild}>
           ＋ add child…
         </button>
@@ -734,14 +838,20 @@ function SubtreeSection({
           add child…
         </DisabledIconControl>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }
 
 function SubtreeRow({ child, onOpenEntity }: { child: EntitySummary; onOpenEntity?: (id: string) => void }) {
   const config = getKind(child.kind);
   const value = statusValueOf(child);
-  const done = value != null && closedStatusValues(config).includes(value);
+  /* PHASE 9/C3 — ONE definition of completed, the same one the list tile and
+     the tab row use: `category === 'done'`. It used to scrape every string
+     array out of the kind's `done` TIER filter and test the child's status
+     word against it, which meant three different predicates on three kinds and
+     none of them reachable for a status a space invented. `cancelled` is
+     deliberately NOT struck: it stopped, it did not finish. */
+  const done = child.category === 'done';
   const tone = value == null ? 'idle' : (config.panel.statusPill?.tones[value] ?? config.chip.tones?.[value] ?? 'idle');
   const word = value == null ? null : (config.panel.statusPill?.labels?.[value] ?? value.replace(/_/g, ' '));
 
@@ -761,10 +871,14 @@ function SubtreeRow({ child, onOpenEntity }: { child: EntitySummary; onOpenEntit
 }
 
 // ---------------------------------------------------------------------------
-// RUNS — the two-source region (D6, brief §2.7)
+// RUNS — one always-visible dot-chip cluster, still the two-source region
+// (D6, brief §2.7). Replaces the old LIVE SESSION card row + full-width RUNS
+// rows: live first and tinted, six chips shown, the rest behind `+N more`.
 // ---------------------------------------------------------------------------
 
-function RunsSection({
+const RUN_CHIP_CAP = 6;
+
+function RunsStrip({
   runs,
   livenessOf,
   onOpenEntity,
@@ -773,39 +887,86 @@ function RunsSection({
   livenessOf?: (sessionId: string) => SessionLiveness | undefined;
   onOpenEntity?: (id: string) => void;
 }) {
-  const verdicts = runs.map((run) => (livenessOf ? livenessOf(run.id) : undefined));
-  const measured = verdicts.filter((v) => v != null).length;
-  const live = verdicts.filter((v) => v === 'live').length;
+  // The `+N more` chip expands the cluster IN PLACE, for this entity only
+  // (the strip is keyed by entity id in the body above).
+  const [expanded, setExpanded] = useState(false);
+  const revealed = useEmptySectionsRevealed();
+  useRegisterEmptySection(runs.length === 0);
+
+  const verdictOf = (run: EntitySummary): SessionLiveness | undefined =>
+    livenessOf ? livenessOf(run.id) : undefined;
+  const measured = runs.filter((run) => verdictOf(run) != null).length;
+  const liveCount = runs.filter((run) => verdictOf(run) === 'live').length;
+
+  // Zero runs ⇒ the strip participates in the empty set.
+  if (runs.length === 0 && !revealed) return null;
 
   /*
    * "RUNS · 1 LIVE" is only sayable when somebody actually looked. With no
    * verdicts in hand, "0 LIVE" would claim a measurement that never ran —
-   * the same lie of precision the hollow-value law forbids for viewer counts,
-   * and the one the gate-evidence screenshot preserves in the other direction
-   * ("1 live" above a row reading "not running").
+   * the same lie of precision the hollow-value law forbids for viewer counts.
    */
   const count =
     runs.length === 0
       ? `RUNS · ${runs.length}`
       : measured === 0
         ? `RUNS · ${runs.length} · LIVENESS UNVERIFIED`
-        : `RUNS · ${runs.length} · ${live} LIVE`;
+        : `RUNS · ${runs.length} · ${liveCount} LIVE`;
+
+  // Live first, then most recent (startedAt when the state carries one,
+  // else the record's own createdAt).
+  const stampOf = (run: EntitySummary): string => {
+    const state = run.state as unknown as Record<string, unknown>;
+    if (typeof state.startedAt === 'string') return state.startedAt;
+    const summary = run as unknown as Record<string, unknown>;
+    return typeof summary.createdAt === 'string' ? summary.createdAt : '';
+  };
+  const sorted = [...runs].sort((a, b) => {
+    const rank = (verdictOf(a) === 'live' ? 0 : 1) - (verdictOf(b) === 'live' ? 0 : 1);
+    return rank !== 0 ? rank : stampOf(b).localeCompare(stampOf(a));
+  });
+  const shown = expanded ? sorted : sorted.slice(0, RUN_CHIP_CAP);
+  const overflow = sorted.length - shown.length;
+  const liveShown = shown.filter((run) => verdictOf(run) === 'live');
+  const restShown = shown.filter((run) => verdictOf(run) !== 'live');
 
   return (
-    <section className="sb-section" data-testid="runs-section">
+    <section className="sb-section sb-runs" data-testid="runs-section">
       <Eyebrow faint>{count}</Eyebrow>
       {runs.length === 0 ? (
         <p className="pn-section__empty">No runs recorded against this.</p>
       ) : (
-        runs.map((run, i) => (
-          <RunRow key={run.id} run={run} verdict={verdicts[i]} onOpenEntity={onOpenEntity} />
-        ))
+        <div className="sb-runs__chips">
+          {liveShown.length > 0 ? (
+            /* The MEASURED-LIVE cluster keeps its own testid (it renders only
+               on a live verdict, exactly as the old promoted card did — D6:
+               never off the stored status). `display: contents`, so the chips
+               flow in the one cluster. */
+            <span className="sb-runs__live" data-testid="live-session-section">
+              {liveShown.map((run) => (
+                <RunChip key={run.id} run={run} verdict="live" onOpenEntity={onOpenEntity} />
+              ))}
+            </span>
+          ) : null}
+          {restShown.map((run) => (
+            <RunChip key={run.id} run={run} verdict={verdictOf(run)} onOpenEntity={onOpenEntity} />
+          ))}
+          {overflow > 0 ? (
+            <button
+              type="button"
+              className="sb-runchip sb-runchip--more"
+              onClick={() => setExpanded(true)}
+            >
+              +{overflow} more
+            </button>
+          ) : null}
+        </div>
       )}
     </section>
   );
 }
 
-function RunRow({
+function RunChip({
   run,
   verdict,
   onOpenEntity,
@@ -818,29 +979,44 @@ function RunRow({
   const treatment = verdict != null ? config.list.liveTreatment?.(verdict) : undefined;
   const state = run.state as unknown as Record<string, unknown>;
   const model = typeof state.model === 'string' ? state.model : null;
+  const live = verdict === 'live';
+  const word = treatment ? treatment.shortLabel ?? treatment.label : null;
+  /* The accessible name carries what the narrow chip cannot: title, model and
+     the liveness word — so the model string is never lost to the ellipsis. */
+  const name = [run.title, model, word ?? 'liveness unverified'].filter(Boolean).join(' · ');
 
   return (
-    <button type="button" className="sb-run" data-testid="run-row" onClick={() => onOpenEntity?.(run.id)}>
-      {/* The verdict dot is SOLID. The oracle draws it pulsing, but pulse
-          belongs to the §9.2 activity signal (LiveTreatment.dot, F1/D6) and
-          this body is handed no activity source — an animated dot here would
-          be presenting a second fact nobody measured. */}
-      <span
-        className={`sb-run__dot${treatment?.dot === 'solid' ? ` sb-run__dot--${treatment.tone}` : ' sb-run__dot--none'}`}
-        aria-hidden
-      />
-      <Avatar actorId={run.createdBy.id} provenance={run.createdBy.isAgent ? 'agent' : 'human'} label={run.createdBy.displayName} size={15} src={run.createdBy.avatar ?? null} />
-      <span className="sb-run__name">{run.title}</span>
-      {model ? <span className="sb-run__meta">{model}</span> : null}
-      <span className="sb-run__spacer" />
+    <button
+      type="button"
+      className={live ? 'sb-runchip sb-runchip--live' : 'sb-runchip'}
+      data-testid={live ? 'live-session-card' : 'run-row'}
+      title={name}
+      aria-label={name}
+      onClick={() => onOpenEntity?.(run.id)}
+    >
+      <span className="sb-runchip__top">
+        {/* The verdict dot is SOLID when live and a hollow ring otherwise —
+            pulse belongs to the §9.2 activity signal, which this body is not
+            handed, so an animated dot would present a fact nobody measured. */}
+        <span
+          className={live ? 'sb-runchip__dot sb-run__dot--run' : 'sb-runchip__dot sb-runchip__dot--ring'}
+          aria-hidden
+        />
+        <span className="sb-runchip__title">{run.title}</span>
+      </span>
       {treatment ? (
-        <span className={`sb-word sb-word--${treatment.tone}`} title={treatment.reason ?? treatment.label}>
-          {treatment.shortLabel ?? treatment.label}
+        <span
+          className={`sb-word sb-word--${treatment.tone} sb-runchip__word`}
+          title={treatment.reason ?? treatment.label}
+        >
+          {word}
         </span>
       ) : (
-        <HollowInline caption="No liveness verdict reached this panel for this run — the row states that nothing was measured rather than guessing from the stored status.">
-          — unverified
-        </HollowInline>
+        <span className="sb-runchip__word">
+          <HollowInline caption="No liveness verdict reached this panel for this run — the chip states that nothing was measured rather than guessing from the stored status.">
+            — unverified
+          </HollowInline>
+        </span>
       )}
     </button>
   );
@@ -858,8 +1034,13 @@ function LinkedSection({
   onOpenEntity?: (id: string) => void;
 }) {
   return (
-    <section className="sb-section" data-testid="linked-section">
-      <Eyebrow faint>LINKED · {linked.length}</Eyebrow>
+    <CollapsibleSection
+      id="linked"
+      label="LINKED"
+      count={linked.length}
+      empty={linked.length === 0}
+      testId="linked-section"
+    >
       {linked.length === 0 ? (
         <p className="pn-section__empty">Nothing linked to this yet.</p>
       ) : (
@@ -871,7 +1052,7 @@ function LinkedSection({
           ))}
         </div>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -888,7 +1069,7 @@ function LinkedSection({
  * to the coordinator rather than taken unilaterally.
  */
 const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
-  workStatus: 'workStatus',
+  status: 'status',
   sessionStatus: 'status',
   prState: 'state',
   profileStatus: 'status',
@@ -906,22 +1087,6 @@ function statusValueOf(summary: EntitySummary): string | null {
   if (!field) return null;
   const raw = (summary.state as unknown as Record<string, unknown>)[field];
   return typeof raw === 'string' ? raw : null;
-}
-
-/**
- * The status values that count as DONE for a kind — read off its `done`
- * LIFECYCLE TIER, which since D56 carries a real contract-shaped filter. A
- * kind whose done tier is `unsupported` has no closed values, so none of its
- * children can be struck: the honest answer, and one nobody had to write.
- */
-function closedStatusValues(config: KindConfig): readonly string[] {
-  const done = config.list.lifecycle?.find((tier) => tier.id === 'done');
-  if (!done || done.unsupported) return [];
-  const out: string[] = [];
-  for (const member of Object.values(done.filter as unknown as Record<string, unknown>)) {
-    if (Array.isArray(member) && member.every((v) => typeof v === 'string')) out.push(...(member as string[]));
-  }
-  return out;
 }
 
 /**

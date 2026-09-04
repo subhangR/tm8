@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
 import type { QueryResultRow } from 'pg';
+import { vi } from 'vitest';
 
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 import { loadConfig } from '../../src/http/config.js';
@@ -11,6 +12,34 @@ import {
   migrationFiles,
   type W1ScratchDatabase,
 } from '../db/w1-pg.js';
+
+/**
+ * THE 10-SECOND HOOK, RAISED ONCE FOR EVERY FILE THAT BOOTS THIS HARNESS.
+ *
+ * `startW3PublicServer` calls `database.apply(migrationFiles())`, and
+ * `w1-pg.ts`'s `apply` runs `spawnSync(psql)` ONCE PER MIGRATION FILE. The cost
+ * of a `beforeAll` here is therefore roughly (number of migrations × process
+ * spawn), and it grows by one spawn every time anybody adds a migration —
+ * measured at ~12.7s for 143 files on a dev box.
+ *
+ * vitest's `hookTimeout` default is 10s, and none of the ~34 files that import
+ * this harness ever raised it. That is why they abort as `Failed Suites` with
+ * "Hook timed out in 10000ms" and ZERO failing assertions — a shape that reads
+ * like a flake, recurs under load, and gets worse with each migration. It was
+ * already firing on `main` (g06) before phase 5's migration 152 added the 143rd
+ * spawn and pushed more of the family over.
+ *
+ * The W5 lane hit exactly this and documented it in as many words —
+ * "hookTimeout 10s -> an UNNAMED file-level abort" (`sweep.test.ts`,
+ * `activate.test.ts`, `conditional-501.test.ts`) — and fixed it with this same
+ * `vi.setConfig`. Those files each set it themselves; setting it HERE covers
+ * every current and future importer from one place, because the thing being
+ * waited on belongs to the harness rather than to any one test.
+ *
+ * This raises a CEILING, it does not slow anything down: a hook that finishes
+ * in two seconds still finishes in two seconds.
+ */
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
 export interface PublicJsonResponse<T = unknown> {
   readonly status: number;

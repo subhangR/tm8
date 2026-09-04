@@ -24,7 +24,10 @@ export function SpaceProfileSection({ space }: SpaceProfileSectionProps) {
         <Pill tone="neutral" dot={false}>{space.memberCount} members</Pill>
         {space.githubRepo && <span className="t-code">{space.githubRepo}</span>}
         <Timestamp className="t-mono cv2-set__rowvalues" at={space.createdAt} prefix="created" />
-        {space.unreadTotal > 0 && <Pill tone="brand" dot={false}>{space.unreadTotal} unread</Pill>}
+        {/* This one DRAWS the number, so null must not become 0: "0 unread" is
+            a claim, and an unmeasured count has none to make. No pill. */}
+        {space.unreadTotal !== null && space.unreadTotal > 0
+          && <Pill tone="brand" dot={false}>{space.unreadTotal} unread</Pill>}
       </div>
     </section>
   );

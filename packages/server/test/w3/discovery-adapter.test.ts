@@ -22,17 +22,24 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {135/133/134/132}: the four credentials.* rows.
         // -> {137/135/136/134}: projects.files.list/attach.
         // -> {138/136/137/135} (2026-08-09, merge): execution.dispatch.
-        total: 163,
-        v1: 161,
+        // -> {166/164/165/163} (2026-08-16, W4/132): spaces.taskWorkflows.*.
+        // -> {169/167/168/166} (141): the three account-lifecycle ops.
+        // -> {172/170/171/169} (148): spaces.workflows.*.
+        // -> {197/195/195/193} (177): the 25 containers.* rows.
+        // NOTE `http` and `ws` are MOUNT counts: 24 of the 25 are HTTP, and
+        // the 25th (`containers.stream`) re-declares `events.subscribe`'s
+        // socket, so it adds a discoverable NAME and no mount — `ws` stays 1.
+        total: 197,
+        v1: 195,
         reserved: 2,
-        http: 162,
+        http: 195,
         ws: 1,
-        registerableV1Http: 160,
+        registerableV1Http: 193,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
         { noun: 'project', operationCount: 19 },
-        { noun: 'space', operationCount: 24 }, // +1 (118): spaces.members.updateRole
+        { noun: 'space', operationCount: 30 }, // +3 (148): spaces.workflows.*
       ]),
     });
     expect(JSON.stringify(response.result)).not.toContain('/v2/');

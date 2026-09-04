@@ -325,6 +325,38 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
   },
 
   /**
+   * `StartChatInputSchema` refines the PAIRING of `workdirMode` and
+   * `projectId`: `project` requires an id, `scratch` refuses one. `projectId`
+   * is optional in the underlying shape, so the minimal walk omits it while
+   * taking the first enum member (`project`) for the required mode — which is
+   * exactly the combination the refinement rejects.
+   *
+   * `scratch` is chosen here rather than a `project` + id pair because it is
+   * the arm that needs no other row to exist: a project id the sweep invented
+   * would be refused by the RPC's space-link check for a reason that has
+   * nothing to do with the surface being swept.
+   */
+  'chat.start': {
+    clientMutationId: 'w5-surface-sweep-cmid',
+    spaceId: ABSENT_ID,
+    teammateId: ABSENT_ID,
+    // 176: the opening turn rides the same command, so a body is required.
+    body: 'w5surface',
+    // DELIBERATELY NOT A LAUNCHABLE MODEL. `model` is only `z.string().min(1)`
+    // in the schema, so any string satisfies the gate — but the handler's FIRST
+    // check is `launchModel(input.model)`, and `HANDLER_AUTHORED_400` in
+    // sweep.test.ts pins this operation as refusing there. A real model id
+    // passes that check and the operation answers 503 `upstream_unavailable`
+    // instead (no chat runtime is composed in the sweep harness), silently
+    // moving this row out of the 400 pin and reducing what the sweep proves.
+    // The override exists to satisfy a NEW required field, not to change which
+    // refusal this operation is on record as producing.
+    model: 'w5-surface-not-a-launch-model',
+    mode: 'ask',
+    workdirMode: 'scratch',
+  },
+
+  /**
    * `ServerConnectionBaseUrlSchema` superRefines the STRING into a URL and
    * requires a bare origin — no path, query, credentials or fragment. A shape
    * walk can produce "a valid URL string" but cannot see the origin-only

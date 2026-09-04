@@ -37,6 +37,49 @@ import {
 } from '../entity-read.js';
 
 /**
+ * Hydrate envelope rows for ids that are ALREADY KNOWN, preserving the order
+ * they were given in.
+ *
+ * This exists because of how `ENTITY_FROM` behaves under a non-`entities`
+ * predicate, and the difference is the whole reason a heavy thread opens at
+ * all. `ENTITY_FROM` left-joins ~25 detail tables. Filter it on `e.id` and the
+ * planner drives the chain from a single index lookup. Filter it on `msg`
+ * instead — a table INSIDE the chain — and it has no id to drive from, so it
+ * rebuilds the entire chain once per candidate row.
+ *
+ * Measured on prod (71-message thread, real RLS, real identity claims):
+ *
+ *   - filtering on `msg`: `Seq Scan on entities` at `loops=71`, the join
+ *     `msg.entity_id = e.id` degraded to a `Join Filter` discarding 588,093
+ *     rows, 5,880,086 shared buffer hits, **37,451 ms to return two rows**.
+ *   - filtering on `e.id = any(...)`: bitmap scan, 4,080 buffer hits, **31 ms**.
+ *
+ * Two things make the bad plan worse than it looks. The RLS predicates
+ * (`internal.entity_readable`, `internal.entity_row_visible`) are
+ * SECURITY DEFINER and therefore CANNOT be inlined, so the planner cannot
+ * estimate their selectivity — it guessed one row where there were 71 and
+ * concluded the rescan was free. And a `Sort` lands above the join, so `limit`
+ * discards nothing: `limit=1` and `limit=100` both took ~30 s, which is why
+ * this never looked like a payload problem and never was one.
+ */
+export async function hydrateEntityRows(
+  q: Querier,
+  ids: readonly string[],
+): Promise<EntityRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await q.query<EntityRow>(
+    `select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = any($1::uuid[])`,
+    [[...ids]],
+  );
+  // Postgres does not promise `any(...)` comes back in array order, and the
+  // caller's order IS the thread order — it came from the keyset read.
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return ids
+    .map((id) => byId.get(id))
+    .filter((row): row is EntityRow => row !== undefined);
+}
+
+/**
  * A `MessageView` is an `EntitySummary` plus the message-specific content and
  * a reply count — so it comes out of the same assembler as everything else and
  * then gains its message parts. Nothing about a message is derived twice.
@@ -101,6 +144,24 @@ export async function toMessageViews(
       order by message_id, seq`,
     [rows.map((r) => r.id)],
   );
+  /*
+   * The wire marker for a claimed chat turn. `createAgentMessage`
+   * (chat/orchestrator.ts) must give the agent's message a body at claim time
+   * — `messages.body` is CHECK-constrained non-empty — so it writes the
+   * 'Agent turn in progress.' placeholder, and `complete_chat_turn` replaces
+   * it. Until then that body is a claim, not content, and clients used to
+   * recognise it by string-matching the sentence. Projecting the turn binding
+   * here lets them suppress by identity instead.
+   */
+  const inFlightRows = await q.query<{ agent_message_id: string }>(
+    `select agent_message_id
+       from public.chat_turns
+      where agent_message_id = any($1::uuid[])
+        and state in ('queued', 'running')`,
+    [rows.map((r) => r.id)],
+  );
+  const inFlight = new Set(inFlightRows.map((r) => r.agent_message_id));
+
   const parts = new Map<string, MessagePart[]>();
   for (const row of partRows) {
     const part = MessagePartSchema.parse({
@@ -143,6 +204,7 @@ export async function toMessageViews(
         .map((id) => replyActors.get(id))
         .filter((actor): actor is NonNullable<typeof actor> => actor !== undefined),
       ...(messageParts ? { parts: messageParts } : {}),
+      ...(inFlight.has(row.id) ? { turnInFlight: true } : {}),
     });
   }
   return views;
@@ -185,13 +247,18 @@ async function embedBoundedReplies(
     .map((root) => root.id);
   if (eligibleRootIds.length === 0) return [...roots];
 
-  const rows = await q.query<EntityRow>(
-    `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
+  // Ids first, envelopes second — see `hydrateEntityRows`. This read is the
+  // one the Discussion tab pays on every anchor open, so it carried the same
+  // per-row rescan of `entities` as the page read above.
+  const keyRows = await q.query<{ id: string }>(
+    `select msg.entity_id as id
+       from public.messages msg
       where msg.anchor_id = $1
         and msg.root_message_id = any($2::uuid[])
-      order by msg.root_message_id asc, msg.created_at asc, e.id asc`,
+      order by msg.root_message_id asc, msg.created_at asc, msg.entity_id asc`,
     [anchorId, eligibleRootIds],
   );
+  const rows = await hydrateEntityRows(q, keyRows.map((row) => row.id));
   const replies = await toMessageViews(q, rows, viewerIdentityId);
   const byRoot = new Map<string, MessageView[]>();
   for (const reply of replies) {
@@ -210,9 +277,13 @@ async function embedBoundedReplies(
   });
 }
 
-function cursorFingerprint(anchorId: string, rootMessageId: string | null): string {
+function cursorFingerprint(
+  anchorId: string,
+  rootMessageId: string | null,
+  order: 'oldest' | 'newest',
+): string {
   return createHash('sha256')
-    .update(JSON.stringify({ operation: 'messages.list', anchorId, rootMessageId }))
+    .update(JSON.stringify({ operation: 'messages.list', anchorId, rootMessageId, order }))
     .digest('hex');
 }
 
@@ -231,12 +302,17 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
     const anchorId = requireUuidParam(ctx, 'anchorId');
     const limit = limitOf(ctx.query.get('limit'));
     const cursor = ctx.query.get('cursor');
+    const rawOrder = ctx.query.get('order');
+    if (rawOrder !== null && rawOrder !== 'oldest' && rawOrder !== 'newest') {
+      throw new CollabError('invalid_input', 'order must be oldest or newest');
+    }
+    const order: 'oldest' | 'newest' = rawOrder ?? 'oldest';
     // `?rootMessageId=` switches from "thread roots" to "replies under a root".
     const rootMessageId = ctx.query.get('rootMessageId');
     if (rootMessageId && !/^[0-9a-f-]{36}$/i.test(rootMessageId)) {
       throw new CollabError('not_found', `no such rootMessageId: ${rootMessageId}`);
     }
-    const fingerprint = cursorFingerprint(anchorId, rootMessageId);
+    const fingerprint = cursorFingerprint(anchorId, rootMessageId, order);
 
     return deps.db.tx({
       ...claimsFor(owner, ctx),
@@ -260,11 +336,15 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
           throw new CollabError('invalid_cursor', 'cursor does not match this message thread');
         }
         params.push(String(k[1]), String(k[2]));
-        keyset = `and (msg.created_at, e.id) > ($${params.length - 1}::timestamptz, $${params.length}::uuid)`;
+        const comparator = order === 'newest' ? '<' : '>';
+        // `msg.entity_id` rather than `e.id`: identical value — the join is
+        // `msg.entity_id = e.id` — but the keyset now runs against `messages`
+        // alone, before `entities` is touched at all.
+        keyset = `and (msg.created_at, msg.entity_id) ${comparator} ($${params.length - 1}::timestamptz, $${params.length}::uuid)`;
       }
 
-      // Threads read oldest-first: a conversation is read in the order it
-      // happened, unlike a feed.
+      // Threads default to oldest-first, while callers polling a busy anchor
+      // can start at the newest edge without walking the whole history.
       //
       // `msg.created_at` is carried as TEXT deliberately, and it is
       // load-bearing for pagination in two independent ways. ENTITY_COLUMNS selects
@@ -282,22 +362,44 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
       // differently depending on server config and carries a variable number of
       // fractional digits. This is now the one idiom every cursor in the
       // codebase uses, which is what lets the truncation detector stay simple.
-      type MessageKeysetRow = EntityRow & { message_created_at: string };
-      const rows = await q.query<MessageKeysetRow>(
-        `select ${ENTITY_COLUMNS}, ${MICROS('msg.created_at')} as message_created_at ${ENTITY_FROM}
+      //
+      // KEYSET FIRST, ENVELOPES SECOND. This selects from `public.messages`
+      // alone: no `ENTITY_FROM`, so no 25-table join chain to rebuild per
+      // candidate row, and `messages_root_created_idx`
+      // `(root_message_id, created_at, entity_id)` supplies this exact ordering
+      // from the index — which retires the `Sort` that used to sit above the
+      // join and made `limit` decorative. `limit` is now load-bearing: a
+      // one-message page reads one message. See `hydrateEntityRows` for the
+      // measurements.
+      //
+      // Splitting the read does not widen what a viewer can see. RLS applies to
+      // both halves and the conjunction is unchanged: `messages_select` demands
+      // `entity_readable(entity_id) and entity_readable(anchor_id)` here, and
+      // `entities_select` demands `entity_row_visible(...)` on the hydrate.
+      // `entity_readable` is the STRICTER of the two — it additionally requires
+      // `deleted_at is null` — so the hydrate can never drop a row this read
+      // admitted, and the page cannot come back short.
+      type MessageKeyRow = { id: string; message_created_at: string };
+      const keyRows = await q.query<MessageKeyRow>(
+        `select msg.entity_id as id, ${MICROS('msg.created_at')} as message_created_at
+           from public.messages msg
           where msg.anchor_id = $1 and ${scope} ${keyset}
-          order by msg.created_at asc, e.id asc
+          order by msg.created_at ${order === 'newest' ? 'desc' : 'asc'}, msg.entity_id ${order === 'newest' ? 'desc' : 'asc'}
           limit ${limit + 1}`,
         params,
       );
 
-      const hasMore = rows.length > limit;
-      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const hasMore = keyRows.length > limit;
+      const pageKeys = hasMore ? keyRows.slice(0, limit) : keyRows;
+      const pageRows = await hydrateEntityRows(q, pageKeys.map((row) => row.id));
       const listed = await toMessageViews(q, pageRows, viewerIdentityId);
       const items = rootMessageId
         ? listed
         : await embedBoundedReplies(q, anchorId, listed, viewerIdentityId);
-      const last = pageRows[pageRows.length - 1];
+      // The cursor comes from the KEYSET row, not the hydrated envelope: only
+      // the keyset read carries `msg.created_at`, and it is the column the next
+      // page's comparator is written against.
+      const last = pageKeys[pageKeys.length - 1];
 
       const page: Page<MessageView> = {
         items,

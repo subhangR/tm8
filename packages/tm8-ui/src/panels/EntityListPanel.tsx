@@ -17,7 +17,7 @@ import type {
   KindConfig,
   LaunchCapacity,
   LaunchProjectOption,
-  LifecycleTier,
+  StatusCategoryTab,
   ListPageState,
   ListRowFacts,
   LiveTreatment,
@@ -39,13 +39,24 @@ import {
   REASONS,
   toRowFacts,
   VIEWER_ACTOR,
+  allKinds,
   collectionKinds,
   countLabel,
   getKind,
   needsViewer,
   resolveAction,
+  workflowRefusalText,
+  workflowTypeOf,
+  workflowVocabularyOf,
 } from '../domain';
-import { Avatar, Timestamp, type PillTone } from '../kit';
+import {
+  Avatar,
+  Timestamp,
+  ancestorPath,
+  usePanelChoice,
+  useTreeDisclosure,
+  type PillTone,
+} from '../kit';
 import {
   CheckingPermission,
   DisabledAction,
@@ -54,11 +65,21 @@ import {
   toReason,
   type UnavailableReason,
 } from './honesty/DisabledWithReason';
+import { ReasonNote } from './honesty/ReasonNote';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
-import { EntityControlStrip, RowAction, RowMembershipControl, type ControlHost } from './controls/EntityControls';
+import {
+  EntityControlStrip,
+  RowAction,
+  RowActionCluster,
+  RowMembershipControl,
+  RowStateControl,
+  type ControlHost,
+} from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
-import { MaestroTaskTile } from './list/MaestroTaskTile';
+import { CategoryGlyph } from './list/CategoryGlyph';
+import { MobileSheet, useMobileSurface } from '../mobile';
+import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
@@ -68,11 +89,41 @@ import {
   type PulseSegment,
   type SessionPulseKind,
 } from './list/message-pulse';
+import { relatedOfKind } from './list/related';
+import { RelatedGroup } from './list/RelatedGroup';
 import type { MessagePulse } from './list/useMessagePulses';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 import { newLaunchMutationId } from '../domain/launch';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
+
+/**
+ * The four narrowing controls, named once.
+ *
+ * A UNION AND NOT FOUR BOOLEANS: one popover at a time is the rule the filter
+ * bar has always enforced, and four independent flags would let the sort menu
+ * and a filter picker sit open over each other. On the phone each of these is a
+ * bottom sheet, where two at once is not a cosmetic problem but two scrims.
+ */
+export type ListPicker = 'filters' | 'people' | 'sets' | 'sort';
+
+/**
+ * The live-session kind for the tile's LEADING relation chip, selected by
+ * CAPABILITY (the one kind with a `liveTreatment`), never by name — the same
+ * §15.2 rule WorkspaceView uses for its empty-centre roster.
+ */
+const SESSION_CHIP_KIND = allKinds().find((kind) => kind.list.liveTreatment != null)?.kind;
+
+/**
+ * A relation chip may expand only into a real collection kind — registry
+ * DATA, so the message tallies (whose `human-message` / `agent-message`
+ * badge kinds resolve to no collection) stay counts, exactly the v1 ruling.
+ */
+const EXPANDABLE_KINDS: ReadonlySet<string> = new Set(
+  collectionKinds().map((config) => config.kind),
+);
+const isExpandableKind = (kind: string): boolean => EXPANDABLE_KINDS.has(kind);
+const NO_LINKED: readonly EntitySummary[] = Object.freeze([]);
 
 /**
  * EntityListPanel — the other universal primitive (L3).
@@ -158,6 +209,14 @@ export interface EntityListPanelProps {
   onNeedDetail?: (entityId: string) => void;
   /** Real `working_on` targets for session tiles, projected by the shell. */
   linkedTasksOf?: (id: string) => readonly EntitySummary[];
+  /**
+   * The inverse projection: `working_on` SOURCES per target, from the same
+   * gate-graph edges. This is what lets a task tile carry its sessions chip
+   * BEFORE anyone hydrates the row's connections — the workspace already
+   * holds these edges, so the count is free and live (user ruling
+   * 2026-08-16: sessions ride the tile, leading position).
+   */
+  linkedSessionsOf?: (id: string) => readonly EntitySummary[];
   /** Tracked PR facts from the graph/entity projection, live by entity id. */
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
 
@@ -167,12 +226,34 @@ export interface EntityListPanelProps {
 
   /**
    * Doc 06 §1.1 — the mode-wiring fix. The ROUTE holds the layout mode and the
-   * shell passes it down; local state remains only the uncontrolled fallback
-   * for hosts that do not route it. Without this pair the codec parsed
-   * `?mode=` and the value died before reaching the panel.
+   * shell passes it down; absent, the kind's registry default applies. Without
+   * this the codec parsed `?mode=` and the value died before reaching the
+   * panel.
+   *
+   * READ-ONLY as of the switcher removal (2026-08-19): the panel no longer
+   * offers an in-header control that writes it back, so there is no `onMode`
+   * counterpart. `?mode=board` still renders a board — the address is now the
+   * only way to ask for one.
    */
   mode?: CollectionMode;
-  onMode?: (mode: CollectionMode) => void;
+
+  /**
+   * WHO DRAWS THE KIND CELL — `'panel'` (the default, and every surface that
+   * mounts this panel alone) or `'host'`.
+   *
+   * Home is the one surface that already had one. Its root header draws
+   * `[Chats ＋][◫ Tasks ＋ ▾]`, and hosting this panel underneath drew
+   * `◫ Tasks ▾` again directly below it: the same glyph, the same word, and
+   * BOTH carets opening a kind menu over the same selection. ChatHomeScreen's
+   * own comment already names this hazard for the header-vs-rail pair ("one
+   * selection, two views of it"); the hosted panel was a third view of it that
+   * arrived with the host, and nothing in either component could see the
+   * duplicate because each is correct alone.
+   *
+   * `'host'` suppresses the selector ROW. The kind MENU needs no relocation —
+   * the host's caret already is one.
+   */
+  selectorSlot?: 'panel' | 'host';
 
   /**
    * Board mode's data source (A2). The shell backs it with the SAME
@@ -183,6 +264,40 @@ export interface EntityListPanelProps {
    * answer is never shown before the question returns (§8.2).
    */
   boardFor?: (filter: QueryFilter, groupBy: GroupByKey) => BoardSnapshot | undefined;
+
+  /**
+   * W3 — the board's GROUPING choice, wired exactly like `mode`: the route
+   * holds it (`q.groupBy`), the shell passes the pair down, and local state
+   * remains the uncontrolled fallback seeded from the registry's
+   * `board.groupBy` default. The choice is among `status`, `assignee`,
+   * and `axis:<name>` for each axis the space defines (`taskAxes`).
+   */
+  groupBy?: GroupByKey;
+  onGroupBy?: (groupBy: GroupByKey) => void;
+
+  /**
+   * WHICH NARROWING CONTROL IS OPEN — held by the HOST when the host has
+   * another way to open one, and locally otherwise.
+   *
+   * On the phone the filter bar is not on screen (`mobile-screens.css` §9): its
+   * four triggers moved into the floating action button, which `EntityView`
+   * owns because a FAB is a property of the SCREEN and not of a panel that also
+   * renders inside a workspace column. So the button that opens `filter` and
+   * the popovers that ARE `filter` sit in two different components, and one of
+   * them has to hold the choice.
+   *
+   * It is held HERE and lifted UP rather than duplicated: the option lists, the
+   * selections and the toggles are all this panel's state, so a second copy of
+   * "which one is open" in `EntityView` could disagree with the sheet that is
+   * actually mounted — and the disagreement would look like a sheet that will
+   * not close.
+   *
+   * Absent ⇒ this host offers no second opener and the panel owns the choice
+   * itself, which is every desktop mount. Same shape as `mode` / `groupBy`
+   * above, for the same reason.
+   */
+  picker?: ListPicker | null;
+  onPicker?: (picker: ListPicker | null) => void;
 
   /**
    * Focus handle for the D36 `list.search` command (`f`). The keyboard
@@ -209,6 +324,8 @@ export interface EntityListPanelProps {
   wiredActions?: readonly ActionRef[];
   /** Session-row close command; separate from generic header/list actions. */
   onTerminate?: (entityId: string) => void;
+  /** The other half of that row's tail slot — see `ControlHost.onResume`. */
+  onResume?: (entityId: string) => void;
   onCreate?: () => void;
   /** Authoring 7a: the host's REAL create control (NewTaskControl). */
   createSlot?: React.ReactNode;
@@ -266,6 +383,14 @@ export interface EntityListPanelProps {
   onArchive?: (ref: ActionRef, entityId: string) => void;
 
   /**
+   * The row cluster's tick — a dedicated prop for the same reason `onArchive`
+   * and `onTerminate` are. See `ControlHost.onComplete`: routed through the
+   * general `onAction` it reached the session-START switch, drew live, and was
+   * dropped on the floor. Absent ⇒ the tick renders its not-wired refusal.
+   */
+  onComplete?: (entityId: string) => void;
+
+  /**
    * Commit a value chosen in an expanded row's `valueControls` picker.
    *
    * ITS OWN PROP, NOT `onSetState`, because the two are not the same write. A
@@ -281,8 +406,41 @@ export interface EntityListPanelProps {
    * the one `ValueControl` is what stops them disagreeing.
    *
    * Absent ⇒ the picker renders DISABLED WITH REASON, never enabled-inert.
+   *
+   * `null` clears, and only a `dateControls` field ever sends one — see
+   * `ControlHost.onSetValue`, which this must keep satisfying structurally.
    */
-  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+  onSetValue?: (entityId: string, source: string, next: string | null, label: string) => void;
+
+  /**
+   * Set or clear (`null`) ONE axis of an expanded row's `state.axes` record.
+   * Its own prop for the same reason `onSetValue` is: the write is a
+   * version-guarded content patch, and additionally a MERGE — the server
+   * replaces the whole axes jsonb, so the host folds this one change into the
+   * stored record. See `ControlHost.onSetAxis`.
+   */
+  onSetAxis?: (
+    entityId: string,
+    axisName: string,
+    next: string | null,
+    label: string,
+    opts?: { notify?: boolean },
+  ) => void | Promise<SetStateOutcome>;
+
+  /**
+   * The space's axis registry — per-space DATA from `spaceSettings().taskAxes`,
+   * hydrated by the host. The axis pickers draw one control per entry for
+   * kinds whose registry declares `axisControls`; empty draws none.
+   */
+  taskAxes?: readonly import('@tm8/contract').TaskAxis[];
+
+  /**
+   * The space's workflow registry (W4, 132) — per-space DATA from
+   * `spaceSettings().taskWorkflows`, hydrated by the host beside `taskAxes`.
+   * The state control narrows its options with it, and the STATUS board
+   * pre-flights a drop against it; the database trigger stays the real gate.
+   */
+  taskWorkflows?: readonly import('@tm8/contract').TaskWorkflow[];
 
   /**
    * Add or remove ONE assignment on an expanded row.
@@ -350,7 +508,59 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const config = getKind(props.kind);
   const list = config.list;
 
-  const [tierId, setTierId] = useState<string | null>(list.lifecycle?.[0]?.id ?? null);
+  /**
+   * The open category tab, REMEMBERED PER KIND (user ruling, task 01a02470:
+   * "when i switch back from entity to entity, it always falls back to TO DO
+   * status filter which is annoying… remembering entity level view selection").
+   *
+   * PER KIND, NOT PER SURFACE AND NOT GLOBAL. Home's column A, the workspace
+   * list and an entity screen's list are three places to look at one kind's
+   * rows, and the tab is a statement about the rows — the same scoping
+   * `useTreeDisclosure` uses one screen down (`list:${kind}`), for the same
+   * reason. Global would be worse than the reset it replaces: picking Done on
+   * Sessions would land you in Done on Tasks, which is not what was asked.
+   *
+   * WHAT THIS MUST NOT UNDO (sub-doc 6, "known bug to fix while in here"): the
+   * id used to be seeded once from the MOUNTING kind's first tab while
+   * `onKindChange` swapped `props.kind` under it, so Tasks' tab silently became
+   * Docs' tab. That is a bug about the id being resolved against the WRONG
+   * kind's vocabulary, not about remembering, and the per-kind storage key plus
+   * `usePanelChoice`'s required `valid` predicate keep it fixed: what comes
+   * back is always one of THIS kind's tabs or this kind's default. The hook is
+   * key-aware for the same reason `usePanelWidth` is — a kind switch on a
+   * mounted panel re-reads during render, so no wrong tab is ever painted.
+   */
+  /**
+   * THE LANDING TAB IS REGISTRY DATA (`list.defaultCategory`), NOT `[0]`.
+   *
+   * `[0]` is `to_do` for every kind, because `CATEGORY_TABS` is one shared
+   * array — and that array is right. What was wrong was reading a POSITION in
+   * it as "where this kind's rows are". For an AUTHORED kind the two coincide;
+   * for an OBSERVED one they do not, and work_session is the case that proves
+   * it: migration 155 maps `running`/`idle` to `in_progress` and only the
+   * sub-second `spawning` transient to `to_do`, so the sessions list opened on
+   * a band a live session is structurally incapable of being in. Measured on
+   * the launch node: 477 sessions, zero of them in To Do.
+   *
+   * Resolved against the kind's OWN `categories` so a stale or mistaken
+   * declaration degrades to the first tab rather than to no tab at all — the
+   * same posture `usePanelChoice`'s `valid` predicate takes for the persisted
+   * value on the line below.
+   */
+  const declaredDefault = list.defaultCategory;
+  const defaultTabId =
+    (declaredDefault && list.categories?.some((tab) => tab.id === declaredDefault)
+      ? declaredDefault
+      : list.categories?.[0]?.id) ?? '';
+  const isCategoryTab = useCallback(
+    (candidate: string) => (list.categories ?? []).some((tab) => tab.id === candidate),
+    [list.categories],
+  );
+  const [categoryTabId, setCategoryTabId] = usePanelChoice(
+    `list-category.${config.kind}`,
+    defaultTabId,
+    isCategoryTab,
+  );
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set((list.sections ?? []).filter((s) => s.collapsedByDefault).map((s) => s.id)),
   );
@@ -363,14 +573,42 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const [selectedPeople, setSelectedPeople] = useState<readonly string[]>([]);
   const [sortKey, setSortKey] = useState(list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key);
   const [query, setQuery] = useState('');
-  // §1.1: route-held when the host passes the pair; local only as the
-  // uncontrolled fallback. `props.mode` null-ish means "the route says
-  // nothing", which falls through to local state, which seeds from registry.
-  const [localMode, setLocalMode] = useState<CollectionMode>(config.defaultMode);
-  const mode = props.mode ?? localMode;
-  const setMode = props.onMode ?? setLocalMode;
+  // §1.1: route-held when the host passes it. `props.mode` null-ish means "the
+  // route says nothing", which reads the registry default. There is no local
+  // state behind it any more — with the switcher gone nothing inside the panel
+  // can change the mode, so a second copy of it could only drift.
+  const mode = props.mode ?? config.defaultMode;
+  /* W3 — same §1.1 shape for the board's grouping: route-held when the host
+     passes the pair, local fallback otherwise, seeded from the registry
+     DEFAULT (`board.groupBy` stays the seed, no longer the pin). */
+  const [localGroupBy, setLocalGroupBy] = useState<GroupByKey | null>(null);
+  const groupBy = props.groupBy ?? localGroupBy ?? list.board?.groupBy ?? 'status';
+  const setGroupBy = props.onGroupBy ?? setLocalGroupBy;
 
-  const activeTier = list.lifecycle?.find((t) => t.id === tierId) ?? null;
+  /* The open narrowing control — see `picker` on the props. `!== undefined`
+     rather than `??` because `null` is a MEANINGFUL host answer here ("nothing
+     is open"), and `??` would fall through it to the local copy on every close. */
+  const [localPicker, setLocalPicker] = useState<ListPicker | null>(null);
+  const picker = props.picker !== undefined ? props.picker : localPicker;
+  const setPicker = props.onPicker ?? setLocalPicker;
+
+  /**
+   * The open tab — AND `null` IN BOARD MODE, deliberately.
+   *
+   * A board's COLUMNS are a partition of the status axis. So is the tab row.
+   * Two controls for one axis is the defect that made the retired `Current` /
+   * `Completed` sections wrong, and on a board it is worse than cosmetic: with
+   * the tabs applied, the To Do board holds only the to_do columns, so
+   * DRAGGING A CARD FROM To Do TO In Progress — the single most-performed
+   * kanban gesture — has no target to land on.
+   *
+   * It was survivable while the tabs were `Open · Done · Archived`, because
+   * `open` spanned five statuses and the board's whole in-flight vocabulary
+   * fitted inside one tab. The closed four split that tab in half, and the
+   * gesture with it. The board owns the axis while it is on screen; `CategoryTabs`
+   * is not rendered, so nothing draws a control that is not in effect.
+   */
+  const activeTab = mode === 'board' ? null : (list.categories?.find((t) => t.id === categoryTabId) ?? null);
   const members = props.members ?? EMPTY_MEMBERS;
 
   /**
@@ -411,17 +649,20 @@ export function EntityListPanel(props: EntityListPanelProps) {
   }, [members]);
 
   /**
-   * Every tier's count, computed ONCE per render and shared by the three
+   * Every tab's count, computed ONCE per render and shared by the three
    * surfaces that show it (tabs, footer, selector total). They were three
    * calls to the same function; with paging state joined in it is now enough
    * work to be worth not tripling, and sharing also makes it structurally
    * impossible for the tab and the footer to disagree.
    */
-  const tierCounts = (list.lifecycle ?? []).map((tier) => ({
-    tier,
-    ...tierCount(props, config, tier),
+  const tabCounts = (list.categories ?? []).map((tab) => ({
+    tab,
+    ...tabCount(props, config, tab),
   }));
-  const anyTierTruncated = tierCounts.some((c) => c.label.endsWith('+'));
+  /* The selector total's `+` — carried only when a tab's number is still the
+     loaded length rather than the server's. Once every tab reports an exact
+     total the sum IS exact, and the hedge disappears on its own. */
+  const anyTabTruncated = tabCounts.some((c) => !c.exact && c.label.endsWith('+'));
 
   return (
     <section
@@ -430,18 +671,22 @@ export function EntityListPanel(props: EntityListPanelProps) {
       data-kind={config.kind}
       aria-label={config.labelPlural}
     >
-      <KindSelector
-        config={config}
-        total={
-          list.lifecycle
-            ? `${tierCounts.reduce((n, c) => n + c.n, 0)}${anyTierTruncated ? '+' : ''}`
-            : undefined
-        }
-        liveCount={liveCountFor(props, config)}
-        onKindChange={props.onKindChange}
-        mode={mode}
-        onMode={setMode}
-      />
+      {/* The host's own kind cell replaces this row when it declares one —
+          see `selectorSlot`. The row is not merely hidden: its live control
+          (the kind menu) exists up there instead, which is why the prop names
+          an owner rather than reading `hideHeader`. */}
+      {props.selectorSlot === 'host' ? null : (
+        <KindSelector
+          config={config}
+          total={
+            list.categories
+              ? `${tabCounts.reduce((n, c) => n + c.n, 0)}${anyTabTruncated ? '+' : ''}`
+              : undefined
+          }
+          liveCount={liveCountFor(props, config, activeTab)}
+          onKindChange={props.onKindChange}
+        />
+      )}
 
       <HeaderActions
         config={config}
@@ -449,6 +694,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         onCreate={props.onCreate}
         createSlot={props.createSlot}
         onAction={props.onAction}
+        hostOwnsBirth={props.selectorSlot === 'host'}
         {...(props.wiredActions ? { wiredActions: props.wiredActions } : {})}
       />
 
@@ -459,17 +705,23 @@ export function EntityListPanel(props: EntityListPanelProps) {
         inputRef={props.searchInputRef}
       />
 
-      <TierTabs
-        tiers={list.lifecycle}
-        activeTierId={tierId}
-        onTier={setTierId}
-        tierLabel={(tier: LifecycleTier) =>
-          tierCounts.find((c) => c.tier.id === tier.id)?.label ?? '0'
-        }
-      />
+      {/* Hidden in board mode — the columns ARE this partition. See
+          `activeTab`. */}
+      {mode === 'board' ? null : (
+        <CategoryTabs
+          tabs={list.categories}
+          activeTabId={categoryTabId}
+          onTab={setCategoryTabId}
+          tabLabel={(tab: StatusCategoryTab) =>
+            tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
+          }
+        />
+      )}
 
       <FilterRow
         config={config}
+        picker={picker}
+        onPicker={setPicker}
         selected={selected}
         onToggleOption={(specId, optionId, multi) =>
           setSelected((prev) => {
@@ -486,12 +738,11 @@ export function EntityListPanel(props: EntityListPanelProps) {
         sortKey={sortKey}
         onSort={setSortKey}
         viewerActorId={props.ctx.viewerActorId}
-        tiers={list.lifecycle}
-        activeTierId={tierId}
-        onTier={setTierId}
-        tierLabel={(tier: LifecycleTier) =>
-          tierCounts.find((c) => c.tier.id === tier.id)?.label ?? '0'
-        }
+        /* THE FOUR TAB PROPS ARE GONE (sub-doc 6, "dead wiring"). `FilterRow`
+           was handed `tabs` / `activeTabId` / `onTab` / `tabLabel` and never
+           read one of them — the tab row is `CategoryTabs`, a separate
+           component one element up, and has been since tabs got their own
+           row. Four props that compute a count nobody renders. */
         compact={props.compact}
         people={members.length > 1 ? members : []}
         selectedPeople={selectedPeople}
@@ -523,12 +774,14 @@ export function EntityListPanel(props: EntityListPanelProps) {
           <BoardBody
             props={props}
             config={config}
-            tier={activeTier}
-            onTier={setTierId}
+            tab={activeTab}
+            onTab={setCategoryTabId}
+            groupBy={groupBy}
+            onGroupBy={setGroupBy}
             filter={
               bandFilter(
-                activeTier?.filter ?? {},
-                activeTier,
+                activeTab?.filter ?? {},
+                activeTab,
                 selected,
                 config,
                 props.ctx,
@@ -539,19 +792,19 @@ export function EntityListPanel(props: EntityListPanelProps) {
             query={query}
           />
         ) : list.sections && list.sections.length > 0 ? (
-          /* A section the active tier excludes outright renders NO heading.
+          /* A section the active tab excludes outright renders NO heading.
              Its rows would be empty by construction, and an empty band under
-             "COMPLETED · 0" inside the Open tier states something false about
-             the tier rather than about the data. */
+             "COMPLETED · 0" inside the Open tab states something false about
+             the tab rather than about the data. */
           list.sections
-            .filter((section) => narrow(section.filter, activeTier?.filter) !== null)
+            .filter((section) => narrow(section.filter, activeTab?.filter) !== null)
             .map((section) => (
             <Band
               key={section.id}
               label={section.label}
               filter={bandFilter(
                 section.filter,
-                activeTier,
+                activeTab,
                 selected,
                 config,
                 props.ctx,
@@ -577,8 +830,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
           <Band
             label={null}
             filter={bandFilter(
-              activeTier?.filter ?? {},
-              activeTier,
+              activeTab?.filter ?? {},
+              activeTab,
               selected,
               config,
               props.ctx,
@@ -593,12 +846,17 @@ export function EntityListPanel(props: EntityListPanelProps) {
         )}
       </div>
 
-      {/* T0-1 draws a footer count line on every kind: "9 open · 601 done ·
-          33 archived". Same per-tier counts as the tabs above — one source,
-          three surfaces (tabs, footer, selector total). */}
-      {tierCounts.length > 0 ? (
+      {/* T0-1 draws a footer count line on every kind: "9 to do · 4 in
+          progress · 601 done · 12 cancelled". Same per-tab counts as the tabs
+          above — one source, three surfaces (tabs, footer, selector total).
+
+          The tab's LABEL, lowercased — not its `id`. The ids are the
+          contract's `StatusCategory` literals, so printing them would put
+          `to_do` and `in_progress` in front of a user; the label is the word
+          the tab above already shows them. */}
+      {tabCounts.length > 0 ? (
         <div className="lp__foot" data-testid="list-footer">
-          {tierCounts.map((c) => `${c.label} ${c.tier.id}`).join(' · ')}
+          {tabCounts.map((c) => `${c.label} ${c.tab.label.toLowerCase()}`).join(' · ')}
         </div>
       ) : null}
     </section>
@@ -610,42 +868,33 @@ export function EntityListPanel(props: EntityListPanelProps) {
 // ---------------------------------------------------------------------------
 
 /**
- * D14 — the lifecycle-tab partition is applied CLIENT-SIDE, deliberately.
- *
- * `CollectionQuery` has no member that filters work_sessions by
- * `WorkSessionStatus` (its `filters.workStatus` is the TASK vocabulary), so
- * rather than invent a contract shape the registry declares `statuses` and
- * the panel partitions rows the seam already delivered. Read STRUCTURALLY —
- * "does this row's state carry a `status`?" — never by kind, so this stays
- * inside the no-branching law. When the contract gains the member, the
- * partition retires and no call site changes.
- */
-/**
  * THE THREE AXES MUST NARROW, NOT OVERWRITE.
  *
- * A visible list is the intersection of three independently-chosen
- * constraints: the SECTION band, the lifecycle TIER, and the filter CHIPS.
- * This used to be `{...section, ...tier, ...chips}`, and object spread is the
- * wrong operator for every one of them:
+ * A visible list is the intersection of independently-chosen constraints: the
+ * SECTION band (no kind declares one today), the CATEGORY TAB, and the filter
+ * CHIPS. This used to be `{...section, ...tab, ...chips}`, and object spread
+ * is the wrong operator for every one of them:
  *
- *   - ARRAYS. `{workStatus:['open','pulled','working']}` spread under
- *     `{workStatus:['done']}` yields `['done']` — the Open tab showing done
+ *   - ARRAYS. `{status:['open','pulled','working']}` spread under
+ *     `{status:['done']}` yields `['done']` — the Open tab showing done
  *     rows. Two lists of allowed values compose by INTERSECTION; each one
  *     says "only these", and both are still true.
- *     Concretely: on the Open tier the band headed "Completed" was queried
+ *     Concretely: on the Open tab the band headed "Completed" was queried
  *     with the OPEN statuses, so it rendered open tasks under a "Completed"
  *     heading and was an exact duplicate of the "Current" band above it. A
  *     user who marked a task done watched it stay put in a band labelled
  *     Completed, which reads as "done did not work".
  *   - SCALARS take the LATER value, because a scalar has no intersection.
- *     Argument order is therefore load-bearing: section, then tier, then
- *     chips. `deleted` is the case that matters — it is the outer lifecycle
- *     scope, and a section's `deleted:'exclude'` restates the common case
- *     rather than constraining anything, so THE TIER WINS. Reading that pair
- *     as a contradiction does not reveal a bug, it empties the Archived tier
- *     ('only') against every section ('exclude') — the one tier whose
- *     partition already worked.
- *   - EMPTY. An empty intersection is not `[]`. `workStatus: []` means NO
+ *     Argument order is therefore load-bearing: section, then tab, then
+ *     chips. `deleted` is the case that matters, and PHASE 7 SHARPENED IT.
+ *     Every category tab now carries `deleted:'exclude'` and the ARCHIVE CHIP
+ *     carries `'only'` or `'include'` — chips apply LAST, so the chip wins and
+ *     "archived AND in progress" is askable. Reading that pair as a
+ *     contradiction instead would empty the archive against every tab, which
+ *     is exactly the failure the old Archived TAB had against every section.
+ *     Archived is orthogonal to status; the composition rule is what makes it
+ *     expressible as a filter rather than as a partition member.
+ *   - EMPTY. An empty intersection is not `[]`. `status: []` means NO
  *     CONSTRAINT — client-side and server-side both — so emitting it would
  *     turn "nothing can satisfy this" into "show me everything", which is the
  *     loudest possible wrong answer.
@@ -656,9 +905,17 @@ export function EntityListPanel(props: EntityListPanelProps) {
  * unsatisfiable wastes a round trip and gets back a `[]` indistinguishable
  * from a genuinely empty collection.
  *
- * This subsumes `scopeToTier`, which composed the section/tier pair under
+ * This subsumes `scopeToTier`, which composed the section/tab pair under
  * exactly these rules. Two functions for one law is one too many, and the
- * chips need the same treatment the tier got.
+ * chips need the same treatment the tab got.
+ *
+ * ONE CROSS-KEY RELATIONSHIP IS DECLARED RATHER THAN KNOWN HERE: a status
+ * chip carries its own `category` beside its `status` (`registry.statusFilter`),
+ * so picking `Done` on the To Do tab is an EMPTY ARRAY INTERSECTION under the
+ * rule above and gets the stated refusal. Without that second member the tab
+ * and the chip would be different keys, the merge would succeed, and the
+ * server would answer honestly with nothing — an unexplained empty list, which
+ * is what this function exists to prevent.
  */
 export function narrow(...parts: readonly (QueryFilter | undefined | null)[]): QueryFilter | null {
   const out: Record<string, unknown> = {};
@@ -687,8 +944,8 @@ export function narrow(...parts: readonly (QueryFilter | undefined | null)[]): Q
 /**
  * D20 RETIRED (D56). The client-side status partition that used to run here is
  * DELETED, not translated: the contract gained
- * `CollectionQuery.filters.sessionStatus`, so the tier's own `filter` is an
- * ordinary filter the SEAM executes, exactly like the task tiers beside it.
+ * `CollectionQuery.filters.sessionStatus`, so the tab's own `filter` is an
+ * ordinary filter the SEAM executes, exactly like the task tabs beside it.
  *
  * Deliberately not re-implemented against `filter.sessionStatus` — that would
  * put server-side filtering on the client as well, and the two would disagree
@@ -696,7 +953,7 @@ export function narrow(...parts: readonly (QueryFilter | undefined | null)[]): Q
  */
 function bandFilter(
   filter: QueryFilter,
-  tier: LifecycleTier | null,
+  tab: StatusCategoryTab | null,
   selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
   ctx: ActionContext,
@@ -708,7 +965,7 @@ function bandFilter(
 ): QueryFilter | null {
   return narrow(
     filter,
-    tier?.filter,
+    tab?.filter,
     mergeSelectedFilters(config, selected, ctx),
     /* `createdByIds` IS NOT A MEMBER OF `CollectionQuery.filters` — it belongs
        to `EntityConnectionsQuery`. This is carried through unchanged because
@@ -729,7 +986,7 @@ const NO_ROWS: readonly EntitySummary[] = Object.freeze([]);
 function rowsForBand(
   props: EntityListPanelProps,
   filter: QueryFilter,
-  tier: LifecycleTier | null,
+  tab: StatusCategoryTab | null,
   selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
   selectedPeople: readonly string[] = [],
@@ -738,48 +995,61 @@ function rowsForBand(
   /**
    * D20 RETIRED (D56). The client-side status partition that used to run here
    * is DELETED, not translated: the contract gained
-   * `CollectionQuery.filters.sessionStatus`, so the tier's own `filter` is an
-   * ordinary filter the SEAM executes, exactly like the task tiers beside it.
+   * `CollectionQuery.filters.sessionStatus`, so the tab's own `filter` is an
+   * ordinary filter the SEAM executes, exactly like the task tabs beside it.
    *
    * Deliberately not re-implemented against `filter.sessionStatus` — that
    * would put server-side filtering on the client as well, and the two would
    * disagree the moment a status is added. One filter, executed once, at the
    * seam.
    */
-  const merged = bandFilter(filter, tier, selected, config, props.ctx, selectedPeople);
-  // Disjoint band: the section asks for statuses this tier excludes, so it can
+  const merged = bandFilter(filter, tab, selected, config, props.ctx, selectedPeople);
+  // Disjoint band: the section asks for statuses this tab excludes, so it can
   // hold nothing. Its caller skips the heading entirely — see `sectionsFor`.
   return merged === null ? NO_ROWS : props.rowsFor(merged, sort);
 }
 
 /**
- * A tier's count is its OWN query's result size — the same source the tab
- * label, the footer line and the kind-selector total all read. A count FIELD
- * would be a second source that could disagree with the query it claims to
- * summarise (A1a's design note, and it is the right one).
+ * A tab's count is its OWN query's answer — the same source the tab label, the
+ * footer line and the kind-selector total all read. A count FIELD on the
+ * registry would be a second source, free to disagree with the query it claims
+ * to summarise (A1a's design note, and it is the right one).
  *
- * COUNTED UNDER NO SORT, DELIBERATELY. A count is order-independent, and the
- * read key includes the sort — so counting under the active sort would fire a
- * fresh query per tier every time the user changes the order, to learn a
- * number that cannot have changed.
+ * PHASE 7 — THE NUMBER IS NOW A SERVER AGGREGATE. It used to be
+ * `rowsFor(filter).length`: the LOADED rows, which stop at the page the server
+ * served, so a 601-row Done tab read `50` and the honest `countLabel` hedge
+ * turned that into `50+`. One source is what stopped the three surfaces
+ * DISAGREEING; it never stopped them being wrong TOGETHER, which is the worse
+ * failure because it looks like a working feature.
  *
- * `more` is the honesty half. The count is `rows.length`, and rows stop at the
- * page the server served, so a saturated first page makes 601 read as 50. The
- * caller renders `50+` while the server still holds a cursor.
+ * `page.total` is a `CollectionResult` member the facade now populates for
+ * every collection read — a `count(*)` over the same WHERE, cursor excluded.
+ * `entities.status_category` is indexed (migration 147) and every tab's filter
+ * is exactly that predicate, so the four counts are four index aggregates.
  *
- * An `unsupported` tier counts ZERO honestly: the kind has no state that can
- * land there, so the tab renders with its reason rather than being dropped.
+ * `n` FALLS BACK to the loaded length when the server volunteered no total —
+ * a rolling node that predates the aggregate — and `countLabel` still renders
+ * the `+`. Absence stays "we do not know", never a fabricated exact number.
+ *
+ * COUNTED UNDER NO SORT, DELIBERATELY. A count is order-independent and the
+ * read key includes the sort, so counting under the active sort would fire a
+ * fresh query per tab every time the user reorders, to learn a number that
+ * cannot have changed.
  */
-function tierCount(
+function tabCount(
   props: EntityListPanelProps,
   config: KindConfig,
-  tier: LifecycleTier,
-): { n: number; label: string } {
-  if (tier.unsupported) return { n: 0, label: '0' };
-  const merged = bandFilter(tier.filter, tier, {}, config, props.ctx);
-  if (merged === null) return { n: 0, label: '0' };
-  const n = props.rowsFor(merged).length;
-  return { n, label: countLabel(n, props.pageStateOf?.(merged)) };
+  tab: StatusCategoryTab,
+): { n: number; label: string; exact: boolean } {
+  const merged = bandFilter(tab.filter, tab, {}, config, props.ctx);
+  if (merged === null) return { n: 0, label: '0', exact: true };
+  const page = props.pageStateOf?.(merged);
+  const loaded = props.rowsFor(merged).length;
+  return {
+    n: page?.total ?? loaded,
+    label: countLabel(loaded, page),
+    exact: page?.total !== undefined,
+  };
 }
 
 /**
@@ -819,11 +1089,31 @@ function LensNote({
  * The '● N live' count is rows ∩ the SEAM LIVE SET. Never a count of rows
  * whose record says "running" — that number would include every stale session
  * and would be exactly the overstatement the liveness read exists to fix.
+ *
+ * IT COUNTS THE OPEN TAB, not the kind (user report 2026-08-19: "live session
+ * count is shown in both in progress and done, does it make sense"). It was
+ * `rowsFor(spec.filter)` with the tab never applied, so one unchanging number
+ * sat beside a tab row whose every other number moved — reading, under Done,
+ * as a claim that Done holds live sessions.
+ *
+ * That was merely confusing while nothing live could BE under Done. It stops
+ * being merely confusing with the tick: a session marked done keeps running,
+ * so "live, under Done" is now a real and useful population, and a badge that
+ * cannot tell you its size is answering the wrong question.
+ *
+ * `narrow` returns null for a contradiction — a tab whose filter cannot
+ * intersect the spec's. That is zero rows and therefore zero live, which is
+ * what `NO_ROWS` produces without asking the seam.
  */
-function liveCountFor(props: EntityListPanelProps, config: KindConfig): string | null {
+function liveCountFor(
+  props: EntityListPanelProps,
+  config: KindConfig,
+  tab: StatusCategoryTab | null,
+): string | null {
   const spec = config.list.liveCount;
   if (!spec || !props.liveIds) return null;
-  const rows = props.rowsFor(spec.filter);
+  const merged = narrow(spec.filter, tab?.filter);
+  const rows = merged === null ? NO_ROWS : props.rowsFor(merged);
   const live = new Set(props.liveIds);
   return spec.label(rows.filter((r) => live.has(r.id)).length);
 }
@@ -837,23 +1127,19 @@ function KindSelector({
   total,
   liveCount,
   onKindChange,
-  mode,
-  onMode,
 }: {
   config: KindConfig;
   /**
-   * Sum of the lifecycle tiers — T0-1 draws it beside the kind name.
+   * Sum of the lifecycle tabs — T0-1 draws it beside the kind name.
    *
-   * A STRING, because the honest value may be `601+`. Summing three tier
+   * A STRING, because the honest value may be `601+`. Summing three tab
    * counts each capped at a page produced `150` for a 700-row space and said
-   * it with a number's confidence; carrying the `+` up from whichever tier is
+   * it with a number's confidence; carrying the `+` up from whichever tab is
    * truncated keeps the total as honest as its worst input.
    */
   total?: string;
   liveCount: string | null;
   onKindChange?: (kind: string) => void;
-  mode: CollectionMode;
-  onMode: (mode: CollectionMode) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -880,7 +1166,6 @@ function KindSelector({
           {liveCount}
         </span>
       ) : null}
-      <ViewSwitcher config={config} mode={mode} onMode={onMode} />
       {open ? (
         <ul className="lp__kindmenu" role="menu">
           {/* Only `strategy: 'collection'` kinds can BE a list: channel is a
@@ -908,84 +1193,6 @@ function KindSelector({
   );
 }
 
-/**
- * THE VIEW SWITCHER — one control everywhere (C5), positions from registry DATA.
- *
- * `hiddenModes` hides by config; `graph` is NEVER a member of it, because R7
- * requires graph VISIBLE-labelled-unclickable rather than absent — hidden and
- * disabled are different states and only one of them teaches the user the
- * feature exists.
- *
- * In A1 only `list` has a body. The other positions render
- * disabled-with-reason rather than switching to a blank region: a switcher
- * that moves you to nothing is worse than one that says why it cannot yet.
- * The layout bodies are A2 (LLD §3.3); this control is the gate deliverable.
- */
-/**
- * T0-1's own switcher set, verbatim from the canvas support code:
- *   views = [['≡','List'], ['⑂','Tree'], ['▥','Board'], ['◉','Graph']]
- * FOUR positions, not the registry's six modes — feed and gallery are
- * CollectionView layouts (k/{slug}, A2) and the composed workspace canvas
- * does not offer them in a side panel. Per-kind visibility still comes from
- * `hiddenModes`, so a kind may show fewer; none may show more.
- */
-const SWITCHER_MODES: readonly CollectionMode[] = ['list', 'tree', 'board', 'graph'];
-const MODE_GLYPH: Record<CollectionMode, string> = {
-  list: '≡',
-  tree: '⑂',
-  board: '▥',
-  graph: '◉',
-  feed: '≡',
-  gallery: '▩',
-};
-
-function ViewSwitcher({
-  config,
-  mode,
-  onMode,
-}: {
-  config: KindConfig;
-  mode: CollectionMode;
-  onMode: (mode: CollectionMode) => void;
-}) {
-  const positions = SWITCHER_MODES.filter((m) => !config.hiddenModes.includes(m));
-  if (positions.length <= 1) return null;
-  return (
-    <span className="lp__views" role="group" aria-label="Layout" data-testid="view-switcher">
-      {positions.map((m) => {
-        // A2: board is built for kinds that DECLARE one. A kind without a
-        // `board` registry row keeps its position honestly disabled — the
-        // declaration is data, so a kind gains a board by registry entry.
-        const built = m === 'list' || (m === 'board' && config.list.board !== undefined);
-        const reason =
-          m === 'graph'
-            ? 'Graph view isn’t available yet.'
-            : m === 'board'
-              ? `${config.labelPlural} have no board: this kind declares no board grouping in the registry.`
-              : `The ${m} layout arrives with A2 — the switcher position is real, the body is not built yet.`;
-        if (!built) {
-          return (
-            <DisabledIconControl key={m} label={`${m} layout`} glyph={MODE_GLYPH[m]} reason={toReason(reason)} />
-          );
-        }
-        return (
-          <button
-            key={m}
-            type="button"
-            className={m === mode ? 'lp__view lp__view--active' : 'lp__view'}
-            aria-pressed={m === mode}
-            aria-label={`${m} layout`}
-            title={`${m} layout`}
-            onClick={() => onMode(m)}
-          >
-            {MODE_GLYPH[m]}
-          </button>
-        );
-      })}
-    </span>
-  );
-}
-
 function HeaderActions({
   config,
   ctx,
@@ -993,6 +1200,7 @@ function HeaderActions({
   createSlot,
   onAction,
   wiredActions,
+  hostOwnsBirth,
 }: {
   config: KindConfig;
   ctx: ActionContext;
@@ -1000,6 +1208,19 @@ function HeaderActions({
   createSlot?: React.ReactNode;
   onAction?: (ref: ActionRef, entityId: string) => void;
   wiredActions?: readonly ActionRef[];
+  /**
+   * The host draws the kind cell (`selectorSlot: 'host'`), so the host's ＋
+   * half already carries this kind's birth verb — see `ListRootHeader`'s
+   * `rootBirthAction`. USER RULING 2026-08-19: on those surfaces this row must
+   * not draw it a second time. It sat directly beneath the cell that now owns
+   * it, which made `▮ Terminal` the only control on the sessions list with two
+   * live copies one row apart.
+   *
+   * Scoped to `quickStart` and to hosted cells ON PURPOSE. The `k/` collection
+   * screen draws the panel's OWN `KindSelector`, whose cell has no ＋ at all,
+   * so there the verb has nowhere else to live and stays here.
+   */
+  hostOwnsBirth?: boolean;
 }) {
   const { quickCreate, quickLaunch, quickStart } = config.list;
   // Per-verb, not per-header. `chrome.tsx`'s exact expression: an unwired verb
@@ -1008,13 +1229,36 @@ function HeaderActions({
   const dispatcherFor = (ref: ActionRef): typeof onAction =>
     wiredActions && !wiredActions.includes(ref) ? undefined : onAction;
   const showCreate = Boolean(quickCreate && (createSlot || onCreate));
-  // `onAction`, NOT `dispatcherFor(...)`: a host with no dispatcher at all
-  // still has nothing to draw, but a host that has one draws every declared
-  // verb — refused where it cannot perform it. Hiding an unwired verb is the
-  // failure mode this panel spent D64 removing, because a control nobody can
-  // see cannot be reported as missing.
-  const showLaunch = Boolean(quickLaunch && onAction);
-  const showStart = Boolean(quickStart && onAction);
+  /*
+   * `dispatcherFor(...)`, NOT `onAction` — USER RULING 2026-08-17, and it
+   * narrows D64 rather than reversing it.
+   *
+   * D64's rule was that an unwired verb renders refused, because a control
+   * nobody can see cannot be reported as missing. That rule earned its keep:
+   * the header once drew NOTHING at all, and drawing `Launch session ▸`
+   * refused is what made task 019ff248 reportable in the first place.
+   *
+   * But `wiredActions` is not "not built yet" — it is the host stating which
+   * verbs it performs. `useSessionStart` omits `launch-session` deliberately
+   * and PERMANENTLY: that verb opens the launch sheet against a subject, and
+   * a list header has no subject to name. So the refusal could never resolve
+   * into a live button no matter what anyone built. A permanently-refused
+   * control is not honesty, it is furniture, and it had been sitting in the
+   * sessions header explaining itself to every reader since 101.
+   *
+   * The distinction the two cases turn on:
+   *   - `onAction` absent entirely   → the host wired NO dispatcher. Draw the
+   *     declared verbs refused; the gap is real and worth reporting. (D64.)
+   *   - `wiredActions` excludes it   → the host wired a dispatcher and said
+   *     this verb is not one of its acts. Do not draw it.
+   *
+   * Scoped to this header ON PURPOSE. `detail/chrome.tsx:303` reads the same
+   * prop and still refuses rather than hides — a detail panel is ABOUT one
+   * entity, so a verb missing from its verb row is a question the reader will
+   * actually ask.
+   */
+  const showLaunch = Boolean(quickLaunch && dispatcherFor(quickLaunch));
+  const showStart = Boolean(!hostOwnsBirth && quickStart && dispatcherFor(quickStart));
   if (!showCreate && !showLaunch && !showStart) return null;
 
   return (
@@ -1181,42 +1425,56 @@ function SearchRow({
 
 /**
  * THE LIFECYCLE TIER TABS — Open / Done / Archived, universal across
- * collection kinds (D41, user-ratified). Their own row: a tier is the
+ * collection kinds (D41, user-ratified). Their own row: a tab is the
  * lifecycle band you are looking at, and the filter chips below narrow WITHIN
- * it. T0-1 draws both, and the count on each tab comes from that tier's own
+ * it. T0-1 draws both, and the count on each tab comes from that tab's own
  * query — the same source as the footer line and the kind-selector total.
  */
-function TierTabs({
-  tiers,
-  activeTierId,
-  onTier,
-  tierLabel,
+function CategoryTabs({
+  tabs,
+  activeTabId,
+  onTab,
+  tabLabel,
 }: {
-  tiers?: readonly LifecycleTier[];
-  activeTierId: string | null;
-  onTier: (id: string) => void;
+  tabs?: readonly StatusCategoryTab[];
+  activeTabId: string | null;
+  onTab: (id: string) => void;
   /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
-  tierLabel: (tier: LifecycleTier) => string;
+  tabLabel: (tab: StatusCategoryTab) => string;
 }) {
-  if (!tiers || tiers.length === 0) return null;
+  /*
+   * THE PHONE DRAWS THE MARKS AND NOT THE WORDS — owner ruling, 2026-08-19.
+   *
+   * `To Do 266` × 4 does not fit across 390px, so the row was `overflow-x:
+   * auto`: four 44px-tall tabs on a scroller, of which two and a bit were ever
+   * on screen. A control whose fourth position is reachable only by a
+   * horizontal flick inside a vertically-scrolling screen is one most readers
+   * never discover — and this is the axis the whole list is filtered on.
+   *
+   * Four marks fit at 97px each with the touch floor cleared twice over, and
+   * the row stops scrolling. The COUNTS are not dropped, they move to
+   * `aria-label` ("To Do, 266"): a screen reader still reads them, and so does
+   * the tap census, which is how this program checks its own targets.
+   *
+   * `oneSurface`, NOT a media query — `mobile/CONTRACT.md` and the same seam
+   * every other phone branch in a shared screen uses. It is false on every
+   * desktop mount by construction, so the desktop DOM is byte-identical.
+   */
+  const { oneSurface } = useMobileSurface();
+  if (!tabs || tabs.length === 0) return null;
   return (
     <div className="lp__tierrow" role="tablist" aria-label="Lifecycle">
-      {tiers.map((tier) => (
+      {tabs.map((tab) => (
         <button
-          key={tier.id}
+          key={tab.id}
           type="button"
           role="tab"
-          aria-selected={tier.id === activeTierId}
-          className={tier.id === activeTierId ? 'lp__tab lp__tab--active' : 'lp__tab'}
-          onClick={() => onTier(tier.id)}
-          /* An unsupported tier still RENDERS — honestly empty, with its
-             reason reachable — rather than being dropped for some kinds and
-             not others. Hidden and empty are different states (L6), and a tab
-             that vanishes per-kind teaches nothing about why. */
-          title={tier.unsupported}
-          data-unsupported={tier.unsupported ? 'true' : undefined}
+          aria-selected={tab.id === activeTabId}
+          className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
+          onClick={() => onTab(tab.id)}
+          {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
         >
-          {`${tier.label} ${tierLabel(tier)}`}
+          {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
         </button>
       ))}
     </div>
@@ -1225,14 +1483,12 @@ function TierTabs({
 
 function FilterRow({
   config,
+  picker,
+  onPicker,
   selected,
   onToggleOption,
   sortKey,
   onSort,
-  tiers,
-  activeTierId,
-  onTier,
-  tierLabel,
   compact,
   people,
   selectedPeople,
@@ -1244,15 +1500,13 @@ function FilterRow({
   onLens,
 }: {
   config: KindConfig;
+  /** Which of the four is open. Held by the panel — see `ListPicker`. */
+  picker: ListPicker | null;
+  onPicker: (picker: ListPicker | null) => void;
   selected: Readonly<Record<string, readonly string[]>>;
   onToggleOption: (specId: string, optionId: string, multi: boolean) => void;
   sortKey: SortKey | undefined;
   onSort: (key: SortKey) => void;
-  tiers?: readonly LifecycleTier[];
-  activeTierId: string | null;
-  onTier: (id: string) => void;
-  /** Each tier's own query size — the one source the tabs, footer and total share. */
-  tierLabel: (tier: LifecycleTier) => string;
   compact?: boolean;
   people: readonly ActorSummary[];
   selectedPeople: readonly string[];
@@ -1267,11 +1521,24 @@ function FilterRow({
   lensSet: EntitySummary | null;
   onLens: (setId: string | null) => void;
 }) {
-  // One popover at a time, sort included. Two independent booleans would let
-  // the sort menu and a filter picker sit open over each other.
-  const [picker, setPicker] = useState<'filters' | 'people' | 'sets' | 'sort' | null>(null);
+  const setPicker = onPicker;
   const barRef = useRef<HTMLDivElement>(null);
-  useDismissable(picker !== null, barRef, useCallback(() => setPicker(null), []));
+  /*
+   * THE PHONE'S SHEETS ARE PORTALLED, SO OUTSIDE-CLICK IS THE WRONG DISMISSAL.
+   *
+   * `useDismissable` closes when a pointer lands outside `barRef`. On the phone
+   * the bar itself is `display: none` (`mobile-screens.css` §9) and the picker
+   * is a `MobileSheet` — a portal into the frame's sheet host, which is by
+   * definition outside that ref. So the FIRST tap inside the sheet would close
+   * it, and the sheet would read as one that refuses to stay open.
+   *
+   * The sheet already carries all three dismissal routes of its own (the ✕, the
+   * backdrop, Escape) through one callback, so nothing is lost by standing this
+   * down where it does not apply.
+   */
+  const { oneSurface, sheetHost } = useMobileSurface();
+  const inSheet = oneSurface && sheetHost !== null;
+  useDismissable(!inSheet && picker !== null, barRef, useCallback(() => setPicker(null), [setPicker]));
   const sort = config.list.sort;
   const current = sort.find((s) => s.key === sortKey) ?? sort[0];
 
@@ -1282,14 +1549,53 @@ function FilterRow({
     }),
   );
 
+  /**
+   * ONE BODY, TWO CONTAINERS — a hanging popover on a desktop, a bottom sheet
+   * on a phone.
+   *
+   * The four option lists are the same lists either way; what differs is the
+   * surface they arrive on. Writing them twice is how the phone's copy of the
+   * collection lens ends up a release behind the desktop's, which is the
+   * failure `MobileSheet`'s own header comment describes for the aux column.
+   *
+   * `.lp__filtermenu` CANNOT BE THE SHEET'S CONTAINER: it is `position:
+   * absolute` at `176px` wide with a `240px` scroll cap, sized to hang off a
+   * 32px row. Inside a 72%-tall sheet that is a small floating card pinned to
+   * the sheet's top-left corner. So the sheet gets its own container and the
+   * body it wraps is identical.
+   */
+  const narrowing = (
+    key: ListPicker,
+    title: string,
+    testId: string,
+    menuClass: string,
+    body: ReactNode,
+  ): ReactNode => {
+    if (picker !== key) return null;
+    if (!inSheet) {
+      return (
+        <div className={menuClass} role="menu" data-testid={testId}>
+          {body}
+        </div>
+      );
+    }
+    return (
+      <MobileSheet title={title} onDismiss={() => setPicker(null)} testId={`list-sheet-${key}`}>
+        <div className="lp__sheetmenu" role="menu" data-testid={testId}>
+          {body}
+        </div>
+      </MobileSheet>
+    );
+  };
+
   return (
     <div className="lp__filterbar" ref={barRef}>
     <div className="lp__filters">
       {/* Filter chips and the picker trigger. The lifecycle TABS are a
-          separate row above (TierTabs): tabs are a lifecycle TIER and filters
+          separate row above (CategoryTabs): tabs are a lifecycle TIER and filters
           narrow WITHIN it, so they coexist — T0-1 draws both. They were an
           either/or here only while work_session was the one kind with tabs,
-          and making tiers universal exposed that shortcut by deleting the
+          and making tabs universal exposed that shortcut by deleting the
           filter chips from every kind at once. */}
       {active.map(({ spec, option }) => (
         <button
@@ -1327,7 +1633,7 @@ function FilterRow({
         <button
           type="button"
           className="lp__chip"
-          onClick={() => setPicker((open) => open === 'filters' ? null : 'filters')}
+          onClick={() => setPicker(picker === 'filters' ? null : 'filters')}
           aria-expanded={picker === 'filters'}
           aria-haspopup="menu"
           data-testid="filter-trigger"
@@ -1339,7 +1645,7 @@ function FilterRow({
         <button
           type="button"
           className={selectedPeople.length > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
-          onClick={() => setPicker((open) => open === 'people' ? null : 'people')}
+          onClick={() => setPicker(picker === 'people' ? null : 'people')}
           aria-expanded={picker === 'people'}
           aria-haspopup="menu"
           data-testid="people-filter-trigger"
@@ -1367,7 +1673,7 @@ function FilterRow({
           <button
             type="button"
             className="lp__chip"
-            onClick={() => setPicker((open) => (open === 'sets' ? null : 'sets'))}
+            onClick={() => setPicker(picker === 'sets' ? null : 'sets')}
             aria-expanded={picker === 'sets'}
             aria-haspopup="menu"
             data-testid="collection-lens-trigger"
@@ -1388,7 +1694,7 @@ function FilterRow({
         <button
           type="button"
           className="lp__chip"
-          onClick={() => setPicker((p) => (p === 'sort' ? null : 'sort'))}
+          onClick={() => setPicker(picker === 'sort' ? null : 'sort')}
           aria-expanded={picker === 'sort'}
           aria-haspopup="menu"
           title={`Sorted by ${current.label}`}
@@ -1401,8 +1707,8 @@ function FilterRow({
       ) : null}
 
     </div>
-      {picker === 'sort' ? (
-        <div className="lp__filtermenu lp__filtermenu--sort" role="menu" data-testid="sort-menu">
+      {narrowing('sort', 'Sort', 'sort-menu', 'lp__filtermenu lp__filtermenu--sort', (
+        <>
           <div className="lp__filtergroup">SORT BY</div>
           {sort.map((spec) => (
             <button
@@ -1422,14 +1728,14 @@ function FilterRow({
               {spec.key === current?.key ? <span className="lp__filtercheck">✓</span> : null}
             </button>
           ))}
-        </div>
-      ) : null}
+        </>
+      ))}
       {/* Rendered OUTSIDE the clipping row, inside the positioned bar: the row
           keeps `overflow: hidden` as its floor guard, and the picker is still
           free to overflow it. No hardcoded offset — `top: 100%` of the bar
           works whether or not this kind renders a header-actions row. */}
-      {picker === 'filters' ? (
-        <div className="lp__filtermenu" role="menu" data-testid="filter-menu">
+      {narrowing('filters', 'Filter', 'filter-menu', 'lp__filtermenu', (
+        <>
           {config.list.filters.map((spec) => (
             <div key={spec.id}>
               <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
@@ -1462,10 +1768,10 @@ function FilterRow({
               })}
             </div>
           ))}
-        </div>
-      ) : null}
-      {picker === 'sets' && membership ? (
-        <div className="lp__filtermenu" role="menu" data-testid="collection-lens-menu">
+        </>
+      ))}
+      {membership ? narrowing('sets', membership.label, 'collection-lens-menu', 'lp__filtermenu', (
+        <>
           <div className="lp__filtergroup">{membership.label.toUpperCase()}</div>
           {(membershipSets ?? []).length === 0 ? (
             /* An empty page is a real answer, said in its own words — never a
@@ -1498,10 +1804,10 @@ function FilterRow({
               );
             })
           )}
-        </div>
-      ) : null}
-      {picker === 'people' ? (
-        <div className="lp__filtermenu" role="menu" data-testid="people-filter-menu">
+        </>
+      )) : null}
+      {narrowing('people', 'People', 'people-filter-menu', 'lp__filtermenu', (
+        <>
           <div className="lp__filtergroup">PEOPLE</div>
           {people.map((person) => {
             const on = selectedPeople.includes(person.id);
@@ -1526,15 +1832,15 @@ function FilterRow({
               </button>
             );
           })}
-        </div>
-      ) : null}
+        </>
+      ))}
     </div>
   );
 }
 
 /**
  * Merge every selected option's contract-shaped filter. Array members UNION
- * (several `status` options combine into one `workStatus` list) rather than
+ * (several `status` options combine into one `status` list) rather than
  * overwrite, which is what `multi` means in the data.
  *
  * UNION HERE, INTERSECTION IN `narrow`, AND BOTH ARE RIGHT. Two options of the
@@ -1594,20 +1900,40 @@ interface BoardColumnSpec {
   key: string;
   label: string;
   tone: PillTone;
-  /** How a drop here dispatches. `null` ⇒ not a legal drop target. */
+  /** How a STATUS drop here dispatches. `null` ⇒ not a status drop target. */
   option: StateOption | null;
-  /** The §1.3 Done sink — a drop target, never a fetched column. */
-  sink: boolean;
+  /**
+   * How an AXIS drop here dispatches (W3): the value this column means, with
+   * `null` for the explicit no-value column (a drop there CLEARS the axis).
+   * `undefined` ⇒ this is not an axis column. A drop is one dimension or the
+   * other, never both — the board must never write a status while its
+   * columns say something else (W3/4).
+   */
+  axisValue?: string | null;
+  /**
+   * THE §1.3 DONE SINK IS RETIRED (phase 7). It was a synthetic drop target
+   * for the option routed `via:'complete'`, and it existed for exactly one
+   * reason: the Open TIER excluded `done`, so the board had no terminal column
+   * and the single most-performed kanban action was impossible. The board no
+   * longer runs under a category tab at all — its columns ARE that partition
+   * — so `done` is an ordinary fetched column with real rows, and a synthetic
+   * one beside it would be a second Done that only ever holds the cards you
+   * completed in this browser tab.
+   *
+   * The field stays so the three column builders keep one shape; it is `false`
+   * everywhere and there is no branch left that sets it.
+   */
+  sink: false;
 }
 
 /**
- * Column MEMBERSHIP and ORDER = stateControl.options ∩ the active tier's
- * workStatus filter; words/tones from panel.statusPill. One source — the
- * picker, the pill and the column cannot drift (§1.3).
+ * Column MEMBERSHIP and ORDER = stateControl.options ∩ the active CATEGORY
+ * TAB; words/tones from panel.statusPill. One source — the picker, the pill
+ * and the column cannot drift (§1.3).
  */
 function boardColumns(
   config: KindConfig,
-  tier: LifecycleTier | null,
+  tab: StatusCategoryTab | null,
   groups: readonly CollectionGroup[],
 ): BoardColumnSpec[] {
   const stateControl = config.list.stateControl;
@@ -1623,30 +1949,16 @@ function boardColumns(
     return groups.map((g) => ({ key: g.key, label: g.label, tone: 'idle', option: null, sink: false }));
   }
 
-  const tierStatuses = tier?.filter.workStatus as readonly string[] | undefined;
+  /* PHASE 7 — the intersection runs on the CATEGORY, both sides declared.
+     It used to read the tab's own `filter.status` array, which worked only
+     while a tab spelled its band as task status literals; the four category
+     tabs spell it as `{ category: [...] }`, and every kind's options now carry
+     their own `category` (registry data). An option with no category is not
+     filtered out — an unbucketable state shows on every tab rather than
+     vanishing from all four. */
   const columns: BoardColumnSpec[] = stateControl.options
-    .filter((o) => !tierStatuses || tierStatuses.includes(o.id))
+    .filter((o) => tab === null || o.category === undefined || o.category === tab.id)
     .map((o) => ({ key: o.id, label: labelOf(o.id), tone: toneOf(o.id), option: o, sink: false }));
-
-  // §1.3 — the Done sink. The tier rule alone would leave the Open board with
-  // no terminal column, making the single most-performed Kanban action
-  // impossible. Derived from DATA: the option routed `via:'complete'` that the
-  // active tier excludes. `cancelled` gets no sink — a rare deliberate act
-  // that stays in the state picker.
-  if (tier?.id === 'open') {
-    const sinkOption = stateControl.options.find(
-      (o) => o.via === 'complete' && !columns.some((c) => c.key === o.id),
-    );
-    if (sinkOption) {
-      columns.push({
-        key: sinkOption.id,
-        label: `${labelOf(sinkOption.id)} — drop to complete`,
-        tone: toneOf(sinkOption.id),
-        option: sinkOption,
-        sink: true,
-      });
-    }
-  }
 
   // A group key the registry does not declare renders APPENDED with the raw
   // key and neutral tone — never dropped (§1.3).
@@ -1659,26 +1971,87 @@ function boardColumns(
   return columns;
 }
 
+/** User copy for an axis whose NAME is data — same rule as the W1 picker. */
+function axisLabelOf(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * Columns for an AXIS board (W3): the explicit no-value column first — it is
+ * where every untyped task lives, and a drop there CLEARS the axis — then the
+ * axis's own vocabulary in `axisValues` order (never alphabetical, never the
+ * server's arrival order), then any group key outside today's vocabulary
+ * appended raw and undroppable, same §1.3 posture as the status board.
+ */
+function axisBoardColumns(
+  axis: { name: string; axisValues: readonly string[] },
+  groups: readonly CollectionGroup[],
+): BoardColumnSpec[] {
+  const columns: BoardColumnSpec[] = [
+    { key: '', label: `no ${axis.name}`, tone: 'idle', option: null, axisValue: null, sink: false },
+    ...axis.axisValues.map((value) => ({
+      key: value,
+      label: value,
+      tone: 'idle' as PillTone,
+      option: null,
+      axisValue: value,
+      sink: false as const,
+    })),
+  ];
+  for (const group of groups) {
+    if (!columns.some((c) => c.key === group.key)) {
+      columns.push({ key: group.key, label: group.label || group.key, tone: 'idle', option: null, sink: false });
+    }
+  }
+  return columns;
+}
+
+/**
+ * Columns for the ASSIGNEE board: the server's groups verbatim (key = actor
+ * id, '' = Unassigned), every one UNDROPPABLE — owner ruling 2026-08-16
+ * (W3/4): drag-to-reassign is out of scope, and a drop that silently wrote a
+ * status under assignee columns is the exact lie this workstream exists to
+ * prevent. The board states the refusal in its header note.
+ */
+function assigneeBoardColumns(groups: readonly CollectionGroup[]): BoardColumnSpec[] {
+  const columns = groups.map((g): BoardColumnSpec => ({
+    key: g.key,
+    label: g.label || g.key,
+    tone: 'idle',
+    option: null,
+    sink: false,
+  }));
+  // The server only emits buckets rows landed in; an assignee board with no
+  // unassigned tasks still deserves the column NOT to appear invented, so
+  // nothing is added here — absent groups are absent columns.
+  return columns;
+}
+
 function BoardBody({
   props,
   config,
-  tier,
-  onTier,
+  tab,
+  onTab,
+  groupBy,
+  onGroupBy,
   filter,
   query,
 }: {
   props: EntityListPanelProps;
   config: KindConfig;
-  tier: LifecycleTier | null;
-  onTier: (tierId: string) => void;
+  tab: StatusCategoryTab | null;
+  onTab: (categoryTabId: string) => void;
+  groupBy: GroupByKey;
+  onGroupBy: (groupBy: GroupByKey) => void;
   filter: QueryFilter;
   query: string;
 }) {
   const list = config.list;
-  const board = list.board as NonNullable<typeof list.board>;
   const stateControl = list.stateControl;
-  /** Cards completed via the sink THIS view session — its only body (§1.3). */
-  const [completedHere, setCompletedHere] = useState<readonly EntitySummary[]>([]);
+  /** The axis this board groups by, resolved from per-space DATA — or null
+      for the status/assignee dimensions. */
+  const axisName = groupBy.startsWith('axis:') ? groupBy.slice('axis:'.length) : null;
+  const axis = axisName === null ? null : (props.taskAxes ?? []).find((a) => a.name === axisName) ?? null;
   /** The §1.5 inline refusal: rendered at the refusing column's header. */
   const [refusal, setRefusal] = useState<{ column: string; reason: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -1687,9 +2060,18 @@ function BoardBody({
   /** §8.1 roving focus: column index + card index within it. */
   const [focus, setFocus] = useState<{ col: number; row: number }>({ col: 0, row: 0 });
 
-  // Archived tier: board disabled with reason — archived rows have no
-  // workflow. Same honesty kit as every other foreseeable refusal (§8.5).
-  if (tier?.id === 'archived') {
+  // ARCHIVED: board disabled with reason — an archived row is not moving
+  // through a workflow, whatever status it kept. Same honesty kit as every
+  // other foreseeable refusal (§8.5).
+  //
+  // PHASE 7: keyed on the RESOLVED FILTER, not on a tab id. Archived stopped
+  // being a tab and became a filter chip that composes with any category, so
+  // "am I looking at the archive" is a question only the merged filter can
+  // answer now — `deleted: 'only'` is the one value that means every row on
+  // screen is archived. `'include'` deliberately does NOT disable the board:
+  // that view is mostly live rows, and refusing it would refuse the majority
+  // to protect the minority.
+  if (filter.deleted === 'only') {
     return (
       <div className="lp__board lp__board--off" data-testid="board-disabled">
         <DisabledAction
@@ -1702,10 +2084,62 @@ function BoardBody({
     );
   }
 
-  const snapshot = props.boardFor?.(filter, board.groupBy);
+  const snapshot = props.boardFor?.(filter, groupBy);
+
+  /**
+   * The GROUP-BY PICKER (W3, D2 made true): `status`, `assignee`, and one
+   * `axis:<name>` per axis the SPACE defines — per-space data, not registry
+   * config, exactly like the W1 pickers. Rendered on every board state
+   * (loading, error, even an unresolvable axis) so the user can always
+   * choose their way out.
+   */
+  const groupByPicker = (
+    <select
+      className="lp__statesel lp__statesel--live lp__board-groupby"
+      aria-label="Group board by"
+      data-testid="board-groupby"
+      value={groupBy}
+      onChange={(e) => onGroupBy(e.target.value as GroupByKey)}
+    >
+      <option value="status">by status</option>
+      <option value="assignee">by assignee</option>
+      {(props.taskAxes ?? []).map((a) => (
+        <option key={a.id} value={`axis:${a.name}`}>
+          by {a.name}
+        </option>
+      ))}
+      {/* A route can carry an axis this space no longer defines (or one not
+          loaded): keep it selectABLE as the current value so the select shows
+          the truth rather than snapping to status. */}
+      {axisName !== null && axis === null ? (
+        <option value={groupBy} disabled>
+          by {axisName} (not defined here)
+        </option>
+      ) : null}
+    </select>
+  );
+
+  /* A route naming an axis the space does not define: the board cannot render
+     honest columns for it. Refuse with the reason and keep the picker — the
+     way out is one choice away. */
+  if (axisName !== null && axis === null) {
+    return (
+      <div className="lp__board lp__board--off" data-testid="board-axis-missing">
+        {groupByPicker}
+        <DisabledAction
+          label="Board"
+          reason={toReason(
+            `This space defines no task axis named ${axisName} — pick another grouping, or define the axis in Settings > Task axes.`,
+          )}
+        >
+          Board
+        </DisabledAction>
+      </div>
+    );
+  }
 
   // No source wired: say so. A board that silently renders nothing is
-  // indistinguishable from an empty tier, and only one of those is true.
+  // indistinguishable from an empty tab, and only one of those is true.
   if (!props.boardFor) {
     return (
       <div className="lp__board lp__board--off" data-testid="board-unwired">
@@ -1732,19 +2166,70 @@ function BoardBody({
   }
 
   const loading = snapshot === undefined;
-  const columns = boardColumns(config, tier, snapshot?.groups ?? []);
+  const columns =
+    axis !== null
+      ? axisBoardColumns(axis, snapshot?.groups ?? [])
+      : groupBy === 'assignee'
+        ? assigneeBoardColumns(snapshot?.groups ?? [])
+        : boardColumns(config, tab, snapshot?.groups ?? []);
   const groupOf = new Map((snapshot?.groups ?? []).map((g) => [g.key, g] as const));
   const itemsOf = (column: BoardColumnSpec): readonly EntitySummary[] =>
-    column.sink ? matching(completedHere, query) : matching(groupOf.get(column.key)?.items ?? [], query);
+    matching(groupOf.get(column.key)?.items ?? [], query);
 
   // §8.4 — quick-add ONLY on the column whose status is the kind's creation
   // status: the FIRST stateControl option (creation IS that state; a quick-add
   // elsewhere would silently create a card belonging to another column).
-  const creationKey = stateControl?.options[0]?.id;
+  const creationKey = groupBy === 'status' ? stateControl?.options[0]?.id : undefined;
 
+  /**
+   * A drop WRITES THE GROUPING DIMENSION (W3/4) — the single highest-risk
+   * behaviour in this workstream. On the status board it dispatches the state
+   * verb exactly as before; on an axis board it writes THE AXIS through the
+   * version-guarded content patch; on the assignee board no column is a drop
+   * target at all (ruling: reassign-by-drag is out of scope), so this cannot
+   * fire there. It must never silently write a status while the columns say
+   * something else.
+   */
   const dispatchDrop = (row: EntitySummary, column: BoardColumnSpec): void => {
+    if (itemsOf(column).some((r) => r.id === row.id)) return;
+
+    if (column.axisValue !== undefined) {
+      if (axis === null || !props.onSetAxis) return;
+      setRefusal(null);
+      setPendingId(row.id);
+      const outcome = props.onSetAxis(row.id, axis.name, column.axisValue, axisLabelOf(axis.name), {
+        notify: false,
+      });
+      void Promise.resolve(outcome).then((result) => {
+        setPendingId(null);
+        if (result && result.ok === false) {
+          setRefusal({ column: column.key, reason: result.reason });
+        }
+      });
+      return;
+    }
+
     if (!column.option || !stateControl || !props.onSetState) return;
-    if (!column.sink && itemsOf(column).some((r) => r.id === row.id)) return;
+
+    /**
+     * W4 — the PRE-FLIGHT workflow refusal, at the refusing column, WITHOUT
+     * calling the server: the vocabulary is already in hand (the same
+     * `spaceSettings()` data the strip narrows with), so a drop the row's
+     * type forbids is foreseeable and §8.5 says a foreseeable refusal is
+     * stated rather than attempted. Same words as the strip's disabled
+     * option; the database trigger (132) remains the real gate for every
+     * writer that is not this board.
+     */
+    const vocabulary = workflowVocabularyOf(props.taskWorkflows, row.state);
+    if (vocabulary !== null && !vocabulary.includes(column.option.id)) {
+      setPendingId(null);
+      setRefusal({
+        column: column.key,
+        reason: workflowRefusalText(workflowTypeOf(row.state)!, column.option.id),
+      });
+      return;
+    }
+
     setRefusal(null);
     setPendingId(row.id);
     const outcome = props.onSetState(
@@ -1759,9 +2244,7 @@ function BoardBody({
         // §1.5/§8.5: attempted-and-refused renders where the act happened.
         // The card never moved (no optimistic swap), so nothing snaps back.
         setRefusal({ column: column.key, reason: result.reason });
-        return;
       }
-      if (column.sink) setCompletedHere((prior) => [...prior, row]);
     });
   };
 
@@ -1779,7 +2262,7 @@ function BoardBody({
     const move = (delta: number): void => {
       if (!focused) return;
       const target = columns[col + delta];
-      if (!target || !target.option) return;
+      if (!target || (!target.option && target.axisValue === undefined)) return;
       dispatchDrop(focused, target);
     };
 
@@ -1821,6 +2304,18 @@ function BoardBody({
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
+      {groupByPicker}
+
+      {/* Ruling 2026-08-16 (W3/4): the assignee board is READ-ONLY — the
+          named reason, stated up front, because undraggable cards with no
+          words are indistinguishable from broken ones. */}
+      {groupBy === 'assignee' ? (
+        <div className="lp__board-banner" data-testid="board-assignee-note">
+          Drag is off on this board — reassigning from a drop is not built; use a card&rsquo;s
+          Assigned control instead.
+        </div>
+      ) : null}
+
       {/* §1.4 — the honesty banner. Groups are page-scoped and no total is
           returned, so column heights are not complete counts and the board
           says so whenever a further page exists. */}
@@ -1845,17 +2340,7 @@ function BoardBody({
             dragging={dragging}
             onDragStart={setDragging}
             onDrop={dispatchDrop}
-            createSlot={!column.sink && column.key === creationKey ? props.createSlot : undefined}
-            doneTierLink={
-              column.sink
-                ? () => {
-                    const doneTier = list.lifecycle?.find((t) =>
-                      (t.filter.workStatus as readonly string[] | undefined)?.includes(column.key),
-                    );
-                    if (doneTier) onTier(doneTier.id);
-                  }
-                : undefined
-            }
+            createSlot={column.key === creationKey ? props.createSlot : undefined}
           />
         ))}
       </div>
@@ -1876,7 +2361,7 @@ function BoardColumn({
   onDragStart,
   onDrop,
   createSlot,
-  doneTierLink,
+  doneTabLink,
 }: {
   column: BoardColumnSpec;
   /** `undefined` ⇒ loading: header renders from the registry, body shimmers. */
@@ -1891,19 +2376,15 @@ function BoardColumn({
   onDragStart: (row: EntitySummary | null) => void;
   onDrop: (row: EntitySummary, column: BoardColumnSpec) => void;
   createSlot?: ReactNode;
-  doneTierLink?: () => void;
+  doneTabLink?: () => void;
 }) {
-  const droppable = Boolean(column.option && props.onSetState);
+  const droppable = Boolean(
+    (column.option && props.onSetState) || (column.axisValue !== undefined && props.onSetAxis),
+  );
 
   return (
     <section
-      className={
-        column.sink
-          ? 'lp__board-col lp__board-col--sink'
-          : focused
-            ? 'lp__board-col lp__board-col--focused'
-            : 'lp__board-col'
-      }
+      className={focused ? 'lp__board-col lp__board-col--focused' : 'lp__board-col'}
       data-testid="board-column"
       data-column={column.key}
       aria-label={column.label}
@@ -1950,12 +2431,8 @@ function BoardColumn({
             <div className="lp__board-skeleton" aria-hidden />
           </>
         ) : rows.length === 0 ? (
-          column.sink ? (
-            <p className="lp__board-empty">drop a card here to complete it</p>
-          ) : (
-            // §1.3: an empty column is a real answer.
-            <p className="lp__board-empty">{`nothing in ${column.label}`}</p>
-          )
+          // §1.3: an empty column is a real answer.
+          <p className="lp__board-empty">{`nothing in ${column.label}`}</p>
         ) : (
           rows.map((row, index) => (
             <div
@@ -1984,11 +2461,6 @@ function BoardColumn({
         )}
       </div>
 
-      {column.sink && doneTierLink ? (
-        <button type="button" className="lp__board-done-link" onClick={doneTierLink}>
-          {'View all done →'}
-        </button>
-      ) : null}
     </section>
   );
 }
@@ -2010,7 +2482,7 @@ function Band({
   label: string | null;
   /**
    * The band's own already-narrowed query, or `null` when the section, the
-   * tier and the chips cannot all hold at once. The band OWNS the read: it is
+   * tab and the chips cannot all hold at once. The band OWNS the read: it is
    * the only place that knows which question these rows answer, and paging
    * needs that question back to ask for the next page.
    */
@@ -2187,35 +2659,38 @@ function TreeRows({
   attentionIds?: ReadonlySet<string>;
 }) {
   /**
-   * Collapsed, not expanded: rows remain visible by default (the existing
-   * contract and the full-workspace reference both open the active subtree),
-   * while a later-arriving child does not need state bookkeeping to appear.
+   * EXPANDED, NOT COLLAPSED — the inversion is the whole point (user ruling
+   * 2026-08-17, "it's always showing expanded full tree… by default it should
+   * be collapsed"). This used to be a `collapsed` set that started EMPTY, i.e.
+   * default-OPEN: every parent drew its whole subtree on first paint, and a
+   * child arriving later from the event stream appeared inside it unasked. Now
+   * the set holds the rows the VIEWER opened, so an untouched row — and every
+   * row that arrives later — is shut, and the state persists per kind.
+   *
+   * See `kit/useTreeDisclosure` for why the set is safe to persist and how the
+   * selection is kept visible without being written to storage.
    */
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const revealed = useMemo(() => ancestorPath(rows, props.selectedId), [rows, props.selectedId]);
+  const disclosure = useTreeDisclosure(`list:${config.kind}`, revealed);
 
   const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
 
   /**
-   * Live session traffic, resolved against THIS tree's current shape. Recomputed
-   * when the tree or the collapsed set changes, because a route is only true for
-   * the arrangement that was on screen when it was drawn — collapsing a subtree
-   * mid-flight must re-aim the pulse at the ancestor now standing in for it.
+   * Live session traffic — delegation, completion and messages — resolved
+   * against THIS tree's current shape. Recomputed
+   * when the tree or the disclosure state changes, because a route is only true
+   * for the arrangement that was on screen when it was drawn — collapsing a
+   * subtree mid-flight must re-aim the pulse at the ancestor now standing in
+   * for it. `isExpanded` (not the raw set) is what is passed, so a row revealed
+   * by the selection routes as the open row it is drawn as.
    */
   const pulse = useMemo(
-    () => resolvePulses(rows, collapsed, props.messagePulses, config),
-    [rows, collapsed, props.messagePulses, config],
+    () => resolvePulses(rows, disclosure.isExpanded, props.messagePulses, config),
+    [rows, disclosure, props.messagePulses, config],
   );
 
-  const toggle = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   const renderNode = (node: TileTreeNode): React.ReactNode => {
-    const isCollapsed = collapsed.has(node.row.id);
+    const isCollapsed = !disclosure.isExpanded(node.row.id);
     const hasChildren = node.children.length > 0;
     const wire = pulse.segments.get(node.row.id);
     const endpoint = pulse.endpoints.get(node.row.id);
@@ -2241,7 +2716,7 @@ function TreeRows({
           attention={attentionIds?.has(node.row.id) ?? false}
           childCount={node.children.length}
           expanded={!isCollapsed}
-          onToggleChildren={hasChildren ? () => toggle(node.row.id) : undefined}
+          onToggleChildren={hasChildren ? () => disclosure.toggle(node.row.id) : undefined}
         />
         {hasChildren && !isCollapsed ? (
           <div
@@ -2371,7 +2846,13 @@ const NO_PULSES: ResolvedPulses = { segments: new Map(), endpoints: new Map() };
  */
 function resolvePulses(
   rows: readonly EntitySummary[],
-  collapsed: ReadonlySet<string>,
+  /**
+   * Does this row draw its children? A PREDICATE, not the persisted set: a row
+   * on the path to the selection is open on screen without being in storage,
+   * and a route that consulted the set alone would re-aim a pulse at an
+   * ancestor while the real row is plainly visible.
+   */
+  isExpanded: (id: string) => boolean,
   pulses: readonly MessagePulse[] | undefined,
   config: KindConfig,
 ): ResolvedPulses {
@@ -2389,12 +2870,16 @@ function resolvePulses(
   const index = {
     parentOf,
     isVisible: (id: string) => {
-      if (!present.has(id) || collapsed.has(id)) return false;
-      // Rendered means every ancestor is expanded, not just this row's parent.
+      if (!present.has(id)) return false;
+      // A ROW IS VISIBLE WHEN EVERY ANCESTOR IS OPEN — its own disclosure state
+      // is about its CHILDREN, not itself, so it is deliberately not consulted
+      // here. (Under the old default-open set this read `collapsed.has(id)`
+      // first, which was wrong in the same way and merely never observable
+      // while nothing started closed.)
       const guard = new Set<string>();
       let cursor = parentOf(id);
       while (typeof cursor === 'string' && !guard.has(cursor)) {
-        if (collapsed.has(cursor)) return false;
+        if (!isExpanded(cursor)) return false;
         guard.add(cursor);
         cursor = parentOf(cursor);
       }
@@ -2445,6 +2930,22 @@ function resolvePulses(
  * vocabulary. One tile implementation; a copy is how the control-card's
  * chips drifted dead once already (D67).
  */
+/**
+ * An `ActorSummary` off a loosely-typed state bag, or null.
+ *
+ * Structural, not kind-tested: §15.2 forbids a component from naming a kind,
+ * and the question here is only "did the server send an actor" — a payload
+ * from a node that predates the field sends nothing, and null is the answer
+ * for that as much as for a run with no persona.
+ */
+function actorSummaryOrNull(value: unknown): ActorSummary | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const actor = value as Partial<ActorSummary>;
+  return typeof actor.id === 'string' && typeof actor.displayName === 'string'
+    ? (actor as ActorSummary)
+    : null;
+}
+
 export function Tile({
   row,
   depth = 0,
@@ -2454,6 +2955,7 @@ export function Tile({
   childCount = 0,
   expanded = false,
   onToggleChildren,
+  path,
 }: {
   row: EntitySummary;
   depth?: number;
@@ -2463,6 +2965,13 @@ export function Tile({
   childCount?: number;
   expanded?: boolean;
   onToggleChildren?: () => void;
+  /**
+   * The relation-traversal path: every entity id this tile hangs UNDER via
+   * open relation groups, so an edge pointing back at an ancestor is
+   * suppressed rather than drawn as a loop (user ruling 2026-08-16 —
+   * parent → child → parent renders once). Absent at the top level.
+   */
+  path?: ReadonlySet<string>;
 }) {
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
@@ -2481,6 +2990,64 @@ export function Tile({
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   /** Bounds for the expand's outside-click dismissal — the trigger lives here too. */
   const tileRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * THE RELATIONAL PANEL (user ruling 2026-08-16): the tile's relation chips
+   * open the linked entities of ONE kind inline under the row. One group per
+   * tile — clicking another chip REPLACES the open one (the accordion the
+   * ruling chose); clicking the open chip closes it. Row-local for the same
+   * reason `flowRef` is: outside state would need an "only one open"
+   * register this panel has no owner for.
+   */
+  const [openRelation, setOpenRelation] = useState<{
+    kind: string;
+    /* The counted edge, captured AT CLICK TIME from the badge's own spec —
+       a live counter update that removes the badge must not retroactively
+       widen an already-open group to "every relation". */
+    edge?: { type: string; direction: 'incoming' | 'outgoing' };
+  } | null>(null);
+  /** The group's stable DOM id — the chips' `aria-controls` target. */
+  const relatedGroupId = useId();
+  const connections = props.connectionsOf?.(row.id);
+  /** This tile's own id joins the path its expansion hands down. */
+  const nestedPath = useMemo<ReadonlySet<string>>(() => {
+    const ids = new Set(path ?? []);
+    ids.add(row.id);
+    return ids;
+  }, [path, row.id]);
+  const linkedSessions =
+    (SESSION_CHIP_KIND ? props.linkedSessionsOf?.(row.id) : undefined) ?? NO_LINKED;
+  const sessionRows = SESSION_CHIP_KIND
+    ? relatedOfKind(row.id, connections, SESSION_CHIP_KIND, linkedSessions, path)
+    : NO_LINKED;
+  const toggleRelation = (
+    kind: string,
+    edge?: { type: string; direction: 'incoming' | 'outgoing' },
+  ): void => {
+    /* Opening asks for the row's detail exactly like the control strip does —
+       `connectionsOf` is backed by hydration, so an unhydrated row would
+       otherwise say "loading" forever. The fill is idempotent (see
+       `onNeedDetail`), so a re-click cannot stampede the seam. */
+    if (openRelation?.kind !== kind && connections === undefined) props.onNeedDetail?.(row.id);
+    setOpenRelation((prev) => (prev?.kind === kind ? null : { kind, ...(edge ? { edge } : {}) }));
+  };
+
+  /**
+   * THE SHARED VISIBLE COUNT (PR #272 re-review, blocking): once this row's
+   * connections are hydrated, a count badge shows the length of the EXACT
+   * read its group renders — same edge spec, same traversal path — so chip
+   * and rows cannot disagree, including the deterministic case where the
+   * counted peer is an ancestor of this very expansion (the chip then
+   * reads zero and unmounts). Before hydration the server counter remains
+   * the discovery value and the group withholds any numeric claim.
+   */
+  const countedRelationOf = (
+    kind: string,
+    relation?: { type: string; direction: 'incoming' | 'outgoing' },
+  ): number | undefined =>
+    connections === undefined || !isExpandableKind(kind)
+      ? undefined
+      : relatedOfKind(row.id, connections, kind, NO_LINKED, path, relation).length;
 
   const streaming = Boolean(
     list.tile.pulse && props.activity?.[row.id] && treatment?.streamingLabel,
@@ -2517,12 +3084,139 @@ export function Tile({
   const statusTitle = treatment?.reason ?? treatment?.label ?? badgeStatus?.word;
 
   const selected = props.selectedId === row.id;
-  const done = row.deletedAt != null;
+  /**
+   * TWO FACTS, TWO NAMES — sub-doc 5, collisions C2 and C3.
+   *
+   * `archived` was called `done` and meant `deletedAt != null`, and it fed the
+   * task tile's `completed` prop. So an ARCHIVED task rendered with the
+   * COMPLETED strikethrough, and would have kept doing it the moment a real
+   * `done` entered this file — a wrong answer that looks like a right one.
+   *
+   * `completed` now has exactly ONE definition, here, for every kind:
+   * `category === 'done'`. It used to have two, 36 lines apart — the session
+   * tile read `recordedStatus === 'exited'` (which files a CRASHED session as
+   * unfinished while the Done tab counted it) and the task tile read
+   * `archived || statusWord === 'done'` (which files an archived to-do as
+   * finished, and reads a WORD off a badge that liveness may have replaced).
+   * Neither matched the tab above them.
+   *
+   * `category` rides the summary (phase 1), so this is a fact that arrives
+   * with the row — no hydration lottery, and a collapsed tile answers it. Its
+   * ABSENCE means the entity has no status at all, which is not `done`.
+   *
+   * `cancelled` is deliberately NOT completed: a cancelled task stopped, it
+   * did not finish, and the fourth category exists to say so.
+   */
+  const archived = row.deletedAt != null;
+  const completed = row.category === 'done';
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
   // Session tiles carry the same chip slot: the index resolves a session's
   // PRs through its working_on task's tracks edges.
   const linkedPullRequests = (controlCard || sessionTree) ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
+
+  /**
+   * The LEADING sessions chip (user ruling 2026-08-16: "sessions also, at the
+   * start, with terminal icons and number"). Counted from the graph
+   * projection UNION the row's connections, path-suppressed — the same read
+   * the open group renders from, so the chip can never promise a row the
+   * group refuses to draw.
+   */
+  const sessionsOpen = openRelation?.kind === SESSION_CHIP_KIND;
+  const sessionsPlural = SESSION_CHIP_KIND
+    ? `${sessionRows.length} linked ${getKind(SESSION_CHIP_KIND).label.toLowerCase()}${sessionRows.length === 1 ? '' : 's'}`
+    : '';
+  const sessionChip = SESSION_CHIP_KIND && sessionRows.length > 0 ? (
+    <button
+      type="button"
+      className={
+        sessionsOpen
+          ? 'pn-st__count pn-st__count--btn pn-st__count--open'
+          : 'pn-st__count pn-st__count--btn'
+      }
+      data-testid="session-chip"
+      data-count-kind={SESSION_CHIP_KIND}
+      data-relation-owner={relatedGroupId}
+      title={`${sessionsPlural} — click to show them under this row`}
+      /* The visible content is a decorative glyph and a number; the name
+         must say kind, count and action itself (PR #272 review, 3). */
+      aria-label={`${sessionsOpen ? 'Hide' : 'Show'} ${sessionsPlural} under this row`}
+      aria-expanded={sessionsOpen}
+      aria-controls={sessionsOpen ? relatedGroupId : undefined}
+      onClick={(event) => {
+        event.stopPropagation();
+        toggleRelation(SESSION_CHIP_KIND);
+      }}
+    >
+      <KindIcon kind={SESSION_CHIP_KIND} size={12} />
+      {sessionRows.length}
+    </button>
+  ) : null;
+
+  /** ONE badge sub-row for EVERY anatomy — session-tree, control-card and
+      standard alike, or traversal would dead-end at the first doc: sessions
+      chip first, then PR chips (on the anatomies that resolve them), then
+      the count badges — doors where a count names a real collection kind.
+      Clickability requires a wired `connectionsOf`; without the projection
+      an opened group could never fill. */
+  const tileBadges =
+    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
+      <>
+        {sessionChip}
+        {linkedPullRequests.length > 0 ? (
+          <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+        ) : null}
+        <TileCountBadges
+          counters={row.counters}
+          humanAuthors={row.badges.humanMessageAuthors}
+          openKind={openRelation?.kind ?? null}
+          onToggleKind={props.connectionsOf ? toggleRelation : undefined}
+          expandableKind={isExpandableKind}
+          controlsId={relatedGroupId}
+          countOf={countedRelationOf}
+        />
+      </>
+    ) : undefined;
+
+  /**
+   * The open relation group, rendered AFTER the tile at the tile's own level
+   * — offset stays the hierarchy tree's vocabulary; a thin rail marks
+   * ownership instead (see RelatedGroup). Rows are REAL tiles of their own
+   * kind (the 2026-08-13 rule), so a session under a task is the same
+   * MaestroSessionTile the sessions list draws, liveness and terminate
+   * included — and each nested tile carries its own chips, which is what
+   * makes the graph traversable in the panel itself.
+   */
+  const relatedRows = openRelation
+    ? relatedOfKind(
+        row.id,
+        connections,
+        openRelation.kind,
+        openRelation.kind === SESSION_CHIP_KIND ? linkedSessions : NO_LINKED,
+        nestedPath,
+        openRelation.edge,
+      )
+    : NO_LINKED;
+  const relatedBlock = openRelation ? (
+    <RelatedGroup
+      id={relatedGroupId}
+      kind={openRelation.kind}
+      label={getKind(openRelation.kind).labelPlural}
+      count={relatedRows.length}
+      loading={connections === undefined}
+      onClose={() => setOpenRelation(null)}
+    >
+      {relatedRows.map((related) => (
+        <Tile
+          key={related.id}
+          row={related}
+          props={props}
+          config={getKind(related.kind)}
+          path={nestedPath}
+        />
+      ))}
+    </RelatedGroup>
+  ) : null;
 
   if (sessionTree) {
     const state = row.state as unknown as Record<string, unknown>;
@@ -2531,51 +3225,66 @@ export function Tile({
     // Passed through so the tile can tell a vanilla terminal from an agent
     // whose tool was never recorded (101). Absent stays absent — see the prop.
     const sessionKind = typeof state.sessionKind === 'string' ? state.sessionKind : null;
+    // The persona behind the run, when the server resolved one. Read off the
+    // summary rather than the graph so the tile's identity cannot flicker on a
+    // page that happened to miss the `participates_in` edge.
+    const teammate = actorSummaryOrNull(state.teammate);
     const model = typeof state.model === 'string' ? state.model : null;
     const live = verdict === 'live';
     // The lane facts ride the summary state (107) — no edge read needed, so
     // the badge cannot flicker when the bounded graph page misses an edge.
     const lane = sessionLaneOf(row.state);
     return (
+      <>
       <MaestroSessionTile
         id={row.id}
         title={row.title || 'Session'}
         agentTool={agentTool}
         sessionKind={sessionKind}
+        teammate={teammate}
         model={model}
         status={recordedStatus}
         attention={attention}
         selected={selected}
-        archived={row.deletedAt != null}
-        completed={recordedStatus === 'exited'}
+        archived={archived}
+        completed={completed}
         live={live}
         streaming={streaming}
         statusTone={statusTone}
         statusTitle={statusTitle}
-        tasks={props.linkedTasksOf?.(row.id) ?? []}
+        /* Path-suppressed: a session expanded UNDER a task must not offer
+           that same task as a chip one level down — the loop the ruling
+           names (parent → child → parent renders once). */
+        tasks={(props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false))}
         lane={lane !== null ? <SessionLaneLine lane={lane} /> : undefined}
-        badges={
-          linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
-            <>
-              {linkedPullRequests.length > 0 ? (
-                <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
-              ) : null}
-              <TileCountBadges counters={row.counters} humanAuthors={row.badges.humanMessageAuthors} />
-            </>
-          ) : undefined
-        }
+        badges={tileBadges}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
         onSelect={() => props.onSelect?.(row.id)}
-        onClose={props.onTerminate ? () => props.onTerminate?.(row.id) : undefined}
+        actions={(own) => (
+          <RowActionCluster
+            row={row}
+            props={props}
+            config={config}
+            openFlow={flowRef}
+            onFlow={setFlowRef}
+            onOpenLaunch={props.launch?.onFullOptions}
+            /* Copy — this anatomy's own affordance, placed by the cluster so
+               it lands before Terminate. See `MaestroSessionTile.actions`. */
+            anatomyActions={own}
+          />
+        )}
         detail={<EntityControlStrip row={row} props={props} config={config} />}
       />
+      {relatedBlock}
+      </>
     );
   }
 
   if (controlCard && controlFacts) {
     return (
+      <>
       <MaestroTaskTile
         rootRef={tileRef}
         id={row.id}
@@ -2584,7 +3293,8 @@ export function Tile({
         selected={selected}
         attention={attention}
         attentionReason={row.badges.attention?.latestReason}
-        completed={done || statusWord === 'done'}
+        archived={archived}
+        completed={completed}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
@@ -2596,44 +3306,45 @@ export function Tile({
           hollow: statusHollow,
           streaming,
         }}
-        assignees={controlFacts.assignees}
-        creator={controlFacts.creator}
-        badges={
-          linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
-            <>
-              {linkedPullRequests.length > 0 ? (
-                <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
-              ) : null}
-              <TileCountBadges counters={row.counters} humanAuthors={row.badges.humanMessageAuthors} />
-            </>
-          ) : undefined
-        }
-        actions={[
-          ...(list.rowActions ?? []).map((ref) => (
-            <RowAction
-              key={ref}
-              ref_={ref}
+        /* The mark becomes the state control — the same one the expanded strip
+           mounts, so the collapsed row writes through exactly the gates and
+           refusals the open row does.
+           NOT when a liveness `treatment` owns the status: there the dot paints
+           the node's verdict, not the record's field, and a picker beside it
+           would offer to write the value the dot is not showing. */
+        statusControl={
+          list.stateControl && !treatment ? (
+            <RowStateControl
               row={row}
               props={props}
-              openFlow={flowRef}
-              onFlow={setFlowRef}
-              onOpenLaunch={props.launch?.onFullOptions}
+              control={list.stateControl}
+              pill={config.panel.statusPill}
+              variant="dot"
+              glyph={
+                <MaestroStatusGlyph
+                  tone={statusTone}
+                  hollow={statusHollow}
+                  streaming={streaming}
+                />
+              }
             />
-          )),
-          /* The collapsed control-card gets the same icon-anatomy membership
-             control as the standard tile — one component, not a second copy. */
-          ...(list.membership
-            ? [
-                <RowMembershipControl
-                  key="membership"
-                  row={row}
-                  props={props}
-                  control={list.membership}
-                  variant="icon"
-                />,
-              ]
-            : []),
-        ]}
+          ) : undefined
+        }
+        assignees={controlFacts.assignees}
+        creator={controlFacts.creator}
+        badges={tileBadges}
+        /* The same cluster the standard tile draws, in the same order — one
+           component, not a second copy. The control-card's own chevron lives
+           inside `MaestroTaskTile` after this slot, so no `trailing` here. */
+        actions={
+          <RowActionCluster
+            row={row}
+            props={props}
+            config={config}
+            openFlow={flowRef}
+            onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
+          />
+        }
         detailsExpanded={controlExpanded}
         flowOpen={flowRef !== null}
         onToggleDetails={() => {
@@ -2693,10 +3404,13 @@ export function Tile({
           <Timestamp className="pn-tt__time" at={row.activityAt} prefix="active" title="last activity" />
         </div>
       </MaestroTaskTile>
+      {relatedBlock}
+      </>
     );
   }
 
   return (
+    <>
     <div
       ref={tileRef}
       className={[
@@ -2711,6 +3425,11 @@ export function Tile({
       data-tree={config.list.tree ? 'true' : undefined}
       data-children={childCount > 0 ? childCount : undefined}
       data-flow={flowRef ? 'open' : undefined}
+      /* The task tile has carried this since #435; the standard anatomy needed
+         it for the same reason. The phone drops the row's verbs while the row
+         is CLOSED, and "closed" is a fact only this tile knows — a descendant
+         selector cannot read a sibling's `useState`. */
+      data-details={detailsExpanded ? 'open' : undefined}
       data-streaming={streaming ? 'true' : 'false'}
     >
       <div className="lp__tile-main" onClick={() => props.onSelect?.(row.id)}>
@@ -2764,7 +3483,18 @@ export function Tile({
 
           <button
             type="button"
-            className={done ? 'lp__title lp__title--done' : 'lp__title'}
+            className={[
+              'lp__title',
+              /* Two facts, two classes — C2. `--completed` is the
+                 strikethrough (this row FINISHED); `--archived` only dims
+                 (this row was FILED AWAY). The one class used to be named
+                 `--done` and was driven by `deletedAt`, so archiving struck a
+                 row through as though it had been completed. */
+              completed ? 'lp__title--completed' : '',
+              archived ? 'lp__title--archived' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             title={row.title}
             aria-current={selected ? 'true' : undefined}
             onClick={(event) => {
@@ -2794,9 +3524,25 @@ export function Tile({
               never grows, so hovering cannot reflow the list under the cursor. */}
           <span className="lp__badges">
             {attention ? (
-              <span className="lp__attention-label" title={row.badges.attention?.latestReason}>
-                Needs attention
-              </span>
+              /* WHY it needs attention was `title`-only, and `title` renders on
+                 hover and nowhere else — so on a phone this row said "Needs
+                 attention" and refused to say why, with the reason present in
+                 the data and reachable by nobody. Attention is a core concept
+                 here; a request with an unreadable reason is a demand.
+                 The mouse loses nothing: `.hon-tip` still opens on hover, and
+                 now on focus and on tap as well. */
+              row.badges.attention?.latestReason ? (
+                <ReasonNote
+                  className="lp__attention-label"
+                  reason={row.badges.attention.latestReason}
+                  label="Needs attention — why"
+                  testid="attention-reason"
+                >
+                  Needs attention
+                </ReasonNote>
+              ) : (
+                <span className="lp__attention-label">Needs attention</span>
+              )
             ) : null}
             {statusWord ? (
               <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
@@ -2805,50 +3551,58 @@ export function Tile({
             ) : null}
           </span>
 
-          <span className="lp__rowactions">
-            {(list.rowActions ?? []).map((ref) => (
-              <RowAction
-                key={ref}
-                ref_={ref}
-                row={row}
-                props={props}
-                openFlow={flowRef}
-                onFlow={setFlowRef}
-                onOpenLaunch={props.launch?.onFullOptions}
-              />
-            ))}
-            {/* Add-to-collection on the COLLAPSED tile (user ruling
-                2026-08-13) — the expanded strip already carries the labelled
-                form; a curation verb two clicks deep is one the user reported
-                as absent. Same component, icon anatomy, same gates. */}
-            {list.membership ? (
-              <RowMembershipControl row={row} props={props} control={list.membership} variant="icon" />
-            ) : null}
-            {/* D67 — the details disclosure, on EVERY standard tile.
-                DELIBERATELY NOT the leading `lp__disclosure`: that chevron
-                means "show this row's CHILDREN" on tree kinds, and giving one
-                control two meanings would make a doc's expand ambiguous. This
-                one trails the row, matching the control-card's `pn-tt__ind`. */}
-            <button
-              type="button"
-              className={
-                detailsExpanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'
+          <span className="lp__rowactions lp__cluster">
+            {/* Collections · Run · Archive — the shared frame. See
+                `RowActionCluster` for why the order lives there and not in
+                three separate JSX literals. */}
+            <RowActionCluster
+              row={row}
+              props={props}
+              config={config}
+              openFlow={flowRef}
+              onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
+              trailing={
+                /* D67 — the details disclosure, on EVERY standard tile.
+                   DELIBERATELY NOT the leading `lp__disclosure`: that chevron
+                   means "show this row's CHILDREN" on tree kinds, and giving one
+                   control two meanings would make a doc's expand ambiguous. This
+                   one trails the row, matching the control-card's `pn-tt__ind`. */
+                <button
+                  type="button"
+                  /* `--ind` names it the OPENER, the way `pn-tt__ind` does on
+                     the task tile. The phone hides this cluster's verbs while
+                     the row is closed and must keep exactly this one; a
+                     structural selector would break the day a verb is added
+                     after it. */
+                  className={
+                    detailsExpanded
+                      ? 'lp__rowaction lp__rowaction--ind lp__rowaction--on'
+                      : 'lp__rowaction lp__rowaction--ind'
+                  }
+                  title="Details"
+                  aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
+                  aria-expanded={detailsExpanded}
+                  data-testid="row-details-toggle"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDetailsExpanded((open) => !open);
+                  }}
+                >
+                  <span aria-hidden><TileChevron /></span>
+                </button>
               }
-              title="Details"
-              aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
-              aria-expanded={detailsExpanded}
-              data-testid="row-details-toggle"
-              onClick={(event) => {
-                event.stopPropagation();
-                setDetailsExpanded((open) => !open);
-              }}
-            >
-              <span aria-hidden><TileChevron /></span>
-            </button>
+            />
           </span>
 
         </div>
       </div>
+
+      {/* THE RELATION BAND, ON THE STANDARD ANATOMY TOO (PR #272 review,
+          blocking 2): the graph is traversable through EVERY tile, so a doc
+          expanded under a task carries the same chips and can keep going.
+          Rendered as its own sub-row because the standard tile's main row
+          holds the 17px floor. */}
+      {tileBadges ? <div className="lp__tile-badges">{tileBadges}</div> : null}
 
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}
 
@@ -2882,6 +3636,8 @@ export function Tile({
         </div>
       ) : null}
     </div>
+    {relatedBlock}
+    </>
   );
 }
 

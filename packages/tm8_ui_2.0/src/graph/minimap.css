@@ -1,0 +1,48 @@
+/**
+ * Minimap — corner overview surface. ATELIER paper-and-ink, tokens only (hex
+ * banned outside tokens.css). Same shelf/ticker overlay dressing: --pn-surface
+ * fill, 1px --pn-line border, no decorative elevation. Node rects
+ * default to a warm-grey ink; blocked / live borrow the functional ramp (and
+ * carry their word in a <title>, so color is never the only carrier). The
+ * viewport frame is the one brass hairline.
+ */
+
+.gv-minimap {
+  display: block;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.gv-minimap:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+.gv-minimap__node {
+  fill: var(--pn-ink-3);
+  transition: fill var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.gv-minimap__node--blocked {
+  fill: var(--pn-block);
+}
+
+.gv-minimap__node--live {
+  fill: var(--pn-run);
+}
+
+.gv-minimap__viewport {
+  fill: transparent;
+  stroke: var(--pn-brand);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gv-minimap__node {
+    transition: none;
+  }
+}

@@ -13,8 +13,9 @@ import {
   ProjectCreateInputSchema, ProjectDirectoryListingSchema, ProjectLinkInputSchema, ProjectResourceSchema,
   RESERVED_OPERATIONS, V1_OPERATIONS, WireErrorBodySchema, WorkInputSchema,
   WorkspaceEventSchema, bindPath,
+  MOUNTED_OPERATIONS,
 } from '../src/index.js';
-import type { EntitySummary, MessageView, WorkspaceEvent } from '../src/index.js';
+import type { EntitySummary, MessageView, OperationName, WorkspaceEvent } from '../src/index.js';
 
 const actor = {
   id: 'ent_member_1', kind: 'member' as const, displayName: 'Subhang', isAgent: false,
@@ -29,8 +30,14 @@ const taskSummary: EntitySummary = {
   updatedAt: '2026-07-25T12:00:00.000Z', deletedAt: null,
   createdBy: actor, counters,
   state: {
-    kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
-    assignees: [], acceptance: { total: 0, completed: 0 },
+    kind: 'task', status: 'open', priority: 'medium', axes: {},
+    assignees: [actor],
+    assignments: [{
+      assignee: actor,
+      assignedBy: null,
+      assignedAt: '2026-07-25T12:00:00.000Z',
+    }],
+    acceptance: { total: 0, completed: 0 },
   },
   badges: {},
 };
@@ -93,12 +100,40 @@ describe('keyset cursors (DEV-5)', () => {
 });
 
 describe('operation catalog', () => {
-  it('has unique names and unique method+path bindings', () => {
+  it('has unique names, and unique method+path bindings among the rows that MOUNT', () => {
     const names = OPERATIONS.map((o) => o.name);
     expect(new Set(names).size).toBe(names.length);
-    const bindings = OPERATIONS.map((o) => `${o.method} ${o.path}`);
+    // Uniqueness is asserted over MOUNTED_OPERATIONS, not OPERATIONS, because
+    // an alias row deliberately re-declares an existing binding so a family's
+    // socket is discoverable under its own name. The invariant that matters is
+    // that nothing MOUNTS the same `method path` twice.
+    const bindings = MOUNTED_OPERATIONS.map((o) => `${o.method} ${o.path}`);
     expect(new Set(bindings).size).toBe(bindings.length);
     for (const op of OPERATIONS) expect(op.path.startsWith(BASE_PATH)).toBe(true);
+  });
+
+  // The teeth of the rule above. Without this, `aliasOf` would be a way to opt
+  // any duplicate out of the uniqueness check; with it, an alias must name a
+  // real operation, must actually MATCH that operation's binding, and must not
+  // itself be mounted. A copy-paste duplicate cannot satisfy all three.
+  it('every alias names a real operation, shares its exact binding, and is not mounted', () => {
+    const aliases = OPERATIONS.filter((o) => 'aliasOf' in o);
+    expect(aliases.length).toBeGreaterThan(0);
+    for (const alias of aliases) {
+      const target = getOperation((alias as { aliasOf: OperationName }).aliasOf);
+      expect(target.name).not.toBe(alias.name);
+      expect(`${alias.method} ${alias.path}`).toBe(`${target.method} ${target.path}`);
+      expect(MOUNTED_OPERATIONS.map((o) => o.name)).not.toContain(alias.name);
+      // The target itself must be mounted — an alias of an alias is a chain
+      // nothing would ever serve.
+      expect(MOUNTED_OPERATIONS.map((o) => o.name)).toContain(target.name);
+    }
+  });
+
+  it('mounts every operation exactly once except the declared aliases', () => {
+    expect(MOUNTED_OPERATIONS.length).toBe(
+      OPERATIONS.length - OPERATIONS.filter((o) => 'aliasOf' in o).length,
+    );
   });
 
   it('carries the execution.* family (R16) and the entityKinds family (T-L4)', () => {
@@ -140,7 +175,7 @@ describe('DTO schemas', () => {
   it('accepts a canonical task summary and rejects drift', () => {
     expect(EntitySummarySchema.safeParse(taskSummary).success).toBe(true);
     expect(EntitySummarySchema.safeParse({ ...taskSummary, surprise: 1 }).success).toBe(false);
-    expect(EntitySummarySchema.safeParse({ ...taskSummary, state: { ...taskSummary.state, workStatus: 'banana' } }).success).toBe(false);
+    expect(EntitySummarySchema.safeParse({ ...taskSummary, state: { ...taskSummary.state, status: 'banana' } }).success).toBe(false);
     expect(EntitySummarySchema.safeParse({ ...taskSummary, counters: { ...counters, viewerReaction: undefined } }).success).toBe(false); // DEV-10: always present
   });
 
@@ -164,15 +199,30 @@ describe('DTO schemas', () => {
       nodeBootId: 'boot-1',
       checkedAt: '2026-07-28T12:00:00.000Z',
       capacity: { used: 1, total: 8 },
+      eventHwm: 108477,
     };
     expect(ExecutionLivenessSchema.safeParse(liveness).success).toBe(true);
     expect(ExecutionLivenessSchema.safeParse({ ...liveness, extra: 1 }).success).toBe(false);
     expect(ExecutionLivenessSchema.safeParse({ ...liveness, checkedAt: 'yesterday' }).success).toBe(false);
+    // The event mark is NULLABLE — "I cannot establish it" is an answer this
+    // read has to give — but never OPTIONAL and never a string: an absent
+    // field is the shape a consumer reads as zero, i.e. "replay everything".
+    expect(ExecutionLivenessSchema.safeParse({ ...liveness, eventHwm: null }).success).toBe(true);
+    const { eventHwm: _omitted, ...withoutMark } = liveness;
+    expect(ExecutionLivenessSchema.safeParse(withoutMark).success).toBe(false);
+    expect(ExecutionLivenessSchema.safeParse({ ...liveness, eventHwm: '108477' }).success).toBe(false);
+    expect(ExecutionLivenessSchema.safeParse({ ...liveness, eventHwm: -1 }).success).toBe(false);
 
     // A22 — each filter alone is legal…
     const base = { spaceId: '019f9896-928d-79b6-ba1c-1cdcc1d30a6f' };
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['running', 'idle'] } }).success).toBe(true);
-    expect(CollectionQuerySchema.safeParse({ ...base, filters: { workStatus: ['open'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { status: ['open'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({
+      ...base,
+      filters: {
+        assignedByIds: ['019f9896-928d-7a24-848b-4c8fdd82b761'],
+      },
+    }).success).toBe(true);
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['sleeping'] } }).success).toBe(false);
 
     // …but the kind-disjoint PAIR is refused, not silently empty: no row is
@@ -180,11 +230,23 @@ describe('DTO schemas', () => {
     // produce the confident zero. The refusal names the mechanism.
     const pair = CollectionQuerySchema.safeParse({
       ...base,
-      filters: { workStatus: ['open'], sessionStatus: ['running'] },
+      filters: { status: ['open'], sessionStatus: ['running'] },
     });
     expect(pair.success).toBe(false);
     if (!pair.success) {
       expect(JSON.stringify(pair.error.issues)).toContain('kind-disjoint');
+    }
+
+    // The priority axis obeys the same law: task-only, so pairing it with
+    // sessionStatus is another always-empty conjunction that must refuse.
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { priority: ['high'] } }).success).toBe(true);
+    const priorityPair = CollectionQuerySchema.safeParse({
+      ...base,
+      filters: { priority: ['high'], sessionStatus: ['running'] },
+    });
+    expect(priorityPair.success).toBe(false);
+    if (!priorityPair.success) {
+      expect(JSON.stringify(priorityPair.error.issues)).toContain('kind-disjoint');
     }
   });
 
@@ -275,7 +337,24 @@ describe('DTO schemas', () => {
 describe('command input schemas (DEF-1/2/3 conventions)', () => {
   it('rejects unknown fields, closed-enum violations, and wrong types', () => {
     expect(WorkInputSchema.safeParse({ status: 'working' }).success).toBe(true);
-    expect(WorkInputSchema.safeParse({ workStatus: 'done' }).success).toBe(false);       // DEF-1
+    /**
+     * DEF-1 IS NOT A SCHEMA RULE, and this line used to claim it was.
+     *
+     * It read `safeParse({ workStatus: 'done' })` and expected `false` — and
+     * it got `false`, but for the UNKNOWN-FIELD reason on the line below it,
+     * never for the value. `WorkInput`'s member has always been spelled
+     * `status`, so the case DEF-1 describes was never actually exercised.
+     * Phase 9's rename made the misspelling impossible to keep, which is how a
+     * silently-vacuous assertion came to light.
+     *
+     * `done` PARSES, and that is correct: DEF-1 ("completion goes through
+     * complete_task") is enforced by `set_work_state`, which refuses with
+     * `invariant_violation / use_complete_command` — a refusal that names the
+     * command to use instead. A schema rejection would replace that sentence
+     * with a shape error, which is a worse answer to the same mistake.
+     */
+    expect(WorkInputSchema.safeParse({ status: 'done' }).success).toBe(true);
+    expect(WorkInputSchema.safeParse({ workStatus: 'working' }).success).toBe(false);  // DEF-3
     expect(WorkInputSchema.safeParse({ status: 'banana' }).success).toBe(false);          // DEF-2
     expect(WorkInputSchema.safeParse({ status: 'working', speed: 'fast' }).success).toBe(false); // DEF-3
     expect(WorkInputSchema.safeParse({ status: 'working', startedAt: 'yesterdayish' }).success).toBe(false);

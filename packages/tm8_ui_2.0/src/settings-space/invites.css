@@ -1,0 +1,313 @@
+/* T2-1c · INVITES — the section's own layout, owned by this lane only.
+ *
+ * Imported from `InviteFrames.tsx`, never from `index.ts`: `settings.css` is
+ * the shared frame and twelve lanes editing it produce twelve conflicts
+ * (SECTION-CONTRACT §5). Everything here is prefixed `set-invites__`, one `s`
+ * away from the older shared `.set-invite*` rules the specimen rows still use,
+ * which live in `settings.css` and are not mine to move.
+ *
+ * WHAT THIS FIXES, measured in Chrome at 1508×882 before the change:
+ *
+ *  - The role select was 850px wide (`.set-field--grow` inside a 1175px form
+ *    with no measure), so "joins as member" sat alone at the far left of a
+ *    control the width of a paragraph. That is the same disease the frame pass
+ *    fixed at the card level, one level down.
+ *  - The bearer-capability warning measured 887px — over the 860px measure.
+ *  - `Create invite link` rendered as a RAW NATIVE BUTTON, because
+ *    `.set-refuse--block` only sets `display:block; width:100%` and no fill.
+ *    The refused variant, which inherits honesty.css's brass chip, therefore
+ *    looked better designed than the working one. Both are chips now.
+ *  - Live / used-up / revoked were separated by opacity and a run of words in
+ *    the same 9px grey. They now carry the functional ramp: run · idle · block.
+ *
+ * RECLASSIFIED (Kinetic W3 sweep). Mono is DATA only: the invite code, the
+ * join URL, the counts. Field labels, cautions, errors, button words, state
+ * words and the locked/empty sentences speak Figtree (caps grammar for the
+ * state pill and eyebrow). Words and counts unchanged.
+ */
+
+/* --- the create form ----------------------------------------------------- */
+
+/* Full-bleed so its hairline reaches the card edge and reads as a rule; the
+   CONTENT inside is capped at the measure and left-aligned, so it starts on
+   the same 18px gutter as the section title above it rather than centring away
+   from it. */
+.set-invites__form {
+  padding: 14px var(--set-gutter) 16px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.set-invites__formInner {
+  max-width: var(--set-measure);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* Three labelled fields that WRAP rather than shrink. `min-width` on each
+   means at 900×600 they fold to two rows instead of squeezing "never expires"
+   into an ellipsis. */
+.set-invites__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.set-invites__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 148px;
+}
+/* The role field earns the extra width — its options are the longest — but it
+   is capped, because a select is not prose and does not want the measure. */
+.set-invites__field--role { flex: 1 1 220px; max-width: 320px; }
+
+.set-invites__label {
+  /* Field labels are words — ui 600 at the floor, no caps dressing. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+
+/* The submit line: affordance right, consequence left, one baseline. */
+.set-invites__submit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+.set-invites__caution {
+  flex: 1 1 300px;
+  min-width: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+.set-invites__go { flex: none; }
+
+.set-invites__error {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-block);
+  background: var(--pn-block-soft);
+  border-radius: var(--pn-r-sm);
+  padding: 6px 9px;
+  overflow-wrap: anywhere;
+}
+
+/* --- the list ------------------------------------------------------------ */
+
+.set-invites__group {
+  padding: 14px var(--set-gutter) 5px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.set-invites__count {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+}
+
+.set-invites__row {
+  padding: 9px var(--set-gutter);
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+.set-invites__rowInner {
+  max-width: var(--set-measure);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.set-invites__rowTop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.set-invites__grow { flex: 1; min-width: 0; }
+
+/* THE STATE, AT A GLANCE. Three tones off the functional ramp, not three
+   shades of the same grey and not opacity — opacity says "less important",
+   which is the wrong sentence for "this code was deliberately killed". */
+.set-invites__state {
+  flex: none;
+  /* A state WORD — caps chip grammar, never mono. */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+}
+.set-invites__state--live {
+  color: var(--pn-run);
+  background: var(--pn-run-soft);
+  border-color: color-mix(in srgb, var(--pn-run) 30%, transparent);
+}
+.set-invites__state--spent {
+  color: var(--pn-ink-2);
+  background: var(--pn-idle-soft);
+  border-color: color-mix(in srgb, var(--pn-idle) 45%, transparent);
+}
+.set-invites__state--revoked {
+  color: var(--pn-block);
+  background: var(--pn-block-soft);
+  border-color: color-mix(in srgb, var(--pn-block) 30%, transparent);
+}
+
+/* THE CODE IS A BUTTON. It is the thing a person came here to take away —
+   `tm8 space invite redeem <code>` consumes the code, not the URL — and before
+   this it was a `<span>` you could only select by dragging. */
+.set-invites__code {
+  appearance: none;
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  border-radius: var(--pn-r-sm);
+  padding: 2px 7px;
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: pointer;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.set-invites__code:hover { background: var(--pn-hover); border-color: var(--pn-line-2); }
+.set-invites__code--dead {
+  cursor: default;
+  font-weight: 400;
+  color: var(--pn-ink-3);
+  text-decoration: line-through;
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
+}
+
+.set-invites__meta {
+  /* "admin · 2/5 used" — words carrying a count; the sentence wins. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  min-width: 0;
+}
+
+/* The join URL. `anywhere` rather than a truncation: a link you cannot read in
+   full is a link you cannot check before you send it to somebody. */
+.set-invites__stamp {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--pn-ink-4);
+  overflow-wrap: anywhere;
+}
+
+/* Row actions — ghost chips, so they read as controls at a glance and stop
+   rendering as the browser's own grey buttons, which is what a `<button>`
+   carrying only a font rule gets. */
+.set-invites__act {
+  appearance: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
+  cursor: pointer;
+}
+.set-invites__act:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.set-invites__act:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+.set-invites__act--copied { color: var(--pn-run); border-color: color-mix(in srgb, var(--pn-run) 40%, transparent); }
+.set-invites__act--danger:hover { color: var(--pn-block); border-color: color-mix(in srgb, var(--pn-block) 40%, transparent); }
+
+/* --- the not-an-admin state --------------------------------------------- */
+
+/* THE COMMON CASE, AND IT MUST LOOK DELIBERATE. Most viewers of this section
+   are not admins, their read rejects, and before this they got one grey line
+   under a form they could not use — indistinguishable from a screen that had
+   failed to load. A stated absence gets a frame of its own. */
+.set-invites__locked {
+  max-width: var(--set-measure);
+  margin: 16px var(--set-gutter);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+}
+.set-invites__lockedEyebrow {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro); /* eyebrow grammar: 11/700 */
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.set-invites__lockedHead {
+  font-family: var(--pn-prose);
+  font-size: 15px;
+  color: var(--pn-ink-2);
+}
+.set-invites__lockedWhy {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+
+/* The measured empty. A different sentence from the one above, and it has to
+   look different too, or the distinction the panel is careful to draw in words
+   is undone by drawing them identically. */
+.set-invites__empty {
+  max-width: var(--set-measure);
+  margin: 4px var(--set-gutter) 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+}
+
+/* --- the redeem landing -------------------------------------------------- */
+
+/* NOT a settings section: it is the whole page a stranger holding a link sees,
+   so it is not wrapped in `SectionFrame` and must stand up on bare paper. It
+   had no width bound of its own and inherited whatever the host gave it — on a
+   wide host that put a 22px serif title across the full window. */
+.set-invites__redeemPage {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+}
+/* The bound goes on a class of MY OWN carried beside `.set-redeem` rather than
+   on `.set-redeem` itself: that rule lives in the shared `settings.css` and
+   re-selecting it from here would reach every lane's copy of it. */
+.set-invites__redeemCard {
+  width: 100%;
+  max-width: 380px;
+}

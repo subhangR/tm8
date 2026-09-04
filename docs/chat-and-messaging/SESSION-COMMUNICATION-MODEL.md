@@ -245,7 +245,7 @@ This separates “the persona executing the process” from “the Teammates res
 
 After a work-session-anchored message commits:
 
-- live and delivery-capable target: reserve a direct-delivery attempt only after the contact capability and universal unordered session-pair wake budget both pass under row lock;
+- live and delivery-capable target: reserve a durable direct-delivery attempt after the contact capability passes;
 - non-live target: do not attempt; create fallback notifications;
 - delivered: no delivery-failure fallback;
 - refused: create fallback notifications;
@@ -387,15 +387,15 @@ When a work session responds:
 5. a message is never delivered into the same work session that authored it, regardless of whether its anchor is that session, a task, or any other entity;
 6. non-live or non-delivered live-wake attempts use the normal fallback union.
 
-> ### ⚠ THE CAP DESCRIBED BELOW WAS REMOVED — 2026-08-14, by migration `120`
+> ### ⚠ THE BUDGET DESCRIBED BELOW WAS REMOVED — by migrations `120` and `135`
 >
-> Everything from here to the end of §10 describes the **agent wake budget**, and the *cap* half of it no longer exists. `120_remove_agent_wake_budget.sql` deleted the `automated_wake_limit` refusal from `public.reserve_session_message_delivery` and dropped `check(consecutive_agent_wakes between 0 and 4)`. **A session may now wake another session as many times as the work needs.** The adopted text is kept verbatim below because it is the record of what was adopted; read it as history, not as behaviour.
+> Everything from here to the end of §10 describes the retired **agent wake budget**. `120_remove_agent_wake_budget.sql` first deleted the cap; `146_remove_wake_budget_machinery.sql` then removed the table, counter, reset/cleanup functions, delivery pair columns, and copied version claim. **A session may wake another session as many times as the work needs.** The adopted text is kept verbatim below because it is the record of what was adopted; read it as history, not as behaviour.
 >
-> What is still true, and is load-bearing:
+> What is still true, and is load-bearing after `135`:
 >
-> * `session_wake_budgets` still exists, is still created-or-locked per unordered pair, and still increments `consecutive_agent_wakes` and `version` in the same transaction that reserves the delivery. `version` is the optimistic pin threaded through reserve → claim → settle and asserted by `internal.require_delivery_principal`; it did not become optional when the cap went away.
-> * `consecutive_agent_wakes` is now **telemetry** — unbounded, governs nothing, still the number to read when a loop is suspected.
-> * `reset_session_wake_budget_for_member_reply` still resets the counter and still bumps `version`. It no longer unblocks anything, because nothing is blocked.
+> * `session_message_deliveries` remains the durable per-attempt ledger. Its unique `(message_id,target_work_session_id,attempt_no)` key prevents two reservation identities for one logical attempt.
+> * Claim and settle lock the delivery row `FOR UPDATE` and enforce legal status transitions. The removed pair version never changed after reserve and was never checked against the pair row, so it was not delivery-row optimistic concurrency.
+> * The delivery principal remains bound to the exact `(deliveryId,messageId,targetWorkSessionId)` tuple, an expiry, the authenticated worker role, and no actor claims.
 > * `automated_wake_limit` remains a valid `failure_reason` in the contract and the UI reason map: rows written before `120` still carry it and must still render. Nothing writes it any more.
 > * The self-delivery rule (item 5 above) is **not** part of the cap and did not go with it. A session is still never handed its own message.
 >
@@ -471,7 +471,7 @@ The full 32 KiB envelope is not placed in `PostMessageInput.body`, whose current
 10. Add nullable `recipient_team_member_id`, the `NotificationItem.recipient: ActorSummary` projection, recipient indexes, and ownership-filtered reads while retaining `recipient_member_id NOT NULL`.
 11. Add the execution-side `session_message_deliveries` record, the constrained recovery principal, and typed events without creating a second inbox.
 12. Add the frozen `session_delivery_failed` and `message_reply` targeted notification triggers.
-13. Add durable unordered-pair `session_wake_budgets`, locked reservation for every Teammate-authored live delivery (top-level send and reply), Member reset, self-wake refusal, retry accounting, fallback, and bounded terminal-session cleanup; no thread-root key is permitted.
+13. Historical: add the unordered-pair wake budget. Migrations `120` and `135` later removed its cap and then all remaining machinery; self-wake refusal, per-attempt delivery rows, retry identity, and fallback survive.
 14. Keep entity handoffs subordinate to the v2.10 dossier rather than redefining them.
 15. Keep `execution.prompt` v1 but authorize it only to the audited Server-internal delivery-adapter principal; every Member/Teammate caller receives `forbidden/use_message_send` before queue admission and writes zero PTY bytes. Removal remains a later catalog-version decision.
 16. Apply spawning-owner-only drive authorization.
@@ -510,10 +510,10 @@ The full 32 KiB envelope is not placed in `PostMessageInput.body`, whose current
 23. Two concurrent participant removals cannot leave a live session participant-less.
 24. Legacy participant backfill never invents or relinks a Teammate.
 25. A Teammate-addressed inbox row is absent from its owner's personal feed unless owner-inspection is explicit.
-26. A and B alternate new top-level `message send` commands without replies; the unordered-pair breaker engages after four Teammate reservations, and every later attempt records `failed_permanent/automated_wake_limit`, falls back to inbox, and writes zero PTY bytes. Starting a new thread does not reset it.
+26. Historical acceptance case: the former unordered-pair breaker engaged after four Teammate reservations. Migrations `120`/`135` retired that behavior and its backing state; current concurrency coverage instead pins unique logical attempts and row-locked claim/settle transitions.
 27. Process restart settles stranded dispatches without ambient spawner credentials and never reinjects.
 28. A session replying with `--notify-source live` to its own task-anchored message never writes back into itself; the durable reply and author notification still commit.
-29. A Member-authored reply whose immutable parent/delivery provenance identifies A and B resets the same locked pair row; a top-level or ambiguous Member message resets none. Concurrent reset/reservation transactions serialize and produce one deterministic counter.
+29. Historical acceptance case: a Member-authored reply reset the former locked pair row. After `135` no reset RPC or pair state exists; concurrent delivery transitions serialize on their delivery rows instead.
 30. A bare Member bearer, a Teammate bearer, an owning Member, a Space admin, and an authorized act-as principal each call the frozen `execution.prompt` HTTP binding and receive `forbidden` with `details.reason='use_message_send'`; queue depth and PTY bytes are unchanged. The internal delivery principal succeeds only for a pre-reserved stored message.
 31. `canMessage`, `canContactSession`, and `canHandoffEntity` are independently denied/granted across the dossier principal matrix; no permission implies another.
 

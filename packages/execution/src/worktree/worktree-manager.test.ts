@@ -347,3 +347,172 @@ describe('preflight and merge verification (§5.4, §10.1)', () => {
     expect(count).toBeGreaterThanOrEqual(1);
   });
 });
+
+// D12 (invariant I3) — a lane branches off the project's DEFAULT branch, never
+// whatever branch the working directory is parked on. For a project whose
+// working dir is a SHARED checkout, "parked" is the last session's in-flight
+// work: 36 of the 68 measured `public.worktrees` rows were based on another
+// lane's branch because of it.
+describe('G2.6 — default base ref is the project default branch, not parked HEAD', () => {
+  let originRepo: string;
+  let clone: string;
+  let originMainOid: string;
+  let parkedOid: string;
+
+  const commit = (cwd: string, message: string) =>
+    git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', message], cwd);
+
+  beforeAll(async () => {
+    originRepo = join(base, 'origin-repo');
+    await mkdir(originRepo, { recursive: true });
+    await git(['init', '-b', 'main'], originRepo);
+    await writeFile(join(originRepo, 'a.txt'), 'a\n');
+    await git(['add', '.'], originRepo);
+    await commit(originRepo, 'origin initial');
+    originMainOid = await git(['rev-parse', 'HEAD'], originRepo);
+
+    // A clone gets `refs/remotes/origin/HEAD`; a `git remote add` + fetch does
+    // not. Both shapes are exercised below.
+    clone = join(base, 'shared-checkout');
+    await git(['clone', originRepo, clone], base);
+
+    // Park it on another lane's branch, one commit ahead — the shared-checkout
+    // situation this defect is about.
+    await git(['checkout', '-b', 'lane/parked'], clone);
+    await writeFile(join(clone, 'b.txt'), 'b\n');
+    await git(['add', '.'], clone);
+    await commit(clone, 'another lane in flight');
+    parkedOid = await git(['rev-parse', 'HEAD'], clone);
+    expect(parkedOid).not.toBe(originMainOid);
+    expect(await git(['symbolic-ref', '--short', 'HEAD'], clone)).toBe('lane/parked');
+  });
+
+  it('no requested base ref → origin/HEAD’s branch, not the parked branch', async () => {
+    const { ref, oid } = await manager.resolveBaseRef(clone);
+    expect(ref).toBe('origin/main');
+    expect(oid).toBe(originMainOid);
+    expect(oid).not.toBe(parkedOid);
+  });
+
+  it('the provisioned checkout really lands on the default branch’s commit', async () => {
+    const worktreeId = uuidN(612);
+    const { ref, oid } = await manager.resolveBaseRef(clone);
+    const { path } = await manager.add({
+      repoRoot: clone, projectId: PROJECT_ID, worktreeId,
+      branch: 'tm8/d12-default', baseCommitOid: oid,
+    });
+    try {
+      expect(ref).toBe('origin/main');
+      expect(await git(['rev-parse', 'HEAD'], path)).toBe(originMainOid);
+    } finally {
+      await manager.remove({ repoRoot: clone, path, force: true });
+    }
+  });
+
+  // The remote-tracking ref is preferred over its local twin, so a shared
+  // checkout whose local `main` nobody has pulled in a while does not hand the
+  // new lane a stale base. Without the remote-first ordering this resolves to
+  // local `main` and the lane starts life behind — the whole defect, just
+  // smaller. This is the assertion that pins the ORDER, not merely the tier.
+  it('local main behind origin/main → based on origin/main, not the stale local branch', async () => {
+    const behindOrigin = join(base, 'origin-repo-behind');
+    await mkdir(behindOrigin, { recursive: true });
+    await git(['init', '-b', 'main'], behindOrigin);
+    await writeFile(join(behindOrigin, 'a.txt'), 'a\n');
+    await git(['add', '.'], behindOrigin);
+    await commit(behindOrigin, 'shared history');
+
+    const checkout = join(base, 'behind-checkout');
+    await git(['clone', behindOrigin, checkout], base);
+    const localMainOid = await git(['rev-parse', 'main'], checkout);
+
+    // The remote moves on; the checkout fetches but never pulls — exactly what
+    // a shared checkout looks like after any other lane lands a PR.
+    await writeFile(join(behindOrigin, 'f.txt'), 'f\n');
+    await git(['add', '.'], behindOrigin);
+    await commit(behindOrigin, 'landed while the checkout sat still');
+    const remoteMainOid = await git(['rev-parse', 'HEAD'], behindOrigin);
+    await git(['fetch', 'origin'], checkout);
+
+    expect(await git(['rev-parse', 'main'], checkout)).toBe(localMainOid);
+    expect(await git(['rev-parse', 'origin/main'], checkout)).toBe(remoteMainOid);
+    expect(localMainOid).not.toBe(remoteMainOid);
+
+    const { ref, oid } = await manager.resolveBaseRef(checkout);
+    expect(ref).toBe('origin/main');
+    expect(oid).toBe(remoteMainOid);
+    expect(oid).not.toBe(localMainOid);
+  });
+
+  it('an explicitly requested ref is still honoured verbatim', async () => {
+    const { ref, oid } = await manager.resolveBaseRef(clone, 'lane/parked');
+    expect(ref).toBe('lane/parked');
+    expect(oid).toBe(parkedOid);
+  });
+
+  it('an explicitly requested ref that does not exist still fails base_ref_not_found', async () => {
+    await expect(manager.resolveBaseRef(clone, 'lane/never-existed')).rejects.toMatchObject({
+      name: 'WorktreeError',
+      code: 'invalid_input',
+      reason: 'base_ref_not_found',
+    });
+  });
+
+  it('no origin/HEAD (a fetch-created remote) → the remote-tracking default branch', async () => {
+    const fetched = join(base, 'fetched-remote');
+    await git(['clone', originRepo, fetched], base);
+    await git(['remote', 'set-head', '-d', 'origin'], fetched);
+    await git(['checkout', '-b', 'lane/parked-2'], fetched);
+    await git(['branch', '-D', 'main'], fetched);
+
+    expect(
+      (await runGit(['-C', fetched, 'symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD'])).code,
+    ).not.toBe(0);
+    const { ref, oid } = await manager.resolveBaseRef(fetched);
+    expect(ref).toBe('origin/main');
+    expect(oid).toBe(originMainOid);
+  });
+
+  it('a repository with no remote and no main/master falls back to local HEAD and provisions', async () => {
+    const local = join(base, 'local-only');
+    await mkdir(local, { recursive: true });
+    await git(['init', '-b', 'wip'], local);
+    await writeFile(join(local, 'c.txt'), 'c\n');
+    await git(['add', '.'], local);
+    await commit(local, 'local only');
+    const wipOid = await git(['rev-parse', 'HEAD'], local);
+
+    const { ref, oid } = await manager.resolveBaseRef(local);
+    expect(ref).toBe('wip');
+    expect(oid).toBe(wipOid);
+
+    const worktreeId = uuidN(613);
+    const { path } = await manager.add({
+      repoRoot: local, projectId: PROJECT_ID, worktreeId,
+      branch: 'tm8/d12-local-only', baseCommitOid: oid,
+    });
+    try {
+      expect(await git(['rev-parse', 'HEAD'], path)).toBe(wipOid);
+    } finally {
+      await manager.remove({ repoRoot: local, path, force: true });
+    }
+  });
+
+  it('a remoteless repo that HAS main, parked elsewhere, still bases on main', async () => {
+    const localMain = join(base, 'local-with-main');
+    await mkdir(localMain, { recursive: true });
+    await git(['init', '-b', 'main'], localMain);
+    await writeFile(join(localMain, 'd.txt'), 'd\n');
+    await git(['add', '.'], localMain);
+    await commit(localMain, 'main tip');
+    const mainOid = await git(['rev-parse', 'HEAD'], localMain);
+    await git(['checkout', '-b', 'lane/other'], localMain);
+    await writeFile(join(localMain, 'e.txt'), 'e\n');
+    await git(['add', '.'], localMain);
+    await commit(localMain, 'other lane');
+
+    const { ref, oid } = await manager.resolveBaseRef(localMain);
+    expect(ref).toBe('main');
+    expect(oid).toBe(mainOid);
+  });
+});

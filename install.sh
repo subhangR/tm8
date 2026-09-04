@@ -4,7 +4,9 @@
 #
 #   ./install.sh                        dev install, then RUN it (server + UI)
 #   ./install.sh --no-start             install only, leave nothing running
-#   ./install.sh --env prod --systemd   server install: unit file, enabled, started
+#   ./install.sh --env prod --service   always-on install: systemd on Linux,
+#                                        launchd on macOS — supervised + survives reboot
+#   ./install.sh --env prod --systemd   the Linux spelling of --service (still works)
 #   ./install.sh --status               what is installed and what is running
 #   ./install.sh --reset                DROP the database and re-migrate (asks first)
 #   ./install.sh --uninstall            stop + remove the service, keep the data
@@ -29,7 +31,7 @@
 # not run. Reviving it was considered and ruled against on 2026-08-12: tm8 uses
 # the system Postgres, and this script is what puts it there.
 #
-# THE ELEVEN THINGS A WORKING tm8 NEEDS, none of which were automated
+# THE TWELVE THINGS A WORKING tm8 NEEDS, none of which were automated
 #
 #   1  node 22 + bun + a Postgres server and client of the same major
 #   2  a running cluster on the slot's port, loopback-only
@@ -42,15 +44,26 @@
 #   9  the data and workspace directories
 #  10  the 90-odd migrations applied — the server does NOT migrate at boot
 #  11  something to keep the process alive
+#  12  an agent CLI (claude or codex) the host is LOGGED IN to — tm8 stores no
+#      agent credential, so a spawned session runs the host's login or nothing.
+#      Checked in PHASE 1 (warn, never block) and authoritatively by `tm8 doctor`.
 #
 # Seeding is the one thing that already worked and still needs no step: once the
 # schema is current and the server boots, the loopback auto-owner creates the
 # first account and bootstrap/launch-resources seeds the teammate roster.
 #
 # PLATFORMS: Linux (Debian/Ubuntu, and RHEL family) and macOS via Homebrew.
-# The macOS path is written to the documented Homebrew layout but has NOT been
-# executed on a Mac — this repo's only machine is Ubuntu. Treat a macOS run as
-# the first one and read --dry-run before you trust it.
+# The macOS path HAS now been executed end to end on an Apple Silicon Mac
+# (Homebrew, node 22, Postgres 18): install.sh --env private ran to exit 0 —
+# cluster created/adopted, superuser + loopback trust in place, database
+# migrated (131/131), server + UI built, and the node came up healthy on 7779.
+# The one thing that used to NOT survive the Mac was a reboot: there was no
+# service manager wired up, so both the Postgres cluster and the server were
+# gone on Tuesday with nothing saying why. That gap is closed below — macOS now
+# gets a launchd equivalent of the systemd path (--service / --systemd), so the
+# cluster and the server come back at login and are restarted if they die.
+# Debian remains this repo's CI machine; a Mac run is well-trodden now, but
+# reading --dry-run first is still the cheapest way to see the whole plan.
 # =============================================================================
 set -euo pipefail
 
@@ -85,7 +98,11 @@ DO_MIGRATE=1
 # tells you the other ten worked. --no-start opts out (CI, provisioning, or a
 # build you intend to hand to systemd later).
 DO_START=1
-USE_SYSTEMD=0
+# A supervised, reboot-surviving service. The KIND is resolved from the platform
+# after detection (systemd on Linux, launchd on macOS); the flags only record the
+# intent. --systemd is the historical Linux spelling and stays working; --service
+# is the neutral word that means the same thing on either OS.
+USE_SERVICE=0
 DRY_RUN=0
 ASSUME_YES=0
 CONFIGURE_HBA=""     # "" = only when we created the cluster; 1 = always; 0 = never
@@ -95,7 +112,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --env)          shift; [[ $# -gt 0 ]] || die "--env needs a value"; SLOT="$1" ;;
     --env=*)        SLOT="${1#*=}" ;;
-    --systemd)      USE_SYSTEMD=1 ;;
+    --service)      USE_SERVICE=1 ;;
+    --systemd)      USE_SERVICE=1 ;;   # the Linux spelling of --service; still accepted
     --layout)       shift; [[ $# -gt 0 ]] || die "--layout needs a value"; LAYOUT="$1" ;;
     --start)        DO_START=1 ;;   # the default; accepted for explicitness
     --no-start)     DO_START=0 ;;
@@ -117,10 +135,14 @@ done
 
 tm8_env_load "$SLOT" || exit 2
 
-# systemd implies the system layout and vice versa, but each can be asked for
-# alone: a --systemd install into a user checkout is a legitimate thing to want.
+# A Linux service implies the system layout (/opt, /etc, a system account) and
+# vice versa, but each can be asked for alone: a --service install into a user
+# checkout is a legitimate thing to want. macOS is different: its service is a
+# per-user LaunchAgent that needs no root, so a macOS --service install stays in
+# the USER layout (the clone, ~/.tm8-<slot>, ~/Library/LaunchAgents) rather than
+# reaching for /opt and a system account that a laptop has no reason to grow.
 if [[ -z "$LAYOUT" ]]; then
-  if (( USE_SYSTEMD )); then LAYOUT=system; else LAYOUT=user; fi
+  if (( USE_SERVICE )) && [[ "$(uname -s)" != Darwin ]]; then LAYOUT=system; else LAYOUT=user; fi
 fi
 tm8_env_paths "$SLOT" "$LAYOUT" "$HERE" || exit 2
 
@@ -219,6 +241,17 @@ case "$(uname -s)" in
     PLATFORM=macos
     command -v brew >/dev/null && PKG=brew
     ;;
+esac
+
+# The service manager this platform speaks. --service and --systemd both request
+# "a supervised, reboot-surviving instance"; which manager provides it is a
+# property of the OS, not of the flag. Linux → systemd units; macOS → launchd
+# LaunchAgents. A macOS box has no systemctl, so --systemd there resolves to
+# launchd too rather than dying on a word.
+SERVICE_KIND=none
+case "$PLATFORM" in
+  linux) SERVICE_KIND=systemd ;;
+  macos) SERVICE_KIND=launchd ;;
 esac
 
 # =============================================================================
@@ -404,7 +437,7 @@ Group=${TM8_ENV_RUN_USER}
 WorkingDirectory=${TM8_ENV_CHECKOUT}
 EnvironmentFile=${TM8_ENV_ENVFILE}
 ExecStart=${NODE_BIN} --enable-source-maps ${TM8_ENV_CHECKOUT}/packages/server/dist/index.js
-Restart=on-failure
+Restart=always
 RestartSec=3
 KillSignal=SIGTERM
 TimeoutStopSec=20
@@ -415,6 +448,217 @@ UNIT
 }
 
 UNIT_NAME="tm8-${SLOT}.service"
+
+# =============================================================================
+# launchd — the macOS equivalent of the systemd path.
+#
+# WHY LaunchAgent, NOT LaunchDaemon. The dev/private slots are a user's own
+# laptop. A LaunchDaemon runs as root out of /Library/LaunchDaemons and needs
+# sudo to install; a per-user LaunchAgent runs as the logged-in user out of
+# ~/Library/LaunchAgents and needs nothing. tm8 binds loopback only and stores
+# its data under $HOME — there is no reason to hand it root. A LaunchDaemon also
+# starts at BOOT (before login), which is wrong for a user's Postgres living in
+# ~/.tm8: it should come up when the user logs in, which is exactly RunAtLoad in
+# the gui/<uid> domain. So: LaunchAgent, user domain, no root. (A shared server
+# Mac wanting boot-time start would be a LaunchDaemon under the system layout —
+# not built here because this repo's always-on server is the Linux one.)
+#
+# TWO jobs, mirroring the two things that did not survive a reboot:
+#   com.tm8.<slot>.postgres   the cluster (postmaster in the foreground)
+#   com.tm8.<slot>.server     the node server
+# launchd has no "After=" between agents, so the server does not formally wait
+# for Postgres. It does not need to: KeepAlive restarts the server until the
+# cluster answers, so the boot race self-heals within a ThrottleInterval.
+LA_DIR="$HOME/Library/LaunchAgents"
+LAUNCHD_PG_LABEL="com.tm8.${SLOT}.postgres"
+LAUNCHD_SERVER_LABEL="com.tm8.${SLOT}.server"
+LAUNCHD_PG_PLIST="$LA_DIR/$LAUNCHD_PG_LABEL.plist"
+LAUNCHD_SERVER_PLIST="$LA_DIR/$LAUNCHD_SERVER_LABEL.plist"
+LAUNCHD_DOMAIN="gui/$(id -u)"
+
+# XML-escape a value before it is interpolated into a plist <string>. A plist is
+# XML, so an unescaped & < or > in a path, username, URL or slot name makes the
+# file malformed — and launchd does NOT reject that at write time, it fails at
+# LOAD time, i.e. the next login: the exact reboot this file exists to survive.
+# "Your node does not come back because your home dir has an ampersand in it" is
+# the class of bug this whole path is fixing, so every interpolated <string> goes
+# through here. Ampersand FIRST — escaping it after < / > would double-escape the
+# entities they produce.
+xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  printf '%s' "$s"
+}
+
+# The cluster's data dir on macOS — the same default phase 2 uses when it
+# initdbs one. Overridable with TM8_PGDATA for a cluster that lives elsewhere.
+macos_pgdata() { printf '%s' "${TM8_PGDATA:-$HOME/.tm8/pg-$SLOT}"; }
+
+# The `postgres` binary that MATCHES the cluster on disk. A postmaster refuses to
+# open a data dir written by a different major, so we read PG_VERSION and pick the
+# matching keg rather than trusting whichever `postgres` is first on PATH — on a
+# box with both postgresql@16 and @18 linked, guessing is a coin flip that fails
+# as "database files are incompatible with server". Falls back to the sibling of
+# the psql we already found, then to a PATH lookup.
+macos_postgres_bin() {
+  local data major c
+  data="$(macos_pgdata)"
+  if [[ -r "$data/PG_VERSION" ]]; then
+    major="$(tr -dc '0-9' < "$data/PG_VERSION")"
+    for c in "/opt/homebrew/opt/postgresql@$major/bin/postgres" \
+             "/usr/local/opt/postgresql@$major/bin/postgres"; do
+      [[ -x "$c" ]] && { printf '%s' "$c"; return 0; }
+    done
+  fi
+  # No cluster yet (fresh initdb) or no versioned keg: the postgres beside psql is
+  # the one this install would create the cluster with, so it matches by
+  # construction.
+  c="$(dirname "${PSQL:-}")/postgres"
+  [[ -x "$c" ]] && { printf '%s' "$c"; return 0; }
+  c="$(command -v postgres 2>/dev/null || true)"
+  [[ -n "$c" ]] && { printf '%s' "$c"; return 0; }
+  return 1
+}
+
+# The per-slot env, as it belongs INSIDE a plist's <EnvironmentVariables>. Same
+# source as the env file (render_env_file), so the two cannot drift: strip the
+# comments and blank lines, keep the KEY=VALUE lines. launchd has no
+# EnvironmentFile=, so this dict IS how the slot's config reaches the process —
+# and because it lists ONLY these keys, an ambient TM8_AGENT_TOKEN in the shell
+# that ran install cannot ride along in it.
+plist_env_dict() {
+  local line key val
+  render_env_file | while IFS= read -r line; do
+    case "$line" in
+      TM8_*=*) ;;
+      *) continue ;;
+    esac
+    key="${line%%=*}"; val="${line#*=}"
+    printf '    <key>%s</key><string>%s</string>\n' "$(xml_escape "$key")" "$(xml_escape "$val")"
+  done
+}
+
+# The Postgres LaunchAgent. Runs the postmaster in the FOREGROUND (not `pg_ctl
+# start`, which daemonises and returns — launchd must own the long-lived
+# process, or KeepAlive has nothing to keep alive). LC_ALL/LANG are set
+# EXPLICITLY: an empty or invalid locale makes macOS libc spawn a thread while
+# resolving it, and Postgres refuses to fork a multithreaded postmaster. A
+# launchd job inherits no shell locale, so without this the cluster that started
+# fine by hand fails to come back after a reboot — the precise "it worked when I
+# ran it" vs "it survives a reboot" gap this file exists to close.
+render_launchd_postgres_plist() {
+  local pgdata pgbin label port
+  pgdata="$(xml_escape "$(macos_pgdata)")"
+  pgbin="$(xml_escape "$(macos_postgres_bin || echo postgres)")"
+  label="$(xml_escape "$LAUNCHD_PG_LABEL")"
+  port="$(xml_escape "$TM8_ENV_PG_PORT")"
+  cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${pgbin}</string>
+    <string>-D</string><string>${pgdata}</string>
+    <string>-p</string><string>${port}</string>
+    <string>-c</string><string>listen_addresses=127.0.0.1</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LC_ALL</key><string>en_US.UTF-8</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>5</integer>
+  <key>StandardOutPath</key><string>${pgdata}/postmaster.log</string>
+  <key>StandardErrorPath</key><string>${pgdata}/postmaster.log</string>
+</dict>
+</plist>
+PLIST
+}
+
+# The server LaunchAgent. ProgramArguments is `env -u <session vars> node …`:
+# the strip is the launchd counterpart of the clean_env_prefix the foreground
+# path uses. It is belt-and-suspenders — launchd does not inject the invoking
+# shell's environment into a bootstrapped job — but it is not decoration: anyone
+# who has run `launchctl setenv TM8_AGENT_TOKEN …` has put that token in the
+# gui/<uid> domain, and every job in that domain would then inherit it. The strip
+# guarantees the server gets THIS node's identity and nobody else's regardless.
+# EnvironmentVariables carries the slot config (there is no EnvironmentFile= in
+# launchd) plus a PATH that includes Homebrew and node@22 — a bare launchd PATH
+# is /usr/bin:/bin only, and a server that spawns agent PTYs needs `node`, `bun`
+# and `tm8` to be findable by what it spawns.
+render_launchd_server_plist() {
+  local nodedir strip w label node checkout logbase
+  nodedir="$(xml_escape "$(dirname "$NODE_BIN")")"
+  label="$(xml_escape "$LAUNCHD_SERVER_LABEL")"
+  node="$(xml_escape "$NODE_BIN")"
+  checkout="$(xml_escape "$TM8_ENV_CHECKOUT")"
+  logbase="$(xml_escape "$HOME/Library/Logs/tm8-${SLOT}-server")"
+  strip=""
+  for w in "${TM8_SESSION_VARS[@]}"; do strip+="    <string>-u</string><string>$(xml_escape "$w")</string>
+"; done
+  cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+${strip}    <string>${node}</string>
+    <string>--enable-source-maps</string>
+    <string>${checkout}/packages/server/dist/index.js</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>${nodedir}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+$(plist_env_dict)
+  </dict>
+  <key>WorkingDirectory</key><string>${checkout}</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>3</integer>
+  <key>StandardOutPath</key><string>${logbase}.out.log</string>
+  <key>StandardErrorPath</key><string>${logbase}.err.log</string>
+</dict>
+</plist>
+PLIST
+}
+
+# Load / reload a plist into the user domain. bootout-then-bootstrap is the
+# idempotent shape: bootstrap alone errors with "service already loaded" on a
+# re-run, and a plain reload does not pick up a rewritten plist. A leading
+# bootout of a not-loaded label is a harmless no-op we swallow.
+launchd_bootstrap() {
+  local plist="$1" label="$2"
+  launchctl bootout "$LAUNCHD_DOMAIN/$label" 2>/dev/null || true
+  launchctl bootstrap "$LAUNCHD_DOMAIN" "$plist"
+}
+
+# Stop and unload a job (used by --uninstall and by a re-install of the same
+# slot). Never removes the plist — that is the caller's explicit act.
+launchd_bootout() {
+  local label="$1"
+  launchctl bootout "$LAUNCHD_DOMAIN/$label" 2>/dev/null || true
+}
+
+# "active/inactive (pid)" for a label, the launchd analogue of systemctl
+# is-active. `launchctl print` carries the live pid and last exit code; a job
+# with a pid is running, one without is loaded-but-stopped or crashed.
+launchd_status() {
+  local label="$1" out pid
+  out="$(launchctl print "$LAUNCHD_DOMAIN/$label" 2>/dev/null || true)"
+  [[ -n "$out" ]] || { printf 'not loaded'; return; }
+  pid="$(printf '%s' "$out" | sed -n 's/.*"*pid"* *= *\([0-9][0-9]*\).*/\1/p' | head -1)"
+  if [[ -n "$pid" ]]; then printf 'active (pid %s)' "$pid"; else printf 'loaded, not running'; fi
+}
 
 # =============================================================================
 # --print-env: emit the env file and stop
@@ -477,12 +721,27 @@ if [[ "$MODE" == status ]]; then
   [[ -f "$TM8_ENV_CHECKOUT/packages/server/dist/index.js" ]] \
     && ok "server build present" || warn "no server build (packages/server/dist/index.js)"
   if (( BUILD_UI )); then
-    [[ -f "$TM8_ENV_CHECKOUT/packages/tm8-ui/dist/index.html" ]] \
-      && ok "UI bundle present" || warn "no UI bundle (packages/tm8-ui/dist/index.html)"
+    [[ -f "$TM8_ENV_CHECKOUT/packages/tm8_ui_2.0/dist/index.html" ]] \
+      && ok "UI bundle present" || warn "no UI bundle (packages/tm8_ui_2.0/dist/index.html)"
   fi
 
   if command -v systemctl >/dev/null && systemctl list-unit-files "$UNIT_NAME" >/dev/null 2>&1; then
     printf '      unit       %s %s\n' "$UNIT_NAME" "$(systemctl is-active "$UNIT_NAME" 2>/dev/null || echo inactive)"
+  fi
+
+  # launchd jobs, on macOS. A half-installed service that --status cannot see is
+  # worse than none, so a plist on disk is reported whether or not it is loaded,
+  # and a loaded job that lost its plist is flagged rather than hidden.
+  if [[ "$PLATFORM" == macos ]] && command -v launchctl >/dev/null; then
+    for pair in "postgres:$LAUNCHD_PG_LABEL:$LAUNCHD_PG_PLIST" "server:$LAUNCHD_SERVER_LABEL:$LAUNCHD_SERVER_PLIST"; do
+      which="${pair%%:*}"; rest="${pair#*:}"; label="${rest%%:*}"; plist="${rest#*:}"
+      loaded="$(launchd_status "$label")"
+      if [[ -f "$plist" ]]; then
+        printf '      launchd    %-22s %s\n' "$label" "$loaded"
+      elif [[ "$loaded" != "not loaded" ]]; then
+        printf '      launchd    %-22s %s (no plist at %s — orphaned)\n' "$label" "$loaded" "$plist"
+      fi
+    done
   fi
 
   health="$(curl -fsS --max-time 3 "http://127.0.0.1:$TM8_ENV_SERVER_PORT/health" 2>/dev/null || true)"
@@ -507,16 +766,38 @@ if [[ "$MODE" == uninstall ]]; then
     read -r reply
     [[ "$reply" == "uninstall $SLOT" ]] || die "aborted — nothing was changed."
   fi
+  removed_any=0
   if command -v systemctl >/dev/null && systemctl list-unit-files "$UNIT_NAME" >/dev/null 2>&1; then
     as_root systemctl disable --now "$UNIT_NAME" || need_root_hint "systemctl disable --now $UNIT_NAME"
     as_root rm -f "/etc/systemd/system/$UNIT_NAME" || need_root_hint "rm -f /etc/systemd/system/$UNIT_NAME"
     as_root systemctl daemon-reload || true
     ok "$UNIT_NAME removed"
-  else
-    info "no $UNIT_NAME to remove"
+    removed_any=1
   fi
+  # macOS: bootout and remove BOTH tm8 LaunchAgents. Both are ours and both were
+  # registered by --service, so both are "the service" here. The cluster is
+  # therefore stopped — but its data dir and database are LEFT ALONE, same as the
+  # Linux path leaves the database behind.
+  if [[ "$PLATFORM" == macos ]] && command -v launchctl >/dev/null; then
+    for pair in "$LAUNCHD_SERVER_LABEL:$LAUNCHD_SERVER_PLIST" "$LAUNCHD_PG_LABEL:$LAUNCHD_PG_PLIST"; do
+      label="${pair%%:*}"; plist="${pair#*:}"
+      if [[ -f "$plist" ]] || launchctl print "$LAUNCHD_DOMAIN/$label" >/dev/null 2>&1; then
+        if (( DRY_RUN )); then
+          dim "(dry-run) would bootout $label and rm $plist"
+        else
+          launchd_bootout "$label"
+          rm -f "$plist"
+          ok "$label removed"
+        fi
+        removed_any=1
+      fi
+    done
+  fi
+  (( removed_any )) || info "no tm8 $SLOT service to remove"
   printf '\n      %sstill on disk:%s database %s, data %s, checkout %s\n' \
     "$DIM" "$OFF" "$TM8_ENV_DATABASE" "$TM8_ENV_DATA_DIR" "$TM8_ENV_CHECKOUT"
+  [[ "$PLATFORM" == macos ]] && printf '      %s%s%s  cluster data %s (the cluster is now stopped)\n' \
+    "$DIM" " " "$OFF" "$(macos_pgdata)"
   exit 0
 fi
 
@@ -601,6 +882,57 @@ else
   warn "no pg_dump beside $PSQL — backups before a migration will not be possible"
 fi
 
+# The AGENT CLI — the twelfth thing a working tm8 needs, and the one that was
+# invisible here. tm8 never asks for, stores or checks an agent credential: a
+# spawned session runs the HOST's `claude` or `codex` and inherits whatever
+# login the machine already has (or does not). So a node can pass every check
+# above — cluster, migrations, build, a real catalog read — and still not run a
+# single agent, and the failure is QUIET: the session sits at "running" while
+# only the terminal carries the refusal.
+#
+# WARN, never block. tm8 is useful without an agent (browsing the graph, the
+# CLI, message history), and refusing to install over a missing agent CLI would
+# be a worse outcome than saying so loudly. The authoritative check — presence
+# AND login, honouring TM8_AGENT_CMD — is `tm8 doctor`; this phase runs before
+# the CLI is built, so it is the early, cheap surfacing of the same fact, and it
+# points there.
+if [[ -n "${TM8_AGENT_CMD:-}" ]]; then
+  acmd_bin="${TM8_AGENT_CMD%% *}"
+  if command -v "$acmd_bin" >/dev/null 2>&1 || [[ -x "$acmd_bin" ]]; then
+    ok "agent CLI: TM8_AGENT_CMD=$TM8_AGENT_CMD (found)"
+  else
+    warn "TM8_AGENT_CMD=$TM8_AGENT_CMD but '$acmd_bin' is not on PATH — every spawn would die with exit 127"
+  fi
+else
+  agent_found=0
+  if command -v claude >/dev/null 2>&1; then
+    agent_found=1
+    if [[ -f "$HOME/.claude.json" ]] && grep -q '"oauthAccount"' "$HOME/.claude.json" 2>/dev/null; then
+      ok "agent CLI: claude ($(command -v claude)) — authenticated"
+    else
+      # Claude Code can keep its token in the login Keychain, which is not
+      # cheaply readable here, so unknown is reported as unknown, not as broken.
+      ok "agent CLI: claude ($(command -v claude)) — present; login state unknown (verify: tm8 doctor)"
+    fi
+  fi
+  if command -v codex >/dev/null 2>&1; then
+    agent_found=1
+    if [[ -f "${CODEX_HOME:-$HOME/.codex}/auth.json" ]]; then
+      ok "agent CLI: codex ($(command -v codex)) — authenticated"
+    else
+      warn "agent CLI: codex ($(command -v codex)) — present but NOT authenticated (run: codex login)"
+    fi
+  fi
+  if (( ! agent_found )); then
+    warn "no agent CLI found (claude or codex) — tm8 will install fine but cannot run an agent."
+    info "a tm8 session runs the host's claude/codex; with neither installed every spawn"
+    info "sits at \"running\" and never finishes, the refusal visible only in the terminal."
+    info "install one and log in, then re-check with 'tm8 doctor':"
+    printf '        npm i -g @anthropic-ai/claude-code    # then run: claude       (to log in)\n'
+    printf '        npm i -g @openai/codex                 # then run: codex login\n'
+  fi
+fi
+
 # --- PHASE 2: the cluster ----------------------------------------------------
 phase "Postgres cluster on $TM8_ENV_PG_PORT"
 
@@ -619,6 +951,27 @@ cluster_listening() {
 
 if cluster_listening; then
   ok "a cluster is already listening on $TM8_ENV_PG_PORT — adopting it"
+  # macOS service install: make sure the adopted cluster is under launchd so it
+  # survives a reboot. If launchd already owns it, this just refreshes the plist;
+  # if a hand-started postmaster holds the port, we do NOT fight it — the plist is
+  # written and takes over the next time the port is free (a reboot, or a manual
+  # bootstrap once you stop the hand-started one).
+  if (( USE_SERVICE )) && [[ "$PLATFORM" == macos ]]; then
+    if (( DRY_RUN )); then
+      dim "(dry-run) would install LaunchAgent $LAUNCHD_PG_LABEL for the adopted cluster"
+    else
+      act mkdir -p "$LA_DIR"
+      render_launchd_postgres_plist > "$LAUNCHD_PG_PLIST"
+      if launchctl print "$LAUNCHD_DOMAIN/$LAUNCHD_PG_LABEL" >/dev/null 2>&1; then
+        ok "launchd already supervises the cluster ($LAUNCHD_PG_LABEL)"
+      else
+        warn "a postmaster is running on $TM8_ENV_PG_PORT that launchd does not own"
+        info "wrote $LAUNCHD_PG_PLIST — it supervises the cluster after the current"
+        info "postmaster stops (a reboot), or now with:"
+        printf '        launchctl bootstrap %s %s\n' "$LAUNCHD_DOMAIN" "$LAUNCHD_PG_PLIST"
+      fi
+    fi
+  fi
 else
   info "nothing on $TM8_ENV_PG_PORT — creating a cluster"
   case "$PLATFORM" in
@@ -661,13 +1014,31 @@ else
                 || { export LC_ALL=C LANG=C; rm -rf '$PGDATA_DIR'; mkdir -p '$PGDATA_DIR'
                      '$PGBIN/initdb' -D '$PGDATA_DIR' -U '$TM8_ENV_SUPERUSER' --encoding=UTF8 --locale=C >/dev/null; }"
       fi
-      act_sh "export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
-              '$PGBIN/pg_ctl' -D '$PGDATA_DIR' -l '$PGDATA_DIR/postmaster.log' -w -t 60 \
-                -o '-p $TM8_ENV_PG_PORT -c listen_addresses=127.0.0.1' start >/dev/null"
-      CREATED_CLUSTER=1
-      did "cluster started from $PGDATA_DIR"
-      warn "macOS has no service manager wired up here — this cluster will NOT come back after a reboot."
-      info "restart it with: $PGBIN/pg_ctl -D $PGDATA_DIR -o '-p $TM8_ENV_PG_PORT' start"
+      if (( USE_SERVICE )); then
+        # launchd owns the postmaster from the start, so "it started" and "it
+        # survives a reboot" are the same event rather than two — the exact gap
+        # the plain pg_ctl path below leaves open. The postmaster runs in the
+        # foreground under launchd (see render_launchd_postgres_plist).
+        if (( DRY_RUN )); then
+          dim "(dry-run) would install and bootstrap LaunchAgent $LAUNCHD_PG_LABEL to run the postmaster"
+        else
+          act mkdir -p "$LA_DIR"
+          render_launchd_postgres_plist > "$LAUNCHD_PG_PLIST"
+          launchd_bootstrap "$LAUNCHD_PG_PLIST" "$LAUNCHD_PG_LABEL" \
+            || die "launchctl bootstrap $LAUNCHD_PG_LABEL failed"
+        fi
+        CREATED_CLUSTER=1
+        did "cluster started under launchd — $LAUNCHD_PG_LABEL (survives login/reboot)"
+      else
+        act_sh "export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+                '$PGBIN/pg_ctl' -D '$PGDATA_DIR' -l '$PGDATA_DIR/postmaster.log' -w -t 60 \
+                  -o '-p $TM8_ENV_PG_PORT -c listen_addresses=127.0.0.1' start >/dev/null"
+        CREATED_CLUSTER=1
+        did "cluster started from $PGDATA_DIR"
+        warn "no service manager wired up — this cluster will NOT come back after a reboot."
+        info "for one that does, re-run with --service (installs a launchd LaunchAgent);"
+        info "or restart it by hand: $PGBIN/pg_ctl -D $PGDATA_DIR -o '-p $TM8_ENV_PG_PORT' start"
+      fi
       ;;
   esac
 fi
@@ -850,10 +1221,10 @@ if (( DO_BUILD )); then
   # error anywhere — the classic silent half-deploy.
   if (( BUILD_UI )); then
     info "vite build (a SEPARATE build — \`bun run build\` does not touch the UI) …"
-    act_sh "cd '$TM8_ENV_CHECKOUT/packages/tm8-ui' && bun run build" \
+    act_sh "cd '$TM8_ENV_CHECKOUT/packages/tm8_ui_2.0' && bun run build" \
       || die "vite build failed"
-    (( DRY_RUN )) || [[ -f packages/tm8-ui/dist/index.html ]] \
-      || die "vite build reported success but packages/tm8-ui/dist/index.html is missing"
+    (( DRY_RUN )) || [[ -f packages/tm8_ui_2.0/dist/index.html ]] \
+      || die "vite build reported success but packages/tm8_ui_2.0/dist/index.html is missing"
     did "UI bundle built"
   else
     dim "$SLOT serves the UI with vite dev against source — no bundle needed"
@@ -961,7 +1332,7 @@ fi
 
 # --- PHASE 10: service -------------------------------------------------------
 phase "Service"
-if (( USE_SYSTEMD )); then
+if (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]]; then
   command -v systemctl >/dev/null || die "--systemd asked for but systemctl is not present"
   unit_path="/etc/systemd/system/$UNIT_NAME"
   if (( DRY_RUN )); then
@@ -973,15 +1344,51 @@ if (( USE_SYSTEMD )); then
       || { rm -f "$tmp"; need_root_hint "install -m 0644 <rendered> $unit_path"; die "cannot write $unit_path"; }
     rm -f "$tmp"
     as_root systemctl daemon-reload || die "systemctl daemon-reload failed"
-    # enable --now, and NEVER a signal. A clean node shutdown exits 0, so with
-    # Restart=on-failure a `kill -TERM` "restart" leaves the unit INACTIVE and
-    # the instance silently DOWN. systemctl is the only verb used here.
-    as_root systemctl enable --now "$UNIT_NAME" || die "systemctl enable --now $UNIT_NAME failed"
-    ok "$UNIT_NAME installed, enabled and started"
+    # systemctl is still the verb used HERE, because this runs as root and a
+    # restart is what is meant. The unit is Restart=always now, so `kill -TERM`
+    # is also a correct restart for an operator without passwordless sudo —
+    # which is what made the old on-failure setting dangerous: it left SIGKILL
+    # as the only working restart, and SIGKILL runs no shutdown handler, so
+    # nothing recorded why the live agents died (171).
+    as_root systemctl enable "$UNIT_NAME" || die "systemctl enable $UNIT_NAME failed"
+    # `restart`, NOT `enable --now`. `--now` only STARTS a unit that is stopped,
+    # so on the case this installer exists to serve — upgrading a node that is
+    # already running — it does nothing at all. The old process keeps serving,
+    # against the schema this run just migrated and the UI bundle it just built,
+    # and phase 11 then confirms a healthy `/health` from that very process. The
+    # run reports success and the new code is never loaded.
+    # `restart` starts a stopped unit and recycles a running one, which is the
+    # only verb that means "load what I just built" in both cases.
+    as_root systemctl restart "$UNIT_NAME" || die "systemctl restart $UNIT_NAME failed"
+    ok "$UNIT_NAME installed, enabled and (re)started"
     dim "logs: journalctl -u $UNIT_NAME -f"
   fi
+elif (( USE_SERVICE )) && [[ "$SERVICE_KIND" == launchd ]]; then
+  # The server LaunchAgent. Postgres was already handed to launchd in phase 2, so
+  # this is the second of the two jobs. RunAtLoad + KeepAlive means it comes up at
+  # login and is restarted if it dies — the launchd analogue of enable --now with
+  # Restart. KeepAlive here is UNCONDITIONAL (restart on any exit), which is the
+  # right choice, and it is what the systemd side now does too: `Restart=always`
+  # plus a clean exit 0 brings the unit back, so a signal "restart" is a real
+  # restart. (Under the old `Restart=on-failure` it silently stopped the unit
+  # instead.) launchd's KeepAlive=true brings the server back even after a clean
+  # exit, so a node that shuts down cleanly on a transient DB blip is restarted
+  # rather than left down. Stopping it is `launchctl bootout`, which --uninstall
+  # and a re-install both do.
+  if (( DRY_RUN )); then
+    dim "(dry-run) would write $LAUNCHD_SERVER_PLIST and bootstrap $LAUNCHD_SERVER_LABEL"
+    render_launchd_server_plist | sed 's/^/      | /'
+  else
+    act mkdir -p "$LA_DIR" "$HOME/Library/Logs"
+    render_launchd_server_plist > "$LAUNCHD_SERVER_PLIST"
+    launchd_bootstrap "$LAUNCHD_SERVER_PLIST" "$LAUNCHD_SERVER_LABEL" \
+      || die "launchctl bootstrap $LAUNCHD_SERVER_LABEL failed"
+    ok "$LAUNCHD_SERVER_LABEL installed, loaded and started"
+    dim "logs: tail -f $HOME/Library/Logs/tm8-${SLOT}-server.err.log"
+    dim "control: launchctl print $LAUNCHD_DOMAIN/$LAUNCHD_SERVER_LABEL"
+  fi
 else
-  dim "no service installed (use --systemd for an always-on instance)"
+  dim "no service installed (use --service for an always-on, reboot-surviving instance)"
 fi
 
 # --- PHASE 11: verify --------------------------------------------------------
@@ -1010,6 +1417,20 @@ verify_running() {
     *) return 1 ;;
   esac
   ok "health on $TM8_ENV_SERVER_PORT — db:ok after ${waited}s"
+  # A healthy /health proves SOMETHING is serving, not that it is what this run
+  # built — a stale process answers exactly the same. Prove the unit entered
+  # active during this run, so the no-op above cannot come back silently.
+  if (( USE_SYSTEMD )) && command -v systemctl >/dev/null; then
+    local entered entered_epoch
+    entered="$(systemctl show "$UNIT_NAME" -p ActiveEnterTimestamp --value 2>/dev/null || true)"
+    entered_epoch="$(date -d "$entered" +%s 2>/dev/null || echo 0)"
+    if [[ -n "$entered" ]] && (( entered_epoch > 0 )) && (( entered_epoch < started_at )); then
+      die "$UNIT_NAME has been running since $entered — it did not restart during
+      this install, so the process serving requests is NOT the build this run
+      produced. Restart it and re-run the verify:
+        systemctl restart $UNIT_NAME"
+    fi
+  fi
   # /health carries BOTH counts and they mean different things: "operations" is
   # the catalog size, "implemented" is how many answer something other than 501.
   # Printing the first under the second's name is how "141 implemented" gets
@@ -1043,16 +1464,38 @@ verify_running() {
 
 if (( DRY_RUN )); then
   dim "(dry-run) would verify /health and one real catalog read"
-elif (( USE_SYSTEMD )); then
+elif (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]]; then
   verify_running || {
     printf '\n'; warn "no db:ok on $TM8_ENV_SERVER_PORT within 60s"
     info "last 30 log lines:"
     journalctl -u "$UNIT_NAME" -n 30 --no-pager 2>&1 | sed 's/^/        /' || true
+    # The unit is enabled with Restart=always/RestartSec=3, so a server that
+    # cannot boot is now respawning every ~3s. Say so, and how to stop it — a
+    # bare `die` would leave a crash-loop running with no way out named.
+    warn "the unit is enabled and will respawn the server every ~3s until you stop it:"
+    info "stop it now:      sudo systemctl stop $UNIT_NAME"
+    info "remove it (keeps your data):  $0 --env $SLOT --uninstall"
     die "$UNIT_NAME started but did not become healthy"
   }
   active="$(systemctl is-active "$UNIT_NAME" 2>/dev/null || echo inactive)"
   [[ "$active" == active ]] || die "$UNIT_NAME is $active"
   ok "$UNIT_NAME active"
+elif (( USE_SERVICE )) && [[ "$SERVICE_KIND" == launchd ]]; then
+  verify_running || {
+    printf '\n'; warn "no db:ok on $TM8_ENV_SERVER_PORT within 60s"
+    info "last 30 log lines ($HOME/Library/Logs/tm8-${SLOT}-server.err.log):"
+    tail -n 30 "$HOME/Library/Logs/tm8-${SLOT}-server.err.log" 2>/dev/null | sed 's/^/        /' || true
+    # The LaunchAgent is loaded with KeepAlive=true, so a server that cannot boot
+    # is now respawning every ~3s and will keep doing so across logins until it is
+    # booted out — a laptop quietly burning CPU on a crash-loop nobody named. Tell
+    # the user how to stop it rather than dying silently on top of it.
+    warn "the LaunchAgent is loaded and KeepAlive will respawn it every ~3s until you stop it:"
+    info "stop it now:      launchctl bootout $LAUNCHD_DOMAIN/$LAUNCHD_SERVER_LABEL"
+    info "remove it (keeps your data):  $0 --env $SLOT --uninstall"
+    die "$LAUNCHD_SERVER_LABEL started but did not become healthy"
+  }
+  st="$(launchd_status "$LAUNCHD_SERVER_LABEL")"
+  case "$st" in active*) ok "$LAUNCHD_SERVER_LABEL $st" ;; *) die "$LAUNCHD_SERVER_LABEL is $st" ;; esac
 elif (( DO_START )); then
   # Verify from a subshell while the foreground process holds the terminal, so
   # starting still PROVES the install rather than merely launching something.
@@ -1111,3 +1554,11 @@ else
 fi
 printf '  status:    %s --env %s --status\n' "$0" "$SLOT"
 printf '  env file:  %s\n' "$TM8_ENV_ENVFILE"
+# The agent login is the one prerequisite this installer can only WARN about, so
+# it earns a line in the summary: a healthy node with no logged-in agent spawns
+# sessions that sit at "running" forever. `tm8 doctor` reports presence AND login.
+if [[ -x "$TM8_ENV_CHECKOUT/packages/cli/dist/tm8" ]]; then
+  printf '  agents:    %s/packages/cli/dist/tm8 doctor   (claude/codex installed AND logged in? tm8 stores no agent login)\n' "$TM8_ENV_CHECKOUT"
+else
+  printf '  agents:    tm8 doctor   (claude/codex installed AND logged in? tm8 stores no agent login)\n'
+fi

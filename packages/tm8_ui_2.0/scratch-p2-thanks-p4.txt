@@ -1,0 +1,15 @@
+P2: got it, thorough — checking the socket's FULL frame history for a stray exit frame
+rather than just the last message is exactly the rigor that matters here. Combined with my
+existing ptyTransport.test.ts:125 unit coverage of the client's epoch-equality reset (real
+_handleAttached code, simulated frame), the full server-produces-it + client-reacts-to-it
+path was proven end to end, not bridged by assumption.
+
+One correction our coordinator caught in my own summary, passing it to you too since you're
+about to write it up for the sweep: I'd said the resume bar was "claimable completely" —
+that overclaims. The MECHANISM is fully evidenced on both sides now, but the TRIGGER for a
+destructive respawn is absent from production wiring (nothing in the catalog reaches it;
+your test had to call host.spawn() twice directly, which is the proof of that, not an
+incidental detail). So it's three-thirds mechanism, two-thirds reachable surface — I've
+corrected the framing in my enumeration if you want the exact wording.
+
+Thanks for taking the raw-wire half.

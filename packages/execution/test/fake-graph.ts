@@ -37,6 +37,8 @@ export interface FakeGraphOptions {
   sessionId?: string;
   model?: string | null;
   permissionMode?: string | null;
+  /** What `parentSessionId` points at (176). Defaults to "not resolved". */
+  parentKind?: SpawnContext['parentKind'];
 }
 
 export class FakeGraph implements GraphPort {
@@ -62,12 +64,28 @@ export class FakeGraph implements GraphPort {
   /** Return this existing session from the next create attempt as a ledger replay. */
   replaySessionId: string | null = null;
 
-  constructor(private readonly options: FakeGraphOptions) {}
+  constructor(private readonly options: FakeGraphOptions) {
+    this.parentKind = options.parentKind ?? null;
+  }
+
+  /** Every `LoadSpawnContextInput` this fake was handed, in order. */
+  readonly spawnContextInputs: LoadSpawnContextInput[] = [];
+
+  /**
+   * What the graph would say `parentSessionId` IS (176). Mutable so a test can
+   * change the parent between constructing the fake and driving a resume.
+   */
+  parentKind: SpawnContext['parentKind'] = null;
 
   async loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext> {
     this.authSeen.push(auth);
+    this.spawnContextInputs.push(input);
     return {
       spaceId: input.spaceId,
+      // 176: the real loader reads the parent's kind from the graph. The fake
+      // answers from a field so a chat-parented spawn can be composed without a
+      // database, and a resume can change it mid-test.
+      parentKind: this.parentKind,
       project:
         this.options.withProject === false
           ? null
@@ -97,7 +115,7 @@ export class FakeGraph implements GraphPort {
         title: `fixture task ${i + 1}`,
         description: 'prove the loop',
         priority: 'high',
-        workStatus: 'open',
+        status: 'open',
         acceptanceCriteria: [],
       })),
     };
@@ -227,6 +245,9 @@ export class FakeGraph implements GraphPort {
 
   async transition(auth: GraphAuth, input: TransitionInput): Promise<void> {
     this.authSeen.push(auth);
+    if (this.failTransitionFor.has(input.sessionId)) {
+      throw new Error(`injected transition failure for ${input.sessionId}`);
+    }
     this.transitions.push(input);
   }
 
@@ -248,6 +269,11 @@ export class FakeGraph implements GraphPort {
   /** Session ids whose `terminate` should blow up, to prove one bad row cannot
    *  stop the sweep. */
   failTerminateFor = new Set<string>();
+  /** Session ids whose `transition` should blow up. The sibling of
+   *  `failTerminateFor`, for paths that write a status WITHOUT going through
+   *  `terminate` — the shutdown sweep is the one that matters, and it must
+   *  still resolve so a failing write cannot hang the process exit. */
+  failTransitionFor = new Set<string>();
 
   async listNodeActiveSessions(
     auth: GraphAuth,

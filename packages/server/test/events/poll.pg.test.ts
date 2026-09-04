@@ -100,7 +100,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
       'Anchor task',
       memberId,
       '',
-      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      null, null, null, 'medium', null, null, null, null, null, 'attached_to',
       `cmid_${randomUUID()}`,
     ]);
     firstTaskId = anchor.entity.id;
@@ -128,6 +128,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
       null,
       null,
       null,
+      null, // 172: p_start_date is TWELFTH of fifteen
       'attached_to',
       cmid,
     ]);
@@ -164,7 +165,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
     expect(upsert.entity.state.kind).toBe('task');
     if (upsert.entity.state.kind === 'task') {
       expect(upsert.entity.state.priority).toBe('high');
-      expect(upsert.entity.state.workStatus).toBe('open');
+      expect(upsert.entity.state.status).toBe('open');
     }
     expect(upsert.entity.createdBy.id).toBe(memberId);
     expect(upsert.entity.counters.messages).toBe(0);
@@ -204,6 +205,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
       null,
       null,
       null,
+      null, // 172: p_start_date is TWELFTH of fifteen
       'attached_to',
       `cmid_${randomUUID()}`,
     ]);
@@ -299,7 +301,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
       'Dependency target',
       memberId,
       '',
-      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      null, null, null, 'medium', null, null, null, null, null, 'attached_to',
       `cmid_${randomUUID()}`,
     ]);
     await db.rpc(claims(), 'public.write_edge', [
@@ -396,7 +398,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
       title,
       memberId,
       'about to go',
-      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      null, null, null, 'medium', null, null, null, null, null, 'attached_to',
       `cmid_${randomUUID()}`,
     ]);
 
@@ -443,6 +445,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
           null,
           null,
           null,
+          null, // 172: p_start_date is TWELFTH of fifteen
           'attached_to',
           `cmid_${randomUUID()}`,
         ]),

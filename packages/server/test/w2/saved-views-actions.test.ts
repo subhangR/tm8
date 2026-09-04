@@ -46,7 +46,7 @@ const VIEW_ROW = {
   owner_member_id: IDS.member,
   name: 'Urgent work',
   share_mode: 'private',
-  query: { spaceId: IDS.space, kinds: ['task'], filters: { workStatus: ['open'] } },
+  query: { spaceId: IDS.space, kinds: ['task'], filters: { status: ['open'] } },
   graph_layout: { [IDS.entity]: { x: 12, y: 24 } },
   created_at: new Date('2026-07-26T10:00:00.000Z'),
   updated_at: new Date('2026-07-26T10:00:00.000Z'),
@@ -55,7 +55,7 @@ const VIEW_ROW = {
 class FakeDb implements Db {
   queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async () => [];
   rpcImpl: <T>(fn: string, args: readonly unknown[]) => Promise<T> = async (fn) => {
-    if (fn === 'resolve_account_credential') return OWNER as T;
+    if (fn === 'resolve_node_owner') return OWNER as T;
     throw new Error(`unexpected rpc: ${fn}`);
   };
 
@@ -175,7 +175,7 @@ describe('W2.G09 saved views and action discovery', () => {
     const db = new FakeDb();
     const calls: Array<{ fn: string; args: readonly unknown[] }> = [];
     db.rpcImpl = async <T>(fn: string, args: readonly unknown[]) => {
-      if (fn === 'resolve_account_credential') return OWNER as T;
+      if (fn === 'resolve_node_owner') return OWNER as T;
       calls.push({ fn, args });
       return VIEW_ROW as T;
     };

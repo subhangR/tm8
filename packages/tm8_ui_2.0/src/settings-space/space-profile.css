@@ -1,0 +1,169 @@
+/* ===========================================================================
+   PROFILE — the SPACE's profile (settings section 1 of 12).
+
+   Owned by this lane alone and imported from `ProfileSection.tsx`, never from
+   `index.ts`. `settings.css` is shared by twelve lanes working in parallel, so
+   nothing here goes there. Every class is prefixed `set-space-profile` —
+   `.set-profile__*` in settings.css is the OTHER profile (the viewer's own
+   identity editor), and a bare `.set-profile__name` would have collided with
+   it.
+
+   Tokens only; `src/hex-ban.test.ts` walks this file.
+
+   WHY THIS FILE EXISTS AT ALL. The section used to render `.set-stack`, which
+   carries `padding: 12px var(--set-gutter)` of its own — inside
+   `SectionFrame`'s `.set-section__pad`, which carries the same gutter again.
+   Measured in Chrome at 900x600 before the change: the head title sat at
+   x=196 and the first body label at x=214. Eighteen pixels of disagreement
+   between a section's title and its own contents, from adding two paddings
+   that were each individually correct. The stack below owns NO padding; the
+   frame's gutter is the only one.
+   =========================================================================== */
+
+.set-space-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* --- the identity ---------------------------------------------------------
+   The name and the about line are what this section IS; members/repo/created
+   are the record behind them. Before, the name was row one of five identical
+   key/value rows and read as one more field of a DTO dump. It gets the serif
+   at display size for the same reason the section head does: it is a title,
+   not a value. */
+
+.set-space-profile__id {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.set-space-profile__name {
+  margin: 0;
+  font-family: var(--pn-prose);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--pn-ink);
+  /* A space name is user input with no length rule; `anywhere` is what stops
+     one unbroken 60-character token widening the grid and handing the page a
+     horizontal scrollbar. */
+  overflow-wrap: anywhere;
+}
+
+.set-space-profile__about {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+  /* Tighter than `--set-measure` ON PURPOSE. 860px is the cap for the whole
+     body; a paragraph of prose at 12px wants ~65 characters, and the measure
+     would let this one run to ~120. The frame sets the ceiling, the paragraph
+     sets its own comfortable line. */
+  max-width: 62ch;
+  overflow-wrap: anywhere;
+}
+
+/* --- the record -----------------------------------------------------------
+   A real <dl>. Two tracks, and the value track is `minmax(0, 1fr)` rather
+   than `1fr` — a bare `1fr` floors at min-content, so a long repo path or an
+   id would push the grid wider than the card instead of wrapping inside it. */
+
+.set-space-profile__record {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 9px 12px;
+  margin: 0;
+  padding-top: 15px;
+  /* Repeated rows inside one component ⇒ the soft hairline (D-law 4), the
+     same rule `.set-member` follows. */
+  border-top: 1px solid var(--pn-x-hairline-soft);
+}
+
+/* Record labels are HEADERS — caps grammar (Kinetic W3), not mono. */
+.set-space-profile__k {
+  margin: 0;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-3);
+  text-transform: uppercase;
+}
+
+.set-space-profile__v {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+
+/* Machine-shaped values — the id, the repo path. Mono says "this is a string
+   you copy", which is the only thing anyone does with either of them. */
+.set-space-profile__v--mono {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-2);
+}
+
+/* THE EMPTY FIELD, SAID RATHER THAN DRAWN. `Repo` and `About` used to render
+   `—` when null, which is indistinguishable from a field whose value IS an em
+   dash — and every entity title on this server may contain one. A different
+   word, differently dressed and in a dimmer ink, cannot be mistaken for
+   content. The word is a WORD, so it speaks ui (Kinetic W3); the italic now
+   carries the "not content" distinction mono used to. `data-unset` carries
+   the same fact to the tests. */
+.set-space-profile__unset {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-style: italic;
+  color: var(--pn-ink-4);
+}
+
+/* --- the refused action ---------------------------------------------------
+   Was an inline `style={{ paddingTop: 8 }}` hanging off the last record row,
+   so the one control on the section read as a sixth field. A rule and the
+   section's own rhythm instead. */
+
+.set-space-profile__actions {
+  padding-top: 15px;
+  border-top: 1px solid var(--pn-x-hairline-soft);
+}
+
+/* --- honest absence -------------------------------------------------------
+   `.set-absent` (settings.css) carries `padding: 12px 16px` of its own, which
+   double-pads inside the frame exactly as `.set-stack` did — and by 16px,
+   where the frame's gutter is 18px, so the absent state landed 2px off from
+   where this section's own rows start. Measured at 900x600 before the change:
+   head title x=196, absent head x=212.
+
+   Zeroed HERE, scoped to this section, rather than in `settings.css` — that
+   file is shared by eleven other lanes editing it right now. The shared block
+   double-padding inside the shared frame is a real defect and it belongs to
+   whoever owns `SectionFrame`/`settings.css`, not to this lane; reported
+   rather than reached for. */
+.set-space-profile__absent .set-absent {
+  padding-block: 0;
+  padding-inline: 0;
+}
+
+/* Below roughly 700px of section width the 96px label track costs more than
+   it buys; the label stacks over its value instead of squeezing it. */
+@media (max-width: 760px) {
+  .set-space-profile__record {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .set-space-profile__k {
+    padding-top: 7px;
+  }
+  .set-space-profile__k:first-of-type {
+    padding-top: 0;
+  }
+}

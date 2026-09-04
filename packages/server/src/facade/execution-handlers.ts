@@ -54,6 +54,7 @@ import {
   WorktreeManager,
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
+  type GhostReconcileReport,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
@@ -66,6 +67,7 @@ import type {
   ExecutionDispatchResult,
   ExecutionLiveness,
   ExecutionPromptInput,
+  ExecutionResumeInput,
   ExecutionSpawnInput,
   ExecutionTerminalStartInput,
   ExecutionStreamsAttachInput,
@@ -80,6 +82,7 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
+import { PgDurableSeqSource } from '../events/seq.js';
 import { DbAgentCredentialHome } from '../credentials/agent-credential-injection.js';
 import { DbGitHubCredentialStore } from '../credentials/github-credential-store.js';
 import type { ServerConfig } from '../http/config.js';
@@ -91,6 +94,7 @@ import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
+import { resolveSpawnParentId } from '../chat/scope.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
@@ -145,6 +149,7 @@ interface TaskRow {
   priority: string;
   work_status: string;
   acceptance_criteria: unknown;
+  attachments: unknown;
   /** Set when the task was derived from a thread message (064/099): the
    * thread's root message and the channel it lives on, for the prompt
    * envelope's <source>/<thread> elements. */
@@ -327,6 +332,31 @@ export class DbGraphPort implements GraphPort {
       }
       const injectedMemories = renderMemories(memoryRows, requestedIds);
 
+      // 176 — WHAT THE PARENT IS, not merely that there is one.
+      //
+      // A chat may parent a work session since 176, so `parentSessionId` no
+      // longer implies a work_session and the manifest's `coordinator.kind`
+      // cannot be inferred from its presence. The kind is read HERE, in the
+      // same transaction as the persona, for the reason this transaction
+      // exists: the manifest must describe one instant.
+      //
+      // Read from `public.entities` under the caller's RLS and never from the
+      // request. An unreadable or deleted parent yields `null`, which every
+      // consumer folds to `work_session` — a launch is not refused over a
+      // return-address LABEL, only over a missing return address, and that
+      // guard is `resolveCoordinatorSessionId`'s.
+      let parentKind: SpawnContext['parentKind'] = null;
+      if (input.parentSessionId) {
+        const parentRows = await q.query<{ kind: string }>(
+          `select e.kind
+             from public.entities e
+            where e.id = $1 and e.space_id = $2 and e.deleted_at is null`,
+          [input.parentSessionId, input.spaceId],
+        );
+        const kind = parentRows[0]?.kind;
+        parentKind = kind === 'chat' ? 'chat' : kind === 'work_session' ? 'work_session' : null;
+      }
+
       let project: SpawnContext['project'] = null;
       if (input.projectId) {
         const rows = await q.query<ProjectRow>(
@@ -409,6 +439,7 @@ export class DbGraphPort implements GraphPort {
               // covers pre-099 rows whose dst may be a reply.
               `select t.entity_id, e.version, t.title, t.description, t.priority, t.work_status,
                       t.acceptance_criteria,
+                      coalesce(ta.attachments, '[]'::jsonb) as attachments,
                       dm.root_id as thread_root_message_id,
                       dm.anchor_id as thread_channel_id
                  from public.tasks t
@@ -421,6 +452,22 @@ export class DbGraphPort implements GraphPort {
                     where d.src_id = t.entity_id and d.type = 'derived_from'
                     limit 1
                  ) dm on true
+                 left join lateral (
+                   select jsonb_agg(
+                            jsonb_build_object(
+                              'fileEntityId', f.entity_id,
+                              'name', f.name,
+                              'mime', f.mime_type
+                            ) order by f.entity_id
+                          ) as attachments
+                     from public.edges a
+                     join public.entities fe
+                       on fe.id = a.src_id and fe.kind = 'file'
+                      and fe.space_id = e.space_id and fe.deleted_at is null
+                     join public.files f on f.entity_id = fe.id
+                    where a.type = 'attached_to'
+                      and a.dst_id = t.entity_id
+                 ) ta on true
                 where t.entity_id = any($1::uuid[])
                   and e.space_id = $2 and e.deleted_at is null`,
               [taskIds, input.spaceId],
@@ -428,6 +475,7 @@ export class DbGraphPort implements GraphPort {
 
       return {
         spaceId: input.spaceId,
+        parentKind,
         project,
         teamMember: {
           id: member.entity_id,
@@ -458,8 +506,23 @@ export class DbGraphPort implements GraphPort {
             title: t.title,
             description: t.description,
             priority: t.priority,
-            workStatus: t.work_status,
+            status: t.work_status,
             acceptanceCriteria: Array.isArray(t.acceptance_criteria) ? t.acceptance_criteria : [],
+            attachments: Array.isArray(t.attachments)
+              ? t.attachments.flatMap((value) => {
+                  if (!value || typeof value !== 'object') return [];
+                  const item = value as Record<string, unknown>;
+                  return typeof item.fileEntityId === 'string' &&
+                    typeof item.name === 'string' &&
+                    typeof item.mime === 'string'
+                    ? [{
+                        fileEntityId: item.fileEntityId,
+                        name: item.name,
+                        mime: item.mime,
+                      }]
+                    : [];
+                })
+              : [],
             threadRootMessageId: t.thread_root_message_id ?? null,
             threadChannelId: t.thread_channel_id ?? null,
           })),
@@ -677,6 +740,8 @@ export class DbGraphPort implements GraphPort {
       input.error ?? null,
       null, // p_transcript_doc_id — transcripts are post-G1A
       null, // p_client_mutation_id — an exit is not a client mutation
+      input.endedKind ?? null, // p_ended_kind (171)
+      input.endedReason ?? null, // p_ended_reason (171) — plain English
     ]);
   }
 
@@ -1199,7 +1264,9 @@ export interface ExecutionRuntime {
    * can `awaitOutcome` a deliveryId instead of settling on admission — see
    * `PromptSettlementWaiter`'s own docs in `@tm8/execution` for why
    * construction order forces this instance to be built here, before the
-   * delivery service exists, rather than by the delivery service itself.
+   * delivery service exists, rather than by the delivery service itself. The
+   * same bridge is handed to SpawnService: `running` is not written until the
+   * initial task turn has settled through the PTY closed loop.
    */
   promptSettlement: PromptSettlementWaiter;
   spawnService: SpawnService;
@@ -1214,7 +1281,7 @@ export interface ExecutionRuntime {
    * the ordering (and so tests can drive it deliberately). Resolves to the count
    * retired and NEVER rejects — see `SpawnService.reconcileNodeGhosts`.
    */
-  reconcileGhosts(): Promise<number>;
+  reconcileGhosts(): Promise<GhostReconcileReport>;
   /**
    * §6 — reconcile this node's worktree ALLOCATIONS. A sibling of
    * `reconcileGhosts`, called at the same point and with the same posture: the
@@ -1223,6 +1290,16 @@ export interface ExecutionRuntime {
    * checkout) and a node with no worktree area still wants the first.
    */
   reconcileWorktrees(): Promise<WorktreeReconcileReport>;
+  /**
+   * Annotate every live session with WHY it is about to die, from the process
+   * that is dying (171). The mirror image of `reconcileGhosts`: that one infers
+   * a past death from the next process, this one observes an imminent one from
+   * this process. Call it from the signal handler, before the listener closes.
+   *
+   * Resolves to how many rows it managed to annotate. Never rejects — a
+   * shutdown must not hang or fail because bookkeeping did.
+   */
+  recordShutdown(signal: string): Promise<number>;
 }
 
 /**
@@ -1277,6 +1354,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   spawnService = new SpawnService({
     graph,
     pty,
+    promptSettlement,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
@@ -1324,7 +1402,30 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           requestId: 'startup-reconcile',
         });
       } catch (error) {
-        deps.logger?.warn?.('execution: ghost reconciliation skipped', {
+        // RETURNED, not only logged. `deps.logger` is optional and commonly
+        // unwired, and a swallowed failure here is indistinguishable at the call
+        // site from a clean boot — both were `0`. The worktree sibling has
+        // always returned its errors, which is why its identical refusal
+        // ("not a member of this space") printed at startup while this one did
+        // not.
+        const message = error instanceof Error ? error.message : String(error);
+        deps.logger?.warn?.('execution: ghost reconciliation skipped', { error: message });
+        return { retired: 0, errors: [{ message }] };
+      }
+    },
+    recordShutdown: async (signal: string) => {
+      // Same loopback-owner identity as ghost reconciliation, and for the same
+      // reason: `work_session_transition` needs a real member. Wrapped for the
+      // same reason too — a node whose graph is unreachable must still be able
+      // to shut down.
+      try {
+        const o = await owner();
+        return await spawnService.recordShutdown(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'shutdown-record' },
+          signal,
+        );
+      } catch (error) {
+        deps.logger?.warn?.('execution: shutdown annotation skipped', {
           error: error instanceof Error ? error.message : String(error),
         });
         return 0;
@@ -1451,7 +1552,28 @@ export function registerExecutionHandlers(
           nodeAdmin: o.isNodeAdmin,
           requestId: 'startup-reconcile',
         });
-      } catch {
+      } catch (error) {
+        return {
+          retired: 0,
+          errors: [{ message: error instanceof Error ? error.message : String(error) }],
+        };
+      }
+    },
+    recordShutdown: async (signal: string) => {
+      // Same loopback-owner identity as ghost reconciliation, and for the same
+      // reason: `work_session_transition` needs a real member. Wrapped for the
+      // same reason too — a node whose graph is unreachable must still be able
+      // to shut down.
+      try {
+        const o = await owner();
+        return await spawnService.recordShutdown(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'shutdown-record' },
+          signal,
+        );
+      } catch (error) {
+        deps.logger?.warn?.('execution: shutdown annotation skipped', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return 0;
       }
     },
@@ -2177,11 +2299,20 @@ function registerHandlers(
       'select internal.live_work_session_count(null) as used',
     );
     const capacity = capacityRows?.[0];
+    // The durable event high-water mark, read AS THE CALLER — the same bound
+    // read the WS `subscribe` path already does (main.ts's `highWaterMark`),
+    // through the same class, so there is exactly one implementation of "no
+    // row is not zero". It rides this response because a client that is
+    // opening a space needs the mark and `nodeBootId` together and already
+    // awaits this read: carrying it costs no extra round trip, and without it
+    // the client's only way to find the end of the log is to page all of it.
+    const eventHwm = await db.tx(claims, (q) => new PgDurableSeqSource(q).latest(spaceId));
     const result: ExecutionLiveness = {
       liveEntityIds: rows.map((r) => r.id),
       nodeBootId: NODE_BOOT_ID,
       checkedAt: new Date().toISOString(),
       capacity: { used: Number(capacity?.used ?? 0), total: sessionCap },
+      eventHwm,
     };
     return json(result);
   });
@@ -2364,6 +2495,30 @@ function registerHandlers(
       last = Math.min(parsed, TRANSCRIPT_LAST_MAX);
     }
 
+    /*
+     * THE PAGE-BACK CURSOR — a byte offset taken from a previous page's
+     * `windowStart`, and the only thing a request may ever say about the file.
+     * It names a POSITION INSIDE the file the session's own row already chose;
+     * it cannot name a file. The authorization story above is unchanged: the
+     * work_session entity read under the caller's claims is still the gate,
+     * and every path component still comes from that row.
+     *
+     * Positive, like `last`. 0 is the start of the file, where `hasOlder` is
+     * already false, so a client that reads its own cursor never sends it.
+     */
+    const rawBefore = ctx.query.get('before');
+    let before: number | undefined;
+    if (rawBefore !== null && rawBefore !== '') {
+      const parsed = Number.parseInt(rawBefore, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new CollabError(
+          'invalid_input',
+          `before must be a positive integer, got ${rawBefore}`,
+        );
+      }
+      before = parsed;
+    }
+
     const cwd =
       session.workdir_mode === 'scratch'
         ? dataDir === undefined
@@ -2391,6 +2546,7 @@ function registerHandlers(
         agentConfigDir: session.agent_config_dir,
         fallbackAgentConfigDirs,
         last,
+        ...(before === undefined ? {} : { before }),
         includeFileChanges,
       }),
     );
@@ -2412,10 +2568,32 @@ function registerHandlers(
         )
       : undefined;
 
+    // 176 — A CHAT IS THE PARENT OF WHAT IT SPAWNS.
+    //
+    // `tm8_delegate` reaches here on an `agent_runtime` bearer and has never
+    // been able to name a parent: a chat had no entity id to name, so every
+    // worker a chat dispatched was born an orphan and its `<reply_address>`
+    // pointed at nothing. The bearer's own `runtime_chat_id` is that id, and it
+    // is a server fact off the session row, so it is safe to use as provenance.
+    //
+    // An EXPLICIT `parentSessionId` still wins. A human driving `execution.spawn`
+    // through a chat's credential may legitimately parent the worker elsewhere,
+    // and silently overriding a stated parent with an ambient one would make the
+    // argument a lie.
+    /**
+     * B10 — and the paragraph above is still exactly true for a HUMAN
+     * credential. `resolveSpawnParentId` is where the whole decision now lives,
+     * including its one new rule: a chat runtime may only parent what it spawns
+     * on ITSELF. That file carries the reasoning and the enumeration of what
+     * else the credential can reach; this is deliberately one call, because a
+     * default expression here plus a guard beside it is two statements about
+     * one question that can disagree.
+     */
+    const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId);
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
-      parentSessionId: input.parentSessionId ?? null,
+      parentSessionId,
       ...(taskIds ? { taskIds } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),
@@ -2431,6 +2609,13 @@ function registerHandlers(
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
+      // Spread rather than `?? undefined` so an absent geometry stays ABSENT:
+      // PtyHostService's clampDim falls back to 80x24 on any falsy value, and
+      // an explicit `cols: undefined` would read the same way — but only the
+      // omitted form survives the exactOptionalPropertyTypes contract
+      // SpawnRequest is written under.
+      ...(input.cols === undefined ? {} : { cols: input.cols }),
+      ...(input.rows === undefined ? {} : { rows: input.rows }),
       clientMutationId: envelope.clientMutationId ?? null,
     };
 
@@ -2626,10 +2811,15 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>
       spawnService.resume(claims, {
         sessionId: requireUuidParam(ctx, 'id'),
         clientMutationId: envelope.clientMutationId ?? null,
+        // A resume re-spawns the PTY, so it needs the browser's geometry for
+        // the same reason spawn does — see ExecutionSpawnInput.cols.
+        ...(resumeInput?.cols === undefined ? {} : { cols: resumeInput.cols }),
+        ...(resumeInput?.rows === undefined ? {} : { rows: resumeInput.rows }),
       }),
     );
     return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));

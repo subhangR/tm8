@@ -1,0 +1,528 @@
+/* ==========================================================================
+   SUBTREE ARCHETYPE BODY — the T0-4 `task` Content region.
+
+   ORACLE: `T0-1 workspace structure review (1)/T0-4 Entity Detail Panels
+   Hi-Fi.dc.html`. Every geometry and micro-type literal below is EXTRACTED
+   from that file's inline styles and cites its line; nothing is eyeballed
+   (brief §2.1). Line references are to the anatomy frame's task panel
+   (L60–L76) unless noted, with the 12-kinds task card (L163–L181) and the Z4
+   subtree map (L950–L975) named where they are the source.
+
+   COLORS ARE TOKENS, always (§14, guarded by src/hex-ban.test.ts). The
+   oracle's bytes map one-for-one onto existing tokens — nothing here needed a
+   new canvas colour:
+     #B7B2A4 --pn-ink-4 · #8E897B --pn-ink-3 · #23201B --pn-ink ·
+     #5B564C --pn-ink-2 · #3E8E5A --pn-run · #FFFFFF --pn-card ·
+     #E7E3D9 --pn-line · #D8D3C6 --pn-line-2 · #9A581F --pn-brand-2 ·
+     rgba(162,156,142,.16) --pn-idle-soft · #F0EDE4 --pn-x-hairline-soft.
+
+   THE HAIRLINE RULE (brief §2.4): the run CARD is bounded by `--pn-line`;
+   the subtree ROWS are repeated siblings inside one region and separate on
+   `--pn-x-hairline-soft`. The oracle draws exactly that pairing — #E7E3D9 on
+   the card, #F0EDE4 between the rows — which is where the rule came from.
+   ========================================================================== */
+
+/* A body section. NOT `.pn-section`: that class carries a `--pn-line`
+   bottom border, and the oracle draws NO rule between these regions — the
+   12px `.pn-body` gap (L59 `gap:12px`) is the whole separation. */
+.cv2-root .sb-section {
+  display: flex;
+  flex-direction: column;
+  /* Was the oracle's 5px; opened to the spacing scale in the 2026-08-16
+     measured-column pass — the redesign's whole point is air. */
+  gap: var(--pn-space-2);
+}
+
+/* --- the composed metadata grid (L60 / L163) ------------------------------ */
+.cv2-root .sb-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* 6px 12px in the oracle; opened with the measured column. */
+  gap: 10px 24px;
+  font-size: 12px;
+}
+/* One column when the panel floor approaches — labels + values need the room. */
+@media (max-width: 560px) {
+  .cv2-root .sb-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.cv2-root .sb-grid__cell {
+  min-width: 0;
+  /* L61 `color:#8E897B` — the LABEL colour is the cell's own; values raise
+     themselves out of it. */
+  color: var(--pn-ink-3);
+  overflow-wrap: anywhere;
+}
+.cv2-root .sb-grid__label {
+  color: var(--pn-ink-3);
+}
+/* L61 value span: `color:#23201B;font-weight:500`. */
+.cv2-root .sb-grid__strong {
+  color: var(--pn-ink);
+  font-weight: 500;
+}
+/* L64 ID / L167 Due: `font-family:mono;font-size:10.5px;color:#5B564C`. */
+.cv2-root .sb-grid__mono {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+}
+/* L63 project value, rendered as a real control because it opens a panel. */
+.cv2-root .sb-grid__link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--pn-ink);
+  font-weight: 500;
+  cursor: pointer;
+}
+.cv2-root .sb-grid__link:hover {
+  color: var(--pn-brand-2);
+}
+/* DEF-052 — the grid cell's link, 52x18 on the baseline of record.
+
+   It is the control that opens a related entity from inside a detail body, so
+   it is a navigation, not a label — and it is the one on this surface a reader
+   is most likely to reach for after reading the row it sits in.
+
+   `min-block-size` and NOT `min-inline-size`: these sit in a two-column grid of
+   label/value pairs, and a 44px floor on the WIDTH would stretch a two-letter
+   value's hit box across its neighbour's column. Height is the axis that is
+   short here — 18px against a 44px bar — and it is the axis a thumb misses on.
+
+   ROUTED, NOT TAKEN. Filed by triage as DEF-052 after I found it unowned in the
+   complete 20-entry inventory of this surface and offered to take it. The row
+   carries `345x18` from the discarded harness; the baseline of record says
+   52x18. Same defect, same fix, and the number in the row is from the file we
+   no longer diff against. */
+.cv2-root[data-shell='mobile'] .sb-grid__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--mobile-touch-min);
+}
+/* L62 priority tag: mono 10px/600, `rgba(162,156,142,.16)`, r4, 1px 5px. */
+.cv2-root .sb-tag {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+  background: var(--pn-idle-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.cv2-root .sb-actors {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  vertical-align: middle;
+}
+.cv2-root .sb-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- task description editor --------------------------------------------- */
+.cv2-root .sb-description {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+/* The label keeps its own line; the stance verb sits at its far end, which is
+   where T0-4 puts a section's action. */
+.cv2-root .sb-description__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cv2-root .sb-description__label {
+  font-family: var(--pn-mono);
+  /* I2 eyebrow grammar (wave 3): micro token / 800 / ink-2 — the section name
+     was 10/600 ink-4 and disappeared against its own body. Matches the fold
+     heads and the grid labels, so every section eyebrow speaks once. */
+  font-size: var(--pn-fs-micro);
+  font-weight: 800;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-2);
+}
+.cv2-root .sb-description__input {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
+  padding: 9px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  outline: none;
+}
+.cv2-root .sb-description__input::placeholder {
+  color: var(--pn-ink-4);
+}
+.cv2-root .sb-description__input:not(:read-only):hover {
+  border-color: var(--pn-line-2);
+}
+.cv2-root .sb-description__input:not(:read-only):focus {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
+.cv2-root .sb-description__input:read-only {
+  background: var(--pn-surface);
+  cursor: default;
+}
+/* Reads as the eyebrow's quiet sibling — it must not compete with the region
+   it labels. Same brass hover every other panel verb uses. */
+.cv2-root .sb-description__stance {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: var(--pn-caps);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+.cv2-root .sb-description__stance:hover {
+  color: var(--pn-brand-2);
+}
+/* DEF-022 — "Edit" at 29x13.
+
+   The desktop rule above is deliberately chrome-less — no padding, no border,
+   transparent — so that the verb reads as the eyebrow's quiet sibling and does
+   not compete with the region it labels. That intent is kept: this adds a box,
+   not a look. `padding-inline` and not `min-inline-size`, because the head is a
+   right-aligned flex row and a 44px minimum on a 29px word would put the label
+   off its own optical edge.
+
+   It is the SECOND "Edit" on this screen and the smaller of the two — the
+   panel-chrome one is 46x20 and is a `pn-btn--primary`. Two verbs with one word
+   at two sizes is a separate complaint nobody has filed; this row is only about
+   whether a thumb can hit this one. */
+.cv2-root[data-shell='mobile'] .sb-description__stance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+.cv2-root .sb-description__head .hon-disabled {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  padding: 0;
+}
+
+/* --- ACCEPTANCE rows ------------------------------------------------------
+   Geometry is the SUBTREE row's (L69 `gap:7px;padding:5px 0;font-size:12px`,
+   separated on the soft hairline), because they are the same thing visually:
+   repeated sibling lines inside one region. A label, not a button — the whole
+   line is the checkbox's hit area and the row opens nothing. */
+.cv2-root .sb-criterion {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  font-size: 12px;
+}
+.cv2-root .sb-criterion:last-of-type {
+  border-bottom: 0;
+}
+.cv2-root .sb-criterion__box {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: var(--pn-brand);
+  cursor: pointer;
+}
+/* DEF-021 — 12x12, THE SMALLEST REAL CONTROL IN THE LEDGER, ON THE WRITE A
+   PHONE USER MAKES MOST OFTEN.
+
+   NOT EXEMPT UNDER RULE R1, and it is worth saying why rather than leaving it
+   to be re-argued: the row IS a `<label>`, so the whole line does toggle the
+   box, and that looks like the delegated-proxy case R1 exempts. It is not. R1
+   exempts an input that is VISUALLY HIDDEN or 1x1 — a thing no finger aims at,
+   whose visible proxy is measured in its place. This input is drawn, it is the
+   only mark on the line that says "tick me", and it is what a thumb goes for.
+   A 12px target with a large forgiving hit area around it is still a 12px
+   target as far as the eye is concerned, and the eye is what aims.
+
+   THE ROW WAS NEVER PINNED — `.sb-criterion` is `padding: 5px 0` with no
+   height — so it grows to hold this and nothing is clipped. That is the check
+   CONTRACT.md §6 asks for before growing a child, done rather than assumed.
+
+   `font-size` is here for a SECOND row and not for looks: the instrument's
+   `tinyInputs` counts any input under the 16px iOS focus-zoom floor, this box
+   inherited the UA's 13.33px, and DEF-024's acceptance is
+   `tinyInputCount === 0` on this surface. Three of that count's seven entries
+   are these boxes. Sizing the selects alone would have left the number at 3
+   and read as a failed fix of DEF-024, which is a different row on a different
+   element. The property is invisible on a checkbox with an explicit box. */
+.cv2-root[data-shell='mobile'] .sb-criterion__box {
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+  font-size: 16px;
+}
+/* The REFUSED box is the honesty tooltip form, never a natively disabled input
+   (a disabled control leaves the tab order and takes its reason with it). It
+   keeps the checkbox's column so the rows still line up: same 12px mark, and
+   no padding stealing the row's 7px gap. */
+.cv2-root .sb-criterion .hon-disabled--tooltip {
+  flex: none;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+.cv2-root .sb-criterion__text {
+  min-width: 0;
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+/* Done reads exactly as a done child row does (L69). */
+.cv2-root .sb-criterion__text--done {
+  color: var(--pn-ink-3);
+  text-decoration: line-through;
+}
+
+/* --- SUBTREE rows (L68–L70) ---------------------------------------------- */
+.cv2-root .sb-rows {
+  display: flex;
+  flex-direction: column;
+}
+/* L69 `display:flex;align-items:center;gap:7px;padding:5px 0;
+   border-bottom:1px solid #F0EDE4;font-size:12px`. A button, not a div: the
+   row opens a panel, so it must be reachable by keyboard. */
+.cv2-root .sb-row {
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  border-radius: 0;
+  background: transparent;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 0;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .sb-row:last-of-type {
+  border-bottom: 0;
+}
+.cv2-root .sb-row:hover .sb-row__title {
+  color: var(--pn-brand-2);
+}
+.cv2-root .sb-row__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* L69 done child: `color:#8E897B;text-decoration:line-through`. */
+.cv2-root .sb-row__title--done {
+  color: var(--pn-ink-3);
+  text-decoration: line-through;
+}
+.cv2-root .sb-row:hover .sb-row__title--done {
+  color: var(--pn-ink-3);
+}
+
+/* L69/L70 status dot: 10px circle, FILLED when done, a 2px RING while open. */
+.cv2-root .sb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  box-sizing: border-box;
+  border: 2px solid var(--pn-idle);
+}
+.cv2-root .sb-dot--filled {
+  border: 0;
+  background: var(--pn-idle);
+}
+.cv2-root .sb-dot--run { border-color: var(--pn-run); }
+.cv2-root .sb-dot--wait { border-color: var(--pn-wait); }
+.cv2-root .sb-dot--block { border-color: var(--pn-block); }
+.cv2-root .sb-dot--info { border-color: var(--pn-info); }
+.cv2-root .sb-dot--idle { border-color: var(--pn-idle); }
+.cv2-root .sb-dot--brand { border-color: var(--pn-brand); }
+.cv2-root .sb-dot--run.sb-dot--filled { background: var(--pn-run); }
+.cv2-root .sb-dot--wait.sb-dot--filled { background: var(--pn-wait); }
+.cv2-root .sb-dot--block.sb-dot--filled { background: var(--pn-block); }
+.cv2-root .sb-dot--info.sb-dot--filled { background: var(--pn-info); }
+.cv2-root .sb-dot--idle.sb-dot--filled { background: var(--pn-idle); }
+.cv2-root .sb-dot--brand.sb-dot--filled { background: var(--pn-brand); }
+
+/* L69 trailing status word: `mono;font-size:9.5px;color:#3E8E5A` — the colour
+   is the TONE's, so a blocked child reads in block ink rather than green. */
+.cv2-root .sb-word {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+.cv2-root .sb-word--run { color: var(--pn-run); }
+.cv2-root .sb-word--wait { color: var(--pn-wait); }
+.cv2-root .sb-word--block { color: var(--pn-block); }
+.cv2-root .sb-word--info { color: var(--pn-info); }
+.cv2-root .sb-word--idle { color: var(--pn-idle); }
+.cv2-root .sb-word--brand { color: var(--pn-brand-2); }
+
+/* Z4 L955 `＋ add child…`: `padding:7px 0;font-size:12.5px;color:#B7B2A4`,
+   hovering to #9A581F. The T0-4 Z3 frames do not draw it; D48.1 rules it
+   gate anatomy off T0-1's Z3, so it renders here — disabled-with-reason
+   until a dispatch exists (R7), which is the `.hon-disabled` form. */
+.cv2-root .sb-addchild {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  align-self: flex-start;
+  padding: 7px 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+.cv2-root .sb-addchild:hover {
+  color: var(--pn-brand-2);
+}
+
+/* --- RUNS as a dot-chip cluster (2026-08-16 redesign) ----------------------
+   One always-visible strip; live chips lead, tinted `--pn-run-soft`; overflow
+   folds into a `+N more` chip that expands in place. The old full-width run
+   rows and the promoted LIVE SESSION card retired into this. */
+.cv2-root .sb-runs__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+/* The measured-live cluster is a testid seam, not a box. */
+.cv2-root .sb-runs__live {
+  display: contents;
+}
+.cv2-root .sb-runchip {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .sb-runchip:hover {
+  border-color: var(--pn-line-2);
+}
+.cv2-root .sb-runchip:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+.cv2-root .sb-runchip--live {
+  background: var(--pn-run-soft);
+}
+.cv2-root .sb-runchip__top {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cv2-root .sb-runchip__title {
+  color: var(--pn-ink);
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* DEF-009 — A CHIP THAT CANNOT BE TOLD FROM ITS NEIGHBOUR IS NOT A CHIP.
+
+   `max-width: 22ch` + `nowrap` + ellipsis is a sound DESKTOP rule: the chips
+   sit in a row beside each other and a long title would push the row wide. The
+   run titles in this space are entity titles, which begin with the same words
+   — the before-run caught "Build & capture service — the only builder, s" and
+   "Work on: Mobile lanes — chat, entity list/det", 183px and 182px of each one
+   past the cut. Both chips identify WHICH run; truncated at 22ch they identify
+   nothing, and the ellipsis honestly reports that the identifying half is the
+   half that went.
+
+   On the phone the chips have a column to themselves, so the title WRAPS
+   instead. `max-width: none` first — leaving 22ch in place while allowing
+   wrapping gives a 22ch-wide column with the text folded inside it, which is
+   the same information loss in a taller box.
+
+   This is also the one shape of this row that can satisfy its own acceptance
+   without argument: the instrument counts a box whose content exceeds it and
+   cannot scroll. Wrapped text does not exceed its box. Ellipsised text always
+   does — that is what draws the ellipsis. */
+.cv2-root[data-shell='mobile'] .sb-runchip__title {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Solid when live, hollow ring otherwise — pulse belongs to the activity
+   signal (F1/D6), which this body is not handed. */
+.cv2-root .sb-runchip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  box-sizing: border-box;
+}
+.cv2-root .sb-runchip__dot--ring {
+  border: 1.5px solid var(--pn-line-2);
+}
+.cv2-root .sb-run__dot--run { background: var(--pn-run); }
+.cv2-root .sb-runchip__word {
+  padding-left: 14px;
+  font-size: 9.5px;
+}
+.cv2-root .sb-runchip--more {
+  justify-content: center;
+  align-self: stretch;
+  color: var(--pn-ink-3);
+  font-size: 11px;
+  background: var(--pn-idle-soft);
+  border-color: transparent;
+}
+.cv2-root .sb-runchip--more:hover {
+  color: var(--pn-brand-2);
+}
+
+.cv2-root .sb-notices {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}

@@ -241,6 +241,13 @@ const IDENTITY_V2_NET_NEW_OPERATIONS = [
   // 114: `auth.invite.resolve` joins the same seam — a claim-free read that
   // answers before the caller is anybody here. Net-new, no replacement.
   'auth.invite.resolve',
+  // 141: the three account-lifecycle ops join the same seam. Net-new, no
+  // replacements. `auth.claim.reissue` and `auth.password.change` are gated
+  // (loopback auto-owner / authenticated caller); `auth.invite.signup` is
+  // claim-free like `auth.invite.resolve`.
+  'auth.claim.reissue',
+  'auth.password.change',
+  'auth.invite.signup',
 ] as const;
 
 /**
@@ -254,6 +261,60 @@ const IDENTITY_V2_NET_NEW_OPERATIONS = [
  */
 const MEMBER_ROLES_NET_NEW_OPERATIONS = [
   'spaces.members.updateRole',
+] as const;
+
+/** W4/132 (2026-08-16): per-type status vocabularies, mounted with the wave. */
+const TASK_WORKFLOW_NET_NEW_OPERATIONS = [
+  'spaces.taskWorkflows.delete',
+  'spaces.taskWorkflows.list',
+  'spaces.taskWorkflows.upsert',
+] as const;
+
+/** 148 (phase 2): the real workflow tables, mounted with the wave. */
+const WORKFLOW_NET_NEW_OPERATIONS = [
+  'spaces.workflows.delete',
+  'spaces.workflows.list',
+  'spaces.workflows.upsert',
+] as const;
+
+/**
+ * Containers (177). All twenty-four HTTP rows of the family, registered
+ * UNCONDITIONALLY and net-new — none replaces anything.
+ *
+ * They register even though most are not built yet, and that is the honesty
+ * rule rather than an oversight: a `status: 'v1'` row with no handler falls
+ * through the registry to 404, which tells a caller the operation does not
+ * exist when it is in the contract and this node simply cannot serve it yet.
+ * Registered-and-501 is the correct answer; unregistered-and-404 is not.
+ *
+ * `containers.stream` is absent because it is the WS alias of
+ * `events.subscribe` — served by the upgrade handler, never by this registry.
+ */
+const CONTAINER_NET_NEW_OPERATIONS = [
+  'containers.attach',
+  'containers.attention',
+  'containers.browser.endpoint',
+  'containers.computer',
+  'containers.create',
+  'containers.destroy',
+  'containers.expose',
+  'containers.files.get',
+  'containers.files.put',
+  'containers.fork',
+  'containers.logs',
+  'containers.pause',
+  'containers.policy.set',
+  'containers.pools.set',
+  'containers.providers.list',
+  'containers.proxy',
+  'containers.resume',
+  'containers.run',
+  'containers.snapshot',
+  'containers.start',
+  'containers.stop',
+  'containers.terminal.start',
+  'containers.unexpose',
+  'containers.update',
 ] as const;
 
 /**
@@ -318,7 +379,7 @@ const COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS = [
 
 /** TM8 Chat's one budgeted catalog command, mounted in degraded mode too. */
 const CHAT_NET_NEW_OPERATIONS = [
-  'chat.threads.start',
+  'chat.start',
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
@@ -331,6 +392,9 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS,
   ...CHAT_NET_NEW_OPERATIONS,
   ...MEMBER_ROLES_NET_NEW_OPERATIONS,
+  ...TASK_WORKFLOW_NET_NEW_OPERATIONS,
+  ...WORKFLOW_NET_NEW_OPERATIONS,
+  ...CONTAINER_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -466,7 +530,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
-    expect(registry.size).toBe(143);
+    // 152 -> 176 (177): the 24 HTTP rows of the containers family. MEASURED.
+    expect(registry.size).toBe(176);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -477,7 +542,10 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + GIT_NET_NEW_OPERATIONS.length
         + COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS.length
         + CHAT_NET_NEW_OPERATIONS.length
-        + MEMBER_ROLES_NET_NEW_OPERATIONS.length,
+        + MEMBER_ROLES_NET_NEW_OPERATIONS.length
+        + TASK_WORKFLOW_NET_NEW_OPERATIONS.length
+        + WORKFLOW_NET_NEW_OPERATIONS.length
+        + CONTAINER_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -632,7 +700,14 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // bodies bind (gitStatus/gitDiff are GETs and bind nothing).
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(93); // + StartChatThreadInput; +2 (118): UpdateMemberRoleInput, ResolveInviteInput
+    // +2 (141): AuthPasswordChangeInputSchema + AuthInviteSignupInputSchema bind
+    // their bodies (auth.claim.reissue takes no body, so it binds nothing).
+    // +2 (148): .upsert binds WorkflowInputSchema, .delete binds
+    // RequiredCommandContextSchema; .list is a READ and binds nothing.
+    // 99 -> 118 (177): nineteen container command bodies bind. The family has
+    // twenty commands; `containers.files.put` carries a tar stream, not JSON,
+    // and is enumerated in UNBOUND_COMMAND_OPERATIONS instead. MEASURED.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(118);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -648,7 +723,13 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // nine command operations had no binding while the constant claimed none
     // were missing. They are enumerated now (see input-schemas.ts) so the
     // derived check above has something true to compare against.
-    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(9);
+    // 141: +1 — auth.claim.reissue is genuinely body-less (no input, auth.* so
+    // no CommandContext), enumerated as such rather than left to hide.
+    // 177: +1 — `containers.files.put` carries a tar stream, not JSON, so it
+    // is genuinely body-less in the zod sense and enumerated as such. Every
+    // other container command IS bound, including the ones whose runtime does
+    // not exist yet.
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(11);
     expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',
@@ -783,8 +864,17 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 141/139 -> 143/141 (2026-08-12): collections.addItem/removeItem, mounted.
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 162, implemented: 160 });
-    expect(harness.production.server.registry.size).toBe(160);
+    // +3 (W4/132): the three spaces.taskWorkflows routes, all mounted.
+    // +3 (141): auth.password.change + auth.invite.signup + auth.claim.reissue,
+    // all mounted and all registered.
+    // +3 (148): the three spaces.workflows routes, all mounted and all
+    // registered. MEASURED off /health.
+    // +24 (177): the containers family, all registered, all mounted. The
+    // catalog grew by 25 and the router by 24 — the 25th is the WS alias,
+    // which adds a discoverable NAME for the existing socket, not a route.
+    // MEASURED off /health.
+    expect(health).toMatchObject({ ok: true, operations: 195, implemented: 193 });
+    expect(harness.production.server.registry.size).toBe(193);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -804,7 +894,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(160);
+    // 169 -> 193 (177): the 24 HTTP container rows. MEASURED.
+    expect(registered.size + residual.length).toBe(193);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

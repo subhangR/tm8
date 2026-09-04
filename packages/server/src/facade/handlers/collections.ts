@@ -92,6 +92,15 @@ const SORTS: Record<SortName, SortSpec> = {
     cast: 'date',
     cursorExpr: "to_char(coalesce(t.due_date, '9999-12-31'::date), 'YYYY-MM-DD')",
   },
+  // Same sentinel posture as `dueDate` above, for the same keyset reason — and
+  // the same `to_char` rather than a JS `toISOString()`, which node-pg would
+  // parse at LOCAL midnight and could shift a day west of UTC.
+  startDate: {
+    expr: "coalesce(t.start_date, '9999-12-31'::date)",
+    dir: 'asc',
+    cast: 'date',
+    cursorExpr: "to_char(coalesce(t.start_date, '9999-12-31'::date), 'YYYY-MM-DD')",
+  },
   priority: {
     expr: "case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end",
     dir: 'asc',
@@ -233,8 +242,11 @@ function assertUuids(values: readonly string[], field: string): string[] {
 
 /**
  * The unresolved-hard-dependency predicate, shared by `readyToPull` and by the
- * blocked badge. `internal.is_resolved` decides what "resolved" means per kind
- * (a task when done, a PR when merged) — asking it here keeps one definition.
+ * blocked badge. `internal.is_resolved` decides what "resolved" means — since
+ * phase 5 (migration 152) that is `status_category = 'done'` for EVERY kind,
+ * with `pull_request` overridden to the forge's merged state. Asking it here
+ * keeps one definition, which is what let that widening reach this predicate
+ * without a line changing.
  */
 const UNBLOCKED_PREDICATE = `not exists (
   select 1 from public.edges dep
@@ -260,6 +272,25 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
       where.push('e.deleted_at is null');
   }
 
+  // The lifecycle bucket, beside the soft-delete posture on purpose: these are
+  // the two envelope-level dispositions a list row has, and the four category
+  // tabs run this predicate on every read. It sits on `e`, not on `t`, which is
+  // the whole reason the column was denormalized — a category filter that
+  // needed the task join could never serve the kinds that gain a status later.
+  //
+  // Kind-narrowing, by the same mechanism `status` uses: an entity with no
+  // status has a NULL `status_category`, and `NULL = any(...)` is never true.
+  // So the filter's PRESENCE restricts the page to entities that have a status,
+  // which in this phase means tasks — no `kinds` clause required, and no
+  // silently-included doc claiming to be To Do.
+  //
+  // Indexed by `entities(space_id, status_category) where deleted_at is null`
+  // (147), which is the shape this actually runs in: space predicate first,
+  // category second, tombstones already excluded by the default posture above.
+  if (f.category && f.category.length > 0) {
+    where.push(`e.status_category = any(${p.add(f.category)}::text[])`);
+  }
+
   if (query.kinds && query.kinds.length > 0) {
     where.push(`e.kind = any(${p.add(query.kinds)}::text[])`);
   }
@@ -281,16 +312,45 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     );
   }
 
-  if (f.workStatus && f.workStatus.length > 0) {
-    where.push(`t.work_status = any(${p.add(f.workStatus)}::text[])`);
+  if (f.status && f.status.length > 0) {
+    where.push(`t.work_status = any(${p.add(f.status)}::text[])`);
   }
 
-  // A22: same kind-narrowing semantics as workStatus — ws.status is NULL for
+  // Board tab wave (2026-08-16): same kind-narrowing semantics as status —
+  // t.priority is NULL for every non-task row, so presence restricts to tasks.
+  if (f.priority && f.priority.length > 0) {
+    where.push(`t.priority = any(${p.add(f.priority)}::text[])`);
+  }
+
+  // A22: same kind-narrowing semantics as status — ws.status is NULL for
   // every non-work_session row, and NULL = any(...) is never true, so the
   // filter's presence restricts the result to work_sessions in these statuses.
   if (f.sessionStatus && f.sessionStatus.length > 0) {
     where.push(`ws.status = any(${p.add(f.sessionStatus)}::text[])`);
   }
+
+  // A CREDENTIAL LOGIN TERMINAL IS NOT WORK (082, architect Ruling 16) and the
+  // rule belongs HERE, not only in the client.
+  //
+  // `projectRows` (tm8-ui/src/data/project/domain-store.ts) has dropped
+  // `sessionKind === 'credential'` from every list for as long as the rule has
+  // existed, but this query never knew about it — so `page.items` and
+  // `page.total` counted rows the list then refused to render, and the two
+  // could not agree by construction. Measured on the launch node: the session
+  // list's To Do tab read `1` and rendered ZERO rows (the row was an eight-day
+  // old `spawning` credential terminal) while Done was inflated by eight more.
+  //
+  // It also contains a residual `credential-sessions.ts` states outright:
+  // nothing writes a credential session's status after its process dies —
+  // `reconcileNodeGhosts` cannot reap one, because 083 leaves `node_id` NULL by
+  // construction precisely so it cannot. That file's own instruction is that a
+  // READ MODEL must never derive from a credential work session's status. A
+  // count is a read model; this is that instruction applied.
+  //
+  // `is distinct from` and NOT `<> 'credential'`: `ws.session_kind` is NULL on
+  // every row that is not a work_session at all, and a plain `<>` would drop
+  // the entire graph.
+  where.push(`ws.session_kind is distinct from 'credential'`);
 
   if (f.axes) {
     for (const [axis, values] of Object.entries(f.axes)) {
@@ -309,6 +369,14 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     )`);
   }
 
+  if (f.assignedByIds && f.assignedByIds.length > 0) {
+    where.push(`exists (
+      select 1 from public.edges a
+       where a.src_id = e.id and a.type = 'assigned_to'
+         and a.assigned_by = any(${p.add(assertUuids(f.assignedByIds, 'assignedByIds'))}::uuid[])
+    )`);
+  }
+
   if (f.edge) {
     const { type, direction, entityId } = f.edge;
     const self = direction === 'outgoing' ? 'src_id' : 'dst_id';
@@ -320,8 +388,23 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     )`);
   }
 
+  if (f.activeSince) {
+    // The clock window. `activity_at` is the same column `activityAt_desc`
+    // orders by, so a windowed read is the default ordering with a floor under
+    // it rather than a second notion of recency the client has to reconcile.
+    where.push(`e.activity_at >= ${p.add(f.activeSince)}::timestamptz`);
+  }
+
   if (f.readyToPull) {
-    where.push(`t.work_status in ('open','pulled')`);
+    // Phase 5 (152): the category, not the two literals it used to enumerate.
+    // `open` and `pulled` were exactly the `to_do` literals, so this is the same
+    // set said once — and it now follows a space that renamed its states, which
+    // the literal list could not. `t.entity_id is not null` keeps the preset
+    // TASK-SHAPED: every kind carries a category from 152 onward, so dropping
+    // the literal without saying "and it is a task" would have widened
+    // "what can I pull" to every doc and channel in the space.
+    where.push(`t.entity_id is not null`);
+    where.push(`e.status_category = 'to_do'`);
     where.push(UNBLOCKED_PREDICATE);
   }
 
@@ -411,6 +494,13 @@ const WORK_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
+const PRIORITY_LABELS: Record<string, string> = {
+  urgent: 'Urgent',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+};
+
 /**
  * Groups partition the PAGE that was fetched, not the whole result set.
  *
@@ -430,9 +520,16 @@ function groupItems(items: EntitySummary[], groupBy: NonNullable<CollectionQuery
   };
 
   for (const item of items) {
-    if (groupBy === 'workStatus') {
-      const status = item.state.kind === 'task' ? item.state.workStatus : 'open';
+    if (groupBy === 'status') {
+      const status = item.state.kind === 'task' ? item.state.status : 'open';
       put(status, WORK_STATUS_LABELS[status] ?? status, item);
+      continue;
+    }
+    if (groupBy === 'priority') {
+      // Non-task rows have no priority; 'medium' mirrors the status arm's
+      // 'open' default so the bucket and the SQL total cannot disagree.
+      const priority = item.state.kind === 'task' ? item.state.priority : 'medium';
+      put(priority, PRIORITY_LABELS[priority] ?? priority, item);
       continue;
     }
     if (groupBy === 'assignee') {
@@ -480,7 +577,7 @@ export async function queryCollection(
   const sort = SORTS[sortName];
   if (!sort) throw new CollabError('invalid_input', `unsupported sort: ${String(query.sort)}`);
 
-  if (query.groupBy && !['workStatus', 'assignee'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
+  if (query.groupBy && !['status', 'assignee', 'priority'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
     throw new CollabError('invalid_input', `unsupported groupBy: ${query.groupBy}`);
   }
 
@@ -536,6 +633,8 @@ export async function queryCollection(
     nextCursor: hasMore && last
       ? encodeCursor([fingerprint, sortKeyOf(last, sortName), last.id])
       : null,
+    // THE TRUE SIZE OF THE MATCH — phase 7's counts ruling. See `queryTotal`.
+    total: await queryTotal(q, baseWhere, p.values.slice(0, baseParamCount)),
   };
 
   // The query as resolved, so re-running it is reproducible.
@@ -564,17 +663,67 @@ export async function queryCollection(
       groups.push({
         key,
         label:
-          query.groupBy === 'workStatus'
+          query.groupBy === 'status'
             ? (WORK_STATUS_LABELS[key] ?? key)
-            : key === ''
-              ? 'Unset'
-              : key,
+            : query.groupBy === 'priority'
+              ? (PRIORITY_LABELS[key] ?? key)
+              : key === ''
+                ? 'Unset'
+                : key,
         items: [],
         total,
       });
     }
   }
   return { query: resolved, page, groups };
+}
+
+/**
+ * THE TRUE SIZE OF THE MATCH, from a server aggregate — `Page.total`.
+ *
+ * ## What this fixes
+ *
+ * `Page.total` has been a contract member all along and the facade never
+ * populated it, so every count in the product was `rows.length` over the rows
+ * that happened to be LOADED. A 601-row Done tab read `50` because the first
+ * page was full; the honest workaround (`countLabel`'s `50+`) is a hedge, not
+ * a number. The four category tabs, the footer line and the kind-selector
+ * total all read that one source, so they could never disagree with each
+ * other — they under-counted TOGETHER, which is the failure mode that looks
+ * like a working feature.
+ *
+ * ## Why it is affordable now
+ *
+ * `entities.status_category` is a real column with a partial index
+ * (`(space_id, status_category) where deleted_at is null`, migration 147), so
+ * the tab reads — the highest-frequency counted query in the product — are an
+ * index-only aggregate. The joins in `ENTITY_FROM` are `entity_id`-unique
+ * LEFT JOINs, which Postgres eliminates outright for a count that names none
+ * of their columns, so the plan is usually just the entity index.
+ *
+ * ## Query-scoped, not page-scoped
+ *
+ * Computed against `baseWhere` — the WHERE with the CURSOR CLAUSE EXCLUDED,
+ * the same base `groupTotals` uses. A total that shrank as you paged would be
+ * describing the page, and the page already describes itself.
+ *
+ * `count(*)`, not `count(distinct e.id)`: every predicate `buildWhere`
+ * produces is either a scalar comparison on `e`/`t`/`ws` or an `exists (…)`
+ * subquery, and neither multiplies rows. `groupTotals` needs the `distinct`
+ * because it adds a real `left join` on `public.edges` for the assignee key.
+ */
+async function queryTotal(
+  q: Querier,
+  where: readonly string[],
+  params: readonly unknown[],
+): Promise<number> {
+  const rows = await q.query<{ total: number }>(
+    `select count(*)::int as total
+     ${ENTITY_FROM}
+      where ${where.join('\n        and ')}`,
+    [...params],
+  );
+  return Number(rows[0]?.total ?? 0);
 }
 
 /**
@@ -592,8 +741,10 @@ async function groupTotals(
   const values = [...params];
   let keyExpr: string;
   let extraJoin = '';
-  if (groupBy === 'workStatus') {
+  if (groupBy === 'status') {
     keyExpr = `coalesce(t.work_status, 'open')`;
+  } else if (groupBy === 'priority') {
+    keyExpr = `coalesce(t.priority, 'medium')`;
   } else if (groupBy === 'assignee') {
     keyExpr = `coalesce(ag.dst_id::text, '')`;
     extraJoin = `left join public.edges ag on ag.src_id = e.id and ag.type = 'assigned_to'`;

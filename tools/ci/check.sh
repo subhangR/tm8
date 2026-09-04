@@ -91,15 +91,15 @@ fi
 # --- 2. typecheck: per-package scoped tsc -b, SEQUENTIAL --------------------
 # Order matters: contract first (everything references it), then dependents.
 #
-# The three groups below (TSC_PROJECTS, packages/ui, packages/tm8-ui) are
+# The three groups below (TSC_PROJECTS, packages/ui, packages/tm8_ui_2.0) are
 # mirrored by the root `bun run typecheck` shorthand, in this same order, as
-# typecheck:core -> typecheck:ui -> typecheck:tm8-ui. Keep them in step. The
+# typecheck:core -> typecheck:ui -> typecheck:tm8-ui-2.0. Keep them in step. The
 # shorthand used to cover TSC_PROJECTS only, and a green there read as "my
 # types are fine" while both UIs went unchecked until push time — that gap
 # cost two lanes a day in 2026-08 and produced a whole follow-up task built on
 # the belief that the GATE had the hole. It did not; the shorthand did.
 #
-# The order is also load-bearing, not cosmetic: packages/tm8-ui resolves
+# The order is also load-bearing, not cosmetic: packages/tm8_ui_2.0 resolves
 # @tm8/contract through its BUILT dist/*.d.ts, so it must run after the
 # contract is built or it reports errors for fields that exist in source.
 TSC_PROJECTS=(
@@ -129,13 +129,50 @@ else
   skip "typecheck packages/ui" "UI arrives at W3/M2"
 fi
 
-# The production UI owns the launch builder. Keep it in the merge gate after
-# the contract build so additions such as execution.spawn credential provenance
-# cannot land on one side of the seam without the other.
-if [ -f packages/tm8-ui/tsconfig.json ]; then
-  run_stage "typecheck packages/tm8-ui" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
+# BOTH UI PACKAGES ARE TYPECHECKED, and which one is the product UI swapped on
+# 2026-09-03: packages/tm8-ui holds the root and packages/tm8_ui_2.0 (the Astryx
+# redesign) is now the ALTERNATE UI at /ui-2.0/. Both stages stay exactly as
+# they were — the argument for gating either never depended on which was which.
+#
+# The UI owns the launch builder. Keep it in the merge gate after the contract
+# build so additions such as execution.spawn credential provenance cannot land
+# on one side of the seam without the other.
+#
+# What ungating a served UI costs is not hypothetical, and is the argument for
+# both stages: while nothing checked the 1.0 snapshot, the contract gained a
+# `codebrain` MenuViewRef and four of its exhaustive `Record<MenuViewRef, …>`
+# tables silently stopped compiling. Nothing reported it, because nothing
+# looked. A UI a viewer can reach has to be a UI something checks — and since
+# the swap that argument runs hardest for the package below, which is the one
+# every viewer now lands on.
+if [ -f packages/tm8_ui_2.0/tsconfig.json ]; then
+  run_stage "typecheck packages/tm8_ui_2.0 (alternate, /ui-2.0/)" ./node_modules/.bin/tsc -p packages/tm8_ui_2.0/tsconfig.json --noEmit
 else
-  skip "typecheck packages/tm8-ui" "production UI is absent"
+  skip "typecheck packages/tm8_ui_2.0 (alternate, /ui-2.0/)" "the alternate UI is absent"
+fi
+
+# THE PRODUCT UI SINCE 2026-09-03 — and TYPECHECK ONLY, which is now a KNOWN
+# HOLE rather than a comfortable one. Say it plainly: the package every viewer
+# lands on has ~3,800 tests that this gate does not run.
+#
+# The omission is still deliberate, and the reason has not changed. MEASURED
+# 2026-09-02 on clean origin/main: 9 failures across 5 files (board, craft,
+# files-explorer, transcript, router-mount) — React-19 act/flush timing in a
+# suite written against React 18, unrelated to anything the version switch or
+# this swap touches. Turning them on today would make this stage red on
+# arrival, and a stage that is red on arrival is a stage people learn to
+# ignore. That would buy nothing and cost the gate's credibility.
+#
+# It is a bigger hole than it was yesterday, because this package moved from
+# alternate to product. FIXING THOSE 9 AND ADDING `packages/tm8-ui` TO
+# TEST_PACKAGES BELOW IS THE FOLLOW-UP, and it should not wait long.
+#
+# The typecheck itself has no such baseline: it is clean, and it is the check
+# that would have caught the `codebrain` widening on the day it landed.
+if [ -f packages/tm8-ui/tsconfig.json ]; then
+  run_stage "typecheck packages/tm8-ui (product)" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
+else
+  skip "typecheck packages/tm8-ui (product)" "the product UI is absent"
 fi
 
 # --- 3. tests ---------------------------------------------------------------
@@ -168,6 +205,33 @@ TEST_PACKAGES=(
   packages/server
   packages/execution
   packages/cli
+  # packages/tm8-ui was ABSENT here until 2026-08-18, and had been since the
+  # package was created. The gate typechecked it (above) and never ran a line
+  # of its ~3,800 tests across 281 files — so every UI test in this repo was,
+  # in effect, a local-only test.
+  #
+  # What that cost, concretely: `gate.test.tsx` sat red on main for the whole
+  # life of the railless-Home design because its assertions still demanded a
+  # menu rail the shell had deliberately stopped drawing, and nothing was
+  # watching. A CI guard added to protect five panel hosts from drifting
+  # (`views/panel-host-wiring.test.ts`) was likewise never executed by CI.
+  #
+  # It is also the only isolated machine this repo has. Local full-suite runs
+  # on a shared dev box are not a substitute: measured at load average 139 on
+  # 8 cores, the same commit produced anywhere from 6 to 94 failures, because
+  # every test with a timeout loses that race eventually.
+  #
+  # 2026-08-29: the entry moved from packages/tm8-ui to packages/tm8_ui_2.0
+  # when the product UI moved.
+  #
+  # 2026-09-03: the product UI moved BACK to packages/tm8-ui and this entry did
+  # NOT follow it, which is the one place this swap knowingly leaves the gate
+  # weaker than it found it. packages/tm8-ui's suite has 9 pre-existing
+  # failures (see the typecheck stage above); adding it here today would red
+  # the gate on arrival. So the suite that runs is now the ALTERNATE UI's — a
+  # real check, on a real bundle viewers can reach, but no longer the one they
+  # land on. Fix those 9 and add packages/tm8-ui beside this line.
+  packages/tm8_ui_2.0
   tools/conformance
 )
 for pkg in "${TEST_PACKAGES[@]}"; do

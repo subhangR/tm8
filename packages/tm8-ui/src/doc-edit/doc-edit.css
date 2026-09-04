@@ -571,6 +571,29 @@
   background: var(--pn-line-2);
   cursor: col-resize;
   position: relative;
+  /* The browser claims a touch drag as a pan unless told otherwise, and it
+     decides BEFORE the first `pointermove` is dispatched — so no amount of
+     JavaScript can win the gesture back afterwards. `.shell-ws__gap` already
+     declares this for the same reason. */
+  touch-action: none;
+}
+/* A 1px hit area is a mouse target, not a thumb target. The bar keeps its 1px
+   RULE — the visible line must not thicken — while the TOUCHABLE area is widened
+   symmetrically around it with a transparent outset, so the divider looks
+   identical and can actually be grabbed.
+
+   COARSE POINTERS ONLY, and that restriction is the point: this outset overlays
+   22px of each pane, and on desktop that would silently eat clicks and text
+   selection along the whole seam — a regression on a surface in daily use,
+   traded for a hit area a mouse does not need. A mouse can already hit 1px. */
+@media (pointer: coarse) {
+  .cv2-root .de-split__bar::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    /* 44px total, centred on the 1px rule. */
+    inset-inline: -21px -22px;
+  }
 }
 
 .cv2-root .de-split__grip {

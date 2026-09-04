@@ -31,13 +31,21 @@ describe('stdio JSON-RPC server', () => {
         serverInfo: { name: 'tm8', version: '0.1.0' },
       },
     });
-    expect(JSON.stringify(response)).toContain('start with tm8_overview');
+    expect(JSON.stringify(response)).toContain('mode-gated');
   });
 
-  it('lists five tools and calls one', async () => {
+  it('lists only the mode-allowed registry and calls one', async () => {
     const listed = await server().handle({ jsonrpc: '2.0', id: 'list', method: 'tools/list' });
-    const tools = (listed as { result: { tools: unknown[] } }).result.tools;
-    expect(tools).toHaveLength(5);
+    const tools = (listed as { result: { tools: Array<{ name: string }> } }).result.tools;
+    const names = tools.map((tool) => tool.name);
+    // Default mode is Ask, which now carries the FULL surface — including the
+    // explain_* presentation tools that were once Explain's alone. The only
+    // absence is repo_bash, which was removed entirely (native Bash covers it).
+    expect(names).toContain('repo_read_file');
+    expect(names).toContain('repo_write');
+    expect(names).toContain('tm8_act');
+    expect(names).toContain('explain_diagram');
+    expect(names).not.toContain('repo_bash');
 
     const called = await server().handle({
       jsonrpc: '2.0',

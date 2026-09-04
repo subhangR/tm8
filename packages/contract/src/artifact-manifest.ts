@@ -419,10 +419,13 @@ export interface ArtifactsRestoreInput extends CommandContext {
 
 /**
  * What `artifacts.preview.start` answers: a short-lived, viewer-bound
- * capability (design §9.5). `previewUrl` is present only on a node whose
- * preview listener is configured (the second origin, §9.2/§9.3); on a node
- * without one the capability is minted but there is nowhere to spend it, and
- * the URL is honestly absent rather than fabricated.
+ * capability (design §9.5). `previewUrl` is an ABSOLUTE URL, usable verbatim
+ * as an iframe `src`. By default it points at the app origin's `/p/` route
+ * (same-origin mount, amended 2026-08-16); a node explicitly configured with
+ * a second preview origin (§9.2/§9.3) mints it there instead. It is absent
+ * ONLY on a node whose preview is explicitly disabled — the capability is
+ * still minted but there is nowhere to spend it, and the URL is honestly
+ * absent rather than fabricated.
  */
 export interface ArtifactPreviewSession {
   previewSessionId: string;

@@ -33,7 +33,7 @@ import { claimsFor, commandEnvelope, limitOf, requireUuidParam, type CommandEnve
 import {
   actorOf,
   assembleSummaries,
-  capabilitiesOf,
+  entityCapabilities,
   contentOf,
   ENTITY_COLUMNS,
   ENTITY_FROM,
@@ -345,7 +345,7 @@ export async function buildDetail(
     content: contentOf(row),
     hierarchy,
     connections,
-    capabilities: capabilitiesOf(row),
+    capabilities: entityCapabilities(row),
   };
 }
 
@@ -583,6 +583,7 @@ export function entitiesCreate(deps: FacadeDeps): OperationHandler {
               JSON.stringify(acceptanceCriteria(content)),
               content.pointsEstimate ?? null,
               content.dueDate ?? null,
+              content.startDate ?? null,
               attach?.entityId ?? null,
               attach?.edgeType ?? 'attached_to',
               envelope.clientMutationId ?? null,
@@ -673,7 +674,7 @@ export function entitiesPatch(deps: FacadeDeps): OperationHandler {
           input.title ?? null,
           content.description ?? null,
           content.axes ?? null,
-          content.workStatus ?? null,
+          content.status ?? null,
           content.priority ?? null,
           content.acceptanceCriteria === undefined
             ? null
@@ -683,6 +684,8 @@ export function entitiesPatch(deps: FacadeDeps): OperationHandler {
           // An explicit `dueDate: null` means CLEAR, which `coalesce` in the
           // RPC cannot express — hence the separate flag.
           content.dueDate === null,
+          content.startDate ?? null,
+          content.startDate === null,
           envelope.clientMutationId ?? null,
         ]);
       } else if (kind === 'doc') {

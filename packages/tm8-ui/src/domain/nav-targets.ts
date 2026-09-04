@@ -58,7 +58,11 @@ import { kindOfSlug, slugOfKind } from './registry';
  * `strategy: 'collection'` on 2026-08-01 and WLT §2.1 has not caught up; the
  * code is the truth and the spec amendment follows it.
  */
-const CHANNEL_KIND = 'channel';
+/* EXPORTED for the shells' entity-arm guards. Both `GateApp` and `MobileShell`
+   must tell a channel from a voice room BY KIND — the discrimination rule
+   stated above — and a bare `'channel'` literal in each of them is two places
+   for that rule to be spelled and one place for it to be spelled wrong. */
+export const CHANNEL_KIND = 'channel';
 
 /**
  * The kind of a VOICE ROOM, which the rail also emits as an `entity` target.
@@ -109,6 +113,21 @@ export const VIEW_REF_ROUTE = {
   files: 'files',
   git: 'git',
   messages: 'messages',
+  /* The task Board tab (2026-08-16) — same flat-segment posture. */
+  board: 'board',
+  /* The Craft studio (2026-08-16) — same flat-segment posture. */
+  craft: 'craft',
+  /* CodeBrain arrived in the contract AFTER this package was frozen as the 1.0
+     snapshot (2026-08-29), and these records are total over `MenuViewRef` — so
+     its absence was a type error the whole time this package was ungated. It
+     gets a route because a `MenuViewRef` with none cannot be addressed at all;
+     the SCREEN is deliberately absent (see `view-ref-screens.ts`), which is the
+     honest state for a view this snapshot predates. */
+  codebrain: 'codebrain',
+  /* The Help shelf (2026-08-19) — same flat-segment posture. Help has a route
+     of its own even though it is not in the default spine: its door is a bar
+     control, and a reference screen with no address could not be linked to. */
+  help: 'help',
   /* Alias, not a view — see CHANNEL_KIND. Present so the record stays total
      over MenuViewRef; `routeViewOf` never emits it. */
   channels: 'channels',
@@ -154,6 +173,8 @@ export function navViewOfName(name: string): NavView | null {
     case 'files':
     case 'git':
     case 'messages':
+    case 'board':
+    case 'codebrain':
     case 'channels':
       return { view: name };
     case 'settings':
@@ -174,8 +195,19 @@ export function navViewOfName(name: string): NavView | null {
  * is what made `MenuTarget` unable to express a shared entity link.
  */
 export interface Landing {
-  /** The screen to show. */
-  target: MenuTarget;
+  /**
+   * The screen to show, or `null` for a REACHABLE screen that has no
+   * `MenuTarget` representation.
+   *
+   * THE TWO NULLS ARE DIFFERENT AND THE DISTINCTION IS THE POINT.
+   * `landingOfRoute` returning `null` means the ROUTE IS UNRESOLVABLE — a slug
+   * naming no kind, a bare `e/{id}` with no origin — which the shell surfaces
+   * as a refusal. `target: null` means the route resolved perfectly well to a
+   * real screen that simply is not a rail destination, so there is nothing for
+   * the rail to highlight. Collapsing the two would either turn a working
+   * screen into an error card or make a broken link look like a screen.
+   */
+  target: MenuTarget | null;
   /** Entity to seed onto that screen's stack, or `null` for a bare screen. */
   openEntity: EntityId | null;
 }
@@ -207,7 +239,34 @@ export function landingOfRoute(view: NavView): Landing | null {
     case 'files':
     case 'git':
     case 'messages':
+    case 'board':
+    case 'craft':
+    /* CodeBrain: routable here even though this snapshot has no screen for it
+       (`view-ref-screens.ts` marks it unbuilt). A ref that cannot round-trip
+       through the codec is worse than one with no screen — it breaks the back
+       button and deep links for everything that shares the route table. */
+    case 'codebrain':
+    case 'help':
       return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
+
+    case 'newSession':
+      /*
+       * A REAL SCREEN WITH NO RAIL SEAT. New Session is reached from a quick
+       * action and from the sessions empty state, not from the menu, so it is
+       * deliberately not a `MenuViewRef` — that would cost a menu revision and
+       * a migration to buy a rail entry nobody asked for.
+       *
+       * `target: null` rather than `null`: the route resolved, the screen
+       * exists, and it simply hosts no stack and lights up no rail item. See
+       * `Landing.target`.
+       */
+      return { target: null, openEntity: null };
+
+    case 'boardV2':
+      /* Board v2 — route-only for the same no-migration reason as newSession.
+         `target: null`: no menu group owns it; the shell appends its tab
+         client-side and highlights it off the route directly. */
+      return { target: null, openEntity: null };
 
     case 'channels':
       /* The alias resolving to the real screen. */
@@ -217,7 +276,14 @@ export function landingOfRoute(view: NavView): Landing | null {
       const kind = kindOfSlug(view.slug);
       if (!kind) return null;
       return {
-        target: { type: 'kind', ref: kind, ...(view.mode ? { mode: view.mode } : {}) },
+        target: {
+          type: 'kind',
+          ref: kind,
+          ...(view.mode ? { mode: view.mode } : {}),
+          /* W3: the board's grouping rides `q` — the codec already parsed and
+             validated it (`q.ts`), this just stops dropping it on the floor. */
+          ...(view.q?.groupBy ? { groupBy: view.q.groupBy } : {}),
+        },
         openEntity: null,
       };
     }
@@ -244,6 +310,16 @@ export function landingOfRoute(view: NavView): Landing | null {
          seeded onto that screen's stack. With no `origin` the caller applies the
          §2.2 canonical-reload rule against the registry strategy — it needs the
          entity's kind, which is a read, so it cannot be resolved here. */
+
+      /* A VIEW COMPANION RESOLVES WITHOUT A REGISTRY LOOKUP, because the ref IS
+         the screen. `messages`, `inbox` and `dashboard` are `MenuViewRef`s and
+         have no kind slug, which is exactly why the collection form could not
+         express them and why both halves of the route<->stack loop skipped a
+         view screen carrying an open entity. Checked BEFORE `origin`, because
+         the codec guarantees only one of the two is ever present. */
+      if (view.originView) {
+        return { target: { type: 'view', ref: view.originView }, openEntity: view.entityId };
+      }
       if (!view.origin) return null;
       const kind = kindOfSlug(view.origin.slug);
       if (!kind) return null;
@@ -273,6 +349,14 @@ export function landingOfRoute(view: NavView): Landing | null {
 export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = null): NavView | null {
   switch (target.type) {
     case 'view': {
+      /* AN OPEN ENTITY PROMOTES A VIEW SCREEN TO THE `e/{id}` FORM, exactly as
+         it does for a kind screen below — which is what makes an entity opened
+         on a view screen shareable at all. `channels` is excluded because it is
+         an ALIAS that normalizes to the channel collection; promoting it would
+         emit an address whose companion contradicts the screen it resolves to. */
+      if (openEntity && target.ref !== 'channels') {
+        return { view: 'entity', entityId: openEntity, origin: null, originView: target.ref };
+      }
       if (target.ref === 'channels') {
         /* Normalized to the collection it actually is, so the URL a viewer sees
            and the URL they share are the same string. */
@@ -289,7 +373,16 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
         case 'files':
         case 'git':
         case 'messages':
+        case 'board':
+        case 'craft':
+        case 'codebrain':
           return { view };
+        case 'help':
+          /* The rail seat opens the LIBRARY, never a particular plate — same
+             posture as `settings`, whose section this function also leaves
+             null. Which plate is open is read from the route by the Help shell
+             itself; a menu click is "go to Help", not "go to plate 07". */
+          return { view: 'help', plate: null };
         case 'settings':
           return { view: 'settings', section: null };
         default:
@@ -304,7 +397,9 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
       if (openEntity) {
         return { view: 'entity', entityId: openEntity, origin: { slug, mode } };
       }
-      return { view: 'kind', slug, mode, q: null };
+      /* W3: a grouped board is shareable — the choice travels as `q.groupBy`,
+         the union `q.ts` already validates on the way back in. */
+      return { view: 'kind', slug, mode, q: target.groupBy ? { v: 1, groupBy: target.groupBy } : null };
     }
 
     case 'entity':

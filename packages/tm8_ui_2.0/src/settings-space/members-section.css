@@ -1,0 +1,365 @@
+/* ===========================================================================
+   T2-1b · MEMBERS & ROLES — the section's own layout, owned by this lane.
+
+   It lives beside the component and is imported BY the component
+   (SECTION-CONTRACT.md §5): `settings.css` is the shared frame and eleven
+   other lanes are editing their own sections in parallel, so a rule that only
+   this section needs must not be written there.
+
+   WHAT WAS MEASURED BEFORE THIS FILE (real Chrome, §8 recipe, card at its
+   1080px cap; `offsetWidth`, never `getBoundingClientRect`, because
+   `.cv2-root` carries zoom: 1.1):
+
+     · the section body SCROLLED SIDEWAYS at every viewport —
+       scrollWidth 1160 against clientWidth 919 at 1508×882, and 948 against
+       707 at 900×600. Cause: `.hon-tip` is `position: absolute; left: 0;
+       max-width: 260px`, and the two controls carrying one sit at the row's
+       RIGHT edge, so each refusal reason hung 241px past the scroller. The
+       reason was therefore unreachable without scrolling to find it — a
+       refusal you cannot read is the defect this whole treatment exists to
+       prevent, so the fix flips the tip rather than clipping it.
+     · rows sat on no common baseline: role controls measured 18 / 20 / 20px
+       and rows 43 / 45 / 45px, because the locked owner pill is a padded
+       span and the live control is a native <select>.
+     · the role column was ragged: the owner's select rendered 172px wide
+       (its longest option text sizes it) against 75px on the rows below.
+     · the ROLES legend ran 866px — over `--set-measure` (860px) — because
+       the body is full-bleed and the legend was inheriting that.
+
+   COLOUR: tokens only. `src/hex-ban.test.ts` walks this file.
+
+   RECLASSIFIED (Kinetic W3 sweep). Mono is DATA only: the handle and the
+   age/timestamp. Column headers wear the caps grammar; names, role words
+   (pill, select and legend), errors and prose speak Figtree at the 13px
+   floor for interactive/label text. Geometry pins (`--set-members-ctl-h`,
+   the grid template, the tip flip) are untouched — the tests hold them.
+   =========================================================================== */
+
+.set-members {
+  /* One control height for the three things in the right-hand cluster, so the
+     locked pill, the live select and the remove ✕ share a centre line. */
+  --set-members-ctl-h: 24px;
+  /* Wide enough for the longest role word plus a native select's arrow. Fixed
+     rather than auto: a column whose width depends on which row you are
+     looking at is not a column. */
+  --set-members-role-w: 116px;
+  --set-members-when-w: 52px;
+  --set-members-x-w: 28px;
+}
+
+/* --- the table ----------------------------------------------------------- */
+
+/* The row and its header share ONE template, which is the whole point of
+   naming it here: a header that disagrees with its rows by a pixel reads as
+   two unrelated strips rather than as a table. */
+.set-members__row,
+.set-members__head {
+  display: grid;
+  grid-template-columns:
+    22px
+    minmax(0, 1fr)
+    var(--set-members-role-w)
+    var(--set-members-when-w)
+    var(--set-members-x-w);
+  align-items: center;
+  column-gap: 14px;
+  /* The gutter is the shared token, not a similar-looking number: these rows
+     are full-bleed (`pad={false}`) and carry their own, so the hairline
+     reaches the card edge and reads as a table rule. */
+  padding: 0 var(--set-gutter);
+  box-sizing: border-box;
+}
+
+/* The header exists to give `3w` a name. It is aria-hidden: every cell below
+   already carries its own accessible name (the select is labelled, the age
+   spells itself out, the ✕ names who it would remove), so announcing the
+   column words again would be duplication rather than help. */
+.set-members__head {
+  padding-top: 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--pn-line);
+}
+/* Table HEADERS — caps grammar (Kinetic W3). */
+.set-members__col {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-4);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.set-members__col--when { text-align: right; }
+
+.set-members__row {
+  padding-top: 7px;
+  padding-bottom: 7px;
+  min-height: 40px;
+  /* Repeated siblings inside one component ⇒ the soft hairline, D-law 4. */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+/* The table's own closing rule. `:last-child` and not `:last-of-type`: the
+   measured prose block below is a div too, so `of-type` would put the closing
+   rule under the LEGEND instead of under the last member. */
+.set-members__row:last-child { border-bottom: 1px solid var(--pn-line); }
+
+.set-members__who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.set-members__name {
+  font-size: var(--pn-fs-sm); /* cell words are ui at the floor */
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.set-members__handle {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+/* --- the right-hand cluster ---------------------------------------------- */
+
+/* The three controls used to sit in a flex run at 9px each with nothing
+   saying which was which. They are columns now, and every one of them is
+   `--set-members-ctl-h` tall so the row has a single centre line. */
+.set-members__cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: var(--set-members-ctl-h);
+}
+.set-members__cell--when { justify-content: flex-end; }
+.set-members__cell--x { justify-content: flex-end; }
+
+.set-members__when {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* The role control, whichever of the three forms it takes — a native select,
+   a locked pill inside `DisabledIconControl`, or a hollow marker. All three
+   fill the column, so the column has one left edge and one right edge.
+   `.cv2-root` is in the selector on purpose wherever this overrides a shared
+   sheet: CSS import order across modules is not something a section lane can
+   rely on, and a specificity win is. */
+.set-members__cell--role > .hon-disabled,
+.set-members__cell--role > .hon-hollow-inline,
+.set-members__cell--role > select.set-role {
+  box-sizing: border-box;
+  height: var(--set-members-ctl-h);
+  width: 100%;
+  min-width: 0;
+}
+.cv2-root .set-members__cell--role > .hon-disabled { padding: 0; }
+.set-members__cell--role .set-role {
+  box-sizing: border-box;
+  height: 100%;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.set-members__cell--role > select.set-role {
+  appearance: auto;
+  /* Role words in the live select match the pill's ui voice. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  padding: 0 4px 0 8px;
+  cursor: pointer;
+}
+.set-members__cell--role > select.set-role:disabled { cursor: progress; opacity: 0.6; }
+
+.cv2-root .set-members__cell--x > .hon-disabled {
+  height: var(--set-members-ctl-h);
+  width: var(--set-members-ctl-h);
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--pn-r-sm);
+}
+
+/* THE 241px FIX. `.hon-tip` opens rightwards from its control's left edge and
+   is up to 260px wide; both controls that carry one sit at the row's right
+   edge, so every reason hung past the scroller and took the section's
+   horizontal scrollbar with it. Opening leftwards from the right edge keeps
+   the reason inside the card, which is the only place it can be read. */
+.cv2-root .set-members__row .hon-tip {
+  left: auto;
+  right: 0;
+}
+
+/* --- the row's own error line -------------------------------------------- */
+
+/* `set_member_role`'s refusal used to be a fifth flex item, so the server's
+   sentence competed with the controls for the same line and squeezed them.
+   It spans the grid instead: a whole line under the row it belongs to. */
+.set-members__error {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  /* The server's refusal is a sentence — Figtree, block ink. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-block);
+  text-wrap: pretty;
+}
+
+/* --- the prose below the table ------------------------------------------- */
+
+/* The body is full-bleed for the ROWS. Prose is not rows: it is read, so it
+   is measured. This is the wrapper that does it, since `SectionFrame`'s own
+   measure had to be turned off for the table above. */
+.set-members__measure {
+  box-sizing: border-box;
+  max-width: var(--set-measure);
+  margin-inline: auto;
+  padding: 14px var(--set-gutter) 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.set-members__details {
+  border-top: 1px solid var(--pn-line);
+  padding-top: 10px;
+}
+
+.set-members__details-summary {
+  min-height: 28px;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.set-members__details-summary:hover { color: var(--pn-ink); }
+
+.set-members__details-summary:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 2px;
+}
+
+.set-members__details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .set-members {
+    --set-members-role-w: 96px;
+    --set-members-x-w: 24px;
+  }
+
+  /* DROP THE TRACK, do not zero it. The `when` cell is `display: none` below,
+     so it generates no box and is not a grid item — which means the ✕ cell
+     after it AUTO-PLACES INTO THE `when` COLUMN. Setting `--set-members-when-w`
+     to 0px would leave the ✕ in a 0px track and strand `--set-members-x-w` as
+     a dead 24px gutter at the right edge, at the one width where 24px is worth
+     arguing about. Restating the template with four columns puts the four
+     surviving cells on the four columns that remain. The head carries the same
+     five children (spacer, Member, Role, Active, spacer), so it sheds its
+     `when` the same way and the two stay one table. */
+  .set-members__row,
+  .set-members__head {
+    grid-template-columns:
+      22px
+      minmax(0, 1fr)
+      var(--set-members-role-w)
+      var(--set-members-x-w);
+    column-gap: 8px;
+  }
+
+  .set-members__handle,
+  .set-members__cell--when,
+  .set-members__col--when { display: none; }
+}
+
+.set-members__legend-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.set-members__legend-role {
+  /* A role is a WORD — ui 600; "member" at 13px still fits the 58px key. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  width: 58px;
+  flex: none;
+  text-transform: lowercase;
+}
+.set-members__legend-what {
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  min-width: 0;
+  text-wrap: pretty;
+}
+.set-members__legend-role--absent { color: var(--pn-ink-4); }
+
+.set-members__note {
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+  margin: 0;
+}
+
+/* ═══ A ROLE IS A FACT, SO IT WEARS A COLOUR ═══
+   (owner, 2026-08-31: "this setting space more better colorful, each status
+   items roles").
+
+   Three roles rendered as three identical grey pills — owner, admin and member
+   indistinguishable in the one column the page exists to show. Authority is a
+   STANDING fact, the same class as a kind, so it takes the same treatment the
+   cards took: a wash of its own hue, its border from the same hue, and the
+   word left in full ink so the colour reinforces a word rather than replacing
+   it. Nobody has to learn a legend.
+
+   THE HUES ARE THE KIND FAMILIES, not new colour. `--color-icon-*` are defined
+   once in `styles/canvas-extra.css` and already carry the graph, the board,
+   the list tiles and the Home cards. Adding a fourth palette for roles would
+   be the drift the token sheet exists to prevent.
+
+   OWNER IS THE LOUDEST because it is the one role that cannot be handed over
+   casually and the one the R2/R3 rules protect. ADMIN is distinct but calm.
+   MEMBER is deliberately the quietest — it is the default, and a default that
+   shouts makes every ordinary row look like an exception. */
+.cv2-root .set-members__cell--role[data-role] .set-role {
+  --set-role-hue: var(--color-icon-gray);
+  border: 1px solid color-mix(in srgb, var(--set-role-hue) 40%, var(--pn-line));
+  border-radius: var(--pn-r-pill);
+  background: color-mix(in srgb, var(--set-role-hue) 12%, var(--pn-card));
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+.cv2-root .set-members__cell--role[data-role='owner']  .set-role { --set-role-hue: var(--color-icon-purple); }
+.cv2-root .set-members__cell--role[data-role='admin']  .set-role { --set-role-hue: var(--color-icon-blue); }
+.cv2-root .set-members__cell--role[data-role='member'] .set-role { --set-role-hue: var(--color-icon-gray); }
+
+/* THE HOLLOW HANDLE KEEPS ITS SPACE AND LOSES ITS DASH. Collapsing the element
+   entirely would let the name column reflow between rows that have a handle
+   and rows that do not, and a list whose baseline moves per row is harder to
+   read than one with a gap in it. Zero width, no glyph: the row stays aligned
+   and states nothing. */
+.cv2-root .set-members__handle--none {
+  display: inline-block;
+  width: 0;
+}

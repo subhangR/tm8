@@ -119,6 +119,11 @@
   margin-left: -5px;
 }
 
+/* NO FILL AT REST, for the same reason `lp__tile` carries none (panels.css):
+   the session row `pn-st` declares no background, so it shows `--pn-surface` —
+   the panel it sits in — and this rule painted `--pn-card`, which is literally
+   #FFFFFF. A task row was a pure white card on a warm paper panel beside a
+   session row that was not. */
 .cv2-root .pn-tt {
   --tt-indent: 0px;
   position: relative;
@@ -129,9 +134,7 @@
   min-width: 0;
   overflow: hidden;
   border: 0;
-  border-bottom: 1px solid var(--pn-line);
-  border-radius: 0;
-  background: var(--pn-card);
+  border-radius: var(--pn-r-sm);
   box-shadow: none;
   transition: background 120ms;
 }
@@ -147,6 +150,12 @@
 .cv2-root .pn-tt--completed .pn-tt__title {
   color: var(--pn-ink-4);
   text-decoration: line-through;
+}
+/* ARCHIVED IS NOT COMPLETED (C2). Filing a row away dims it; it does not
+   strike it through, which is the mark this tile reserves for work that
+   finished. Same 0.62 the session tile has always used for the same fact. */
+.cv2-root .pn-tt--archived {
+  opacity: 0.62;
 }
 
 /* DEPTH IS THE WRAPPER, EXACTLY AS IT IS FOR SESSIONS. `lp__tree--control
@@ -189,18 +198,39 @@
   cursor: pointer;
 }
 .cv2-root .pn-tt__arrow {
-  position: relative;
+  position: absolute;
+  top: 6px;
+  left: calc(7px + var(--tt-indent));
+  z-index: 3;
   width: 16px;
   height: 16px;
-  flex: 0 0 auto;
   display: grid;
   place-items: center;
   padding: 0;
   color: var(--pn-ink-4);
-  background: none;
+  background: var(--pn-hover);
   border: none;
   border-radius: 4px;
   line-height: 0;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
+}
+/* Always visible on a row that HAS children, for the reason `.pn-st__arrow`
+   records and `.lp__disclosure` now shares: since trees ship collapsed
+   (2026-08-17) this chevron is the only thing on screen saying there is more
+   under this task, and hover-to-discover is not discovery. It overlays the
+   status dot exactly as it already does whenever the row is expanded — that
+   trade was made when the chevron was given this slot, and this only makes it
+   symmetric between the two states. */
+.cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 0.55; }
+.cv2-root .pn-tt:hover .pn-tt__arrow:not(.pn-tt__arrow--empty),
+.cv2-root .pn-tt:focus-within .pn-tt__arrow:not(.pn-tt__arrow--empty),
+.cv2-root .pn-tt__arrow--expanded { opacity: 1; }
+/* The subtree arrow was a ONE-WAY DOOR on touch, exactly like `.lp__disclosure`:
+   hidden until hover, and otherwise revealed only by `--expanded`, so a finger
+   could close a subtree and never reopen it. */
+@media (pointer: coarse) {
+  .cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 1; }
 }
 .cv2-root .pn-tt__arrow:hover { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .pn-tt__arrow svg {
@@ -212,11 +242,7 @@
 .cv2-root .pn-tt__arrow--expanded svg { transform: rotate(90deg); }
 .cv2-root .pn-tt__arrow--empty { color: var(--pn-line); }
 .cv2-root .pn-tt__arrowCount {
-  margin-left: 1px;
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
-  font-weight: 600;
-  color: var(--pn-ink-3);
+  display: none;
 }
 .cv2-root .pn-tt__status {
   width: 16px;
@@ -224,6 +250,23 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
+}
+/* THE STATUS COLUMN IS 16px, WHATEVER IS IN IT. The mark is a live control, so
+   while `capabilitiesOf(row.id)` is undefined it renders `CheckingPermission`,
+   whose loading vocabulary is a dashed, breathing ~30px pill. In a 16px column
+   that reads as the status dot blinking inside a dotted box AND widens the
+   column, shoving the title sideways the moment the detail lands. The wrapper
+   keeps its `title` and `aria-label`, so "not loaded yet" is still told — only
+   its chrome is dropped, and the dot it already carries sits where the dot
+   always sits. Same treatment `pn-tt__actions .hon-checking` already gets. */
+.cv2-root .pn-tt__status .hon-checking {
+  width: 16px;
+  height: 16px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  opacity: 1;
+  animation: none;
 }
 .cv2-root .pn-tt__status-text {
   position: absolute;
@@ -278,7 +321,8 @@
    and session row-height parity stays untouched. */
 .cv2-root .pn-tt__badges {
   min-width: 0;
-  padding: 0 8px 5px 45px;
+  /* 7px row inset + 16px status mark + 6px gap = title start. */
+  padding: 0 8px 5px 29px;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -327,39 +371,167 @@
   pointer-events: auto;
   transform: translate(0, -50%);
 }
+/* DEF-030 / DEF-036 — ON TOUCH THIS CLUSTER DID NOT EXIST, AND THE FIX THAT
+   SAID IT DID MISSED THIS ONE OF THREE.
+
+   `56e1bc72` ("the row controls that were not merely hidden, but absent")
+   revealed `.lp__rowactions` in `panels.css` and `.pn-st__actions` beside it,
+   under `(pointer: coarse)`, for exactly the reason written there. There are
+   THREE containers carrying the `.lp__cluster` vocabulary, not two — the task
+   tile's is this one, and it was not in that commit. So the fix read as landed
+   while the tasks list, the busiest of the three phone list screens, kept
+   `opacity: 0` and `pointer-events: none` at rest.
+
+   That is what the `before-lanes` run measured: on `entity-list-tasks` at
+   phone-390, `inertCount` 67 — a COUNT FIELD, over 46 listRows — with the
+   sampled offenders `lp__rowaction` Archive / Change collections / Complete /
+   Run all at `pointer-events:none`. The two containers that WERE fixed reported
+   nothing, which is why one missing container looked like a finished fix.
+
+   THE EVIDENCE IS STATED AT THE STRENGTH IT ACTUALLY HAS. `inert[]` is capped
+   at six entries by the instrument, so those four names are EXAMPLES and not an
+   inventory; only `inertCount` speaks for the population, and it speaks about
+   size, never about content. The shot corroborates on the ~13 rows its viewport
+   contains, which is not all 46. What makes the claim hold for every row is
+   neither the array nor the shot but THIS FILE: the `opacity: 0` rule above is
+   unconditional on `.pn-tt__actions`, and the only rules that lifted it were
+   `:hover`, `:focus-within` and `[data-details='open']`. A rule with no state
+   qualifier applies to every instance, and that is the whole population.
+
+   BOTH SIGNALS, deliberately, and they are not the same question:
+     - `(pointer: coarse)` is the PRODUCT rule and is the sibling rules'
+       spelling verbatim — these rows are the phone's main screens and the
+       coarse tablet's, and the tablet runs the desktop shell.
+     - `[data-shell='mobile']` covers the phone shell reached by the user
+       override on a fine pointer, where the row actions are just as
+       unreachable by hover-in-a-list and the media query is false.
+   Neither implies the other, and a capture taken through the override seam
+   would have reported the coarse-only rule as unfixed. */
+@media (pointer: coarse) {
+  .cv2-root .pn-tt__actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
+}
+.cv2-root[data-shell='mobile'] .pn-tt__actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+
+/* DEF-036 — THE FLOW HALF, WHICH REVEALING THE CLUSTER DOES NOT FIX BY ITSELF.
+
+   Un-inerting the buttons satisfies DEF-030's machine floor and would still
+   have left Archive unreachable, which is why the ledger files these as two
+   rows and closes them together. The cluster FLOATS over the row's right edge
+   on an opaque backing — a desktop hover affordance, where it appears under a
+   pointer that is already there and vanishes again. Revealed permanently on a
+   390px row it sits ON TOP OF the title it shares the line with: the title
+   would be legible for ~170px and then covered by an opaque box, and the tap
+   that opens the row would land on Archive instead. "Visible" and "reachable"
+   are two questions, and floating answers only the first.
+
+   So on the phone the cluster LEAVES THE FLOAT and takes its own line under the
+   title. The row gets taller. Per CONTRACT.md §7 that is the correct outcome
+   and not a cost — density is a desktop constraint — and it is the only
+   arrangement where the title is whole AND every action is at the bar.
+
+   THE ROW WAS ALREADY UNPINNED FOR THIS, which is the only reason it is safe:
+   `.pn-tt__main` is `min-height`, not `height`, and the gate's §7e floor
+   already made `.pn-tt__title` 44px tall, so the phone row is >= 44 before this
+   rule adds anything. Growing a 22px control inside a pinned 29px row is the
+   trap CONTRACT.md §6 names, and it is not the trap here. */
+.cv2-root[data-shell='mobile'] .pn-tt__main {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt__actions {
+  position: static;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 4px;
+  padding-left: 0;
+  transform: none;
+}
+/* DEF-059 — A DEFECT IN MY OWN CHANGE, FOUND AUDITING IT AFTER WRITING THE
+   COMMENT THAT DESCRIBES THE BUG.
+
+   `background: none` was declared inside the rule above, with a comment saying
+   the backing existed to keep the badges readable UNDER the floating cluster,
+   that in the flow there is nothing under it, and that a tinted strip across
+   the row would read as a second selected state. All true, and on two states
+   not what happened:
+
+     MINE   .cv2-root[data-shell='mobile'] .pn-tt__actions         (0,3,1)
+     LATER  .cv2-root .pn-tt--active .pn-tt__actions,
+            .cv2-root .pn-tt[data-details='open'] .pn-tt__actions  (0,3,1)
+     LATER  .cv2-root .pn-tt--active:hover .pn-tt__actions         (0,3,1)
+
+   EQUAL SPECIFICITY, LATER IN THE FILE, SO THEY WIN. On a selected row or one
+   with details open, the in-flow cluster got its tint back — a full-width
+   tinted band under the title, which is precisely the "second selected state"
+   my own comment says it must not be.
+
+   The DEF-024 trap exactly, in my own file, after I caught it in the chips band
+   and wrote a paragraph about it. Found only by auditing my phone rules for
+   later same-or-higher-specificity clashes on shared properties — the one check
+   aimed at this class. Two of its three hits were benign; this one was not. */
+.cv2-root[data-shell='mobile'] .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt--active .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt[data-details='open'] .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt--active:hover .pn-tt__actions {
+  background: none;
+}
+/* CROSS-LANE TIE, RULED. `.cv2-root .tch-panel-host .pn-tt__main` in Lane A's
+   `chat-home.css` is (0,3,0) and sets `padding: 7px 6px; gap: 5px`. My phone
+   rule above is also (0,3,0), in a different file, so the winner is emission
+   order — and `gap` expands to `row-gap`, the property I set, so a
+   name-only diff cannot see the collision at all.
+
+   THE RULING: the collision is between a pre-existing desktop-affecting rule
+   and a new phone-only one, and the NEW rule carries the extra specificity.
+   The burden sits on the change, not on the incumbent.
+
+   WHAT THIS OVERRIDES, STATED RATHER THAN SILENT: Lane A's `gap: 5px` is a
+   documented narrowing for the chat column's ~280px width, part of a coat that
+   also re-cuts the row inset to 7px/6px for disclosure-caret alignment. On the
+   phone this takes my 4px instead. I have no evidence about which value is
+   right in that host at 390 — the state is currently UNREACHABLE (the
+   instrument measured `panelHost: present FALSE` on chat-home at both widths)
+   — so this is a determinism fix and not a design decision. If the hosted list
+   ever renders on a phone, Lane A says which value it wants and I take it.
+   Deleting this rule reinstates the tie; changing its value is Lane A's call. */
+.cv2-root[data-shell='mobile'] .tch-panel-host .pn-tt__main {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+/* The bar, on both axes, for every control in the cluster — `min-*` rather
+   than `width`/`height` so `.lp__rowaction--wide` keeps its `width: auto` and
+   grows around its label instead of being squared off at 44. */
+.cv2-root[data-shell='mobile'] .pn-tt__actions .lp__rowaction,
+.cv2-root[data-shell='mobile'] .pn-tt__actions .pn-tt__ind {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+
 /* A selected or expanded row is not hovered, so the backing must match the row
    it floats over rather than the hover tint. */
 .cv2-root .pn-tt--active .pn-tt__actions,
 .cv2-root .pn-tt[data-details='open'] .pn-tt__actions { background: var(--pn-active); }
 .cv2-root .pn-tt--active:hover .pn-tt__actions { background: var(--pn-hover); }
-.cv2-root .pn-tt__actions > *:not(:first-child):not(.pn-tt__ind) { display: none; }
-.cv2-root .pn-tt__actions .lp__rowaction,
-.cv2-root .pn-tt__actions .hon-checking,
-.cv2-root .pn-tt__actions .hon-disabled {
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
-  background: transparent;
-  color: var(--pn-ink-2);
-  transition: background 140ms, border-color 140ms, color 140ms;
-}
-/* Run is the row's one primary verb — it inverts on hover so it reads as the
-   thing you came for, not as another muted glyph. */
-.cv2-root .pn-tt__actions .lp__rowaction:hover {
-  color: var(--pn-paper);
-  background: var(--pn-ink);
-  border-color: var(--pn-ink);
-}
-.cv2-root .pn-tt__actions .lp__rowaction--on {
-  color: var(--pn-paper);
-  background: var(--pn-brand);
-  border-color: var(--pn-brand);
-}
+/* REMOVED 2026-08-17 — this hid every cluster member after the first:
+     .pn-tt__actions > *:not(:first-child):not(.pn-tt__ind) { display: none }
+   It dated from when the control-card's only verb was Run, and it silently ate
+   whatever was added next. `complete` has been in this tile's DOM and invisible
+   ever since it was declared, and the collections icon joined it there. The
+   cluster is now a fixed, deliberate set (Collections · Run · Archive), so
+   there is nothing to suppress — and a rule that hides "everything I did not
+   anticipate" cannot tell a mistake from a feature. */
+/* The button vocabulary moved to `.lp__cluster` in panels.css — it was copied
+   here and into `.pn-st__actions`, and the copies had already drifted (the
+   session tile's had no border and a different hover). One cluster, one look. */
 .cv2-root .pn-tt__ind {
   width: 22px;
   height: 22px;
@@ -388,7 +560,7 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 1px 10px 10px calc(33px + var(--tt-indent));
+  padding: 1px 10px 10px calc(29px + var(--tt-indent));
 }
 .cv2-root .pn-tt__metarow {
   display: flex;
@@ -462,6 +634,10 @@
     padding-inline: calc(30px + var(--tt-indent)) 9px;
   }
 
+  .cv2-root .pn-tt__badges {
+    padding-inline: calc(30px + var(--tt-indent)) 9px;
+  }
+
 }
 
 @container task-tile (max-width: 360px) {
@@ -484,6 +660,10 @@
 
   /* 6px pad + 16px caret + 5px gap. */
   .cv2-root .pn-tt__meta {
+    padding-inline: calc(27px + var(--tt-indent)) 8px;
+  }
+
+  .cv2-root .pn-tt__badges {
     padding-inline: calc(27px + var(--tt-indent)) 8px;
   }
 

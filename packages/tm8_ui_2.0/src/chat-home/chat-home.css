@@ -1,0 +1,2495 @@
+.tch-root {
+  display: grid;
+  grid-template-columns: minmax(210px, 280px) minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--pn-paper);
+}
+
+/* SOLO (Craft): the thread column is hosted outside this screen, so the grid
+   is the conversation alone. One column, not a zero-width first track — a
+   collapsed track still resolves `minmax()` against the sidebar's `min-width`
+   and would leave a sliver of border down the pane. */
+.tch-root--solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tch-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.tch-conversation__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  flex: none;
+  min-height: 56px;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.tch-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.tch-title strong {
+  font-family: var(--pn-prose);
+  font-size: var(--pn-fs-h3);
+  font-weight: 500;
+  line-height: var(--pn-lh-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-title span {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+/* Kit button grammar, compact form (Kinetic W3): 28px box, bordered, r-sm,
+   ui 600 at the interactive floor (13). The word is Figtree ink, not chrome. */
+.tch-send,
+.tch-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.tch-stop:hover {
+  background: var(--pn-hover);
+}
+
+.tch-thread-list {
+  /* GROWS, so the column foot (slots + workspace link) pins to the bottom on
+     the Chats tab exactly as the hosted panel pins it on Tasks/Sessions — a
+     foot that floats mid-column on one tab and sits at the bottom on the
+     others reads as two different screens. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* The generous grid (Kinetic W3): 12px pane padding, aligned with the find
+     box's own side margins above. */
+  padding: var(--pn-space-3);
+}
+
+.tch-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 2px;
+  /* Two lines, not three, since the duplicate preview line came out — so the
+     box is trimmed to match rather than keeping three lines' worth of air
+     around two. */
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-thread:hover { background: var(--pn-hover); }
+
+.tch-thread[data-active] {
+  border-color: var(--pn-line);
+  background: var(--pn-active);
+}
+
+/* Kinetic I1: a thread's name is a TITLE (15/600 full ink), not a 12px label —
+   the title/meta size gap is what makes the list read as conversations
+   rather than rows of uniform gray. */
+.tch-thread__title {
+  overflow: hidden;
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* RECLASSIFICATION (Kinetic W3): the meta row's VOICE is Figtree — the
+   teammate's NAME is a word about a person, not machine output. The model
+   name and the timestamp are the data in the row and they alone stay mono
+   (`.tch-thread__model`, the <time>). */
+.tch-thread__meta {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  margin-top: 1px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+}
+
+.tch-thread__model {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+}
+
+.tch-thread__meta time {
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+}
+/* Empty-state sentence: ui 13 (the reclassification's floor for prose). */
+.tch-hollow { padding: var(--pn-space-3); color: var(--pn-ink-3); font-family: var(--pn-ui); font-size: var(--pn-fs-sm); }
+.tch-thread-refusal {
+  margin: var(--pn-space-2);
+  padding: var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-wait);
+  /* An honesty sentence at reading size, never label size (DEF-039's logic). */
+  font-size: var(--pn-fs-sm);
+}
+.tch-load { display: grid; place-items: center; flex: 1; color: var(--pn-ink-3); }
+
+.tch-conversation {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+.tch-conversation__head { padding-inline: var(--pn-space-4); }
+
+/* The mode word is a CHIP WORD, so it speaks Figtree (caps face, 600) — the
+   uppercase+tracking is what keeps it reading as a tag rather than prose. */
+.tch-mode-chip {
+  color: var(--pn-info);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 5px;
+  font: 600 var(--pn-fs-fine) var(--pn-caps);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-label);
+  white-space: nowrap;
+}
+
+
+.tch-transcript {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--pn-space-6) max(var(--pn-space-4), calc((100% - 760px) / 2));
+}
+
+/* THE TRANSCRIPT IS PROSE, AND IT IS NOW SET AS PROSE.
+   Owner, 2026-08-30: "chat font naturally consistent". Three things were
+   wrong, and the measure was NOT as wrong as it first looked — `.tch-transcript`
+   already centres its content at 760px, so widening the pane did not widen the
+   lines. What it did was make 760px at 14px visible for what it is: about a
+   hundred characters a line, where the eye starts losing the return sweep past
+   seventy-five.
+
+     · SIZE. `--pn-fs-body` is 14px, which is right for a label beside a control
+       and tiring for four paragraphs. Reading size is its own token now.
+     · MEASURE. `--pn-measure`, so a wider window gives a reader MARGIN rather
+       than longer lines. It composes with the 760px centring: whichever is
+       narrower wins, so this can only ever shorten a line.
+     · INK. The body was `--pn-ink-2`. Muted grey is fine for a caption and
+       tiring for a transcript; the words a person came to read take full ink.
+
+   NOT FIXED HERE, because it is a token-wide decision rather than this
+   surface's: `--pn-prose` and `--pn-ui` resolve to the SAME Figtree stack, so
+   the "serif body, sans headings" contrast this stylesheet is written for has
+   never once rendered. Either give the body a real second face or retire the
+   token — but that lands on every surface, not just the chat. */
+.cv2-root .tch-transcript .md-root {
+  font-size: var(--pn-fs-read);
+  line-height: var(--pn-lh-read);
+  color: var(--pn-ink);
+  max-width: var(--pn-measure);
+}
+
+.tch-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  max-width: 540px;
+  margin: auto;
+  text-align: center;
+}
+
+/* THE MARK IS THE MARK, NOT A CARD AROUND ONE. This was a bordered 42px tile
+   holding a `⌁` glyph — chrome that read as a status chip on the product's
+   front door. It now sizes `kit/RibbonMark` (design box 560x700, so the width
+   follows the height at that ratio) and draws nothing else: no border, no
+   surface, no shadow. A brand mark standing on the paper is what the empty
+   canvas wants; a tile is what a notification wants. */
+.tch-welcome__mark {
+  height: 46px;
+  width: calc(46px * 560 / 700);
+  margin-bottom: var(--pn-space-3);
+  color: var(--pn-brand);
+}
+
+.tch-welcome h1 {
+  margin: 0;
+  font-family: var(--pn-prose);
+  font-size: var(--pn-fs-h1);
+  font-weight: 500;
+}
+
+.tch-welcome p {
+  max-width: 480px;
+  margin: var(--pn-space-2) 0 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+}
+
+.tch-turn { margin-bottom: var(--pn-space-6); }
+
+.tch-turn__byline {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--pn-space-2);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+}
+
+/* Byline sidedness (user ruling 2026-08-18): the VIEWER's identity block sits
+   RIGHT, everyone else's — other humans, agents, and with them the thinking
+   pulse that follows an agent turn — stays LEFT. Avatar, name, mode chip and
+   timestamp travel as ONE unit. Purely visual: `justify-content`, never
+   `row-reverse`, so DOM order (and with it screen-reader and tab order) is
+   identical on both sides. */
+.tch-turn[data-self='true'] .tch-turn__byline { justify-content: flex-end; }
+
+/* The viewer's bubble follows their byline to the right edge; everyone
+   else's stays in the 26px avatar gutter. Agent parts (`tch-parts`) never
+   move — answers are a reading column, not a bubble. `.cv2-root` qualifies
+   this rule so it stays ahead of the qualified base bubble below. */
+.cv2-root .tch-turn[data-self='true'] .tch-user-body { margin-left: auto; }
+
+.tch-turn__byline strong { color: var(--pn-ink-2); font-size: var(--pn-fs-micro); }
+.tch-turn__byline time { font-family: var(--pn-mono); font-size: var(--pn-fs-tick); }
+
+/* The bubble is a MARKDOWN ROOT since the body render went through
+   kit/Markdown, so the panel trick applies (panels.css:947): the `.md-root`
+   qualifier is what makes the bubble's own voice outrank markdown.css's
+   `.cv2-root .md-root` serif-at-body-size default, whatever order the
+   stylesheets import in. Found by the transcript lane (D-VIS-1): a plain
+   `.tch-user-body` lost that war and typed messages came out serif. */
+.cv2-root .md-root.tch-user-body {
+  /* The bubble gains the transcript's reading size, leading and ink, so your
+     words and the reply are one voice at two volumes rather than two
+     typefaces. Folded into THIS rule rather than added as a
+     `.tch-transcript`-scoped one: that selector is (0,4,0) and would have tied
+     `.tch-turn[data-self='true'] .tch-user-body`, where at equal specificity
+     source order decides and the own-right margin silently dies. The cascade
+     test next door exists because that shipped once already. */
+  max-width: min(var(--pn-measure), 80%);
+  font-size: var(--pn-fs-read);
+  line-height: var(--pn-lh-read);
+  width: fit-content;
+  margin-left: 26px;
+  padding: 8px 11px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  /* No pre-wrap: the body renders as markdown now (chatMarkdownSource keeps
+     a lone newline a line break), and pre-wrap over rendered HTML turns
+     inter-element whitespace into phantom gaps. */
+}
+.cv2-root .md-root.tch-user-body > :first-child { margin-top: 0; }
+.cv2-root .md-root.tch-user-body > :last-child { margin-bottom: 0; }
+
+/* The attachment row under a body. Placement only — the chips and the
+   thumbnail are `files/message-attachments.css`, shared with the channel feed.
+   It takes the bubble's own 26px avatar gutter and its own sidedness, so a
+   file you sent lands under your bubble on your side rather than drifting to
+   the opposite margin. */
+.tch-turn__attachments { margin: 6px 0 0 26px; max-width: 80%; }
+.cv2-root .tch-turn[data-self='true'] .tch-turn__attachments {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.tch-parts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  margin-left: 26px;
+}
+
+/* The agent's own thinking text, as a collapsed <details> inside a turn
+   (TurnParts.tsx). NOT a wait state — that is `.tch-wait`, which used to share
+   this class and imposed a `display: flex` on it; opening this disclosure put
+   the summary and the body side by side. Sole owner of the name now. */
+.tch-thinking {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+/* The disclosure's word is a LABEL — ui at the interactive floor, ink-2. */
+.tch-thinking summary { cursor: pointer; color: var(--pn-ink-2); font: 500 var(--pn-fs-sm) var(--pn-ui); }
+.tch-thinking__text { white-space: pre-wrap; }
+.tch-thinking p { margin: 5px 0 0; padding-left: 10px; border-left: 2px solid var(--pn-line-2); }
+.tch-answer { font-size: var(--pn-fs-sm); }
+
+/* Explain-mode presentation tools. Their structured payload is the secondary
+   disclosure; the diagram/graph/code/asset is the thing the human asked for. */
+.tch-explain {
+  overflow: hidden;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
+}
+
+.tch-explain__body { padding: 14px; }
+.tch-explain__heading { min-width: 0; }
+/* The card's eyebrow: caps 11/700 (Kinetic grammar), not a mono whisper. */
+.tch-explain__heading > span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--pn-ink-3);
+  font: 700 var(--pn-fs-micro) var(--pn-caps);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+.tch-explain__heading h3 {
+  margin: 0;
+  color: var(--pn-ink);
+  font-family: var(--pn-prose);
+  font-size: var(--pn-fs-title);
+  font-weight: 500;
+}
+.tch-explain__caption {
+  margin: 10px 0 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  line-height: 1.5;
+}
+.tch-explain__pending { padding: 18px 14px; color: var(--pn-ink-3); font-size: var(--pn-fs-sm); }
+
+.tch-explain__source {
+  margin-top: 10px;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-tick) var(--pn-mono);
+}
+/* The disclosure WORD is a label (ui, interactive floor); the payload under it
+   is source and stays mono (the `pre` rule below). */
+.tch-explain__source summary { cursor: pointer; color: var(--pn-ink-2); font: 500 var(--pn-fs-sm) var(--pn-ui); }
+.tch-explain__source pre {
+  overflow-x: auto;
+  margin: 7px 0 0;
+  padding: 9px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: var(--pn-fs-tick)/1.5 var(--pn-mono);
+}
+
+/* Mermaid already owns its safe lazy renderer; this only tunes its frame in a
+   Chat presentation card instead of a document column. */
+.tch-explain .md-mermaid { margin: 12px 0 0; }
+
+/* Legend words are LABELS — ui voice; the coloured dashes stay the data. */
+.tch-xgraph__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+  color: var(--pn-ink-3);
+  font: 500 var(--pn-fs-label) var(--pn-ui);
+}
+.tch-xgraph__legend span::before { content: '—'; margin-right: 4px; }
+.tch-xgraph__legend span[data-basis='inferred']::before { content: '– –'; color: var(--pn-brand-2); }
+.tch-xgraph__legend span[data-basis='persisted']::before { color: var(--pn-info); }
+.tch-xgraph__legend span[data-basis='pending']::before { content: '···'; color: var(--pn-wait); }
+.tch-xgraph__stage {
+  overflow-x: auto;
+  margin-top: 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+.tch-xgraph__stage svg { display: block; min-width: 620px; width: 100%; height: auto; }
+.tch-xgraph__stage marker path { fill: var(--pn-ink-3); }
+.tch-xgraph__edges path { fill: none; stroke-width: 1.5; }
+.tch-xgraph__edges g[data-basis='persisted'] path { stroke: var(--pn-info); }
+.tch-xgraph__edges g[data-basis='inferred'] path { stroke: var(--pn-brand-2); stroke-dasharray: 7 5; }
+.tch-xgraph__edges g[data-basis='pending'] path { stroke: var(--pn-wait); stroke-dasharray: 2 5; }
+.tch-xgraph__edges text {
+  fill: var(--pn-ink-3);
+  stroke: var(--pn-surface);
+  stroke-width: 5px;
+  paint-order: stroke;
+  text-anchor: middle;
+  font: var(--pn-fs-tick) var(--pn-mono);
+}
+.tch-xgraph__nodes rect { fill: var(--pn-card); stroke: var(--pn-line-2); }
+.tch-xgraph__nodes g[data-entity='true'] { cursor: pointer; }
+.tch-xgraph__nodes g[data-entity='true'] rect { stroke: var(--pn-brand-2); }
+.tch-xgraph__nodes g[data-focus='true'] rect { stroke-width: 2; fill: var(--pn-brand-soft); }
+.tch-xgraph__nodes g:focus { outline: none; }
+.tch-xgraph__nodes g:focus rect { stroke-width: 3; }
+.tch-xgraph__node-label { fill: var(--pn-ink); text-anchor: middle; font: 10px var(--pn-ui); font-weight: 600; }
+.tch-xgraph__node-kind { fill: var(--pn-ink-4); text-anchor: middle; font: 7px var(--pn-mono); text-transform: uppercase; }
+
+.tch-code { padding: 0; }
+.tch-code__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.tch-code__head .tch-explain__heading { flex: 1; }
+.tch-code__actions { display: flex; align-items: center; gap: 5px; }
+.tch-code__actions > span {
+  color: var(--pn-ink-3);
+  font: 500 var(--pn-fs-label) var(--pn-ui);
+  text-transform: lowercase;
+}
+/* Real buttons wear the kit grammar's compact metrics (Kinetic W3): 28px box,
+   bordered, r-sm, ui 600 at the interactive floor, focus ring, hover fill. */
+.tch-code__actions button,
+.tch-asset__head button {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  padding: 0 10px;
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
+  cursor: pointer;
+}
+.tch-code__actions button:hover,
+.tch-asset__head button:hover { background: var(--pn-hover); }
+.tch-code__actions button:focus-visible,
+.tch-asset__head button:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+.tch-asset__head button:disabled { cursor: default; opacity: 0.55; }
+.tch-code__path {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-tick) var(--pn-mono);
+}
+.tch-code__path code { overflow: hidden; color: var(--pn-ink-3); text-overflow: ellipsis; white-space: nowrap; }
+.tch-code__scroll { overflow: auto; max-height: 540px; border-top: 1px solid var(--pn-line); background: var(--pn-paper); }
+.tch-code__scroll pre { min-width: max-content; margin: 0; padding: 8px 0; }
+.tch-code__scroll code { font: var(--pn-fs-fine)/1.65 var(--pn-mono); }
+.tch-code__row {
+  display: grid;
+  grid-template-columns: 48px minmax(520px, 1fr);
+  min-height: 16px;
+}
+.tch-code__row[data-highlight] { background: var(--pn-brand-soft); }
+.tch-code__row[data-highlight='warning'] { background: var(--pn-block-soft); }
+.tch-code__row[data-highlight='note'] { background: var(--pn-active); }
+.tch-code__line {
+  padding-right: 10px;
+  color: var(--pn-ink-4);
+  text-align: right;
+  user-select: none;
+}
+.tch-code__source { padding-right: 16px; color: var(--pn-ink-2); white-space: pre; }
+.tch-code__annotation {
+  grid-column: 2;
+  margin: 2px 16px 5px 0;
+  padding: 3px 7px;
+  border-left: 2px solid var(--pn-brand-2);
+  color: var(--pn-ink-3);
+  background: var(--pn-surface);
+  white-space: normal;
+  font: var(--pn-fs-tick)/1.4 var(--pn-ui);
+}
+.tch-code__annotation[data-tone='warning'] { border-color: var(--pn-block); }
+.tch-code__annotation[data-tone='note'] { border-color: var(--pn-info); }
+.tch-code__tok--keyword { color: var(--pn-brand-2); font-weight: 600; }
+.tch-code__tok--string { color: var(--pn-run); }
+.tch-code__tok--comment { color: var(--pn-ink-4); font-style: italic; }
+.tch-code__tok--number { color: var(--pn-info); }
+.tch-code__tok--name { color: var(--pn-ink-2); }
+
+.tch-asset__head { display: flex; align-items: center; gap: 10px; }
+.tch-asset__head .tch-explain__heading { flex: 1; }
+.tch-asset > img,
+.tch-asset > video {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 460px;
+  margin: 12px auto 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+.tch-asset > audio { width: 100%; margin-top: 12px; }
+.tch-asset__file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+.tch-asset__file > span { color: var(--pn-brand-2); font-size: 20px; }
+.tch-asset__file > div { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.tch-asset__file strong { overflow: hidden; color: var(--pn-ink-2); font-size: var(--pn-fs-label); text-overflow: ellipsis; white-space: nowrap; }
+.tch-asset__file small { color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
+.tch-asset__file a { color: var(--pn-brand); font-size: var(--pn-fs-label); }
+.tch-asset__file em { color: var(--pn-ink-4); font-size: var(--pn-fs-label); }
+
+.tch-durable__entities { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+/* A state WORD, not machine output — ui voice, tone colours unchanged. */
+.tch-durable__state { display: block; margin-top: 8px; color: var(--pn-ink-3); font: 500 var(--pn-fs-label) var(--pn-ui); }
+.tch-durable__state[data-state='error'] { color: var(--pn-block); }
+.tch-durable__state[data-state='running'] { color: var(--pn-wait); }
+
+/* The ledger lines — what a turn DID to the graph, as sentences (design
+   ruling 1): one counted read line, one line per create (tree-indented via
+   inline padding), one line per transition. They stand free in the transcript
+   like the chip row they replace: no border, no card, no tool chrome. */
+.tch-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tch-ledger__reads,
+.tch-ledger__create,
+.tch-ledger__transition {
+  display: flex;
+  gap: var(--pn-space-2);
+  align-items: baseline;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-fine) var(--pn-mono);
+}
+
+/* The read line is a BUTTON (S3b): the expansion is its press destination.
+   Same sentence anatomy as its siblings above — the reset strips the button
+   chrome so the three line types keep reading as one family. */
+button.tch-ledger__reads {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+button.tch-ledger__reads:hover { color: var(--pn-ink-2); }
+
+.tch-ledger__caret { color: var(--pn-ink-4); }
+
+/* The expanded tree, inline under its line — indented into the sentence's
+   flow, never a card (the box stays gone). */
+.tch-ledger__readtree {
+  margin: 2px 0 4px;
+  padding-left: var(--pn-space-4);
+}
+
+.tch-ledger__entity {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A real button only when the host can open entities — same split, same
+   affordance family as the entity chip it replaces. */
+button.tch-ledger__open {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--pn-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.tch-ledger__open:hover {
+  color: var(--pn-brand-2);
+  text-decoration: underline;
+}
+
+.tch-ledger__verb { color: var(--pn-ink-4); }
+
+.tch-ledger__arrow { color: var(--pn-ink-3); }
+
+/* A chip's TITLE is an entity's name — a word, so the ui voice (Kinetic W3).
+   The KIND tag stays a caps whisper; unresolved ids keep reading quiet. */
+.tch-entity-chip {
+  display: inline-flex;
+  gap: var(--pn-space-1);
+  align-items: center;
+  max-width: 260px;
+  padding: 2px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: 500 var(--pn-fs-label) var(--pn-ui);
+  text-align: left;
+}
+
+button.tch-entity-chip { cursor: pointer; }
+
+button.tch-entity-chip:hover {
+  border-color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+}
+
+button.tch-entity-chip:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+
+.tch-entity-chip__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--pn-brand-2);
+}
+
+.tch-entity-chip__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tch-entity-chip__kind {
+  flex: none;
+  color: var(--pn-ink-4);
+  font: 600 var(--pn-fs-tick) var(--pn-caps);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+
+/* An id still resolving (or unresolved) reads quieter than a real title. */
+.tch-entity-chip[data-resolved='pending'] .tch-entity-chip__title,
+.tch-entity-chip[data-resolved='unresolved'] .tch-entity-chip__title {
+  color: var(--pn-ink-3);
+}
+
+.tch-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+  align-items: center;
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-tick) var(--pn-mono);
+}
+
+.tch-usage span + span { padding-left: 8px; border-left: 1px solid var(--pn-line-2); }
+/* The word is an eyebrow (caps 700); the numbers beside it keep .tch-usage's mono. */
+.tch-usage__label { color: var(--pn-ink-3); font: 700 var(--pn-fs-micro) var(--pn-caps); text-transform: uppercase; letter-spacing: var(--pn-track-label); }
+
+.tch-turn-error,
+.tch-load-error,
+.tch-submit-error {
+  display: flex;
+  gap: 7px;
+  color: var(--pn-block);
+  /* Error sentences are honesty copy: ui 13, never label-size (Kinetic W3). */
+  font-size: var(--pn-fs-sm);
+}
+
+.tch-load-error { flex-direction: column; margin: auto; }
+.tch-submit-error { margin: 0 4px 5px; }
+
+.tch-composer-wrap {
+  flex: none;
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto var(--pn-space-3);
+  /* A query container, so the foot degrades by the COMPOSER's width, not the
+     viewport's — the pane beside a 380px column and an open aside is far
+     narrower than the window. The skill popover is unaffected: its containing
+     block is .ri-host (position: relative), not this ancestor. */
+  container-type: inline-size;
+}
+/* THE FOOT SHEDS COPY BEFORE IT SHEDS CONTROLS, in that order and no other:
+   the phase word, then trigger width, then the teammate's NAME — and never a
+   control, never a second line. Losing a label beats the three thread-setting
+   triggers or Send wrapping. (The keyboard tip and the pinned note are gone
+   for good — user ruling 2026-08-18: the foot carries controls, not copy.)
+
+   NOT ON THE PHONE. `data-shell='mobile'` answers this same squeeze the
+   opposite way and deliberately: the picks scroll sideways so that nothing is
+   hidden and nothing is ellipsized, because a node's roster is variable-length
+   and a layout that must fit all of it in 342px is one that must lie about
+   some of it (see the mobile foot rules at the end of this file). The mobile
+   composer is ~342px wide, so without this guard these desktop rules would
+   land on the phone and undo that ruling. */
+@container (max-width: 480px) {
+  .tch-phase { display: none; }
+  /* The phase word is what carried `margin-left: auto`, so hiding it also took
+     away the thing that pushed Send to the right edge — the button drifted
+     back against the last trigger and left a hole at the end of the row. The
+     free space collects on the picks instead. Send keeps its own 8px margin,
+     so when the row runs out of slack and this `auto` resolves to 0 the two
+     controls still do not touch. */
+  .cv2-root:not([data-shell='mobile']) .tch-picks { margin-right: auto; }
+}
+
+@container (max-width: 420px) {
+  .cv2-root:not([data-shell='mobile']) .tch-picks { gap: 4px; }
+  .cv2-root:not([data-shell='mobile']) .tch-pick__trigger { max-width: 108px; }
+}
+
+/* THE NAME BECOMES THE FACE. Below this the teammate trigger is its avatar and
+   its caret — the face already says which teammate, so the word beside it was
+   the one piece of the foot that could go without costing an answer. The
+   tooltip (`title` on the trigger) keeps the full name one hover away, and the
+   accessible name is unchanged because it was never the value to begin with. */
+@container (max-width: 360px) {
+  .cv2-root:not([data-shell='mobile']) .tch-pick--faced .tch-pick__value { display: none; }
+  .cv2-root:not([data-shell='mobile']) .tch-pick--faced .tch-pick__trigger { padding-inline: 5px; }
+  .cv2-root:not([data-shell='mobile']) .tch-pick__trigger { max-width: 88px; }
+}
+
+/* THE EMPTY STATE CENTRES THE PAIR (ref mockup 02-home-empty): greeting and
+   composer read as ONE invitation in the middle of the canvas — a greeting
+   floating alone with the box parked at the bottom is a dashboard, not a
+   prompt. The two `auto` margins split the free space; once a thread exists
+   the composer returns to the bottom, as the conversation mockup draws it. */
+.tch-conversation[data-empty] .tch-transcript {
+  flex: 0 1 auto;
+  margin-top: auto;
+}
+.tch-conversation[data-empty] .tch-composer-wrap {
+  margin: 0 auto auto;
+}
+
+/* NO TRAY-ONLY VARIANT ANY MORE. A `[data-chrome='tray']` rule made this wrap
+   full-bleed for the one row left in it when a stage held region B. The row
+   itself is now gone (user report 2026-08-19, task 01a017d3 — see the berth
+   note in ChatHomeScreen), so the wrap only ever renders over the chat and the
+   760px reading measure above is the only geometry it needs. Recorded rather
+   than silently dropped: a rule for an element that no longer exists is the
+   orphan half of what chat-home-css-coverage.test.ts guards against. */
+
+/* THE ENTITY TRAY — the control panel's top row (Cockpit ruling 2026-08-18).
+   Chips reuse `.tch-entity-chip` (same anatomy as the transcript's touched
+   row); this container only supplies the docked-row geometry: one line by
+   default, wrapping when expanded, the Graph door pinned at the right edge. */
+.tch-tray {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-2);
+  margin: 0 4px var(--pn-space-2);
+}
+
+.tch-tray__tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: var(--pn-space-1);
+  overflow: hidden;
+}
+
+/* The pinned stage tabs, at the tray's right edge. They wear
+   `.tch-tray__chat` for their anatomy (see EntityTray) — this only groups
+   them, so the pair never splits across the tray's wrap. */
+.tch-tray__stages {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* The way back — always first, active when the transcript holds the stage. */
+.tch-tray__chat {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  padding: 2px 10px;
+  /* A TAB wears the ui voice at the interactive floor (Kinetic W3). */
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tch-tray__chat[data-active] {
+  background: var(--pn-active);
+  border-color: var(--pn-line-2);
+  color: var(--pn-ink);
+}
+.tch-tray__chat:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-tray__chat:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+
+.tch-tray__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-run);
+  animation: tch-tray-pulse 1.1s var(--pn-ease-standard) infinite alternate;
+}
+@keyframes tch-tray-pulse { from { opacity: 0.35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .tch-tray__pulse { animation: none; }
+}
+
+/* The chip tabs and the +N overflow left with the tray's chips (S4) —
+   the ledger panel below is where the thread's entities live now. */
+
+/* Honesty sentences read at ui 13 — the words stay, only their type moved. */
+.tch-refusal {
+  margin: 0 4px 5px;
+  color: var(--pn-wait);
+  font-size: var(--pn-fs-sm);
+}
+
+.tch-continuable {
+  margin: 0 0 7px;
+  color: var(--pn-wait);
+  font: 500 var(--pn-fs-sm) var(--pn-ui);
+}
+
+.tch-composer-wrap[data-phase='stopped-continuable'] .tch-composer {
+  border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-line));
+}
+
+/* The card shell (border, field, foot geometry) is `ComposerCard`'s —
+   `.ri-card` in rich-input.css. Only what is genuinely Chat Home's stays. */
+
+/* The two sigil-and-file controls in the footer. Sized to the phase label
+   beside them rather than to the Send button, which is the primary. */
+.tch-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* NOT SHRINKABLE. A 24px square with the default `flex-shrink: 1` is a 24px
+     square right up until the row runs out of room, and then it is a squashed
+     glyph — the box is the affordance here, so it holds its size and the
+     pick triggers do the giving. */
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: var(--pn-space-1);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-label) var(--pn-ui);
+  cursor: pointer;
+}
+.tch-attach:hover { border-color: var(--pn-line-2); color: var(--pn-ink); }
+/* Reachable by its accessible name, invisible on screen — see
+   `files/ChooseFilesControl` for why the input is not `display: none`. */
+.tch-attach__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The phase is a word about the turn, so it speaks ui; wait tone unchanged. */
+.tch-phase { margin-left: auto; color: var(--pn-wait); font: 500 var(--pn-fs-label) var(--pn-ui); }
+
+/* SEND NEVER GIVES, AND THIS IS THE RULE THE OVERLAP BUG WAS MISSING.
+   Everything else in the foot refused to shrink — `.tch-pick` is a flex item
+   with the automatic `min-width: auto`, so the three triggers held their
+   content width whatever happened — which left Send as the ONLY item with any
+   give. Under 360px it was squeezed until "Send ↑" wrapped onto two lines: the
+   button grew from 31px to 49px tall, the foot from 47px to 59px, and the row
+   still did not fit, so the model trigger ran out past the card's edge and
+   under the button. (Measured in `chat-dev.html`: 8px of overlap at a 360px
+   composer, 151px at 220px.) `flex: none` plus `nowrap` means the primary
+   action keeps one line and its full footprint at every width; the triggers
+   below are what yields instead. */
+.tch-send,
+.tch-stop {
+  flex: none;
+  margin-left: var(--pn-space-2);
+  white-space: nowrap;
+}
+
+/* The primary action and the thread-setting triggers get a real keyboard
+   ring — hover styling alone leaves a keyboard user aiming blind. */
+.tch-send:focus-visible,
+.tch-stop:focus-visible,
+.tch-pick__trigger:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+
+.tch-send {
+  border-color: transparent;
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+}
+
+.tch-send[aria-disabled='true'] { opacity: 0.42; cursor: default; }
+.tch-stop { color: var(--pn-block); }
+
+/* The send button carrying the agent-running state: same footprint, plus the
+   turning mark. Disabled here means "no interrupt on this node", not "inert
+   UI", so it keeps more presence than a refused send. */
+.tch-send--working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tch-send--working[aria-disabled='true'] { opacity: 0.72; cursor: default; }
+
+/* THE MARK IS NOT BRAND HERE. This button is FILLED with brand, so the mark's
+   default ink would be the mark's own background. `--pn-ribbon-ink` hands it a
+   paper ink instead, so it reads as the same object as the word beside it.
+   Both themes are covered because it is a token, not a literal.
+
+   PAPER, NOT CARD — and the 11 points between them are the whole reason.
+   `shade()` posterizes AROUND the base ink: down toward black for the unlit
+   half of the band, up toward white for the lit half. `--pn-card` is #FFFFFF
+   in the LIGHT theme, which has nowhere left to go upward, so that entire half
+   flattens into one wall of white. Paper is visually the same ink to a reader
+   and keeps the headroom: roughly TWICE the distinct fills of card, at every
+   phase of the loop.
+
+   NO DIGITS HERE ON PURPOSE. The count depends on where in the 2s loop you
+   sample — the shading rides the flow and rotation terms, so one frame is a
+   draw from a distribution and not a property of the ink. Re-measure across
+   the loop, never at a single frame, or you will get a number that disagrees
+   with whatever was written down and distrust the warning instead of the
+   method. Ranges, both themes, and the sweep that produced them are in
+   gate-evidence/chat-ribbon.md.
+
+   THE MECHANISM, so this is not just a number to trust: `shade` walks 0.78 of
+   the way toward black for the unlit half and 0.58 toward white for the lit
+   half, so where the base sits decides whether BOTH halves still vary.
+
+   For white the lit half is one colour BY CONSTRUCTION, not by measurement:
+   the lit branch is c + (255 - c) * f, and at c = 255 that is 255 for every f,
+   in every channel. Re-measuring cannot disagree with arithmetic.
+
+   It is NOT about total range: white has the widest luminance span of any
+   candidate and is still the worst, because the whole span lives in one half.
+   Nor is the rule "avoid railed channels" (pure red rails all three and scores
+   HIGHER than brass) or "pick a mid-tone" (mid grey is one, and scores lower —
+   its channels move in lockstep, so the count collapses to one channel's
+   travel). Both halves staying live is the whole statement; see the evidence
+   doc for the table that refutes the two tidier versions of it.
+
+   THE DIFFERENCE IS LIGHT-THEME-ONLY. In dark, card (#221E15) and paper
+   (#1D1912) are both near-black with the whole upward range free, so the 11
+   points between them buys nothing and they measure the same. In light both sit
+   against the ceiling and those 11 points are nearly the whole difference. Not
+   a reason to use card: one token serves both grounds, and in the ground where
+   they differ, card is the broken one.
+
+   Do not "simplify" this back to --pn-card. It is the button's text colour,
+   which is exactly what makes it the tempting wrong answer. */
+.tch-send__mark {
+  --pn-ribbon-ink: var(--pn-paper);
+  display: inline-flex;
+  align-items: center;
+  /* The old spinner was a 10px circle. The mark is 4:5, so the same optical
+     weight is a hair narrower and taller — and the box is held to 10px so the
+     button keeps the footprint its own comment promises. The ribbon overflows
+     that box on purpose (`overflow: visible` in the component); it is what
+     gives a 10px slot a 13px mark without moving the composer when a turn
+     starts. Verified in a browser: button height is identical to the spinner's. */
+  width: 10px;
+  height: 10px;
+}
+
+.cv2-root .tch-send__ribbon {
+  width: 11px;
+  height: 13.75px;
+  margin: -1.875px 0;
+}
+
+/* THE TRANSCRIPT'S WAIT ROW — a pending turn, or a conversation being read.
+   `.tch-thinking` is deliberately NOT part of this any more: that class is
+   also the collapsible Thinking disclosure in TurnParts.tsx, and the two
+   sharing a `display: flex` rule laid that disclosure's summary and body out
+   side by side whenever a reader opened it. */
+.tch-wait {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) 0;
+  color: var(--pn-ink-3);
+  /* A sentence about waiting, not machine output — ui 13 (Kinetic W3). */
+  font: 500 var(--pn-fs-sm) var(--pn-ui);
+}
+
+/* The read of a whole conversation is ALONE in the transcript — nothing above
+   it, nothing below — so it keeps the roomier padding the old `.tch-loading`
+   had. The pending-turn row sits under the turns and keeps the tight one. */
+.tch-wait--solo { padding: var(--pn-space-4); }
+
+.tch-wait__mark {
+  display: inline-flex;
+  align-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+.cv2-root .tch-wait__ribbon {
+  width: 16px;
+  height: 20px;
+  margin: -1px 0;
+}
+
+/* Reduced motion: `RibbonMark` never subscribes to the frame clock, so both
+   marks hold their rest pose in JS rather than freezing mid-turn. The slow
+   fade is what is left as the activity signal — the same treatment boot uses,
+   and the same one the dots this replaced used to carry. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .tch-wait__ribbon,
+  .cv2-root .tch-send__ribbon {
+    animation: pnPulse 2.4s var(--pn-ease-standard) infinite;
+  }
+}
+
+/* ── THE CONVERSATION BEING OPENED ────────────────────────────────────────
+   The arm that replaced the bare centred wait row — see `ThreadOpening` in
+   ChatHomeScreen.tsx for why the outgoing transcript is not what stands here.
+
+   TOP-ALIGNED AND NOT CENTRED, which is the whole structural point. The row
+   this supersedes was one line with `margin: auto` around it, so on a phone —
+   where the transcript IS the page — the surface emptied to a mark floating in
+   the middle and then refilled from the top. This starts where the turns will
+   start and holds their column, so the arriving transcript replaces a page
+   that is already the right shape. */
+.tch-opening {
+  display: flex;
+  flex-direction: column;
+  /* NOT `flex: 1`. `.tch-transcript` is a scrolling flex column and `.tch-welcome`
+     claims the whole box there; this must not, or the skeleton would stretch its
+     rows down a tall viewport and stop tracing the turns it stands for. */
+  flex: 0 0 auto;
+}
+
+/* The wait row keeps its words and its mark; it just captions the shape now
+   instead of being the only thing on the page. */
+.tch-opening__wait { padding-top: 0; margin-bottom: var(--pn-space-5); }
+
+.tch-opening__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* One placeholder turn, spaced like a real one (`.tch-turn`'s own margin) so
+   the arriving transcript does not shift what is already on screen. */
+.tch-opening__row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: var(--pn-space-6);
+}
+
+/* The viewer's side follows the same ruling the real bubbles do (byline
+   sidedness, 2026-08-18): their own turns sit right, the agent's stay in the
+   26px avatar gutter. A skeleton that ignored it would re-lay itself the
+   instant the turns landed. */
+.tch-opening__row[data-role='user'] { align-items: flex-end; }
+.tch-opening__row[data-role='assistant'] { align-items: flex-start; margin-left: 26px; }
+
+.tch-opening__line {
+  width: min(72%, 420px);
+  height: 11px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+  animation: tch-opening-pulse 1.6s var(--pn-ease-standard) infinite;
+}
+
+.tch-opening__line--short { width: min(44%, 260px); }
+
+@keyframes tch-opening-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* The skeleton is scenery for a wait, so it is the first thing to hold still:
+   a reader who has asked for reduced motion gets the shape without the
+   breathing, and the wait mark beside it is still the activity signal. */
+@media (prefers-reduced-motion: reduce) {
+  .tch-opening__line { animation: none; }
+}
+
+/* Still the sidebar row's live pip — a STATUS on a list row, not a wait, and
+   one per streaming thread. It keeps the dot. */
+@keyframes tch-dot-pulse {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+
+.tch-thread__live {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--pn-wait);
+  animation: tch-dot-pulse 1.1s ease-in-out infinite;
+}
+/* The pip both fades AND travels, so reduced motion cannot keep a slower
+   version of it — the dot holds still and its colour is the whole signal. */
+@media (prefers-reduced-motion: reduce) {
+  .tch-thread__live { animation: none; opacity: 1; }
+}
+
+@media (max-width: 760px) {
+  .tch-root { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .tch-sidebar { border-right: 0; border-bottom: 1px solid var(--pn-line); }
+  .tch-thread-list { display: flex; gap: 4px; overflow-x: auto; padding: 5px 8px; }
+  .tch-thread { flex: 0 0 210px; margin: 0; }
+  .tch-conversation__head { align-items: flex-start; flex-direction: column; }
+  .tch-transcript { padding: var(--pn-space-4); }
+  .tch-composer-wrap { width: calc(100% - 20px); }
+}
+
+/* ---------------------------------------------------------------------------
+   The MERGED conversation column (R4, 2026-08-15): threads + sessions,
+   time-grouped, with the launch actions, the loaded-list filter, and the
+   slots/workspace foot. */
+
+/* THE ROOT HEADER moved to `panels/list-root-header.css` (task 01a0102f):
+   the Work tab draws the same bar, and this stylesheet only loads when the
+   lazy ChatHomeScreen mounts — which on the Work tab it never does. The
+   component owns its CSS now so the header cannot paint unstyled. */
+
+/* A tile groups a row button with its NON-BUTTON siblings (the Run control,
+   the badge sub-row — PR chips carry real links, which cannot nest inside a
+   button). The tile carries the hover/active visuals so all of it reads as
+   one row; the inner button's own chrome goes quiet inside it. */
+.tch-tile {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 3px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+}
+.tch-tile:hover { background: var(--pn-hover); }
+.tch-tile[data-active] {
+  border-color: var(--pn-line);
+  background: var(--pn-active);
+}
+.tch-tile .tch-thread { margin: 0; }
+.tch-tile .tch-thread:hover { background: transparent; }
+.tch-tile .tch-thread[data-active] {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* The workspace tiles' badge sub-row, verbatim components (SessionLaneLine,
+   LinkedPullRequestChips, TileCountBadges) in a chat-column coat. */
+.tch-thread__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px 7px;
+  font-size: var(--pn-fs-fine);
+}
+
+/* A task row and its Run are siblings — Run must not be the row's whole
+   surface, and a button cannot nest a button. */
+.tch-task-row {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+}
+.tch-task-row .tch-thread { flex: 1; margin: 0; }
+.tch-run {
+  flex: none;
+  align-self: center;
+  padding: 4px 7px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tch-run:hover { background: var(--pn-hover); }
+/* Run appears on hover (user ruling 2026-08-16) — the same reveal the
+   workspace tile's action cluster does. Focus keeps it reachable and
+   visible for keyboard users. */
+.tch-task-row .tch-run {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.tch-tile:hover .tch-task-row .tch-run,
+.tch-task-row .tch-run:focus-visible,
+.tch-task-row .tch-run:focus {
+  opacity: 1;
+}
+/* The comment above says focus "keeps it reachable and visible for keyboard
+   users" — and that is exactly the gap, because a TAP produces neither `:hover`
+   nor `:focus-visible`, and it does not produce `:focus` on the row either. So
+   Run was invisible on the phone's Home screen, which is the one screen the
+   phone actually ships. */
+@media (pointer: coarse) {
+  .tch-task-row .tch-run { opacity: 1; }
+}
+
+.tch-thread--task[aria-disabled='true'] { cursor: not-allowed; opacity: 0.7; }
+
+/* THE WORKSPACE LIST'S HOME COAT (user ruling 2026-08-16): Tasks and
+   Sessions tabs mount the real `EntityListPanel` — the exact tree, tiles,
+   lifecycle tabs and in-panel search the workspace draws. The host fills
+   the tab's space; this scope only re-cuts the tiles for a narrow column
+   (compact paddings, the chat rows' type scale). Anatomy and behaviour
+   stay the components' own. */
+.tch-panel-host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.tch-panel-host > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.cv2-root .tch-panel-host .pn-tt {
+  margin: 0 0 3px;
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .tch-panel-host .pn-tt__main {
+  padding: 7px 6px;
+  gap: 5px;
+}
+.cv2-root .tch-panel-host .pn-tt__title {
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+.cv2-root .tch-panel-host .pn-tt__status-text { font-size: var(--pn-fs-fine); }
+/* The badge sub-row hangs off the TITLE, not off the tile edge. This coat
+   re-cuts `pn-tt__main` to a 6px inset and a 5px gap, so the title starts at
+   6 + 16px status mark + 5px = 27px and the chips must start there too. A bare
+   `padding: 0 8px 6px` put them at the beginning of the row instead — the
+   workspace panel's own rule was already correct, so only Home read as broken. */
+.cv2-root .tch-panel-host .pn-tt__badges { padding: 0 8px 6px 27px; }
+.cv2-root .tch-panel-host .pn-tt__meta { padding: 6px 8px 8px; }
+
+/* REGION B when a task/session is selected (D7): the host's panel takes the
+   conversation's grid cell; the conversation itself stays MOUNTED but
+   display:none (D8) — the attribute selector outranks the pane's own
+   display:flex, which the bare `hidden` attribute would not. */
+/* The STAGE (Cockpit ruling 2026-08-18): the selection renders in the
+   transcript's berth INSIDE the conversation column, so the composer and the
+   entity tray keep the bottom. It takes the transcript's flex share; the
+   hidden transcript keeps its mount (D8's reason) but no box. */
+.tch-center {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--pn-paper);
+}
+.tch-center > * { flex: 1; min-width: 0; min-height: 0; }
+.tch-transcript[data-hidden] { display: none; }
+
+/* TIER 2 on the Chats root (Kinetic W4): the same 36px hairline verb the
+   hosted list's search row speaks — one grammar for the pane's find box on
+   every root. 12px above (tier gap from the root strip), 8px below to its
+   thread list. */
+.tch-find {
+  flex: none;
+  margin: var(--pn-space-3) var(--pn-space-3) var(--pn-space-2);
+  padding: 0 var(--pn-space-3);
+  min-height: 36px;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  /* Kinetic I1: the find box is a first-class control — 13px (--pn-fs-sm),
+     up from micro, so typed text no longer reads as chrome. */
+  font-size: var(--pn-fs-sm);
+  transition:
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.tch-find:focus-visible {
+  outline: none;
+  border-color: var(--pn-focus, var(--pn-brand-2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-focus, var(--pn-brand-2)) 20%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tch-find { transition: none; }
+}
+
+/* 16px is the iOS focus-zoom threshold, not a type choice: Safari zooms the page
+   when a field under 16px takes focus, and inside a `100dvh` frame with
+   `overflow: hidden` there is no scroll to pan with and no affordance to undo
+   it — the user taps this box and the app is the wrong size from then on.
+   Measured at 11.5px on the phone's Home screen when this shipped; desktop
+   now sits at --pn-fs-sm (13px, Kinetic I1) — still under the threshold, so
+   the phone override stays. */
+.cv2-root .mobile-frame .tch-find {
+  font-size: 16px;
+  min-height: 44px;
+}
+
+/* Group heads are EYEBROWS (Kinetic grammar): caps 11/700, never gray mono. */
+.tch-group__label {
+  display: block;
+  padding: 8px 9px 3px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tch-thread__glyph {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+}
+.tch-thread--session[aria-disabled='true'] { cursor: not-allowed; opacity: 0.7; }
+
+.tch-session-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+}
+.tch-session-word--run { color: var(--pn-run); }
+.tch-session-word--wait { color: var(--pn-wait); }
+.tch-session-word--block { color: var(--pn-block); }
+.tch-session-word--idle { color: var(--pn-ink-3); }
+.tch-session-word--info { color: var(--pn-ink-2); }
+.tch-session-word--brand { color: var(--pn-brand); }
+
+.tch-viewonly {
+  padding: 0 5px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+}
+
+.tch-sidebar__foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+.tch-slots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 'SESSION SLOTS' stays a caps eyebrow (Kinetic W3); the NUMBERS beside it
+   are the data and keep mono (`.tch-slots__nums`). */
+.tch-slots__label {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tch-slots__bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--pn-active);
+  overflow: hidden;
+}
+.tch-slots__fill {
+  display: block;
+  height: 100%;
+  background: var(--pn-run);
+}
+.tch-slots__nums {
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+}
+
+/* THE THREAD'S CONFIGURATION, INSIDE THE BOX. Three triggers on the composer's
+   own foot: constant height whatever the roster is, and the transcript keeps
+   the top of the canvas that the old header panel and chip rows were taking. */
+.tch-picks {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-left: var(--pn-space-1);
+}
+/* THE TRIGGERS ARE THE FOOT'S SHOCK ABSORBER, so every link in the chain has
+   to be allowed to compress. `min-width: 0` on the item AND on the button
+   defeats the automatic minimum size that otherwise pins a flex item at its
+   content width — without both, `.tch-pick__value`'s ellipsis can never
+   engage and the row overflows instead of narrowing. */
+.tch-pick { display: inline-flex; min-width: 0; }
+/* Kit grammar metrics, compact (Kinetic W3): 28px box, bordered, r-sm, ui 600
+   at the 13px interactive floor — a thread-setting is a control, not chrome. */
+.tch-pick__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 150px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
+  cursor: pointer;
+}
+.tch-pick__trigger:hover:not(:disabled) {
+  background: var(--pn-hover);
+  border-color: var(--pn-line-2);
+}
+/* Pinned, not broken: the thread's write-once facts stay READABLE when they
+   can no longer be edited, so a configured thread still says what it runs as.
+   The hidden caret is the whole signal now — a still trigger reads as a
+   label, a caret promises a menu. */
+.tch-pick__trigger:disabled { cursor: default; opacity: 0.75; }
+.tch-pick__trigger:disabled .tch-pick__caret { visibility: hidden; }
+.tch-pick__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The caret is the promise of a menu, so it is the last thing to be traded
+   away — it holds its size while the value beside it ellipsizes. */
+.tch-pick__caret { flex: none; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
+
+/* Portalled by `useMenuAnchor` — positioned inline, sized here. */
+.tch-pickmenu {
+  max-height: 260px;
+  width: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-md);
+}
+.tch-pickmenu__note { margin: 4px 6px; color: var(--pn-ink-3); font-family: var(--pn-ui); font-size: var(--pn-fs-sm); }
+/* Menu items are interactive text: ui 13/500, ink-2 (Kinetic W3). */
+.tch-pickmenu__opt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.tch-pickmenu__opt[data-active] { background: var(--pn-hover); }
+.tch-pickmenu__opt[aria-selected='true'] { color: var(--pn-ink); font-weight: 600; }
+.tch-pickmenu__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.tch-pickmenu__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tch-pickmenu__hint {
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-label);
+  font-weight: 400;
+  line-height: 1.35;
+}
+.tch-pickmenu__mark { color: var(--pn-brand); font-size: var(--pn-fs-fine); }
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-025, DEF-026, DEF-039.
+
+   Scoped to `.cv2-root[data-shell='mobile']`, the marker `GateApp` and
+   `MobileFrame` stamp. It is a SHARED contract (37 uses in mobile-screens.css,
+   24 in terminal.css, plus the zoom gate), so it is matched here exactly as
+   those files match it and is not re-shaped. If a rule below appears not to
+   apply, check the marker before rewriting the rule — CONTRACT.md §7.
+
+   `src/mobile/*.css` is GATE-OWNED and is not touched. These are `tch-`
+   classes in Lane A's own stylesheet, restated under a narrower selector
+   exactly as the shell's own §7 restates `panels.css` — the desktop values
+   above are untouched.
+
+   THE TWO CONSTRAINTS FROM THE CONTRACT, WHICH ARE ACCEPTANCE NOT ADVICE:
+   every rule names its class (no blanket `button` floor), and every target
+   grows by real padding and real `min-block-size` (no `::after` hit areas —
+   the instrument measures `getBoundingClientRect()` OF THE ELEMENT and would
+   score a pseudo-element trick as fixed while the thumb still missed).
+
+   AND THE THIRD: the container is unpinned BEFORE anything inside it grows.
+   `.ri-card__foot` is done in `rich-input.css`; `.tch-attach`'s own
+   `width`/`height` pins are overridden rather than padded around.
+   ========================================================================== */
+
+/* --- DEF-039 — the type floor, applied at the TOKENS ---------------------- */
+
+/* 16 text nodes at 11px, and the run reported only the first 6 of them. A
+   per-class list would therefore have been a list of the ones I could SEE, and
+   the ten I could not would have shipped — `tinyTextCount` is a count, and the
+   array beside it is a sample. Lifting the three small steps of the type scale
+   inside this screen reaches all sixteen without naming any.
+
+   12px IS THE FLOOR AND IT IS DERIVED, NOT CHOSEN: across all 283 tinyText
+   findings in `before-lanes-results.json` the largest size ever flagged is
+   11.5 and no element at 12 or above appears, so the instrument's cut is below
+   12. Prose and refusal copy goes to 13 rather than sitting on the line —
+   DEF-039's own note is that `.tch-thread-refusal` is an HONESTY message, and
+   an honesty message the reader cannot read is not honest. A floor is not a
+   reading size.
+
+   Desktop is untouched: this sets the variables on the phone's `.tch-root`
+   only, so every consumer of them inside this screen lifts together and no
+   consumer outside it moves at all. */
+.cv2-root[data-shell='mobile'] .tch-root {
+  --pn-fs-tick: 12px;
+  --pn-fs-fine: 12px;
+  --pn-fs-micro: 13px;
+}
+
+/* THE LIFT STOPS AT THE HOSTED LIST, AND THAT BOUNDARY IS THE POINT.
+   `.tch-panel-host` is `EntityListPanel` — the shell's and Lane B's surface,
+   embedded in mine. The shell's `mobile-screens.css` §7 has already grown
+   every `lp__` control on this phone and the build service has already
+   measured those numbers clean. Inheriting a bigger type scale into it would
+   move controls the shell has verified, on a screen the shell does not own,
+   and any overflow it caused would land in another lane's rows. The scale is
+   restored to the package default across that boundary. */
+.cv2-root[data-shell='mobile'] .tch-root .tch-panel-host {
+  --pn-fs-tick: 9px;
+  --pn-fs-fine: 10px;
+  --pn-fs-micro: 11px;
+}
+
+/* `.tch-rootopt` and the root bar's cells are NOT lifted from here even though
+   they render on this screen: they are `list-root-header.css`'s, that file
+   owns their sizes, and this one is under the `type-scale-ban` guard which
+   would (correctly) reject a px literal added here. Their floor is in that
+   file, beside the rules it overrides. */
+
+/* The refused-attach control (`DisabledIconControl` renders `.hon-disabled`,
+   not `.tch-attach`, so it is a SECOND control in the same slot and the rule
+   above does not reach it) IS grown — but the rule lives in `rich-input.css`
+   and NOT here, which is a loading fact rather than a filing preference.
+
+   `chat-home.css` is imported by `ChatHomeScreen` and is therefore only in the
+   document once the LAZY chat home has mounted. The same composer foot renders
+   on the channel screen, which imports `channel-screen.css` and never this
+   file — so a phone rule for a shared composer control, written here, would
+   apply on one of the two surfaces that draw it and be absent on the other,
+   with nothing to show for it but a number that differed between two screens
+   running the same component. `rich-input.css` is imported by
+   `rich-input/index.ts`, so it is present wherever a composer is. */
+
+/* --- DEF-025 — the "Thinking" disclosure inside a turn (332x13) ----------- */
+
+/* `padding-block` AND NOT `display: flex`. A `<summary>` is `display:
+   list-item` and that is what draws its disclosure triangle; making it a flex
+   container removes the marker in Chromium and Safari, so the control would
+   have measured 44 and lost the one glyph that says it opens. The padding
+   grows the box and leaves the marker exactly where it was.
+
+   `.tch-thinking` is deliberately NOT part of the `.tch-wait` rule set (see
+   the comment over `.tch-wait`): the two once shared a class and `.tch-wait`'s
+   `display: flex` laid this disclosure's summary and body side by side when a
+   reader opened it. This rule is its own and is not folded into that block. */
+.cv2-root[data-shell='mobile'] .tch-thinking > summary {
+  min-block-size: var(--mobile-touch-min);
+  padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
+  padding-inline: var(--pn-space-1);
+}
+
+/* --- DEF-026 — every composer control was under the bar ------------------- */
+
+/* Attach was `width: 24px; height: 24px` — a hard pin on both axes, so a
+   `min-*` floor alone would have lost to it. Both are restated. */
+.cv2-root[data-shell='mobile'] .tch-attach {
+  width: var(--mobile-touch-min);
+  height: var(--mobile-touch-min);
+}
+
+/* The three thread-setting triggers (mode / teammate / model), 24px tall.
+   `max-width` stays at 150px: these ellipsise their value, and the row this
+   defect is about is the HEIGHT. Widening them as well would put the foot's
+   natural width past 390 and trade a tap-target row for an overflow one.
+
+   AMENDED 2026-08-20 (user report, task 01a01c91: "ask / plan widget … its too
+   height"). 44px on a pill holding one 12px word is mostly empty pill, and the
+   three of them set the visual weight of the whole row. They come down to 36,
+   which is a NARROW AND DELIBERATE DEPARTURE from the ledger's 44 floor rather
+   than an oversight, on three grounds that do not generalise:
+
+     - The floor is about the thumb REACHING a control. These three sit in a
+       full-bleed strip with 36px of clear height and nothing above or below
+       them to hit by mistake — the miss the census guards against is a control
+       crowded by neighbours, and this row has three items in 366px.
+     - They are not the row's actions. Attach and Send keep 44 exactly, and
+       they are what the census's R2 reading is for: the primary action of the
+       primary screen, and the one control a misfire costs a message.
+     - The foot's own height is set by Send, so this buys the pills their
+       proportion back WITHOUT changing what the row costs the transcript. The
+       height reduction is bought separately, below.
+
+   `--mobile-touch-min` is deliberately not used here: a `calc()` off the floor
+   would read as "the floor, adjusted" when the point is that this is a second,
+   smaller number with its own reason.
+
+   AND THE WIDTH CAP COMES DOWN WITH IT, for the "no overflows" half of the
+   same report. The roster is variable-length by construction — a node can
+   publish a model called `claude-opus-4-6-20260101` — and the base rule's
+   150px was written for a 760px desktop pane, where one trigger at 150 is a
+   fifth of the row. On a 366px card it is 41% of it, and three of those cannot
+   fit however hard the strip scrolls. At 112 the three fit the width they are
+   given at 390 and above, and ellipsise honestly below it. */
+.cv2-root[data-shell='mobile'] .tch-pick__trigger {
+  min-block-size: 36px;
+  max-width: 112px;
+  padding-inline: var(--pn-space-2);
+}
+
+/* THE NAME COMES OFF THE TEAMMATE TRIGGER (user report: "the teammate name
+   should not be shown only the icon and drop down").
+
+   The desktop already does exactly this, and has since #442 — it is the
+   `.tch-pick--faced` rule in the container query above, guarded
+   `:not([data-shell='mobile'])` because the phone answered the same squeeze by
+   SCROLLING instead. The scroll is still right for the strip as a whole; what
+   it was not is a reason to keep spending 101px of a 366px row on a word the
+   avatar beside it already says. Measured: the strip's overflow falls from
+   152px to 51px on this change alone.
+
+   `--faced` and not `[data-testid='tch-teammate']` for the reason
+   `ComposerSelect` states — the trigger that carries a FACE is the one that can
+   stand without a label, so a fourth faced setting gets this for free and a
+   mode or model picker can never accidentally lose its subject.
+
+   Nothing is lost to assistive tech: `aria-label` carries the control's name
+   and always did, `title` carries the current selection, and the value span
+   never contributed to either. */
+.cv2-root[data-shell='mobile'] .tch-pick--faced .tch-pick__value { display: none; }
+.cv2-root[data-shell='mobile'] .tch-pick--faced .tch-pick__trigger {
+  padding-inline: var(--pn-space-1);
+  /* WITHOUT THIS IT COLLAPSES TO A 36x36 SQUARE — a 15px avatar and a 6px
+     caret and nothing else, and the one control in this row that is smallest
+     on BOTH axes. The block axis is 36 by the ruling above; the inline axis has
+     no such argument, and the floor's own rule is that it applies to the
+     SMALLER side. 44 wide keeps the thumb's reach where the ledger wants it and
+     costs the strip nothing — it fits its 222px with 30 to spare. */
+  min-inline-size: var(--mobile-touch-min);
+  justify-content: center;
+  /* The cap above is for a trigger that still spends width on a word. This one
+     does not, so there is nothing left to ellipsise and nothing to cap. */
+  max-width: none;
+}
+
+/* SEND — 57x29, and the primary action of the primary screen. `.tch-stop`
+   carries the same footprint by construction and moves with it. */
+.cv2-root[data-shell='mobile'] .tch-send,
+.cv2-root[data-shell='mobile'] .tch-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+/* THE WRAPPING PICKS RULE THAT USED TO SIT HERE IS GONE, and it had been dead
+   since the foot was re-laid as a scrolling row further down this file — the
+   later rule sets `flex-wrap: nowrap` on the same selector and wins on order.
+   Two rules for one selector saying opposite things is also how a source guard
+   goes green on a regression: a reader (or a test) that finds the FIRST match
+   reads the arrangement that lost. One rule per selector, and the live one is
+   in "THE FOOT IS ONE ROW". */
+
+
+/* --- the thread-setting sheet (shell contract §4) ------------------------- */
+
+/* `ComposerSelect` draws its options in a `MobileSheet` on the phone instead
+   of the portalled anchored menu — see the docblock at its render for why the
+   contract requires that. The sheet supplies the panel, the title and the
+   dismiss; this supplies only the list inside it, so the rules below are the
+   ones `.tch-pickmenu` was contributing and NOT its geometry (the max-height,
+   the border and the shadow all belong to the sheet now, and restating them
+   here would draw a card inside a card).
+
+   NOT scoped to the shell marker, and that is deliberate rather than an
+   oversight: `.tch-picksheet` is only ever rendered inside `MobileSheet`,
+   which returns null wherever `sheetHost` is null — so this class cannot
+   appear off the phone and a `[data-shell='mobile']` prefix would be a guard
+   against a state that cannot occur, of the kind this codebase treats as
+   noise rather than safety. */
+.tch-picksheet {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The rows take the touch floor. They are the whole point of the sheet — a
+   thread setting the writer came here to change — and at 390px they have the
+   full width, so the floor is the block axis. */
+.tch-picksheet .tch-pickmenu__opt {
+  min-block-size: var(--mobile-touch-min);
+  padding: var(--pn-space-2) var(--pn-space-3);
+}
+
+
+/* --- the tray strip — the fourth strip, and the one I missed -------------- */
+
+/* THE BUILD SERVICE FAILED chat-home@390 ON THIS: `overflowCount` 0 -> 2,
+   `worstRightEdge` 390 -> 401, offender
+   `nav.tch-tray > div (tabs strip) > chip` (historical anatomy — the chips left in S4).
+   11px past a frame that is `overflow: hidden`, so clipped rather than
+   scrolled to. 430 was clean — it has the slack to absorb it — which is the
+   argument for measuring both widths made concrete: the defect exists at both
+   and MANIFESTS at one.
+
+   I wrapped `.ri-card__foot`, `.tch-picks` and `.tch-rootbar` specifically so
+   that growing a control could not trade a tap row for an overflow row. This
+   is a fourth strip of the same shape and I did not enumerate the class, I
+   fixed the three I had touched. So, enumerated now — every non-column flex
+   strip in this file that carries variable-width children:
+
+     .tch-durable__entities, .tch-usage, .tch-thread__badges,
+     .tch-xgraph__legend .......... already `flex-wrap: wrap`. Safe.
+     (the transcript chip row was in this set until the ledger lines
+     replaced it.)
+     .ri-card__foot, .tch-picks, .tch-rootbar ... wrapped by this branch.
+     .tch-tray__tabs .............. THE MISS. `overflow: hidden`, no wrap.
+     the rest (.tch-conversation__head, .tch-turn__byline, .tch-code__head,
+       .tch-asset__head, .tch-thread__meta, .tch-slots, .tch-task-row)
+       ............................ carry text that ellipsises or is fixed.
+
+   IT IS FIXED BY LETTING THE CHIP SHRINK, NOT BY WRAPPING, AND THAT IS A
+   DELIBERATE DEPARTURE FROM THE FIX I WAS OFFERED. Wrapping is the idiom I
+   used on the other three and `.tch-tray__tabs[data-expanded]` already pairs
+   `flex-wrap: wrap` with `overflow: visible`, so it would have worked. But
+   wrapping ADDS HEIGHT, and this screen is currently short of height rather
+   than of width — the composer foot is at the bottom of a column whose
+   contents already exceed the frame at 390. Trading a horizontal overflow the
+   instrument CAN see for vertical growth that per DEF-037 it CANNOT is the
+   wrong direction, and it is the trade this file has been burned by before.
+
+   Shrinking costs nothing vertically. The chain was one link short of already
+   working: the tabs strip and its chip slots both carried `min-width: 0`
+   and `.tch-entity-chip__title` already ellipsises — but the chip itself is a
+   flex item with the default `min-width: auto`, which refuses to shrink below
+   its content and so passes the overflow straight through the two ancestors
+   that were built to absorb it. */
+/* (The mobile chip-shrink pair for the tray died with the tray's chips.) */
+
+
+/* --- THE COLUMN COLLECTS ON §3's PROMISE — task 2, composer visibility ----- */
+
+/* `.tch-root` carries `flex: 1` and no height. **THE `flex: 1` IS INERT ON THE
+   PHONE**: `.mobile-frame__content` is a BLOCK (`mobile.css` sets `min-height`
+   and `overflow-y` on it and no `display`), sitting on `.mobile-frame`'s
+   `1fr` grid row — so it has a definite height and is not a flex container.
+   A flex property on a child of a block parent applies to nothing.
+
+   Left at `height: auto`, this grid grows to its content, overflows the frame's
+   content box, and `.mobile-frame__content` scrolls instead. Measured on merged
+   main at 390: `contentScroll.overflowBy` 219, with the composer 200px down.
+
+   THE COLUMN'S OWN DESIGN IS ALREADY RIGHT AND HAS NEVER BEEN REACHABLE.
+   `.tch-transcript` is `flex: 1; min-height: 0; overflow-y: auto` and
+   `.tch-composer-wrap` is `flex: none` — that pair pins the composer and
+   scrolls the transcript INSIDE a bounded column. It cannot do either until
+   something bounds the column.
+
+   WHY THIS AND NOT A STICKY COMPOSER. CONTRACT.md §3: the frame is
+   `calc(100dvh - var(--mobile-keyboard-inset))`, so "the whole frame shrinks,
+   and header, content, notices, tab bar and sheets all stay above the keyboard
+   WITHOUT KNOWING THE KEYBOARD EXISTS." Anchoring the composer would add a
+   second keyboard arithmetic to a surface the contract deliberately keeps
+   ignorant of the keyboard — the "three surfaces, three arithmetics, three
+   bugs" §3 forbids. A column that FILLS the frame gets the outcome for free.
+
+   THE `flex: 1` IS LEFT ALONE. It is a base rule and may well be live on the
+   desktop, whose host region this file does not own. Adding the height here is
+   phone-scoped and desktop-neutral; removing the flex would not be.
+
+   NOT VERIFIED. This changes the scroll behaviour of the phone's default
+   screen and will move `belowFoldCount`, `overflowBy` and the composer's
+   geometry — so it SUPERSEDES those fields in the verdict already held on
+   `daebad80`, and needs its own before/after.
+
+   FALSIFIER, stated before the number exists: if this does not reduce
+   `overflowBy`, the column is not what overflows, the content genuinely
+   exceeds a bounded frame, and SCROLL-REACHABLE is the honest answer — in
+   which case anchoring is the only route to visible and this rule should be
+   reverted rather than tuned. */
+.cv2-root[data-shell='mobile'] .tch-root {
+  height: 100%;
+}
+
+
+/* ==========================================================================
+   THE PHONE'S CHAT SCREEN IS ONE CANVAS AND ONE COMPOSER.
+
+   The shell now hosts the thread column in a sheet (`MobileShell`, the ☰), so
+   what is left on this surface is the conversation and the box you write in.
+   These rules give that pair the arrangement the reference asks for: the mark
+   and the greeting centred in the free space, the composer DOCKED at the
+   bottom as a floating card.
+
+   WHY THE DOCK NEEDS A RULE AT ALL. The desktop empty state deliberately
+   centres greeting + composer as one invitation (`[data-empty]`, above) —
+   right for a wide canvas, wrong for a phone, where the one control you reach
+   for lives under your thumb and everything else is reading. The two `auto`
+   margins that do the centring are undone here and only here.
+
+   NO KEYBOARD ARITHMETIC. `margin-bottom` and nothing else: CONTRACT.md §3
+   shrinks the whole frame by `--mobile-keyboard-inset`, so a docked composer
+   rides above the keyboard for free. A `position: sticky`/`fixed` composer
+   would be the second keyboard arithmetic that section exists to forbid.
+   ========================================================================== */
+
+/* THE ROW, NOT THE ITEM. `.tch-root` is a GRID and declares columns only, so
+   its single row is implicit and therefore AUTO — sized to its content. The
+   container is 741px tall on a 390x844 phone and the row measured 381: the
+   conversation was a content-height box floating in a full-height grid, which
+   is why the composer sat mid-canvas with 350px of dead paper under it. A
+   `height: 100%` on the conversation resolves against that 381px row and
+   changes nothing; the row is what has to be told to fill. */
+.cv2-root[data-shell='mobile'] .tch-root {
+  grid-template-rows: minmax(0, 100%);
+}
+
+/* The greeting takes the canvas; the composer takes the foot. `margin-top:
+   auto` on the wrap is what docks it, and it beats `[data-empty]`'s centring
+   pair (same specificity, later in the file) so a NEW conversation docks too —
+   which is the state the screen is in almost every time it is opened.
+
+   NO `justify-content: center` HERE, AND THAT IS THE FIX FOR A REPORTED BUG,
+   not a tidy-up. This rule carried one, and on a scroller it is data loss:
+   `justify-content` distributes NEGATIVE free space as readily as positive, so
+   once a conversation is taller than the box, half the overflow is placed ABOVE
+   `scrollTop: 0` where no gesture can reach it. Measured on the phone harness
+   at 390x844 with 30 turns: with the transcript scrolled as far up as it will
+   go, the first turn's top sat 2607px above the box's own top edge. The
+   reader's own words, on task 01a01c3f: "the chat is not going up after a
+   point ... it should be scrollable till the begining."
+
+   NOTHING IS LOST BY REMOVING IT, which is what made this the fix rather than a
+   trade. It was never what centred the greeting: `.tch-welcome` is `flex: 1`
+   with `margin: auto` and its own `justify-content: center`, so it fills this
+   box and centres its contents unaided. An item that fills its container leaves
+   no free space for `justify-content` to distribute — the declaration was inert
+   in the one state it was added for and destructive in every other. Verified
+   both ways on the harness: the welcome state is pixel-identical, and
+   `firstTurnHiddenAboveTop` goes 2607 → 0.
+
+   WHY NOT `safe center`. It would also stop the clipping, and it would keep a
+   centring nothing wants: a two-turn conversation floating in the middle of the
+   canvas is not what any chat draws. Turns start at the top and grow down. */
+.cv2-root[data-shell='mobile'] .tch-conversation .tch-transcript {
+  flex: 1;
+  margin-top: 0;
+}
+.cv2-root[data-shell='mobile'] .tch-conversation .tch-composer-wrap {
+  margin: auto auto var(--pn-space-3);
+}
+
+/* Full-bleed but for one gutter: at 390px the desktop's 32px inset spends 8%
+   of the width on nothing, and the card is where every control on this screen
+   lives. */
+.cv2-root[data-shell='mobile'] .tch-composer-wrap {
+  width: calc(100% - 2 * var(--pn-space-3));
+}
+
+/* A CARD THAT FLOATS, not a panel welded to the foot. The reference draws one
+   rounded surface standing off the paper; `--pn-r-lg` + the lifted shadow is
+   that, and it is scoped to the phone so the desktop composer — which sits
+   inside a bordered column and would look detached — is untouched. */
+.cv2-root[data-shell='mobile'] .tch-composer {
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-lg);
+}
+
+/* The mark reads as the screen's subject on a phone, where it is the only
+   thing above the fold. */
+.cv2-root[data-shell='mobile'] .tch-welcome__mark {
+  height: 58px;
+  width: calc(58px * 560 / 700);
+  margin-bottom: var(--pn-space-4);
+}
+
+/* The welcome copy is a caption for an empty screen, and on a phone it was
+   three lines of it under a heading. Centred, narrower, and out of the way of
+   the composer. */
+.cv2-root[data-shell='mobile'] .tch-welcome {
+  padding-inline: var(--pn-space-4);
+}
+
+
+/* --- THE FOOT IS ONE ROW, AND IT HAS TO STAY ONE ROW --------------------- */
+
+/* WHAT WENT WRONG WHEN THE TOUCH FLOOR LANDED. Growing every control to 44px
+   (DEF-026, above) took a foot built for a 760px desktop pane and asked it to
+   hold five 44px controls in 342px. It wrapped: attach on its own line, three
+   pick triggers on the next, Send on a third — 150px of composer chrome under
+   a one-line field, and the primary action of the primary screen at the very
+   bottom edge of the phone. The floor was right; the ROW was never re-laid.
+
+   SO THE ROW SCROLLS INSTEAD OF WRAPPING. Attach and Send are pinned to the
+   two ends where a thumb expects them, and the thread settings — mode,
+   teammate, model — take whatever is left and scroll sideways when they do not
+   fit. Nothing is hidden and nothing is compressed to an ellipsis it did not
+   need: the roster is variable-length by construction (a node can offer any
+   number of teammates and models), so a layout that must fit ALL of them in
+   342px is a layout that must lie about one of them. */
+.cv2-root[data-shell='mobile'] .ri-card__foot {
+  flex-wrap: nowrap;
+  /* The gap is what the scrolling strip clips INTO. At 4px the last chip's
+     border was cut a pixel from Send's edge and the two read as one broken
+     control; 8px makes the clip legible as "there is more this way". */
+  gap: var(--pn-space-2);
+  /* THE ROW'S OWN HEIGHT, and the second half of the "too height" report. The
+     foot measured 58px against a 44px Send, so 14 of it was chrome: 8px of
+     block padding here and 6px the refused-attach control was carrying over
+     the floor (below). 3px of padding still separates Send's pill from the
+     field above it and from the card's edge, and the row lands at 50. */
+  padding: 3px var(--pn-space-2);
+  /* Nothing in this row may ever set the height by growing taller than the
+     controls in it — an image, a longer phase label or a future control would
+     otherwise silently reintroduce the same 14px. */
+  align-items: center;
+}
+
+/* THE REFUSED-ATTACH CONTROL WAS THE TALLEST THING IN THE ROW, at 50px against
+   a 44px floor — `rich-input.css` gives `.ri-card__foot .hon-disabled` a
+   `min-height` and the `DisabledIconControl` inside it adds its own box on top.
+   It is a `+` in the same slot as `.tch-attach`, so the two must measure the
+   same or the row's height depends on whether this surface happens to have an
+   attachment port wired. Pinned to the floor exactly, both axes, the way
+   `.tch-attach` is. */
+.cv2-root[data-shell='mobile'] .ri-card__foot .hon-disabled {
+  /* BORDER-BOX EXPLICITLY — this package has no border-box reset, and
+     `honesty.css` gives `.hon-disabled` its own padding and border. Without
+     this the pin below is a CONTENT height and the control measures 50 again,
+     which is exactly how the 6px got there in the first place. */
+  box-sizing: border-box;
+  block-size: var(--mobile-touch-min);
+  inline-size: var(--mobile-touch-min);
+}
+
+.cv2-root[data-shell='mobile'] .tch-picks {
+  flex: 1;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  margin-left: 0;
+  /* The strip is scrolled by the same finger that taps it; a scrollbar over a
+     44px control would eat part of the target. */
+  scrollbar-width: none;
+  /* SMOOTH, AND THAT IS THREE SEPARATE PROPERTIES DOING THREE JOBS.
+
+     `overscroll-behavior-x: contain` is the one that matters most: without it a
+     horizontal flick that reaches either end CHAINS to the ancestor, so a
+     finger that overshoots the model pill starts dragging the transcript — the
+     two scrollers are perpendicular but a real thumb swipe is never exactly
+     one axis. Containing it also stops the browser's back-navigation gesture
+     firing off the left edge of this strip, which on a chat composer costs the
+     writer their draft.
+
+     `scroll-snap-type: x proximity` settles the strip ON a pill instead of
+     halfway through one. PROXIMITY and not `mandatory`: mandatory would fight
+     a deliberate small nudge and re-centre the strip every time the finger
+     lifted, and with three items it would make the last one hard to rest on.
+
+     `scroll-behavior: smooth` is for the programmatic case — focusing a
+     trigger with a keyboard scrolls it into view, and a jump-cut there reads
+     as the row redrawing itself. */
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-behavior: smooth;
+  /* The snap ports need somewhere to land that is not flush against Send. */
+  scroll-padding-inline: var(--pn-space-1);
+}
+.cv2-root[data-shell='mobile'] .tch-picks::-webkit-scrollbar { display: none; }
+.cv2-root[data-shell='mobile'] .tch-pick {
+  flex: none;
+  scroll-snap-align: start;
+}
+
+/* The trigger's own geometry is set once, in the DEF-026 block above — one rule
+   per selector, so a guard that reads "the first rule matching this selector"
+   cannot be reading a rule that a later one overrides. */
+
+/* Attach loses its box. At 24px the border was what made a 24px glyph findable;
+   at 44px the target is its own affordance, and a bordered square beside a
+   round Send reads as two unrelated controls. */
+.cv2-root[data-shell='mobile'] .tch-attach {
+  flex: none;
+  margin-right: 0;
+  border-color: transparent;
+  border-radius: var(--pn-r-pill);
+}
+
+/* Send is a pill pinned to the end of the row — the shape the primary action
+   has on every phone the reader already uses, and the one that survives a foot
+   whose middle is scrolling. It keeps its WORD: squeezing "Send ↑" into a 44px
+   disc clipped the label, and an icon-only primary would be the one control on
+   this screen a reader has to guess at. The padding stays for that reason. */
+.cv2-root[data-shell='mobile'] .tch-send,
+.cv2-root[data-shell='mobile'] .tch-stop {
+  flex: none;
+  margin-left: 0;
+  border-radius: var(--pn-r-pill);
+}
+
+
+/* --- THE CONVERSATION SHEET (`MobileShell`'s ☰) --------------------------- */
+
+/* RETIRED 2026-08-19 with `MobileChatsSheet`. The ☰ now opens `MobileDrawer`,
+   whose FIRST section IS the conversation list — so the sheet was a second door
+   to the same rows and its `.mchats*` rules styled markup nothing emits. The
+   rows kept their properties in the move: real `min-block-size` padding, never
+   a pseudo-element hit area (CONTRACT.md §7 — the audit measures the ELEMENT).
+   See `mobile/mobile-drawer.css`. */
+
+/* --- THE LEDGER TREE (SW, task 01a023fa-f35b) ----------------------------- */
+
+/* One component for the ledger's two tree surfaces — the sticky panel's body
+   and the transcript's expanded read line (ruling 7 as amended). Same visual
+   family as the fleet rows and the entity chips: kind mark + title + status
+   pill, mono, quiet. The graph stage shares the MODEL, not these rules. */
+.tch-ledger-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  min-width: 0;
+}
+
+/* Kind chips: a VIEW filter, not a host verb — drawn only when there is more
+   than one kind to discriminate, and counts never renumber under their own
+   toggling. */
+.tch-ledger-tree__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+}
+
+/* A kind chip's word is interactive text: ui 13/600, ink-2 (Kinetic W3). */
+.tch-ledger-tree__kind {
+  padding: 1px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
+  cursor: pointer;
+}
+
+.tch-ledger-tree__kind:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-ledger-tree__kind:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+
+.tch-ledger-tree__kind[aria-pressed='true'] {
+  border-color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+}
+
+.tch-ledger-tree__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+/* The indent IS the parentId — one step per nesting level, drawn as a left
+   rule so a deep chain reads as a chain and not as a ragged margin. */
+.tch-ledger-tree__list--nested {
+  margin-left: var(--pn-space-2);
+  padding-left: var(--pn-space-2);
+  border-left: 1px solid var(--pn-line-2);
+}
+
+.tch-ledger-tree__branch { display: flex; flex-direction: column; min-width: 0; }
+
+.tch-ledger-tree__row {
+  display: inline-flex;
+  gap: var(--pn-space-1);
+  align-items: center;
+  min-width: 0;
+  padding: 2px var(--pn-space-1);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-2);
+  /* Titles are NAMES (ui); placeholders below fall back to mono-id. */
+  font: 500 var(--pn-fs-sm) var(--pn-ui);
+  text-align: left;
+}
+
+/* A row is a button only where the press can land (the tray's honesty rule);
+   only the button form takes hover affordances. */
+button.tch-ledger-tree__row { cursor: pointer; }
+button.tch-ledger-tree__row:hover { background: var(--pn-hover); color: var(--pn-ink); }
+button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+
+.tch-ledger-tree__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--pn-brand-2);
+}
+
+.tch-ledger-tree__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A title still standing in for a name we do not have reads quieter — and it
+   IS an id, so it reads as data: mono, not the ui voice real names get. */
+.tch-ledger-tree__title[data-placeholder] { color: var(--pn-ink-3); font: var(--pn-fs-fine) var(--pn-mono); }
+
+/* --- THE LEDGER PANEL (S4, task 01a023fb-1575) ---------------------------- */
+
+/* The sticky projection: one collapsed row welded above the composer, an
+   optional capped-height body above it. Same elevated-card language as the
+   composer's control panel; the TREE inside keeps its own tch-ledger-tree
+   family. */
+.tch-lpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  min-width: 0;
+  padding: var(--pn-space-1) var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-surface);
+}
+
+.tch-lpanel__bar {
+  display: flex;
+  gap: var(--pn-space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+/* The scope trigger — the `[sessions ⌃]` half of the collapsed row. A real
+   drop-up trigger, portalled menu (audit a6: an in-flow menu would clip
+   against the body's internal scroll). */
+.tch-lpanel__scope {
+  display: inline-flex;
+  gap: var(--pn-space-1);
+  align-items: center;
+  padding: 1px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  /* A trigger's word is interactive text: ui 13/600 (Kinetic W3). */
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
+  cursor: pointer;
+}
+
+.tch-lpanel__scope:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-lpanel__scope:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+
+/* The scope's summary — `5 live ·` / `3 tasks, 2 docs`. A statement, not a
+   control. */
+.tch-lpanel__summary {
+  flex: 1;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-fine) var(--pn-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ONE persistent expand/collapse toggle — aria-expanded flips in place
+   (audit a6: the tray's two-button swap dropped keyboard focus to body). */
+.tch-lpanel__toggle {
+  flex: none;
+  padding: 1px var(--pn-space-1);
+  border: none;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-2);
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
+  cursor: pointer;
+}
+
+.tch-lpanel__toggle:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-lpanel__toggle:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+
+/* Capped height with internal scroll (§7.5): a tree N deep must not eat the
+   transcript it accompanies. */
+.tch-lpanel__body {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.tch-lpanel__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tch-lpanel__rowitem { display: flex; min-width: 0; }
+
+/* A session row — view-only navigation (ruling 8): the press opens the
+   terminal in the right panel, never retargets the composer. */
+.tch-lpanel__row {
+  display: inline-flex;
+  gap: var(--pn-space-2);
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  padding: 2px var(--pn-space-1);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-2);
+  /* An entity's NAME is a word, not data — ui at the interactive floor. */
+  font: 500 var(--pn-fs-sm) var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-lpanel__row:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-lpanel__row:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+
+.tch-lpanel__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A placeholder is a truncated ID standing in for a name: id ⇒ mono data. */
+.tch-lpanel__title[data-placeholder] { color: var(--pn-ink-3); font: var(--pn-fs-fine) var(--pn-mono); }
+
+/* Empty state: ui 13 (Kinetic W3) — the sentence itself is unchanged. */
+.tch-lpanel__empty {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-sm) var(--pn-ui);
+}
+
+/* ---------------------------------------------------------------------------
+   THE SESSION LIST — Home's "what is happening right now" column.
+
+   WIDTH BUDGET, stated because the prior art's cautionary tale is a Fitts fix
+   applied without one. The TITLE is the name and never yields: it may shrink
+   and ellipsise, while the status word and the model chip are `flex: none` and
+   the chip is CAPPED — uncapped `nowrap` metadata gives up nothing and eats the
+   name instead.
+   --------------------------------------------------------------------------- */
+.tch-sessions {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  gap: var(--pn-space-2);
+}
+
+/* The scroller is HERE, not on a height-capped ancestor: a parent whose
+   children can shrink crushes them instead of overflowing, which is how a
+   description card shipped at 46px against 289px of content. */
+.tch-sessions__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* PENDING and FAILED share this. It is never the empty sentence — the union
+   makes that unreachable — so this only ever states a transient fact. */
+.tch-sessions__note {
+  margin: 0;
+  padding: var(--pn-space-3);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-body);
+}
+
+.tch-srow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+
+/* LIVE is state that changes what you do, so it earns colour — and it is the
+   only colour on the row. Driven by the host's `live` boolean: an `idle`
+   session is live and keeps this edge. */
+.tch-srow--live { border-inline-start: 3px solid var(--pn-run); }
+
+/* WHERE YOU ARE gets a ring, not a fill, so it does not compete with the live
+   edge on the same row. */
+.tch-srow--on { outline: 2px solid var(--pn-brand); outline-offset: -1px; }
+
+.tch-srow__main {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.tch-srow__main:disabled { cursor: default; }
+
+/* THE NAME. May shrink, may ellipsise, never vanishes. */
+.tch-srow__title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-2);
+}
+
+/* THE INCOMPRESSIBLE SIDE, CAPPED — see the block comment above. */
+.tch-srow__detail {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  max-inline-size: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+}
+
+.tch-srow__dot {
+  flex: none;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+}
+
+.tch-srow__status {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+}
+
+.tch-srow__viewonly {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-fine);
+}
+
+/* Sibling of the button — PR chips carry real anchors and an <a> cannot nest
+   inside a <button>. */
+.tch-srow__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+}
+
+/* SESSION SLOTS. The count is a QUANTITY, so it is ink and not a pill. */
+.tch-slots {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding-block-start: var(--pn-space-2);
+  border-block-start: 1px solid var(--pn-line-2);
+}
+.tch-slots__label {
+  flex: 0 0 auto;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tch-slots__count {
+  flex: none;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-fine);
+  font-variant-numeric: tabular-nums;
+}
+.tch-slots__bar {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  block-size: 4px;
+  border-radius: 2px;
+  background: var(--pn-line-2);
+  overflow: hidden;
+}
+.tch-slots__fill {
+  block-size: 100%;
+  background: var(--pn-run);
+}

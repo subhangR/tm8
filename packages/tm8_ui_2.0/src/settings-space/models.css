@@ -1,0 +1,273 @@
+/* ===========================================================================
+   MODELS — the launch catalog section's own stylesheet.
+
+   OWNED BY THE MODELS LANE (SECTION-CONTRACT.md §5). Imported from
+   `ModelsSection.tsx`, not from `index.ts`, so eleven parallel lanes never meet
+   in one file. Every class is `.set-models__*` for the same reason: a bare
+   `.row` collides, and this section reused `.set-card` — the class the whole
+   settings CARD is drawn with — for its list rows until 2026-08-16.
+
+   WHY THIS FILE EXISTS AT ALL, i.e. what was measured wrong (real Chrome,
+   1508x882 and 900x600, §8 harness):
+
+   1. Rows were `.set-card`. That class had just gained `flex: 1`,
+      `max-width: 1080px` and `margin-inline: auto` in the frame pass, so a
+      LIST ROW was carrying the geometry of the page card. It also brings
+      `border + radius + box-shadow` and NO padding, so twelve rows stacked as
+      twelve shadowed boxes with their controls flush against the border.
+   2. `.set-card` is `display: flex` with the initial `align-items: stretch`.
+      On a row whose id wrapped to five lines the `custom` chip stretched with
+      it: measured 72px tall for an 11px pill. Rows here are `center`.
+   3. The human LABEL was rendered in `.set-kv__k` — the field-NAME slot: mono,
+      uppercase, letter-spaced, and hard-capped at 96px. "Opus 4.8 via a
+      cross-region inference profile in us-east-1" came out as five lines of
+      shouting mono. A label is data, not a field name. It is body type now,
+      and the mono treatment moved to the thing that is actually a machine
+      string: the model id.
+   4. The scope banner — the one fact on this screen a reader cannot afford to
+      miss, that these writes touch ONE BROWSER — was `.set-absent__why`: 9px
+      mono in `--pn-ink-4`, the faintest type on the page, i.e. a footnote.
+
+   TOKENS ONLY (§6): `src/hex-ban.test.ts` walks this file.
+
+   RECLASSIFIED (Kinetic W3 sweep). Mono is DATA only: the model id, the node
+   key, the edit-panel id echo, counts. The scope head wears the caps eyebrow
+   grammar; labels, hints, notes, refusals and the scope sentence speak
+   Figtree on the --pn-fs-* scale. Words and counts unchanged.
+   =========================================================================== */
+
+/* --- the scope banner ---------------------------------------------------- */
+
+/* Not `.set-state__banner--info`: that one is the menu editor's furniture and
+   is sized for a 280px column. This is the section's opening statement and is
+   drawn at the measure. The brass edge is deliberate — brass is this canvas's
+   "you are about to change something" colour, and the something here is
+   invisible to everyone but the person reading it. */
+.set-models__scope {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.set-models__scope-head {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro); /* eyebrow grammar: 11/700 */
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-brand-2);
+  text-transform: uppercase;
+}
+.set-models__scope-body {
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+
+/* The per-node key, stated rather than implied. The catalog is keyed by node,
+   so a host pointed at a named Server edits THAT node's list — and until this
+   row existed the screen gave a reader no way to tell which one they were
+   looking at. */
+/* The sentence around the key is words; the KEY itself is data and keeps
+   mono via its own rule below. */
+.set-models__node {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  padding-top: 1px;
+}
+.set-models__node-key {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: var(--pn-card);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-xs);
+  padding: 1px 6px;
+  /* A node key is a free string and can be a URL. */
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.set-models__node-dot { color: var(--pn-ink-4); }
+
+/* --- the refusal --------------------------------------------------------- */
+
+/* Beside the act, in the block colour, at readable size. It was `.set-absent__head`
+   (11.5px `--pn-ink-3`) — a refusal that reads the same as an absence. */
+.set-models__refusal {
+  margin-top: 10px;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--pn-block) 40%, transparent);
+  border-radius: var(--pn-r-md);
+  background: color-mix(in srgb, var(--pn-block) 7%, transparent);
+  font-size: var(--pn-fs-label);
+  line-height: 1.45;
+  color: var(--pn-block);
+}
+
+/* --- the add group ------------------------------------------------------- */
+
+/* A labelled group, not a bare `.set-add-bar`. `.set-add-bar` carries a
+   `border-top` and the menu editor's 14px gutter, so dropping it into an 18px
+   body drew a rule across the section at the wrong inset. */
+.set-models__add {
+  margin-top: 14px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  padding: 11px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.set-models__add-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+/* `flex-basis` per field, so at 900x600 the four controls reflow onto two rows
+   instead of squeezing the id input to the point where the placeholder is
+   clipped mid-word — measured: the id field was 128px and showed
+   "model id (e.g. claude" with the rest cut. */
+.set-models__add-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.set-models__add-field--id { flex: 3 1 220px; }
+.set-models__add-field--label { flex: 2 1 160px; }
+.set-models__add-field--tool { flex: 1 1 130px; }
+/* Field labels are words — ui 600 at the floor, no caps dressing. */
+.set-models__add-label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+/* `.set-field` is `display: flex` — correct for the div it was written for,
+   inert-to-harmful on a real `<input>`, which cannot be a flex container and
+   loses its intrinsic sizing. Width comes from the column here. */
+.set-models__add-input { width: 100%; min-width: 0; box-sizing: border-box; }
+.set-models__add-submit { align-self: flex-end; margin-bottom: 1px; }
+.set-models__add-hint {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-4);
+}
+
+/* --- a tool group -------------------------------------------------------- */
+
+.set-models__group { margin-top: 20px; }
+.set-models__group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.set-models__count {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+.set-models__group-why {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-4);
+  padding-top: 6px;
+}
+
+/* --- a model row --------------------------------------------------------- */
+
+/* Flex-WRAP rather than a grid with fixed tracks: the action cluster drops to
+   its own line when the identity column cannot hold its 260px basis, which is
+   what keeps every control reachable at 900x600 without a media query the card
+   could not answer anyway (the card's width is not the viewport's). */
+.set-models__row {
+  display: flex;
+  flex-wrap: wrap;
+  /* `center`, not the initial `stretch` — see note 2 at the top of this file. */
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+.set-models__row:last-child { border-bottom: 0; }
+
+.set-models__ident {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.set-models__label {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+/* THE machine string. `anywhere` because a model id is routinely an ARN or a
+   Bedrock inference profile with no space in 100 characters, and the
+   alternative to wrapping it is `overflow: hidden` eating its tail — which is
+   the half a reader needs to tell two profiles apart. */
+.set-models__id {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--pn-ink-3);
+  overflow-wrap: anywhere;
+}
+.set-models__note {
+  font-size: var(--pn-fs-micro);
+  line-height: 1.4;
+  color: var(--pn-ink-4);
+  overflow-wrap: anywhere;
+}
+
+.set-models__marks { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.set-models__acts { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-left: auto; }
+
+/* Hidden reads as withdrawn, not as broken: the row keeps full contrast on its
+   marks and buttons (they are the way back) and dims only the identity. */
+.set-models__row--hidden .set-models__ident { opacity: 0.5; }
+.set-models__row--hidden .set-models__label { text-decoration: line-through; }
+
+/* --- the inline editor --------------------------------------------------- */
+
+.set-models__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 11px;
+  margin: 6px 0;
+  border: 1px solid var(--pn-brand);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+}
+.set-models__edit-id {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  overflow-wrap: anywhere;
+}
+.set-models__edit-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.set-models__edit-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 200px; }
+.set-models__edit-acts { display: flex; flex-wrap: wrap; gap: 6px; }

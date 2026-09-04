@@ -1,0 +1,524 @@
+// @vitest-environment jsdom
+/**
+ * THE TASK FLOW JOURNEY, THROUGH THE PANEL — assign, prioritise, and come back.
+ *
+ * THE REPORTED DEFECT, verbatim: "While Creating Task im not able to assign,
+ * edit priority … also after task is archived or done im not ableot move it to
+ * again to open as well the complete Task flow jourey to be fixed."
+ *
+ * Both halves were real, and neither was a server limitation:
+ *
+ *  1. CREATE-TIME ASSIGN / PRIORITY. The generic-create pattern (T5-6) commits
+ *     the entity the instant "+ New task" is pressed and opens its PANEL with
+ *     the title in edit focus — so the panel IS the create form, and it drew
+ *     `status` as a read-only header pill and `priority` / `assignees` as
+ *     `<span>`s in the meta grid. There was no control on the one surface a
+ *     new task is born on. `authoring/StatusSelect` had existed, fully built
+ *     and exported, mounted by nothing but its own test.
+ *
+ *  2. THE WAY BACK. Two different doors, both shut:
+ *     · DONE — `update_task_content` (038:378) and `set_work_state` (060:34)
+ *       refuse only the value `done` ("completion goes through complete_task").
+ *       Writing `open` FROM done is accepted from any state; nothing in the DB
+ *       reads the current status. So reopening was never blocked — the panel
+ *       simply had no state control to offer it.
+ *     · ARCHIVED — archive is the shared TOMBSTONE (`deletedAt`), not a work
+ *       status. `TombstoneBody` has always drawn a `Restore ▸` button, and no
+ *       host has ever passed `onRestore`: it was enabled and inert since the
+ *       day it was written. An archived task had a button that did nothing.
+ *
+ * These tests hold the WIRING, which is where all of it went wrong — every
+ * individual piece was already green in its own suite.
+ *
+ * === RED-FIRST RECORD (measured; each break applied to the fixed tree, run,
+ * captured, reverted) ===
+ * Instrument: `npx vitest run src/panels/detail/panel-controls.test.tsx`
+ * from `packages/tm8-ui` (banner `RUN v4.1.10 …/packages/tm8-ui`).
+ *
+ *   BREAK 1 — 2026-08-04T19:21Z. Gate off the `<EntityControlStrip>` mount in
+ *             `EntityDetailPanel` (`{false && controlsFor(config) && …}`),
+ *             which is HEAD's state as far as anything here can observe: a
+ *             read-only header pill and `<span>`s in the meta grid.
+ *     FAIL the panel mounts a REAL priority control, and it writes priority
+ *       TestingLibraryElementError: Unable to find an element by:
+ *       [data-testid="row-value-select"]
+ *     FAIL the panel mounts a REAL assignee control, and it writes an EDGE
+ *       …by: [data-testid="row-assign-trigger"]
+ *     FAIL an unwired host refuses VISIBLY rather than hiding the control
+ *       AssertionError: expected null not to be null
+ *     FAIL a DONE task can be sent back to open, through the work verb
+ *     FAIL reopening does NOT route through the completion verb
+ *     FAIL completing still routes through the gated completion verb
+ *       all three: …by: [data-testid="row-state-select"]
+ *     FAIL is mounted for a live task
+ *       AssertionError: expected null not to be null
+ *     Tests  7 failed | 4 passed (11)
+ *
+ *   BREAK 2 — 2026-08-04T19:22Z. Strip restored; `TombstoneBody` reverted to
+ *             the shape it shipped with — one `<button>` under `canRestore`
+ *             alone, `onClick={onRestore}` whether or not a handler exists.
+ *             This is the enabled-and-inert regression itself.
+ *     FAIL an unwired Restore is disabled-with-reason, never enabled-and-inert
+ *       AssertionError: expected 'BUTTON' not to be 'BUTTON' // Object.is equality
+ *     Tests  1 failed | 10 passed (11)
+ *
+ *   Restored: Tests  11 passed (11).
+ *
+ * NOTE on what BREAK 2 does NOT cover: the missing `onRestore` at the HOST
+ * (`EntityView` / `WorkspaceView`) is the defect users actually met, and this
+ * file cannot catch it — it passes `onRestore` itself, as any caller would.
+ * The host wiring is held by `views/`, not here.
+ */
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render } from '@testing-library/react';
+import type { ActorSummary, EntityDetail, EntityId } from '@tm8/contract';
+import { REASONS as DOMAIN_REASONS, getKind, type ActionContext } from '../../domain';
+import {
+  FIXTURE_SPACE_ID,
+  fixtureDetails,
+  presenceHollowReason,
+  taskUuidTitle,
+} from '../../fixtures';
+import { EntityControlStrip, EntityDetailPanel, type ControlHost, type DetailReasons } from '../index';
+
+const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
+
+const REASONS: DetailReasons = {
+  presenceHollow: presenceHollowReason,
+  versionHistory: DOMAIN_REASONS.versionHistoryDeferred,
+  provenanceHollow: 'Session provenance is not recorded yet.',
+  shareUnavailable: 'not in the stamped seam',
+  withdrawUnavailable: 'not in the stamped seam',
+};
+
+/** The app's own task fixture, so capabilities, version and state shape are
+    the ones the panel actually renders rather than a hand-built optimist. */
+const TASK: EntityDetail = fixtureDetails[taskUuidTitle.id]!;
+
+const ADA: ActorSummary = {
+  id: 'member-ada' as EntityId,
+  kind: 'member',
+  displayName: 'Ada',
+  avatar: null,
+  isAgent: false,
+};
+
+/**
+ * A fully-wired host. Every handler is a spy, so a control that renders live
+ * but dispatches nothing fails here rather than in a browser.
+ */
+function host(over: Partial<ControlHost> = {}): ControlHost {
+  return {
+    kind: 'task',
+    ctx,
+    capabilitiesOf: () => TASK.capabilities,
+    onSetState: vi.fn(),
+    onSetValue: vi.fn(),
+    onAssign: vi.fn(),
+    onArchive: vi.fn(),
+    assignableActors: [ADA],
+    ...over,
+  };
+}
+
+function panel(detail: EntityDetail, controls: ControlHost | null, onRestore?: () => void) {
+  return render(
+    <EntityDetailPanel
+      detail={detail}
+      reasons={REASONS}
+      ctx={ctx}
+      controls={controls}
+      {...(onRestore ? { onRestore } : {})}
+    />,
+  );
+}
+
+/** A task in whatever work status the case needs. */
+function taskAt(status: string, extra: Partial<EntityDetail> = {}): EntityDetail {
+  return {
+    ...TASK,
+    state: { ...TASK.state, status } as EntityDetail['state'],
+    ...extra,
+  };
+}
+
+describe('the panel mounts the real control strip', () => {
+  it('the panel mounts a REAL priority control, and it writes priority', () => {
+    const h = host();
+    const { getByTestId } = panel(TASK, h);
+
+    const select = getByTestId('row-value-select') as HTMLSelectElement;
+    // The registry names the field; the panel must not spell it.
+    expect(select.dataset.source).toBe('priority');
+
+    fireEvent.change(select, { target: { value: 'low' } });
+    // The fourth argument is the control's LABEL, and it is not decoration: a
+    // failure notice is user copy, and titling one with `source` produced
+    // "priority could not be changed" — lowercase mid-sentence. Both values
+    // come off the same registry control, so they cannot disagree.
+    expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'priority', 'low', 'Priority');
+  });
+
+  /**
+   * THE REPORTED DEFECT, on the surface it was reported against — 2026-08-28:
+   * "the task detail panel should have an option to select due date. is it
+   * already there in the model, i dont see it in the entity detail panel."
+   *
+   * The field WAS modelled end to end; the panel's only door to it was the
+   * modal `editFields` dialog behind the header's `Edit` verb, and `MetaGrid`
+   * read the value out only when it was already set — so a task with no due
+   * date said nothing about due dates anywhere on this panel. This holds the
+   * live control on the strip, beside status and priority, where the report
+   * says a user looks.
+   */
+  it('the panel mounts a REAL control for EVERY registry date, and each writes its own field', () => {
+    const h = host();
+    const { getAllByTestId } = panel(TASK, h);
+
+    const inputs = getAllByTestId('row-date-input') as HTMLInputElement[];
+    /* Driven off the registry rather than a literal pair, so a third date
+       field is covered here the moment it is declared and this test can never
+       quietly stop covering one that was removed. The panel must not spell a
+       field name; the registry is the only place they appear. */
+    const declared = getKind('task').list.dateControls!;
+    expect(inputs.map((i) => i.dataset.source)).toEqual(declared.map((c) => c.source));
+
+    for (const [i, control] of declared.entries()) {
+      h.onSetValue.mockClear();
+      fireEvent.change(inputs[i]!, { target: { value: '2026-09-01' } });
+      expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, control.source, '2026-09-01', control.label);
+    }
+  });
+
+  /**
+   * The grid must not restate what the strip now owns. Before `dateControls`
+   * the `Due` cell was the only place the value appeared, so it had to stay;
+   * now it would be a read-only copy under a live picker, which is the exact
+   * shape D67's amendment removed ("the buttons are broken" — the things that
+   * looked like buttons were `<span>`s and the real control was elsewhere).
+   */
+  it('the read-only Due cell gives way to the control that replaced it', () => {
+    const { getByTestId, getAllByTestId } = panel(
+      {
+        ...TASK,
+        state: {
+          ...TASK.state, dueDate: '2026-09-01', startDate: '2026-08-01',
+        } as EntityDetail['state'],
+      },
+      host(),
+    );
+    const bySource = Object.fromEntries(
+      (getAllByTestId('row-date-input') as HTMLInputElement[]).map((i) => [i.dataset.source, i.value]),
+    );
+    expect(bySource).toEqual({ dueDate: '2026-09-01', startDate: '2026-08-01' });
+    /* `Start` is suppressed for the same registry reason as `Due` and through
+       the same `controlled` set — it is asserted here because the grid grew a
+       `Start` cell in the same commit, and an unsuppressed one would sit as a
+       read-only copy directly under its own picker. */
+    expect(getByTestId('subtree-grid').textContent).not.toMatch(/Start/);
+    expect(getByTestId('subtree-grid').textContent).not.toMatch(/Due/);
+  });
+
+  /**
+   * WAVE 3 — the points estimate, the last contract-carried task field with
+   * no writer anywhere in the UI: on Create AND Patch since the task commands
+   * shipped, forwarded by the real ops, and readable only as a MetaGrid cell
+   * that drew when already set. The registry now declares it
+   * (`TASK_POINTS_CONTROL`, `input: 'number'`) and the strip renders it.
+   */
+  it('the panel mounts a REAL points control, reads CONTENT, and writes a NUMBER', () => {
+    const h = host();
+    const { getByTestId } = panel(TASK, h);
+
+    const input = getByTestId('row-number-input') as HTMLInputElement;
+    expect(input.dataset.source).toBe('pointsEstimate');
+    // The current value comes off the detail's CONTENT (the one field whose
+    // only home is content — `stateOf` never projects it). The fixture says 8.
+    expect(input.value).toBe('8');
+
+    // Commits on blur, not per keystroke — one version-guarded patch.
+    fireEvent.change(input, { target: { value: '5' } });
+    expect(h.onSetValue).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    /* A NUMBER crosses the wire: `content.pointsEstimate` is `number | null`
+       in the contract (`integer` on the node), and a string here would be
+       junk the fixture stores and the schema refuses. */
+    expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'pointsEstimate', 5, 'Points');
+  });
+
+  it('the points control refuses junk instead of writing it', () => {
+    const h = host();
+    const { getByTestId } = panel(TASK, h);
+    const input = getByTestId('row-number-input') as HTMLInputElement;
+
+    // Negative and fractional both revert (`points_estimate integer >= 0`);
+    // an emptied box reverts too — nothing in the contract CLEARS the field.
+    for (const junk of ['-3', '2.5', '']) {
+      fireEvent.change(input, { target: { value: junk } });
+      fireEvent.blur(input);
+    }
+    expect(h.onSetValue).not.toHaveBeenCalled();
+    // After every revert the stored value is still what renders.
+    expect(input.value).toBe('8');
+  });
+
+  it('the points cell leaves the grid for the control that replaced it (D67)', () => {
+    const { getByTestId } = panel(TASK, host());
+    // The live editor is on the strip; the read-only copy is suppressed via
+    // the same `controlled` set that took Due and Start out.
+    expect(getByTestId('row-number-input')).toBeTruthy();
+    expect(getByTestId('subtree-grid').textContent).not.toMatch(/Points/);
+  });
+
+  it('a summary-shaped subject cannot READ the estimate and says so', () => {
+    /*
+     * List rows pass `EntitySummary` straight through as the strip's subject,
+     * and a summary carries NO content — so the current value is unknowable
+     * there, and an empty input would claim "unset" about a field that may be
+     * set. Not CheckingPermission (content never arrives on a summary, so
+     * "resolves on its own" would be false forever — the permanent-checking
+     * defect class); a refusal that names the surface and the remedy.
+     */
+    const h = host();
+    const summaryShaped = {
+      id: TASK.id,
+      title: TASK.title,
+      kind: TASK.kind,
+      state: TASK.state,
+      deletedAt: null,
+    };
+    const { queryByTestId, container } = render(
+      <EntityControlStrip row={summaryShaped} props={h} config={getKind('task')} variant="chips" />,
+    );
+    expect(queryByTestId('row-number-input')).toBeNull();
+    // The refused pill keeps the `data-source` hook; its cause—remedy caption
+    // lives on the surrounding honesty group.
+    const pill = container.querySelector('[data-source="pointsEstimate"]');
+    const group = pill?.closest('.hon-disabled-group');
+    expect(group?.textContent).toMatch(/isn’t loaded on this surface/i);
+    expect(group?.textContent).toMatch(/open the entity’s panel/i);
+    // The panel's own subject carries content (subjectOf), so the SAME strip
+    // there renders the live input — asserted by the write test above.
+  });
+
+  it('the panel mounts a REAL assignee control, and it writes an EDGE', () => {
+    const h = host();
+    const { getByTestId, getByRole } = panel(TASK, h);
+
+    fireEvent.click(getByTestId('row-assign-trigger'));
+    fireEvent.click(getByRole('button', { name: new RegExp(ADA.displayName) }));
+
+    /**
+     * ONE ACTOR, ONE EDGE. `state.assignees` is a PROJECTION of `assigned_to`
+     * edges, so assignment is `edges.create` / `edges.delete` per actor and
+     * never a whole-collection PUT — a collection write would silently drop an
+     * assignment another client made between the read and the write.
+     */
+    expect(h.onAssign).toHaveBeenCalledWith(TASK.id, ADA.id, 'assigned_to', true);
+  });
+
+  it('the strip is registry-driven: a kind with no controls gets none', () => {
+    // A doc declares no stateControl, no valueControls and no assignControl.
+    const docConfig = getKind('doc');
+    expect(docConfig.list.stateControl).toBeUndefined();
+    expect(docConfig.list.valueControls ?? []).toHaveLength(0);
+    expect(docConfig.list.assignControl).toBeUndefined();
+
+    const doc = Object.values(fixtureDetails).find((d) => d.kind === 'doc');
+    if (!doc) throw new Error('the fixtures must carry a doc to exercise this');
+
+    const { queryByTestId } = panel(doc, host({ kind: 'doc' }));
+    expect(queryByTestId('row-state-select')).toBeNull();
+    expect(queryByTestId('row-value-select')).toBeNull();
+    expect(queryByTestId('row-assign-trigger')).toBeNull();
+  });
+
+  it('an unwired host refuses VISIBLY rather than hiding the control', () => {
+    // L6 / R7: the control is present, dead, and says why. A hidden control
+    // would claim the kind has no priority to set, which is a different fact.
+    const { getByTestId, queryByTestId } = panel(TASK, host({ onSetValue: undefined }));
+    expect(queryByTestId('row-value-select')).toBeNull();
+    expect(getByTestId('subtree-body')).toBeTruthy();
+    // The refused pill keeps the `data-source` hook so the refusal is assertable.
+    expect(document.querySelector('[data-source="priority"]')).not.toBeNull();
+  });
+});
+
+describe('the way back — done and archived both reopen', () => {
+  it('a DONE task can be sent back to open, through the work verb', () => {
+    const h = host();
+    const { getByTestId } = panel(taskAt('done'), h);
+
+    const select = getByTestId('row-state-select') as HTMLSelectElement;
+    expect(select.value).toBe('done');
+    // `open` must be OFFERED from done — the registry lists it and nothing
+    // filters the list by the current value.
+    expect([...select.options].map((o) => o.value)).toContain('open');
+
+    fireEvent.change(select, { target: { value: 'open' } });
+    expect(h.onSetState).toHaveBeenCalledWith(TASK.id, 'open', 'set-state');
+  });
+
+  it('reopening does NOT route through the completion verb', () => {
+    /**
+     * The `via` override exists so `done` reaches `complete` (which carries the
+     * acceptance-criteria gate and the point award). Every OTHER value —
+     * reopening included — must take the plain work verb: `complete` refuses a
+     * task that is already done ("task is already complete", 007:1833), so
+     * routing a reopen through it would fail on the one path that must work.
+     */
+    const h = host();
+    const { getByTestId } = panel(taskAt('done'), h);
+    fireEvent.change(getByTestId('row-state-select'), { target: { value: 'working' } });
+
+    expect(h.onSetState).toHaveBeenCalledWith(TASK.id, 'working', 'set-state');
+    expect(h.onSetState).not.toHaveBeenCalledWith(TASK.id, 'working', 'complete');
+  });
+
+  it('completing still routes through the gated completion verb', () => {
+    const h = host();
+    const { getByTestId } = panel(taskAt('working'), h);
+    fireEvent.change(getByTestId('row-state-select'), { target: { value: 'done' } });
+
+    // `done` is the ONE value the database refuses on both write doors.
+    expect(h.onSetState).toHaveBeenCalledWith(TASK.id, 'done', 'complete');
+  });
+
+  it("an ARCHIVED task's Restore button actually restores it", () => {
+    const onRestore = vi.fn();
+    const archived = taskAt('open', { deletedAt: '2026-08-04T00:00:00.000Z' });
+
+    const { getByTestId } = panel(archived, host(), onRestore);
+
+    fireEvent.click(getByTestId('tombstone-restore'));
+    expect(onRestore).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unwired Restore is disabled-with-reason, never enabled-and-inert', () => {
+    /**
+     * The regression this pins. `TombstoneBody` drew the button from the day
+     * it was written and NO host ever passed `onRestore`, so the one verb an
+     * archived entity has rendered as a live-looking button that swallowed the
+     * click. That is the exact failure mode L6 exists to forbid.
+     */
+    const archived = taskAt('open', { deletedAt: '2026-08-04T00:00:00.000Z' });
+    const { getByTestId } = panel(archived, host());
+
+    const restore = getByTestId('tombstone-restore');
+    expect(restore.tagName).not.toBe('BUTTON');
+    expect(restore.closest('[data-testid="panel-tombstone"]')).not.toBeNull();
+  });
+});
+
+describe('the strip is ONE ROW, and it sits UNDER THE TABS', () => {
+  /**
+   * USER RULING 2026-08-05, verbatim: "the top part is showing the drop downs
+   * in vertical, they should be in a single row … below the tabs (task,
+   * discussion, connections, activity) a row with these drop downs."
+   *
+   * The panel used to mount the strip in its default `lines` variant, which is
+   * `flex-direction: column` — four controls, four stacked rows — between the
+   * title and the tabs. Both facts are pinned here because both were the
+   * defect, and neither is visible to any test that only asks whether the
+   * controls exist: the seven cases above all passed while it was wrong.
+   *
+   * NOTE ON WHAT THIS FILE CANNOT SEE: jsdom has no layout engine, so "one
+   * row" is asserted as the CLASS that selects the row layout, not as measured
+   * geometry. The pixel check was done in Chrome.
+   */
+  it('takes the chip layout, not the stacked one', () => {
+    const { getByTestId } = panel(TASK, host());
+    // The band's first child is the reading-measure wrapper (2026-08-16:
+    // full-bleed band, centered contents); the strip rides inside it.
+    const measure = getByTestId('panel-controls').firstElementChild;
+    expect(measure?.className).toContain('pn-controls__measure');
+    expect(measure?.firstElementChild?.className).toContain('lp__rowdetail--chips');
+  });
+
+  it('is mounted AFTER the tab strip in document order', () => {
+    const { getByTestId } = panel(TASK, host());
+    const tabs = getByTestId('panel-toolbar');
+    const strip = getByTestId('panel-controls');
+
+    // Node.DOCUMENT_POSITION_FOLLOWING === 4.
+    expect(tabs.compareDocumentPosition(strip) & 4).toBe(4);
+  });
+
+  it('is reachable from every tab, not only from Content', () => {
+    const { getByTestId, getByRole } = panel(TASK, host());
+    fireEvent.click(getByRole('tab', { name: /Connections/ }));
+    expect(getByTestId('panel-controls')).toBeTruthy();
+  });
+
+  it('draws no band for a kind that declares no controls', () => {
+    // A doc has neither state, value nor assign control; an unconditional band
+    // would draw an empty padded row with a hairline under the tabs.
+    const doc = Object.values(fixtureDetails).find((d) => d.kind === 'doc');
+    if (!doc) throw new Error('the fixtures must carry a doc to exercise this');
+
+    expect(panel(doc, host({ kind: 'doc' })).queryByTestId('panel-controls')).toBeNull();
+  });
+
+  it('draws NO band, and no strip anywhere, above a terminal', () => {
+    /**
+     * USER RULING 2026-08-06, on the bar above the terminal: remove it.
+     *
+     * The band held exactly two things for a session and a user could act on
+     * neither: the state is observed rather than chosen (the registry says so
+     * with `readOnlyReason`) and archive is not the verb anyone opens a live
+     * terminal to reach. The status itself is not lost — `StatusPillFor` draws
+     * it in the header, carrying the liveness verdict the strip's copy never
+     * had.
+     *
+     * BOTH assertions, because either alone passes while the bar is on screen:
+     * `panel-controls` is the band under the tabs, and `.lp__rowdetail` is the
+     * strip itself, which an `isTerminal ? strip : null` elsewhere in the panel
+     * would happily re-mount above the canvas.
+     */
+    const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
+    if (!session) throw new Error('the fixtures must carry a work_session');
+
+    const { queryByTestId, container } = panel(session, host({ kind: 'work_session' }));
+
+    expect(queryByTestId('panel-controls')).toBeNull();
+    expect(container.querySelectorAll('.lp__rowdetail')).toHaveLength(0);
+  });
+
+  it('still draws the session status, in the header pill', () => {
+    // The removal is of a CONTROL that could not be used, not of the fact it
+    // showed. A session that stopped reporting its state anywhere would be the
+    // regression this ruling did not ask for.
+    const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
+    if (!session) throw new Error('the fixtures must carry a work_session');
+
+    const status = (session.state as { status?: string }).status;
+    if (!status) throw new Error('the work_session fixture must carry a status');
+
+    const { getByTestId } = panel(session, host({ kind: 'work_session' }));
+    expect(getByTestId('panel-header').textContent).toContain(status.replace(/_/g, ' '));
+  });
+});
+
+describe('the strip does not duplicate what it replaced', () => {
+  /**
+   * ONE CONTROL PER STATE. The strip's archive verb belongs to a live entity
+   * and the tombstone's restore to a dead one; mounting the strip over a
+   * tombstone too would put two restore controls in one panel, which is the
+   * duplication D67 removed from the tile in the first place.
+   *
+   * The two halves are separate cases on purpose: `render()` binds its queries
+   * to `document.body`, so two renders in one case would let the first panel
+   * answer for the second.
+   */
+  it('is mounted for a live task', () => {
+    expect(panel(TASK, host()).queryByTestId('row-state-select')).not.toBeNull();
+  });
+
+  it('is NOT mounted over a tombstone — restore is the only verb there', () => {
+    const archived = taskAt('open', { deletedAt: '2026-08-04T00:00:00.000Z' });
+    const { queryByTestId } = panel(archived, host());
+
+    expect(queryByTestId('row-state-select')).toBeNull();
+    expect(queryByTestId('panel-tombstone')).not.toBeNull();
+  });
+});

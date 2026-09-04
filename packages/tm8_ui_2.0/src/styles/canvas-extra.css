@@ -1,0 +1,337 @@
+/* ==========================================================================
+   CANVAS-EXTRA — canvas-measured colors that tokens.css does NOT define,
+   declared ONCE as custom properties so no component ever inlines a raw hex.
+   Grew past "four" at P2 (live-terminal transplant): xterm needs a full
+   ITheme (fg/cursor/selection/16 ANSI slots), added below as the same
+   `--pn-x-term-*` family rather than a second extension file.
+
+   WHY THIS FILE EXISTS. tokens.css is a byte-verbatim transplant (A0's
+   byte-equality test guards it), so it cannot grow. But the canvases paint
+   two regions with colors the token ramp has no entry for: the terminal
+   "black box" is darker than any paper token in BOTH themes, and T4's
+   caution fill is warmer than --pn-wait-soft over card. LLD §14 bans raw hex
+   in src/ outside styles/tokens.css because a hundred transcriptions would
+   otherwise drift into a hundred palettes — that is the rule's actual point,
+   and one named, auditable extension file serves it exactly as well as zero
+   would. The §15.2 hex-ban exclusion therefore names TWO files: tokens.css
+   and this one. Nothing else in src/ may carry a color literal.
+
+   WHAT IS *NOT* HERE, deliberately:
+   - Alpha variants of brand: use rgba(var(--pn-brand-rgb), α) — tokens.css
+     ships --pn-brand-rgb for precisely this, and it re-themes for free.
+   - Alpha variants of run/wait/block/idle: use
+     color-mix(in srgb, var(--pn-wait) 40%, transparent) — derived, so it
+     re-themes for free too.
+   - The dark ramp for always-dark regions (terminal strip, live-session bar,
+     roster): NOT duplicated here. Those regions open a nested
+     `.cv2-root[data-theme="dark"]` scope, which re-declares the real dark
+     tokens via tokens.css's own selector. See terminal.css.
+   - #1D1912 is NOT scaffolding. This comment used to call it "the demo board
+     behind every canvas frame … never shipped", and that misclassification is
+     why the divergence went uncaught through every earlier review: a
+     correct-sounding comment closed the question. T0-1 paints it on
+     `<!-- CENTER: ink stage -->` and pairs it as `zBg: dk ? '#1D1912' :
+     '#F4F2EC'` — i.e. it IS the dark counterpart of --pn-paper. User ruled the
+     canvas wins (2026-07-28); the value now lives in tokens.css where it
+     belongs, not here.
+   ========================================================================== */
+
+.cv2-root {
+  /* The xterm host / black box. Near-black in BOTH themes by design — the
+     established terminal contrast, deliberately outside the paper ramp.
+     T0-2 draws two near-blacks: #0D0B08 for the reserved/placeholder host and
+     #131009 for live scrollback. Phase 1 ships the static host only, so
+     --pn-x-term-bg is the one in use; the live value is declared now so the
+     transport transplant at integration has a name to bind to rather than a
+     fresh literal. (T0-2 spec AMBIGUITY 2: the two values may be drift rather
+     than intent — resolving that is an integration-time question, and keeping
+     both named is what makes it answerable.) */
+  --pn-x-term-bg: #0D0B08;
+  --pn-x-term-live-bg: #131009;
+
+  /* Ghost text inside the empty host ("▉ xterm canvas — verbatim
+     transplant"). Placeholder only: real terminal text color comes from
+     xterm.js, never from CSS. */
+  --pn-x-term-ghost: #4A4334;
+
+  /* T4's caution fill — the OFFLINE banner and the `? unknown` delivery-facet
+     row. Warmer and lighter than color-mix over --pn-card lands, so it is a
+     measured value, not a derivation. This is the fill that keeps `unknown`
+     reading as a warning and never as success. */
+  --pn-x-warn-fill: #FFF8EC;
+
+  /* R5 parity (user directive, routed [master->fe 43]): the primary create
+     chip ("+ New" / "+ Launch") is an INK chip in the canvas, and its hover
+     is a measured value — style-hover="background:#3A362E" on the create
+     chip in T0-1 Workspace Hi-Fi. The chip's own fill/text are --pn-ink /
+     --pn-paper (already tokens); only the hover needed a home here. */
+  --pn-x-btn-ink-hover: #3A362E;
+
+  /* READER prose ink (T0-4 doc column) — a MEASURED PAIR, not derivable:
+     color-mix lands 2-7 units off per channel at every ratio (ReaderBody
+     handover). Light #3A362E (oracle T0-4:349,1007), dark #D8D0BE (:1345).
+     TRAP, stated because it already nearly happened: --pn-x-btn-ink-hover
+     ALSO carries #3A362E in light for an unrelated reason (the ink-chip
+     hover) and derives ink→paper in dark — do NOT alias these two; same
+     light byte, different meanings, different dark halves. */
+  --pn-x-prose-ink: #3A362E;
+
+  /* P2 (live-terminal transplant): xterm's ITheme cannot take a raw hex
+     literal in TS source (§14), and it cannot resolve a `var(...)` string
+     passed to its canvas renderer either — colors are read from these custom
+     properties via getComputedStyle() at mount, against an element inside
+     the always-dark `.cv2-root` scope, and handed to xterm as resolved
+     values. This is the "Warm Atelier" palette (the terminal-family default
+     carried over from packages/ui's useTerminalSettingsStore), tokenized
+     here rather than left as literals in a component. Standard ANSI
+     numbering: 0-7 are the regular 16-color set, 8-15 their bright twins. */
+  --pn-x-term-fg: #D9D2C4;
+  --pn-x-term-cursor: #E0A45A;
+  --pn-x-term-cursor-accent: #131009;
+  --pn-x-term-sel-bg: rgba(224, 164, 90, 0.22);
+  --pn-x-term-sel-fg: #F3EEE2;
+  /* SOFT ROW HAIRLINE — the divider BETWEEN sibling rows inside one list.
+     Measured: T0-1 paints `border-bottom:1px solid #F0EDE4` on 15 row sites
+     (list tiles carrying `border-left:2px solid {{s.bar}}`, field rows,
+     activity rows). It is NOT --pn-line: the oracle reserves #E7E3D9 for
+     COMPONENT edges — panel header, action bar, tab strip, chips, cards —
+     and uses this lighter value only to separate repeated siblings. The rule
+     that falls out, and the one that scopes any future use: --pn-line BOUNDS
+     a component, this SEPARATES siblings within one. Never apply it blanket. */
+  --pn-x-hairline-soft: #F0EDE4;
+  /* Dark Terminate hover. The canvas draws this one DARK-ONLY
+     (`color:#DA7D6A` = --pn-block dark, `style-hover="color:#E89A89"`), so the
+     LIGHT value here is a DERIVATION, not a measurement — block lifted toward
+     paper so it tracks the light ramp. The measured value is in the dark block. */
+  --pn-x-block-hover: color-mix(in srgb, var(--pn-block) 82%, var(--pn-paper));
+  --pn-x-term-ansi-0: #322D24;
+  --pn-x-term-ansi-1: #CB7059;
+  --pn-x-term-ansi-2: #74B083;
+  --pn-x-term-ansi-3: #D2A24C;
+  --pn-x-term-ansi-4: #6E9BC4;
+  --pn-x-term-ansi-5: #B98BC0;
+  --pn-x-term-ansi-6: #6FB2A8;
+  --pn-x-term-ansi-7: #CFC8BA;
+  --pn-x-term-ansi-8: #6B6453;
+  --pn-x-term-ansi-9: #DC8B73;
+  --pn-x-term-ansi-10: #8FC79C;
+  --pn-x-term-ansi-11: #E6B968;
+  --pn-x-term-ansi-12: #88B0D6;
+  --pn-x-term-ansi-13: #CCA0D2;
+  --pn-x-term-ansi-14: #86C4BA;
+  --pn-x-term-ansi-15: #EFE9DB;
+}
+
+/* Dark counterparts. The terminal blacks do NOT flip — that is the whole
+   point of the black box. Only the caution fill rejoins the theme, derived
+   from the dark wait ramp so it tracks any future token change. */
+.cv2-root[data-theme='dark'],
+[data-theme='dark'] .cv2-root {
+  --pn-x-warn-fill: color-mix(in srgb, var(--pn-wait) 14%, var(--pn-card));
+  /* Dark ink-chip hover is a DERIVATION, not a measurement (the canvas is
+     light-only): ink nudged toward paper, so it tracks the dark ramp. */
+  --pn-x-btn-ink-hover: color-mix(in srgb, var(--pn-ink) 86%, var(--pn-paper));
+  /* The oracle pairs the hairline explicitly: `zHair: dk ? '#262117' : '#F0EDE4'`
+     — and #262117 IS the dark --pn-hover, exactly. So this DERIVES rather than
+     restating the literal: one source, and it tracks any future ramp change. */
+  --pn-x-hairline-soft: var(--pn-hover);
+  /* MEASURED (unlike the light counterpart above): T0-1 draws the Terminate
+     hover only in dark, `style-hover="color:#E89A89"` over #DA7D6A. */
+  --pn-x-block-hover: #E89A89;
+  /* MEASURED dark half of the reader prose pair (oracle T0-4:1345). */
+  --pn-x-prose-ink: #D8D0BE;
+}
+
+/* ==========================================================================
+   THE TEN KIND FAMILIES — the lookup table that was never written.
+
+   THE DEFECT. `domain/registry.ts` gives every kind a `graphFamily`: red,
+   yellow, purple, pink, green, teal, orange, gray, cyan, blue. Ten hues.
+   `graph.css` maps each to `var(--color-icon-<hue>, <a --pn- fallback>)` and
+   `panels` resolves the same map into `--pnf`. But NOT ONE `--color-icon-<hue>`
+   is defined anywhere in this package — the Astryx bridge declares only
+   `primary`, `secondary`, `disabled` and `accent`. Every family therefore fell
+   through to its fallback, and the fallbacks collide:
+
+       blue   -> --pn-info        cyan   -> --pn-info      SAME COLOUR
+       green  -> --pn-run         teal   -> --pn-run       SAME COLOUR
+       orange -> --pn-wait        yellow -> --pn-wait      SAME COLOUR
+       purple -> --pn-pr-merged   pink   -> --pn-brand-2   near-identical
+
+   So a system that declares ten kind colours renders six, three pairs of them
+   indistinguishable. The owner, repeatedly: "why is it only one color black
+   and white types". The palette was never the problem. The lookup was empty,
+   and CSS resolves an undefined custom property to its fallback in silence.
+
+   WHY THE HUES LIVE HERE and not in tokens.css: tokens.css is a byte-verbatim
+   transplant guarded by an equality test and cannot grow. This file is the one
+   named, auditable extension the hex ban exempts, and its own header says it
+   exists for exactly this — colours the token ramp has no entry for.
+
+   HOW THEY WERE CHOSEN. Same construction as the status ramp they sit beside:
+   held to a similar lightness and chroma so no kind shouts over another, and
+   so a family tint never competes with a STATUS tint painted on the same card.
+   Colour here answers "what is this", never "is it urgent" — urgency is
+   --pn-run/wait/block and stays theirs alone.
+
+   Both themes, because a hue tuned on paper is wrong on ink: the dark set is
+   lifted in lightness and dropped in chroma so it reads on #0F1114 without
+   glowing. */
+.cv2-root {
+  --color-icon-blue:   #3F6078;
+  --color-icon-cyan:   #2F7480;
+  --color-icon-teal:   #2C7268;
+  --color-icon-green:  #367253;
+  --color-icon-yellow: #8A7118;
+  --color-icon-orange: #96591F;
+  --color-icon-red:    #A44141;
+  --color-icon-pink:   #97416B;
+  --color-icon-purple: #6A4C93;
+  --color-icon-gray:   #70767D;
+}
+.cv2-root[data-theme='dark'] {
+  --color-icon-blue:   #7FA3BE;
+  --color-icon-cyan:   #6FB2BE;
+  --color-icon-teal:   #6DB5A6;
+  --color-icon-green:  #78AF8C;
+  --color-icon-yellow: #C6B15E;
+  --color-icon-orange: #D09566;
+  --color-icon-red:    #D98A8A;
+  --color-icon-pink:   #D189AE;
+  --color-icon-purple: #A990D6;
+  --color-icon-gray:   #9AA1A8;
+}
+
+/* ── the gate's brand ground (auth splash + sign-in aside) ─────────────────
+   The sign-in and the splash both paint a DEEP BRAND PANEL that neither
+   `--pn-paper` nor `--pn-surface` can supply: those two are the app's own
+   grounds and in dark theme they sit within a few points of each other, which
+   is exactly what made the split stop reading — the brand side and the form
+   side collapsed into one black rectangle.
+
+   Measured rather than mixed. `color-mix(in oklab, var(--pn-brand-2) …)` was
+   tried first and lands in the same near-black in dark for the same reason,
+   so these are authored values in the one file the hex ban names for colours
+   tokens.css has no entry for.
+
+   `--au-act-ink` is the primary button's LABEL, and it is a contrast fix, not
+   a taste one: dark theme's `--pn-brand` is a pale blue, and white on it
+   measures ~2.3:1. Dark ink on the same fill measures ~10:1. */
+.cv2-root {
+  --au-ground-a:  #25384A;
+  --au-ground-b:  #16222D;
+  --au-brand-ink: #DDE6EC;
+  --au-brand-ink-2: #93A9B9;
+  --au-ribbon:    #D8E5EE;
+  --au-act-ink:   #FFFFFF;
+}
+.cv2-root[data-theme='dark'] {
+  --au-ground-a:  #1C2833;
+  --au-ground-b:  #0D1318;
+  --au-brand-ink: #E6EDF2;
+  --au-brand-ink-2: #8A9BA8;
+  --au-ribbon:    #A9C2D2;
+  --au-act-ink:   #101318;
+}
+
+/* ── the splash (owner's design, 2026-08-31) ───────────────────────────────
+   A LIGHT screen, which is the whole point of it and why these are not the
+   `--au-ground-*` pair above: the sign-in's brand panel is a deep slate and
+   the splash is near-white. The blue ramp is the owner's, transcribed from
+   the supplied CSS rather than sampled off the picture.
+
+   THE DARK SET IS AN ADDITION, and a deliberate one. The supplied design is
+   light-only; shipping it unchanged means a dark-theme viewer takes a full
+   screen of near-white for two and a half seconds on every load, which is the
+   one thing a boot curtain must not do. Same geometry, same ramp, dark ground.
+   FLAGGED to the owner as an addition rather than a transcription. */
+.cv2-root {
+  --au-splash-bg:    #F9FBFF;
+  --au-splash-ink:   #19223A;
+  --au-splash-grid:  rgba(77, 104, 159, 0.055);
+  --au-splash-text:  #8493AD;
+  --au-splash-track: rgba(113, 139, 191, 0.13);
+  --au-splash-glow:  rgba(94, 136, 255, 0.13);
+  --au-splash-fill-a: #4386FF;
+  --au-splash-fill-b: #689CFF;
+  --au-splash-fill-c: #91A9FF;
+  --au-splash-ribbon: #C3D3EE;
+}
+.cv2-root[data-theme='dark'] {
+  --au-splash-bg:    #070F1C;
+  --au-splash-ink:   #E8EEF8;
+  --au-splash-grid:  rgba(140, 168, 224, 0.055);
+  --au-splash-text:  #7C8AA6;
+  --au-splash-track: rgba(126, 152, 204, 0.16);
+  --au-splash-glow:  rgba(94, 136, 255, 0.15);
+  --au-splash-fill-a: #4386FF;
+  --au-splash-fill-b: #689CFF;
+  --au-splash-fill-c: #91A9FF;
+  --au-splash-ribbon: #7C93BC;
+}
+
+/* ── the sign-in page's accent ramp (owner's design, 2026-08-31) ───────────
+   A BLUE→VIOLET ramp, which the product's own palette does not carry: tm8's
+   brand is a slate (`--pn-brand: #3F6078`) chosen to sit quietly behind work,
+   and the front door is the one screen that is not behind work. Transcribed
+   from the supplied stylesheet rather than sampled off the picture, and SCOPED
+   to the auth page — nothing else in the app reads these. */
+.cv2-root {
+  --sp-page:      #F7F9FC;
+  --sp-page-2:    #F1F5FB;
+  --sp-surface:   rgba(255, 255, 255, 0.88);
+  --sp-surface-2: #FFFFFF;
+  --sp-input:     rgba(255, 255, 255, 0.82);
+  --sp-text:      #10182E;
+  --sp-text-soft: #65708B;
+  --sp-text-sub:  #8A94AA;
+  --sp-line:      rgba(52, 78, 145, 0.14);
+  --sp-line-2:    rgba(52, 78, 145, 0.23);
+  --sp-accent:    #2B7CFF;
+  --sp-accent-2:  #6853FF;
+  --sp-accent-3:  #8A40F4;
+  --sp-focus:     rgba(49, 125, 255, 0.15);
+  --sp-shadow:    0 30px 90px rgba(42, 67, 121, 0.15), 0 3px 10px rgba(31, 47, 84, 0.05);
+  --sp-tint:      rgba(80, 100, 145, 0.11);
+  /* The primary is a saturated blue→violet gradient in BOTH themes, so its
+     label is white in both — this does not flip. */
+  --sp-on-accent: #FFFFFF;
+}
+.cv2-root[data-theme='dark'] {
+  --sp-page:      #07101F;
+  --sp-page-2:    #0A1326;
+  --sp-surface:   rgba(10, 21, 41, 0.88);
+  --sp-surface-2: #0D182D;
+  --sp-input:     rgba(10, 20, 39, 0.84);
+  --sp-text:      #F8FBFF;
+  --sp-text-soft: #ADB8D2;
+  --sp-text-sub:  #7F8BA7;
+  --sp-line:      rgba(126, 151, 210, 0.18);
+  --sp-line-2:    rgba(129, 159, 229, 0.30);
+  --sp-accent:    #318CFF;
+  --sp-accent-2:  #6757FF;
+  --sp-accent-3:  #8D3CFF;
+  --sp-focus:     rgba(49, 140, 255, 0.18);
+  --sp-shadow:    0 32px 96px rgba(0, 0, 0, 0.44);
+  --sp-tint:      rgba(126, 151, 210, 0.13);
+  --sp-on-accent: #FFFFFF;
+}
+
+/* The six module tones. The design's values, both themes lifted for contrast
+   on the darker ground. */
+.cv2-root {
+  --sp-tone-green:  #25A56A;
+  --sp-tone-blue:   #2E86FF;
+  --sp-tone-purple: #8B45F6;
+  --sp-tone-pink:   #E45AA5;
+  --sp-tone-violet: #6757FF;
+  --sp-tone-orange: #F28A2B;
+}
+.cv2-root[data-theme='dark'] {
+  --sp-tone-green:  #4FCB92;
+  --sp-tone-blue:   #61A6FF;
+  --sp-tone-purple: #AD79FA;
+  --sp-tone-pink:   #F083C0;
+  --sp-tone-violet: #8E83FF;
+  --sp-tone-orange: #F7A85C;
+}

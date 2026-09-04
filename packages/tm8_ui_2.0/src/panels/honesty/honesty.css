@@ -1,0 +1,332 @@
+/* ==========================================================================
+   THE HONESTY VOCABULARY — T1-4, transcribed.
+
+   "the difference between 'broken' and 'honest'". Three treatments, and a
+   surface may only compose these — inventing a fourth is a design bug (T4's
+   own matrix rule). Shared DNA, quoted from the canvas footer:
+     reason always present · mono voice for the remedy · wait amber for
+     "partial", never block red · reasons name numbers (3 pins, 8 slots) so
+     they read as fact, not apology.
+   ========================================================================== */
+
+/* --- A · DISABLED-WITH-REASON ------------------------------------------- */
+/* An affordance with a dead backend is NEVER hidden and never silently
+   inert (L6). Two forms: a tooltip for icon buttons, an inline caption where
+   there is room. */
+
+.cv2-root .hon-disabled {
+  appearance: none;
+  font-family: inherit;
+  cursor: not-allowed;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Tooltip form — the icon-button case. T1-4 draws .55 light / .7 dark on the
+   CONTROL here, even though the annotation prose says a flat 45%; the 45% is
+   what the inline-caption form actually uses. Drawn beats prose (D-entry). */
+.cv2-root .hon-disabled--tooltip {
+  color: var(--pn-ink-4);
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: var(--pn-r-xs);
+  border: 0;
+  background: transparent;
+  opacity: 0.55;
+}
+.cv2-root[data-theme='dark'] .hon-disabled--tooltip,
+[data-theme='dark'] .cv2-root .hon-disabled--tooltip {
+  opacity: 0.7;
+}
+
+/* Inline-caption form — the primary-action case (Run ▸ / Coordinate). Keeps
+   the brass affordance visible at .45 so the user sees the verb exists. */
+.cv2-root .hon-disabled--inline {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: 6px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.45;
+}
+.cv2-root[data-theme='dark'] .hon-disabled--inline,
+[data-theme='dark'] .cv2-root .hon-disabled--inline {
+  color: var(--pn-brand);
+  border-color: rgba(var(--pn-brand-rgb), 0.4);
+}
+
+/* The tooltip itself. Present in the DOM ALWAYS — a reason a screen reader
+   cannot reach is not a reason — and revealed visually on hover/focus. */
+.cv2-root .hon-tip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  box-shadow: 0 12px 34px rgba(40, 34, 24, 0.3);
+  text-align: left;
+  cursor: default;
+  /* hidden without display:none — display:none would drop it from the
+     accessibility tree along with the aria-describedby target. */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root[data-theme='dark'] .hon-tip,
+[data-theme='dark'] .cv2-root .hon-tip {
+  background: var(--pn-x-term-bg);
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-line-2);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
+}
+.cv2-root .hon-disabled:hover > .hon-tip,
+.cv2-root .hon-disabled:focus-visible > .hon-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* THE THIRD TRIGGER: TAP.
+   Hover does not exist on a touch device, and `:focus-visible` deliberately
+   does NOT match a pointer interaction — that is the whole difference between
+   it and `:focus`. So the two rules above, which were the only way to read a
+   refusal, both resolve to "never" on a phone: every explanation of why a
+   control will not work was silent, and the user got a dead affordance with no
+   reason. `useReasonDisclosure` sets this attribute on tap. */
+.cv2-root .hon-disabled[data-reason-open='true'] > .hon-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ── THE NOTE HOST (`ReasonNote`) ─────────────────────────────────────────
+   A `title=` renders as a tooltip on hover and in NO other circumstance, so on
+   a touch device the text does not become awkward to reach, it does not exist.
+   Around forty of this codebase's attributes carried their information nowhere
+   else, and every one of them is an explanation — why an entity wants
+   attention, why a command is unavailable, why an option is barred.
+
+   This is a HOST, not a second vocabulary: it renders the same `.hon-tip`
+   bubble, in the same cause/remedy voice, opened by the same disclosure and
+   clamped by the same phone rule below. It exists only because the hosts that
+   already had one are all refused CONTROLS, and most of these sites are
+   ordinary text that must not start looking disabled. */
+.cv2-root .hon-note {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+/* The dotted underline is the whole affordance: it says "there is more here"
+   without claiming the thing is a button or that it is refused. Same mark
+   `.hon-hollow-inline` already uses for "ask me about this value". */
+.cv2-root .hon-note__trigger {
+  cursor: help;
+  border-bottom: 1px dotted var(--pn-line-2);
+}
+.cv2-root .hon-note:hover > .hon-tip,
+.cv2-root .hon-note__trigger:focus-visible ~ .hon-tip,
+.cv2-root .hon-note[data-reason-open='true'] > .hon-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .hon-tip {
+    transition: none;
+  }
+}
+
+/* ── THE PHONE PRESENTATION ───────────────────────────────────────────────
+   On the mobile shell the reason stops being a tooltip anchored to its control
+   and becomes a strip docked to the FRAME. Two reasons, both measured:
+
+   1. IT WAS THE WORST OVERFLOW IN THE PROGRAM. `position: absolute; left: 0`
+      with `width: max-content` up to 260px has no idea a viewport exists. On
+      the audit at 390x844 (ref 3bc882f4) this element was the single worst
+      right edge on THREE screens — tasks 449, sessions 504, channels 471 —
+      and `.mobile-frame` is `overflow: hidden`, so the reason was not scrolled
+      off, it was destroyed. Setting BOTH `left` and `right` clamps it by
+      construction, at every anchor position, open and closed alike.
+
+   2. A TOOLTIP UNDER A THUMB IS UNDER THE THUMB. Anchored below its control it
+      lands exactly where the finger that opened it is resting, and a reason the
+      user is covering is not a reason. Docked above the tab bar it never
+      occludes the control it explains.
+
+   ONE RULE FOR ALL THREE SPELLINGS OF THIS TOOLTIP, and it lives here because
+   this file owns the vocabulary: `.hon-tip`, `.auth-tip` (auth.css, the same
+   treatment restated) and the chip-row `.hon-caption` (panels.css, which takes
+   the tooltip presentation so a refusal cannot cost the row its second line).
+   Written once rather than three times on purpose — three copies of a geometry
+   derived from frame tokens is three things to drift when a token moves.
+
+   THE GEOMETRY IS `.mobile-frame__notices`' VERBATIM (mobile/mobile.css), on
+   Lane 1's call: that region is already "above the tab bar, inside the safe-area
+   gutters", derived from these same tokens, and exists precisely because a
+   screen does not know where the tab bar is. It is not hand-rolled here, and no
+   literal stands in for a token. `position: fixed` rather than that region's
+   `absolute` because the nearest positioned ancestor is `.hon-disabled` itself,
+   which is the control we are trying NOT to anchor to; for a `100dvh` frame the
+   two resolve to the same box. The inherited `z-index: 70` sits above the
+   notices region's 20 deliberately — a refusal is the direct answer to a tap the
+   user just made, and it outranks an ambient notice for the moment it is open.
+
+   Same ink and paper as the desktop tooltip: one vocabulary rendered for a
+   different hand, not a second one. Radius and shadow step up (`--pn-r-md`,
+   `--pn-sh-md`) because at full width `pop`'s 34px blur reads as a modal and
+   pulls focus off the control it is explaining. */
+.cv2-root .mobile-frame .hon-tip,
+.cv2-root .mobile-frame .auth-tip,
+.cv2-root .mobile-frame .lp__rowdetail--chips .hon-caption {
+  position: fixed;
+  left: var(--mobile-safe-left, 0px);
+  right: var(--mobile-safe-right, 0px);
+  bottom: calc(var(--mobile-safe-bottom, 0px) + var(--mobile-tabbar-min, 49px));
+  top: auto;
+  width: auto;
+  max-width: none;
+  /* The visual gutter is margin, not inset, so the anchor above stays a verbatim
+     copy of the notices region rather than a variant of it. */
+  margin-block: var(--pn-space-3);
+  margin-inline: auto;
+  /* Short reasons read as deliberate rather than stretched — the measure Lane 1
+     set on `.mobile-empty`. The `min()` keeps the gutter even where 34ch would
+     not fit, so the clamp never depends on the text being short. */
+  max-inline-size: min(34ch, calc(100% - 2 * var(--pn-space-3)));
+  padding: 10px 12px;
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-md);
+}
+/* ON THE PHONE THE TAP IS THE ONLY TRIGGER, and this is not tidiness.
+   `:hover` STICKS after a tap on iOS Safari and in Chrome's touch emulation —
+   the element keeps matching `:hover` until the user taps somewhere else. So a
+   hover-revealed tip survives its own dismissal: measured here, an outside
+   `pointerdown` correctly set `aria-expanded="false"` while the tip stayed
+   `visibility: visible`, held open by nothing but a stale hover. A reason the
+   user cannot put away is the same defect as one they cannot open.
+
+   Written as `:not([data-reason-open='true'])` so it suppresses ONLY the
+   implicit triggers and never fights the explicit one, whatever the source
+   order. Desktop is untouched — this is scoped under `.mobile-frame`. */
+.cv2-root .mobile-frame .hon-disabled:not([data-reason-open='true']):hover > .hon-tip,
+.cv2-root .mobile-frame .hon-disabled:not([data-reason-open='true']):focus-visible > .hon-tip,
+.cv2-root .mobile-frame .auth-inline-refusal:not([data-reason-open='true']):hover > .auth-tip,
+.cv2-root .mobile-frame .auth-inline-refusal:not([data-reason-open='true']):focus-within > .auth-tip,
+.cv2-root .mobile-frame .hon-note:not([data-reason-open='true']):hover > .hon-tip,
+.cv2-root
+  .mobile-frame
+  .hon-note:not([data-reason-open='true'])
+  .hon-note__trigger:focus-visible
+  ~ .hon-tip,
+.cv2-root
+  .mobile-frame
+  .lp__rowdetail--chips
+  .hon-disabled-group:not([data-reason-open='true']):hover
+  > .hon-caption {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cv2-root .mobile-frame .hon-tip__cause,
+.cv2-root .mobile-frame .auth-tip__cause {
+  font-size: 13px;
+}
+.cv2-root .mobile-frame .hon-tip__remedy,
+.cv2-root .mobile-frame .auth-tip__remedy,
+.cv2-root .mobile-frame .lp__rowdetail--chips .hon-caption {
+  font-size: 11px;
+}
+
+/* Line 1 = bold cause. Line 2 = mono remedy — the "voice" split is what
+   makes a refusal read as a fact plus a next step. */
+.cv2-root .hon-tip__cause {
+  font-size: 11px;
+  font-weight: 600;
+}
+.cv2-root .hon-tip__remedy {
+  /* RECLASSIFIED (owner screenshot, 2026-08-29): a remedy is a SENTENCE the
+     user must read, not data — ui face at a readable size. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+/* Inline caption under an inline-form control. RECLASSIFIED (owner
+   screenshot, 2026-08-29): honesty captions are explanatory PROSE ("a
+   session's state is observed, not chosen…") — mono at 9.5px read as debug
+   output. ui face, fs-label, relaxed line-height for multi-line reasons. */
+.cv2-root .hon-caption {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: 1.45;
+  color: var(--pn-ink-3);
+}
+.cv2-root .hon-disabled-group {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* --- B · HOLLOW-VALUE ---------------------------------------------------- */
+/* "A permanently-zero stat renders — (never 0) plus the dotted-rule caption.
+   Zero means measured-zero; dash means not-measured." Rendering 0 for absent
+   data is a lie of precision, and it is the specific lie D7.2 exists to
+   forbid for presence. */
+
+.cv2-root .hon-stat {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 110px;
+  padding: 9px 12px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+}
+.cv2-root[data-theme='dark'] .hon-stat,
+[data-theme='dark'] .cv2-root .hon-stat {
+  background: var(--pn-surface);
+}
+.cv2-root .hon-stat__value {
+  font-family: var(--pn-mono);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .hon-stat__value--hollow {
+  color: var(--pn-ink-4);
+}
+.cv2-root .hon-stat__label {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+.cv2-root .hon-stat__caption {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-3);
+  border-top: 1px dotted var(--pn-line);
+  padding-top: 3px;
+  margin-top: 4px;
+}
+
+/* Inline hollow — the panel-footer viewers case ("◉ — viewing"), where a
+   stat tile would not fit but the same dash-not-zero law applies. */
+.cv2-root .hon-hollow-inline {
+  color: var(--pn-ink-4);
+  cursor: help;
+  border-bottom: 1px dotted var(--pn-line-2);
+}

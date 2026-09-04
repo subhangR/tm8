@@ -7,6 +7,7 @@ import type {
   Hierarchy,
   Connections,
   Page,
+  StatusCategory,
 } from '@tm8/contract';
 import { ada, noor, forge, scout } from './actors';
 
@@ -66,6 +67,108 @@ function hierarchy(parent: EntitySummary | null = null, children: EntitySummary[
 
 type SummaryOver = Partial<Omit<EntitySummary, 'state' | 'kind'>> & Pick<EntitySummary, 'id' | 'kind' | 'title' | 'state'>;
 
+/**
+ * `EntitySummary.category` DERIVED FROM THE ROW'S STATUS — the fixture's
+ * mirror of what the database does for real.
+ *
+ * `entities.status_category` is maintained by a trigger off the entity's
+ * workflow state (migration 149), so on a live node EVERY row carries one and
+ * no client ever computes it. A fixture that omitted the key was therefore
+ * modelling a node that predates phase 1, and every surface keyed on the
+ * category — the four tabs, the completed strikethrough, the subtree mark —
+ * read `undefined` and rendered "no status" for a task that plainly had one.
+ * That is a fixture lying about the server, which is the one thing a fixture
+ * may not do.
+ *
+ * The mapping is the RULED one (`internal.work_status_category`, and its two
+ * judgement calls: `pulled → to_do`, `blocked → in_progress`) plus the session
+ * lifecycle's, where `failed` is `done` — a run that ended, badly, is not a run
+ * somebody cancelled.
+ *
+ * A ROW WITH NO STATUS WORD FALLS BACK TO ITS KIND'S SEED, AND THAT REVERSES
+ * WHAT THIS COMMENT USED TO SAY. It used to read: "absence means this entity
+ * has no position in a workflow, and inventing `to_do` for it would file it
+ * under a tab nobody put it in." That was true of a phase-1 node, where only
+ * task and work_session had statuses at all.
+ *
+ * PHASE 5 (migration 152) ended it. Birth widened from `kind = 'task'` to
+ * EVERY kind, the backfill gave every pre-existing row of every kind a status
+ * — soft-deleted rows included, because "a restored entity with a NULL status
+ * would be the one row in the graph the four tabs cannot show" (152 §5) — and
+ * the file ends by REFUSING TO APPLY if any row is left behind:
+ *
+ *     raise exception '152: % entities have a status but no category'
+ *
+ * So absent-category is not a state a live node can be in; it is a state the
+ * database now guarantees against, and `migrations apply clean` re-proves that
+ * on every CI run. Inventing `to_do` is precisely what the SERVER does.
+ *
+ * Omitting the key was therefore this fixture doing the one thing the
+ * paragraph above says a fixture may not do — lying about the server — for the
+ * seventeen kinds that carry no status word. It rendered them into a four-tab
+ * partition where an absent axis matches no present clause, so they appeared
+ * under NO tab and the channel list came up empty (gate.test.tsx).
+ *
+ * The fallback mirrors 152's seeding table exactly: the facts-about-the-past
+ * kinds seed `done` (`internal.kind_seeds_done`, 152:215-218), `pull_request`
+ * seeds from the forge state it already carries, everything else seeds `to_do`.
+ */
+const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
+  // task
+  open: 'to_do',
+  pulled: 'to_do',
+  working: 'in_progress',
+  in_review: 'in_progress',
+  blocked: 'in_progress',
+  done: 'done',
+  cancelled: 'cancelled',
+  // work_session. `spawning -> to_do` mirrors migration 155's
+  // `internal.session_status_category`, and it is not a taste call there
+  // either: `execution_resume` returns an exited session to `spawning`, which
+  // under `in_progress` would be the `done -> in_progress` move 149 refuses
+  // outright. This entry said `in_progress` after 155 landed — the fixture
+  // lying about the server in exactly the way this file's header forbids.
+  spawning: 'to_do',
+  running: 'in_progress',
+  idle: 'in_progress',
+  exited: 'done',
+  failed: 'done',
+};
+
+/**
+ * Kinds whose rows are FACTS ABOUT THE PAST: existence IS completion, so 152
+ * births and backfills them into `done` rather than `to_do`. Mirrors
+ * `internal.kind_seeds_done` (152:215-218) member for member.
+ */
+const FIXTURE_KIND_SEEDS_DONE: ReadonlySet<string> = new Set([
+  'commit',
+  'message',
+  'file',
+  'memory',
+  'artifact',
+]);
+
+/** 152's `pull_request` arm: the category agrees with the forge state the row
+ * already carries rather than contradicting it on day one. */
+const FIXTURE_PR_STATE_CATEGORY: Readonly<Record<string, StatusCategory>> = {
+  merged: 'done',
+  closed: 'cancelled',
+};
+
+function categoryOf(over: SummaryOver): { category: StatusCategory } {
+  if (over.category !== undefined) return { category: over.category };
+  const state = over.state as unknown as Record<string, unknown>;
+  const status = state.status;
+  if (typeof status === 'string') {
+    const category = FIXTURE_STATUS_CATEGORY[status];
+    if (category !== undefined) return { category };
+  }
+  if (over.kind === 'pull_request' && typeof state.state === 'string') {
+    return { category: FIXTURE_PR_STATE_CATEGORY[state.state] ?? 'to_do' };
+  }
+  return { category: FIXTURE_KIND_SEEDS_DONE.has(over.kind) ? 'done' : 'to_do' };
+}
+
 function summary(over: SummaryOver): EntitySummary {
   return {
     spaceId: FIXTURE_SPACE_ID,
@@ -80,6 +183,7 @@ function summary(over: SummaryOver): EntitySummary {
     createdBy: ada,
     counters: counters(),
     badges: {},
+    ...categoryOf(over),
     ...over,
   };
 }
@@ -135,7 +239,7 @@ export const voiceLounge = summary({
  * never wrap panels apart), long excerpt, big counters, and the full
  * delivery-facet spread: three pulls covering contentStale-only,
  * discussionMoved-only, and both. Viewer = ada, whose pull has both facets
- * AND workStatus in_review → this row is the NEEDS YOU fixture.
+ * AND status in_review → this row is the NEEDS YOU fixture.
  */
 export const taskUuidTitle = summary({
   id: 'task-4f8c2a9e',
@@ -155,7 +259,7 @@ export const taskUuidTitle = summary({
   counters: counters({ likes: 41, dislikes: 3, stars: 12, points: 120, messages: 87, viewerReaction: 'star' }),
   state: {
     kind: 'task',
-    workStatus: 'in_review',
+    status: 'in_review',
     priority: 'urgent',
     axes: { area: 'ui', wave: 'w5' },
     dueDate: '2026-07-30',
@@ -176,11 +280,11 @@ export const taskUuidTitle = summary({
   badges: {
     pulls: [
       // both facets — the viewer's own pull; with in_review this is NEEDS YOU
-      { actor: ada, localId: 'wt-ada-1', pinnedVersion: 5, contentStale: true, discussionMoved: true, workStatus: 'in_review', pulledAt: T.old },
+      { actor: ada, localId: 'wt-ada-1', pinnedVersion: 5, contentStale: true, discussionMoved: true, status: 'in_review', pulledAt: T.old },
       // contentStale only
-      { actor: forge, localId: null, pinnedVersion: 6, contentStale: true, discussionMoved: false, workStatus: 'working', pulledAt: T.morning },
+      { actor: forge, localId: null, pinnedVersion: 6, contentStale: true, discussionMoved: false, status: 'working', pulledAt: T.morning },
       // discussionMoved only
-      { actor: scout, localId: null, pinnedVersion: 7, contentStale: false, discussionMoved: true, workStatus: null, pulledAt: T.staleEdge },
+      { actor: scout, localId: null, pinnedVersion: 7, contentStale: false, discussionMoved: true, status: null, pulledAt: T.staleEdge },
     ],
   },
 });
@@ -198,7 +302,7 @@ export const taskGuideLines = summary({
   counters: counters({ messages: 9, points: 12 }),
   state: {
     kind: 'task',
-    workStatus: 'working',
+    status: 'working',
     priority: 'medium',
     axes: { area: 'ui' },
     dueDate: null,
@@ -206,6 +310,38 @@ export const taskGuideLines = summary({
     acceptance: { total: 3, completed: 1 },
   },
   // workingActors is filled after sessionLive exists (LiveWork references a task summary).
+});
+
+/**
+ * THE QUEUE — a task nobody has started.
+ *
+ * Added by phase 7, and it closes a gap that had been invisible: NOT ONE task
+ * fixture carried a `to_do` status (the set was in_review, working, blocked,
+ * cancelled). While `Open` was one tab spanning to_do AND in_progress that
+ * never showed, because the three in-flight rows filled it. The four ruled
+ * tabs split that tab in half, and the half with nothing in it is the one the
+ * panel OPENS ON — so every fixture-driven tasks list rendered "No tasks here
+ * yet" over three tasks that exist.
+ *
+ * A fixture set that cannot represent unstarted work cannot exercise the
+ * default view of the most-used list in the product.
+ */
+export const taskQueued = summary({
+  id: 'task-queued',
+  kind: 'task',
+  title: 'Name the empty states',
+  excerpt: 'Every list needs a sentence for the case where the answer is nothing.',
+  parentId: channelDesign.id,
+  position: 1,
+  state: {
+    kind: 'task',
+    status: 'open',
+    priority: 'low',
+    axes: { area: 'ui' },
+    dueDate: null,
+    assignees: [],
+    acceptance: { total: 0, completed: 0 },
+  },
 });
 
 export const taskBlocked = summary({
@@ -216,7 +352,7 @@ export const taskBlocked = summary({
   position: 3,
   state: {
     kind: 'task',
-    workStatus: 'blocked',
+    status: 'blocked',
     priority: 'high',
     axes: {},
     assignees: [],
@@ -237,7 +373,7 @@ export const taskTombstone = summary({
   updatedAt: T.old,
   state: {
     kind: 'task',
-    workStatus: 'cancelled',
+    status: 'cancelled',
     priority: 'low',
     axes: {},
     assignees: [],
@@ -250,7 +386,11 @@ export const taskTombstone = summary({
 // ---------------------------------------------------------------------------
 
 export const sessionLive = summary({
-  id: 'ws-forge-live',
+  /* UUIDv7-shaped, unlike its slug-id neighbours, and that is load-bearing:
+     the chat surface's payload walk only recognises real graph ids (UUIDv7 —
+     payload-walk.ts), so THIS session is the one a chat fixture thread can
+     spawn and a host-level test can follow from ledger row to terminal. */
+  id: '019f0000-0000-7000-8000-000000000031',
   kind: 'work_session',
   title: 'forge · tm8-ui kit',
   parentId: taskGuideLines.id,
@@ -265,6 +405,11 @@ export const sessionLive = summary({
     shareMode: 'space',
     startedAt: T.morning,
     exitedAt: null,
+    /* The persona behind the run. Its neighbours below deliberately carry
+       none, on the same reasoning as `sessionKind`: absence is a shape the
+       server really produces, and a roster where every session is attributed
+       would let a renderer that assumes one pass the whole suite. */
+    teammate: forge,
   },
 });
 
@@ -865,13 +1010,89 @@ export const customRitual = summary({
   state: { kind: 'c:ritual', fields: { cadence: 'daily', hour: 9, active: true, notes: null } },
 });
 
+/**
+ * Artifact — a versioned static-web bundle. Revision 3, not 1, so the
+ * revision switcher has a real history to list; published by an AGENT so the
+ * viewer's publisher chrome exercises the agent wording rather than only the
+ * human one.
+ */
+export const artifactPulseBoard = summary({
+  id: 'artifact-pulse-board',
+  kind: 'artifact',
+  title: 'Pulse board',
+  excerpt: 'Single-file status dashboard published from the forge lane.',
+  createdBy: forge,
+  state: { kind: 'artifact', revisionNumber: 3 },
+});
+
 // ---------------------------------------------------------------------------
 // roster
+/**
+ * chat — a conversation with a teammate, as an entity (migration 176).
+ *
+ * TWO ROWS, because the chat state carries TWO INDEPENDENT AXES and one row
+ * cannot show that they are independent. `runtimeState` is the durable claim
+ * about the headless child; `turnState` is the queue. The pair that matters is
+ * the second one: a chat whose node restarted with work still waiting is
+ * `stopped` AND `queued`, and a surface that folded them would have no way to
+ * say "your message is still coming" — it would draw that chat as idle.
+ *
+ * `turnCount` is TURNS, not replies. A chat is flat: every message is anchored
+ * on the chat with no thread root, and the user->agent pairing lives in
+ * `chat_turns`. There is no reply count to project.
+ */
+export const chatLaunchPlan = summary({
+  id: 'ent-chat-launch',
+  kind: 'chat',
+  title: 'Plan the launch sequence',
+  excerpt: 'Walk me through what still has to land before we ship.',
+  createdBy: ada,
+  state: {
+    kind: 'chat',
+    teammateId: teamMemberForge.id,
+    model: 'claude-opus-5',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    mode: 'plan',
+    workdirMode: 'scratch',
+    projectId: null,
+    runtimeState: 'live',
+    turnState: 'running',
+    turnCount: 6,
+    lastTurnAt: T.morning,
+  },
+});
+
+export const chatStoppedWithWork = summary({
+  id: 'ent-chat-stopped',
+  kind: 'chat',
+  title: 'Audit the release blockers',
+  excerpt: 'Which of the open PRs actually block the cut?',
+  createdBy: ada,
+  state: {
+    kind: 'chat',
+    teammateId: teamMemberForge.id,
+    model: 'claude-opus-5',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    mode: 'ask',
+    workdirMode: 'project',
+    projectId: 'proj-tm8-ui',
+    // THE PAIR THAT PROVES THE AXES ARE INDEPENDENT: no hot child survives a
+    // node restart, so the runtime is honestly 'stopped' — and a turn is still
+    // queued behind it. Neither field can say this alone.
+    runtimeState: 'stopped',
+    turnState: 'queued',
+    turnCount: 2,
+    lastTurnAt: T.old,
+  },
+});
+
 // ---------------------------------------------------------------------------
 
 export const fixtureSummaries: EntitySummary[] = [
   channelDesign, voiceStandup, voiceLounge,
-  taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
+  taskQueued, taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
   sessionLive, sessionStale, sessionExited, sessionFailed, sessionCredentialLogin,
   docLayoutSpec, docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive,
   messageInThread, messageAgentNullProvenance,
@@ -880,9 +1101,10 @@ export const fixtureSummaries: EntitySummary[] = [
   teamMemberScout,
   memoryTokens, memoryDisputed, memorySuperseded,
   loopDreamer, loopFailing,
+  chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, customRitual,
+  profileHouseStyle, customRitual, artifactPulseBoard,
 ];
 
 // ---------------------------------------------------------------------------
@@ -1038,6 +1260,68 @@ export const fixtureDetails: Record<string, EntityDetail> = {
             edge('edge-remembers-2', 'remembers', teamMemberForge, memoryDisputed, forge),
             edge('edge-remembers-3', 'remembers', teamMemberForge, memorySuperseded, forge),
           ],
+        },
+      ],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  /**
+   * A chat's CONTENT is empty by ruling (R5): the working directory and the
+   * native runtime session id are the two facts a client might want here, and
+   * both stay server-side. The arm exists so the discriminated union is total,
+   * and the fixture says so rather than inventing a payload to look fuller.
+   */
+  [chatLaunchPlan.id]: detail(chatLaunchPlan, {
+    content: { kind: 'chat' },
+    /**
+     * WRITTEN OUT, NOT SPREAD FROM `CAPS_FULL` — and the first draft of this
+     * fixture got it wrong, which is the argument.
+     *
+     * `detail()` defaults to `CAPS_FULL`, so a kind that says nothing here
+     * asserts all eight verbs are permitted. For `chat` FIVE of the eight are
+     * false on the server, and the fixture claimed them anyway: a spread with
+     * no override list fails OPEN by construction, so a member you do not think
+     * about does not read as missing, it reads as `true`.
+     *
+     * Each value below is read off `facade/entity-read.ts` `capabilitiesOf`,
+     * not guessed:
+     *   canEdit        false — `chat` is not in the `editable` set; there is no
+     *                          patch door for a chat in Wave 1.
+     *   canAddChild    false — not in `hierarchical`.
+     *   canPull        false — not in `pullable`.
+     *   canGrantPoints false — member / team_member only.
+     *   canComplete    false — keyed on the completion SURFACE (a work status),
+     *                          which a chat does not have.
+     *   canDelete/canLink/canReact  true — the live-only rules.
+     */
+    capabilities: {
+      canEdit: false,
+      canDelete: true,
+      canAddChild: false,
+      canLink: true,
+      canPull: false,
+      canReact: true,
+      canGrantPoints: false,
+      canComplete: false,
+    },
+    connections: {
+      // The two edges a chat is born with (176 §7): its teammate binding, and
+      // the entity it was opened ABOUT — which replaced anchoring the whole
+      // transcript on somebody else's row.
+      incoming: [],
+      outgoing: [
+        {
+          type: 'relates_to',
+          direction: 'outgoing',
+          label: 'teammate',
+          edges: [edge('edge-chat-teammate', 'relates_to', chatLaunchPlan, teamMemberForge, ada)],
+        },
+        {
+          type: 'about',
+          direction: 'outgoing',
+          label: 'about',
+          edges: [edge('edge-chat-about', 'about', chatLaunchPlan, taskQueued, ada)],
         },
       ],
       unresolvedHardDependencyCount: 0,
@@ -1211,6 +1495,48 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     },
   }),
 
+  /*
+   * AN ENDED SESSION WITH A DETAIL — HANDOVER-SessionAnatomy.md §8 F1.
+   *
+   * `sessionStale` was the ONLY work_session with a detail arm, and stale is the
+   * one ended-ish state whose canvas is NOT the exited fallback. So the exited
+   * canvas — the verdict word, the exit facts line, Resume, and now the
+   * post-mortem — could not be opened on the fixture seam at all. Its `state`
+   * already carries both timestamps (`T.older` → `T.old`), which is what makes
+   * `ran … · ended …` a real line here rather than the "duration not recorded"
+   * degradation.
+   *
+   * `sessionFailed` gets one too (F2), and it is NOT redundant: the verdict
+   * `presentSession` hands the canvas is `not-running` for BOTH, and the fork
+   * between "exited" and "failed" is read off the DETAIL's own
+   * `state.status`. Without a failed detail there is no way to reach the
+   * failed interior at all — from a test or from the app — which is exactly
+   * how D3 survived this long.
+   */
+  [sessionExited.id]: detail(sessionExited, {
+    content: {
+      kind: 'work_session',
+      nodeId: 'node-local',
+      launchProjectId: 'proj-tm8ui',
+      workingOn: [taskGuideLines],
+      transcriptDoc: null,
+    },
+    hierarchy: hierarchy(taskGuideLines, [], [channelDesign, taskGuideLines]),
+    connections: { outgoing: [], incoming: [], unresolvedHardDependencyCount: 0 },
+  }),
+
+  [sessionFailed.id]: detail(sessionFailed, {
+    content: {
+      kind: 'work_session',
+      nodeId: 'node-local',
+      launchProjectId: 'proj-tm8ui',
+      workingOn: [taskTombstone],
+      transcriptDoc: null,
+    },
+    hierarchy: hierarchy(taskTombstone, [], [taskTombstone]),
+    connections: { outgoing: [], incoming: [], unresolvedHardDependencyCount: 0 },
+  }),
+
   [teamMemberScout.id]: detail(teamMemberScout, {
     content: {
       kind: 'team_member',
@@ -1266,5 +1592,17 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [customRitual.id]: detail(customRitual, {
     content: { kind: 'c:ritual', fields: { cadence: 'daily', hour: 9, active: true, notes: null } },
+  }),
+
+  [artifactPulseBoard.id]: detail(artifactPulseBoard, {
+    content: {
+      kind: 'artifact',
+      description: 'A one-page dashboard: build state, open lanes and the merge queue at a glance.',
+      currentRevisionNumber: 3,
+      entrypoint: 'index.html',
+      manifestSha256: '9b3f2a10c4d5e6f7a8b9c0d1e2f30415263748596a7b8c9d0e1f2a3b4c5d6e7f',
+      fileCount: 1,
+      totalSizeBytes: 4096,
+    },
   }),
 };

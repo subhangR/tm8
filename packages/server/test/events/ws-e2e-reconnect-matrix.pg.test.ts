@@ -117,7 +117,7 @@ async function mutate(kind: MutationKind, label: string): Promise<void> {
   if (kind === 'task') {
     await db.rpc(claimsFor(memberA.identityId), 'public.create_task', [
       spaceId, label, memberA.memberId, '',
-      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      null, null, null, 'medium', null, null, null, null, null, 'attached_to',
       `cmid_${randomUUID()}`,
     ]);
     return;
@@ -159,7 +159,7 @@ beforeAll(async () => {
     claimsFor(memberA.identityId),
     'public.create_task',
     [spaceId, 'matrix anchor', memberA.memberId, '',
-      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      null, null, null, 'medium', null, null, null, null, null, 'attached_to',
       `cmid_${randomUUID()}`],
   );
   anchorTaskId = anchor.entity.id;

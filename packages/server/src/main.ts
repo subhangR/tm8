@@ -31,6 +31,7 @@ import {
   WorkspaceEventPublisher,
 } from './events/index.js';
 import { createExecutionRuntime, createLoopExecutorPort } from './facade/execution-handlers.js';
+import type { ExecutionRuntime } from './facade/execution-handlers.js';
 import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
 import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
@@ -54,12 +55,12 @@ import {
   resolveServerDataDir,
   type ServerConfig,
 } from './http/config.js';
-import { createArtifactPreviewServer } from './http/artifact-preview.js';
+import { createArtifactPreviewHandler, createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { autoOwnerResolver } from './http/security.js';
 import { announceNodeClaim } from './identity/node-claim-boot.js';
-import { createStaticHandler } from './http/static.js';
+import { createStaticHandler, UI_2_0_MOUNT_PATH } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
@@ -137,6 +138,13 @@ export interface BootstrappedServer {
   readonly events: WorkspaceEventPublisher;
   readonly url: string;
   /**
+   * The execution block, when this node has one. Exposed so whoever owns the
+   * process lifetime can call `recordShutdown` before exiting — the reason a
+   * session died is only knowable first-hand from the process it died with,
+   * and after that only inferable (171).
+   */
+  readonly execution?: ExecutionRuntime | undefined;
+  /**
    * The graph connection, when one was configured. Undefined on a
    * database-less node — see the guard in `bootstrap`. Callers that own the
    * process lifetime must `await db.end()` at shutdown.
@@ -154,11 +162,13 @@ export interface BootstrappedServer {
    */
   readonly delivery: { close(): Promise<void> } | undefined;
   /**
-   * The artifact-preview listener (design §9, second origin), when the node
-   * is configured with one AND has a database to resolve capabilities
-   * against. Narrowed to `url` + `close` for the same reason `delivery` is.
+   * The SECOND-ORIGIN artifact-preview listener (design §9), only when the
+   * node is explicitly configured with one (TM8_PREVIEW_HOST/PORT) AND has a
+   * database to resolve capabilities against. In the same-origin default the
+   * renderer is a `/p/` route on the app socket and this stays undefined.
+   * Narrowed to `url` + `close` for the same reason `delivery` is.
    */
-  readonly preview: { readonly url: string; close(): Promise<void> } | undefined;
+  readonly preview: { readonly url: string; readonly port: number; close(): Promise<void> } | undefined;
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrappedServer> {
@@ -580,7 +590,24 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // when background jobs are enabled below.
   let scheduler: Scheduler | undefined;
 
+  /**
+   * The DEFAULT preview deployment (amended 2026-08-16): the renderer mounted
+   * as the `/p/` route on the app socket. Same handler, same header set as
+   * the second-origin listener below — one code path by design. Only when a
+   * database exists to resolve capabilities against: a preview route that can
+   * authenticate nothing should not be mounted.
+   *
+   * Harness caveat: `config.preview.origin` is precomputed from the
+   * CONFIGURED port, so an in-process harness that substitutes `port: 0`
+   * after validation should substitute its preview config too if it needs
+   * `previewUrl` to carry the real ephemeral port.
+   */
+  const artifactPreviewRoute = config.preview?.sameOrigin && db && blobStore && owner
+    ? createArtifactPreviewHandler({ preview: config.preview, db, blobStore, owner })
+    : undefined;
+
   const server = createFacadeServer({
+    ...(artifactPreviewRoute ? { artifactPreviewRoute } : {}),
     config,
     registry,
     upgrades,
@@ -595,6 +622,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
+    // The 2.0 bundle, when an operator configured one. Mounted rather than
+    // rooted so both UIs share this origin — and therefore the session cookie,
+    // without which switching lands you on a sign-in wall.
+    ...(config.ui20Dir
+      ? {
+          staticMounts: [
+            createStaticHandler(config.ui20Dir, { mountPath: UI_2_0_MOUNT_PATH }),
+          ],
+        }
+      : {}),
   });
 
   const { url } = await server.listen();
@@ -616,13 +653,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   /**
    * The SECOND listener (design §9.2/§9.3): untrusted bundle content, on its
    * own origin, sharing no middleware with the app pipeline above. Started
-   * only when the config carries a preview origin — loadConfig has already
-   * refused to produce one that collides with the app origin — and only when
-   * a database exists to resolve capabilities against: a preview listener
-   * that can authenticate nothing should not be listening.
+   * only in explicit second-origin mode (TM8_PREVIEW_HOST/TM8_PREVIEW_PORT
+   * set — the same-origin default mounted the `/p/` route above instead) —
+   * loadConfig has already refused a second origin that collides with the
+   * app origin — and only when a database exists to resolve capabilities
+   * against: a preview listener that can authenticate nothing should not be
+   * listening.
    */
   let preview: BootstrappedServer['preview'];
-  if (config.preview && db && blobStore && owner) {
+  if (config.preview && !config.preview.sameOrigin && db && blobStore && owner) {
     const previewServer = createArtifactPreviewServer({
       preview: {
         ...config.preview,
@@ -638,7 +677,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       owner,
     });
     const listening = await previewServer.listen();
-    preview = { url: listening.url, close: () => previewServer.close() };
+    preview = { url: listening.url, port: listening.port, close: () => previewServer.close() };
     // Ride the composed server's close: every existing caller — harnesses
     // included — tears down with `server.close()` and must not leak the
     // second listener for not knowing it exists.
@@ -804,9 +843,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   }
 
   if (execution) {
-    const retired = await execution.reconcileGhosts();
-    if (retired > 0) {
-      console.log(`  reconciled: retired ${retired} ghost session(s) left by a previous run`);
+    const ghosts = await execution.reconcileGhosts();
+    if (ghosts.retired > 0) {
+      console.log(`  reconciled: retired ${ghosts.retired} ghost session(s) left by a previous run`);
+    }
+    // Printed for the same reason the worktree errors below are, and it is the
+    // omission of exactly this that hid a node reconciling nothing on every boot:
+    // a refusal here leaves rows claiming to be running with no process, which
+    // the UI paints as live agents and the concurrency cap counts forever.
+    for (const problem of ghosts.errors) {
+      console.log(`  ghost reconciliation could not finish: ${problem.message}`);
     }
     // Worktree allocations, same posture, same place in the sequence. Kept
     // separate from the ghost sweep because they answer different questions: a
@@ -851,25 +897,56 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     });
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview, scheduler };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution };
 }
 
 export async function main(): Promise<void> {
   try {
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
-    const { server, url, db, delivery, preview, scheduler } = await bootstrap({
+    const { server, url, db, delivery, preview, scheduler, execution } = await bootstrap({
       startBackgroundJobs: true,
       // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
       // launch-config resolver. Without this line the chat ships dead — the
       // orchestrator only exists when a runtime is injected (see compose.ts).
-      chat: composeChatBootstrap,
+      // TM8_CHAT_SKILLS_DIR, when set, is the tm8-curated Claude Code plugin
+      // directory that turns the chat `Skill` tool on; unset ⇒ Skill is offered
+      // but resolves nothing (no behaviour change).
+      chat: (chatCtx) => composeChatBootstrap({
+        ...chatCtx,
+        ...(process.env.TM8_CHAT_SKILLS_DIR?.trim()
+          ? { skillsPluginDir: process.env.TM8_CHAT_SKILLS_DIR.trim() }
+          : {}),
+      }),
     });
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
     console.log(
-      `  artifact preview: ${preview ? `${preview.url} (second origin, design §9)` : 'NOT RUNNING (needs a database and TM8_PREVIEW_ENABLED not 0)'}`,
+      `  artifact preview: ${
+        preview
+          // Both facts, because behind a TLS proxy they differ and each one
+          // answers a different question: the first is the URL a browser gets
+          // minted, the second is the socket nginx must be pointed at.
+          ? `${preview.url} (second origin, design §9; bound ${server.config.host}:${preview.port})`
+          : server.config.preview?.sameOrigin && db
+            ? `${url}/p/... (same-origin route on the app socket)`
+            : 'NOT RUNNING (needs a database and TM8_PREVIEW_ENABLED not 0)'
+      }`,
     );
+    // The prod version of this is a boot refusal (config.ts). Off prod it is
+    // this line, because the failure is otherwise INVISIBLE: the node boots,
+    // previews render, and the only thing standing between an agent-authored
+    // bundle and the session cookie is one CSP directive.
+    if (
+      server.config.preview?.sameOrigin
+      && server.config.publicOrigin?.startsWith('https:')
+    ) {
+      console.warn(
+        `  WARNING: previews are served SAME-ORIGIN from ${server.config.publicOrigin} — untrusted ` +
+          `bundle HTML on the origin that holds the session cookie, contained by the response CSP's ` +
+          `sandbox alone. Set TM8_PREVIEW_PUBLIC_ORIGIN to a separate hostname (design §9.2).`,
+      );
+    }
     console.log(
       `  catalog: ${router.mounted().length} HTTP operations mounted · ` +
         `${registry.size} implemented · the rest answer 501 not_implemented (DEV-13)`,
@@ -886,7 +963,24 @@ export async function main(): Promise<void> {
     // as a hang rather than as the clean exit it nearly was.
     const shutdown = (signal: string): void => {
       console.log(`\n${signal} — shutting down`);
-      void Promise.resolve(scheduler?.stop(2_000))
+      // FIRST, before anything is torn down: tell every live session why it is
+      // about to die (171). This process holds their PTYs, so they die with it
+      // either way — but this is the only moment the reason is known
+      // first-hand rather than inferred by the next process from an empty PTY
+      // map. Without it a deploy is indistinguishable, in the graph, from four
+      // agents finishing their work, which is exactly how 2026-08-22 11:04 hid.
+      //
+      // Bounded and non-throwing by contract (see recordShutdown), and awaited
+      // before the listener closes so the writes actually land. TimeoutStopSec
+      // on the unit remains the outer bound.
+      void Promise.resolve(execution?.recordShutdown(signal))
+        .catch(() => undefined)
+        .then((annotated) => {
+          if (typeof annotated === 'number' && annotated > 0) {
+            console.log(`  recorded shutdown reason on ${annotated} live session(s)`);
+          }
+        })
+        .then(() => scheduler?.stop(2_000))
         .catch(() => undefined)
         .then(() => server.close())
         .then(() => preview?.close())

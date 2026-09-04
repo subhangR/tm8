@@ -1,0 +1,57 @@
+.cv2-root .server-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--pn-ink) 35%, transparent);
+}
+.cv2-root .server-dialog {
+  width: min(340px, calc(100vw - 40px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  color: var(--pn-ink);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 14px;
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .server-dialog h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.cv2-root .server-dialog p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--pn-ink-3); }
+.cv2-root .server-dialog__field { display: flex; flex-direction: column; gap: 4px; }
+.cv2-root .server-dialog__field > span {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  color: var(--pn-ink-3);
+}
+.cv2-root .server-dialog__field input {
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font: 12px var(--pn-mono);
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  outline: none;
+}
+.cv2-root .server-dialog__field input:focus { border-color: var(--pn-brand); box-shadow: 0 0 0 2px var(--pn-brand-soft); }
+.cv2-root .server-dialog__auth-note { font-size: 10.5px; line-height: 1.45; color: var(--pn-ink-4); }
+.cv2-root .server-dialog__error { padding: 7px 9px; font-size: 11px; color: var(--pn-block); background: var(--pn-block-soft); border-radius: 6px; }
+.cv2-root .server-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
+.cv2-root .server-dialog__actions button {
+  padding: 5px 12px;
+  font: 600 12px var(--pn-ui);
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.cv2-root .server-dialog__actions button:disabled { opacity: .55; cursor: wait; }
+.cv2-root .server-dialog__actions .server-dialog__primary { color: var(--pn-paper); background: var(--pn-ink); border-color: var(--pn-ink); }

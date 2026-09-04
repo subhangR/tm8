@@ -1,0 +1,1653 @@
+/*
+ * T10 CHAT SURFACE — the channel destination, in chat grammar.
+ *
+ * LAYOUT: a chronological feed (oldest at top, newest at the bottom where the
+ * composer is), a 38px avatar gutter, bylines only on the first message of an
+ * author run, day dividers, and hover-revealed row actions. Density is the
+ * point: a row's resting height is its text, and everything else (actions,
+ * follow-row timestamps) surfaces on hover/focus without reflowing the feed.
+ *
+ * COLOUR: tokens only — `src/hex-ban.test.ts` scans this file and will fail the
+ * package on a raw hex. The palette maps used here are the package tokens:
+ * card/surface/line/ink scales, brand, and the status tones (run/wait/block/
+ * info/idle). Every token's light value inverts with the theme — which is the
+ * whole reason this surface needs no per-theme override (design law 8).
+ *
+ * MICRO TYPE stays in the D5 8.5–13px family as literals. The single global
+ * lever is `zoom: 1.1` on `.cv2-root`. If this reads small, the answer is
+ * never a per-element bump here.
+ *
+ * HAIRLINES follow the D-ledgered rule: `--pn-line` BOUNDS a component (the
+ * composer's top edge, the refusal card); soft hairlines SEPARATE repeated
+ * siblings. Feed rows get NEITHER — whitespace and the hover tint carry the
+ * row boundary; day dividers are the only ruled lines inside the feed.
+ *
+ * VISUAL PASS (Lane D): four deliberate moves on top of the above —
+ *   1. hierarchy: message text at full --pn-ink, metadata at ink-3/ink-4, so
+ *      a row reads name → text → meta in that order at a glance;
+ *   2. measure: `.chs-text` capped at 70ch — the row stays full-width, the
+ *      TEXT column does not;
+ *   3. rhythm: 14px opens an author group, 2px inside a run, 20px opens a
+ *      day — three visibly different gaps, three levels of grouping;
+ *   4. the composer is its own @container so its narrow layout answers to
+ *      the composer's width (thread pane vs channel column), not the root's.
+ */
+
+.chs-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  container-type: inline-size;
+  /* The reading surface's own top edge — the hub above it has no bottom rule,
+     and without this the feed scrolls straight into the hub's chips. */
+  border-top: 1px solid var(--pn-line);
+}
+
+/* --- "needs you" ----------------------------------------------------------
+ *
+ * A full-width strip above the feed, not a pill inside it: an agent blocked on
+ * a human is the highest-priority fact on the screen, and a row in the feed
+ * would scroll away from the reader who most needs it. Deliberately the same
+ * geometry and the same tone tokens as the terminal's `.term-needs-you`, so the
+ * two surfaces state the same fact in the same visual language — the point of
+ * the feature is that they agree.
+ */
+
+.chs-needs-you {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--pn-wait-soft);
+  border-bottom: 1px solid var(--pn-line);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-wait);
+}
+/* RECLASSIFICATION (Kinetic W3): "needs you" is a sentence to a person, not
+   machine output — it speaks Figtree at the interactive floor. The wait tone
+   is inherited from the strip; the tone system outranks the ink defaults. */
+.chs-needs-you__label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  flex: none;
+}
+.chs-needs-you__detail {
+  color: var(--pn-ink-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chs-needs-you .chs-chip-btn {
+  margin-left: auto;
+  flex: none;
+}
+
+/* --- the feed region ------------------------------------------------------ */
+
+.chs-feed {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--pn-space-4) var(--pn-space-4) var(--pn-space-3);
+}
+
+/* The bottom anchor: history grows upward from the composer, so a short feed
+   sits at the BOTTOM of the viewport like every chat, not floating at the top.
+   The spacer absorbs the free height and collapses to zero once the feed fills. */
+.chs-feed__spacer { flex: 1 0 0; }
+
+.chs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Browser-native virtualization: after the measured threshold, offscreen rows
+   retain DOM/focus semantics while layout and paint are skipped. ResizeObserver
+   replaces the fallback with the feed's measured mean row height. */
+.chs-list[data-virtualized='true'] > .chs-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--chs-measured-row-size, 72px);
+}
+
+/* RHYTHM: a new author (or a new thread root) opens a group — 14px above it.
+   Follow rows inside a run sit at 2px so the run reads as one utterance.
+   Activity rows are connective tissue and take an in-between 8px. */
+.chs-row {
+  position: relative;
+  margin-top: 14px;
+  border-radius: var(--pn-r-sm);
+  padding: 2px 8px;
+}
+
+.chs-row--follow { margin-top: 2px; }
+.chs-row--activity { margin-top: 8px; }
+.chs-row:first-child { margin-top: 0; }
+
+.chs-row:hover,
+.chs-row:focus-within { background: var(--pn-hover); }
+
+.chs-row__grid {
+  display: flex;
+  gap: 12px;
+  padding: 1px 0;
+}
+
+/* --- the avatar gutter ---------------------------------------------------- */
+
+.chs-gutter {
+  width: 38px;
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding-top: 2px;
+}
+
+.chs-gutter__time {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+/* A follow row's timestamp is hover-detail, not resting noise. Activity rows
+   keep theirs visible — they have no byline to answer "when" anywhere else. */
+.chs-row--follow .chs-gutter__time { opacity: 0; }
+.chs-row--follow:hover .chs-gutter__time,
+.chs-row--follow:focus-within .chs-gutter__time { opacity: 1; }
+
+.chs-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* --- own-message sidedness (user ruling 2026-08-18) ------------------------
+   The viewer's messages sit RIGHT in a brand-tinted bubble; everyone else
+   keeps the left column with avatar and byline. Purely presentational —
+   DOM order, clustering, day separators and thread footers are untouched,
+   and a feed with no `viewerActorId` draws no row as anyone's own. */
+.chs-row[data-own] .chs-row__body { align-items: flex-end; }
+.chs-row[data-own] .chs-byline { flex-direction: row-reverse; }
+.chs-row[data-own] .chs-text {
+  align-self: flex-end;
+  max-width: 80%;
+  width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-brand-soft);
+}
+/* The own avatar says nothing the sidedness doesn't; follow rows keep their
+   gutter timestamp so "when" survives. Geometry is kept, not collapsed. */
+.chs-row[data-own]:not(.chs-row--follow) .chs-gutter { visibility: hidden; }
+.chs-row[data-own] .chs-references,
+.chs-row[data-own] .chs-thread-footer { align-self: flex-end; }
+
+/* --- hover actions -------------------------------------------------------- */
+
+.chs-actions {
+  position: absolute;
+  /* Straddling the row's TOP-RIGHT corner, the chat convention: the hovered
+     row's own headroom absorbs the overlay, and it no longer covers the
+     reply footer or the next row's byline (which are interactive; the
+     previous placement sat exactly on them). Message text is left-aligned
+     and measure-capped, so a row's top-right corner is reliably empty. */
+  top: -12px;
+  right: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 3px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-md);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chs-row:hover .chs-actions,
+.chs-row:focus-within .chs-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* --- message rows --------------------------------------------------------- */
+
+.chs-byline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A member's NAME is a word about a person (Kinetic W3): ui 14/600. */
+.chs-byline__who {
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-tight);
+  color: var(--pn-ink);
+}
+
+/* Provenance as TEXT beside the avatar's shape — never shape alone. A soft
+   tinted badge instead of a hairline box: it must be legible at a glance
+   without out-shouting the author's name it qualifies. */
+.chs-byline__kind {
+  /* An eyebrow, not data: "agent" is a word qualifying a person's name, so it
+     wears the caps face at eyebrow metrics (Kinetic W3). */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-info);
+  background: var(--pn-info-soft);
+  border-radius: var(--pn-r-xs);
+  padding: 0.5px 5px;
+}
+
+/* The timestamp is DATA and stays mono; "edited" is a word about the message
+   and speaks the meta voice (ui label/500 — same split as chat-home's meta
+   row, where only the model name and the <time> stayed mono). */
+.chs-byline__time {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+
+.chs-byline__edited {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  color: var(--pn-ink-3);
+}
+
+.chs-byline__gap { flex: 1; }
+
+/* The message body is a MARKDOWN root (kit/Markdown), not a paragraph.
+   `.md-root` is `.cv2-root .md-root` in markdown.css, so every rule here
+   qualifies with both classes to outrank it regardless of import order — the
+   doc surfaces read in a serif column at doc size, and a chat line must not.
+   No `white-space: pre-wrap`: line breaks are hard breaks in the source now,
+   and pre-wrap would double the spacing of every list and table. */
+.cv2-root .md-root.chs-text {
+  margin: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: 1.55;
+  /* Full ink: the message is the primary content of this screen, and it must
+     sit a clear step above its own metadata (ink-3/ink-4), which body-at-ink-2
+     never did. */
+  color: var(--pn-ink);
+  /* Measure cap. On a wide panel an uncapped chat line runs past 100
+     characters and the eye loses the return sweep; ~70ch is the widest a
+     13px line stays effortless. The row itself stays full-width (hover tint,
+     actions), only the text column is bounded. */
+  max-width: 70ch;
+  text-wrap: pretty;
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+/* AN IN-FLIGHT TURN THAT HAS NOT EMITTED A PART YET.
+   Not a Markdown root, so it does not inherit `.md-root.chs-text` above — the
+   type facts it needs are repeated rather than shared, because the alternative
+   is rendering the stored body through Markdown, and that body is the claim
+   placeholder rather than anything the agent said (contract.ts:857-859).
+   Dimmed and italic so it reads as a STATUS, never as content. */
+.cv2-root .chs-text--pending {
+  margin: 0;
+  font-family: var(--pn-ui);
+  /* --pn-fs-sm IS 13px (tokens.css:71): this is the same rendered size, said
+     through the scale. #384 added this rule with a literal; #392's sweep and
+     its ban test were written against a base that predated it, so neither
+     side's CI ever saw the other. */
+  font-size: var(--pn-fs-sm);
+  line-height: 1.55;
+  color: var(--pn-ink-3);
+  font-style: italic;
+}
+
+/* A message is a chat line, so its blocks sit tight and its last one adds no
+   trailing gap above the delivery row. */
+.cv2-root .md-root.chs-text p,
+.cv2-root .md-root.chs-text ul,
+.cv2-root .md-root.chs-text ol,
+.cv2-root .md-root.chs-text blockquote,
+.cv2-root .md-root.chs-text .md-fence,
+.cv2-root .md-root.chs-text .md-tablewrap,
+.cv2-root .md-root.chs-text .md-mermaid { margin-bottom: 0.5em; }
+.cv2-root .md-root.chs-text > :last-child { margin-bottom: 0; }
+
+/* Headings inside a message are EMPHASIS, not chapters: the doc treatment
+   (serif h1 with a rule under it) would tower over the row it lives in. */
+.cv2-root .md-root.chs-text h1,
+.cv2-root .md-root.chs-text h2,
+.cv2-root .md-root.chs-text h3,
+.cv2-root .md-root.chs-text h4,
+.cv2-root .md-root.chs-text h5,
+.cv2-root .md-root.chs-text h6 {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.7em 0 0.3em;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.cv2-root .md-root.chs-text h1 { font-family: var(--pn-ui); font-size: var(--pn-fs-body); }
+
+/* A canonical mention, in place in the sentence it was typed in. */
+.chs-mention-inline {
+  display: inline;
+  border: none;
+  margin: 0;
+  padding: 0 3px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chs-mention-inline:hover { text-decoration: underline; }
+
+/* The reply quote — one compact line, all of it the jump control. */
+.chs-parent { display: flex; min-width: 0; }
+
+.chs-parent__jump {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  border: none;
+  border-left: 2px solid var(--pn-brand);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
+  padding: 2px 8px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chs-parent__glyph { color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
+.chs-parent__label { color: var(--pn-ink-4); flex: none; }
+.chs-parent__author { color: var(--pn-ink-2); font-weight: 600; flex: none; }
+
+.chs-parent__excerpt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cross-surface provenance — rendered only when it is news (foreign anchor or
+   source session), so it reads as context, not as boilerplate. */
+/* The meta row's VOICE ("from session …", "in …") is Figtree at meta size;
+   the session id itself stays mono inside `.chs-session-chip` — the same
+   words/data split as chat-home's thread meta (Kinetic W3). */
+.chs-message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  color: var(--pn-ink-4);
+}
+
+.chs-message-meta__part,
+.chs-references,
+.chs-mentions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chs-session-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  list-style: none;
+  margin: 1px 0 0;
+  padding: 0;
+}
+
+.chs-session-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  padding: 2px 8px;
+  color: var(--pn-ink-2);
+  font: var(--pn-fs-fine) var(--pn-mono);
+}
+
+button.chs-session-chip { cursor: pointer; }
+button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-brand); }
+
+.chs-references { margin-top: 2px; }
+.chs-mentions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The attachment row's own rules moved to `files/message-attachments.css` with
+   the component — the feed and the Chat transcript now draw the same one, and
+   a chip face that lives in one surface's stylesheet is only styled on that
+   surface. Nothing about this row's appearance changed here. */
+
+.chs-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+}
+
+.chs-ref-chip:hover { background: var(--pn-hover); border-color: var(--pn-line); }
+
+.chs-ref-chip { color: var(--pn-brand); }
+
+.chs-delivery { display: inline-flex; align-self: center; }
+
+/* --- per-target delivery (S20) -------------------------------------------- */
+
+.chs-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  margin-top: 2px;
+}
+
+.chs-targets__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chs-targets__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+}
+
+.chs-targets__name { color: var(--pn-ink-2); }
+.chs-targets__reason { color: var(--pn-ink-4); overflow-wrap: anywhere; }
+
+/* Tones mirror the badge exactly — one status must never read two ways. */
+.chs-targets__state--run { color: var(--pn-run); }
+.chs-targets__state--wait { color: var(--pn-wait); }
+.chs-targets__state--block { color: var(--pn-block); }
+.chs-targets__state--info { color: var(--pn-info); }
+.chs-targets__state--idle { color: var(--pn-idle); }
+.chs-targets__state--brand { color: var(--pn-brand); }
+
+/* --- activity rows -------------------------------------------------------- */
+
+.chs-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding-top: 1px;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.chs-state__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-idle);
+  flex: none;
+}
+
+.chs-state__actor { color: var(--pn-ink-2); font-weight: 600; }
+.chs-inline-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.chs-artifact__provenance {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.chs-state__from,
+.chs-state__to {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 5px;
+}
+
+.chs-state__from { color: var(--pn-ink-4); }
+.chs-state__to { color: var(--pn-ink-2); }
+.chs-state__arrow { color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
+
+.chs-artifact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  padding: 7px 10px;
+}
+
+/* The kind badge is an EYEBROW (Kinetic W3): "task"/"doc" are words, so they
+   wear the caps face at eyebrow metrics, not the data face. */
+.chs-artifact__kind {
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  padding: 0 7px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
+  color: var(--pn-ink-3);
+  font: 700 var(--pn-fs-micro) var(--pn-caps);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-label);
+}
+.chs-artifact__title { color: var(--pn-ink); font-size: var(--pn-fs-label); min-width: 0; overflow-wrap: anywhere; }
+.chs-artifact__excerpt { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); min-width: 0; overflow-wrap: anywhere; }
+/* "changed by …" is a sentence — meta VOICE is ui label/500 (chat-home's
+   split); the inline session id rides along because it has no element of its
+   own to stay mono in. */
+.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: 500 var(--pn-fs-label) var(--pn-ui); }
+
+/*
+ * The safe card (S15). Dashed, because a dashed edge reads as "provisional"
+ * in this palette's existing vocabulary — the same signal the tombstone uses.
+ * It is deliberately NOT alarming: an unknown variant is the feed being newer
+ * than the renderer, which is expected, not broken.
+ */
+/* These cards speak SENTENCES to a reader ("message … redacted — replies keep
+   their place"), so the voice is ui at reading size (Kinetic W3, same call as
+   the refusal card); only the variant chip below stays mono — a verb string
+   the renderer did not recognise is machine output by definition. */
+.chs-unknown,
+.chs-tomb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 5px 10px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.chs-unknown__label { font-weight: 500; color: var(--pn-ink-2); }
+
+.chs-unknown__variant {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 5px;
+}
+
+.chs-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chs-group__glyph { color: var(--pn-ink-4); font-size: var(--pn-fs-micro); }
+.chs-group__text { font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
+
+.chs-group__rows {
+  list-style: none;
+  margin: 0 0 0 5px;
+  padding-left: 19px;
+  border-left: 1px solid var(--pn-line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-4);
+}
+
+/* --- day dividers --------------------------------------------------------- */
+
+.chs-day {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: var(--pn-space-5);
+  padding: var(--pn-space-1) 8px var(--pn-space-2);
+}
+
+.chs-day:first-child { margin-top: 0; }
+
+.chs-day::before,
+.chs-day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--pn-line);
+}
+
+.chs-day__label {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+/* --- the client-local new-since divider ----------------------------------- */
+
+/* "NEW SINCE OPENED · CLIENT-LOCAL" is a label, and an already-uppercase one:
+   an eyebrow (caps 11/700 — Kinetic W3), never the data face. */
+.chs-mark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--pn-brand);
+}
+
+.chs-mark::before,
+.chs-mark::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--pn-brand-soft);
+}
+
+/* A button with words on it speaks ui 600 at the interactive floor (Kinetic
+   W3 button grammar); it keeps its pill shape and 44px height — a floating
+   jump control, not a row action. */
+.chs-new-items {
+  position: sticky;
+  z-index: 3;
+  top: 4px;
+  align-self: center;
+  min-height: 44px;
+  border: 1px solid var(--pn-brand);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-brand);
+  padding: 5px 14px;
+  font: 600 var(--pn-fs-sm) var(--pn-ui);
+  cursor: pointer;
+}
+
+/* --- states --------------------------------------------------------------- */
+
+.chs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: var(--pn-space-8) var(--pn-space-5);
+  text-align: center;
+}
+
+.chs-empty__glyph { font-size: var(--pn-fs-h2); color: var(--pn-ink-4); }
+.chs-empty__headline { margin: 0; font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink); }
+
+.chs-empty__note {
+  margin: 0;
+  max-width: 42ch;
+  /* Empty-state prose at the reclassification's floor: ui 13. */
+  font-size: var(--pn-fs-sm);
+  line-height: 1.55;
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+
+/* Honesty sentences at reading size, in the ui voice (Kinetic W3 — same call
+   as chat-home's .tch-hollow). */
+.chs-hollow,
+.chs-notice {
+  margin: 0;
+  padding: 6px 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.chs-notice { color: var(--pn-wait); }
+
+.chs-skeleton {
+  height: 34px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+}
+
+.chs-list--skeleton { gap: 8px; }
+
+.chs-root--refused { justify-content: center; }
+
+.chs-refusal {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 44ch;
+  padding: 24px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  text-align: center;
+}
+
+.chs-refusal__glyph { font-size: 20px; color: var(--pn-ink-4); }
+.chs-refusal__headline { margin: 0; font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink-2); }
+/* A refusal sentence speaks UI at reading size (wave-3 precedent). */
+.chs-refusal__note { margin: 0; font-size: var(--pn-fs-sm); line-height: 1.5; color: var(--pn-ink-3); }
+
+.chs-earlier {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 8px;
+}
+
+/* At the TOP of the feed (D2), above "load earlier ↑": the rule sits under
+   the line, marking the paging boundary it describes. */
+.chs-provenance {
+  margin: 0 0 var(--pn-space-2);
+  padding-bottom: var(--pn-space-2);
+  border-bottom: 1px solid var(--pn-line);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  letter-spacing: 0.02em;
+  color: var(--pn-ink-4);
+}
+
+/* --- the composer --------------------------------------------------------- */
+
+.chs-composer {
+  flex: none;
+  /* The positioning context for `.chs-mention-picker`, which pins itself to
+     this element's top edge with `bottom: 100%`. Without this the popover
+     resolves against a distant ancestor and lands nowhere near the composer. */
+  position: relative;
+  /* Its OWN query container: the composer lives at two very different widths
+     (the channel column and the ~360px thread pane), and the narrow-composer
+     rules below must answer to the composer's width, not the root's — inside
+     the thread pane the root is wide while the composer is not, and the
+     un-wrapped row used to push Send past the pane's edge. */
+  container-type: inline-size;
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  padding: var(--pn-space-3) var(--pn-space-4) 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The card and its warnings track Chat Home's width: centred on the feed,
+   capped at the same 760px reading measure. The pickers are absolutely
+   positioned popovers and opt out. */
+.chs-composer > :not(.chs-mention-picker) {
+  box-sizing: border-box;
+  width: min(760px, 100%);
+  margin-inline: auto;
+}
+
+.chs-mention-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Composer chips wear the kit grammar's compact metrics (Kinetic W3): 28px
+   box, bordered, r-sm, and the chip's word — a person's name — at the
+   interactive floor. */
+.chs-mention-list > li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 0 5px 0 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+}
+
+.chs-mention-list button {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-brand);
+  cursor: pointer;
+}
+
+/**
+ * A POPOVER, not a block in the composer's flow. It floats above the composer
+ * so opening it never reflows the message being written — the textarea does
+ * not move under the caret mid-sentence. `bottom: 100%` pins it to the top
+ * edge of `.chs-composer`, which is `position: relative` for this reason.
+ */
+.chs-mention-picker {
+  position: absolute;
+  bottom: 100%;
+  left: 16px;   /* matches .chs-composer's 16px side padding */
+  right: 16px;
+  /* Anchored left and capped, rather than stretched edge to edge: a name and
+     its one-line reason belong together, and a full-width row strands the
+     reason a screen away from the name it explains. `right` stays set so the
+     cap yields on containers narrower than it. */
+  max-width: 420px;
+  z-index: 30;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+}
+
+.chs-mention-picker__query {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-fine);
+}
+
+/* The workspace-attach picker's own search field — unlike the `@` list, this
+   popover is not driven from the textarea, so it carries its own input. */
+.chs-attach-search {
+  margin: 6px;
+  min-height: 32px;
+  padding: 4px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  outline: none;
+}
+
+.chs-attach-search:focus { border-color: var(--pn-brand); }
+
+/* The kind tag on an attached-entity chip ("task" / "doc") — an eyebrow:
+   caps 11/700 (Kinetic W3), because a kind is a word, not machine output. */
+.chs-attach-kind {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 4px;
+}
+
+/**
+ * ONE COLUMN. A grid put targets side by side, which reads as a palette of
+ * chips and makes ↑/↓ ambiguous — with two columns "down" has two meanings.
+ * A single column gives the arrow keys exactly one axis.
+ *
+ * The height is cut to ~5 rows (5 × 44px targets + gaps) so the list always
+ * announces itself as scrollable rather than growing until it covers the feed.
+ */
+.chs-mention-picker [role='listbox'] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 238px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+}
+
+.chs-mention-picker button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.chs-mention-picker button:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
+
+/**
+ * THE KEYBOARD HIGHLIGHT. Without this the arrow keys move an invisible
+ * cursor and Enter commits a row the user cannot see — the navigation is
+ * only as useful as this rule. Toned with the brand accent so it outranks
+ * the hover tint when the mouse happens to rest on a different row.
+ */
+.chs-mention-picker button[data-active='true'] {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+}
+
+.chs-mention-picker__identity { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+/* The row's qualifier ("agent" / "member" / "skill") is a word about the row,
+   not machine output — meta voice, ui label/500 (Kinetic W3). */
+.chs-mention-picker button span:last-child { color: var(--pn-ink-3); font: 500 var(--pn-fs-label) var(--pn-ui); }
+.chs-mention-picker__empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--pn-ink-4);
+  /* An empty-state sentence at the reclassification's floor. */
+  font-size: var(--pn-fs-sm);
+}
+
+.chs-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* The field is the shared card's (`.ri-card textarea` in rich-input.css) —
+   borderless inside the bordered card, exactly as Chat Home draws it. */
+
+/* Send matches Chat Home's: a compact primary at the foot's end, on the kit
+   grammar's compact metrics (Kinetic W3) — 28px box, r-sm, ui 600 at the
+   interactive floor, exactly as `.tch-send` wears them. */
+.chs-composer__send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  margin-left: var(--pn-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.chs-composer__send:hover:not(:disabled) { background: var(--pn-brand); }
+
+.chs-composer__send:disabled { opacity: 0.42; cursor: default; }
+
+/*
+ * The exited-session warning is WAIT-toned, not BLOCK-toned, and that is a
+ * deliberate reading of S21: storing a message on an exited session is a
+ * permitted, successful write whose consequence is smaller than the user might
+ * assume. Colouring it as an error would refuse something we are in fact doing.
+ */
+.chs-composer__warn {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--pn-wait-soft);
+  border: 1px solid var(--pn-wait-soft);
+  border-radius: var(--pn-r-sm);
+  padding: 5px 10px;
+  /* Warning sentences read at the reclassification's floor (ui 13). */
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-wait);
+}
+
+.chs-composer__error {
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+  font-size: var(--pn-fs-sm);
+  line-height: 1.45;
+}
+
+.chs-composer__uncertain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--pn-wait);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+  font-size: var(--pn-fs-sm);
+  line-height: 1.4;
+}
+.chs-composer__uncertain span { flex: 1; }
+.chs-composer__uncertain button {
+  min-height: 44px;
+  border: 1px solid currentColor;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chs-replying {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--pn-line-2);
+  border-left: 2px solid var(--pn-brand);
+  border-radius: var(--pn-r-sm);
+  padding: 4px 9px;
+  background: var(--pn-surface);
+}
+
+/* "REPLYING TO …" is an eyebrow — already uppercase in the source (no CSS
+   transform here: it carries the person's name, whose case is theirs). */
+.chs-replying__label {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-brand);
+  flex: none;
+}
+
+.chs-replying__excerpt {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The keyboard tip rides in the card's foot, pushed against Send — the same
+   seat Chat Home gives it. */
+.chs-composer__hint {
+  margin: 0 0 0 auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+/* --- shared small controls ------------------------------------------------ */
+
+/* Buttons with words on them ("Open the terminal", "load earlier ↑") wear the
+   kit grammar's compact metrics (Kinetic W3): 28px box, bordered, r-sm,
+   ui 600 at the interactive floor, hover fill. */
+.chs-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.chs-chip-btn:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.chs-chip-btn:disabled { color: var(--pn-ink-4); cursor: default; }
+
+/* The load-earlier control keeps a full touch target — it stands alone. */
+.chs-earlier .chs-chip-btn,
+.chs-earlier .hon-disabled { min-height: 44px; min-width: 44px; }
+
+/* "open details →" is a button word (Kinetic W3): ui at the interactive
+   floor; the brand + underline stay — they are the link affordance. */
+.chs-linkbtn {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-brand);
+  background: transparent;
+  border: none;
+  padding: 0 4px;
+  cursor: pointer;
+  text-decoration: underline;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  white-space: normal;
+}
+
+/* Compact by default, like Chat Home's footer sigils; the 440px container
+   block below restores full 44px touch targets where fingers do the work. */
+.chs-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pn-ink-4);
+  background: transparent;
+  border: none;
+  font-size: var(--pn-fs-label);
+  line-height: 1;
+  padding: 4px;
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  flex: none;
+  min-width: 26px;
+  min-height: 26px;
+}
+
+.chs-iconbtn:hover { color: var(--pn-brand); }
+
+.chs-actions .hon-disabled {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ri-card__foot .hon-disabled {
+  min-width: 26px;
+  min-height: 26px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where(
+  .chs-iconbtn,
+  .chs-linkbtn,
+  .chs-chip-btn,
+  .chs-composer__send,
+  .chs-new-items,
+  .chs-upload button,
+  .chs-mention-list button,
+  .chs-mention-picker button,
+  .chs-mention-picker input,
+  .chs-composer__input,
+  .chs-ref-chip,
+  .chs-mention-inline,
+  .chs-parent__jump,
+  .chs-thread-footer__open,
+  .chs-thread__close,
+  .chs-thread__back
+):focus-visible {
+  /* The ONE focus grammar (Kinetic W3): the kit's --pn-focus ring, same
+     fallback chain as panels/auth wave 1. */
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+
+/* --- the thread split (slice 2) -------------------------------------------
+ *
+ * The channel's three-column shape, inner half: feed+composer is one column,
+ * the open thread the next — same aside-beside-a-feed pattern as
+ * `chv-split`/`chv-aside` and the WorkspaceGrid side tracks, solved at THIS
+ * container so both hosts (route and panel) inherit one collapse behaviour.
+ */
+
+.chs-columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+.chs-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chs-thread {
+  flex: 0 0 clamp(280px, 42cqw, 420px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* `--pn-line` BOUNDS a component — this hairline is the pane's edge. */
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+
+.chs-thread__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 8px 4px 14px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+/* The breadcrumb is the COLLAPSED escape hatch; at full width the feed is
+   beside the pane and ✕ is the dismiss. One wired fact, one visible control. */
+.chs-thread__back { display: none; }
+/* "Thread" is an eyebrow — caps 11/700 (Kinetic W3), never the data face. */
+.chs-thread__title {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-2);
+}
+.chs-thread__close {
+  margin-left: auto;
+  min-width: 32px;
+  min-height: 32px;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+.chs-thread__close:hover { background: var(--pn-hover); color: var(--pn-ink); }
+
+.chs-thread__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--pn-space-3) var(--pn-space-3) var(--pn-space-2);
+}
+
+.chs-thread__root { flex: none; }
+
+.chs-thread__divider {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: var(--pn-space-2) 0 var(--pn-space-1);
+  /* The divider label ("n replies") is an eyebrow, not data (Kinetic W3). */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+/* The soft hairline SEPARATES repeated siblings — root above, branch below. */
+.chs-thread__divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--pn-x-hairline-soft, var(--pn-line));
+}
+
+.chs-thread__empty {
+  margin: var(--pn-space-2) 0;
+  /* Empty-state prose at the reclassification's floor. */
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.chs-thread__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: var(--pn-space-2) 0;
+  padding: 6px 10px;
+  border: 1px solid var(--pn-block, var(--pn-line));
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-block-soft, transparent);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-block, inherit);
+}
+
+/* --- the thread footer ----------------------------------------------------
+ *
+ * PERSISTENT, not hover — an unseen thread is a lost thread. The whole line
+ * is one click target.
+ */
+
+.chs-thread-footer { margin-top: 4px; }
+.chs-thread-footer__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  padding: 2px 8px 2px 3px;
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand);
+  cursor: pointer;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.chs-thread-footer__open:hover {
+  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand-soft);
+}
+.chs-thread-footer__glyph { font-size: var(--pn-fs-tick); color: var(--pn-brand-2); }
+.chs-thread-footer__count { font-weight: 700; }
+.chs-thread-footer__faces {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.chs-thread-footer__names,
+.chs-thread-footer__when { color: var(--pn-ink-3); }
+.chs-thread-footer__when { font-family: var(--pn-mono); font-size: var(--pn-fs-fine); }
+
+/* Below the collapse threshold an open thread REPLACES the feed — a channel
+   and its thread do not fit side by side, and a 180px feed sliver beside a
+   180px pane serves neither. The breadcrumb takes over from ✕ as the one
+   way back to the channel. */
+@container (max-width: 640px) {
+  .chs-root[data-thread-open='true'] .chs-main { display: none; }
+  .chs-root[data-thread-open='true'] .chs-thread { flex: 1 1 auto; border-left: none; }
+  .chs-thread__back {
+    display: inline-flex;
+    align-items: center;
+    border: none;
+    background: none;
+    padding: 4px 6px;
+    font: inherit;
+    font-size: var(--pn-fs-label);
+    color: var(--pn-brand);
+    cursor: pointer;
+  }
+  .chs-thread__close { display: none; }
+}
+
+@container (max-width: 440px) {
+  .chs-feed { padding-inline: 8px; }
+  .chs-gutter { width: 30px; }
+  .chs-byline { flex-wrap: wrap; }
+  .chs-message-meta { flex-wrap: wrap; }
+  .chs-parent__jump { flex-wrap: wrap; }
+  .chs-targets__row { flex-wrap: wrap; }
+  /* No hover on touch: actions stay reachable as a permanent overlay,
+     anchored to the row's top-right like the pointer state. */
+  .chs-actions { opacity: 1; pointer-events: auto; top: -12px; right: 8px; left: auto; }
+  .chs-artifact { grid-template-columns: auto minmax(0, 1fr); }
+  .chs-artifact .chs-linkbtn { grid-column: 1 / -1; justify-self: start; }
+  .chs-composer { padding-inline: 8px; }
+  /* Touch targets grow back to the full 44px where fingers do the work. */
+  .chs-composer__send { min-height: 44px; }
+  .chs-iconbtn { min-width: 44px; min-height: 44px; }
+}
+
+/* The composer is its own query container (see `.chs-composer`), so this
+   answers to the COMPOSER's width — narrow both on a small screen and
+   inside the thread pane on a large one. The card stacks field-over-foot
+   at every width; only copy sheds here, exactly as Chat Home's foot does. */
+@container (max-width: 520px) {
+  .chs-composer__hint { display: none; }
+  .chs-composer__uncertain { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chs-root *,
+  .chs-root *::before,
+  .chs-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .chs-root { forced-color-adjust: auto; }
+  .chs-artifact,
+  .ri-attachment,
+  .chs-mention-picker,
+  .chs-ref-chip,
+  .chs-actions,
+  .chs-parent__jump,
+  .chs-tomb,
+  .chs-unknown { border-color: CanvasText; }
+  .chs-new-items,
+  .chs-composer__send { border: 1px solid ButtonText; }
+  :where(button, textarea, input):focus-visible { outline: 3px solid Highlight; }
+}
+
+/* --- turn graph — the in-feed row that stands in for a turn's activity ----- */
+
+.chs-turn-graph {
+  list-style: none;
+  margin: var(--pn-space-2) var(--pn-space-4);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-paper);
+  overflow: hidden;
+}
+
+.chs-turn-graph__caption {
+  margin: 0;
+  padding: var(--pn-space-1) var(--pn-space-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+/* Compact: the row shares the strip's canvas but sits inside a transcript,
+   so it takes less height and is never sticky. The fresh-node animation is
+   inside `.chs-root`, whose reduced-motion rule above already stills it. */
+.chs-turn-graph .chs-livegraph__canvas {
+  height: 200px;
+  border-top: 0;
+}
+
+/* --- live graph strip — the collapsible whole-conversation strip ----------- */
+
+/* Sticky: the strip is the first child of a scrolling transcript, so without
+   this it scrolls off the top and a live graph becomes invisible the moment
+   the conversation is longer than the viewport. */
+.chs-livegraph {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+
+.chs-livegraph__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  /* A button word at the interactive floor (Kinetic W3); the count beside it
+     stays mono — it is the data in the row. */
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  padding: var(--pn-space-1) var(--pn-space-4);
+  cursor: pointer;
+  text-align: left;
+}
+
+.chs-livegraph__toggle:hover { background: var(--pn-hover); }
+
+.chs-livegraph__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.chs-livegraph__canvas {
+  height: 260px;
+  overflow: hidden;
+  background: var(--pn-paper);
+  border-top: 1px solid var(--pn-line);
+}
+
+/* The most recently touched node breathes once so live growth is visible. */
+.chs-livegraph__cell--fresh .sg-box {
+  stroke: var(--pn-brand);
+  animation: chs-livegraph-fresh var(--pn-dur-slow) var(--pn-ease-standard) 1;
+}
+
+@keyframes chs-livegraph-fresh {
+  from { stroke-width: 2.5; }
+  to { stroke-width: 1; }
+}
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-039, plus the thread-nav controls named below.
+
+   The `@container (max-width: 440px)` block above is NOT this. It answers to
+   the channel container's own width, so it fires inside a narrow desktop panel
+   too — which is why it stops at the two controls that were safe to grow
+   anywhere. This block answers to the SHELL, and only the phone has one.
+   ========================================================================== */
+
+/* --- DEF-039 — the type floor, applied at the TOKENS ---------------------- */
+
+/* Same reasoning as `chat-home.css`: the run reports a tinyText COUNT and a
+   six-element SAMPLE beside it, so a per-class list fixes the ones visible in
+   the sample and ships the rest. This file alone reads the three small steps
+   of the scale 52 times. Lifting them inside `.chs-root` reaches all of them.
+
+   12px is derived, not chosen: across all 283 tinyText findings in the run the
+   largest size ever flagged is 11.5, and nothing at 12 or above appears. Prose
+   takes 13. */
+.cv2-root[data-shell='mobile'] .chs-root {
+  --pn-fs-tick: 12px;
+  --pn-fs-fine: 12px;
+  --pn-fs-micro: 13px;
+}
+
+/* THE GUTTER IS WIDENED WITH THE TYPE IT HOLDS, and this is the row that made
+   the rule worth stating. `.chs-gutter` is `flex: none; width: 38px` — 30px
+   under the 440 container query — and `.chs-gutter__time` is a `nowrap` mono
+   timestamp inside it. Growing the type without growing the box gives a
+   timestamp that overflows its own container to the LEFT, which is invisible
+   to the instrument twice over: it is not a right-edge offender, so
+   `offenders[]` never sees it, and per DEF-037 nothing here measures vertical
+   or leading-edge clipping at all. It would have read as a clean fix.
+
+   IT IS SIZED TO ITS CONTENT RATHER THAN TO A NEW NUMBER, and that is the rule
+   rather than a detail of it. My first version of this line was `width: 46px`,
+   computed from "12:16" at 12px mono — which is a guess about the LOCALE, not
+   a measurement. A 12-hour format ("12:16 PM") is three characters longer and
+   would have clipped in exactly the way this rule exists to stop. `width:
+   auto` under a floor cannot be wrong about a string it has not seen, and
+   `.chs-row__body` is `flex: 1; min-width: 0`, so it absorbs whatever the
+   gutter takes. */
+.cv2-root[data-shell='mobile'] .chs-gutter {
+  width: auto;
+  min-width: 38px;
+}
+
+/* --- the thread-nav controls under the bar -------------------------------- */
+
+/* NOT LEDGER ROWS, AND I AM NOT CLAIMING THEM AS SUCH — triage is the only
+   writer of `lane` (RULE R9). They are in `tapWorst` for
+   `results[surface=chat-channel, viewport=phone-430]` in the before-run
+   alongside DEF-028's `chv-tab`, they are in Lane A's files, and thread
+   navigation is this task's stated work. Leaving known sub-44 controls on my
+   own surface while reporting the surface clean is the narrow pass this
+   ledger's §6b exists to catch. They are fixed here and reported to triage as
+   unfiled findings, for triage to row or decline.
+
+   `chs-thread-footer__open` — 299x23 and 246x23, three of them. "Open thread ·
+   3 replies" is how a phone reader reaches a thread at all.
+   `chs-linkbtn` — 84x24, twice. */
+.cv2-root[data-shell='mobile'] .chs-thread-footer__open {
+  min-block-size: var(--mobile-touch-min);
+  padding-block: var(--pn-space-1);
+}
+
+.cv2-root[data-shell='mobile'] .chs-linkbtn {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-2);
+}
+
+/* Send is 57x44 already — the 440 container query grew it — but it reads at
+   11px, which is the DEF-048 shape the gate filed against its own work: a 44px
+   button with type nobody can read is tappable and unreadable. The token lift
+   above carries it to 13. Its min-inline-size is restated so the two composers
+   agree; Chat Home's `.tch-send` takes the same floor. */
+.cv2-root[data-shell='mobile'] .chs-composer__send {
+  min-inline-size: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}

@@ -23,6 +23,25 @@ export interface OperationBinding {
   path: string;
   kind: OperationKind;
   status: OperationStatus;
+  /**
+   * THIS ROW RE-DECLARES AN EXISTING BINDING; it does not add a mount.
+   *
+   * Every other row owns its `method path` pair exclusively, and the
+   * conformance generator asserts that — a duplicate binding is normally a
+   * copy-paste defect that would shadow a real route. One case is legitimate:
+   * a family wants its socket DISCOVERABLE under its own name while sharing
+   * one physical endpoint with another family (`containers.stream` and
+   * `events.subscribe` are both `WS /v2/ws`; the socket dispatches on the
+   * grant, per TM8-CONTAINERS-DESIGN §4.1).
+   *
+   * Declaring it here is what keeps the uniqueness invariant's teeth: an
+   * alias is legal ONLY when it says so and names what it aliases, so any
+   * duplicate that is a mistake still fails. Anything that MOUNTS routes
+   * (the HTTP router, the WS upgrade handler, the router inventory) must skip
+   * alias rows; anything that LISTS operations (discovery, the CLI catalog,
+   * help) must include them — being listed is the entire point.
+   */
+  aliasOf?: string;
 }
 
 export const BASE_PATH = '/v2';
@@ -52,6 +71,20 @@ export const OPERATIONS = [
   { name: 'spaces.taskAxes.create',  method: 'POST',   path: '/v2/spaces/:spaceId/task-axes',               kind: 'command', status: 'v1' },
   { name: 'spaces.taskAxes.update',  method: 'PATCH',  path: '/v2/spaces/:spaceId/task-axes/:axisId',       kind: 'command', status: 'v1' },
   { name: 'spaces.taskAxes.delete',  method: 'DELETE', path: '/v2/spaces/:spaceId/task-axes/:axisId',       kind: 'command', status: 'v1' },
+  // W4 (132): per-type status vocabularies. Upsert, not create+update — the
+  // natural key is (space, type value) and the UI edits one row per value.
+  { name: 'spaces.taskWorkflows.list',   method: 'GET',    path: '/v2/spaces/:spaceId/task-workflows',             kind: 'read',    status: 'v1' },
+  { name: 'spaces.taskWorkflows.upsert', method: 'POST',   path: '/v2/spaces/:spaceId/task-workflows',             kind: 'command', status: 'v1' },
+  { name: 'spaces.taskWorkflows.delete', method: 'DELETE', path: '/v2/spaces/:spaceId/task-workflows/:workflowId', kind: 'command', status: 'v1' },
+  // Phase 2 (148): the real workflow tables — open, user-named states each
+  // carrying one of the four closed categories. SUPERSEDES taskWorkflows above,
+  // which stays read-only until phase 6 retires the `type` axis. Upsert is
+  // WHOLE-DOCUMENT (states and transitions ride along) because every invariant
+  // here is about a workflow as a whole; same reasoning that put `statuses` on
+  // the taskWorkflows upsert rather than shipping an add-status op.
+  { name: 'spaces.workflows.list',   method: 'GET',    path: '/v2/spaces/:spaceId/workflows',             kind: 'read',    status: 'v1' },
+  { name: 'spaces.workflows.upsert', method: 'POST',   path: '/v2/spaces/:spaceId/workflows',             kind: 'command', status: 'v1' },
+  { name: 'spaces.workflows.delete', method: 'DELETE', path: '/v2/spaces/:spaceId/workflows/:workflowId', kind: 'command', status: 'v1' },
   { name: 'spaces.leaderboard',      method: 'GET',    path: '/v2/spaces/:spaceId/leaderboard',             kind: 'read',    status: 'v1' },
   { name: 'spaces.awards',           method: 'GET',    path: '/v2/spaces/:spaceId/awards',                  kind: 'read',    status: 'v1' },
 
@@ -99,9 +132,10 @@ export const OPERATIONS = [
   { name: 'messages.edit',           method: 'PATCH',  path: '/v2/messages/:id',                            kind: 'command', status: 'v1' },
   { name: 'messages.delete',         method: 'DELETE', path: '/v2/messages/:id',                            kind: 'command', status: 'v1' },
 
-  // chat — configure an already-posted human root and start its first turn.
-  // Every later user turn still travels through messages.post.
-  { name: 'chat.threads.start',      method: 'POST',   path: '/v2/chat/threads',                            kind: 'command', status: 'v1' },
+  // chat — create the chat entity and post its opening turn, in one command.
+  // Every later turn, from a human or from another agent, still travels through
+  // messages.post anchored on the chat; there is no second write path.
+  { name: 'chat.start',              method: 'POST',   path: '/v2/chats',                                   kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },
@@ -291,6 +325,18 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+  // `auth.password.change` — the day a human forgets their password, the only
+  // recovery was `psql` (FIRST-RUN-CLAIM-DESIGN.md §10.3). This is CHANGE, not
+  // reset: it demands the CURRENT password in the body and proves it with the
+  // same scrypt work `auth.login` spends, so a walk-up attacker holding an open
+  // session still cannot rotate the credential and lock the owner out. The write
+  // is `set_account_credential` (007) under the caller's own claims — an account
+  // sets its OWN credential without node admin — and it revokes every OTHER live
+  // session for the account while sparing the one making the change. There is no
+  // reset-without-the-old-password path here on purpose: that needs an
+  // out-of-band capability, and an unauthenticated one would hand the node to
+  // anyone who can reach it.
+  { name: 'auth.password.change',                        method: 'POST',   path: '/v2/auth/password',                                                  kind: 'command', status: 'v1' },
   // POST-WITH-`kind: 'read'`, DELIBERATELY. It writes nothing — it answers what
   // a join code lets you join, before the holder is anybody on this node — but
   // the code must travel in the BODY. A bearer capability in a URL path lands
@@ -299,6 +345,17 @@ export const OPERATIONS = [
   // the shape: `collections.query` and `graph.query`, both POST reads for the
   // same reason (a payload that does not belong in a URL).
   { name: 'auth.invite.resolve',                         method: 'POST',   path: '/v2/auth/invite/resolve',                                            kind: 'read',    status: 'v1' },
+  // `auth.invite.signup` — the second half of D5 (FIRST-RUN-CLAIM-DESIGN.md
+  // §4.4, §5.3). CLAIM-FREE like `resolve`: an invited person has no account
+  // until this call, and the INVITE CODE is the authorization. `signup_via_invite`
+  // creates the account, the membership, and consumes the invite in ONE
+  // transaction — a half-state would leave a person who can log in and see
+  // nothing. It hard-codes `is_node_admin = false` / `is_owner = false` with no
+  // input that can reach them (§7.3), so a forwarded link can never mint an
+  // admin. Same POST-body reasoning as `resolve`: the code is a bearer
+  // capability and must not land in a URL. Claiming an account SIGNS YOU IN, so
+  // the result is `auth.login`'s shape plus the space you joined.
+  { name: 'auth.invite.signup',                          method: 'POST',   path: '/v2/auth/invite/signup',                                             kind: 'command', status: 'v1' },
 
   // First-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md, D1/D2).
   // Both are CLAIM-FREE, and both must stay that way: they are the only
@@ -318,6 +375,14 @@ export const OPERATIONS = [
   // (`artifacts.publish` / `artifacts.revisions.list` below).
   { name: 'auth.claim',                                  method: 'POST',   path: '/v2/auth/claim',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.claim.status',                           method: 'GET',    path: '/v2/auth/claim',                                                     kind: 'read',    status: 'v1' },
+  // `auth.claim.reissue` — recover from a lost claim token (§3.1, §4.3). A
+  // restart REPRINTS the live token rather than rotating it, so rotation stays a
+  // deliberate act; this is that act. ON-BOX BY CONSTRUCTION: the handler admits
+  // only the loopback auto-owner arm, and the fresh `tm8c_…` is written to the
+  // 0600 `<dataDir>/setup-token` — the file, not the network, is the boundary,
+  // so triggering it confers nothing on a caller who cannot read the box. It is
+  // inert on a claimed node, exactly like the token it mints.
+  { name: 'auth.claim.reissue',                          method: 'POST',   path: '/v2/auth/claim/reissue',                                             kind: 'command', status: 'v1' },
 
   // Tier B per-member credentials (sub-doc 11 §D). A member connects their OWN
   // vendor account in a login terminal tm8 opens for them, so an agent they
@@ -369,6 +434,51 @@ export const OPERATIONS = [
   // own actions are existing ops (`entities.patch`, `edges.create`,
   // `execution.spawn`, `messages.post`).
   { name: 'execution.dispatch',                          method: 'POST',   path: '/v2/execution/dispatch',                                             kind: 'command', status: 'v1' },
+
+  // containers — machines agents run in or drive (TM8-CONTAINERS-DESIGN §4.1).
+  //
+  // TWENTY-FIVE ROWS. The Design's PROSE says 27 and is wrong; §4.1's list is
+  // the contract and the coordinator ruled on it (2026-09-03).
+  //
+  // Reads go through the UNIVERSAL entity reads — `entities.get`,
+  // `entities.children`, `entities.connections`, `collections.query` — because
+  // a container is an entity. THERE IS DELIBERATELY NO `containers.get`.
+  // `providers.list` and `logs` are the only family-specific reads, because
+  // their truth is on the node and not in the graph.
+  //
+  // EVERY ROW IS REGISTERED IN P0, INCLUDING THE ONES NOT YET BUILT. A `v1`
+  // row with no handler answers 404, which breaks the reserved-op honesty rule
+  // (DEV-13) exactly as a `reserved` row 404ing would. The not-yet-built ones
+  // answer `501 not_implemented` with a named reason — the same mechanism the
+  // `TM8_CONTAINERS=off` gate uses, so it is one path and not two.
+  { name: 'containers.create',           method: 'POST',   path: '/v2/containers',                                        kind: 'command', status: 'v1' },
+  { name: 'containers.start',            method: 'POST',   path: '/v2/containers/:containerId/commands/start',            kind: 'command', status: 'v1' },
+  { name: 'containers.stop',             method: 'POST',   path: '/v2/containers/:containerId/commands/stop',             kind: 'command', status: 'v1' },
+  { name: 'containers.pause',            method: 'POST',   path: '/v2/containers/:containerId/commands/pause',            kind: 'command', status: 'v1' },
+  { name: 'containers.resume',           method: 'POST',   path: '/v2/containers/:containerId/commands/resume',           kind: 'command', status: 'v1' },
+  { name: 'containers.destroy',          method: 'POST',   path: '/v2/containers/:containerId/commands/destroy',          kind: 'command', status: 'v1' },
+  { name: 'containers.update',           method: 'PATCH',  path: '/v2/containers/:containerId',                           kind: 'command', status: 'v1' },
+  { name: 'containers.policy.set',       method: 'POST',   path: '/v2/containers/:containerId/commands/policy',           kind: 'command', status: 'v1' },
+  { name: 'containers.run',              method: 'POST',   path: '/v2/containers/:containerId/commands/run',              kind: 'command', status: 'v1' },
+  { name: 'containers.terminal.start',   method: 'POST',   path: '/v2/containers/:containerId/terminals',                 kind: 'command', status: 'v1' },
+  { name: 'containers.attach',           method: 'POST',   path: '/v2/containers/:containerId/attach',                    kind: 'command', status: 'v1' },
+  // The EXISTING `/v2/ws` binding re-declared for discoverability — NOT a
+  // second socket. The PTY, graph events and every container surface share
+  // one socket and dispatch on the grant.
+  { name: 'containers.stream',           method: 'WS',     path: '/v2/ws',                                                kind: 'stream',  status: 'v1', aliasOf: 'events.subscribe' },
+  { name: 'containers.computer',         method: 'POST',   path: '/v2/containers/:containerId/commands/computer',         kind: 'command', status: 'v1' },
+  { name: 'containers.browser.endpoint', method: 'POST',   path: '/v2/containers/:containerId/commands/browser-endpoint', kind: 'command', status: 'v1' },
+  { name: 'containers.files.put',        method: 'PUT',    path: '/v2/containers/:containerId/files',                     kind: 'command', status: 'v1' },
+  { name: 'containers.files.get',        method: 'GET',    path: '/v2/containers/:containerId/files',                     kind: 'read',    status: 'v1' },
+  { name: 'containers.logs',             method: 'GET',    path: '/v2/containers/:containerId/logs',                      kind: 'read',    status: 'v1' },
+  { name: 'containers.expose',           method: 'POST',   path: '/v2/containers/:containerId/commands/expose',           kind: 'command', status: 'v1' },
+  { name: 'containers.unexpose',         method: 'POST',   path: '/v2/containers/:containerId/commands/unexpose',         kind: 'command', status: 'v1' },
+  { name: 'containers.proxy',            method: 'GET',    path: '/v2/containers/:containerId/ports/:port/*',             kind: 'read',    status: 'v1' },
+  { name: 'containers.snapshot',         method: 'POST',   path: '/v2/containers/:containerId/commands/snapshot',         kind: 'command', status: 'v1' },
+  { name: 'containers.fork',             method: 'POST',   path: '/v2/containers/:containerId/commands/fork',             kind: 'command', status: 'v1' },
+  { name: 'containers.attention',        method: 'POST',   path: '/v2/containers/:containerId/commands/attention',        kind: 'command', status: 'v1' },
+  { name: 'containers.providers.list',   method: 'GET',    path: '/v2/containers/providers',                              kind: 'read',    status: 'v1' },
+  { name: 'containers.pools.set',        method: 'POST',   path: '/v2/containers/:containerId/commands/pool',             kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];
 
 export type OperationName = (typeof OPERATIONS)[number]['name'];
@@ -387,6 +497,17 @@ export function isOperationName(name: string): name is OperationName {
 
 /** Operations every v1 deployment must implement (everything not reserved). */
 export const V1_OPERATIONS = OPERATIONS.filter((op) => op.status === 'v1');
+
+/**
+ * The rows that OWN a `method path` binding — every row except the aliases.
+ *
+ * This is the list anything that MOUNTS should read: the HTTP router, the WS
+ * upgrade handler, and any inventory that asserts one route per binding.
+ * Discovery, help and the CLI catalog read `OPERATIONS` instead, because an
+ * alias exists precisely to be listed. See `OperationBinding.aliasOf`.
+ */
+export const MOUNTED_OPERATIONS: readonly OperationBinding[] =
+  OPERATIONS.filter((op) => !('aliasOf' in op));
 
 /** Reserved operations — must answer `501 not_implemented`, never 404. */
 export const RESERVED_OPERATIONS = OPERATIONS.filter((op) => op.status === 'reserved');

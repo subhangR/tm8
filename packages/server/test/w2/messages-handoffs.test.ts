@@ -284,6 +284,11 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           IDS.sourceSession,
           IDS.author,
           'batch-1',
+          null,
+          // 176: `p_source_chat_id`. NULL here, and that is the assertion —
+          // this caller is session-sourced, and a message has exactly ONE
+          // source (the RPC raises 22023 if both are named).
+          null,
         ]);
         return {
           messageBatchId: 'batch-1',
@@ -305,6 +310,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
         threadParentMessageId: null,
         threadRootMessageId: IDS.message,
         body: 'stored body',
+        attachments: [],
         addressingKind: 'channel_mention',
         contextAnchors: [],
         rollingControlMaxBytes: 16_384,
@@ -327,7 +333,6 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
             deliveryId: IDS.delivery,
             messageId: IDS.message,
             targetWorkSessionId: IDS.targetSession,
-            reservationVersion: 3,
             expiresAt: '2026-07-26T12:15:00.000Z',
             content: String(intent.content),
             mode: 'send',
@@ -368,12 +373,224 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
 
     expect(MessageBatchResultSchema.safeParse(result).success).toBe(true);
     expect(result).toMatchObject({ messageBatchId: 'batch-1', messages: [{ id: IDS.message }] });
+    // The route named a session and the copy was reserved and handed on, so the
+    // result SAYS so. `accepted`, not `delivered`: only reserve() is awaited
+    // here, and the terminal outcome settles later on the delivery row.
+    expect(result).toMatchObject({
+      delivery: [{
+        targetMessageId: IDS.message,
+        targetWorkSessionId: IDS.targetSession,
+        status: 'accepted',
+        deliveryId: IDS.delivery,
+      }],
+    });
     expect(order).toEqual([
       'w2_post_message_batch:true',
       'w2_record_session_message_routes:true',
       'reserve:false',
       'dispatch:false',
     ]);
+  });
+
+  /**
+   * THE SILENT SUCCESS, which is the defect this group exists to make
+   * impossible.
+   *
+   * Reproduced live on 2026-08-21: a message anchored to a RUNNING work session
+   * was stored, routed, and answered 200 with a durable message entity — while
+   * `reserve()` threw, zero delivery rows were written, and nothing entered the
+   * PTY. The throw was logged and dropped on the floor by
+   * `dispatchSessionMessages`, and the response path never read the log. A human
+   * steered a worker twice and was told it worked twice.
+   *
+   * `execution.dispatch` has always been honest about the identical failure —
+   * `sendDispatchRequest` returns a boolean and the result carries
+   * `delivery: 'undelivered'`. These tests pin the other two paths to the same
+   * standard: the message still stores (stored-first is deliberate and
+   * unchanged), and the caller is told, per target, that nothing landed.
+   */
+  describe('a copy that cannot be delivered is reported, never swallowed', () => {
+    function routedSetup(reserve: () => Promise<never> | Promise<null>) {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          attachments: [],
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          sessionInputAllowed: true,
+        }] as T;
+      };
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve,
+          principalFor: (reservation) => ({ reserved: reservation.deliveryId }),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+      return registry;
+    }
+
+    function post(registry: HandlerRegistry) {
+      return handler(registry, 'messages.post')(request('messages.post', {
+        body: {
+          clientMutationId: 'batch-1',
+          actorId: IDS.author,
+          anchorIds: [IDS.anchor],
+          body: 'stored body',
+        },
+      }));
+    }
+
+    it('reports undelivered when reserve() throws — the exact live failure', async () => {
+      // What migration 168 removed, and what any future reservation-time
+      // refusal will look like from here: a throw, before any row exists.
+      const registry = routedSetup(async () => {
+        throw new Error('Teammate delivery requires immutable source-session provenance');
+      });
+
+      const result = await post(registry);
+
+      // STORED-FIRST IS UNCHANGED. The message is durable and the command
+      // succeeded; what changed is that the response no longer implies the copy
+      // landed when it did not.
+      expect(result).toMatchObject({ messageBatchId: 'batch-1', messages: [{ id: IDS.message }] });
+      expect(result).toMatchObject({
+        delivery: [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          status: 'undelivered',
+          reason: 'delivery_reserve_refused',
+        }],
+      });
+      expect(MessageBatchResultSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('reports undelivered when SQL refuses at reservation and returns nothing to send', async () => {
+      const registry = routedSetup(async () => null);
+
+      expect(await post(registry)).toMatchObject({
+        delivery: [{ status: 'undelivered', reason: 'refused_at_reservation' }],
+      });
+    });
+
+    it('omits the field entirely when the batch named no session', async () => {
+      // An unrouted post owes nobody a live copy. Absent must not read as
+      // failure, which is why this is optional rather than an empty array.
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => (name === 'w2_post_message_batch'
+        ? { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T
+        : [] as T);
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve: async () => { throw new Error('never reached: there are no routes'); },
+          principalFor: () => ({}),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+
+      const result = await post(registry);
+      expect(result).not.toHaveProperty('delivery');
+      expect(MessageBatchResultSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('reports undelivered when the node has routes but no delivery runtime at all', async () => {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          attachments: [],
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          sessionInputAllowed: true,
+        }] as T;
+      };
+      const registry = new HandlerRegistry();
+      // No `messageDelivery` — the honest degraded mode a node without an
+      // execution runtime takes. It used to be indistinguishable from success.
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+      });
+
+      expect(await post(registry)).toMatchObject({
+        delivery: [{ status: 'undelivered', reason: 'no_delivery_runtime' }],
+      });
+    });
+
+    it('reports a skip, with its reason, when the target may not be injected', async () => {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          attachments: [],
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          // The target's interaction profile forbids `tm8.session-input`.
+          sessionInputAllowed: false,
+        }] as T;
+      };
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve: async () => { throw new Error('never reached: the route is skipped'); },
+          principalFor: () => ({}),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+
+      // A correct silence is still a REPORTED silence: the caller learns the
+      // route existed and deliberately sent nothing, rather than inferring it.
+      expect(await post(registry)).toMatchObject({
+        delivery: [{ status: 'skipped', reason: 'session_input_not_allowed' }],
+      });
+    });
   });
 
   // D1b — the parent-message excerpt. The route carries the thread parent as
@@ -408,6 +625,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           threadParentMessageId: options.threadParentMessageId,
           threadRootMessageId: IDS.message,
           body: 'stored body',
+          attachments: [],
           addressingKind: 'channel_mention',
           contextAnchors: [],
           rollingControlMaxBytes: 16_384,
@@ -461,7 +679,6 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
               deliveryId: IDS.delivery,
               messageId: IDS.message,
               targetWorkSessionId: IDS.targetSession,
-              reservationVersion: 3,
               expiresAt: '2026-07-26T12:15:00.000Z',
               content: String(intent.content),
               mode: 'send',
@@ -539,6 +756,134 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
     });
   });
 
+  // THE ATTACHMENT MANIFEST. `messages.post` validated, stored and returned a
+  // message's files — and delivered the body alone. The sender saw two chips
+  // on a message the teammate was handed with no hint either file existed, and
+  // nothing in the stack said so: the drop was three layers of "this type has
+  // no field for that". These tests pin the copy's own attachments onto the
+  // copy's own delivery, and pin the empty case to `count="0"` rather than to
+  // silence.
+  describe('attachments reach the delivered envelope', () => {
+    function attachmentSetup(attachments: unknown, rollingControlMaxBytes = 16_384) {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          attachments,
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes,
+          sessionInputAllowed: true,
+        }] as T;
+      };
+      db.queryImpl = async <R>(sql) => {
+        if (sql.includes('profile_display_name')) {
+          return [{
+            id: IDS.author, kind: 'member', space_id: IDS.space,
+            member_display_name: 'Message Author', member_role: 'owner',
+            team_member_name: null, team_member_avatar: null, team_member_owner_id: null,
+            profile_display_name: 'Message Author', profile_avatar: null,
+          }] as R[];
+        }
+        if (sql.includes('left join public.messages msg')) {
+          // Deliberately disagree with the route. The route RPC is the
+          // canonical delivery projection; a posting-viewer side reload must
+          // not be a second, caller-optional attachment source.
+          return [messageRow({ message_attachments: [] })] as R[];
+        }
+        return [];
+      };
+      const contents: string[] = [];
+      const rejections: Array<Record<string, unknown>> = [];
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve: async (intent) => {
+            contents.push(String(intent.content));
+            return {
+              deliveryId: IDS.delivery,
+              messageId: IDS.message,
+              targetWorkSessionId: IDS.targetSession,
+              expiresAt: '2026-07-26T12:15:00.000Z',
+              content: String(intent.content),
+              mode: 'send',
+            };
+          },
+          principalFor: (reservation) => ({ reserved: reservation.deliveryId }),
+          adapter: {
+            dispatch: async () => ({ outcome: 'delivered' }),
+            reject: async (attempt) => {
+              rejections.push(attempt);
+              return { outcome: 'refused', reason: String(attempt.reason) };
+            },
+          },
+        },
+      });
+      return { registry, contents, rejections };
+    }
+
+    function post(registry: HandlerRegistry) {
+      return handler(registry, 'messages.post')(request('messages.post', {
+        body: {
+          clientMutationId: 'batch-1',
+          actorId: IDS.author,
+          anchorIds: [IDS.anchor],
+          body: 'stored body',
+          attachmentIds: [IDS.file],
+        },
+      }));
+    }
+
+    it('names the stored file in the envelope the teammate is handed', async () => {
+      const { registry, contents } = attachmentSetup([
+        { fileEntityId: IDS.file, name: 'proof.txt', mime: 'text/plain' },
+      ]);
+      await post(registry);
+      expect(contents).toHaveLength(1);
+      expect(contents[0]).toContain('<attachments count="1"');
+      expect(contents[0]).toContain(`entity_id="${IDS.file}"`);
+      expect(contents[0]).toContain('&quot;name&quot;:&quot;proof.txt&quot;');
+      expect(contents[0]!.indexOf('proof.txt')).toBeGreaterThan(
+        contents[0]!.indexOf('</trusted_control>'),
+      );
+    });
+
+    it('says count="0" for a message with no files, rather than saying nothing', async () => {
+      const { registry, contents } = attachmentSetup([]);
+      await post(registry);
+      expect(contents[0]).toContain('<attachments count="0" />');
+    });
+
+    it('settles an envelope over the target profile budget instead of silently skipping it', async () => {
+      const { registry, contents, rejections } = attachmentSetup([], 1);
+      await post(registry);
+
+      // Reserve receives the bounded reason, not an envelope the renderer has
+      // already proved the target cannot admit.
+      expect(contents).toEqual(['delivery_envelope_budget_exceeded']);
+      expect(rejections).toHaveLength(1);
+      expect(rejections[0]).toMatchObject({
+        messageId: IDS.message,
+        targetWorkSessionId: IDS.targetSession,
+        reason: 'delivery_envelope_budget_exceeded',
+      });
+    });
+  });
+
   // SENDER ATTRIBUTION — the `attribution=` label in the delivered
   // `<trusted_control>` envelope. It was a hardcoded `'verified'` literal, so
   // every PTY-delivered message claimed the protocol's highest trust label
@@ -568,6 +913,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           threadParentMessageId: null,
           threadRootMessageId: IDS.message,
           body: 'stored body',
+          attachments: [],
           addressingKind: 'channel_mention',
           contextAnchors: [],
           rollingControlMaxBytes: 16_384,
@@ -587,7 +933,6 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
               deliveryId: IDS.delivery,
               messageId: IDS.message,
               targetWorkSessionId: IDS.targetSession,
-              reservationVersion: 3,
               expiresAt: '2026-07-26T12:15:00.000Z',
               content: String(intent.content),
               mode: 'send',
@@ -709,7 +1054,9 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
       if (name === 'w2_post_message_batch') {
         expect(args).toEqual([
           [IDS.anchor], 'routed answer', IDS.message, [], [],
-          IDS.sourceSession, null, 'reply-batch-1',
+          IDS.sourceSession, null, 'reply-batch-1', null,
+          // 176: `p_source_chat_id`, null for a session-sourced reply.
+          null,
         ]);
         return { messageBatchId: 'reply-batch-1', messageIds: [IDS.message] } as T;
       }

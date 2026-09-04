@@ -22,7 +22,7 @@ const manifest: PromptManifest = {
       title: 'Wire the PTY',
       description: 'Stream bytes.',
       priority: 'high',
-      workStatus: 'open',
+      status: 'open',
       acceptanceCriteria: ['xterm renders live output', 'no poll requests'],
     },
   ],
@@ -110,7 +110,10 @@ describe('four-mode identity', () => {
       }
     }
     // Every advertised usage names a frozen-grammar command path.
-    const grammar = ['help', 'action list', 'entity context', 'entity attention', 'attention resolve-entity', 'message send', 'session spawn'];
+    // `artifact publish` joined the surface for the Tarkesh artifact bug: it is a
+    // public command in the frozen catalog, and the surface must name it because
+    // every harness ships a competing native artifact tool (see commandSurface).
+    const grammar = ['help', 'action list', 'entity context', 'entity attention', 'attention resolve-entity', 'message send', 'session spawn', 'artifact publish'];
     for (const { usage } of commandSurface(true)) {
       const path = usage.replace(/^tm8 /, '');
       expect(
@@ -134,6 +137,53 @@ describe('composePrompt', () => {
     expect(system).toMatch(/never the assignment or task anchor/i);
     expect(task).toMatch(/<reply [^>]*anchor_id="coord-1"/);
     expect(task).not.toMatch(/<reply [^>]*anchor_id="task-1"/);
+  });
+
+  it('names the coordinator kind on the v1 frame — always, not only for chats', () => {
+    // Emitted in both arms deliberately: a `coordinator_kind` that appears only
+    // for chats makes its ABSENCE ambiguous between "a work session" and "a
+    // manifest written before 176", and a worker cannot tell those apart.
+    const { system } = composePrompt({
+      ...manifest,
+      mode: 'coordinated-worker',
+      coordinator: { sessionId: 'coord-1' },
+    });
+    expect(system).toContain('<coordinator_kind>work_session</coordinator_kind>');
+  });
+
+  it('tells a chat-coordinated worker what the id is and who reads what it sends (176)', () => {
+    const { system, task } = composePrompt({
+      ...manifest,
+      mode: 'coordinated-worker',
+      coordinator: { sessionId: 'chat-1', kind: 'chat' },
+    });
+
+    expect(system).toContain('<coordinator_session_id>chat-1</coordinator_session_id>');
+    expect(system).toContain('<coordinator_kind>chat</coordinator_kind>');
+    expect(system).toMatch(/A CHAT spawned you/);
+    expect(system).toMatch(/chat entity, not a work session/);
+    expect(system).toMatch(/human reading that chat sees/);
+    // Same transport, same anti-misroute rule, same reply anchor as a session
+    // coordinator: a chat is an anchor like any other and the frame must not
+    // invent a second protocol for it.
+    expect(system).toContain('tm8 message send --to &lt;coordinator-session-id&gt;');
+    expect(system).toMatch(/never the assignment or task anchor/i);
+    expect(task).toMatch(/<reply [^>]*anchor_id="chat-1"/);
+    expect(utf8Bytes(`${system}\n\n${task}`)).toBeLessThanOrEqual(
+      BYTE_BUDGETS.combinedInitialInjection,
+    );
+  });
+
+  it('folds an unrecognised coordinator kind to work_session rather than echoing it', () => {
+    // The manifest field is a plain string off a JSON document; echoing it into
+    // the frame would let a manifest name a coordinator kind that does not exist.
+    const { system } = composePrompt({
+      ...manifest,
+      mode: 'coordinated-worker',
+      coordinator: { sessionId: 'coord-1', kind: 'channel' },
+    });
+    expect(system).toContain('<coordinator_kind>work_session</coordinator_kind>');
+    expect(system).not.toContain('channel');
   });
 
   it('keeps the task as the reply anchor for a standalone worker', () => {

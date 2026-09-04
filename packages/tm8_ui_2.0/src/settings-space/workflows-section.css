@@ -1,0 +1,280 @@
+/* =============================================================================
+   SETTINGS > WORKFLOWS — this section's own stylesheet.
+
+   OWNED BY THIS LANE, imported from `WorkflowsSection.tsx` and from nowhere
+   else. `settings.css` is the shared frame and twelve lanes editing it in
+   parallel is twelve merge conflicts, so per-section CSS lives beside its
+   component (SECTION-CONTRACT.md §5) and every class here is prefixed
+   `set-workflows__`.
+
+   WHAT IT REPLACES. Every rule below was an inline `style={{ display: 'flex' }}`
+   in the component, plus three borrowed classes that meant something else:
+   `.set-invite` (an invite row), `.set-invite__meta` on a BUTTON (so Save's
+   sibling rendered as 9px mono and wrapped onto two lines in a 120px box), and
+   `.set-refuse--block` on Save — a class whose whole body is
+   `display:block; width:100%`, written for a refusal notice. Measured in Chrome
+   at 1508x882: that made the primary action an 886px slab, four of them stacked,
+   which is why the section read as a wall rather than a list.
+
+   Tokens only, both themes (§6 / hex-ban.test.ts).
+
+   RECLASSIFIED (Kinetic W3 sweep). Mono is DATA here and this section is
+   MOSTLY data: the rule's `type` key, the status vocabulary (path line,
+   checkbox words, ordinals — schema tokens, not prose), stamps and counts
+   all keep the data voice. What moves to Figtree/caps: the summary words,
+   the state pills, the group legends, and the server's error sentence.
+   ========================================================================== */
+
+.set-workflows__intro {
+  display: block;
+  margin-bottom: 14px;
+}
+
+/* The rule list. A gap rather than a hairline: these are independent records
+   (one per `type` value), not rows of one table — the member table is the
+   hairline shape, and borrowing it here would imply an ordering between type
+   values that does not exist. */
+.set-workflows__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.set-workflows__row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  min-width: 0;
+}
+
+/* A rule the axis no longer keys, or cannot be checked against: still legible,
+   still deletable, visibly not in force. Opacity would dim its Delete too — the
+   one control the user needs on an inert rule — so the signal is the border and
+   the badge, not the ink. */
+.set-workflows__row--inert {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--pn-hover) 55%, transparent);
+}
+
+.set-workflows__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.set-workflows__name {
+  font-family: var(--pn-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+
+.set-workflows__summary {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.set-workflows__grow { flex: 1; min-width: 0; }
+
+.set-workflows__pill {
+  /* A state WORD — caps chip grammar. */
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  border-radius: var(--pn-r-pill);
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.set-workflows__pill--ruled {
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
+}
+.set-workflows__pill--unruled {
+  color: var(--pn-ink-3);
+  background: color-mix(in srgb, var(--pn-ink-4) 12%, transparent);
+}
+.set-workflows__pill--inert {
+  color: var(--pn-wait);
+  background: color-mix(in srgb, var(--pn-wait) 14%, transparent);
+}
+
+/* THE ORDER, SHOWN. A workflow is a SET (132: `statuses <@ array[...]`, and the
+   trigger tests `work_status <> all (vocab)`) — but the seven statuses it draws
+   from are a LIFECYCLE with a fixed order, and a bare wrap of checkboxes shows
+   neither. This line is the allowed statuses in that order; the caption under it
+   says set, not chain, so the sequence cannot be misread as a transition matrix
+   the schema deliberately does not have. */
+.set-workflows__path {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-2);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.set-workflows__path-sep { color: var(--pn-ink-4); padding: 0 2px; }
+
+/* SIDE BY SIDE WHERE THEY FIT, stacked where they do not. The two groups are
+   one seven-status vocabulary split by who may edit it, and reading them as one
+   band says that; stacking them read as two unrelated lists. Measured: side by
+   side takes a row from 239px to 200px, and at the narrow bound (900x600, a
+   671px body) the two still sit on one line — `min-width: 232px` is the
+   narrowable group's own natural width, so the wrap happens before anything
+   inside either group has to. */
+.set-workflows__groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.set-workflows__group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 232px;
+}
+/* Group legends are HEADERS — caps grammar. */
+.set-workflows__legend {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+
+.set-workflows__boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+/* One status. The whole chip is the label, so the hit target is the word and
+   its ordinal too, not a 13px box — that is the "reachable at 900x600" part of
+   §7.2 for a control that has seven instances per row and four rows. */
+.set-workflows__box {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 5px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.set-workflows__box:hover { background: var(--pn-hover); }
+/* The checkbox lives inside the label; the ring goes on the chip (one focus
+   grammar, Kinetic W3). */
+.set-workflows__box:focus-within { outline: 2px solid var(--pn-focus, var(--pn-brand-2)); outline-offset: 1px; }
+.set-workflows__box input { margin: 0; cursor: inherit; }
+
+.set-workflows__box--on {
+  color: var(--pn-brand-2);
+  border-color: rgba(var(--pn-brand-rgb), 0.4);
+  background: var(--pn-card);
+}
+/* Locked: the three 132's check constraint requires. `cursor: default` and no
+   hover, because a pointer on a box that cannot move is a promise the schema
+   will not keep. */
+.set-workflows__box--locked {
+  cursor: default;
+  color: var(--pn-ink-3);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--pn-ink-4) 8%, transparent);
+}
+.set-workflows__box--locked:hover { background: color-mix(in srgb, var(--pn-ink-4) 8%, transparent); }
+.set-workflows__box--disabled { cursor: default; opacity: 0.55; }
+
+/* The lifecycle position, kept TRUE across both groups: open is 1, working is 3,
+   done is 6 in the locked group; pulled is 2 in the live one. Renumbering each
+   group 1..n would draw two lists where there is one ordered vocabulary split by
+   who may edit it. */
+.set-workflows__ord {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--pn-ink-4);
+  min-width: 1ch;
+  text-align: right;
+}
+
+/* A DISABLED PRIMARY MUST LOOK DISABLED. Save goes quiet when a stored rule
+   matches its draft, and `.set-chip` (shared, not this lane's to edit) styles no
+   `:disabled` state at all — measured at 900x600, the unchanged `code` row's
+   Save rendered pixel-identical to the live `default` one next to it, which is
+   worse than the always-live button it replaced. These two rules are the whole
+   reason this modifier exists; everything else comes from `.set-chip` /
+   `.set-ghost` unchanged. */
+.set-workflows__save:disabled,
+.set-workflows__remove:disabled {
+  color: var(--pn-ink-4);
+  background: transparent;
+  border-color: var(--pn-line-2);
+  cursor: default;
+}
+.set-workflows__save:disabled:hover,
+.set-workflows__remove:disabled:hover {
+  background: transparent;
+}
+
+.set-workflows__acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--pn-line);
+}
+
+.set-workflows__stamp {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  line-height: 1.6;
+  color: var(--pn-ink-4);
+  text-wrap: pretty;
+}
+
+/* The head's count. Not a control — it is the one number that answers "did my
+   last save land" without reading four rows. */
+.set-workflows__count {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.set-workflows__error {
+  display: block;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--pn-block) 40%, transparent);
+  border-radius: var(--pn-r-sm);
+  background: color-mix(in srgb, var(--pn-block) 9%, transparent);
+  color: var(--pn-block);
+  /* The server's refusal is a sentence. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  text-wrap: pretty;
+}

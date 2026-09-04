@@ -1,0 +1,1677 @@
+/**
+ * Graph view (◉) — ATELIER paper-and-ink. Tokens only (hex is banned outside
+ * tokens.css). Realtime is a RESTRAINED overlay: ink freshness for recency,
+ * the pulse dot + one marching-dash for genuine liveness, brass rings for
+ * arrivals. No glow, no bounce; prefers-reduced-motion collapses every
+ * animation to an instant state change.
+ */
+
+.gv-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+  overflow: hidden;
+}
+
+/* -- toolbar -------------------------------------------------------------- */
+
+.gv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-paper);
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.gv-toolbar__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.gv-toolbar__spacer { flex: 1; }
+
+.gv-toolbar__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  flex-wrap: wrap;
+}
+
+.gv-toolbar__zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+
+/* RECLASSIFICATION (2026-08-29): these are real action buttons — escape
+   hatches under empty states, the focus breadcrumb, re-layout — so they wear
+   the kit button grammar's compact metrics: 28px box, r-sm radius, ui 600 at
+   fs-sm, bordered, hover fill, the ONE focus ring. Their words are labels,
+   never data, so mono has no claim here. */
+.gv-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 0 var(--pn-space-3);
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.gv-filter:hover { background: var(--pn-hover); color: var(--pn-ink); }
+
+.gv-filter--off {
+  color: var(--pn-ink-4);
+  background: transparent;
+  border-style: dashed;
+  text-decoration: line-through;
+}
+
+/* Action chips (re-layout, focus breadcrumb) use one accent border rather than
+   another tinted fill, so they read as available without adding a new plane. */
+.gv-filter--action {
+  color: var(--pn-brand-2);
+  background: var(--pn-card);
+  border-color: var(--pn-brand);
+}
+.gv-filter--action:hover {
+  background: var(--pn-hover);
+  border-color: var(--pn-brand-2);
+}
+
+/* -- the lens ---------------------------------------------------------------
+   A segmented control, not a dropdown: there are three options, the current one
+   must be readable at a glance, and switching is the most common action on this
+   toolbar. Sits first in the bar because it is the first question the canvas
+   answers — what is this view about? */
+
+.gv-lens {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  background: transparent;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+}
+
+/* Time-window chips are LABELS, not data (RECLASSIFICATION 2026-08-29): ui
+   face at the interactive floor (fs-sm/600), ink-2 at rest — never ink-3 on
+   something clickable. */
+.gv-lens__opt {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-pill);
+  padding: 4px var(--pn-space-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.gv-lens__opt:hover { color: var(--pn-ink); background: var(--pn-hover); }
+
+.gv-lens__opt--on,
+.gv-lens__opt--on:hover {
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border-color: var(--pn-line-2);
+}
+
+/* The folded-count affordance inside the count line: a plain-text button, so it
+   reads as part of the sentence it belongs to rather than as a control.
+   RECLASSIFICATION: the verb is a label, so it steps out of the gray mono
+   sentence into Figtree ink — the counts around it stay mono-data. 13px is the
+   interactive floor; the size difference against the 11px readout is the
+   point, not a bug. */
+.gv-toolbar__fold {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+  background: none;
+  border: 0;
+  padding: 0 0 0 2px;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.gv-toolbar__fold:hover { color: var(--pn-brand-2); }
+
+/* -- honesty banner + empty state ----------------------------------------- */
+
+.gv-banner {
+  padding: var(--pn-space-2) var(--pn-space-4);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+  border-left: 3px solid var(--pn-wait);
+  border-bottom: 1px solid var(--pn-line);
+  flex: none;
+}
+
+/* The banner's instruction IS the control (AUDIT 2): the sentence keeps its
+   shape and its verb performs the switch it names. Plain-text button, same
+   treatment as the toolbar's folded-count affordance, so it reads as part of
+   the sentence rather than as chrome. */
+.gv-banner__act {
+  font: inherit;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.gv-banner__act:hover { color: var(--pn-ink); }
+
+.gv-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-3);
+}
+
+.gv-empty__title {
+  font-family: var(--pn-prose);
+  font-size: var(--pn-fs-h3);
+  color: var(--pn-ink-3);
+  margin: 0;
+}
+
+/* An empty-state SENTENCE is prose, not data (RECLASSIFICATION): Figtree at
+   body size. The counts inside it keep their truth — only the type changed. */
+.gv-empty__detail {
+  max-width: 42rem;
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  font-weight: 500;
+  text-align: center;
+}
+
+/* -- canvas ---------------------------------------------------------------- */
+
+.gv-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.gv-viewport:active { cursor: grabbing; }
+
+.gv-viewport:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+.gv-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+/* Applied ONLY during a programmatic reveal-pan (aside open / resize) so it
+   eases; manual drag/zoom clear the flag so they track instantly. */
+.gv-canvas--ease {
+  transition: transform var(--pn-dur-base) var(--pn-ease-out);
+}
+
+/* -- edges ------------------------------------------------------------------ */
+
+.gv-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.gv-edge__line {
+  fill: none;
+  stroke: var(--pn-line-2);
+  stroke-width: 1.5;
+  transition: opacity var(--pn-dur-base) var(--pn-ease-standard);
+}
+
+.gv-arrowhead { fill: var(--pn-line-2); }
+
+.gv-edge__label {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  fill: var(--pn-ink-3);
+  paint-order: stroke;
+  stroke: var(--pn-paper);
+  stroke-width: 3px;
+}
+
+.gv-edge--blocked .gv-edge__line { stroke: var(--pn-block); stroke-width: 2; }
+.gv-edge--blocked .gv-edge__label { fill: var(--pn-block); }
+.gv-arrowhead--blocked { fill: var(--pn-block); }
+
+/* The ONE sustained animation on the canvas: a live working thread. Gated on
+   the seam's liveness verdict in the component — never on recency. */
+.gv-edge--live .gv-edge__line {
+  stroke: var(--pn-run);
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+  animation: gv-march 1.4s linear infinite;
+}
+.gv-edge--live .gv-edge__label { fill: var(--pn-run); }
+
+@keyframes gv-march {
+  to { stroke-dashoffset: -24; }
+}
+
+.gv-edge--dim { opacity: 0.18; }
+
+/* -- nodes ------------------------------------------------------------------ */
+
+.gv-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  text-align: left;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    opacity var(--pn-dur-base) var(--pn-ease-standard),
+    border-color var(--pn-dur-slow) var(--pn-ease-standard);
+}
+
+.gv-node:hover { border-color: var(--pn-line-2); }
+
+.gv-node:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* Ink freshness — recency as border weight, NEVER the only carrier (the
+   timestamp word rides the footer of every card).
+
+   SUPERSEDED 2026-08-31 by the RECENCY register at the foot of this file. These
+   three rules have been dead since the FLOW-CARD CANVAS block below started
+   restating `border: 1px solid var(--pn-line)` on `.gv-node` — equal
+   specificity (0,1,0), later in source, so the plain rule won and every card
+   drew the same edge whatever its `activityAt` said. Recency was computed on
+   every node and painted nowhere. They are kept here, inert, only so the
+   history is legible at the place the mistake was made; the live rules are
+   `.cv2-root .gv-node--warm` / `--fresh`, which tint the FAMILY STRIPE rather
+   than the border, because the border already belongs to hover and selection. */
+.gv-node--fresh { border-color: var(--pn-ink-3); }
+.gv-node--warm { border-color: var(--pn-line-2); }
+.gv-node--rest { border-color: var(--pn-line); }
+
+.gv-node--blocked { border-color: var(--pn-block); }
+
+.gv-node--ghost {
+  border-style: dashed;
+  opacity: 0.55;
+  background: var(--pn-surface);
+}
+
+.gv-node--dim { opacity: 0.25; }
+
+/* Search: unmatched nodes read like a hover-neighborhood miss (same opacity);
+   matched nodes carry a SUBTLE persistent brass outline — 1px at reduced alpha,
+   deliberately weaker than the 2px selected ring. Declared before the selected
+   block so a selected+matched node keeps the full ring (source-order wins). */
+.gv-node--unmatched { opacity: 0.25; }
+.gv-node--match {
+  outline: 1px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+.gv-node--match:hover {
+  outline-color: var(--pn-brand-2);
+}
+
+/* Materialize: fade + 4px rise with a brass ring that decays. */
+.gv-node--new {
+  animation:
+    gv-rise var(--pn-dur-base) var(--pn-ease-out),
+    gv-ring 2s var(--pn-ease-standard);
+}
+
+.gv-node--flash { animation: gv-ring 1.8s var(--pn-ease-standard); }
+
+/* Selected — the node bound to the aside wears a persistent outline, visually
+   distinct from the decaying arrival ring and free of layout shift. */
+.gv-node--selected {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+.gv-node--selected:hover {
+  box-shadow: none;
+}
+.gv-node--selected.gv-node--dim,
+.gv-node--selected.gv-node--unmatched {
+  opacity: 0.8;
+}
+
+/* Focus affordance — a small ⌖ button in the card's bottom-right (clear of the
+   status pills up top). Hidden until the card is hovered/focused so it never
+   competes with the card content; the pressed state stays lit while focus mode
+   is on. It is a REAL nested button (the card is a role=button div). */
+.gv-node__focus {
+  position: absolute;
+  right: var(--pn-space-1);
+  bottom: var(--pn-space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.gv-node:hover .gv-node__focus,
+.gv-node:focus-within .gv-node__focus,
+.gv-node__focus:focus-visible {
+  opacity: 1;
+}
+
+/* ON A TOUCH DEVICE THIS BUTTON WAS SIMPLY INVISIBLE. It is `opacity: 0` until
+   `:hover`, and a finger produces no hover — so the only ways to reveal it were
+   two things a touch device cannot do. It stayed hit-testable the whole time,
+   which is worse than being hidden: the control was there, it worked, and
+   nothing on screen said so.
+
+   `(pointer: coarse)` rather than the mobile shell, deliberately — the graph has
+   no phone port and serves the refusal screen at 390px, so scoping this under
+   `.mobile-frame` would fix nothing. Where it IS reachable on touch is the
+   coarse-pointer tablet, which runs the DESKTOP shell at 768px. That is the
+   surface this rule is for.
+
+   Revealed at rest rather than on tap: there is no second gesture to spend on
+   disclosing a control, and a graph node is not a control the user is hunting
+   for — it has to be visible to be found. */
+@media (pointer: coarse) {
+  .gv-node__focus {
+    opacity: 1;
+  }
+  /* 44px of hit area around a box that stays 20px. Taken as a transparent
+     outset rather than as padding, because this element carries a visible
+     border and a background — padding would drag both out to 44px and redraw
+     the control, which is exactly what must not change. */
+  .gv-node__focus::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+}
+.gv-node__focus:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.gv-node__focus--on {
+  opacity: 1;
+  color: var(--pn-brand-2);
+  border-color: var(--pn-brand);
+  background: var(--pn-card);
+}
+
+@keyframes gv-rise {
+  from { opacity: 0; translate: 0 4px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes gv-ring {
+  0% { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+  100% { outline: 2px solid transparent; outline-offset: 1px; }
+}
+
+.gv-node__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.gv-node__glyph { color: var(--pn-ink-3); flex: none; }
+
+.gv-node__kind {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.gv-node__pills {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  margin-left: auto;
+  flex: none;
+}
+
+.gv-node__title {
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
+  color: var(--pn-ink);
+  line-height: var(--pn-lh-snug);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  flex: 1;
+  min-height: 0;
+}
+
+.gv-node__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.gv-node__meta {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.gv-node__meta--ghost { color: var(--pn-block); }
+
+/* The hub badge — "◈27". Deliberately quiet: it explains the partition, it does
+   not claim the node is more important than the work around it. */
+.gv-node__meta--hub { color: var(--pn-ink-2); }
+
+/* The fold badge — "+12" on a hub that swallowed twelve leaves. Brand-soft so
+   it reads as an available expansion, and it must stay legible when the card is
+   dimmed by a hover neighborhood or a search miss (see the --dim rules). */
+.gv-node__folded {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 0 6px;
+  margin-left: auto;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.gv-node__folded:hover { border-color: var(--pn-brand); }
+
+/* -- shelf ------------------------------------------------------------------ */
+
+.gv-shelf {
+  position: absolute;
+  left: var(--pn-space-4);
+  bottom: 64px;
+  max-width: 46%;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  /* AUDIT 3: the shelf floats OVER the canvas, and at fit zoom a node card can
+     sit fully behind it — unreachable. The panel itself is click-through; only
+     its own interactive children take the pointer (rule below), so no canvas
+     node is ever occluded from the mouse. Wheel-scrolling the chip list still
+     works: a wheel event over a chip scroll-chains to its scrollable parent
+     regardless of the parent's pointer-events. */
+  pointer-events: none;
+}
+
+/* Chips are buttons (kit Chip renders <button>); anything interactive the
+   shelf ever grows must opt back in the same way. */
+.gv-shelf button { pointer-events: auto; }
+
+.gv-shelf__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+/* -- ticker ----------------------------------------------------------------- */
+
+/* Right rail — stacks the minimap above the ticker, both kept visible, in the
+   bottom-right corner opposite the shelf. */
+.gv-rail {
+  position: absolute;
+  right: 64px;
+  bottom: var(--pn-space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--pn-space-2);
+  max-width: 44%;
+  /* THE OTHER HALF OF THE 42/52 SPLIT — see `.gv-legend`. This column is
+     bottom-anchored and grows upward, so without a ceiling a long BUILDING
+     list walks straight into the legend. `min-height: 0` is what lets the
+     children below actually shrink instead of the column overflowing its own
+     bound: an unfloored flex column ignores `max-height` at the child level,
+     which is the trap that has bitten this package repeatedly. */
+  max-height: 52%;
+  min-height: 0;
+}
+
+.gv-ticker {
+  width: 300px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--pn-space-2);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: none;
+}
+
+.gv-ticker__row {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 2px var(--pn-space-1);
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: gv-rise var(--pn-dur-base) var(--pn-ease-out);
+}
+
+.gv-ticker__row:hover { background: var(--pn-hover); color: var(--pn-ink); }
+
+.gv-ticker__row:first-child { color: var(--pn-ink); }
+
+/* -- the full-width screen (D65 pattern: canvas + Z3 aside + Z4 full) ------- */
+
+.gv-screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+.gv-screen__split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.gv-screen__canvas {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* EntityView geometry: peek ≈440px, floor 320. */
+.gv-screen__aside {
+  width: 440px;
+  min-width: 320px;
+  flex: none;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.gv-screen__full-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  height: 42px;
+  padding: 0 var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  flex: none;
+}
+
+/* A real button (RECLASSIFICATION): compact kit grammar — 28px, r-sm,
+   ui 600 at the 13px interactive floor, bordered, hover fill. */
+.gv-screen__collapse {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 0 var(--pn-space-3);
+  cursor: pointer;
+}
+
+.gv-screen__collapse:hover { background: var(--pn-hover); color: var(--pn-ink); }
+
+/* An eyebrow, so it wears the eyebrow uniform: caps face, 11/700. */
+.gv-screen__crumb {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.gv-screen__spacer { flex: 1; }
+
+.gv-screen__esc {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 var(--pn-space-1);
+}
+
+.gv-screen__full-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+}
+
+/* -- motion honesty --------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .gv-node--new,
+  .gv-node--flash,
+  .gv-ticker__row,
+  .gv-edge--live .gv-edge__line {
+    animation: none;
+  }
+  .gv-node,
+  .gv-edge__line,
+  .gv-filter,
+  .gv-canvas--ease,
+  .gv-node__focus {
+    transition: none;
+  }
+}
+
+/* --- FilterSelect (user ruling 2026-07-29: chips → compact multi-selects) --- */
+.gv-select {
+  position: relative;
+  flex: none;
+}
+/* Dropdown TRIGGERS are labels wearing the compact button grammar. An
+   unfiltered trigger carries no redundant total; changed filters disclose the
+   visible/total state after the name. */
+.gv-select__face {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 0 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gv-select__face:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+/* Filtered state is a FACT the face carries — a hidden filter that only the
+   popover reveals is how "where did my nodes go" happens. */
+.gv-select__face--filtered {
+  color: var(--pn-brand-2);
+  border-color: var(--pn-brand);
+  background: var(--pn-card);
+}
+.gv-select__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 180px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* "show all" is a verb, not data: ui at the interactive floor. */
+.gv-select__all {
+  appearance: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pn-line);
+  padding: 4px 8px 6px;
+  margin-bottom: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+.gv-select__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+  padding: 2px 8px;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gv-select__row:hover {
+  background: var(--pn-hover);
+}
+.gv-select__row input {
+  accent-color: var(--pn-brand);
+}
+.gv-select__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A trigger's noun is the invariant; optional state/count text is the first
+   thing allowed to contract. This is the graph's width-budget form of the
+   house law: the name of a thing always beats its count. */
+.gv-select__name,
+.gv-select__chevron {
+  flex: none;
+}
+
+/* THE OTHER HALF OF THE LAW: cap the incompressible side. flex: none alone only
+   changes WHICH child loses, not THAT one does — an uncapped nowrap name in a
+   nowrap face overflows its own trigger. Today the labels are fixed short
+   literals and .gv-toolbar happens to wrap, so nothing is visibly wrong; both
+   of those are properties of the DATA and the container, not of this rule, and
+   a dynamic label (a kind name, a saved-view name) would end that. The ceiling
+   makes the guarantee belong to the rule. The name is a flex item of the
+   inline-flex face and so is blockified — text-overflow reaches it. */
+.gv-select__name {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gv-select__state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   FLOW-CARD CANVAS — calm pass: neutral entity cards on a quiet dotted grid,
+   one organized kind edge, curved edges and compact canvas docks. Family
+   colors resolve through Astryx tokens (falling back to bridged --pn-*), so
+   both themes come for free and no hex lives here.
+   ========================================================================== */
+
+.gv-root [data-family='blue']   { --gvf: var(--color-icon-blue, var(--pn-info)); }
+.gv-root [data-family='green']  { --gvf: var(--color-icon-green, var(--pn-run)); }
+.gv-root [data-family='orange'] { --gvf: var(--color-icon-orange, var(--pn-wait)); }
+.gv-root [data-family='red']    { --gvf: var(--color-icon-red, var(--pn-block)); }
+.gv-root [data-family='purple'] { --gvf: var(--color-icon-purple, var(--pn-pr-merged)); }
+.gv-root [data-family='teal']   { --gvf: var(--color-icon-teal, var(--pn-run)); }
+.gv-root [data-family='cyan']   { --gvf: var(--color-icon-cyan, var(--pn-info)); }
+.gv-root [data-family='yellow'] { --gvf: var(--color-icon-yellow, var(--pn-wait)); }
+.gv-root [data-family='pink']   { --gvf: var(--color-icon-pink, var(--pn-brand-2)); }
+.gv-root [data-family='gray']   { --gvf: var(--pn-ink-3); }
+
+/* The drafting grid recedes behind the work: a wider cadence leaves enough
+   orientation to pan without turning every empty pixel into texture. */
+.gv-viewport {
+  background-image: radial-gradient(var(--pn-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 12px 12px;
+}
+
+/* The card. One family-colored edge names kind; the icon and kind word stay
+   neutral so color is organized at a single, predictable location. */
+.gv-node {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-left: 4px solid var(--gvf);
+  border-radius: var(--pn-r-lg);
+  box-shadow: none;
+  padding: var(--pn-space-3) var(--pn-space-3) var(--pn-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition:
+    border-color var(--pn-dur-fast) var(--pn-ease-out),
+    opacity var(--pn-dur-base) var(--pn-ease-standard);
+}
+.gv-node:hover {
+  box-shadow: none;
+  border-color: var(--pn-ink-3);
+  border-left-color: var(--gvf);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gv-node, .gv-node:hover { transform: none; transition: none; }
+}
+.gv-node--selected {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+  box-shadow: none;
+  border-color: var(--pn-brand);
+  border-left-color: var(--gvf);
+}
+
+.gv-node__head { display: flex; align-items: center; gap: 6px; }
+.gv-node__glyph { color: var(--pn-ink-2); display: inline-flex; }
+/* The card's kind word is an EYEBROW, so it wears the eyebrow uniform (caps
+   face, 700) — the mono claim on the earlier block would otherwise leak
+   through, since that rule only ever set the family. The id tail below stays
+   mono: it IS data. */
+.gv-node__kind {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-2);
+}
+/* The id's own tail in mono — TASK · 82df, the ticket-number read. Dimmed a
+   step below the kind word so it identifies without shouting. */
+.gv-node__ref {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  opacity: 1;
+}
+.gv-node__pills { margin-left: auto; display: inline-flex; gap: 4px; }
+
+.gv-node__title {
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Structural body slot */
+.gv-node__body { display: flex; flex-direction: column; gap: 4px; }
+.gv-node__bar {
+  display: block; height: 5px; border-radius: var(--pn-r-pill);
+  background: var(--pn-hover); overflow: hidden;
+}
+.gv-node__bar i { display: block; height: 100%; border-radius: inherit; background: var(--pn-brand); }
+.gv-node__bodymeta { font-size: var(--pn-fs-fine); color: var(--pn-ink-3); font-family: var(--pn-mono); }
+.gv-node__snippet {
+  display: block;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gv-node__due { font-size: var(--pn-fs-fine); font-family: var(--pn-mono); color: var(--pn-ink-3); }
+.gv-node__due--over { color: var(--pn-block); }
+
+.gv-node__foot { margin-top: auto; display: flex; align-items: center; gap: 8px; }
+
+/* Edges: quiet curves, arrowheads a shade darker; labels unchanged. */
+.gv-edge__line { stroke: var(--pn-line-2); stroke-width: 1.6; fill: none; }
+.gv-arrowhead { fill: var(--pn-ink-4, var(--pn-ink-3)); }
+
+/* THE ACTIVE PATH. Width + the single accent are sufficient; a decorative
+   glow added visual noise without adding another state. Blocked is exempt. */
+.gv-edge--hot:not(.gv-edge--blocked) .gv-edge__line {
+  stroke: var(--pn-brand);
+  stroke-width: 2.4;
+  filter: none;
+}
+.gv-edge--hot:not(.gv-edge--blocked) .gv-edge__label { fill: var(--pn-brand-2); }
+
+/* --- floating chrome ------------------------------------------------------ */
+.gv-legend {
+  position: absolute; top: 14px; right: 14px; z-index: 6;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md); box-shadow: none;
+  padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  /* 42%, NOT `calc(100% - 28px)`. THE CANVAS CHROME IS TWO ABSOLUTELY
+     POSITIONED COLUMNS ON ONE EDGE — this legend anchored top-right, and
+     `.gv-rail` (minimap + BUILDING) anchored bottom-right and growing UPWARD.
+     Both were allowed to be nearly the full height of the canvas, so their
+     collision was guaranteed by arithmetic rather than unlucky: the owner
+     screenshotted BUILDING sitting on top of the legend with the minimap
+     clipping its foot.
+
+     Absolute positioning is also why nothing caught it. The render gate's
+     overlapping-siblings rule deliberately skips absolutely positioned
+     subtrees — which is precisely where overlap happens — so this class of
+     defect had no detector at all. Noted for the gate.
+
+     42 + 52 = 94 < 100, so the two columns cannot meet whatever either
+     contains, and each scrolls inside its own bound rather than growing into
+     the other's. A panel that scrolls has hidden nothing; a panel painted over
+     has hidden everything. */
+  max-height: 42%;
+  overflow-y: auto;
+}
+.gv-legend:not([open]) > :not(summary) { display: none; }
+.gv-legend:not([open]) { overflow: hidden; }
+.gv-legend[open] { min-width: 172px; }
+.gv-legend__title::-webkit-details-marker { display: none; }
+/* THE DISCLOSURE MARKER IS A SHAPE, NOT A CODEPOINT. It was U+25B8/U+25BE, which
+   render on this box only because a SYSTEM FALLBACK supplies them — the shipped
+   Figtree/JetBrains subsets do not, and the 2026-08-30 census showed both font
+   columns drawing them identically, which is the tell. That is the U+FF0B tofu
+   failure with the trigger not yet pulled, and this is the only affordance
+   saying the Legend opens: if a viewer's fallback differs, it reads as an inert
+   label. Borders always draw.
+
+   `content: ''` plus zero width/height makes the border box itself the triangle.
+   The ::after is a flex item of `.gv-legend__title` (display: flex) and so is
+   blockified — an inline box would ignore the sizing. Widths are in `em` so the
+   mark tracks the font-size set below rather than being pinned in px. */
+.gv-legend__title::after {
+  content: '';
+  flex: none;
+  margin-left: auto;
+  font-size: var(--pn-fs-micro);
+  width: 0;
+  height: 0;
+  border-top: 0.32em solid transparent;
+  border-bottom: 0.32em solid transparent;
+  border-left: 0.4em solid var(--pn-ink-3);
+  border-right: 0;
+}
+/* Open: the same box re-pointed downward. Every one of the four borders is
+   restated, so nothing survives from the closed rule above. */
+.gv-legend[open] .gv-legend__title::after {
+  border-top: 0.4em solid var(--pn-ink-3);
+  border-bottom: 0;
+  border-left: 0.32em solid transparent;
+  border-right: 0.32em solid transparent;
+}
+.gv-legend[open] .gv-legend__title {
+  border-bottom-color: var(--pn-line);
+  margin-bottom: 4px;
+}
+.gv-legend__title {
+  display: flex; align-items: center; gap: var(--pn-space-2);
+  min-height: 28px;
+  font-size: var(--pn-fs-sm); font-weight: 650; color: var(--pn-ink);
+  border-bottom: 1px solid transparent;
+  padding: 0 8px; cursor: pointer; list-style: none;
+}
+/* Legend rows are toggles, so they take the compact grammar's metrics — 28px
+   box, r-sm, ui 600 at fs-sm, hover fill — in the grammar's ghost (unbordered)
+   form: a stack of eight bordered boxes would out-shout the canvas. */
+.gv-legend__row {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 28px;
+  border: none; background: none; cursor: pointer; text-align: left;
+  font: 600 var(--pn-fs-sm) var(--pn-ui); color: var(--pn-ink);
+  padding: 2px 6px; border-radius: var(--pn-r-sm);
+}
+.gv-legend__row:hover { background: var(--pn-hover); }
+/* The legend teaches the SYMBOL, not just the color: the same registry-drawn
+   kind mark the card eyebrow wears, tinted by the family var the row carries. */
+.gv-legend__mark { display: inline-flex; color: var(--gvf); flex: none; }
+.gv-legend__row--off { opacity: 0.35; }
+
+.gv-filterdock {
+  position: absolute; left: 14px; bottom: 14px; z-index: 6;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md); box-shadow: none;
+  padding: 5px 6px 5px 14px;
+}
+.gv-filterdock__label {
+  font-size: var(--pn-fs-sm); font-weight: 650; color: var(--pn-ink);
+  padding-right: 10px; border-right: 1px solid var(--pn-line); margin-right: 4px;
+}
+/* Dock options take the compact grammar's metrics (28px, ui 600 at fs-sm,
+   hover fill, the one focus ring). Radius stays pill, deliberately: the dock
+   itself is a pill, and an r-sm rectangle would poke through its end caps. */
+.gv-filterdock__opt {
+  display: inline-flex; align-items: center;
+  min-height: 28px;
+  border: 1px solid transparent; background: none; cursor: pointer;
+  font: 600 var(--pn-fs-sm) var(--pn-ui); color: var(--pn-ink-2);
+  line-height: 1;
+  padding: 0 12px; border-radius: var(--pn-r-pill);
+}
+.gv-filterdock__opt:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.gv-filterdock__opt--on {
+  background: var(--pn-card);
+  border-color: var(--pn-brand);
+  color: var(--pn-ink);
+}
+
+.gv-zoomdock {
+  position: absolute; right: 14px; bottom: 14px; z-index: 6;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md); box-shadow: none; padding: 4px;
+}
+
+/* -- contextual bands -------------------------------------------------------
+   The frame a band draws around the nodes one signal put together. It sits
+   UNDER the edges and the cards and takes no pointer events, because a backdrop
+   that swallows a click meant for a card is worse than no backdrop; only the
+   header opts back in.
+
+   Deliberately quiet: the band is the room, not the furniture. It reads as a
+   faint sunken plane with a hairline, so a card still looks like the brightest
+   thing on the canvas — the same reason the edge layer is a hairline crowd
+   until something is hovered. */
+
+/* NO `z-index` on the frame, deliberately. Giving it one makes it a stacking
+   context, and its own header can then never rise above the edge layer — an
+   edge would paint straight through the band's label and count, which it did.
+   With `z-index: auto` the frame still paints under the edges (it precedes the
+   SVG in DOM order) while the header, which IS positioned and z-indexed, lifts
+   clear of them. */
+.gv-band {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--pn-line);
+  border-radius: 12px;
+  background: none;
+}
+
+/* The residual band — "Unassigned", "No status". A real band holding real
+   entities, but its label is an admission that the signal had nothing to say,
+   so it recedes further rather than competing with the bands that mean
+   something. Dashed, because the boundary itself is the weaker claim. */
+.gv-band--residual {
+  border-style: dashed;
+  background: none;
+}
+
+/* Collapsed: header only. Kept visually complete rather than shrunk to a
+   sliver, because it carries the only control that brings its contents back. */
+.gv-band--collapsed {
+  background: var(--pn-surface);
+}
+
+/* Lifts above the edge layer (which is positioned at `z-index: auto`), so a
+   band's name and count are never crossed out by an edge passing through. */
+.gv-band__head {
+  pointer-events: auto;
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  max-width: 100%;
+  appearance: none;
+  border: none;
+  /* The label sits ON the frame's top border, so it needs its own ground to be
+     legible where the hairline — and any edge routed past it — runs behind.
+     Must come AFTER the `appearance` reset, or the reset wins. */
+  background: var(--pn-card);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  cursor: pointer;
+  color: var(--pn-ink-2);
+  border-radius: 12px 12px 0 0;
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.gv-band__head:hover { color: var(--pn-ink); }
+
+.gv-band__caret {
+  font-size: 9px;
+  color: var(--pn-ink-3);
+  line-height: 1;
+}
+
+.gv-band__icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.85;
+}
+
+.gv-band__label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  flex: none;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The count is the band's whole promise: whatever the frame is doing to the
+   layout, this many entities are in here. It never disappears on collapse. */
+.gv-band__count {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  /* NEVER CLIP A NUMBER BARE. This is the child elected to yield, so it is the
+     one that can actually truncate — and a bare clip turns 128 into 12, which
+     is not a smaller number, it is a WRONG one that looks right. The ellipsis
+     is what makes the truncation legible as truncation. The exact figure is in
+     the header's own title either way. */
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 7px;
+}
+
+.gv-band--residual .gv-band__label { font-weight: 500; color: var(--pn-ink-3); }
+
+/* -- the grouping dropdown's rows ------------------------------------------ */
+
+.gv-select__opt {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--pn-ink-2);
+}
+
+/* The option's NAME at the interactive floor (ui 13/600); the hint below it
+   keeps its own quieter size. */
+.gv-select__opt .gv-select__label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+}
+
+.gv-select__opt:hover { background: var(--pn-hover); }
+
+.gv-select__opt--on,
+.gv-select__opt--on:hover {
+  color: var(--pn-brand-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-brand);
+}
+
+/* The hint is why this control can be single-select without being a guess: the
+   reader learns what the partition MEANS before spending a click on it. */
+.gv-select__hint {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: normal;
+  max-width: 260px;
+  line-height: 1.35;
+}
+
+.gv-select__opt--on .gv-select__hint { color: var(--pn-ink-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .gv-band__head { transition: none; }
+}
+
+/* -- the ONE focus grammar --------------------------------------------------
+   Every reclassified control shares the kit ring (same as .k-btn): 2px
+   --pn-focus, 1px offset. Declared once so no chrome control can quietly ship
+   without a visible keyboard state. */
+.gv-filter:focus-visible,
+.gv-lens__opt:focus-visible,
+.gv-toolbar__fold:focus-visible,
+.gv-banner__act:focus-visible,
+.gv-select__face:focus-visible,
+.gv-select__all:focus-visible,
+.gv-select__opt:focus-visible,
+.gv-legend__row:focus-visible,
+.gv-filterdock__opt:focus-visible,
+.gv-screen__collapse:focus-visible,
+.gv-node__folded:focus-visible,
+.gv-ticker__row:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+
+/* ==========================================================================
+   GOD'S-EYE PASS (2026-08-31) — legibility, the recency/liveness registers,
+   the find grammar, and the Building rail.
+
+   Everything below is prefixed `.cv2-root` like its neighbours in panels.css.
+   That is not cosmetic here: the palette is scoped to `.cv2-root` rather than
+   `:root`, and the prefix also puts these rules one specificity step above the
+   FLOW-CARD block above them, which is what lets the recency register reach
+   the stripe without an `!important` anywhere.
+   ========================================================================== */
+
+/* -- SEMANTIC ZOOM ----------------------------------------------------------
+   THE 7px LABELS, AND WHY THE FIX IS NOT A HEIGHT.
+
+   The render gate measured `.gv-node__head` and `.gv-node__foot` at 116×7
+   holding 13–31 characters, eleven times, both themes. Probing the same live
+   page for LAYOUT size found `.gv-node` 178px tall with `__head` at 20.06px and
+   `__foot` at 16.5px: a healthy flex column, nothing crushed, no §4.5 minimum
+   zeroed anywhere. What the gate read was the COMPOSITED box — `.gv-canvas`
+   carried `scale(0.372)` from the opening fit, and 20.06 × 0.372 = 7.5.
+
+   Bumping a height would have been fixing the ruler. The screen was still
+   wrong: at 0.372 the card's 10px micro-type painted at under 4px, so the
+   god's-eye view opened on labels nobody could read. Two rules answer it —
+   `FIT_FLOOR` in GraphView stops the canvas CHOOSING a scale that small, and
+   this block handles the case where the reader chooses it deliberately.
+
+   Below the threshold a card sheds every register the scale cannot carry and
+   keeps the four that survive it: the family stripe (kind), the title, the
+   arrival/selection rings, and a liveness mark. The words those rows carried
+   move to the card's `title` — colour + word-in-title, which is exactly how
+   `Minimap` already resolves this same tension for a 4px rect. */
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__head,
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__body,
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__foot,
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__focus {
+  display: none;
+}
+
+/* With four registers gone the card is nothing but its name, so the name takes
+   the room. Three lines rather than two: there is space for them now, and a
+   truncated title is the one thing an overview cannot afford. */
+.cv2-root .gv-canvas[data-lod='far'] .gv-node {
+  justify-content: center;
+}
+
+.cv2-root .gv-canvas[data-lod='far'] .gv-node__title {
+  font-size: var(--pn-fs-h3);
+  -webkit-line-clamp: 3;
+}
+
+/* LIVENESS SURVIVES THE ZOOM, because it is the one fact on a card that is
+   about right now. A dot rather than the pill: at this scale a pill is a smear,
+   and the word is in the card's title where it stays readable. Driven by
+   `data-live`, which carries the seam's VERDICT and never a status field. */
+.cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='live']::after,
+.cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='stale']::after {
+  content: '';
+  position: absolute;
+  top: var(--pn-space-3);
+  right: var(--pn-space-3);
+  width: 10px;
+  height: 10px;
+  border-radius: var(--pn-r-pill);
+}
+
+.cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='live']::after {
+  background: var(--pn-run);
+  animation: gv-livepulse 2s var(--pn-ease-standard) infinite;
+}
+
+/* Stale is a HOLLOW mark, never the live one in another colour: the difference
+   between "running" and "recorded as running and not answering" has to be
+   legible to someone who cannot resolve a hue at this size. */
+.cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='stale']::after {
+  background: none;
+  border: 2px solid var(--pn-wait);
+}
+
+@keyframes gv-livepulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* -- THE RECENCY REGISTER ---------------------------------------------------
+   Recency was computed on every node (`heatOf` over `activityAt`) and painted
+   nowhere: the three `.gv-node--fresh/warm/rest` border rules near the top of
+   this file are outranked by the FLOW-CARD block's plain `.gv-node` border, so
+   every card drew the same edge however old it was.
+
+   It lands on the family STRIPE rather than the border, deliberately. The
+   border is spoken for — hover, selection and the blocked path all claim it —
+   and stacking a fourth meaning on it is how a card ends up saying four things
+   with one line. The stripe already carries KIND as hue; carrying recency as
+   the same hue's SATURATION adds a dimension without adding an element, and it
+   is never the only carrier: the timestamp word rides the foot of every card
+   at any zoom that can read it.
+
+   Ordered rest → warm → fresh, all at the same specificity, so source order
+   decides and the newest claim wins. */
+.cv2-root .gv-node {
+  border-left-color: color-mix(in srgb, var(--gvf) 52%, var(--pn-line));
+}
+
+.cv2-root .gv-node--warm {
+  border-left-color: color-mix(in srgb, var(--gvf) 78%, var(--pn-line));
+}
+
+.cv2-root .gv-node--fresh {
+  border-left-color: var(--gvf);
+}
+
+/* A fresh card's timestamp is the sentence the stripe is only illustrating, so
+   it steps up out of the meta grey with it. */
+.cv2-root .gv-node--fresh .gv-node__meta {
+  color: var(--pn-ink-2);
+}
+
+/* -- FINDING, WITHOUT UNMAKING THE GRAPH ------------------------------------
+   A search miss recedes; it is never removed. 0.25 took the neighbourhood so
+   far down that a match arrived with no context around it — which is a card,
+   not a graph. 0.4 is the point where an edge and its far endpoint are still
+   readable as structure while the hits clearly own the canvas. */
+.cv2-root .gv-node--unmatched {
+  opacity: 0.4;
+}
+
+/* THE MATCH THE READOUT IS COUNTING. "3 / 12" is a lie unless one card on
+   screen is visibly the third; the other hits keep the softer 1px outline they
+   already had. Ring + a brand-soft ground, no glow — the ring is what carries
+   it, the ground only stops the ring reading as a selection. */
+.cv2-root .gv-node--match-current {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  background: var(--pn-brand-soft);
+}
+
+/* -- THE BUILDING RAIL ------------------------------------------------------
+   The right rail now stacks three things — Building, the overview, the scripted
+   ticker — so it needs a ceiling and its own scroll. Bottom-anchored, so it
+   grows upward and stops at the top edge of the viewport rather than at the
+   top edge of the document. */
+.cv2-root .gv-rail {
+  max-height: calc(100% - 96px);
+  z-index: 6;
+}
+
+/* The overview and the scripted ticker are fixed-size objects: an SVG that
+   shrinks is a distorted map, and two ticker rows are not a ticker. Building is
+   the one member with a scrollable interior, so it is the one that yields —
+   `flex: none` on the other two says which. */
+.cv2-root .gv-rail > .gv-minimap,
+.cv2-root .gv-rail > .gv-ticker {
+  flex: none;
+}
+
+.cv2-root .gv-rail > .gv-building {
+  flex: 0 1 auto;
+}
+
+.cv2-root .gv-building {
+  width: 300px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  /* The list scrolls inside the card so the CARD stays inside the rail's
+     bound. Without this the rail is bounded and its child simply overflows it,
+     which looks identical to having no bound at all. */
+  min-height: 0;
+  overflow: hidden;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+}
+
+.cv2-root .gv-building__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: none;
+}
+
+.cv2-root .gv-building__spacer {
+  flex: 1;
+}
+
+/* COLOUR AND WORD, both, for the count the whole panel is about. */
+.cv2-root .gv-building__live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-run);
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__quiet {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__pulse {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-run);
+  animation: gv-livepulse 2s var(--pn-ease-standard) infinite;
+}
+
+.cv2-root .gv-building__sub {
+  margin: 0;
+  flex: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  line-height: var(--pn-lh-snug);
+}
+
+/* THE LIST SCROLLS INSIDE ITSELF. A bounded panel whose rows are sized from
+   content, never rows divided across a definite height — hence flex-column with
+   `flex: none` rows and the overflow on the list, not on the panel. */
+.cv2-root .gv-building__list {
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: var(--pn-space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cv2-root .gv-building__list > li {
+  flex: none;
+  display: flex;
+  min-width: 0;
+}
+
+.cv2-root .gv-building__row {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-height: 26px;
+  padding: 2px var(--pn-space-2);
+  text-align: left;
+  background: none;
+  border: none;
+  /* The recency register again, in the one place a row can afford it: a 2px
+     rule on the leading edge, the same hue the card's stripe wears. */
+  border-left: 2px solid color-mix(in srgb, var(--gvf) 52%, var(--pn-line));
+  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.cv2-root .gv-building__row[data-heat='warm'] {
+  border-left-color: color-mix(in srgb, var(--gvf) 78%, var(--pn-line));
+}
+
+.cv2-root .gv-building__row[data-heat='fresh'] {
+  border-left-color: var(--gvf);
+}
+
+.cv2-root .gv-building__row:hover {
+  background: var(--pn-hover);
+}
+
+/* The row for the node the canvas is currently marking. The panel and the
+   canvas must agree about what "here" means, or clicking a row and looking up
+   is a guess. */
+.cv2-root .gv-building__row--marked {
+  background: var(--pn-brand-soft);
+}
+
+.cv2-root .gv-building__row:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -1px;
+}
+
+.cv2-root .gv-building__glyph {
+  flex: none;
+  display: inline-flex;
+  color: var(--gvf);
+}
+
+/* THE NAME IS THE INVARIANT — it is the only child allowed to consume the
+   width, and the only one allowed to truncate. Every trailing register beside
+   it is `flex: none`, so a long title never pushes the timestamp off the row
+   and the row never widens the rail. */
+.cv2-root .gv-building__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink);
+}
+
+.cv2-root .gv-building__new {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-brand-2);
+  border: 1px solid var(--pn-brand);
+  border-radius: var(--pn-r-pill);
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__rowlive {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-run);
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__when {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.cv2-root .gv-building__more {
+  margin: 0;
+  flex: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .gv-building__pulse,
+  .cv2-root .gv-canvas[data-lod='far'] .gv-node[data-live='live']::after {
+    animation: none;
+  }
+  .cv2-root .gv-building__row {
+    transition: none;
+  }
+}

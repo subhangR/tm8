@@ -4,9 +4,9 @@
  *
  * WHY ITS OWN PACKAGE. The prompt must be composed in TWO places that must not
  * depend on each other:
- *   - `@tm8/execution` composes it at SPAWN time and embeds it in the agent's
- *     command line, so the prompt exists at the agent's first token — before it
- *     could possibly run a CLI;
+ *   - `@tm8/execution` composes it at SPAWN time, puts the system half in the
+ *     provider command, and queues the task half through the PTY's verified
+ *     first-turn submit — before the agent could possibly run a CLI;
  *   - `@tm8/cli` composes it for `tm8 worker init`, so an agent can re-read its
  *     own briefing.
  * `@tm8/cli` cannot import `@tm8/execution` (that would drag `node-pty` and
@@ -32,10 +32,12 @@ import { untrustedData } from './escape.js';
 import { composeKernel } from './kernel.js';
 import {
   coordinatorBootstrapControl,
+  coordinatorKindOf,
   dispatcherBootstrapControl,
   taskAssignmentInjection,
   workerBootstrapControl,
   type BootstrapControlFacts,
+  type CoordinatorKind,
 } from './templates.js';
 
 /**
@@ -112,14 +114,27 @@ export interface PromptManifest {
         title?: string | undefined;
         description?: string | undefined;
         priority?: string | undefined;
-        workStatus?: string | undefined;
+        status?: string | undefined;
         acceptanceCriteria?: readonly unknown[] | undefined;
+        attachments?: ReadonlyArray<{
+          fileEntityId: string;
+          name: string;
+          mime?: string | null | undefined;
+        }> | undefined;
         /** Thread-derived tasks (064/099): the live thread's root and channel. */
         threadRootMessageId?: string | null | undefined;
         threadChannelId?: string | null | undefined;
       }>
     | undefined;
-  coordinator?: { sessionId?: string; displayName?: string } | null | undefined;
+  coordinator?:
+    | {
+        sessionId?: string;
+        /** `work_session | chat` (176). Absent means work_session. */
+        kind?: string | null | undefined;
+        displayName?: string;
+      }
+    | null
+    | undefined;
   directive?:
     | { subject?: string; message?: string; fromSessionId?: string }
     | null
@@ -370,6 +385,28 @@ export const COORDINATION_INSTRUCTION =
   'exact `coordinator_session_id` above, the moment you complete or block. Never send ' +
   'that completion report to the assignment or task anchor, and do not simply go idle.';
 
+/**
+ * The same instruction when the coordinator is a CHAT (176).
+ *
+ * Written as its own constant rather than a suffix because the first sentence
+ * of the original is now false in this case — the thing waiting is not a
+ * coordinator session, and a worker told to look for one will not find it. The
+ * COMMAND is deliberately identical: a chat is an anchor like any other, and
+ * suggesting otherwise would invent a second protocol that does not exist.
+ */
+export const COORDINATION_INSTRUCTION_CHAT =
+  'A CHAT spawned you and is waiting on a durable answer. Its id above is a chat ' +
+  'entity, not a work session, and `tm8 message send --to <coordinator-session-id> ' +
+  '"<body>"` reaches it exactly as it reaches a session: the message lands in the ' +
+  'chat transcript, runs the chat\'s next turn, and the human reading that chat sees ' +
+  'it. Send it the moment you complete or block. Never send that completion report ' +
+  'to the assignment or task anchor, and do not simply go idle.';
+
+/** The §14 instruction for a coordinator of the given kind. */
+export function coordinationInstructionFor(kind: CoordinatorKind): string {
+  return kind === 'chat' ? COORDINATION_INSTRUCTION_CHAT : COORDINATION_INSTRUCTION;
+}
+
 export const COMMAND_SURFACE_INSTRUCTION =
   'These are real HTTP calls against your tm8 server, and they ' +
   'are how your work becomes visible; nothing else in this environment writes to ' +
@@ -517,6 +554,20 @@ export function commandSurface(hasSession: boolean): CommandDoc[] {
       usage: 'tm8 message send --to <anchor-entity-id> "<body>"',
       what: 'durable communication — a result, a milestone or a blocker is a message on an anchor',
     },
+    // The second undiscoverable-by-accident path, and it is here for the same
+    // reason `message send` is — not as an operation inventory (§9 rule 1 still
+    // stands; the other 80 rows stay behind `tm8 help`).
+    //
+    // Every harness tm8 spawns brings its OWN artifact/canvas tool. So an agent
+    // told "make me an artifact" does not experience a gap it could resolve with
+    // `tm8 help` — it believes it already has the verb, reaches for the native
+    // one, and publishes somewhere tm8 cannot see. Discovery cannot fix a verb
+    // an agent never knows to look up. This is the `task link-pr` precedent
+    // exactly: a deliverable nobody can see did not happen.
+    {
+      usage: 'tm8 artifact publish <dir> --name "<name>"',
+      what: 'publish a directory of HTML/JS/CSS AS A TM8 ARTIFACT — the only way a built page becomes an entity in this space; your harness\'s own artifact/canvas tool publishes elsewhere and leaves nothing in tm8',
+    },
   ];
   if (hasSession) {
     cmds.push({
@@ -557,6 +608,8 @@ interface BootstrapView {
     launchProjectId?: string | null;
     trust: string;
     coordinatorSessionId?: string | null;
+    /** `work_session | chat` (176). Absent means work_session. */
+    coordinatorKind?: string | null;
   };
   interactionProfile: {
     entityId: string;
@@ -618,6 +671,7 @@ function composeBootstrapSystem(view: BootstrapView, manifestPath: string): stri
     launchProjectId: view.session.launchProjectId ?? null,
     primaryTaskId: view.assignment?.primaryTaskId ?? null,
     coordinatorSessionId: view.session.coordinatorSessionId ?? null,
+    coordinatorKind: coordinatorKindOf(view.session.coordinatorKind),
     interactionProfileId: profile.entityId,
     interactionProfileVersion: profile.version,
     resolvedProfileHash: profile.resolvedHash,
@@ -638,6 +692,7 @@ function composeBootstrapSystem(view: BootstrapView, manifestPath: string): stri
     resolvedProfileHash: profile.resolvedHash,
     taskId: view.assignment?.primaryTaskId ?? null,
     coordinatorSessionId: view.session.coordinatorSessionId ?? null,
+    coordinatorKind: coordinatorKindOf(view.session.coordinatorKind),
   };
   const control =
     view.identity.mode === 'dispatcher'
@@ -708,6 +763,7 @@ export function composePrompt(
   const tasks = manifest.tasks ?? [];
   const commands = commandSurface(sessionId !== null);
   const coordinatorSessionId = manifest.coordinator?.sessionId?.trim() || null;
+  const coordinatorKind = coordinatorKindOf(manifest.coordinator?.kind);
 
   // A `manifestVersion: "2"` bootstrap manifest takes the harness path: the
   // §5.2 kernel and one §14 control block, with no persona/skill/memory frame
@@ -815,9 +871,13 @@ export function composePrompt(
   if (coordinatorSessionId) {
     s.push('  <coordination>');
     s.push(`    <coordinator_session_id>${esc(coordinatorSessionId)}</coordinator_session_id>`);
+    // WHAT that id names. Emitted unconditionally, including the `work_session`
+    // case: a kind that appears only for chats would make its absence ambiguous
+    // between "a session" and "a manifest too old to say".
+    s.push(`    <coordinator_kind>${esc(coordinatorKind)}</coordinator_kind>`);
     if (coordinator?.displayName)
       s.push(`    <coordinator>${esc(coordinator.displayName)}</coordinator>`);
-    s.push(`    <instruction>${COORDINATION_INSTRUCTION}</instruction>`);
+    s.push(`    <instruction>${coordinationInstructionFor(coordinatorKind)}</instruction>`);
     s.push('  </coordination>');
   }
 
@@ -867,7 +927,7 @@ export function composePrompt(
     const body = [
       task.title ? `Title: ${task.title}` : null,
       task.priority ? `Priority: ${task.priority}` : null,
-      task.workStatus ? `Status: ${task.workStatus}` : null,
+      task.status ? `Status: ${task.status}` : null,
       task.description ? `Description:\n${task.description}` : null,
       criteria.length > 0 ? `Acceptance criteria:\n${criteria.map((item) => `- ${item}`).join('\n')}` : null,
     ].filter((line): line is string => line !== null).join('\n\n');
@@ -882,6 +942,7 @@ export function composePrompt(
       destinationSessionId: sessionId ?? 'none',
       replyAnchorId: coordinatorSessionId,
       body,
+      attachments: task.attachments,
       threadRootMessageId: task.threadRootMessageId ?? null,
       threadChannelId: task.threadChannelId ?? null,
     }));

@@ -23,8 +23,8 @@ export type {
   CollectionMode,
   ContentBlockKind,
   ContentBlockRef,
-  ContentSurfaces,
   CustomKindFallback,
+  DateControl,
   EditFieldSpec,
   FilterOption,
   FilterSpec,
@@ -32,7 +32,7 @@ export type {
   Hash,
   IconRef,
   KindConfig,
-  LifecycleTier,
+  StatusCategoryTab,
   ListConfig,
   ListPageState,
   ListRowFacts,
@@ -76,11 +76,19 @@ export {
   slugOfKind,
 } from './registry';
 
-export { KIND_ART, VIEW_ART, type KindArt } from './kind-art';
+export { KIND_ART, SURFACE_ART, VIEW_ART, type KindArt } from './kind-art';
 export { KindIcon } from './KindIcon';
 export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
 
-export { REASONS, allActions, deferredActions, resolveAction } from './actions';
+export {
+  PROCESS_CONTROL,
+  REASONS,
+  allActions,
+  deferredActions,
+  hasEnded,
+  processControlFor,
+  resolveAction,
+} from './actions';
 
 export {
   PREDATES_MERGE_DOOR,
@@ -142,6 +150,16 @@ export type {
 
 export { placeholderNameFor, slugifyTitle, titleNormalizerFor } from './title-grammar';
 
+/** W4 — per-type status vocabularies (132): the one client-side statement of the rule. */
+export {
+  STRUCTURAL_STATUSES,
+  WORKFLOW_AXIS,
+  offWorkflowType,
+  workflowRefusalText,
+  workflowTypeOf,
+  workflowVocabularyOf,
+} from './workflows';
+
 export {
   SHIPPED_DEFAULT_MENU,
   SHIPPED_DEFAULT_MENU_REVISION,
@@ -152,11 +170,22 @@ export {
 
 /** The merged Home page's rail/presence kinds — registry-adjacent data (D18). */
 export { HOME_PRESENCE_KIND, HOME_RAIL_KINDS } from './home-page';
+export { CATEGORY_DEFAULT_STATUS } from './status-categories';
+export {
+  CHATS_ROOT,
+  DEFAULT_HOME_KIND,
+  LEGACY_HOME_TAB_KINDS,
+  homeRailGroups,
+  homeRootKinds,
+  isHomeRootKind,
+  type HomeRailGroup,
+  type HomeRoot,
+} from './home-rail';
 
 /**
  * The MenuTarget <-> NavView mapping. Exported from the barrel because the
  * shell composes from `domain/`, and this is the one place the two navigation
  * vocabularies are joined.
  */
-export { VIEW_REF_ROUTE, landingOfRoute, navViewOfName, routeViewOf } from './nav-targets';
+export { CHANNEL_KIND, VIEW_REF_ROUTE, landingOfRoute, navViewOfName, routeViewOf } from './nav-targets';
 export type { Landing } from './nav-targets';

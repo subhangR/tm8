@@ -23,6 +23,7 @@ import type {
   AccessMode,
   AgentMode,
   CommandNetworkPolicy,
+  CoordinatorKind,
   CredentialSource,
   GitHubCredential,
   PermissionMode,
@@ -87,6 +88,21 @@ export function resolveCoordinatorSessionId(
     );
   }
   return coordinatorSessionId;
+}
+
+/**
+ * What the coordinator id NAMES, resolved from the parent the graph read back.
+ *
+ * Deliberately separate from {@link resolveCoordinatorSessionId}, which the
+ * spec pins as returning a string: the id and its kind are two facts, and
+ * folding them into one return would change a signature three call sites and a
+ * guard already depend on. `null`/unknown folds to `work_session` — the pre-176
+ * meaning, and the only safe reading of a parent this node could not resolve.
+ */
+export function resolveCoordinatorKind(
+  parentKind: CoordinatorKind | null | undefined,
+): CoordinatorKind {
+  return parentKind === 'chat' ? 'chat' : 'work_session';
 }
 
 /** Exact hosts tm8 grants to sandboxed Codex commands. */
@@ -430,6 +446,33 @@ export function resolveWorkdir(
     });
   }
 
+  // Project mode requires a project, for the same reason worktree mode does and
+  // scratch mode refuses one: the mode names where the agent works, and without
+  // a project there is no such place.
+  //
+  // THIS IS THE ONE COMBINATION THAT USED TO FALL THROUGH. The two guards above
+  // reject their impossible pairing; `mode: 'project'` with no project reached
+  // the projectless return at the bottom and got back
+  // `.../scratch/pending` — with `mode` still reported as `'project'`. Nothing
+  // failed, so the session spawned, the row recorded `project`, and the agent
+  // ran in a scratch directory instead of the repository it was asked for.
+  //
+  // Measured on a live node 2026-08-22: of the sessions active that day, every
+  // one whose row said `project` and whose path was scratch had a null
+  // `project_id`, and every one with a project was in the repository. The
+  // operator's report was "my sessions are not starting from /root/strykr".
+  //
+  // Safe to add because the DEFAULT already resolves correctly: an unspecified
+  // mode is `context.project ? 'project' : 'scratch'`, so a caller that simply
+  // does not know is unaffected. Only a caller that explicitly asked for project
+  // mode without one reaches here — and that caller is asking for something that
+  // does not exist.
+  if (mode === 'project' && !context.project) {
+    throw new SpawnError('workdir.mode "project" requires a project', 'invalid_input', {
+      reason: 'project_requires_project',
+    });
+  }
+
   if (context.project) {
     const dir = context.project.workingDir;
     if (!dir.startsWith('/') || dir.includes('..')) {
@@ -732,7 +775,43 @@ export function withAgentResume(
  *
  * The positional goes LAST, after every flag, because both CLIs stop parsing
  * options at the first non-option argument.
+ *
+ * PRODUCTION NOTE (2026-08-24): positional task delivery is the DEFAULT again,
+ * for every provider this function knows how to configure. The 2026-08-16 shape
+ * — blank the positional, launch an idle REPL, then type the task into the TUI
+ * through the PTY closed loop — bought a verified submit receipt at the cost of
+ * making the first turn racy: the readiness gate releases on output silence,
+ * and a booting claude-code can fall quiet several seconds before its composer
+ * accepts input, so the task was written into a terminal that discarded it. The
+ * session then reported `running` with an EMPTY prompt (live sessions 01a035b9
+ * and 01a035d3, 2026-08-24: complete task prompts in both launch records, no
+ * first turn in either transcript, operator pasted the task in by hand).
+ *
+ * argv cannot lose a race it does not run: the prompt exists at the agent's
+ * first token, before any terminal is drawn. That is also why the SYSTEM half
+ * never failed while the task half did — the system half was always in argv.
+ * The PTY closed loop keeps its real job, delivering prompts to an agent that
+ * is already live, and remains the first-turn path for operator wrappers whose
+ * flag vocabulary this function refuses to guess (see `supportsPositionalPrompt`).
  */
+/**
+ * Whether this launch's actual binary takes its first user turn as a trailing
+ * positional argument — i.e. whether {@link withAgentPrompt} will embed `task`.
+ *
+ * Shares `withAgentPrompt`'s resolution of which binary is really being run so
+ * the two cannot drift: a caller that trusts this and skips its own first-turn
+ * delivery would otherwise strand the assignment the moment the rule changed
+ * in one place only. Returns false for `echo-agent` (it reads the typed
+ * manifest) and for any operator `TM8_AGENT_CMD` wrapper.
+ */
+export function supportsPositionalPrompt(
+  launch: ResolvedLaunchConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
+  return raw === 'claude' || raw === 'codex';
+}
+
 export function withAgentPrompt(
   command: string,
   prompts: { system: string; task: string },
@@ -742,11 +821,11 @@ export function withAgentPrompt(
   const system = prompts.system.trim();
   const task = prompts.task.trim();
   if (system === '' && task === '') return command;
-  const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
 
   // echo-agent reads the typed manifest directly. An operator-provided wrapper
   // is a complete command whose private flag vocabulary tm8 must not guess.
-  if (raw !== 'claude' && raw !== 'codex') return command;
+  if (!supportsPositionalPrompt(launch, env)) return command;
+  const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
 
   const parts = [command];
   if (system !== '') {
@@ -1293,7 +1372,9 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // context predating this (the test fake, an older caller) is "no skills",
     // not an error. This is the value change the shape was held stable for.
     skills: context.skills ?? [],
-    coordinator: coordinatorSessionId ? { sessionId: coordinatorSessionId } : null,
+    coordinator: coordinatorSessionId
+      ? { sessionId: coordinatorSessionId, kind: resolveCoordinatorKind(context.parentKind) }
+      : null,
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
   });

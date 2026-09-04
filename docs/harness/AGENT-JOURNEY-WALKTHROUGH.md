@@ -634,7 +634,7 @@ Every outcome except `failed_retryable` is terminal. The same mutation/delivery 
 
 Every Teammate-authored live send/reply reserves against one durable **unordered work-session pair** budget:
 
-> **⚠ THE CAP BELOW WAS REMOVED — 2026-08-14, by migration `120`.** The `check(consecutive_agent_wakes between 0 and 4)` was dropped and the `automated_wake_limit` refusal deleted from `public.reserve_session_message_delivery`; a session may now wake another as many times as the work needs. The table, the pair lock and `version` all remain (`version` is the reserve → claim → settle pin), and the counter is now telemetry. `SESSION-COMMUNICATION-MODEL.md` §10 carries the full note. The design text below is kept as the record of what was adopted.
+> **⚠ THE BUDGET BELOW WAS REMOVED — by migrations `120` and `135`.** `120` removed the cap; `135` removed the table, pair lock, counter, reset/cleanup paths, delivery pair columns, and copied version claim. The delivery row lock and unique logical-attempt key remain the concurrency boundaries. `SESSION-COMMUNICATION-MODEL.md` §10 carries the full note. The design text below is kept as the record of what was adopted.
 
 ```sql
 session_wake_budgets(
@@ -658,7 +658,7 @@ A **Member**-authored reply resets a pair only when immutable parent/delivery pr
 
 - minted per worker execution; **not** an account, Member, Teammate, agent token, session token, owner/admin role, or act-as identity;
 - cannot appear in HTTP JSON, CLI flags, headers, or `actorId`;
-- claims contain only `deliveryId`, `messageId`, target session, reservation version, expiry;
+- claims contain only `deliveryId`, `messageId`, target session, and expiry;
 - allowlisted to exactly three DB RPCs — `reserve_` / `claim_` / `settle_session_message_delivery` — plus one governed non-DB `proc.write`.
 
 Mandatory handler order: authenticate → reject non-adapter principals with `forbidden`/`use_message_send` → verify the delivery/message/target tuple and active reservation → claim idempotently → enqueue exactly one adapter entry → settle from the awaited `proc.write`. **Steps 2–3 precede queue admission**, so a forbidden caller writes zero bytes. Owner/admin roles do not bypass B1 or the pair budget.
@@ -821,7 +821,7 @@ The W0 review verified against source, not against docs:
 
 - `execution.prompt` is **still a live, public, unrestricted handler** at `packages/server/src/facade/execution-handlers.ts:580` (`POST /v2/entities/:id/commands/prompt`) — this was blocker B1, and the restriction is designed but unshipped;
 - migrations 001–014 define **none** of the three delivery RPCs, no delivery tables, and no dedicated delivery DB role;
-- `session_wake_budgets`, `session_message_deliveries`, `participates_in`, `authored_from`, `shared_into`, and `recipient_team_member_id` all live in a single **planned forward migration**.
+- `session_message_deliveries`, `participates_in`, `authored_from`, `shared_into`, and `recipient_team_member_id` landed through forward migrations; the later `120`/`135` pair retired the former `session_wake_budgets` state.
 
 Gate status: W0 complete with G0 APPROVE; **W1 started but paused at its pre-edit authority boundary** pending the G0.1 verdict. The dossier is design authority only — "no package, migration, test, UI, or Remote edit" is authorized by the documentation pass.
 

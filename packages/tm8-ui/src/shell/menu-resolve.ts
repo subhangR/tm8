@@ -14,8 +14,9 @@
  * names no kinds: this resolver, and the view-ref presentation table. The split
  * is data vs. rail behavior.
  */
-import type { MenuConfig, MenuViewRef } from '@tm8/contract';
+import type { MenuConfig, MenuGroup, MenuViewRef } from '@tm8/contract';
 import { SHIPPED_DEFAULT_MENU, VIEW_ART, unrenderableKindRefs, type KindArt } from '../domain';
+import type { MenuTarget } from './MenuRail';
 
 // ---------------------------------------------------------------------------
 // Fail-closed resolution
@@ -157,6 +158,104 @@ export function resolveMenu(raw: MenuConfig | null | undefined, error?: unknown)
   return { config: raw, origin: { source: 'server', revision: raw.revision } };
 }
 
+// ---------------------------------------------------------------------------
+// Tab derivation (five-tab ruling R2, 2026-08-15): the menu's GROUPS are the
+// top-level tabs, and the rail renders only the active group's contents.
+// Structural walks over the config — no view or kind literal appears here.
+// ---------------------------------------------------------------------------
+
+/**
+ * The group that owns a target: its items (and caret children) name the
+ * target's ref. Entity targets match through the entity's KIND — a channel
+ * entity belongs to the group carrying the channel collection row. Null when
+ * no group claims the target (e.g. the Inbox view, whose door is the bell,
+ * not a tab) — the honest answer is "no tab is current", never a guess.
+ */
+export function groupIdOfTarget(config: MenuConfig, target: MenuTarget | null | undefined): string | null {
+  if (!target) return null;
+  const wanted =
+    target.type === 'entity' ? { type: 'kind' as const, ref: target.kind } : { type: target.type, ref: target.ref };
+  for (const group of config.groups) {
+    for (const item of group.items) {
+      if (item.type === wanted.type && item.ref === wanted.ref) return group.id;
+      const children = item.type === 'view' ? (item.children ?? []) : [];
+      for (const child of children) {
+        if (child.type === wanted.type && child.ref === wanted.ref) return group.id;
+      }
+    }
+  }
+  return null;
+}
+
+/** Where clicking a tab lands: the group's FIRST item, as a nav target. */
+export function primaryTargetOfGroup(group: MenuGroup): MenuTarget | null {
+  const first = group.items[0];
+  return first ? ({ type: first.type, ref: first.ref } as MenuTarget) : null;
+}
+
+/**
+ * The full-bleed screens: a tab landing on one of these draws NO rail (R2:
+ * "Graph and Settings have no rail"; the Files explorer has the same
+ * full-screen posture). View refs are shell's own territory — the same
+ * jurisdiction VIEW_PRESENTATION claims.
+ *
+ * `dashboard` JOINED THEM on 2026-08-15 (revision 14). It was deliberately
+ * excluded before, on the reasoning that "its rail is the conversation list" —
+ * but the conversation list is drawn by the SCREEN, inside its own left pane,
+ * and never by the rail. So the shell drew a rail anyway and put a single row
+ * in it repeating the tab's own name, one column left of the list that is the
+ * real navigation: three panes where the design calls for two. Excluding it
+ * here is what made the Chats tab look redundant enough to retire in 126;
+ * including it is what lets the tab come back (127) without the third column.
+ */
+const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>([
+  'graph',
+  'settings',
+  'files',
+  'dashboard',
+  // 2026-08-16 (Board tab): the kanban is full-bleed — its columns ARE the
+  // navigation, so a rail beside it could only repeat the tab's own name.
+  'board',
+  // 2026-08-16 (Craft P1): the blueprint studio is full-bleed — the chat
+  // thread and the canvas are the navigation, same posture as board.
+  'craft',
+  // 2026-08-16 (Work tab returns, revision 19): the workspace is the split
+  // pane ITSELF — its own side panels are the navigation, and a menu rail
+  // beside them would be a fourth column repeating the tab's own name.
+  //
+  // THIS DOES NOT DISTURB THE PRE-134 WORK GROUP. `isRaillessGroup` keys on
+  // the SHAPE first: that group's `workspace` item carries eight caret
+  // children, so it fails the childless test before this set is consulted
+  // and keeps drawing its rail — correctly, because an operator with rows
+  // in a group must see them. Only a group whose whole content is a lone
+  // childless `workspace` goes full-bleed, which is exactly the new default.
+  'workspace',
+  // 2026-08-19 (Help): the shelf carries its OWN contents column, so a menu
+  // rail beside it would be a second list of the same pages.
+  'help',
+  // 2026-09-01 (CodeBrain): the module draws its OWN phase spine, so a menu
+  // rail beside it would be a second list of the same phases. Listed even
+  // though this snapshot has no CodeBrain screen — the group is in the shipped
+  // spine, and a spine group that is not railless draws an empty rail column
+  // beside an unbuilt notice, which is two wrongs where one is enough.
+  'codebrain',
+]);
+
+/**
+ * A group draws no rail when its whole content is a single childless
+ * full-bleed view — a rail there could only repeat its own tab. A group with
+ * real rows (Work, Channels) always draws one.
+ */
+export function isRaillessGroup(group: MenuGroup): boolean {
+  if (group.items.length !== 1) return false;
+  const only = group.items[0]!;
+  return (
+    only.type === 'view' &&
+    (only.children?.length ?? 0) === 0 &&
+    RAILLESS_VIEW_REFS.has(only.ref)
+  );
+}
+
 function describeError(error: unknown): string {
   if (typeof error === 'object' && error !== null) {
     const shaped = error as { code?: unknown; message?: unknown };
@@ -217,4 +316,22 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   // (projects, PRs, worktrees ride its caret), and "Git" named the tool
   // rather than the intent. The ref stays `git`.
   git: { label: 'Code', icon: '⎇', art: VIEW_ART.git },
+  // Board tab wave (2026-08-16): the task kanban. Label "Board" — it names
+  // the SURFACE (columns you move cards across), not the kind it presents;
+  // the task collection row in Work already reads "Tasks".
+  board: { label: 'Board', icon: '⫼', art: VIEW_ART.board },
+  // Craft P1 (2026-08-16): the blueprint studio. Label "Craft" — it names the
+  // ACTIVITY (sketching a flow with a teammate), not the graph kind it edits.
+  craft: { label: 'Craft', icon: '✎', art: VIEW_ART.craft },
+  /* CodeBrain entered the contract after this snapshot was frozen. It is
+     listed so the record stays total over `MenuViewRef` and so an operator can
+     PLACE it in a menu; `view-ref-screens.ts` marks it unbuilt here, which is
+     what makes the row say so instead of rendering an empty screen. */
+  codebrain: { label: 'CodeBrain', icon: '◈', art: VIEW_ART.codebrain },
+  // Help (2026-08-19): the curated shelf of Help pages. Label "Help" — the
+  // word a reader looks for; "Docs" would promise API reference this is not.
+  // Present here so an operator can PLACE Help in their own menu even though
+  // it is not in the shipped default spine (`availableViewRefs` reads this
+  // table): a ref the editor could not offer would be unreachable by choice.
+  help: { label: 'Help', icon: '?', art: VIEW_ART.help },
 };

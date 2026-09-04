@@ -235,6 +235,34 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['whoami', 'session', 'token', 'me'],
   },
+  'auth.password.change': {
+    cmd: ['auth', 'password'],
+    syn: 'tm8 auth password --current <current-password> --new <new-password>',
+    sum: 'Change your own account password — the current one is required, so this is never a reset',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['password', 'change', 'rotate', 'credential', 'account', 'me'],
+    notes: [
+      'this is a CHANGE, not a reset: the current password is required and proven inside Postgres, so an open session cannot silently re-credential the account',
+      'every OTHER live session for the account is revoked; the session making the change is kept, so this shell or browser stays signed in',
+      'both passwords travel in the request body — a real deployment needs TLS before using this',
+    ],
+  },
+  'auth.invite.signup': {
+    cmd: ['auth', 'invite', 'signup'],
+    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    sum: 'Redeem a space invite that creates your account and signs you in — the operator never learns your password',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['invite', 'signup', 'join', 'account', 'onboard', 'member'],
+    notes: [
+      'claim-free: the invite code is the authorization — you have no account here until this call',
+      'the account, the membership and the invite consumption happen in ONE transaction, and it can never mint a node admin or an owner',
+      'the password travels in the request body — a real deployment needs TLS before using this',
+    ],
+  },
   // ── first-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md) ───────
   'auth.claim': {
     cmd: ['auth', 'claim'],
@@ -260,6 +288,20 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'answers without any credential, on purpose: it is the one question a caller can ask before it knows who anybody is',
       'it never reports whether a live claim token exists — that is a fact about the operator\'s filesystem, not about the node',
+    ],
+  },
+  'auth.claim.reissue': {
+    cmd: ['auth', 'claim', 'reissue'],
+    syn: 'tm8 auth claim reissue',
+    sum: 'Rotate this Server\'s first-run claim token and reprint it — on-box only, inert once claimed',
+    authz: 'server',
+    input: 'none',
+    side: 'durable',
+    tags: ['claim', 'reissue', 'rotate', 'first-run', 'setup', 'token', 'recover'],
+    notes: [
+      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
+      'an ordinary restart REPRINTS the live token rather than rotating it, so this is the deliberate act that rotates: reissuing invalidates any previously printed token',
+      'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
     ],
   },
   // ── credentials (Tier B per-member vendor credentials) ───────────────────
@@ -498,6 +540,76 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'unbound',
   },
+  'spaces.taskWorkflows.list': {
+    cmd: ['space', 'task-workflow', 'list'],
+    syn: 'tm8 space task-workflow list [<space-id>]',
+    sum: 'List the per-type status vocabularies this Space enforces',
+    authz: 'space',
+    input: 'none',
+    notes: [
+      'a type value with no row keeps the full seven-status vocabulary; open, working, and done are structural in every row',
+    ],
+  },
+  'spaces.taskWorkflows.upsert': {
+    cmd: ['space', 'task-workflow', 'set'],
+    syn: 'tm8 space task-workflow set <type-value> [--space <space-id>] --status <status>... [--mutation-id <id>]',
+    sum: 'Create or replace the status vocabulary for one `type` axis value',
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'upsert on (space, type value) — the whole vocabulary is stated each time, never patched',
+      'open, working, and done are required members (schema constraint); the narrowable set is pulled|in_review|blocked|cancelled',
+    ],
+    examples: ['tm8 space task-workflow set <type-value> --status open --status working --status in_review --status done'],
+  },
+  'spaces.taskWorkflows.delete': {
+    cmd: ['space', 'task-workflow', 'delete'],
+    syn: 'tm8 space task-workflow delete <workflow-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Remove a per-type vocabulary — the type returns to all seven statuses',
+    authz: 'space',
+    input: 'unbound',
+    notes: ['never data loss: no task row changes; the vocabulary simply widens back'],
+  },
+  'spaces.workflows.list': {
+    cmd: ['space', 'workflow', 'list'],
+    syn: 'tm8 space workflow list [<space-id>]',
+    sum: 'List this Space\'s workflows, plus the built-in default every kind falls back to',
+    authz: 'space',
+    input: 'none',
+    notes: [
+      'the built-in default workflow is always included and is listed last — it belongs to no Space and cannot be edited or deleted',
+      'a workflow with no transitions is the NORMAL case: the ruled category-level defaults apply and need no rows',
+    ],
+  },
+  'spaces.workflows.upsert': {
+    cmd: ['space', 'workflow', 'set'],
+    syn: 'tm8 space workflow set <name> --kind <kind> --state <name>:<category>[:initial][:default]... [--transition <from>-><to>]... [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Create or replace a workflow — its states, and any transition overrides',
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'WHOLE-DOCUMENT: the states are stated each time, never patched, and states left out are deleted',
+      'exactly one state must be marked `initial`, and it must be in the to_do category',
+      'a transition is an OVERRIDE. Omit them all and every state keeps the ruled category defaults (any->cancelled; to_do->in_progress; in_progress->done; to_do->done; done->to_do; cancelled->to_do; and any move WITHIN a category)',
+      'naming a state as a transition target overrides the defaults for THAT state only — every other state is untouched',
+      'a state holding entities cannot be deleted; the call refuses rather than stripping the status off live work',
+    ],
+    examples: [
+      'tm8 space workflow set <name> --kind <kind> --state <state>:to_do:initial --state <state>:in_progress --state <state>:done --state <state>:cancelled',
+      'tm8 space workflow set <name> --kind <kind> --state <state>:to_do:initial --state <state>:in_progress --transition <from>-><to>',
+    ],
+  },
+  'spaces.workflows.delete': {
+    cmd: ['space', 'workflow', 'delete'],
+    syn: 'tm8 space workflow delete <workflow-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Delete a workflow and its states',
+    authz: 'space',
+    input: 'unbound',
+    notes: [
+      'refuses while any entity still holds one of its states — unlike a task-workflow delete, this one CAN be data loss and the FK is what stops it',
+      'the built-in default workflow belongs to no Space and is reported as not found',
+    ],
+  },
   'spaces.leaderboard': {
     cmd: ['space', 'leaderboard', 'get'],
     syn: 'tm8 space leaderboard get [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -535,7 +647,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
-      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate}',
+      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
     ],
     examples: [
@@ -670,7 +782,14 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'bound',
     ver: 'expectedVersion',
-    tags: ['done', 'finish', 'close'],
+    /* `'close'` REMOVED (sub-doc 5, C4). The UI uses "close" to mean TERMINATE
+       a live session — `handleSessionClose = primaries.terminate` — so
+       `tm8 help --query close` answering *task complete* pointed the word at
+       the wrong button. The action label is already `Terminate` and it stays
+       that; nothing in the product now spells terminate "close", so nothing
+       should route the search there either. Completion's own words are
+       enough. */
+    tags: ['done', 'finish', 'complete'],
     notes: [
       'it alone checks acceptance criteria and writes completer relationships, activity, and awards',
       '`task transition <id> done` is refused with invariant_violation / use_complete_command',
@@ -787,14 +906,14 @@ const ROWS: Record<OperationName, Row> = {
   // ── messages ─────────────────────────────────────────────────────────────
   'messages.list': {
     cmd: ['message', 'list'],
-    syn: 'tm8 message list <anchor-entity-id> [--root <message-id>] [--order oldest|newest] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 message list (<anchor-entity-id>|--for <anchor-entity-id>) [--root <message-id>] [--order oldest|newest] [--limit <count>] [--cursor <cursor>]',
     sum: 'Page the durable messages anchored to an entity',
     authz: 'entity',
     input: 'none',
     tags: ['read', 'thread', 'chat', 'conversation', 'inbox'],
     notes: [
       'pass --limit; unbounded listings measured several times larger',
-      'the anchor id is positional — there is no --to/--for/--entity/--anchor flag here; --to belongs to message send',
+      'the anchor id may be positional or passed with --for, matching action list; --to belongs to message send',
     ],
   },
   'messages.post': {
@@ -849,29 +968,37 @@ const ROWS: Record<OperationName, Row> = {
       'thread history survives — replies, ordering, and cursors are unaffected',
     ],
   },
-  'chat.threads.start': {
-    cmd: null,
-    sum: 'Configure an already-posted human root as a write-once TM8 Chat thread',
-    authz: 'entity',
+  'chat.start': {
+    cmd: ['chat', 'start'],
+    syn: 'tm8 chat start --teammate <team-member-id> --model <model> --mode ask|explain|plan|build|orchestrate|craft --workdir project|scratch [--project <project-id>] [--about <entity-id>] [--title <text>] [<body>|-] [--body <text-source>] [--attach <file-entity-id>...] [--mutation-id <id>]',
+    sum: 'Create a chat entity with a teammate and post its opening turn',
+    authz: 'space',
     input: 'bound',
-    reason: 'browser_chat_composer_only',
-    tags: ['chat', 'thread', 'agent', 'teammate', 'model'],
+    tags: ['chat', 'agent', 'teammate', 'model', 'conversation', 'talk'],
     notes: [
-      'post the human-authored root first with message send; this operation creates no message',
-      'configuration is write-once and this call is the sole trigger for turn one',
-      'v1 exposes this through the browser composer; exact-operation help remains available to CLI users',
+      'creates the chat AND its first message in one transaction; there is no separate root to post first',
+      'a chat is the anchor of its own transcript: every later turn is `chat send <chat-id>` — the same door as `message send --to <chat-id>` — from a human, a work session, or another chat',
+      '--teammate, --model, --mode and --workdir are all REQUIRED and have no CLI default: every one of them is pinned for the chat\'s life, so an invented default would be a chat nobody chose',
+      '--workdir picks where the chat works: `project` (requires --project, and the Server resolves the path from the project itself) or `scratch` (a server-owned empty directory)',
+      '--about records what the chat is about as an `about` edge — the Craft blueprint, the task, the pull request it was opened from',
+      'chat v1 runs claude-code models only; a model that launches via another agent tool is refused at start rather than on turn one',
+      'human-authenticated only: an agent runtime credential is refused, exactly as the browser composer is the human surface',
+    ],
+    examples: [
+      "tm8 chat start --teammate <team-member-id> --model <model> --mode build --workdir scratch 'open with this'",
+      'tm8 chat start --teammate <team-member-id> --model <model> --mode ask --workdir project --project <project-id> --about <entity-id> -',
     ],
   },
 
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
     cmd: ['entity', 'query'],
-    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--work-status <status>...] [--assignee <actor-id>...] [--ready] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--status <status>...] [--assignee <actor-id>...] [--ready] [--limit <count>] [--cursor <cursor>]',
     sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
     authz: 'space',
     input: 'bound',
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
-    examples: ['tm8 entity query --kind task --assignee <actor-id> --work-status working'],
+    examples: ['tm8 entity query --kind task --assignee <actor-id> --status working'],
   },
   'collections.addItem': {
     cmd: ['collection', 'add'],
@@ -1322,7 +1449,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -1911,6 +2038,356 @@ const ROWS: Record<OperationName, Row> = {
       'restore is append-only: it creates a NEW revision whose provenance records the source revision, never mutating history',
     ],
   },
+
+  // ── containers (TM8-CONTAINERS-DESIGN §14) ───────────────────────────────
+  //
+  // Twenty-five rows, and every one of them is here because this record is
+  // `Record<OperationName, Row>` — the build breaks until the family is total,
+  // which is the property that stops a catalog operation from shipping with no
+  // CLI disposition at all. Two rows have `cmd: null` and that is a decision,
+  // not an omission (see each).
+  //
+  // FIFTEEN OF THESE ANSWER 501 IN P0 AND STILL HAVE A COMMAND. A `status:
+  // 'v1'` row with no handler answers 404, which breaks DEV-13, so every row
+  // is registered server-side and answers an honest `not_implemented` with a
+  // named reason until its runtime lands. The `availability` axis is what
+  // reports that, and it is MEASURED from what this node actually answered —
+  // never narrated here. Nothing in these notes says "not yet": a note is a
+  // contract fact, and a roadmap in a note becomes a lie the moment the
+  // roadmap moves.
+  //
+  // Container READS are deliberately absent: `entity get/children/connections`
+  // and `entity query --kind container` already answer them, and §4.5 names
+  // only `containers.logs` and `containers.providers.list` as family-specific
+  // reads, because their truth is on the node rather than in the graph.
+  'containers.create': {
+    cmd: ['container', 'create'],
+    syn: 'tm8 container create <profile> [--title <t>] [--space <space-id>] [--project <project-resource-id>] [--image <ref>] [--provider <id>] [--node <name>] [--cpus <n>] [--mem <MiB>] [--disk <MiB>] [--mount <host>:<guest>[:ro]...] [--env <key>=<value>...] [--port <n>...] [--network open|balanced|locked] [--allow <host>...] [--ephemeral|--persistent] [--ttl <seconds>] [--idle-hibernate <seconds>] [--grace <seconds>] [--snapshot-on-stop] [--share none|space|explicit] [--parent <container-id>] [--template <container-id>] [--label <key>=<value>...] [--no-start] [--confirm-untrusted] [--mutation-id <id>]',
+    sum: 'Create a machine an agent can run in or drive, and start it',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'machine', 'vm', 'sandbox', 'docker', 'new', 'birth'],
+    notes: [
+      'the birth verb: `tm8 entity create container` is refused server-side, exactly as work_session is',
+      'create-and-start is the default; --no-start leaves the machine provisioned and stopped',
+      '--mount takes a HOST path and it never comes back — reads carry {guest, ro} only (ruling R5)',
+      '--env refuses credential-looking keys and never echoes a value; credentials reach a machine through the credential path (§12.3)',
+      'replaying the same --mutation-id returns the first result and never provisions a second machine',
+    ],
+    examples: [
+      'tm8 container create shell --title <title> --space <space-id>',
+      'tm8 container create browser --network locked --allow <hostname>',
+    ],
+  },
+  'containers.start': {
+    cmd: ['container', 'start'],
+    syn: 'tm8 container start <container-id> --expect-version <n> [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Start a stopped machine',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'start', 'resume', 'boot', 'machine'],
+    notes: [
+      '--timeout-ms is the PROVIDER budget and is a different clock from the global transport option, which is named separately and measured in SECONDS',
+    ],
+    examples: ['tm8 container start <container-id> --expect-version <n>'],
+  },
+  'containers.stop': {
+    cmd: ['container', 'stop'],
+    syn: 'tm8 container stop <container-id> --expect-version <n> [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Stop a running or paused machine, keeping its record',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'stop', 'halt', 'machine'],
+    examples: ['tm8 container stop <container-id> --expect-version <n>'],
+  },
+  'containers.pause': {
+    cmd: ['container', 'pause'],
+    syn: 'tm8 container pause <container-id> --expect-version <n> [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Freeze a running machine without releasing its memory',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'pause', 'freeze', 'suspend', 'machine'],
+    notes: ['a provider that reports no `pause` feature refuses this rather than emulating it with a stop'],
+  },
+  'containers.resume': {
+    cmd: ['container', 'resume'],
+    syn: 'tm8 container resume <container-id> --expect-version <n> [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Unfreeze a paused machine',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'resume', 'unpause', 'thaw', 'machine'],
+  },
+  'containers.destroy': {
+    cmd: ['container', 'destroy'],
+    syn: 'tm8 container destroy <container-id> --expect-version <n> [--force] [--keep-snapshot] [--timeout-ms <n>] [--mutation-id <id>]',
+    sum: 'Destroy a machine and its runtime object',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'destroy', 'delete', 'remove', 'machine'],
+    notes: [
+      '--expect-version IS the deliberate act this destructive verb requires; --force changes how the machine is stopped, never who may stop it',
+      '--keep-snapshot preserves the disk image the lifecycle would otherwise discard',
+    ],
+    examples: ['tm8 container destroy <container-id> --expect-version <n>'],
+  },
+  'containers.update': {
+    cmd: ['container', 'update'],
+    syn: 'tm8 container update <container-id> --expect-version <n> [--title <t>] [--ephemeral|--persistent] [--ttl <seconds>] [--idle-hibernate <seconds>] [--grace <seconds>] [--snapshot-on-stop] [--share none|space|explicit] [--label <key>=<value>...] [--mutation-id <id>]',
+    sum: 'Change a machine\'s title, lifecycle, share mode or labels',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['container', 'update', 'rename', 'share', 'lifecycle', 'ttl', 'label'],
+    notes: [
+      'the share vocabulary is the work_session one (none|space|explicit), NOT the exposed-port one (none|space|link)',
+      'cpu, memory and mounts are fixed at create — a machine that needs different hardware is a new machine',
+    ],
+  },
+  'containers.policy.set': {
+    cmd: ['container', 'policy'],
+    syn: 'tm8 container policy <container-id> --expect-version <n> --network open|balanced|locked [--allow <host>...] [--mutation-id <id>]',
+    sum: 'Set a machine\'s egress preset and its allowlist',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'policy', 'network', 'egress', 'firewall', 'allowlist'],
+    notes: ['the policy is a preset PLUS an allowlist; an allowlist alone has no rule to widen and is refused'],
+  },
+  'containers.run': {
+    cmd: ['container', 'run'],
+    syn: 'tm8 container run <container-id> [--cwd <path>] [--env <key>=<value>...] [--timeout-ms <n>] [--stdin <text-source>] [--user <name>] [--mutation-id <id>] -- <argv...>',
+    sum: 'Run one command inside a machine and return its output',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'run', 'exec', 'command', 'shell', 'argv'],
+    notes: [
+      'the argv is PASSTHROUGH after a literal `--`, so the machine\'s own flags are never parsed by this CLI',
+      'the ledgered result is capped at 64 KiB; beyond that `truncated` is set and the full output is in `container logs` for 24 h',
+    ],
+    examples: ['tm8 container run <container-id> -- ls -la /workspace'],
+  },
+  'containers.terminal.start': {
+    cmd: ['container', 'terminal'],
+    syn: 'tm8 container terminal <container-id> [--title <t>] [--cwd <path>] [--cols <n>] [--rows <n>] [--mutation-id <id>]',
+    sum: 'Open a PTY inside a machine as a work session, and print its id',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'terminal', 'pty', 'shell', 'exec', 'console'],
+    notes: [
+      'there is NO argv field: the shell is the image\'s login shell, the same RCE boundary execution.terminal.start draws',
+      'the result is a work_session of kind container_exec — attach to it with `tm8 session attach`',
+    ],
+  },
+  'containers.attach': {
+    cmd: ['container', 'attach'],
+    syn: 'tm8 container attach <container-id> --surface screen|browser|adb|docker [--mode view|drive] [--mutation-id <id>]',
+    sum: 'Mint a grant for one of a machine\'s live surfaces',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'attach', 'surface', 'screen', 'vnc', 'cdp', 'adb', 'grant'],
+    notes: [
+      'every call mints a FRESH grant — the door is unledgered, so a mutation id is recorded but never replayed',
+      'the grant token travels ONLY in the `tm8-grant.<token>` websocket subprotocol; a token-bearing URL is refused by the transport',
+      'a terminal is not an attachable surface — `tm8 container terminal` opens one',
+    ],
+  },
+  'containers.stream': {
+    // NO COMMAND, AND THE REASON IS THE SOCKET ITSELF. This row re-declares the
+    // EXISTING `/v2/ws` binding for discoverability (it carries `aliasOf:
+    // 'events.subscribe'`, so nothing mounts it twice); the bytes on it are RFB
+    // frames, CDP messages, adb and docker streams dispatched on a grant. There
+    // is nothing a terminal can do with any of them, and a command that printed
+    // them would be printing a binary protocol into a shell. The UI dials it.
+    cmd: null,
+    sum: 'The websocket a surface grant is redeemed on — the same socket as PTY and graph events',
+    authz: 'entity',
+    input: 'none',
+    tags: ['container', 'stream', 'websocket', 'surface', 'rfb', 'frames'],
+    reason: 'a surface stream carries a binary protocol dispatched on a grant; there is no terminal rendering of it',
+    notes: [
+      'not a second socket: it is the existing /v2/ws binding re-declared so the surface protocol is discoverable',
+      'mint the grant with `tm8 container attach`, then dial this socket with a client that speaks the encoding',
+    ],
+  },
+  'containers.computer': {
+    cmd: ['container', 'computer'],
+    syn: 'tm8 container computer <container-id> <action> [--x <n>] [--y <n>] [--to <x>,<y>] [--text <t>] [--keys <chord>] [--dx <n>] [--dy <n>] [--ms <n>] [--url <url>] [--no-screenshot] [--keep] [--out <file>] [--scale <f>] [--mutation-id <id>]',
+    sum: 'Perform one computer action in a machine and return a screenshot',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'computer', 'click', 'type', 'key', 'scroll', 'screenshot', 'gui', 'automation'],
+    notes: [
+      'one vocabulary, three drivers (desktop/Xvfb, browser/CDP, android/adb) — deliberately the intersection of computer-use, Playwright and adb',
+      'coordinates are in SCREENSHOT pixels at the scale the last screenshot reported; the node keeps the mapping',
+      '--keep stores the screenshot as an artifact revision on the container, which is the reviewable record',
+      'the ledgered result is capped at 64 KiB',
+    ],
+    examples: ['tm8 container computer <container-id> click --x <n> --y <n>'],
+  },
+  'containers.browser.endpoint': {
+    cmd: ['container', 'browser'],
+    syn: 'tm8 container browser <container-id> endpoint [--ttl <seconds>] | goto <url> | text',
+    sum: 'Mint a CDP websocket endpoint for a browser machine, or drive it',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'browser', 'cdp', 'playwright', 'chrome', 'endpoint', 'goto'],
+    notes: [
+      'the CDP url is BEARER-BOUND and is the one documented exception to subprotocol-only carriage: connectOverCDP cannot send a subprotocol',
+      '`goto` and `text` are containers.computer actions under a friendlier spelling, not a second operation',
+      'every call mints a FRESH endpoint — the grant door is unledgered',
+    ],
+  },
+  'containers.files.put': {
+    cmd: ['container', 'cp'],
+    syn: 'tm8 container cp <container-id> <src> ctr:<dst>',
+    sum: 'Copy files into a machine as a tar stream',
+    authz: 'entity',
+    input: 'unbound',
+    side: 'execution',
+    tags: ['container', 'cp', 'copy', 'files', 'upload', 'tar'],
+    notes: [
+      'exactly one side of the copy carries the `ctr:` prefix, and which side it is chooses the direction and the operation',
+    ],
+  },
+  'containers.files.get': {
+    cmd: ['container', 'cp'],
+    syn: 'tm8 container cp <container-id> ctr:<src> <dst>',
+    sum: 'Copy files out of a machine as a tar stream',
+    authz: 'entity',
+    input: 'none',
+    tags: ['container', 'cp', 'copy', 'files', 'download', 'tar'],
+    notes: [
+      'copying OUT is a read and refuses --mutation-id; copying IN is a command and accepts one',
+    ],
+  },
+  'containers.logs': {
+    cmd: ['container', 'logs'],
+    syn: 'tm8 container logs <container-id> [--since <timestamp>] [--tail <n>] [--follow]',
+    sum: 'Read a machine\'s stdout and stderr',
+    authz: 'entity',
+    input: 'none',
+    tags: ['container', 'logs', 'stdout', 'stderr', 'tail', 'follow', 'output'],
+    notes: [
+      'one of the two family-specific reads: a machine\'s log truth is on the node, not in the graph',
+      'the full output of a truncated `container run` is here for 24 h',
+    ],
+  },
+  'containers.expose': {
+    cmd: ['container', 'expose'],
+    syn: 'tm8 container expose <container-id> <port> --expect-version <n> [--share none|space|link] [--mutation-id <id>]',
+    sum: 'Publish a machine\'s port through the node\'s reverse proxy',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'expose', 'port', 'publish', 'proxy', 'share'],
+    notes: [
+      'the port-share vocabulary is none|space|link and it is NOT the container share vocabulary — `link` means a bearer URL anyone holding it may open',
+      'a minted share token is in the json DTO and is never printed to a terminal',
+    ],
+  },
+  'containers.unexpose': {
+    cmd: ['container', 'unexpose'],
+    syn: 'tm8 container unexpose <container-id> <port> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Withdraw a published port and invalidate its share',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'unexpose', 'port', 'withdraw', 'proxy'],
+  },
+  'containers.proxy': {
+    // NO COMMAND, AND IT IS A SCOPE DECISION RATHER THAN A REFUSAL — the shape
+    // `credentials.*` and `execution.terminal.start` take above. This is the
+    // reverse proxy an exposed port is reached THROUGH: a browser opens the URL
+    // `container expose` printed. A `tm8` verb here would be `curl` with extra
+    // steps and a worse error surface, and the catalog row exists so the path
+    // is discoverable by exact lookup and by tag.
+    cmd: null,
+    sum: 'The reverse-proxy path an exposed port is served on',
+    authz: 'entity',
+    input: 'none',
+    tags: ['container', 'proxy', 'port', 'http', 'forward', 'url'],
+    reason: 'an exposed port is opened in a browser or by an ordinary HTTP client; a CLI verb would add nothing to either',
+    notes: ['the URL to open is what `tm8 container expose` returns'],
+  },
+  'containers.snapshot': {
+    cmd: ['container', 'snapshot'],
+    syn: 'tm8 container snapshot <container-id> --expect-version <n> [--name <name>] [--make-template] [--mutation-id <id>]',
+    sum: 'Capture a machine\'s disk as a reusable image',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'snapshot', 'image', 'template', 'save'],
+    notes: ['--template marks the snapshot as a base other machines are created and pooled from'],
+  },
+  'containers.fork': {
+    cmd: ['container', 'fork'],
+    syn: 'tm8 container fork <container-id> [--title <t>] [--ephemeral|--persistent] [--ttl <seconds>] [--cpus <n>] [--mem <MiB>] [--disk <MiB>] [--mutation-id <id>]',
+    sum: 'Create a new machine from this one\'s snapshot, with a snapshot_of edge',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['container', 'fork', 'clone', 'copy', 'branch', 'snapshot'],
+    notes: ['no version guard: a fork READS the source machine and never changes its record'],
+  },
+  'containers.attention': {
+    cmd: ['container', 'attention'],
+    syn: 'tm8 container attention <container-id> --reason login|captcha|2fa|payment|approval|other [--detail <text>] [--points <n>] [--mutation-id <id>]',
+    sum: 'Ask a human to take over a machine, with a bounded score',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['container', 'attention', 'takeover', 'human', 'login', 'captcha', '2fa'],
+    notes: [
+      'the takeover path for the moments an agent must not automate: a login, a captcha, a payment (§12.5)',
+      'points are 1-100 and rank the request against every other call on human attention',
+    ],
+  },
+  'containers.providers.list': {
+    cmd: ['container', 'providers'],
+    syn: 'tm8 container providers [--node <name>]',
+    sum: 'What this node can actually run: providers, their probes, and cached images',
+    authz: 'server',
+    input: 'none',
+    tags: ['container', 'providers', 'capabilities', 'probe', 'images', 'node', 'docker'],
+    notes: [
+      'the other family-specific read: which providers exist is node truth, not graph truth',
+      'the `probe` verdict is produced by ACTUALLY creating and destroying a container, not by checking a PATH',
+    ],
+    examples: ['tm8 container providers --node <name>'],
+  },
+  'containers.pools.set': {
+    cmd: ['container', 'pool'],
+    syn: 'tm8 container pool <template-id> --expect-version <n> --warm <n> [--mutation-id <id>]',
+    sum: 'Set how many machines to keep warm from a template',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    ver: 'expectedVersion',
+    tags: ['container', 'pool', 'warm', 'prewarm', 'template', 'capacity'],
+    notes: [
+      'the positional is a TEMPLATE container and the guard is the template\'s version — a pool is a warm count on the template, not an object of its own',
+      '--warm is 0-8',
+    ],
+  },
 };
 
 /**
@@ -1955,7 +2432,14 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   teamMembers: 'teammate',
   voice: 'voice',
   artifacts: 'artifact',
-  chat: 'chat-thread',
+  // `chat`, not `chat-thread`. The old noun named the shape a chat used to
+  // have — a message THREAD bound to its root — and 176 replaced that with an
+  // entity kind whose slug is `chat`. Keeping both would put one thing under
+  // two nouns in `tm8 help`, one of which no longer names anything: there is
+  // no `chat_threads` table to describe. `tools/conformance`'s generator holds
+  // the same map and moves with it.
+  chat: 'chat',
+  containers: 'container',
   // Required even though all four `credentials.*` rows are `cmd: null`: the
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
@@ -2012,7 +2496,16 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
-  'sha256:4f48f15d8ac03dfcc5fce979ba12b627d2fe1af7ebd8028c397c0631eb7ed3ce';
+  // Re-measured 141 (+ auth.password.change, auth.invite.signup,
+  // auth.claim.reissue) — read from the regenerated conformance manifest, never
+  // hand-derived.
+  // Re-measured 148 (+ the three spaces.workflows rows) — read from the
+  // regenerated conformance manifest, never hand-derived.
+  // Re-measured on the MERGED tree (176's chat.start rename + the 25
+  // containers.* rows). RECOMPUTED from JSON.stringify(OPERATIONS), never
+  // adjusted from either side of the merge — neither branch's value is
+  // correct once both landed.
+  'sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -2176,6 +2669,25 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ["tm8 message reply <message-id> '<body>' --mutation-id <uuid>"],
   }],
+  // `task axis` is SUGAR over `entities.get` + `entities.patch`: the axis
+  // write IS the ordinary task content patch, and the read exists because the
+  // server replaces the axes jsonb wholesale — merging one axis into the
+  // stored record requires the record. No new catalog row for a door that
+  // already exists.
+  ['task axis', {
+    path: ['task', 'axis'],
+    syntax: 'tm8 task axis <task-id> <axis-name> [<value>] [--clear] [--expect-version <n>] [--mutation-id <id>]',
+    summary: 'Set or clear one per-space axis value on a task (e.g. the `type` taxonomy)',
+    notes: [
+      'sugar over entities.get + entities.patch — the write is the version-guarded task content patch, merged into the stored axes record',
+      'axis names and legal values are per-Space data: `tm8 space task-axis list`; an illegal value is refused by the Server (invalid_input)',
+      'an axis with no declared values takes free text; --clear unsets the axis, which is distinct from any value',
+    ],
+    examples: [
+      'tm8 task axis <task-id> type code',
+      'tm8 task axis <task-id> type --clear',
+    ],
+  }],
   // `task import-issue` is SUGAR over `entities.create`: the GitHub read is a
   // local network act the catalog does not model (same reasoning as the Tier 2
   // git verbs' local git execution), and the only graph write is an ordinary
@@ -2198,6 +2710,27 @@ const COMMAND_ALIASES = new Map<string, {
   // for exactly that reason: an alias declares a second spelling of an existing
   // operation, and a new catalog row would have been a second way to ask a
   // question `collections.query` already answers.
+  ['container screenshot', {
+    path: ['container', 'screenshot'],
+    syntax: 'tm8 container screenshot <container-id> [--out <file>] [--keep] [--scale <f>] [--mutation-id <id>]',
+    summary: 'Capture a machine\'s screen — sugar for `container computer screenshot`',
+    notes: [
+      'sugar over containers.computer with action=screenshot — it adds no catalog operation and lands in the same ledger row',
+      '--out writes the PNG to a file; without it the human view prints the dimensions and the scale, never the image bytes',
+      'the scale is what a caller needs to convert their next click: coordinates are in SCREENSHOT pixels',
+    ],
+    examples: ['tm8 container screenshot <container-id> --out <file>'],
+  }],
+  ['container adb', {
+    path: ['container', 'adb'],
+    syntax: 'tm8 container adb <container-id> [--timeout-ms <n>] [--mutation-id <id>] -- <adb args...>',
+    summary: 'Run adb against an android machine — sugar over `container run`',
+    notes: [
+      'sugar over containers.run — the node prefixes `adb -s <serial>`, and the serial is node-local runtime truth a client is never given',
+      'the adb arguments are PASSTHROUGH after a literal `--`, so adb\'s own flags are never parsed by this CLI',
+    ],
+    examples: ['tm8 container adb <container-id> -- shell input tap <x> <y>'],
+  }],
   ['worktree list', {
     path: ['worktree', 'list'],
     syntax: 'tm8 worktree list [--space <space-id>] [--status active|merged|abandoned|deleted] [--limit <count>] [--cursor <cursor>]',
@@ -2304,10 +2837,98 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 worktree merge <session-id> --from main'],
   }],
+  // `node mode` is SUGAR over `auth.claim.status`, which already reports the
+  // mode — a second, purpose-named spelling, exactly like `worktree status`
+  // over `entities.get`. It is READ-ONLY and adds no catalog row on purpose: the
+  // mode is server config (TM8_NODE_MODE, design D4), converting is an env edit
+  // and a restart, and a command that could flip it over the wire would be
+  // lying about where the switch is. No new operation could honestly do that, so
+  // none is minted.
+  // The four read-and-write chat verbs are ALIASES for the reason `worktree
+  // list|status` are: every one of them is an operation that already exists.
+  // A chat became an ENTITY in 176, and the whole point of that change is that
+  // the ordinary entity and message doors now reach it — so a `chats.list` or
+  // a `chats.postTurn` row would be a second way to ask a question
+  // `collections.query` and `messages.post` already answer, on an entity kind
+  // whose entire design is that it needs no special door except its birth.
+  ['chat list', {
+    path: ['chat', 'list'],
+    syntax: 'tm8 chat list [--space <space-id>] [--limit <count>] [--cursor <cursor>]',
+    summary: 'The chats in this Space, with each one’s runtime and turn state',
+    notes: [
+      'sugar over collections.query with kinds:[chat] — it adds no catalog operation',
+      'runtime state and turn state are DIFFERENT facts and both are shown: a cold chat with a queued turn is "the node restarted, your message is still coming"',
+    ],
+    examples: ['tm8 chat list --space <space-id> --limit <count>'],
+  }],
+  ['chat show', {
+    path: ['chat', 'show'],
+    syntax: 'tm8 chat show <chat-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>]',
+    summary: 'One chat in bounded context — configuration, recent transcript, and what it is about',
+    notes: [
+      'sugar over entities.context; bounded by design, so a long transcript is excerpted rather than paged here',
+      'the `about` relation appears under connections — it is the entity the chat was opened about, not a hidden binding column',
+      'page the full transcript with `tm8 chat turns <chat-id>`, and read every field with `tm8 entity get <chat-id>`',
+    ],
+    examples: ['tm8 chat show <chat-id> --sections summary,messages'],
+  }],
+  ['chat send', {
+    path: ['chat', 'send'],
+    syntax: 'tm8 chat send <chat-id> [<body>|-] [--body <text-source>] [--reply-to <parent-message-id>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    summary: 'Post a turn to a chat — one anchor’s spelling of `message send`',
+    notes: [
+      'sugar over messages.post with a single --to; `tm8 message send --to <chat-id>` is the identical call',
+      'a chat anchors its own transcript, so this is how a human, a work session, or another chat reaches one',
+      'the caller’s work-session id is forwarded, which is what records `authored_from` and keys the chat’s self-delivery guard',
+      '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
+    ],
+    examples: ["tm8 chat send <chat-id> '<body>' --mutation-id <uuid>"],
+  }],
+  ['chat turns', {
+    path: ['chat', 'turns'],
+    syntax: 'tm8 chat turns (<chat-id> [--limit <count>] [--cursor <cursor>] | --message <message-id>)',
+    summary: 'What a chat is doing now and the turns it has, or the exact turn one message queued',
+    notes: [
+      'sugar over entities.get + messages.list, and over messages.delivery.get for --message',
+      'the chat’s own state carries the FOLDED verdict (idle/queued/running, a count, a stamp); the per-turn row with its own queued/running/completed/error state is reachable only through the message that queued it',
+      '--message is the drilldown and is a flag on purpose: listing per-turn state for a whole page would be one delivery read per message',
+      'an absent chat-turn arm means the node cannot tell you — a node predating the chat entity omits it — never that no turn was queued',
+    ],
+    examples: ['tm8 chat turns <chat-id> --limit <count>', 'tm8 chat turns --message <message-id>'],
+  }],
+  ['node mode', {
+    path: ['node', 'mode'],
+    syntax: 'tm8 node mode',
+    summary: 'Report this Server\'s node mode (single | multi), read-only',
+    notes: [
+      'sugar over auth.claim.status — it adds no catalog operation',
+      'READ-ONLY by design: the mode is server config (TM8_NODE_MODE), not a graph row; converting is an env edit and a restart (D4)',
+    ],
+    // No example: `tm8 node mode` takes no arguments, and every example must
+    // carry a `<placeholder>` (help.test.ts) — a zero-arg command has none.
+    examples: [],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
 COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIndex + 1, 0, 'message reply');
+// `node mode` reads the same operation `auth claim status` does — its
+// availability is exactly that read's.
+COMMAND_OPS.set('node mode', ['auth.claim.status']);
+const authClaimStatusIndex = COMMAND_ORDER.indexOf('auth claim status');
+COMMAND_ORDER.splice(
+  authClaimStatusIndex < 0 ? COMMAND_ORDER.length : authClaimStatusIndex + 1,
+  0,
+  'node mode',
+);
+// `task axis` is as available as the read and the patch it composes. The
+// PATCH leads because the help header derives side-effect and versioning
+// traits from the FIRST operation, and the patch is what this command IS —
+// a header reading `side effect: none` off the merge's read would be a lie
+// about a durable write.
+COMMAND_OPS.set('task axis', ['entities.patch', 'entities.get']);
+const taskGateIndex = COMMAND_ORDER.indexOf('task gate');
+COMMAND_ORDER.splice(taskGateIndex < 0 ? COMMAND_ORDER.length : taskGateIndex + 1, 0, 'task axis');
 // `task import-issue`'s only wire operation is the create it performs; the
 // GitHub read is local network execution the availability model does not see.
 COMMAND_OPS.set('task import-issue', ['entities.create']);
@@ -2317,6 +2938,34 @@ COMMAND_ORDER.splice(
   0,
   'task import-issue',
 );
+// The chat verbs sit immediately after `chat start`, so the noun reads
+// birth-then-life rather than alphabetically. `chat send`'s ops are
+// `messages.post` alone — the same single row `message send` projects.
+// `chat turns` names all three reads it can make, because availability is the
+// weakest stage and `--message` is one of its two branches.
+COMMAND_OPS.set('chat list', ['collections.query']);
+COMMAND_OPS.set('chat show', ['entities.context']);
+COMMAND_OPS.set('chat send', ['messages.post']);
+COMMAND_OPS.set('chat turns', ['entities.get', 'messages.list', 'messages.delivery.get']);
+const chatStartIndex = COMMAND_ORDER.indexOf('chat start');
+COMMAND_ORDER.splice(
+  chatStartIndex < 0 ? COMMAND_ORDER.length : chatStartIndex + 1,
+  0,
+  'chat list',
+  'chat show',
+  'chat send',
+  'chat turns',
+);
+// `container screenshot` and `container adb` are ALIASES over operations that
+// already have a command, for the same reason `worktree list|status` are: a
+// second catalog row for a spelling would be a second way to ask one question.
+// `container browser` is not an alias — it owns `containers.browser.endpoint` —
+// but two of its three sub-verbs invoke `containers.computer`, so both
+// operations are named here and the command is as available as its WEAKEST.
+COMMAND_OPS.set('container screenshot', ['containers.computer']);
+COMMAND_OPS.set('container adb', ['containers.run']);
+COMMAND_OPS.set('container browser', ['containers.browser.endpoint', 'containers.computer']);
+COMMAND_ORDER.push('container screenshot', 'container adb');
 COMMAND_OPS.set('worktree list', ['collections.query']);
 COMMAND_OPS.set('worktree status', ['entities.get']);
 COMMAND_ORDER.push('worktree list', 'worktree status');
@@ -2413,6 +3062,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
   collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
+  chat: 'Chats with a teammate: start one, list them, read one, post a turn, and see its turn state',
   message: 'Durable messages — the only public communication action for text',
   'read-mark': 'Per-anchor read cursors (invoked as `message mark-read`)',
   graph: 'Graph traversal outward from a focus entity',
@@ -2434,6 +3084,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   teammate: 'Teammate-scoped configuration',
   voice: 'Mint LiveKit room-join grants for voice channels',
   artifact: 'Versioned, viewable static-web bundles: publish, revisions, preview, export',
+  container: 'Machines an agent runs in or drives: create, lifecycle, exec, surfaces, ports',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */

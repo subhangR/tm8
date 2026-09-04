@@ -1,0 +1,2726 @@
+/* ==========================================================================
+   T3 · AUTH & ONBOARDING — "Every auth moment, one card grammar".
+
+   Oracle: "T0-1 workspace structure review (1)/T3 Auth & Onboarding Flows.dc.html".
+   Every value below is EXTRACTED from that file's inline styles and cites the
+   line it came from; nothing here was eyeballed.
+
+   COLOUR IS TOKENS ONLY. `src/hex-ban.test.ts` scans this file (it is not one
+   of its four exclusions) and fails the package on any raw hex. Two derivation
+   idioms carry the oracle's alpha values exactly:
+     · rgba(var(--pn-brand-rgb), a)                    — the brass tints
+     · color-mix(in srgb, var(--pn-x) N%, transparent) — every other tint,
+       because mixing a colour with `transparent` at N% IS that colour at
+       alpha N/100, exactly, and it re-themes for free.
+
+   ONE ACCEPTED DRIFT, recorded rather than hidden: the oracle's card shadows
+   are `rgba(40,34,24,.10)` on standalone cards (L37), `.22` on modals (L160)
+   and `.18` on coach-marks (L230). `--pn-sh-pop` is the same geometry at `.14`
+   and is used for all three. Three alphas of one shadow is drift in the
+   source, not three intentions — and chasing it would put un-tokenised colour
+   back into the package. Flagged to the coordinator in HANDOVER-Auth.md.
+   ========================================================================== */
+
+/* ── root & stage ──────────────────────────────────────────────────────── */
+
+/* The gate's own scope, when it is the OUTERMOST one (AuthFlow rootScope
+   'own'). tokens.css gives .cv2-root no height; the shell's root gets its
+   height from shell.css, and a gate mounted ABOVE the shell has no such rule
+   to inherit — without this the stage collapses to its content and the card
+   sits at the top of a short box instead of centred in the viewport. */
+.cv2-root.auth-scope {
+  height: 100%;
+  min-height: 0;
+}
+
+.cv2-root .auth-root {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+}
+
+/* Overlay frames (1f, 1j, 1k, 1l, 1m) sit OVER the host's own surface, so the
+   root must not paint a ground of its own or it would hide the work the
+   dimming exists to keep visible. */
+.cv2-root .auth-root--overlay {
+  background: transparent;
+}
+
+.cv2-root .auth-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-paper);
+}
+
+/* oracle L36: height 46, padding 0 18px, space-between */
+.cv2-root .auth-stage__bar {
+  height: 46px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+}
+
+/* oracle L36: mono 13px/600, --pn-brand */
+.cv2-root .auth-stage__brand {
+  font-family: var(--pn-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pn-brand);
+}
+
+/* oracle L36: mono 10px, --pn-ink-4 */
+.cv2-root .auth-stage__meta {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+
+/* oracle L35: the card is centred in the stage, both axes */
+.cv2-root .auth-stage__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px 46px;
+  overflow: auto;
+}
+
+/* ── the card ──────────────────────────────────────────────────────────── */
+
+/* oracle L37: --pn-surface, 1px --pn-line-2, r14, padding 24, gap 14 */
+.cv2-root .auth-card {
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 100%;
+}
+
+/* Kinetic W2: the gate card widens to 420 and sits at elevation LOW
+   (--pn-sh-sm) — rest-on-paper, not a popover. Radius stays --pn-r-lg, the
+   nearest token to the spec's 12 (no raw px radii when a token fits). */
+.cv2-root .auth-card--card {
+  width: 420px;
+  box-shadow: var(--pn-sh-sm);
+} /* L37 · Kinetic W2 */
+.cv2-root .auth-card--narrow {
+  width: 340px;
+  gap: 13px;
+} /* L177 */
+.cv2-root .auth-card--mid {
+  width: 360px;
+  gap: 13px;
+} /* L251, L352 */
+.cv2-root .auth-card--wide {
+  width: 400px;
+  padding: 22px;
+  gap: 13px;
+} /* L432 */
+.cv2-root .auth-card--modal {
+  width: 350px;
+  padding: 20px;
+  gap: 13px;
+} /* L160, L287, L305 */
+
+/* oracle L177: the signed-out card centres its contents */
+.cv2-root .auth-card--centred {
+  align-items: center;
+  text-align: center;
+}
+
+/* oracle L38: the eyebrow row — label left, step dots right */
+.cv2-root .auth-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* oracle L66: "← back" left, primary right, padding-top 2 */
+.cv2-root .auth-card__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.cv2-root .auth-spacer {
+  flex: 1;
+}
+
+.cv2-root .auth-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cv2-root .auth-stack--tight {
+  gap: 6px;
+} /* L355 */
+.cv2-root .auth-stack--cards {
+  gap: 14px;
+  align-items: center;
+} /* L369 */
+
+/* ── type ──────────────────────────────────────────────────────────────── */
+
+/* oracle L38: mono 10px/600, tracking .12em, --pn-ink-3. D5 keeps the 10px. */
+.cv2-root .auth-eyebrow {
+  font-family: var(--pn-caps);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+.cv2-root .auth-eyebrow--block {
+  color: var(--pn-block);
+} /* L252 */
+.cv2-root .auth-eyebrow--wait {
+  color: var(--pn-wait);
+} /* L161 */
+.cv2-root .auth-eyebrow--run {
+  color: var(--pn-run);
+}
+.cv2-root .auth-eyebrow--idle {
+  color: var(--pn-idle);
+}
+.cv2-root .auth-eyebrow--brand {
+  color: var(--pn-brand-2);
+}
+
+/* oracle L39: Newsreader 23px/500, line-height 1.18 */
+.cv2-root .auth-title {
+  font-family: var(--pn-prose);
+  font-weight: 500;
+  line-height: var(--pn-lh-tight);
+  color: var(--pn-ink);
+}
+.cv2-root .auth-title--lg {
+  font-size: 23px;
+}
+.cv2-root .auth-title--sm {
+  font-size: 21px;
+  line-height: 1.2;
+} /* L162, L179, L253 */
+
+/* A dialog's title is UI-weight, not serif (oracle L288: 16px/600 sans). */
+.cv2-root .auth-dialog__title {
+  font-family: var(--pn-ui);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* oracle L40: 13px/1.5, --pn-ink-2 */
+.cv2-root .auth-body {
+  color: var(--pn-ink-2);
+  line-height: var(--pn-lh-body);
+}
+.cv2-root .auth-body--lg {
+  font-size: 13px;
+}
+.cv2-root .auth-body--sm {
+  font-size: 12.5px;
+} /* L163, L180, L205 */
+
+.cv2-root .auth-mono {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-2);
+} /* L354 */
+
+/* oracle L44: 11px --pn-ink-4, centred */
+.cv2-root .auth-footnote {
+  font-size: 11px;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-4);
+  text-align: center;
+}
+.cv2-root .auth-footnote--md {
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+} /* L166 */
+
+/* oracle L122: a 1px --pn-line rule. D-law 4: --pn-line BOUNDS. */
+.cv2-root .auth-rule {
+  height: 1px;
+  background: var(--pn-line);
+}
+
+/* ── step dots (oracle L38) ────────────────────────────────────────────── */
+
+.cv2-root .auth-steps {
+  display: flex;
+  gap: 4px;
+}
+.cv2-root .auth-step {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-line-2);
+}
+.cv2-root .auth-step--on {
+  background: var(--pn-brand);
+}
+
+/* ── fields (oracle L41–L42) ───────────────────────────────────────────── */
+
+.cv2-root .auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* oracle L41: mono caps/600, tracking .12em, --pn-ink-3.
+   Kinetic W2: 10px -> --pn-fs-micro (11px) — the token exists, so use it. */
+.cv2-root .auth-field__label {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+
+/* oracle L41: padding 0 10, --pn-card ground.
+   Kinetic W2: height 32 -> 40, radius r7 -> --pn-r-md (10px, the exact
+   token); the focus transition is new, guarded below for reduced motion. */
+.cv2-root .auth-field__box {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  transition:
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .auth-field__box {
+    transition: none;
+  }
+}
+
+/* oracle L41: the active field takes a brass edge + a 3px brass-soft ring.
+   Kinetic W2: the ring colour now flows through W1's --pn-focus token
+   (brand-2 fallback); the soft halo keeps the oracle's .11 alpha via
+   color-mix so it stays brass AND re-themes with the token. */
+.cv2-root .auth-field__box--focus,
+.cv2-root .auth-field__box:focus-within {
+  border-color: var(--pn-focus, var(--pn-brand-2));
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--pn-focus, var(--pn-brand-2)) 11%, transparent);
+}
+
+/* oracle L140: the failed field — block edge, block ring at .09 */
+.cv2-root .auth-field__box--error {
+  border-color: var(--pn-block);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-block) 9%, transparent);
+}
+
+.cv2-root .auth-field__input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: var(--pn-ui);
+  font-size: 12.5px; /* L41 */
+  color: var(--pn-ink);
+}
+.cv2-root .auth-field__input::placeholder {
+  color: var(--pn-ink-4);
+} /* L291 */
+.cv2-root .auth-field__input[type='password'] {
+  letter-spacing: 2px;
+  color: var(--pn-ink-2);
+} /* L42 */
+.cv2-root .auth-field__input--mono {
+  font-family: var(--pn-mono);
+  font-size: 11.5px;
+} /* L117, L290 */
+
+/* oracle L42: "show", 11px --pn-ink-4, letter-spacing reset */
+.cv2-root .auth-field__show {
+  flex: none;
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+
+/* oracle L41: 11px --pn-ink-3 */
+.cv2-root .auth-field__hint {
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+
+/* ── buttons ───────────────────────────────────────────────────────────── */
+
+/* oracle L43: h34, --pn-ink over --pn-paper, r7, 12.5/600 */
+.cv2-root .auth-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+/* Kinetic W2: 34 -> 40 to match the 40px inputs */
+.cv2-root .auth-btn--lg {
+  height: 40px;
+  padding: 0 22px;
+}
+.cv2-root .auth-btn--sm {
+  padding: 6px 14px;
+  font-size: 12px;
+} /* L292 */
+
+.cv2-root .auth-btn--ink {
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+/* oracle L43 style-hover="background:#3A362E" — already tokenised as
+   --pn-x-btn-ink-hover in canvas-extra.css for this exact chip. */
+.cv2-root .auth-btn--ink:hover {
+  background: var(--pn-x-btn-ink-hover);
+}
+
+/* oracle L292: the dialog's secondary — --pn-card ground, --pn-line-2 edge */
+.cv2-root .auth-btn--ghost {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  color: var(--pn-ink-2);
+}
+.cv2-root .auth-btn--ghost:hover {
+  background: var(--pn-hover);
+}
+
+/* A full-width primary is what the card grammar draws (L43 has no padding and
+   fills the card); a `sm` button sits in a row and does not stretch. */
+.cv2-root .auth-card > .auth-btn--lg,
+.cv2-root .auth-card > .auth-btn-group > .auth-btn--lg,
+.cv2-root .auth-stack > .auth-btn-group > .auth-btn--lg {
+  width: 100%;
+}
+.cv2-root .auth-card > .auth-btn-group,
+.cv2-root .auth-stack > .auth-btn-group {
+  align-self: stretch;
+}
+
+/* THE REFUSAL SKIN — treatment A (L6/D28) over the oracle's button geometry.
+   D32's inline-caption opacity (.45) because this IS the inline-caption form:
+   a labelled control with its reason spelled out underneath. */
+.cv2-root .auth-btn-group {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.cv2-root .auth-btn--refused {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* honesty.css's .hon-caption voice: mono 9.5px --pn-ink-3. Restated rather
+   than reused as a class so the auth surface's captions can never be
+   restyled by a change aimed at panel captions. */
+.cv2-root .auth-caption {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--pn-ink-3);
+  text-align: left;
+}
+.cv2-root .auth-caption--specimen {
+  color: var(--pn-ink-4);
+}
+
+/* oracle L66: "← back", 12px --pn-ink-3, hover --pn-ink-2 */
+.cv2-root .auth-back {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .auth-back:hover {
+  color: var(--pn-ink-2);
+}
+
+/* oracle L112: the mode-switch link, 12px, centred, brass */
+.cv2-root .auth-switch {
+  text-align: center;
+}
+.cv2-root .auth-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--pn-brand);
+  cursor: pointer;
+  text-decoration: none;
+}
+.cv2-root .auth-link:hover {
+  color: var(--pn-brand-2);
+  text-decoration: underline;
+}
+.cv2-root .auth-switch .auth-link {
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .auth-switch .auth-link:hover {
+  color: var(--pn-brand);
+}
+
+/* ── refused rows & inline refusals ────────────────────────────────────── */
+
+.cv2-root .auth-refused-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cv2-root .auth-refused-row__control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  opacity: 0.45; /* D32, inline-caption form */
+  cursor: not-allowed;
+}
+
+.cv2-root .auth-inline-refusal {
+  position: relative;
+  display: inline-block;
+}
+.cv2-root .auth-link--refused {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: underline dotted;
+}
+
+/* The tooltip form's reason: present in the DOM ALWAYS (D28 — a reason a
+   screen reader cannot reach is not a reason), hidden with opacity/visibility
+   and never display:none, which would drop it from the a11y tree too. */
+.cv2-root .auth-tip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  box-shadow: var(--pn-sh-pop);
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .auth-inline-refusal:hover > .auth-tip,
+.cv2-root .auth-inline-refusal:focus-within > .auth-tip {
+  opacity: 1;
+  visibility: visible;
+}
+/* TAP — the third trigger. Neither rule above can fire on a touch device, and
+   this refusal is on the SIGN-IN screen: a user who cannot read the reason
+   cannot get into the product. Set by useReasonDisclosure; same treatment as
+   `.hon-tip`, which is the same vocabulary. */
+.cv2-root .auth-inline-refusal[data-reason-open='true'] > .auth-tip {
+  opacity: 1;
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .auth-tip {
+    transition: none;
+  }
+}
+/* The PHONE presentation — docked to the frame instead of anchored to the
+   control, because `left: 0` + 260px is the same viewport-blind geometry
+   `.hon-tip` had — is written ONCE, in honesty.css, over all three spellings of
+   this tooltip. Three copies of a geometry derived from the frame's tokens is
+   three things to drift when a token moves. Do not restate it here. */
+.cv2-root .auth-tip__cause {
+  font-size: 11px;
+  font-weight: 600;
+}
+.cv2-root .auth-tip__remedy {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+/* ── insets, tiles, dots, status ───────────────────────────────────────── */
+
+/* oracle L60: --pn-card ground, --pn-line edge, r10, padding 12 */
+.cv2-root .auth-inset {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  padding: 12px;
+}
+.cv2-root .auth-inset--note {
+  gap: 10px;
+  padding: 10px 12px;
+} /* L83 */
+.cv2-root .auth-inset--row {
+  gap: 10px;
+  padding: 10px 12px;
+} /* L204 */
+.cv2-root .auth-inset__text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--pn-ink-2);
+}
+.cv2-root .auth-inset__name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cv2-root .auth-inset__kind {
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .auth-inset__meta {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .auth-server {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  width: 100%;
+}
+.cv2-root .auth-server__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.cv2-root .auth-server__name {
+  font-size: 14px;
+  font-weight: 600;
+} /* L105 */
+.cv2-root .auth-server__meta {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+} /* L105 */
+
+/* oracle L105: the server glyph — brass over brass-soft, brass-.4 edge */
+.cv2-root .auth-glyph {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+.cv2-root .auth-glyph--xs {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 10px;
+} /* L204 */
+.cv2-root .auth-glyph--sm {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--pn-r-sm);
+  font-size: 12px;
+} /* L356 */
+.cv2-root .auth-glyph--md {
+  width: 36px; /* Kinetic W2: 34 -> 36 */
+  height: 36px;
+  border-radius: var(--pn-r-md);
+  font-size: 14px;
+} /* L105 · Kinetic W2 */
+.cv2-root .auth-glyph--lg {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  font-size: 16px;
+} /* L61 */
+
+.cv2-root .auth-glyph--brand {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.4);
+}
+.cv2-root .auth-glyph--info {
+  color: var(--pn-info);
+  background: color-mix(in srgb, var(--pn-info) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-info) 35%, transparent);
+} /* L357 */
+.cv2-root .auth-glyph--run {
+  color: var(--pn-run);
+  background: color-mix(in srgb, var(--pn-run) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-run) 40%, transparent);
+}
+.cv2-root .auth-glyph--wait {
+  color: var(--pn-wait);
+  background: color-mix(in srgb, var(--pn-wait) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 40%, transparent);
+}
+/* oracle L358 draws the maintenance glyph `#8C8470` over `#ECE8DF`. That hex
+   is the DARK ramp's --pn-ink-3; light --pn-ink-3 is #8E897B — the same
+   colour to within 2/5/11 in RGB, imperceptible. Using the token rather than
+   asking for a new one. RECORDED AS AN ACCEPTED DRIFT in HANDOVER-Auth.md
+   (COLOR NEEDS) so the coordinator can reverse it. */
+.cv2-root .auth-glyph--muted {
+  color: var(--pn-ink-3);
+  background: var(--pn-active);
+  border: 1px solid transparent;
+}
+
+.cv2-root .auth-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cv2-root .auth-dot--brand {
+  background: var(--pn-brand);
+} /* L83 */
+.cv2-root .auth-dot--wait {
+  width: 8px;
+  height: 8px;
+  background: var(--pn-wait);
+} /* L161 */
+
+/* Status is ALWAYS colour + word (tokens.css's own law, and the oracle's). */
+.cv2-root .auth-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  flex: none;
+}
+.cv2-root .auth-status .auth-dot {
+  width: 6px;
+  height: 6px;
+}
+.cv2-root .auth-status--run {
+  color: var(--pn-run);
+}
+.cv2-root .auth-status--wait {
+  color: var(--pn-wait);
+}
+.cv2-root .auth-status--block {
+  color: var(--pn-block);
+}
+.cv2-root .auth-status--idle {
+  color: var(--pn-idle);
+}
+.cv2-root .auth-status--brand {
+  color: var(--pn-brand-2);
+}
+.cv2-root .auth-status--inline {
+  display: inline-flex;
+  vertical-align: baseline;
+  font-size: 10.5px;
+} /* L236 */
+
+/* ── honesty banner (oracle L138) ──────────────────────────────────────── */
+
+.cv2-root .auth-alert {
+  display: flex;
+  gap: 9px;
+  border-radius: var(--pn-r-md);
+  padding: 10px 12px;
+}
+/* L138: fill at .09, edge at .35 — the T1-4 tint pair */
+.cv2-root .auth-alert--block {
+  background: color-mix(in srgb, var(--pn-block) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-block) 35%, transparent);
+}
+.cv2-root .auth-alert--wait {
+  background: color-mix(in srgb, var(--pn-wait) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
+}
+.cv2-root .auth-alert--run {
+  background: var(--pn-run-soft);
+  border: 1px solid color-mix(in srgb, var(--pn-run) 35%, transparent);
+}
+.cv2-root .auth-alert--idle,
+.cv2-root .auth-alert--brand {
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.4);
+}
+.cv2-root .auth-alert__glyph {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pn-block);
+}
+.cv2-root .auth-alert__glyph--block {
+  font-size: 13px;
+  color: var(--pn-block);
+}
+.cv2-root .auth-alert--wait .auth-alert__glyph {
+  color: var(--pn-wait);
+}
+.cv2-root .auth-alert__text {
+  font-size: 12px;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}
+.cv2-root .auth-alert__lead {
+  color: var(--pn-block);
+}
+.cv2-root .auth-alert--wait .auth-alert__lead {
+  color: var(--pn-wait);
+}
+
+/* ── overlay & scrim (oracle L159) ─────────────────────────────────────── */
+
+.cv2-root .auth-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+.cv2-root .auth-overlay__behind {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+/* L159: rgba(35,32,27,.38) — --pn-ink at 38%, derived so it re-themes. */
+.cv2-root .auth-scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--pn-ink) 38%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+/* L229: the orientation scrim is lighter (.30) — the coach-marks must read
+   against work that stays recognisable. */
+.cv2-root [data-testid='auth-orientation'] .auth-scrim {
+  background: color-mix(in srgb, var(--pn-ink) 30%, transparent);
+}
+
+/* oracle L292/L319: dialog actions right-aligned */
+.cv2-root .auth-dialog__foot {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding-top: 2px;
+  flex-wrap: wrap;
+}
+
+/* ── 1b swatches (oracle L65) ──────────────────────────────────────────── */
+
+.cv2-root .auth-swatches {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cv2-root .auth-swatch {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--pn-line-2);
+  cursor: pointer;
+  padding: 0;
+}
+.cv2-root .auth-swatch--brand {
+  background: rgba(var(--pn-brand-rgb), 0.18);
+}
+.cv2-root .auth-swatch--run {
+  background: color-mix(in srgb, var(--pn-run) 16%, transparent);
+}
+.cv2-root .auth-swatch--info {
+  background: color-mix(in srgb, var(--pn-info) 16%, transparent);
+}
+.cv2-root .auth-swatch--wait {
+  background: color-mix(in srgb, var(--pn-wait) 16%, transparent);
+}
+.cv2-root .auth-swatch--on {
+  border: 2px solid var(--pn-brand);
+}
+.cv2-root .auth-swatch__note {
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  padding-left: 4px;
+}
+
+/* ── 1h inviter (oracle L202) ──────────────────────────────────────────── */
+
+.cv2-root .auth-inviter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cv2-root .auth-avatar {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--pn-active);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+.cv2-root .auth-avatar--lg {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+} /* L412 */
+
+/* ── 1j coach-marks (oracle L230–L241) ─────────────────────────────────── */
+
+.cv2-root .auth-coachmark {
+  position: absolute;
+  z-index: 2;
+  max-width: calc(100% - 36px);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cv2-root .auth-coachmark__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* L231: an 18px brass square with the ordinal in mono over --pn-card */
+.cv2-root .auth-coachmark__n {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 6px;
+  background: var(--pn-brand);
+  color: var(--pn-card);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cv2-root .auth-coachmark__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cv2-root .auth-coachmark__body {
+  font-size: 12px;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}
+.cv2-root .auth-coachmark__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 6px;
+}
+.cv2-root .auth-coachmark__foot .auth-btn {
+  height: 30px;
+  padding: 0 16px;
+  font-size: 12px;
+} /* L241 */
+.cv2-root .auth-coachmark__note {
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+/* L240: the palette key chip */
+.cv2-root .auth-kbd {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--pn-ink-2);
+}
+
+/* ── 1i legend (oracle L257–L259) ──────────────────────────────────────── */
+
+.cv2-root .auth-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cv2-root .auth-legend__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .auth-legend__word {
+  width: 52px;
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+.cv2-root .auth-legend__word--block {
+  color: var(--pn-block);
+}
+.cv2-root .auth-legend__word--wait {
+  color: var(--pn-wait);
+}
+.cv2-root .auth-legend__word--idle {
+  color: var(--pn-idle);
+}
+
+/* ── 1l segmented picker (oracle L314) ─────────────────────────────────── */
+
+.cv2-root .auth-segmented {
+  display: flex;
+  gap: 4px;
+  background: var(--pn-active);
+  border-radius: var(--pn-r-sm);
+  padding: 3px;
+}
+.cv2-root .auth-segmented__tab {
+  flex: 1;
+  text-align: center;
+  padding: 4px 0;
+  border-radius: var(--pn-r-xs);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+}
+.cv2-root .auth-segmented__tab--on {
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  box-shadow: var(--pn-sh-sm);
+}
+
+/* ── 1m server picks (oracle L356–L358) ────────────────────────────────── */
+
+.cv2-root .auth-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  padding: 10px 12px;
+  min-width: 0;
+}
+.cv2-root .auth-pick--on {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 3px var(--pn-brand-soft);
+}
+.cv2-root .auth-pick--down {
+  opacity: 0.75;
+} /* L358 */
+.cv2-root .auth-pick__name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cv2-root .auth-pick__meta {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .auth-pick__meta--wait {
+  color: var(--pn-wait);
+}
+.cv2-root .auth-pick__check {
+  color: var(--pn-brand);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ── 1n failure cards (oracle L370–L374) ───────────────────────────────── */
+
+.cv2-root .auth-failcard {
+  width: 380px;
+  max-width: 100%;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 12px;
+  box-shadow: var(--pn-sh-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cv2-root .auth-failcard__foot {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+/* L373: the evidence line — mono 10.5 over --pn-card, --pn-line edge */
+.cv2-root .auth-evidence {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  overflow-x: auto;
+}
+
+/* ── 1o toast (oracle L342) ────────────────────────────────────────────── */
+
+/* Ink ground with paper text: D24 says an always-dark region opens a nested
+   dark scope rather than restating the ramp. The element carries
+   data-theme="dark", so tokens.css re-declares the dark tokens here and the
+   ✓ resolves to dark --pn-run (#5CB381) and the text to dark --pn-ink
+   (#EFE9DB) — precisely what the oracle draws. */
+.cv2-root .auth-toast {
+  background: var(--pn-surface);
+  border-radius: 9px;
+  box-shadow: var(--pn-sh-pop);
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cv2-root .auth-toast__glyph {
+  color: var(--pn-run);
+  font-size: 12px;
+  font-weight: 700;
+  padding-top: 1px;
+}
+.cv2-root .auth-toast__text {
+  font-size: 11.5px;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink);
+}
+.cv2-root .auth-placeholder {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+
+/* ── 1p account menu (oracle L402–L422) ────────────────────────────────── */
+
+.cv2-root .auth-appbar {
+  height: 42px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .auth-appbar__rule {
+  width: 1px;
+  height: 18px;
+  background: var(--pn-line);
+}
+.cv2-root .auth-appbar__space {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--pn-active);
+  border-radius: var(--pn-r-sm);
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cv2-root .auth-appbar__theme {
+  font-size: 13px;
+  color: var(--pn-ink-3);
+}
+/* L408: the avatar carries a 2px brass ring when the menu is open */
+.cv2-root .auth-appbar__avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--pn-active);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  box-shadow: 0 0 0 2px var(--pn-brand);
+}
+
+/* L410: 250px, --pn-card over --pn-line, r10, top 48 / right 12 */
+.cv2-root .auth-menu {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  width: 250px;
+  max-width: calc(100% - 24px);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+  z-index: 3;
+}
+.cv2-root .auth-menu__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .auth-menu__name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cv2-root .auth-menu__name--absent {
+  color: var(--pn-ink-4);
+}
+.cv2-root .auth-menu__handle {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  overflow-wrap: anywhere;
+}
+/* L421: the sign-out group is separated by a --pn-line rule. D-law 4: this
+   BOUNDS a group inside the menu component, so --pn-line is right. */
+.cv2-root .auth-menu__group {
+  padding: 4px 0;
+}
+.cv2-root .auth-menu__group--last {
+  border-top: 1px solid var(--pn-line);
+}
+/* THE UTILITY GROUP (2026-08-31) — Inbox + the hosted rows, between the
+   identity head and Appearance. It carries its own separator rather than
+   pushing a border onto the Appearance group, so the group that MOVED owns the
+   line it introduced and the appearance group's markup is untouched. Same
+   --pn-line, same 1px, as `--last` above: one boundary treatment in this menu,
+   not two. */
+.cv2-root .auth-menu__group--utility {
+  border-bottom: 1px solid var(--pn-line);
+}
+/* The inbox mark is DRAWN geometry in the 15px column the TYPED glyphs use, so
+   this variant centres a box instead of a baseline. A modifier rather than a
+   change to `.auth-menu__glyph` itself: the ◐ / ⌗ / ↩ rows are text and are
+   already centred correctly, and nudging all of them to lay out an icon that
+   only one row has would be paying for this move in rows that did not move. */
+.cv2-root .auth-menu__glyph--art {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* HOSTED ROWS wear `auth-menu__row`, and the copy-link control brings its own
+   layout from `share/copy-link.css`. These three rules are the seam between
+   the two, and only where they actually disagree. */
+.cv2-root .auth-menu__row .copy-link__glyph {
+  width: 15px;
+  flex: none;
+  text-align: center;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+}
+/* The manual-copy fallback is an instruction ABOVE a field, never a flex row:
+   inside a ~310px menu the row form would squeeze the field to nothing. It
+   also is not a verb, so it must not take the live row's pointer. */
+.cv2-root .auth-menu__row.copy-link--manual {
+  display: grid;
+  gap: var(--pn-space-1);
+  cursor: default;
+}
+.cv2-root .auth-menu__row.copy-link--manual:hover {
+  background: transparent;
+}
+.cv2-root .auth-menu__row {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  /* `width: 100%` + 12px inline padding WITHOUT border-box made every row
+     24px wider than the menu that contains it (a 310px box grew a 334px
+     Appearance row), which is what shoved the dark toggle past the menu's
+     clipped edge — and past the viewport when the menu opened near it. The
+     row must never exceed the menu's own box. */
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+}
+.cv2-root .auth-menu__row--live {
+  cursor: pointer;
+}
+.cv2-root .auth-menu__row--live:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .auth-menu__row--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+/* The refused rows keep the menu's own padding, so a disabled row and a live
+   row sit on the same grid — the treatment must not move the furniture. */
+.cv2-root .auth-refused-row.auth-menu__row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.cv2-root .auth-refused-row.auth-menu__row .auth-refused-row__control {
+  width: 100%;
+}
+.cv2-root .auth-menu__glyph {
+  width: 15px;
+  text-align: center;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  flex: none;
+}
+.cv2-root .auth-menu__signout {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--pn-ink-2);
+}
+.cv2-root .auth-menu__signout-note {
+  font-size: 10.5px;
+  color: var(--pn-ink-4);
+  padding-left: 24px;
+}
+/* L419: the "phase 2" pill — the ONE refusal the oracle itself draws */
+.cv2-root .auth-menu__pill {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 7px;
+  flex: none;
+}
+/* Where the oracle draws a count pill and we have no count: the T1-4 hollow
+   value. A dash means not-measured; a 0 would mean measured-zero. */
+.cv2-root .auth-menu__hollow {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-4);
+  border-bottom: 1px dotted var(--pn-line-2);
+  cursor: help;
+  flex: none;
+}
+
+/* L417: the appearance segmented toggle */
+.cv2-root .auth-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--pn-active);
+  border-radius: 6px;
+  padding: 2px;
+  flex: none;
+}
+.cv2-root .auth-toggle__opt {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-family: var(--pn-ui);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .auth-toggle__opt--on {
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-weight: 600;
+  box-shadow: var(--pn-sh-sm);
+}
+
+/* ── 1q tokens (oracle L435–L448) ──────────────────────────────────────── */
+
+/* L435: brass-tinted card at .08 fill, .4 edge — the one-time reveal */
+.cv2-root .auth-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(var(--pn-brand-rgb), 0.08);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.4);
+  border-radius: var(--pn-r-md);
+  padding: 12px;
+}
+.cv2-root .auth-reveal__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cv2-root .auth-reveal__name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cv2-root .auth-reveal__pill {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: rgba(var(--pn-brand-rgb), 0.14);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 7px;
+}
+.cv2-root .auth-reveal__secret {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  padding: 7px 10px;
+  min-width: 0;
+}
+.cv2-root .auth-reveal__value {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cv2-root .auth-reveal__copy {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+}
+.cv2-root .auth-reveal__once {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pn-brand-2);
+}
+
+.cv2-root .auth-tokens {
+  display: flex;
+  flex-direction: column;
+}
+/* D-law 4: these are repeated SIBLINGS inside one list, so the divider is the
+   soft hairline, not --pn-line. (The oracle draws --pn-line here at L441 —
+   noted as a DRIFT in the handover; the rule is the decidable one and it
+   predicts this case.) */
+.cv2-root .auth-tokens__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  min-width: 0;
+}
+.cv2-root .auth-tokens__row:last-child {
+  border-bottom: 0;
+}
+.cv2-root .auth-tokens__name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cv2-root .auth-tokens__name--revoked {
+  font-weight: 400;
+  color: var(--pn-ink-3);
+  text-decoration: line-through;
+}
+.cv2-root .auth-tokens__meta {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .auth-tokens__revoked {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-block);
+  flex: none;
+}
+.cv2-root .auth-tokens__revoke {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-block);
+}
+
+/* ── the dev bypass ────────────────────────────────────────────────────── */
+
+/* Deliberately unlike everything else on the board. A dev escape that looked
+   like product furniture is one a reviewer's eye slides past — and this is
+   the one control on the surface that actually changes app state. */
+.cv2-root .auth-devbypass {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 5;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  background: var(--pn-surface);
+  border: 1px dashed var(--pn-brand);
+  border-radius: var(--pn-r-sm);
+  padding: 8px 10px;
+}
+.cv2-root .auth-devbypass__label {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-brand-2);
+}
+
+/* ── responsive ────────────────────────────────────────────────────────── */
+
+/* The cards are fixed-width by design (the oracle's grammar), so the only
+   narrow-viewport rule needed is that they stop being wider than the screen.
+   `max-width:100%` above does that; this drops the stage padding so a 340px
+   card still fits a 360px viewport. */
+@media (max-width: 420px) {
+  .cv2-root .auth-stage__body {
+    padding: 0 8px 24px;
+    align-items: flex-start;
+    padding-top: 12px;
+  }
+  .cv2-root .auth-scrim {
+    padding: 8px;
+    align-items: flex-start;
+  }
+}
+
+/* ── the local-gate disclosure ─────────────────────────────────────────── */
+
+/* Brass-tinted, like the one-time-reveal card at 1q (oracle L435: .08 fill,
+   .4 edge) — the surface's existing vocabulary for "read this, it matters",
+   rather than a new treatment. It is not an ALERT: nothing has gone wrong,
+   and block/wait tones would say something had. */
+.cv2-root .auth-localnote {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: rgba(var(--pn-brand-rgb), 0.08);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.4);
+  border-radius: var(--pn-r-md);
+  padding: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+}
+.cv2-root .auth-localnote__glyph {
+  flex: none;
+  color: var(--pn-brand-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.cv2-root .auth-localnote b {
+  color: var(--pn-brand-2);
+}
+.cv2-root .auth-localnote code {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-brand-2);
+  white-space: nowrap;
+}
+
+/* The reveal toggle is a real button now (it toggles the input type), so it
+   needs the button reset the static span never did. */
+.cv2-root button.auth-field__show {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: var(--pn-ui);
+  cursor: pointer;
+}
+.cv2-root button.auth-field__show:hover {
+  color: var(--pn-ink-3);
+}
+
+/* A stacked live menu row (the gate's sign-out) needs the same column layout
+   the refused variant gets, or its subtitle lands beside the verb. */
+.cv2-root button.auth-menu__row--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  cursor: pointer;
+}
+
+/* ── the workspace account menu (T3-3 as an anchored popover) ──────────── */
+
+.cv2-root .auth-accountmenu {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* The trigger carries the NAME, not just an initial: the ask was for the
+   owner name to be visible on the workspace, and an avatar alone meets the
+   letter of that and not the point. */
+.cv2-root .auth-accountmenu__trigger {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 180px;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root .auth-accountmenu__trigger:hover {
+  background: var(--pn-hover);
+  border-color: var(--pn-line);
+}
+.cv2-root .auth-accountmenu__trigger[aria-expanded='true'] {
+  background: var(--pn-active);
+  border-color: var(--pn-line);
+}
+.cv2-root .auth-accountmenu__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cv2-root .auth-accountmenu__caret {
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+/* oracle L408: the avatar takes a 2px brass ring while the menu is open */
+.cv2-root .auth-accountmenu__trigger[aria-expanded='true'] .auth-avatar {
+  box-shadow: 0 0 0 2px var(--pn-brand);
+}
+.cv2-root .auth-avatar--sm {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+/* Anchored under the trigger rather than staged in a frame (oracle L410
+   geometry otherwise: 250px, --pn-card over --pn-line, r10).
+   Kinetic W2: elevation-high GLASS — the card surface at 90% over a
+   10px backdrop blur, shadow stepped down from pop to --pn-sh-lg. */
+.cv2-root .auth-menu--anchored {
+  position: absolute;
+  top: calc(100% + 6px);
+  /* Anchored by its RIGHT edge under the trigger, so growing content extends
+     the menu leftward — never past the viewport's right edge. */
+  right: 0;
+  width: min(280px, calc(100vw - 24px));
+  /* Was `none` (to undo the base rule's trigger-relative `calc(100% - 24px)`).
+     A viewport clamp instead of no clamp at all: whatever box anchors this
+     menu, it can never exceed the screen. */
+  max-width: calc(100vw - 24px);
+  z-index: 80;
+  background: color-mix(in srgb, var(--pn-card) 90%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--pn-sh-lg);
+}
+/* Kinetic W2: 28px option rows. Rows sit at ~29px today (7px pad + ~15px
+   line) — a 1px trim of the vertical padding, not a rhythm change. */
+.cv2-root .auth-menu--anchored .auth-menu__row {
+  box-sizing: border-box;
+  min-height: 28px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.cv2-root .auth-menu--anchored .auth-menu__head .auth-server__text {
+  flex: 1 1 auto;
+}
+.cv2-root .auth-menu--anchored .auth-menu__handle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.cv2-root .auth-switch__sep {
+  color: var(--pn-ink-4);
+  padding: 0 6px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SPLASH — the owner's design, transcribed.
+
+   WHY THIS IS NOT A FAKE LOADER. `AuthGate` already renders literal nothing
+   on a cold browser while two real probes are in flight (`auth.claim.status`
+   and the loopback auto-owner check); this covers that, plus the bundle
+   hydration and server-registry read that surround it. It does not invent the
+   wait. The progress line is honest for the same reason it is unusual: it
+   measures the FLOOR, which is a fixed 2.5s the app controls, not a guess at
+   work of unknown length.
+
+   THE MARK IS `RibbonMark`, NOT THE SUPPLIED SVG PATH. The design image is
+   plainly the product's own 150-quad Möbius ribbon — the radial quad seams are
+   visible in it — while the supplied JSX draws a flat two-loop path with 53
+   decorative lines clipped inside. The real component is the higher-fidelity
+   answer to the picture, so the picture won.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.cv2-root .auth-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(750px 520px at 95% -5%, var(--au-splash-glow), transparent 66%),
+    radial-gradient(620px 500px at -6% 105%, var(--au-splash-glow), transparent 68%),
+    var(--au-splash-bg);
+  color: var(--au-splash-ink);
+  transition: opacity 240ms var(--pn-ease-standard), visibility 240ms linear;
+}
+
+.cv2-root .auth-splash[data-phase='lifting'] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.cv2-root .auth-splash__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.72;
+  background-image:
+    linear-gradient(to right, var(--au-splash-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--au-splash-grid) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(
+    ellipse 80% 75% at center,
+    rgba(0, 0, 0, 1) 10%,
+    rgba(0, 0, 0, 0.75) 56%,
+    transparent 100%
+  );
+}
+
+.cv2-root .auth-splash__glow {
+  position: absolute;
+  pointer-events: none;
+  border-radius: var(--pn-r-pill);
+  filter: blur(70px);
+  background: var(--au-splash-glow);
+}
+
+.cv2-root .auth-splash__glow--top {
+  inline-size: 460px;
+  block-size: 460px;
+  inset-block-start: -270px;
+  inset-inline-end: -130px;
+}
+
+.cv2-root .auth-splash__glow--bottom {
+  inline-size: 420px;
+  block-size: 420px;
+  inset-block-end: -250px;
+  inset-inline-start: -180px;
+}
+
+.cv2-root .auth-splash__stack {
+  position: relative;
+  inline-size: min(92vw, 430px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateY(-18px);
+}
+
+/* The standalone mark's design box is 560×700, so width follows from height at
+   that ratio and the two can never drift. */
+.cv2-root .auth-splash__ribbon {
+  display: block;
+  inline-size: 274px;
+  block-size: calc(274px * 700 / 560);
+  --pn-ribbon-ink: var(--au-splash-ribbon);
+  animation:
+    authSplashArrive 700ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    authSplashFloat 3400ms var(--pn-ease-standard) 700ms infinite;
+}
+
+@keyframes authSplashArrive {
+  from { opacity: 0; transform: translateY(12px) scale(0.955); filter: blur(3px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes authSplashFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-4px) rotate(0.25deg); }
+}
+
+.cv2-root .auth-splash__loader {
+  inline-size: 300px;
+  margin-block-start: 2px;
+}
+
+.cv2-root .auth-splash__track {
+  position: relative;
+  inline-size: 100%;
+  block-size: 3px;
+  overflow: hidden;
+  border-radius: var(--pn-r-pill);
+  background: var(--au-splash-track);
+}
+
+/* Fills across `--au-splash-ms`, which the component sets from the SAME
+   constant it holds the curtain for. One number, so the bar cannot finish
+   early or late. */
+.cv2-root .auth-splash__progress {
+  position: absolute;
+  inset: 0 auto 0 0;
+  inline-size: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  background: linear-gradient(
+    90deg,
+    var(--au-splash-fill-a) 0%,
+    var(--au-splash-fill-b) 45%,
+    var(--au-splash-fill-c) 100%
+  );
+  animation: authSplashFill var(--au-splash-ms) cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes authSplashFill {
+  0%   { transform: scaleX(0); }
+  12%  { transform: scaleX(0.08); }
+  45%  { transform: scaleX(0.47); }
+  76%  { transform: scaleX(0.81); }
+  100% { transform: scaleX(1); }
+}
+
+.cv2-root .auth-splash__shine {
+  position: absolute;
+  inset-block-start: -2px;
+  inset-inline-start: -25%;
+  inline-size: 24%;
+  block-size: 7px;
+  border-radius: var(--pn-r-pill);
+  filter: blur(2px);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.95),
+    transparent
+  );
+  animation: authSplashShine var(--au-splash-ms) var(--pn-ease-standard) forwards;
+}
+
+@keyframes authSplashShine {
+  from { inset-inline-start: -25%; }
+  to   { inset-inline-start: 105%; }
+}
+
+.cv2-root .auth-splash__label {
+  margin-block-start: 32px;
+  text-align: center;
+  color: var(--au-splash-text);
+  font-family: var(--pn-mono);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1;
+  letter-spacing: 0.34em;
+  /* The tracking is trailing, so without this the word sits left of centre by
+     half a letter-space. */
+  padding-inline-start: 0.34em;
+  opacity: 0;
+  animation: authSplashLabel 450ms var(--pn-ease-out) 360ms forwards;
+}
+
+@keyframes authSplashLabel {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (max-width: 600px) {
+  .cv2-root .auth-splash__stack { transform: translateY(-10px); }
+  .cv2-root .auth-splash__ribbon {
+    inline-size: 220px;
+    block-size: calc(220px * 700 / 560);
+  }
+  .cv2-root .auth-splash__loader { inline-size: min(260px, 68vw); }
+  .cv2-root .auth-splash__label {
+    margin-block-start: 27px;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    padding-inline-start: 0.3em;
+  }
+  .cv2-root .auth-splash__grid { background-size: 58px 58px; }
+}
+
+/* Reduced motion: `useSplashCurtain` never raises the curtain at all under
+   this query, so none of the above runs. The rules stay as the statement of
+   intent for any second mount, and the bar keeps a linear fill rather than an
+   eased one that reads as acceleration. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .auth-splash__ribbon { animation: none; }
+  .cv2-root .auth-splash__label { animation: none; opacity: 1; }
+  .cv2-root .auth-splash__shine { display: none; }
+  .cv2-root .auth-splash__progress { animation-timing-function: linear; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SIGN-IN PAGE — the owner's design, transcribed.
+
+   Every literal below comes from the supplied stylesheet. Where a value had a
+   house token that already carried it (radii, mono stack, pill radius) the
+   token wins, for the same reason `AuthCard`'s shadow ruling gives: three
+   alphas of one shadow is drift, not three intentions.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.cv2-root .sp-page {
+  position: relative;
+  min-block-size: 100%;
+  display: grid;
+  grid-template-rows: 90px 1fr;
+  isolation: isolate;
+  overflow: hidden;
+  color: var(--sp-text);
+  background:
+    radial-gradient(880px 620px at 14% 0%, rgba(64, 118, 255, 0.09), transparent 58%),
+    radial-gradient(900px 720px at 94% 100%, rgba(110, 67, 255, 0.08), transparent 60%),
+    linear-gradient(180deg, var(--sp-page), var(--sp-page-2));
+}
+
+.cv2-root .sp-page__grid {
+  position: absolute;
+  inset: 0;
+  z-index: -5;
+  opacity: 0.18;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--sp-tint) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--sp-tint) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.25) 12%,
+    rgba(0, 0, 0, 0.08) 74%,
+    transparent 100%
+  );
+}
+
+.cv2-root .sp-page__glow {
+  position: absolute;
+  z-index: -4;
+  pointer-events: none;
+  border-radius: var(--pn-r-pill);
+  filter: blur(90px);
+}
+
+.cv2-root .sp-page__glow--a {
+  inline-size: 360px;
+  block-size: 360px;
+  inset-inline-start: 10%;
+  inset-block-start: 17%;
+  background: rgba(59, 120, 255, 0.10);
+}
+
+.cv2-root .sp-page__glow--b {
+  inline-size: 390px;
+  block-size: 390px;
+  inset-inline-end: 7%;
+  inset-block-end: 5%;
+  background: rgba(122, 62, 255, 0.09);
+}
+
+/* ── top bar ─────────────────────────────────────────────────────────────── */
+
+.cv2-root .sp-top,
+.cv2-root .sp-main {
+  inline-size: min(1440px, calc(100% - 64px));
+  margin-inline: auto;
+}
+
+.cv2-root .sp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cv2-root .sp-logo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.03em;
+  font-family: var(--pn-ui);
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--sp-text);
+}
+
+.cv2-root .sp-logo__letters {
+  margin-inline-end: -0.03em;
+}
+
+/* The wordmark box is 360×520; height in `em` so the lockup scales as one. */
+.cv2-root .sp-logo__eight {
+  display: block;
+  block-size: 0.94em;
+  inline-size: calc(0.94em * 360 / 520);
+  position: relative;
+  inset-block-start: 0.055em;
+  --pn-ribbon-ink: var(--sp-accent);
+}
+
+.cv2-root .sp-top__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-4);
+}
+
+.cv2-root .sp-top__meta {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-theme {
+  inline-size: 72px;
+  block-size: 34px;
+  padding: 4px;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--sp-surface);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.cv2-root .sp-theme > span {
+  block-size: 24px;
+  border-radius: var(--pn-r-pill);
+  display: grid;
+  place-items: center;
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-theme > span.is-on {
+  color: var(--sp-text);
+  background: var(--sp-surface-2);
+  box-shadow: 0 2px 8px rgba(20, 35, 75, 0.10);
+}
+
+/* ── the two columns ─────────────────────────────────────────────────────── */
+
+.cv2-root .sp-main {
+  /* Flexbox/grid §4.5 again: this row is `1fr` inside a definite-height page
+     grid, and `overflow: auto` below would take its automatic minimum size to
+     zero without a floor of its own. Floored at 0 here is not the L4 ban —
+     that bans `minmax(0, …)` as a TRACK size; this is `min-block-size`. */
+  min-block-size: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 440px) minmax(520px, 600px);
+  justify-content: center;
+  align-items: center;
+  gap: clamp(68px, 8vw, 142px);
+  padding: 30px 0 36px;
+  overflow: auto;
+}
+
+.cv2-root .sp-product__eyebrow {
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 750;
+  letter-spacing: 0.24em;
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-product__title {
+  margin: 20px 0 0;
+  font-size: clamp(48px, 4.1vw, 58px);
+  line-height: 1.02;
+  font-weight: 790;
+  letter-spacing: -0.038em;
+  text-wrap: balance;
+}
+
+/* The one gradient in the product. `background-clip: text` needs a transparent
+   fill to show through, and the unprefixed pair is listed after the prefixed
+   one so a browser that understands both takes the standard. */
+.cv2-root .sp-product__title > span {
+  background: linear-gradient(90deg, var(--sp-accent), var(--sp-accent-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.cv2-root .sp-product__blurb {
+  max-inline-size: 414px;
+  margin: 22px 0 0;
+  color: var(--sp-text-soft);
+  font-size: 16px;
+  line-height: 1.68;
+}
+
+.cv2-root .sp-modstack {
+  margin-block-start: 30px;
+  display: grid;
+  gap: 10px;
+}
+
+.cv2-root .sp-mod {
+  min-block-size: 60px;
+  padding: 8px 12px 8px 10px;
+  border: 1px solid var(--sp-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--sp-surface) 82%, transparent);
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 11px;
+  align-items: center;
+}
+
+.cv2-root .sp-mod__icon {
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--sp-line);
+  display: grid;
+  place-items: center;
+}
+
+.cv2-root .sp-mod__icon--green  { color: var(--sp-tone-green);  background: color-mix(in srgb, var(--sp-tone-green) 8%, transparent); }
+.cv2-root .sp-mod__icon--blue   { color: var(--sp-tone-blue);   background: color-mix(in srgb, var(--sp-tone-blue) 8%, transparent); }
+.cv2-root .sp-mod__icon--purple { color: var(--sp-tone-purple); background: color-mix(in srgb, var(--sp-tone-purple) 8%, transparent); }
+.cv2-root .sp-mod__icon--pink   { color: var(--sp-tone-pink);   background: color-mix(in srgb, var(--sp-tone-pink) 8%, transparent); }
+.cv2-root .sp-mod__icon--violet { color: var(--sp-tone-violet); background: color-mix(in srgb, var(--sp-tone-violet) 9%, transparent); }
+.cv2-root .sp-mod__icon--orange { color: var(--sp-tone-orange); background: color-mix(in srgb, var(--sp-tone-orange) 8%, transparent); }
+
+.cv2-root .sp-mod__copy {
+  min-inline-size: 0;
+}
+
+.cv2-root .sp-mod__titleline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cv2-root .sp-mod__titleline strong {
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.cv2-root .sp-mod__badge {
+  min-block-size: 17px;
+  padding: 0 5px;
+  border-radius: var(--pn-r-pill);
+  display: inline-grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--sp-accent) 12%, transparent);
+  color: var(--sp-accent);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 850;
+}
+
+.cv2-root .sp-mod__text {
+  display: block;
+  margin-block-start: 3px;
+  color: var(--sp-text-soft);
+  font-size: 11.5px;
+  line-height: 1.38;
+}
+
+.cv2-root .sp-mod__arrow {
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-audience {
+  margin-block-start: 18px;
+  padding: 13px 15px;
+  border: 1px solid var(--sp-line);
+  border-radius: 15px;
+  background: var(--sp-surface);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.cv2-root .sp-audience__slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.cv2-root .sp-audience__rule {
+  inline-size: 1px;
+  block-size: 38px;
+  flex: none;
+  background: var(--sp-line);
+}
+
+.cv2-root .sp-audience__item {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  align-items: start;
+  color: var(--sp-accent-2);
+}
+
+.cv2-root .sp-audience__item strong {
+  display: block;
+  color: var(--sp-text);
+  font-size: 11.5px;
+  line-height: 1.2;
+}
+
+.cv2-root .sp-audience__item span {
+  display: block;
+  margin-block-start: 4px;
+  color: var(--sp-text-soft);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+/* ── the card ────────────────────────────────────────────────────────────── */
+
+.cv2-root .sp-card {
+  inline-size: 100%;
+  padding: 34px 46px 38px;
+  border: 1px solid var(--sp-line);
+  border-radius: 26px;
+  background: var(--sp-surface);
+  box-shadow: var(--sp-shadow);
+  backdrop-filter: blur(22px) saturate(125%);
+  -webkit-backdrop-filter: blur(22px) saturate(125%);
+}
+
+.cv2-root .sp-card__badge {
+  inline-size: 48px;
+  block-size: 48px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  color: var(--sp-accent-2);
+  background: color-mix(in srgb, var(--sp-accent-2) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sp-accent-2) 12%, transparent);
+}
+
+.cv2-root .sp-card__title {
+  margin: 22px 0 0;
+  font-family: var(--pn-ui);
+  font-size: 36px;
+  line-height: 1.05;
+  font-weight: 780;
+  letter-spacing: -0.035em;
+}
+
+.cv2-root .sp-card__sub {
+  margin: 11px 0 0;
+  color: var(--sp-text-soft);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+/* Not in the design, and here for a reason the design did not have to carry:
+   tm8 is many servers behind one client, so which node is about to receive
+   this password is a fact nobody can infer from the page. */
+.cv2-root .sp-card__server {
+  margin-block-start: 18px;
+  padding: 9px 11px;
+  border: 1px solid var(--sp-line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--sp-surface-2) 55%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cv2-root .sp-card__serverglyph {
+  inline-size: 28px;
+  block-size: 28px;
+  flex: none;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sp-accent-2);
+  background: color-mix(in srgb, var(--sp-accent-2) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sp-accent-2) 14%, transparent);
+}
+
+.cv2-root .sp-card__server strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.cv2-root .sp-card__server em {
+  display: block;
+  margin-block-start: 2px;
+  font-family: var(--pn-mono);
+  font-style: normal;
+  font-size: var(--pn-fs-micro);
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-form {
+  margin-block-start: 24px;
+}
+
+.cv2-root .sp-field__label {
+  display: block;
+  margin: 0 0 7px;
+  color: var(--sp-text);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.cv2-root .sp-field {
+  block-size: 55px;
+  margin-block-end: 18px;
+  padding: 0 14px;
+  border: 1px solid var(--sp-line-2);
+  border-radius: 11px;
+  background: var(--sp-input);
+  color: var(--sp-text-sub);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .sp-field:focus-within {
+  border-color: color-mix(in srgb, var(--sp-accent) 58%, transparent);
+  box-shadow: 0 0 0 4px var(--sp-focus);
+}
+
+/* Colour is never alone: the failed field keeps its ring AND the banner above
+   it, per the honesty law this flow is built to. */
+.cv2-root .sp-field[data-state='error'] {
+  border-color: var(--pn-block);
+}
+
+.cv2-root .sp-field > input {
+  inline-size: 100%;
+  min-inline-size: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--sp-text);
+  font: inherit;
+  font-size: 15px;
+}
+
+.cv2-root .sp-field > input::placeholder {
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-field__reveal {
+  inline-size: 30px;
+  block-size: 30px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sp-text-sub);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.cv2-root .sp-field__reveal:hover {
+  color: var(--sp-text);
+  background: color-mix(in srgb, var(--sp-text-sub) 12%, transparent);
+}
+
+.cv2-root .sp-form__row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.cv2-root .sp-primary {
+  inline-size: 100%;
+  block-size: 57px;
+  margin-block-start: 22px;
+  border: 0;
+  border-radius: 11px;
+  color: var(--sp-on-accent);
+  background: linear-gradient(
+    100deg,
+    var(--sp-accent) 0%,
+    var(--sp-accent-2) 48%,
+    var(--sp-accent-3) 100%
+  );
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  font: inherit;
+  font-size: 15.5px;
+  font-weight: 710;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(58, 80, 220, 0.22);
+  transition: transform var(--pn-dur-fast) var(--pn-ease-standard),
+              filter var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .sp-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: saturate(108%);
+}
+
+.cv2-root .sp-primary:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.cv2-root .sp-sep {
+  margin: 29px 0 18px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.cv2-root .sp-sep > span {
+  block-size: 1px;
+  background: var(--sp-line);
+}
+
+.cv2-root .sp-sep > em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--sp-text-sub);
+}
+
+.cv2-root .sp-provs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+}
+
+/* ── the refused controls ───────────────────────────────────────────────────
+   D32 opacity (.45, the inline-caption value), D28 mechanics on the element
+   itself. `cursor: not-allowed` rather than `pointer`, because the pointer is
+   the promise. */
+
+.cv2-root .sp-prov,
+.cv2-root .sp-forgot {
+  position: relative;
+  display: block;
+}
+
+/* The refused control's FACE. `DisabledAction` supplies the mechanics — role,
+   aria-disabled, aria-describedby, tabIndex, and a caption that is always in
+   the DOM — and carries D32's .45 opacity itself. All this does is give it the
+   design's button geometry. */
+.cv2-root .sp-prov .hon-disabled {
+  display: block;
+  inline-size: 100%;
+}
+
+.cv2-root .sp-prov__face {
+  block-size: 49px;
+  border: 1px solid var(--sp-line);
+  border-radius: 10px;
+  background: var(--sp-surface-2);
+  color: var(--sp-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: not-allowed;
+}
+
+.cv2-root .sp-forgot .hon-disabled {
+  color: var(--sp-accent);
+  font-size: 12px;
+  font-weight: 620;
+  cursor: not-allowed;
+}
+
+/* ── the caption takes the TOOLTIP presentation here ───────────────────────
+   `DisabledAction`'s caption is normally visible prose, which is right in a
+   panel where a refusal has a line to itself. On this card it is not: three
+   provider reasons and a forgot-password reason rendered as prose added about
+   two hundred pixels of red text under a login form and pushed the separator
+   through the button. Measured, not predicted — the first build shipped it and
+   the screenshot is unusable.
+
+   So this is the SAME move the chip row already makes, and it is copied from
+   there deliberately rather than invented: `opacity` + `visibility`, NEVER
+   `display: none`, because the caption is the control's `aria-describedby`
+   target and dropping it from the accessibility tree would take the reason
+   with it. Hover, `:focus-visible`, and the tap flag that `useReasonDisclosure`
+   sets — a thumb can produce neither of the first two. */
+.cv2-root .sp-prov .hon-disabled-group,
+.cv2-root .sp-forgot .hon-disabled-group {
+  position: relative;
+  display: block;
+}
+
+.cv2-root .sp-prov .hon-caption,
+.cv2-root .sp-forgot .hon-caption {
+  position: absolute;
+  z-index: 70;
+  inset-block-end: calc(100% + 8px);
+  inset-inline-start: 0;
+  inline-size: max-content;
+  max-inline-size: 260px;
+  padding: 8px 11px;
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--sp-line-2);
+  background: var(--sp-surface-2);
+  color: var(--sp-text-soft);
+  box-shadow: var(--pn-sh-md);
+  font-size: 11.5px;
+  font-weight: 450;
+  line-height: 1.45;
+  text-align: start;
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* The link sits at the row's right edge, so its tooltip is anchored there or it
+   would leave the card. */
+.cv2-root .sp-forgot .hon-caption {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+
+.cv2-root .sp-prov .hon-disabled-group:hover > .hon-caption,
+.cv2-root .sp-prov .hon-disabled:focus-visible + .hon-caption,
+.cv2-root .sp-prov .hon-disabled-group[data-reason-open='true'] > .hon-caption,
+.cv2-root .sp-forgot .hon-disabled-group:hover > .hon-caption,
+.cv2-root .sp-forgot .hon-disabled:focus-visible + .hon-caption,
+.cv2-root .sp-forgot .hon-disabled-group[data-reason-open='true'] > .hon-caption {
+  opacity: 1;
+  visibility: visible;
+}
+
+.cv2-root .sp-card__foot {
+  max-inline-size: 360px;
+  margin: 28px auto 0;
+  text-align: center;
+  color: var(--sp-text-sub);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+
+/* ── the collapse ──────────────────────────────────────────────────────────
+   The design drops the product panel entirely under 1020px. Kept: at that
+   width the six module rows and the card cannot both be read, and the card is
+   the one somebody came for. */
+@media (max-width: 1020px) {
+  .cv2-root .sp-main {
+    max-inline-size: 680px;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .cv2-root .sp-product { display: none; }
+  .cv2-root .sp-card {
+    inline-size: min(100%, 600px);
+    justify-self: center;
+  }
+}
+
+@media (max-width: 680px) {
+  .cv2-root .sp-page { grid-template-rows: 72px 1fr; }
+  .cv2-root .sp-top,
+  .cv2-root .sp-main { inline-size: calc(100% - 28px); }
+  .cv2-root .sp-main { padding: 14px 0; }
+  .cv2-root .sp-top__meta { display: none; }
+  .cv2-root .sp-card {
+    padding: 26px 20px 30px;
+    border-radius: 20px;
+  }
+  .cv2-root .sp-card__title { font-size: 32px; }
+  .cv2-root .sp-provs { grid-template-columns: 1fr; }
+  .cv2-root .sp-logo { font-size: 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .sp-primary { transition: none; }
+}
+
+/* ── SHORT VIEWPORTS ───────────────────────────────────────────────────────
+   The design's vertical rhythm is authored for roughly a 1080px window. On the
+   1512×950 laptop this actually ships to, the product column runs past the
+   fold and Docs plus the audience card sit below it — measured, not guessed.
+
+   Keyed on HEIGHT, so nothing here touches the design at the size it was drawn
+   for. It compacts rather than removes: every module keeps its icon, title,
+   blurb and chevron, and only the padding and the leading give way. Removing a
+   row to make the rest fit would be answering "too tall" with "show less",
+   which is the wrong trade on the one screen that has to explain the product. */
+@media (max-height: 1000px) and (min-width: 1021px) {
+  .cv2-root .sp-main { padding: 18px 0 22px; }
+  .cv2-root .sp-product__title { margin-block-start: 14px; }
+  .cv2-root .sp-product__blurb { margin-block-start: 16px; }
+  .cv2-root .sp-modstack {
+    margin-block-start: 20px;
+    gap: 7px;
+  }
+  .cv2-root .sp-mod {
+    min-block-size: 52px;
+    padding: 6px 12px 6px 10px;
+  }
+  .cv2-root .sp-mod__icon {
+    inline-size: 34px;
+    block-size: 34px;
+    border-radius: 10px;
+  }
+  .cv2-root .sp-mod { grid-template-columns: 34px 1fr auto; }
+  .cv2-root .sp-audience {
+    margin-block-start: 12px;
+    padding: 10px 14px;
+  }
+  .cv2-root .sp-card { padding: 26px 40px 30px; }
+  .cv2-root .sp-card__title { margin-block-start: 16px; }
+  .cv2-root .sp-field {
+    block-size: 48px;
+    margin-block-end: 14px;
+  }
+  .cv2-root .sp-primary {
+    block-size: 50px;
+    margin-block-start: 16px;
+  }
+  .cv2-root .sp-sep { margin: 20px 0 14px; }
+  .cv2-root .sp-prov__face { block-size: 44px; }
+  .cv2-root .sp-card__foot { margin-block-start: 20px; }
+}
+
+/* The primary, refused. Same gradient, same geometry, wearing `DisabledAction`
+   so the reason is focusable and always in the DOM — see SignInPage for why a
+   natively `disabled` button was the wrong answer here. */
+.cv2-root .sp-primary--refused {
+  display: block;
+  inline-size: 100%;
+  margin-block-start: 22px;
+  block-size: auto;
+  background: none;
+  box-shadow: none;
+  position: relative;
+}
+
+.cv2-root .sp-primary--refused .hon-disabled-group { position: relative; display: block; }
+.cv2-root .sp-primary--refused .hon-disabled { display: block; inline-size: 100%; }
+
+.cv2-root .sp-primary__face {
+  block-size: 57px;
+  border-radius: 11px;
+  color: var(--sp-on-accent);
+  background: linear-gradient(
+    100deg,
+    var(--sp-accent) 0%,
+    var(--sp-accent-2) 48%,
+    var(--sp-accent-3) 100%
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  font-size: 15.5px;
+  font-weight: 710;
+  cursor: not-allowed;
+}
+
+.cv2-root .sp-primary--refused .hon-caption {
+  position: absolute;
+  z-index: 70;
+  inset-block-start: calc(100% + 8px);
+  inset-inline-start: 0;
+  inline-size: 100%;
+  padding: 8px 11px;
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--sp-line-2);
+  background: var(--sp-surface-2);
+  color: var(--sp-text-soft);
+  box-shadow: var(--pn-sh-md);
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-align: start;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cv2-root .sp-primary--refused .hon-disabled-group:hover > .hon-caption,
+.cv2-root .sp-primary--refused .hon-disabled:focus-visible + .hon-caption,
+.cv2-root .sp-primary--refused .hon-disabled-group[data-reason-open='true'] > .hon-caption {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (max-height: 1000px) and (min-width: 1021px) {
+  .cv2-root .sp-primary--refused { margin-block-start: 16px; }
+  .cv2-root .sp-primary__face { block-size: 50px; }
+}
+
+/* The design's account row, kept for the one path it is true on. */
+.cv2-root .sp-account {
+  margin-block-start: 23px;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  color: var(--sp-text-soft);
+  font-size: 12.5px;
+}
+
+.cv2-root .sp-account__link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--sp-accent);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cv2-root .sp-account__link:hover { text-decoration: underline; }

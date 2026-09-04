@@ -1,0 +1,126 @@
+/**
+ * The join landing — the one full-page screen somebody sees before they are a
+ * member of anything.
+ *
+ * Its own block rather than a reuse of `.set-redeem`: that one is a card
+ * inside a settings body, this one owns the viewport, and inheriting a panel's
+ * padding for a full-page state is how a centred card ends up in a corner.
+ * Every colour is a token — this package's hex ban covers this directory.
+ */
+.join {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 24px;
+  text-align: center;
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+}
+
+.join__mark {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--pn-ink-4);
+}
+
+.join__title {
+  font-family: var(--pn-prose);
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.22;
+  margin: 0;
+}
+
+/* The read facts — inviter, role, expiry. Mono because each one is a value
+   that came off the wire, not prose. */
+.join__facts {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+
+/* Carries the honesty on every dead and signed-out state, so it is sized to be
+   read rather than skimmed as fine print. */
+.join__why {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--pn-ink-3);
+}
+
+.join__detail {
+  margin: 0;
+  max-width: 46ch;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-4);
+}
+
+.join__problem {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pn-block);
+}
+
+.join__primary {
+  appearance: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pn-paper);
+  background: var(--pn-ink);
+  border: 1px solid var(--pn-ink);
+  border-radius: var(--pn-r-sm);
+  padding: 8px 20px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+.join__primary:hover { opacity: 0.9; }
+.join__primary:disabled { opacity: 0.55; cursor: default; }
+
+.join__ghost {
+  appearance: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.join__ghost:hover { color: var(--pn-ink-2); }
+
+.join__foot {
+  margin: 2px 0 0;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+}
+
+/* The line the auth gate shows while a code is parked, so a stranger who hits
+   the sign-in wall learns WHY they are being asked. Sits above the auth card
+   rather than inside it — the gate owns that card, and this is context, not a
+   field. */
+.join-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  text-align: center;
+  padding: 10px 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border-bottom: 1px solid var(--pn-line);
+}
+.join-banner__sub { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-4); }

@@ -72,15 +72,60 @@ export function commandsComplete(deps: FacadeDeps): OperationHandler {
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as CompleteTaskInput;
 
+    /**
+     * ONE OPERATION, TWO DOORS — user ruling 2026-08-19, "tick marks the
+     * session done, but does not close it".
+     *
+     * `complete` means the same thing on both kinds at the level a user cares
+     * about ("I am finished with this row"), so it stays ONE operation rather
+     * than growing a second catalog entry for the session case. What differs is
+     * entirely below the seam:
+     *
+     *   task          `complete_task` — checks acceptance criteria, awards
+     *                 points, writes `tasks.work_status = 'done'`.
+     *   work_session  `set_session_done` — moves the ENVELOPE only. The process
+     *                 is untouched: the PTY keeps running and the terminal keeps
+     *                 streaming. It is also a TOGGLE, which `complete_task` is
+     *                 not, because a session you filed away is one you meant to
+     *                 come back to.
+     *
+     * The kind read costs one indexed lookup on the row this command is about
+     * to write anyway. The alternative — teaching `complete_task` a session arm
+     * — would put "and it does not actually complete anything" inside a function
+     * whose name is a promise, and both doors' preconditions would then live in
+     * one body with two unrelated failure modes.
+     *
+     * `input.completerIds` IS DROPPED on the session path, and that is not an
+     * oversight. The schema requires at least one and the client sends the
+     * viewer, so nothing has to change on the wire — but a session has no
+     * completion to credit and no points to award, and inventing a `completed`
+     * edge for "I filed this away" would put a claim in the graph that the
+     * ruling does not make. The actor is already recorded on the activity row.
+     *
+     * The kind read and the RPC are in ONE transaction with the write, so a
+     * session that is somehow deleted between the two cannot route a task RPC
+     * at a missing row: `live_entity` inside the door refuses it either way.
+     */
     const run = (): Promise<unknown> =>
       deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
-        const raw = await q.rpc<RpcCommandResult>('complete_task', [
-          id,
-          input.expectedVersion,
-          input.completerIds ?? [],
-          envelope.actorId ?? null,
-          envelope.clientMutationId ?? null,
-        ]);
+        const rows = await q.query<{ kind: string }>(
+          'select kind from public.entities where id = $1',
+          [id],
+        );
+        const raw = rows[0]?.kind === 'work_session'
+          ? await q.rpc<RpcCommandResult>('set_session_done', [
+              id,
+              input.expectedVersion,
+              envelope.actorId ?? null,
+              envelope.clientMutationId ?? null,
+            ])
+          : await q.rpc<RpcCommandResult>('complete_task', [
+              id,
+              input.expectedVersion,
+              input.completerIds ?? [],
+              envelope.actorId ?? null,
+              envelope.clientMutationId ?? null,
+            ]);
         return toCommandResult(q, raw, owner.identityId);
       });
 

@@ -7,13 +7,18 @@
 // point is that the PTY assertions can run with no Postgres at all.
 
 import { randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
+import type {
+  PromptSettlementResult,
+  PromptSettlementWaiter,
+} from '../pty/PromptSettlementWaiter.js';
 import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
 import { composePrompt } from '@tm8/prompt';
 
+import { oomKillObserved, readOomKillCount } from './oom-witness.js';
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
 import {
   preflightCodexNetworkPolicy,
@@ -29,6 +34,7 @@ import {
   resolveLaunchConfig,
   resolveSessionTitle,
   resolveWorkdir,
+  supportsPositionalPrompt,
   withAgentPrompt,
   withAgentResume,
   type ResolvedLaunchConfig,
@@ -65,7 +71,11 @@ import type {
   SpawnRequest,
   SpawnResult,
   Tm8Manifest,
+  TransitionInput,
+  WorkSessionEndedKind,
   WorkSessionStatus,
+  WorktreeAllocationRow,
+  GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
 
@@ -83,6 +93,27 @@ export interface SpawnServiceOptions {
   env?: NodeJS.ProcessEnv;
   /** Window in which a child exit makes spawn itself fail. Default 150ms. */
   bootSettlementMs?: number;
+  /**
+   * Production's closed-loop PTY settlement bridge. When present, a fresh
+   * spawn queues its first task through the same verified submit path as every
+   * later message and does not acknowledge until that outcome settles.
+   * Optional for legacy embedders which constructed their PTY before the
+   * callback bridge existed; those retain the argv positional fallback.
+   */
+  promptSettlement?: Pick<PromptSettlementWaiter, 'awaitOutcome' | 'cancel'>;
+  /**
+   * Hard ceiling for first-turn settlement. Default 150s.
+   *
+   * This is a BACKSTOP against a wedged delivery, so it must stay strictly
+   * larger than the closed loop's own worst case — a ceiling tighter than the
+   * work it bounds fails sessions that were about to succeed. Cold-path budget,
+   * summing PtyHostService's constants: 45s readiness gate + 22s arrival
+   * confirmation (three body writes with a 5s re-settle between) + ~1.3s
+   * pre-submit floor + ~36s submit-verify backoff ≈ 104s.
+   */
+  firstPromptSettlementMs?: number;
+  /** Base delay for retrying a failed terminal-state write. Default 1s. */
+  failedTransitionRetryMs?: number;
   /** Injected only for deterministic compatibility-preflight tests. */
   codexNetworkPreflight?: CodexNetworkPreflight;
   /**
@@ -184,6 +215,24 @@ async function repairPrivateChildDirectories(path: string): Promise<void> {
 }
 
 /**
+ * "Is there still a directory at this path?" — the observation resume needs
+ * before it will honour a recorded worktree path.
+ *
+ * `stat`, not `lstat`: a worktree reachable through a symlinked path is still
+ * reachable, and refusing it would fail a resume that would have worked. Any
+ * error at all (gone, unreadable, a file) answers `false` — the caller's only
+ * two options are "use this directory" or "refuse", and every error means the
+ * first one is not available.
+ */
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Turn a {@link PtyExitInfo} into the honest, human-readable statement that
  * lands in `work_sessions.error` for a NATURAL exit.
  *
@@ -213,6 +262,57 @@ function describePtyExit(exitInfo: PtyExitInfo): string {
   return 'agent process exited; neither an exit code nor a signal was reported';
 }
 
+/**
+ * The same PTY exit, said to a PERSON (171).
+ *
+ * `describePtyExit` above is the technical diagnostic and keeps its job. This
+ * is the other half: one sentence, no signal numbers, no exit codes, no jargon.
+ * The reader is someone looking at a list of sessions wondering why one of
+ * theirs stopped, and "terminated by signal 9" tells them nothing they can act
+ * on. It is a separate function rather than a rewrite because BOTH are wanted —
+ * `error` for whoever is debugging, `ended_reason` for whoever is working.
+ *
+ * `killedForMemory` is the caller's kernel evidence, never inferred here: a
+ * deploy's SIGKILL and the OOM killer's SIGKILL are identical at this layer,
+ * and guessing between them would launder a deploy bug as an infrastructure
+ * fact. See `oom-witness.ts`.
+ */
+function endingFromPtyExit(
+  status: PtySessionStatus,
+  exitInfo: PtyExitInfo,
+  killedForMemory: boolean,
+): { endedKind: WorkSessionEndedKind; endedReason: string } {
+  if (killedForMemory) {
+    return {
+      endedKind: 'out_of_memory',
+      endedReason:
+        'Stopped because the machine ran out of memory. This session was using too much, ' +
+        'and the system shut it down to stay alive.',
+    };
+  }
+  if (status === 'completed') {
+    return { endedKind: 'completed', endedReason: 'Finished on its own.' };
+  }
+  // A signal death that was NOT a memory kill. This is the deploy/restart
+  // shape — but from here it is genuinely indistinguishable from an operator
+  // running `kill` by hand, so the sentence says what is known and stops.
+  // `reconcileNodeGhosts` is where a restart CAN be named, because a whole
+  // node's worth of sessions dying at once is itself the evidence.
+  if (exitInfo.signal !== null) {
+    return {
+      endedKind: 'crashed',
+      endedReason: 'Stopped by the system before it finished. It can be resumed to try again.',
+    };
+  }
+  return {
+    endedKind: 'crashed',
+    endedReason:
+      exitInfo.exitCode === null
+        ? 'Stopped unexpectedly, and no reason was reported. It can be resumed to try again.'
+        : 'Stopped because it hit an error and could not continue. It can be resumed to try again.',
+  };
+}
+
 export class SpawnService {
   private readonly graph: GraphPort;
   private readonly pty: PtyHostService;
@@ -222,6 +322,9 @@ export class SpawnService {
   private readonly logger: Logger | undefined;
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
+  private readonly promptSettlement: Pick<PromptSettlementWaiter, 'awaitOutcome' | 'cancel'> | undefined;
+  private readonly firstPromptSettlementMs: number;
+  private readonly failedTransitionRetryMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
   private readonly credentialHome: AgentCredentialHomePort | undefined;
   private readonly gitHubCredentials: GitHubCredentialPort | undefined;
@@ -246,6 +349,20 @@ export class SpawnService {
    * the actor who started it.
    */
   private readonly sessionAuth = new Map<string, GraphAuth>();
+  /**
+   * The cgroup OOM-kill counter as it stood when each session's PTY was
+   * spawned (171). The exit path compares against it: an ADVANCE across a
+   * session's lifetime is kernel evidence that a memory kill happened, which
+   * is the only thing that can separate the OOM killer's SIGKILL from a
+   * deploy's — they are identical at the process level.
+   *
+   * Keyed by session id and deleted on exit, exactly as `sessionAuth` is, so a
+   * long-lived node does not accumulate one integer per session it ever ran.
+   */
+  private readonly oomKillAtSpawn = new Map<string, number | null>();
+  /** Failed spawn terminal writes retried for this process lifetime. Startup
+   * ghost reconciliation is the second line of defence after a node restart. */
+  private readonly failedTransitionRetries = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: SpawnServiceOptions) {
     this.graph = options.graph;
@@ -256,6 +373,9 @@ export class SpawnService {
     this.logger = options.logger;
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
+    this.promptSettlement = options.promptSettlement;
+    this.firstPromptSettlementMs = options.firstPromptSettlementMs ?? 150_000;
+    this.failedTransitionRetryMs = options.failedTransitionRetryMs ?? 1_000;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
     this.credentialHome = options.credentialHome;
     this.gitHubCredentials = options.gitHubCredentials;
@@ -660,7 +780,7 @@ export class SpawnService {
    *   2. resolve launch config + cwd IN-PROCESS
    *   3. `execution_spawn` — the work_session row and `working_on` edges, one tx
    *   4. compose the manifest, write the FILE and record the ROW
-   *   5. spawn the PTY
+   *   5. queue the first task, spawn the PTY, and await verified submission
    *   6. transition to `running`
    *
    * Steps 1-2 precede 3 because the RPC persists the resolved model/agentTool/
@@ -671,12 +791,19 @@ export class SpawnService {
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
+    let firstPromptDeliveryId: string | undefined;
 
     const context = await this.graph.loadSpawnContext(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
       projectId: request.projectId ?? null,
       taskIds,
+      // 176: the loader resolves the parent's KIND for the manifest's
+      // coordinator block. Passed even for non-coordinated modes because the
+      // launch config that decides coordination has not been resolved yet, and
+      // re-reading the graph after it would be a second round trip describing
+      // a later instant than the persona it is composed beside.
+      parentSessionId: request.parentSessionId ?? null,
       ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
     });
 
@@ -802,6 +929,9 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    // The OOM baseline, captured with the claims because it is the same kind
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
+    this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
 
     try {
       // Step 7 (§4.8) — publish. The lease and the association need the session
@@ -898,9 +1028,21 @@ export class SpawnService {
         launch.agentTool === 'codex'
           ? `${envelope.task}\n<tm8_session_id>${sessionId}</tm8_session_id>`
           : envelope.task;
+      // THE FIRST TURN RIDES IN ARGV wherever the binary accepts one, because a
+      // prompt that is already in the process cannot be lost to a boot race. The
+      // alternative — launch an idle REPL and type the task into the TUI once it
+      // looks quiet — is what produced sessions that reported `running` with an
+      // empty composer and an agent that never received its assignment. See
+      // `withAgentPrompt`'s production note for the evidence.
+      //
+      // Only a launch this function cannot configure (echo-agent, an operator
+      // `TM8_AGENT_CMD` wrapper) still needs the PTY to carry its first turn, and
+      // `positionalTask` is the single source of truth for which case we are in —
+      // so the task is delivered exactly once, never zero times and never twice.
+      const positionalTask = supportsPositionalPrompt(launch, this.env);
       const command = withAgentPrompt(
         baseCommand,
-        { system: envelope.system, task },
+        { system: envelope.system, task: positionalTask ? task : '' },
         launch,
         this.env,
       );
@@ -976,6 +1118,30 @@ export class SpawnService {
       // dropped on the floor; the handoff parks them in the bounded FIFO and
       // spawnIfAbsent drains it.
       this.pty.beginPromptHandoff(sessionId);
+      let firstPromptOutcome: Promise<PromptSettlementResult> | undefined;
+      // `positionalTask` already put the assignment in the command line; queuing
+      // it here as well would deliver the same first turn twice.
+      if (this.promptSettlement && !positionalTask) {
+        firstPromptDeliveryId = `spawn:${sessionId}:${randomUUID()}`;
+        // Registration MUST precede queue admission: a same-tick settlement
+        // must already have somewhere to land (PromptSettlementWaiter's law).
+        firstPromptOutcome = this.promptSettlement.awaitOutcome(firstPromptDeliveryId);
+        const admitted = await this.pty.deliverPrompt(
+          sessionId,
+          task,
+          'send',
+          firstPromptDeliveryId,
+          true,
+        );
+        if (!admitted) {
+          this.promptSettlement.cancel(firstPromptDeliveryId);
+          throw new SpawnError(
+            `initial task prompt was refused by the delivery queue for session ${sessionId}`,
+            'conflict',
+            { sessionId },
+          );
+        }
+      }
       const { reused } = this.pty.spawnIfAbsent({
         sessionId,
         command,
@@ -990,10 +1156,12 @@ export class SpawnService {
       // after that await creates a gap where the PTY entry and its exit evidence
       // have already been removed before we begin watching.
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
-
-      await this.graph.transition(auth, { sessionId, status: 'running' });
-
-      const earlyExit = await bootSettlement;
+      const [earlyExit, promptOutcome] = await Promise.all([
+        bootSettlement,
+        firstPromptDeliveryId && firstPromptOutcome
+          ? this.waitForFirstPromptSettlement(firstPromptDeliveryId, firstPromptOutcome)
+          : Promise.resolve<PromptSettlementResult>({ outcome: 'delivered' }),
+      ]);
       if (earlyExit) {
         bootExit = earlyExit;
         throw new SpawnError(
@@ -1002,6 +1170,17 @@ export class SpawnService {
           { sessionId, exitCode: earlyExit.exitCode, signal: earlyExit.signal },
         );
       }
+      if (promptOutcome.outcome !== 'delivered') {
+        throw new SpawnError(
+          `initial task prompt did not settle as delivered for session ${sessionId}: ` +
+            `${promptOutcome.reason ?? 'unknown outcome'}`,
+          'internal',
+          { sessionId, reason: promptOutcome.reason ?? 'unknown' },
+        );
+      }
+
+      // `running` now means both process survival and first-turn submission.
+      await this.graph.transition(auth, { sessionId, status: 'running' });
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
 
@@ -1012,6 +1191,11 @@ export class SpawnService {
       // failed before rethrowing — and do not let a cleanup failure mask the
       // original error, which is the one that explains what happened.
       await this.failSession(auth, sessionId, error, bootExit);
+      if (firstPromptDeliveryId) this.promptSettlement?.cancel(firstPromptDeliveryId);
+      // A failure after the child exists must not leave an unowned process. The
+      // notifying kill also abandons a queued first prompt if spawn itself
+      // threw before the PTY was installed, closing the handoff residue.
+      this.pty.kill(sessionId);
       // §4.8: the lease is released, and the WORKTREE IS PRESERVED. A failed
       // spawn is evidence about a process, not about a checkout — and a
       // checkout may already hold work. Removing it here would be the delete
@@ -1134,6 +1318,9 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    // The OOM baseline, captured with the claims because it is the same kind
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
+    this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
     let launchedPty = false;
     try {
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
@@ -1211,6 +1398,12 @@ export class SpawnService {
     const info = await this.graph.loadWorkSessionForResume(auth, request.sessionId);
     const sessionId = info.sessionId;
     let bootExit: PtyExitInfo | undefined;
+    // Cleanup owns only a child THIS invocation created. `spawnIfAbsent` can
+    // legitimately discover a live PTY after the optimistic guard above (a
+    // concurrent reattach/race) and answer `reused: true`; a later graph error
+    // must not turn that unrelated failure into destruction of the healthy
+    // process we merely found.
+    let launchedPty = false;
 
     if (this.pty.hasSession(sessionId)) {
       throw new SpawnError(
@@ -1239,6 +1432,12 @@ export class SpawnService {
       teamMemberId: info.teamMemberId,
       projectId: info.projectId,
       taskIds: info.taskIds,
+      // The stored parent, resolved the same way spawn resolves it. A resumed
+      // worker must be told the same thing about its return address as it was
+      // told at launch — and the kind is re-READ rather than taken from the
+      // recorded manifest, because a chat that has since been deleted should
+      // stop being described as one.
+      parentSessionId: info.parentSessionId,
     });
 
     // The posture is the one launch fact `work_sessions` does NOT carry (the
@@ -1282,12 +1481,51 @@ export class SpawnService {
       );
     }
 
-    // Project cwd is re-read from the graph (it may legitimately have moved);
-    // a scratch cwd is named for the SESSION id, which resume shares — so the
-    // conversation's own files are still there.
-    const cwd = context.project
-      ? context.project.workingDir
-      : join(this.dataDir, 'scratch', sessionId);
+    // WORKTREE FIRST, and it is the whole point of this block.
+    //
+    // Resume used to compute this as `context.project.workingDir` outright,
+    // which sent every resumed WORKTREE session back into the SHARED checkout
+    // while the manifest below still emitted `mode: 'worktree'`. Nothing showed
+    // it: the branch probe reads `info.workdirPath`, so `checkoutBranch` stayed
+    // right while the cwd was wrong, and the session committed to whatever
+    // branch the shared checkout happened to be parked on. §7.4's first
+    // prohibition — a session told it is isolated and running in the shared
+    // checkout — arrived through resume rather than through spawn.
+    //
+    // The row is the authority here, NOT `resolveWorkdir`: re-resolving would
+    // re-run the request-time DECISION (persona defaults, a policy that has
+    // since changed) and could legitimately answer a different mode than the
+    // one this conversation's files actually live in. A resume restores a
+    // place; it does not choose one.
+    //
+    // Project cwd is still re-read from the graph (it may legitimately have
+    // moved); a scratch cwd is named for the SESSION id, which resume shares —
+    // so the conversation's own files are still there.
+    const worktreeCwd = info.workdirMode === 'worktree' ? info.workdirPath : null;
+    if (info.workdirMode === 'worktree' && worktreeCwd === null) {
+      throw new SpawnError(
+        `work session ${sessionId} is recorded as an isolated worktree but its row carries no ` +
+          `workdir path — refusing to resume it into the shared checkout`,
+        'conflict',
+        { sessionId, workdirMode: info.workdirMode },
+      );
+    }
+    // A reclaimed checkout REFUSES, and refuses BEFORE `resumeWorkSession`
+    // touches the row. Falling through to the project directory is precisely
+    // the defect above; making that fallback unreachable is what keeps it from
+    // coming back.
+    if (worktreeCwd !== null && !(await isDirectory(worktreeCwd))) {
+      throw new SpawnError(
+        `the worktree for session ${sessionId} is gone — '${worktreeCwd}' is no longer a ` +
+          `directory. Refusing to resume: an isolated session must not silently reland in the ` +
+          `shared checkout.`,
+        'not_found',
+        { sessionId, workdirPath: worktreeCwd },
+      );
+    }
+    const cwd =
+      worktreeCwd ??
+      (context.project ? context.project.workingDir : join(this.dataDir, 'scratch', sessionId));
 
     // Resolve the native id BEFORE any state change (fail-closed, maestro's
     // codex_resume_id_unavailable pattern). Claude ids are pre-minted at spawn,
@@ -1348,6 +1586,9 @@ export class SpawnService {
       // first spawned elsewhere migrates here on resume.
       nodeId: this.nodeId,
     });
+    // A successful resurrection supersedes any process-local cleanup retry left
+    // from the prior run. Without this, a late retry could fail the new run.
+    this.cancelFailedTransitionRetry(sessionId);
 
     const manifestPath = this.manifestPathFor(sessionId);
     // A ledger replay is a transport retry of the original resume result — not
@@ -1377,8 +1618,43 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    // The OOM baseline, captured with the claims because it is the same kind
+    // of launch-time bookkeeping and must exist before the PTY can die (171).
+    this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
 
     try {
+      // §3.4 — one write-capable live session per worktree, re-asserted for the
+      // NEW run. Resume never did this: the previous run's lease was either
+      // still hanging off a dead session (see `handlePtyExit`) or had been
+      // swept by reconciliation, and in the swept case a resumed session went
+      // back into a checkout it held no claim on, where a fresh spawn was free
+      // to take it out from under it.
+      //
+      // Re-acquiring a lease this session ALREADY holds is a success, not a
+      // conflict: `acquire_worktree_lease` refuses only when the holder is
+      // some OTHER session (081:282-284). A resume that refused because the
+      // session still owned its own worktree would be a new bug.
+      if (worktreeCwd !== null) {
+        const allocation = await this.findWorktreeAllocation(
+          auth,
+          (row) => row.path === worktreeCwd,
+        );
+        if (allocation) {
+          await this.graph.acquireWorktreeLease(auth, allocation.worktreeId, sessionId);
+        } else {
+          // Not fatal. The cwd fix above already put this session in the right
+          // place, and the directory is provably there; an allocation this node
+          // cannot see is a bookkeeping gap, not a reason to strand a
+          // conversation. It IS worth saying out loud, because until it is
+          // fixed nothing enforces exclusivity on that checkout.
+          this.logger?.warn?.(
+            'SpawnService: resumed worktree session has no allocation on this node — ' +
+              'its checkout is unleased and nothing prevents a second session taking it',
+            { sessionId, workdirPath: worktreeCwd, nodeId: this.nodeId },
+          );
+        }
+      }
+
       // Re-pin the interaction profile for the new run; non-fatal on failure —
       // a resume that degrades to the core-default profile frame is strictly
       // better than one that refuses, because the restored conversation already
@@ -1412,14 +1688,15 @@ export class SpawnService {
 
       // Refresh the lane fact (107): a shared checkout may have changed
       // branches since the last run, and a lane branch may have been renamed.
-      // Worktree sessions probe their own checkout (the stored workdir_path);
-      // scratch sessions have nothing to probe and keep NULL.
-      const branchProbePath =
-        info.workdirMode === 'worktree'
-          ? info.workdirPath
-          : info.workdirMode === 'project'
-            ? cwd
-            : null;
+      // Scratch has no repo by construction and keeps NULL.
+      //
+      // This probes `cwd` for BOTH repo modes now, and that is deliberate. It
+      // used to read `info.workdirPath` for worktree mode and `cwd` for
+      // project mode — a divergence that was invisibly load-bearing: it kept
+      // the displayed branch correct while the cwd above was wrong, which is
+      // exactly why the defect had no surface. One expression, one answer: the
+      // branch reported is now the branch of the directory the PTY gets.
+      const branchProbePath = info.workdirMode === 'scratch' ? null : cwd;
       if (branchProbePath !== null) {
         await this.captureCheckoutBranch(
           auth,
@@ -1512,6 +1789,7 @@ export class SpawnService {
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
       });
+      launchedPty = !reused;
 
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
       await this.graph.transition(auth, { sessionId, status: 'running' });
@@ -1530,8 +1808,29 @@ export class SpawnService {
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
+      if (launchedPty) this.pty.kill(sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
+    }
+  }
+
+  private async waitForFirstPromptSettlement(
+    deliveryId: string,
+    outcome: Promise<PromptSettlementResult>,
+  ): Promise<PromptSettlementResult> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        outcome,
+        new Promise<PromptSettlementResult>((resolve) => {
+          timer = setTimeout(() => {
+            this.promptSettlement?.cancel(deliveryId);
+            resolve({ outcome: 'unknown', reason: 'first_prompt_settlement_timeout' });
+          }, this.firstPromptSettlementMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -1566,21 +1865,33 @@ export class SpawnService {
     exitInfo?: PtyExitInfo,
   ): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
+    const transition: TransitionInput = {
+      sessionId,
+      status: 'failed',
+      ...(exitInfo ? { exitCode: exitInfo.exitCode } : {}),
+      // A NAMED unknown, never blank: an Error with an empty message would
+      // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
+      // honesty check while saying nothing, which is the exact failure this
+      // whole fix exists to close.
+      error: exitInfo
+        ? describePtyExit(exitInfo)
+        : message.trim() !== ''
+          ? message
+          : 'spawn failed for an unspecified reason',
+    };
+    if (await this.persistFailedTransition(auth, transition, message)) return;
+    this.scheduleFailedTransitionRetry(auth, transition, message, 1);
+  }
+
+  private async persistFailedTransition(
+    auth: GraphAuth,
+    transition: TransitionInput,
+    originalError: string,
+  ): Promise<boolean> {
     try {
-      await this.graph.transition(auth, {
-        sessionId,
-        status: 'failed',
-        ...(exitInfo ? { exitCode: exitInfo.exitCode } : {}),
-        // A NAMED unknown, never blank: an Error with an empty message would
-        // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
-        // honesty check while saying nothing, which is the exact failure this
-        // whole fix exists to close.
-        error: exitInfo
-          ? describePtyExit(exitInfo)
-          : message.trim() !== ''
-            ? message
-            : 'spawn failed for an unspecified reason',
-      });
+      await this.graph.transition(auth, transition);
+      this.cancelFailedTransitionRetry(transition.sessionId);
+      return true;
     } catch (cleanupError) {
       // CONFLICT, not a fresh failure: sqlstate 23514 here means the row is
       // ALREADY terminal — almost always because the PTY died fast enough
@@ -1596,19 +1907,58 @@ export class SpawnService {
       // row, so no extra query sits on this hot error path.
       const sqlState = (cleanupError as { code?: string } | null)?.code;
       if (sqlState === '23514') {
+        this.cancelFailedTransitionRetry(transition.sessionId);
         this.logger?.info(
           'SpawnService: skipped a redundant failed-transition write — the row is already terminal, ' +
             'almost certainly from the real PTY-exit path recording it first',
-          { sessionId, originalError: message },
+          { sessionId: transition.sessionId, originalError },
         );
-        return;
+        return true;
       }
       this.logger?.error(
         'SpawnService: failed to mark session failed after spawn error',
         cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)),
-        { sessionId },
+        { sessionId: transition.sessionId },
       );
+      return false;
     }
+  }
+
+  private scheduleFailedTransitionRetry(
+    auth: GraphAuth,
+    transition: TransitionInput,
+    originalError: string,
+    attempt: number,
+  ): void {
+    if (this.failedTransitionRetries.has(transition.sessionId)) return;
+    const delayMs = Math.min(
+      this.failedTransitionRetryMs * 2 ** Math.min(attempt - 1, 5),
+      30_000,
+    );
+    const timer = setTimeout(() => {
+      this.failedTransitionRetries.delete(transition.sessionId);
+      void this.persistFailedTransition(auth, transition, originalError).then((settled) => {
+        if (!settled) {
+          this.scheduleFailedTransitionRetry(auth, transition, originalError, attempt + 1);
+        }
+      });
+    }, delayMs);
+    // A cleanup retry must never keep a server process alive by itself. If the
+    // process exits first, startup ghost reconciliation owns the same row.
+    timer.unref?.();
+    this.failedTransitionRetries.set(transition.sessionId, timer);
+    this.logger?.warn?.('SpawnService: scheduled failed-session transition retry', {
+      sessionId: transition.sessionId,
+      attempt,
+      delayMs,
+    });
+  }
+
+  private cancelFailedTransitionRetry(sessionId: string): void {
+    const timer = this.failedTransitionRetries.get(sessionId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.failedTransitionRetries.delete(sessionId);
   }
 
   /**
@@ -1684,6 +2034,33 @@ export class SpawnService {
        * to a human action that never happened.
        */
       reason?: string;
+      /**
+       * The terminal status to record. Defaults to 'exited' — an operator
+       * cancelling a session is an ordinary end, not a failure.
+       *
+       * `'failed'` exists for the one caller that knows the session did NOT
+       * end on its own terms: ghost reconciliation. A row retired at startup
+       * belonged to an agent killed alongside its host, and recording that as
+       * 'exited' makes it byte-identical, in every read model, to an agent
+       * that finished its work — `exit_code` is NULL either way, and the
+       * contract's `work_session` state projects neither `exit_code` nor
+       * `error`, so `status` is the ONLY field a client can discriminate on.
+       * Measured 2026-08-22: a deploy SIGKILLed the server with four live
+       * agents; all four were retired here as 'exited', and the incident was
+       * invisible in the graph until someone read `exited_at` by hand and
+       * noticed four unrelated sessions sharing a timestamp to the millisecond.
+       */
+      terminalStatus?: 'exited' | 'failed';
+      /**
+       * The ending facts (171), for a caller that knows more than "an operator
+       * asked". Default to a cancellation, which is what a bare terminate is.
+       *
+       * `endedReason` is read by a PERSON, and by a person who is not a
+       * developer. One sentence, plain English, no signal names and no exit
+       * codes — those belong in `reason`/`error`, which stay technical.
+       */
+      endedKind?: WorkSessionEndedKind;
+      endedReason?: string;
     } = {},
   ): Promise<{ outcome: string; commandResult: unknown }> {
     const commandResult = await this.graph.recordCommand(auth, {
@@ -1740,9 +2117,22 @@ export class SpawnService {
         : opts.force
           ? 'terminated by request (force) — exit code not observed, kill does not wait for the real exit event'
           : 'terminated by request — exit code not observed, kill does not wait for the real exit event');
-    await this.graph.transition(auth, { sessionId, status: 'exited', error });
+    const status = opts.terminalStatus ?? 'exited';
+    // The ending facts (171). `endedReason` is the sentence a person reads, so
+    // it never mentions PTYs, kill outcomes or exit events — all of which are
+    // already in `error` above, which is unchanged and stays technical. The
+    // default reads as a cancellation because that is what an unqualified
+    // terminate IS; a caller who knows better (ghost reconciliation, the
+    // shutdown sweep) passes its own.
+    await this.graph.transition(auth, {
+      sessionId,
+      status,
+      error,
+      endedKind: opts.endedKind ?? 'stopped_by_operator',
+      endedReason: opts.endedReason ?? 'Stopped by request.',
+    });
 
-    this.logger?.info('SpawnService: session terminated', { sessionId, outcome });
+    this.logger?.info('SpawnService: session terminated', { sessionId, outcome, status });
     return { outcome, commandResult };
   }
 
@@ -1774,38 +2164,109 @@ export class SpawnService {
    *
    * @returns how many sessions were retired.
    */
-  async reconcileNodeGhosts(auth: GraphAuth): Promise<number> {
-    if (!this.nodeId) return 0;
+  async reconcileNodeGhosts(auth: GraphAuth): Promise<GhostReconcileReport> {
+    if (!this.nodeId) return { retired: 0, errors: [] };
 
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
       candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       this.logger?.warn?.('SpawnService: ghost reconciliation could not list sessions', {
         nodeId: this.nodeId,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
-      return 0;
+      return { retired: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
     }
 
+    // WAS THE KERNEL INVOLVED? Asked ONCE, before the sweep, because it is a
+    // property of the window we are reconciling, not of any one row.
+    //
+    // Every ghost here died with a previous instance of this node, and this
+    // process cannot see how. The one thing it can still check is whether the
+    // kernel OOM-killed anything in this cgroup — and under the standing policy
+    // that is the difference between the single death that is allowed to happen
+    // and every death that is not.
+    //
+    // The honesty bound from `readOomKillCount` applies with full force: the
+    // counter is per-cgroup, so a positive says "a memory kill happened here",
+    // NOT "this session was the one killed". With several ghosts that is not
+    // enough to accuse any particular one, so a positive only ever WEAKENS the
+    // claim to 'unknown' with a hedged sentence — it never asserts
+    // `out_of_memory` for a row it cannot pin. A single ghost with a positive
+    // counter is the one case where the attribution is unambiguous.
+    //
+    // The NEGATIVE is what carries most of the value, and it is unambiguous in
+    // every case: the counter did not move, so the kernel killed nothing for
+    // memory, so this was a restart and can be said so plainly.
+    const oomSinceBoot = await readOomKillCount();
+    const memoryKillHappened = (oomSinceBoot ?? 0) > 0;
+
     let retired = 0;
+    const errors: Array<{ message: string }> = [];
     for (const { sessionId, status } of candidates) {
       // Defensive, and what makes this safe to call at any time rather than
       // only at boot: a session with a LIVE PTY on this node is not a ghost.
       if (this.pty.hasSession(sessionId)) continue;
       try {
         await this.terminate(auth, sessionId, {
+          // 'failed', not 'exited': this agent did not finish, it was killed
+          // with its host. See the `terminalStatus` docstring on terminate() —
+          // 'exited' here is indistinguishable from a clean finish to every
+          // client, because the contract projects neither exit_code nor error.
+          terminalStatus: 'failed',
           reason:
             `retired at node startup: this node still recorded status '${status}' with no live ` +
             'PTY for it — the process almost certainly died with a prior instance of this node ' +
             '(crash or restart) before it could record its own exit',
+          // Attribution rule, per the honesty bound above: assert
+          // `out_of_memory` ONLY when a memory kill happened AND this is the
+          // single ghost, because only then does the per-cgroup counter point
+          // at exactly one session. With several ghosts we know a memory kill
+          // occurred but not to whom, so the kind drops to 'unknown' and the
+          // sentence says both halves out loud rather than picking a victim.
+          ...(memoryKillHappened
+            ? candidates.length === 1
+              ? {
+                  endedKind: 'out_of_memory' as const,
+                  endedReason:
+                    'Stopped because the machine ran out of memory. This session was using ' +
+                    'too much, and the system shut it down to stay alive.',
+                }
+              : {
+                  endedKind: 'unknown' as const,
+                  endedReason:
+                    'Stopped when the server restarted. The machine also ran out of memory ' +
+                    'around that time, so this session may have been shut down for memory ' +
+                    'rather than by the restart — there is no way to tell which.',
+                }
+            : {
+                endedKind: 'server_restart' as const,
+                endedReason:
+                  'Stopped when the server restarted. Nothing was wrong with this session — ' +
+                  'it can be resumed to pick up where it left off.',
+              }),
         });
         retired += 1;
         this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
       } catch (error) {
+        // COLLECTED, not merely logged. This catch fires once per ghost, and on
+        // a node whose owner is not a member of the ghost's space it fires for
+        // EVERY one — `work_session_transition` goes through
+        // `require_space_member` with no node-admin bypass. Reported only to an
+        // optional logger, a total failure is indistinguishable from a clean
+        // boot with nothing to do, and the caller's `retired: 0` says the same
+        // thing either way.
+        //
+        // Measured on a live node 2026-08-22: reconciliation had been refused on
+        // every boot since the space was created, silently, while its worktree
+        // sibling printed the identical refusal at startup — because that one
+        // returns its errors and this one dropped them.
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push({ message: `session ${sessionId} (${status}): ${message}` });
         this.logger?.warn?.('SpawnService: failed to retire ghost session', {
           sessionId,
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
         });
       }
     }
@@ -1816,7 +2277,68 @@ export class SpawnService {
         retired,
       });
     }
-    return retired;
+    return { retired, errors };
+  }
+
+  /**
+   * SHUTDOWN SWEEP — say why, while there is still someone to say it.
+   *
+   * Called from the server's SIGTERM/SIGINT handler, BEFORE the process exits.
+   * Every PTY this process holds is about to die with it, and this is the only
+   * moment at which the truthful reason is known FIRST-HAND: the server is
+   * stopping, deliberately, and nothing is wrong with the agents.
+   *
+   * WHY THIS IS NOT JUST reconcileNodeGhosts RUNNING EARLIER. The reconciler
+   * runs in the NEXT process and can only ever infer — it finds rows with no
+   * live PTY and reasons backwards to "the previous instance must have died".
+   * That inference is sound but weak, and it cannot tell a deploy from a crash.
+   * Here we are the process that is being asked to stop, so the reason is
+   * observed rather than deduced, and it is recorded before the evidence is
+   * destroyed. Reconciliation stays as the backstop for the case this cannot
+   * cover — a SIGKILL, where no handler runs at all.
+   *
+   * ORDERING. Must complete before the process exits, so the caller has to
+   * await it. It is bounded: one transition per live session, and the caller
+   * should still cap the total shutdown window rather than trust this.
+   *
+   * NEVER THROWS, per-session or overall. A shutdown that hangs or crashes
+   * because it could not annotate a row is strictly worse than one that exits
+   * having annotated fewer — the process is going away either way, and the
+   * reconciler will still catch whatever this missed.
+   *
+   * @returns how many sessions were annotated.
+   */
+  async recordShutdown(auth: GraphAuth, signal: string): Promise<number> {
+    const live = this.pty.liveSessionIds();
+    if (live.length === 0) return 0;
+
+    // Deliberately NOT the OOM path. Reaching this handler means the process
+    // was asked to stop politely; the OOM killer sends SIGKILL and no handler
+    // runs. So a session ending here ended because of a restart, full stop —
+    // and saying so plainly is the entire point of doing it here.
+    let annotated = 0;
+    for (const sessionId of live) {
+      const sessionAuth = this.sessionAuth.get(sessionId) ?? auth;
+      try {
+        await this.graph.transition(sessionAuth, {
+          sessionId,
+          status: 'failed',
+          error: `node received ${signal} and is shutting down; this session's PTY dies with it`,
+          endedKind: 'server_restart',
+          endedReason:
+            'Stopped because the server was restarted. Nothing was wrong with this session — ' +
+            'it can be resumed to pick up where it left off.',
+        });
+        annotated += 1;
+      } catch (error) {
+        this.logger?.warn?.('SpawnService: could not record shutdown for session', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    this.logger?.info('SpawnService: recorded shutdown', { signal, annotated, live: live.length });
+    return annotated;
   }
 
   /**
@@ -1896,6 +2418,16 @@ export class SpawnService {
       );
       return;
     }
+    // This is the ONE path with real evidence: node-pty observed the actual
+    // exit and told us the code and the signal. So the OOM question is asked
+    // here too — a signal death whose cgroup counter advanced is a memory kill,
+    // and a signal death whose counter did not is something else. Unlike the
+    // ghost path, the window here is one specific process's death, so a
+    // positive attributes cleanly.
+    const oomBefore = this.oomKillAtSpawn.get(sessionId) ?? null;
+    this.oomKillAtSpawn.delete(sessionId);
+    const killedForMemory =
+      exitInfo.signal !== null && oomKillObserved(oomBefore, await readOomKillCount());
     try {
       await this.graph.transition(auth, {
         sessionId,
@@ -1906,6 +2438,7 @@ export class SpawnService {
         // actually reported (see describePtyExit) — never left for `error` to
         // stay NULL by default.
         ...(status === 'failed' ? { error: describePtyExit(exitInfo) } : {}),
+        ...endingFromPtyExit(status, exitInfo, killedForMemory),
       });
     } catch (error) {
       // LOUD, always, even with no logger injected.
@@ -1930,8 +2463,92 @@ export class SpawnService {
         { sessionId, status, sqlState },
       );
     } finally {
+      // In `finally`, not after the `try`: a transition that FAILED still means
+      // the agent is gone, and the checkout must come back either way.
+      await this.releaseWorktreeLeaseAfterExit(auth, sessionId);
     }
   };
+
+  /**
+   * The one lookup that turns a session (or a path) back into the worktree it
+   * is bound to.
+   *
+   * `work_sessions` records the workdir PATH, not the worktree entity id, and
+   * `WorkSessionResumeInfo` carries no worktree id either — so both the resume
+   * lease and the exit release have to ask the allocation table. Scoping to
+   * THIS node is not a limitation of the query, it is the correct bound: an
+   * allocation is a checkout on a specific node's disk, and both callers have
+   * already established that the checkout is on this one (resume stat()ed the
+   * directory; exit just ran a PTY in it).
+   *
+   * Returns null rather than throwing. Both callers have a defined, non-fatal
+   * behaviour for "no allocation", and neither should turn a bookkeeping gap
+   * into a dead session.
+   */
+  private async findWorktreeAllocation(
+    auth: GraphAuth,
+    match: (row: WorktreeAllocationRow) => boolean,
+  ): Promise<WorktreeAllocationRow | null> {
+    // A node with no id owns no allocations to look up — `worktree_allocations`
+    // is keyed by node_id, so there is nothing to ask for.
+    if (this.nodeId === null) return null;
+    try {
+      const rows = await this.graph.listNodeWorktreeAllocations(auth, this.nodeId);
+      return rows.find(match) ?? null;
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not read this node worktree allocations', {
+        nodeId: this.nodeId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * D6a — hand the checkout back when the agent that held it is gone.
+   *
+   * This used to be a literally empty `finally { }`. The consequence was not
+   * theoretical: the lease is a `unique(lease_session_id) where not null` row
+   * that nothing else clears on a CLEAN exit, so a session that finished
+   * normally PINNED its worktree. Reconciliation does release a lease held by a
+   * terminal session — but reconciliation is a node-boot sweep, so in practice
+   * the checkout stayed unavailable until the next reboot.
+   *
+   * The worktree itself is NEVER touched here. §6.3: a checkout may hold
+   * unpushed work, and an exiting process is evidence about a process, not
+   * about a directory.
+   *
+   * Loud but non-fatal, and it must stay that way — this runs in the `finally`
+   * of the exit transition, and a throw here would replace the transition's
+   * own (already reported) outcome with this one.
+   */
+  private async releaseWorktreeLeaseAfterExit(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<void> {
+    try {
+      const allocation = await this.findWorktreeAllocation(
+        auth,
+        (row) => row.leaseSessionId === sessionId,
+      );
+      if (!allocation) return;
+      await this.graph.releaseWorktreeLease(auth, allocation.worktreeId);
+    } catch (error) {
+      // LOUD for the same reason the transition above is: the damage is a
+      // worktree that silently stops being allocatable, and the node degrades
+      // over hours with nothing pointing back here.
+      this.loud(
+        `FAILED to release the worktree lease held by session ${sessionId} after its PTY ` +
+          `exited — that checkout stays leased to a dead session until the next ` +
+          `reconciliation sweep: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.logger?.error?.(
+        'SpawnService: failed to release worktree lease on PTY exit',
+        error instanceof Error ? error : new Error(String(error)),
+        { sessionId },
+      );
+    }
+  }
 
   /** Exit-path failures must never depend on a logger having been injected. */
   private loud(message: string): void {

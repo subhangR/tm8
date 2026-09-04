@@ -173,7 +173,18 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 142 -> 143 (2026-08-13): `task import-issue`, an alias over
     // entities.create (catalog rows unmoved).
     // 143 -> 144 (2026-08-13, forge write): `pr merge` (catalog row tracking.pr.merge).
-    expect(COMMAND_PATHS).toHaveLength(148);
+    // 148 -> 149 (2026-08-16): `task axis`, an alias over entities.get +
+    // entities.patch (catalog rows unmoved).
+    // 149 -> 152 (2026-08-16, W4/132): space task-workflow list|set|delete —
+    // three catalog-driven commands over the new taskWorkflows rows.
+    // 152 -> 156 (141): auth password + auth invite signup + auth claim reissue,
+    // plus the node mode alias — none of which moves the catalog count.
+    // 156 -> 159 (148): space workflow list|set|delete.
+    // MEASURED on the merged tree (176's `chat` noun AND the container noun).
+    // Neither branch's number survives: main counts chat's five and not the
+    // container paths, my branch the reverse. Summing them would be arithmetic
+    // over two partial views.
+    expect(COMMAND_PATHS).toHaveLength(188);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

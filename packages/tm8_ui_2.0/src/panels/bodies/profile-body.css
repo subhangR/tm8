@@ -1,0 +1,614 @@
+/* ==========================================================================
+   PROFILE ARCHETYPE BODY — T0-4 "Entity Detail Panels Hi-Fi", frames MEMBER
+   (oracle lines 400–448) and AGENT (lines 452–496).
+
+   Every value below is EXTRACTED from those frames' inline styles and cites
+   its line. Colors resolve through tokens only (§14 / D23 / D61): the two
+   frames introduce no color the ramp lacks — #ECE8DF is --pn-active, #E7E3D9
+   --pn-line, #D8D3C6 --pn-line-2, #FFFFFF --pn-card, #F2EFE8 --pn-hover,
+   #23201B/#5B564C/#8E897B/#B7B2A4 the ink ramp — so nothing was added to
+   canvas-extra.css and nothing needed to be.
+
+   NO DIVIDERS BETWEEN BLOCKS. The oracle draws the profile body as plain
+   gap-separated regions (line 418: `gap:12px`, no borders), and the hairline
+   rule agrees: --pn-line BOUNDS a component, --pn-x-hairline-soft SEPARATES
+   repeated siblings inside one. These regions are neither, so `.pn-section`'s
+   bottom rule would be a hairline the canvas does not draw.
+   ========================================================================== */
+
+/* The body itself is `.pn-body` (padding 12px, column, gap 12px) — oracle
+   line 418 exactly, already in panels.css. */
+.cv2-root .pn-profile__block {
+  display: flex;
+  flex-direction: column;
+  /* T0-4 433: the section label carries `padding-bottom:5px`. */
+  gap: 5px;
+}
+
+/* --- identity header (member frame, T0-4 419–426) ------------------------ */
+.cv2-root .pn-profile__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cv2-root .pn-profile__identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cv2-root .pn-profile__name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  /* T0-4 423: `font-size:14px;font-weight:600`. */
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-profile__name-text {
+  min-width: min-content;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+/* T0-4 423 (inner span): mono 9.5px/600, #5B564C on #ECE8DF, r4, 1px 5px. */
+.cv2-root .pn-profile__tag {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  background: var(--pn-active);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+/* T0-4 424: mono 10.5px #8E897B. */
+.cv2-root .pn-profile__caption {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+
+/* --- stat tiles (member frame, T0-4 427–431) ----------------------------- */
+.cv2-root .pn-profile__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+/*
+ * The tiles ARE `HollowStat` — the dash-not-zero law lives in that component
+ * and is not worth re-implementing for a size change. What differs here is
+ * only geometry: T1-4's stat (its home surface) is a 17px value in a 9px 12px
+ * box. In this panel the calm-pass hierarchy is deliberately inverted: the
+ * stat name leads, then its smaller value. Scoped here, so HollowStat keeps
+ * its original anatomy everywhere else.
+ */
+.cv2-root .pn-profile__stats .hon-stat {
+  min-width: 0;
+  padding: 7px 9px;
+  overflow: hidden;
+}
+.cv2-root .pn-profile__stats .hon-stat__value {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-profile__stats .hon-stat__label {
+  order: -1;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--pn-ink-2);
+}
+
+/* --- field grid (agent frame, T0-4 474–478) ------------------------------ */
+.cv2-root .pn-profile__grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+.cv2-root .pn-profile__cell {
+  min-width: 0;
+}
+/* dt/dd inline so the separator is the literal space the oracle draws. */
+.cv2-root .pn-profile__cell-key {
+  display: inline;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-profile__cell-value {
+  display: inline;
+  margin: 0;
+}
+/* T0-4 475: mono 10.5px #5B564C. */
+.cv2-root .pn-profile__mono {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+}
+/* T0-4 476: `color:#23201B;font-weight:500` — the owner reads as a person. */
+.cv2-root .pn-profile__actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--pn-ink);
+  font-weight: 500;
+}
+
+/* --- working-on row (agent frame, T0-4 479) ------------------------------ */
+.cv2-root .pn-profile__livework {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+}
+.cv2-root .pn-profile__livework:hover {
+  border-color: var(--pn-line-2);
+}
+/*
+ * THE DOT IS A RING, NOT A GREEN FILL. The oracle paints it #3E8E5A with
+ * `animation:pnPulse` — a live claim. No verdict is obtainable for this row
+ * (see LiveWorkBlock's docblock: the record names no session), so it renders
+ * the not-live geometry the terminal family already uses for an unverified
+ * state: hollow, unanimated, ink-4.
+ */
+.cv2-root .pn-profile__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--pn-ink-4);
+}
+.cv2-root .pn-profile__livework-label {
+  font-size: 12px;
+  color: var(--pn-ink-2);
+}
+/* T0-4 479: `font-size:12px;font-weight:600` — bare text, not a chip. */
+.cv2-root .pn-profile__task {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cv2-root .pn-profile__task:hover {
+  color: var(--pn-brand-2);
+}
+/* T0-4 479: `font-size:11px;color:#8E897B`. */
+.cv2-root .pn-profile__since {
+  flex: none;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-profile__spacer {
+  flex: 1;
+}
+/* T0-4 479 draws the verdict slot as mono 9.5px; ours is the hollow form. */
+.cv2-root .pn-profile__livework .hon-hollow-inline {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+}
+
+/* --- session rows (agent frame, T0-4 487–492) ---------------------------- */
+.cv2-root .pn-profile__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* T0-4 490: `gap:7px;padding:6px 9px;background:#FFFFFF;border:1px solid
+   #E7E3D9;border-radius:7px;font-size:11.5px;color:#5B564C`,
+   `style-hover="background:#F2EFE8"`. */
+.cv2-root .pn-profile__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cv2-root .pn-profile__row:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .pn-profile__row-glyph {
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-profile__row-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .pn-profile__sep {
+  flex: none;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-profile__ago {
+  flex: none;
+}
+/*
+ * THE VERDICT WORD IS TINTED. The oracle draws this row monochrome (#5B564C
+ * throughout, line 490), so this is a DELIBERATE DIVERGENCE, flagged for
+ * ratification: everywhere else in this app a status is color + word (L10,
+ * D22), and a monochrome row makes `exited` and `running` read identically on
+ * the one surface where confusing them is the named defect (D39). The word is
+ * always present, so color is never the only carrier.
+ */
+.cv2-root .pn-profile__word {
+  flex: none;
+  font-weight: 600;
+}
+.cv2-root .pn-profile__word[data-tone='run'] {
+  color: var(--pn-run);
+}
+.cv2-root .pn-profile__word[data-tone='wait'] {
+  color: var(--pn-wait);
+}
+.cv2-root .pn-profile__word[data-tone='block'] {
+  color: var(--pn-block);
+}
+.cv2-root .pn-profile__word[data-tone='idle'] {
+  color: var(--pn-ink-3);
+}
+
+/*
+ * ORG TREE — this teammate's place in the entity hierarchy.
+ *
+ * NOT an oracle frame (T0-4 draws no org tree on the AGENT card), so the
+ * geometry is borrowed rather than invented: the 17px-per-level indent and the
+ * guide hairline in --pn-line-2 are T0-3's tree spec, already extracted in
+ * `entity-tree.css`. Borrowing the measured value keeps the two tree surfaces
+ * reading as one idea instead of two eyeballed ones.
+ *
+ * The row shell deliberately matches `.pn-profile__row` (session rows) — same
+ * body, same card idiom; only the indent and the self-marking differ.
+ */
+.cv2-root .pn-profile__org {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cv2-root .pn-profile__org-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* A button row is clickable; the self row is a div and must not pretend. */
+.cv2-root button.pn-profile__org-row {
+  cursor: pointer;
+}
+.cv2-root button.pn-profile__org-row:hover {
+  background: var(--pn-hover);
+}
+/* T0-3 tree geometry: 17px per level. */
+.cv2-root .pn-profile__org-row[data-depth='1'] {
+  margin-left: 17px;
+}
+.cv2-root .pn-profile__org-row[data-depth='2'] {
+  margin-left: 34px;
+}
+/*
+ * THE CURRENT ENTITY, marked without color alone: a heavier left edge in the
+ * brand tint AND the words "this teammate" in the row itself, so the marking
+ * survives both themes and a monochrome reading.
+ */
+.cv2-root .pn-profile__org-row--self {
+  border-color: var(--pn-brand-2);
+  background: var(--pn-active);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-profile__org-role {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/*
+ * MEMORY SET — the `remembers` working set (056/084/085).
+ *
+ * NO BORDER-BOX RESET IN THIS APP (panels.css states it): every padded box here
+ * is sized by its content, so paddings below are chosen knowing they ADD to the
+ * declared height rather than sit inside it. Nothing here sets an explicit
+ * height for exactly that reason.
+ */
+.cv2-root .pn-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cv2-root .pn-memory__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/*
+ * A row is a GRID, not a flex line: the claim must be free to truncate while
+ * the marks and the forget control keep their intrinsic width. In a flex row
+ * the marks would be the first thing squeezed, and a badge reading "supersede…"
+ * is a status that has lost its meaning.
+ *
+ * THE CLAIM TRACK IS FLOORED AT 120px, NOT `minmax(0, 1fr)` — L4, enforced by
+ * `panels/no-branching.test.ts`. An unfloored track is how this app has been
+ * broken three separate times: the region collapses to zero and the content
+ * simply vanishes. 120px still truncates rather than pushing the marks out,
+ * and is wide enough that a statement never becomes an ellipsis alone.
+ */
+.cv2-root .pn-memory__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 7px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+}
+/*
+ * THE NOT-INJECTED ROW. Muted AND struck AND carrying the words "not injected"
+ * — three carriers, because this row's whole job is to say "this is in the set
+ * and the agent will still never see it", and a reader who takes only the tint
+ * would read it as merely decorative.
+ */
+.cv2-root .pn-memory__row[data-injected='no'] .pn-memory__statement {
+  text-decoration: line-through;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-memory__claim {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .pn-memory__claim:hover .pn-memory__statement {
+  color: var(--pn-ink);
+}
+.cv2-root .pn-memory__statement {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .pn-memory__marks {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+.cv2-root .pn-memory__mark {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+.cv2-root .pn-memory__mark[data-tone='block'] {
+  color: var(--pn-block);
+}
+.cv2-root .pn-memory__mark[data-tone='wait'] {
+  color: var(--pn-wait);
+}
+.cv2-root .pn-memory__mark[data-tone='idle'] {
+  color: var(--pn-ink-3);
+}
+/* The scope sits on its own line under the claim — it is the condition the
+   claim is true UNDER, so it must not compete with the claim for the eye. */
+.cv2-root .pn-memory__scope {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-3);
+  font-size: 10.5px;
+}
+.cv2-root .pn-memory__forget,
+.cv2-root .pn-memory__add {
+  flex: none;
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .pn-memory__add {
+  align-self: flex-start;
+}
+.cv2-root .pn-memory__forget:hover,
+.cv2-root .pn-memory__add:hover {
+  color: var(--pn-ink);
+  background: var(--pn-hover);
+}
+/* Refused controls stay FOCUSABLE and keep their title — the reason is
+   unreachable if the control is not (L6/D28). Only the affordance dims. */
+.cv2-root .pn-memory__forget[aria-disabled='true'],
+.cv2-root .pn-memory__add[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * EPISTEMICS — every mark standing against a memory.
+ *
+ * A LIST, not a single badge: `reasons` is ordered by display precedence and
+ * the server's own comment insists the order "never hides a reason". The detail
+ * panel is the one surface with room to honour that, so it draws all of them.
+ */
+.cv2-root .pn-memory__epistemics {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cv2-root .pn-memory__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cv2-root .pn-memory__reason {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+}
+/* The superseded row is the only one that changes what gets INJECTED, so it is
+   the only one that gets a heavier edge. The others are warnings about a claim
+   that is still being handed to agents. */
+.cv2-root .pn-memory__reason[data-reason='superseded'] {
+  border-color: var(--pn-block);
+}
+.cv2-root .pn-memory__reason-detail {
+  color: var(--pn-ink-3);
+  font-size: 10.5px;
+  text-wrap: pretty;
+}
+.cv2-root .pn-memory__marks-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── membership block (collections `contains`, both directions) ──────────── */
+.cv2-root .pn-membership {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cv2-root .pn-membership__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.cv2-root .pn-membership__remove {
+  border: none;
+  background: none;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  line-height: 1;
+}
+.cv2-root .pn-membership__remove:hover {
+  color: var(--pn-ink);
+}
+.cv2-root .pn-membership__remove[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+/* MEMBERS AS TILES (user ruling 2026-08-13). The tile brings its own card
+   treatment from the list vocabulary; this only stacks the rows and seats the
+   remove control beside each tile without letting it steal the tile's width. */
+.cv2-root .pn-membership__items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cv2-root .pn-membership__itemrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+/* The leading kind mark: seated on the tile's first text line (the tiles pad
+   ~8px), quiet ink so the tile's own status colours keep the loud channel. */
+.cv2-root .pn-membership__kind {
+  flex: none;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-membership__tile {
+  flex: 1;
+  min-width: 0;
+}
+.cv2-root .pn-membership__itemrow .pn-membership__remove {
+  margin-top: 8px;
+}
+.cv2-root .pn-membership__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  max-width: 340px;
+}
+.cv2-root .pn-membership__input {
+  font: inherit;
+  color: var(--pn-ink);
+  background: transparent;
+  border: 1px solid var(--pn-line);
+  border-radius: 5px;
+  padding: 4px 7px;
+}
+.cv2-root .pn-membership__option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: var(--pn-ink);
+  cursor: pointer;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.cv2-root .pn-membership__option:hover {
+  background: var(--pn-hover, rgba(127, 127, 127, 0.12));
+}

@@ -29,7 +29,8 @@
 # THE FIVE THINGS THAT MAKE THE OBVIOUS RECIPE WRONG
 #
 #  1. STAGING HAS NO UI BUILD; PROD'S IS SEPARATE. `bun run build` is `tsc -b`
-#     only. Prod serves TM8_UI_DIR=packages/tm8-ui/dist, so prod needs a second,
+#     only. Prod serves TM8_UI_DIR=packages/tm8-ui/dist (plus the alternate 2.0
+#     bundle at packages/tm8_ui_2.0/dist-2.0), so prod needs a second,
 #     explicit `vite build` — skip it and you ship a stale UI against a new server
 #     with no error anywhere. Staging runs vite DEV against source, so the
 #     checkout alone updates its UI and a build there is wasted work.
@@ -319,11 +320,57 @@ rok "server + CLI built"
 if [[ "$BUILD_UI" == 1 ]]; then
   # Prod only. `bun run build` above is tsc -b and does NOT touch the UI; prod
   # serves packages/tm8-ui/dist, so skipping this ships a stale UI, silently.
-  say "building the UI bundle (separate vite build — prod serves dist)"
+  #
+  # TWO BUNDLES SINCE 2026-09-03. packages/tm8-ui is the product UI at `/`;
+  # packages/tm8_ui_2.0 is the alternate at `/ui-2.0/`, from `dist-2.0`.
+  #
+  # STALE SYMLINKS FIRST. Both of these have existed on this box: tm8-ui/dist
+  # pointed at ../tm8_ui_2.0/dist while a root-owned env named the old path, and
+  # tm8_ui_2.0/dist was pointed at a hand-built root bundle during the 2026-09-03
+  # zero-restart swap. Either one makes a vite build write THROUGH it into the
+  # other package. Remove them before building; idempotent, and a no-op on a box
+  # that never had one.
+  for stale in "$DIR/packages/tm8-ui/dist" "$DIR/packages/tm8_ui_2.0/dist"; do
+    if [[ -L "$stale" ]]; then
+      rm -f "$stale"
+      rok "removed stale symlink $stale -> (gone)"
+    fi
+  done
+
+  say "building the product UI bundle (separate vite build — prod serves dist)"
   runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8-ui' && umask 022 && bun run build >/dev/null" \
     || rdie "vite build failed — nothing has been stopped"
   [[ -f "$DIR/packages/tm8-ui/dist/index.html" ]] || rdie "vite build reported success but dist/index.html is missing"
-  rok "UI bundle built"
+  rok "product UI bundle built"
+
+  # NOT `rdie` ON FAILURE, unlike the product UI: this bundle is optional. A
+  # deploy that cannot build the alternate UI must still ship the product one —
+  # failing the whole rollout over a rollback affordance would make the
+  # affordance more dangerous than the thing it exists to protect against.
+  say "building the alternate 2.0 UI bundle (/ui-2.0/, from dist-2.0)"
+  if runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8_ui_2.0' && umask 022 && bun run build >/dev/null" \
+     && [[ -f "$DIR/packages/tm8_ui_2.0/dist-2.0/index.html" ]]; then
+    rok "alternate UI bundle built"
+  else
+    say "! 2.0 UI build failed — shipping without it; the version switch will report it unavailable"
+  fi
+
+  # /etc/tm8/prod.env is 0600 root:root, so the checkout update alone cannot move
+  # these pointers — and a stale TM8_UI_DIR serves the WRONG UI with every other
+  # check green. Fix them here, where we are root anyway. Both edits are
+  # idempotent: no-ops once the env file already points right.
+  if grep -q "packages/tm8_ui_2.0/dist" "$ENVFILE"; then
+    sed -i 's|packages/tm8_ui_2.0/dist|packages/tm8-ui/dist|' "$ENVFILE"
+    rok "TM8_UI_DIR moved to packages/tm8-ui/dist in $ENVFILE"
+  fi
+  # The mount is opt-in and this box has never had the variable. Without it
+  # /ui-2.0/ 404s and the switch refuses with its reason — correct, but not what
+  # the swap asked for, so seed it rather than leaving it to be noticed.
+  if ! grep -q '^TM8_UI_2_0_DIR=' "$ENVFILE"; then
+    sed -i '/^TM8_UI_1_0_DIR=/d' "$ENVFILE"
+    printf 'TM8_UI_2_0_DIR=%s/packages/tm8_ui_2.0/dist-2.0\n' "$DIR" >> "$ENVFILE"
+    rok "TM8_UI_2_0_DIR seeded in $ENVFILE (the /ui-2.0/ mount)"
+  fi
 else
   say "staging runs vite DEV against source — no UI build (the checkout already updated it)"
 fi

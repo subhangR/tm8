@@ -1,0 +1,10 @@
+P2: Job 1 done. liveTerminalFlag.ts's existence check moved inside the try, matching
+realSeamFlag.ts's landed pattern exactly. Added liveTerminalFlag.test.ts (4 tests) mirroring
+realSeamFlag.test.ts's shape, including the throwing-storage regression control. Probed the
+probe: reverted the fix locally, reran the new suite, confirmed the throwing-storage test
+genuinely fails against the OLD ordering (Error: blocked origin escapes uncaught) before
+restoring the fix — proven to catch the defect, not just present alongside it. tsc clean,
+58/58 terminal tests green. Enumeration updated (item 5's GUARD-ORDER FIX paragraph + new
+item 18b), credited to FE's tests finding it while building the twin flag, as instructed.
+
+Moving to Job 2 now — the real click path.

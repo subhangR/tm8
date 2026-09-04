@@ -10,6 +10,10 @@ import {
   type SpaceSettings,
   type SpaceSettingsView,
   type TaskAxis,
+  type TaskWorkflow,
+  type Workflow,
+  type WorkflowState,
+  type WorkflowTransition,
 } from '@tm8/contract';
 
 import type { DbClaims, Querier } from '../../../db/types.js';
@@ -84,6 +88,48 @@ interface InviteMutationResult {
 
 interface AxisMutationResult {
   axis: TaskAxisRow;
+}
+
+interface TaskWorkflowRow {
+  id: string;
+  space_id: string;
+  type_value: string;
+  statuses: TaskWorkflow['statuses'];
+}
+
+interface WorkflowMutationResult {
+  workflow: TaskWorkflowRow;
+}
+
+interface WorkflowRow {
+  id: string;
+  space_id: string | null;
+  name: string;
+  kind: string | null;
+}
+
+interface WorkflowStateRow {
+  id: string;
+  workflow_id: string;
+  name: string;
+  category: WorkflowState['category'];
+  position: number | string;
+  is_initial: boolean;
+  is_default: boolean;
+}
+
+interface WorkflowTransitionRow {
+  id: string;
+  workflow_id: string;
+  from_state_id: string | null;
+  to_state_id: string;
+  conditions: Record<string, unknown> | null;
+}
+
+interface WorkflowUpsertResult {
+  workflow: WorkflowRow;
+  states: WorkflowStateRow[];
+  transitions: WorkflowTransitionRow[];
 }
 
 interface LeaderboardDbRow {
@@ -187,6 +233,55 @@ function toInvite(row: InviteRow): InviteView {
   };
 }
 
+function toTaskWorkflow(row: TaskWorkflowRow): TaskWorkflow {
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    typeValue: row.type_value,
+    statuses: row.statuses,
+  };
+}
+
+function toWorkflowState(row: WorkflowStateRow): WorkflowState {
+  return {
+    id: row.id,
+    workflowId: row.workflow_id,
+    name: row.name,
+    category: row.category,
+    // `position` is an int4 and pg hands ints back as numbers, but the RPC
+    // returns it through `to_jsonb` where the same column has arrived as a
+    // string before. Number() is correct for both and wrong for neither.
+    position: Number(row.position),
+    isInitial: row.is_initial,
+    isDefault: row.is_default,
+  };
+}
+
+function toWorkflowTransition(row: WorkflowTransitionRow): WorkflowTransition {
+  return {
+    id: row.id,
+    workflowId: row.workflow_id,
+    fromStateId: row.from_state_id,
+    toStateId: row.to_state_id,
+    conditions: row.conditions ?? {},
+  };
+}
+
+function toWorkflow(
+  row: WorkflowRow,
+  states: readonly WorkflowStateRow[],
+  transitions: readonly WorkflowTransitionRow[],
+): Workflow {
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    name: row.name,
+    kind: row.kind,
+    states: states.map(toWorkflowState),
+    transitions: transitions.map(toWorkflowTransition),
+  };
+}
+
 function toTaskAxis(row: TaskAxisRow): TaskAxis {
   return {
     id: row.id,
@@ -280,6 +375,55 @@ async function loadInvites(q: Querier, spaceId: string): Promise<InviteView[]> {
   return rows.map(toInvite);
 }
 
+async function loadTaskWorkflows(q: Querier, spaceId: string): Promise<TaskWorkflow[]> {
+  const rows = await q.query<TaskWorkflowRow>(
+    `select id, space_id, type_value, statuses
+       from public.task_workflows
+      where space_id = $1
+      order by type_value asc, id asc`,
+    [spaceId],
+  );
+  return rows.map(toTaskWorkflow);
+}
+
+/**
+ * The space's own workflows AND the built-in default.
+ *
+ * `space_id is null` is deliberately in the predicate. The built-in default is
+ * the workflow every kind falls back to, so a list that omitted it would be a
+ * list of the workflows a space happens to have overridden — which is not what
+ * anyone asks this endpoint. It is returned last, and it is the one row here
+ * that `spaces.workflows.delete` refuses to touch.
+ */
+async function loadWorkflows(q: Querier, spaceId: string): Promise<Workflow[]> {
+  const workflows = await q.query<WorkflowRow>(
+    `select id, space_id, name, kind
+       from public.workflows
+      where space_id = $1 or space_id is null
+      order by space_id nulls last, kind asc nulls first, name asc`,
+    [spaceId],
+  );
+  if (workflows.length === 0) return [];
+  const ids = workflows.map((w) => w.id);
+  const states = await q.query<WorkflowStateRow>(
+    `select id, workflow_id, name, category, position, is_initial, is_default
+       from public.workflow_states where workflow_id = any($1) order by position asc, id asc`,
+    [ids],
+  );
+  const transitions = await q.query<WorkflowTransitionRow>(
+    `select id, workflow_id, from_state_id, to_state_id, conditions
+       from public.workflow_transitions where workflow_id = any($1) order by id asc`,
+    [ids],
+  );
+  return workflows.map((w) =>
+    toWorkflow(
+      w,
+      states.filter((s) => s.workflow_id === w.id),
+      transitions.filter((t) => t.workflow_id === w.id),
+    ),
+  );
+}
+
 async function loadTaskAxes(q: Querier, spaceId: string): Promise<TaskAxis[]> {
   const rows = await q.query<TaskAxisRow>(
     `select id, space_id, name, axis_values, kind, position
@@ -347,6 +491,7 @@ export class W2IdentitySpacesService {
       const members = await loadMembers(q, spaceId);
       const invites = await loadInvites(q, spaceId);
       const taskAxes = await loadTaskAxes(q, spaceId);
+      const taskWorkflows = await loadTaskWorkflows(q, spaceId);
       const menuRows = await q.query<MenuRow>(
         `select schema_version, revision, payload
            from public.space_menu_configs
@@ -367,6 +512,7 @@ export class W2IdentitySpacesService {
         members,
         invites,
         taskAxes,
+        taskWorkflows,
         menu,
         defaultChannelId: space.default_channel_id,
         defaultInteractionProfileId: space.default_interaction_profile_id,
@@ -558,6 +704,86 @@ export class W2IdentitySpacesService {
       [spaceId, axisId, clientMutationId],
     );
     return { axisId };
+  };
+
+  readonly spacesTaskWorkflowsList: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims);
+      return loadTaskWorkflows(q, spaceId);
+    });
+  };
+
+  readonly spacesTaskWorkflowsUpsert: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const body = bodyObject(ctx.body);
+    const clientMutationId = requireMutationId(body);
+    optionalActorId(body);
+    const result = await this.deps.db.rpc<WorkflowMutationResult>(
+      claimsFor(owner, ctx, commandEnvelope(ctx)),
+      'upsert_task_workflow',
+      [spaceId, body.typeValue, body.statuses, clientMutationId],
+    );
+    return toTaskWorkflow(result.workflow);
+  };
+
+  readonly spacesWorkflowsList: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims);
+      return loadWorkflows(q, spaceId);
+    });
+  };
+
+  readonly spacesWorkflowsUpsert: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const body = bodyObject(ctx.body);
+    const clientMutationId = requireMutationId(body);
+    optionalActorId(body);
+    const result = await this.deps.db.rpc<WorkflowUpsertResult>(
+      claimsFor(owner, ctx, commandEnvelope(ctx)),
+      'upsert_workflow',
+      [spaceId, body.name, body.kind, JSON.stringify(body.states), JSON.stringify(body.transitions ?? []), clientMutationId],
+    );
+    return toWorkflow(result.workflow, result.states, result.transitions);
+  };
+
+  readonly spacesWorkflowsDelete: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const workflowId = requireUuidParam(ctx, 'workflowId');
+    const body = bodyObject(ctx.body);
+    assertStrictKeys(body, ['actorId', 'clientMutationId']);
+    const clientMutationId = requireMutationId(body);
+    optionalActorId(body);
+    await this.deps.db.rpc(
+      claimsFor(owner, ctx, commandEnvelope(ctx)),
+      'delete_workflow',
+      [spaceId, workflowId, clientMutationId],
+    );
+    return { workflowId };
+  };
+
+  readonly spacesTaskWorkflowsDelete: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const workflowId = requireUuidParam(ctx, 'workflowId');
+    const body = bodyObject(ctx.body);
+    assertStrictKeys(body, ['actorId', 'clientMutationId']);
+    const clientMutationId = requireMutationId(body);
+    optionalActorId(body);
+    await this.deps.db.rpc(
+      claimsFor(owner, ctx, commandEnvelope(ctx)),
+      'delete_task_workflow',
+      [spaceId, workflowId, clientMutationId],
+    );
+    return { workflowId };
   };
 
   readonly spacesLeaderboard: OperationHandler = async (ctx) => {

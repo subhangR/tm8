@@ -4,6 +4,7 @@ import { fireEvent, render } from '@testing-library/react';
 import type { EntitySummary } from '@tm8/contract';
 
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../../fixtures';
+import { expandTree } from '../../kit/tree-disclosure.testkit';
 import { getKind, type ActionContext, type QueryFilter } from '../../domain';
 import { EntityListPanel } from '../EntityListPanel';
 import type { MessagePulse } from './useMessagePulses';
@@ -26,10 +27,18 @@ const chain: readonly EntitySummary[] = [
 
 const rowsFor = (_filter: QueryFilter): readonly EntitySummary[] => chain;
 
+/**
+ * The panel ships COLLAPSED (2026-08-17), so every one of these assertions is
+ * about a subtree the viewer has opened. `expandTree` performs that gesture —
+ * without it `leaf` is not on screen at all and the pulse would (correctly)
+ * absorb into an ancestor, which is a different test than the one being run.
+ */
 function renderTree(messagePulses: readonly MessagePulse[]) {
-  return render(
+  const view = render(
     <EntityListPanel kind="work_session" rowsFor={rowsFor} ctx={ctx} messagePulses={messagePulses} />,
   );
+  expandTree(view.container);
+  return view;
 }
 
 function message(key: string, fromId: string, toId: string): MessagePulse {

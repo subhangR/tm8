@@ -30,12 +30,24 @@ import type {
   AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
   AmendmentErrorReason,
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
-  AuthAccountView, AuthClaimInput, AuthClaimResult, AuthClaimStatusResult,
+  AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult,
+  AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
-  AuthLogoutResult, AuthSessionGetResult, AuthSessionView, AuthSignupInput,
-  AuthSignupResult, ChannelTab, ChatThreadSummary, ChatTurnFrame, ChatTurnUsage,
+  AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
+  AuthSessionGetResult, AuthSessionView, AuthSignupInput,
+  AuthSignupResult, ChannelTab, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
+  ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
+  ContainerNetworkPolicy, ContainerProviderDescriptor, ContainerSpec, ContainerSpecInput,
+  ContainerSurfaceSpec,
+  ContainersAttachInput, ContainersAttentionInput, ContainersBrowserEndpointInput,
+  ContainersCreateInput, ContainersComputerInput, ContainersDestroyInput,
+  ContainersExposeInput, ContainersForkInput, ContainersLifecycleInput,
+  ContainersLogsResult, ContainersPolicySetInput, ContainersPoolsSetInput,
+  ContainersProvidersListResult, ContainersRunInput, ContainersRunResult,
+  ContainersSnapshotInput, ContainersTerminalStartInput, ContainersTerminalStartResult,
+  ContainersUnexposeInput, ContainersUpdateInput, SurfaceAttachGrant,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
   CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput, CreateVoiceTokenInput,
   CredentialConnectionView, CredentialProviderName, CredentialsDeleteInput,
@@ -56,18 +68,20 @@ import type {
   FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
-  GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
+  GraphEdgeView, GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
   InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
   InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkedPullRequestBadge, LinkPrInput,
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
-  Mention, MessageBatchResult, MessageDeliveryQuery, MessageDeliveryRecord,
-  MessageDeliveryView, MessagePart, MessageView, MoveEntityInput, NavChannelNode,
+  Mention, MessageBatchResult, MessageDeliveryDisposition,
+  MessageDeliveryQuery, MessageDeliveryRecord,
+  MessageChatTurnRecord, MessageDeliveryView, MessagePart, MessageView, MoveEntityInput,
+  NavChannelNode,
   NotificationItem, Page, PaletteAction, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
-  PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatThreadInput,
-  StartChatThreadResult,
+  PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatInput,
+  StartChatResult,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   CommitSessionAttribution,
   ProjectBlameHunk, ProjectBranch, ProjectBranchTopology,
@@ -93,12 +107,13 @@ import type {
   SessionFileChange, SessionFileChanges, SessionFileHunk,
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
   SessionTranscriptStuck,
-  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
+  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StatusCategory, StreamAttachGrant, TaskAxis, TaskAxisInput, TaskWorkflow, TaskWorkflowInput,
+  Workflow, WorkflowInput, WorkflowState, WorkflowStateInput, WorkflowTransition, WorkflowTransitionInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionEndedKind, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -130,6 +145,14 @@ export const CoreEntityKindSchema = z.enum([
   'worktree',
   'artifact',
   'loop',
+  // Craft P1 (2026-08-16): the graph/blueprint kind — one row holding
+  // vertices AND edges, content-discriminated by graphType (R1/R3).
+  'graph',
+  // Chat as an Entity (2026-09-03, migration 176). Not in
+  // `CreatableEntityKind`: `chat.start` is its only door.
+  'chat',
+  // Containers (177): a machine an agent runs in or drives.
+  'container',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -140,7 +163,70 @@ export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
 export const EntityKindSchema: z.ZodType<EntityKind> =
   z.union([CoreEntityKindSchema, CustomEntityKindSchema]);
 
+/**
+ * Craft P1 — the lean blueprint vocabulary (rulings R1-R3), SOFT by design.
+ * A node is `{id, ref?, spec?}`: `id` is the ROW-LOCAL key edges name, `ref`
+ * the entity id when the node is a reference, `spec` the sketch when it is
+ * not. See `GraphNode` in contract.ts for the full pin and its legacy
+ * aliases. `passthrough` everywhere: the orchestrating agent interprets, and
+ * the schema only keeps the shapes recognizably graph-ish.
+ *
+ * The ONE thing this door refuses is the mistake that caused the defect: a
+ * `ref` that is not an entity id. `ref` is now the sole word meaning "this
+ * exists", so it must be typed, or the ambiguity walks straight back in.
+ */
+const ENTITY_ID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const GraphNodeRefSchema = z.string().regex(
+  ENTITY_ID_FORM,
+  '`ref` must be an entity id — use `id` for the row-local key edges name',
+);
+
+export const GraphNodeInputSchema = z.object({
+  /** Row-local key — the edge namespace. NOT an entity id. */
+  id: z.string().min(1).optional(),
+  /** Present ⇔ this node references a real entity. */
+  ref: GraphNodeRefSchema.optional(),
+  spec: z.object({
+    kind: z.string().min(1).optional(),
+    title: z.string().optional(),
+    hint: z.string().optional(),
+  }).passthrough().optional(),
+  /** @deprecated legacy alias for `id`; honored, and it wins over `id`. */
+  key: z.string().min(1).optional(),
+  /** @deprecated legacy alias for `ref`. */
+  entityId: GraphNodeRefSchema.optional(),
+}).passthrough();
+
+export const GraphEdgeInputSchema = z.object({
+  src: z.string().min(1).optional(),
+  dst: z.string().min(1).optional(),
+  type: z.string().optional(),
+  note: z.string().optional(),
+}).passthrough();
+
+/**
+ * What `entities.create`/`entities.patch` accept as a `graph` row's content —
+ * the door-side twin of the read arm below. Everything optional: a patch may
+ * carry only the members it changes, and a graphType this schema has never
+ * heard of is a future type, not an error (R3).
+ */
+export const GraphContentInputSchema = z.object({
+  graphType: z.string().min(1).optional(),
+  nodes: z.array(GraphNodeInputSchema).optional(),
+  edges: z.array(GraphEdgeInputSchema).optional(),
+  layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()).nullable().optional(),
+  source: z.string().nullable().optional(),
+}).passthrough();
+
 export const WorkStatusSchema = z.enum(['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled']);
+/**
+ * The closed four. `z.ZodType<StatusCategory>` on purpose: the annotation makes
+ * the enum and the union fail to compile the moment they disagree, which is the
+ * only guard against a fifth category entering through the schema alone.
+ */
+export const StatusCategorySchema: z.ZodType<StatusCategory> =
+  z.enum(['to_do', 'in_progress', 'done', 'cancelled']);
 export const VisibilitySchema = z.enum(['space', 'restricted']);
 export const PrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
@@ -153,6 +239,16 @@ export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
 /** Mirrors `work_sessions.workdir_mode`'s CHECK exactly — 001, widened by 015. */
 export const WorkSessionWorkdirModeSchema: z.ZodType<WorkSessionWorkdirMode> =
   z.enum(['project', 'worktree', 'scratch']);
+/** Mirrors `work_sessions.ended_kind`'s CHECK exactly — 171. */
+export const WorkSessionEndedKindSchema: z.ZodType<WorkSessionEndedKind> =
+  z.enum([
+    'completed',
+    'stopped_by_operator',
+    'server_restart',
+    'out_of_memory',
+    'crashed',
+    'unknown',
+  ]);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
   z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
@@ -204,11 +300,17 @@ export function pageOf<T>(item: z.ZodType<T>): z.ZodType<Page<T>> {
 export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('task'),
-    workStatus: WorkStatusSchema,
+    status: WorkStatusSchema,
     priority: PrioritySchema,
     axes: z.record(z.string()),
     dueDate: z.string().nullable().optional(),
+    startDate: z.string().nullable().optional(),
     assignees: z.array(ActorSummarySchema),
+    assignments: z.array(z.object({
+      assignee: ActorSummarySchema,
+      assignedBy: ActorSummarySchema.nullable(),
+      assignedAt: IsoTimestamp,
+    }).strict()).optional(),
     acceptance: z.object({ total: z.number().int().nonnegative(), completed: z.number().int().nonnegative() }).strict(),
     // 082's opt-in completion gate, additive + optional (Git UI wave).
     completionGate: z.enum(['none', 'pr_merged']).optional(),
@@ -246,6 +348,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     model: z.string().nullable().optional(),
     agentTool: z.string().nullable().optional(),
     liveWork: LiveWorkSchema.nullable().optional(),
+    // ABSENT/`null` means the teammate has no default profile of its own, NOT
+    // "not loaded yet" — the space default applies. See `contract.ts`.
+    defaultProfileId: EntityIdSchema.nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('pull_request'),
@@ -277,6 +382,21 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     committedAt: z.string().nullable().optional(),
   }).strict(),
   z.object({
+    kind: z.literal('container'),
+    status: ContainerStatusSchema,
+    profile: ContainerProfileSchema,
+    provider: z.string(),
+    isolation: ContainerIsolationClassSchema,
+    // NOT nullable: the create door refuses a null node, so a container always
+    // has a home node and a consumer never renders "nowhere".
+    nodeId: z.string(),
+    surfaces: z.array(ContainerSurfaceKindSchema),
+    ephemeral: z.boolean(),
+    shareMode: ContainerShareModeSchema,
+    startedAt: z.string().nullable(),
+    expiresAt: z.string().nullable(),
+  }).strict(),
+  z.object({
     kind: z.literal('file'),
     name: z.string(),
     mimeType: z.string(),
@@ -303,6 +423,17 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // explicit null checkoutBranch = measured absence (no repo/detached HEAD).
     checkoutBranch: z.string().nullable().optional(),
     workdirMode: WorkSessionWorkdirModeSchema.optional(),
+    // The ending facts (171), additive: absent = a pre-171 node, no claim;
+    // explicit null = a session that has not ended, or one that ended before
+    // 171 and so was never asked why. `endedReason` is one plain-English
+    // sentence for a person; `endedKind` is the closed vocabulary that keeps
+    // `out_of_memory` — the one legitimate involuntary death — recognisable.
+    endedKind: WorkSessionEndedKindSchema.nullable().optional(),
+    endedReason: z.string().nullable().optional(),
+    // The persona this run acts as, from its latest `participates_in` edge.
+    // Absent = a node that predates the field; explicit null = a run with no
+    // persona, which renders the tool alone. See the DTO note in contract.ts.
+    teammate: ActorSummarySchema.nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -353,6 +484,30 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     lastError: z.string().nullable(),
   }).strict(),
   z.object({
+    kind: z.literal('graph'),
+    graphType: z.string().min(1),
+    nodeCount: z.number().int().nonnegative(),
+    edgeCount: z.number().int().nonnegative(),
+  }).strict(),
+  // 176 — the chat row's facts. `runtimeState` is the durable claim about the
+  // headless child; `turnState` is the queue. They are independent: a chat can
+  // be 'stopped' with a turn 'queued', which is what "the node restarted, your
+  // message is still coming" looks like.
+  z.object({
+    kind: z.literal('chat'),
+    teammateId: EntityIdSchema,
+    model: z.string().min(1),
+    provider: z.string().min(1),
+    agentTool: z.string().min(1),
+    mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
+    workdirMode: z.enum(['project', 'scratch']),
+    projectId: EntityIdSchema.nullable(),
+    runtimeState: z.enum(['cold', 'live', 'stopped']),
+    turnState: z.enum(['idle', 'queued', 'running']),
+    turnCount: z.number().int().nonnegative(),
+    lastTurnAt: IsoTimestamp.nullable(),
+  }).strict(),
+  z.object({
     kind: z.literal('artifact'),
     revisionNumber: z.number().int().positive(),
   }).strict(),
@@ -368,7 +523,7 @@ export const PullStateSchema: z.ZodType<PullState> = z.lazy(() => z.object({
   pinnedVersion: z.number().int(),
   contentStale: z.boolean(),
   discussionMoved: z.boolean(),
-  workStatus: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
   pulledAt: IsoTimestamp,
 }).strict());
 
@@ -470,6 +625,17 @@ function entitySummaryShape() {
     counters: EntityCountersSchema,
     state: EntityStateSchema,
     badges: EntityBadgesSchema,
+    // Additive and OPTIONAL — see the field's docblock on `EntitySummary`.
+    // A node that predates the projection omits it, and that must stay legal:
+    // `.strict()` would otherwise turn an older server's every list read into
+    // a parse failure. `EntityDetail` re-declares it REQUIRED after this
+    // spread, so detail keeps the stronger guarantee it always had.
+    capabilities: EntityCapabilitiesSchema.optional(),
+    // Additive and OPTIONAL under the same law as `capabilities`: absent means
+    // "this entity has no status", which is the truth for every non-task kind
+    // in this phase AND the truth a pre-column node reports. See the field's
+    // docblock on `EntitySummary`.
+    category: StatusCategorySchema.optional(),
   };
 }
 
@@ -481,6 +647,24 @@ export const EdgeViewSchema: z.ZodType<EdgeView> = z.lazy(() => z.object({
   type: z.string(),
   source: EntitySummarySchema,
   target: EntitySummarySchema,
+  props: z.record(z.unknown()),
+  createdBy: ActorSummarySchema,
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+  resolved: z.boolean().optional(),
+  hard: z.boolean().optional(),
+}).strict());
+
+/**
+ * `graph.query`'s edge shape. Identical to `EdgeViewSchema` except that the
+ * endpoints are ids: the same response's `nodes` array already carries both
+ * summaries, so embedding them was pure duplication (see `GraphEdgeView`).
+ */
+export const GraphEdgeViewSchema: z.ZodType<GraphEdgeView> = z.lazy(() => z.object({
+  id: z.string(),
+  type: z.string(),
+  sourceId: EntityIdSchema,
+  targetId: EntityIdSchema,
   props: z.record(z.unknown()),
   createdBy: ActorSummarySchema,
   createdAt: IsoTimestamp,
@@ -545,6 +729,29 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     description: z.string(),
     acceptanceCriteria: z.array(AcceptanceCriterionSchema),
     pointsEstimate: z.number().nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('container'),
+    image: z.string(),
+    spec: ContainerSpecSchema,
+    lifecycle: ContainerLifecycleSchema,
+    // PARTIAL: a container with no adb surface omits the key rather than
+    // carrying a fake one, so every consumer must guard.
+    surfaceDetail: z.record(ContainerSurfaceKindSchema, z.object({
+      live: z.boolean(),
+      geometry: z.object({ w: z.number(), h: z.number(), dpr: z.number() }).strict().optional(),
+      meta: z.record(z.string(), z.unknown()).optional(),
+    }).strict()),
+    error: z.string().nullable(),
+    // NULL is a MEASURED absence — no heartbeat has landed — never zeros.
+    usage: z.object({
+      cpuPct: z.number(), memMiB: z.number(), diskMiB: z.number(),
+    }).strict().nullable(),
+    exposed: z.array(z.object({ port: z.number().int(), url: z.string() }).strict()),
+    // THERE IS NO `runtimeRef` HERE AND THERE MUST NEVER BE ONE (R5). This arm
+    // is embedded in the command result by `internal.command_entity`, so every
+    // member of it reaches the client; `.strict()` is what makes adding one
+    // back a test failure rather than a silent leak.
   }).strict(),
   z.object({
     kind: z.literal('channel'),
@@ -639,6 +846,20 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     lastRunAt: z.string().nullable(),
     lastError: z.string().nullable(),
   }).strict(),
+  // Craft P1: LEAN BY LAW (R2) — nodes and edges are sketches the
+  // orchestrating agent interprets, so members beyond the discriminants stay
+  // open (`passthrough`) and nothing here grows into a program schema.
+  z.object({
+    kind: z.literal('graph'),
+    graphType: z.string().min(1),
+    nodes: z.array(GraphNodeInputSchema),
+    edges: z.array(GraphEdgeInputSchema),
+    layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()),
+    source: z.string().nullable(),
+  }).passthrough(),
+  // A chat has no content beyond its summary (R5): the working directory and
+  // the native session id are the two facts that stay server-side.
+  z.object({ kind: z.literal('chat') }).strict(),
   z.object({
     kind: z.literal('artifact'),
     description: z.string().nullable(),
@@ -664,6 +885,23 @@ export const EntityCapabilitiesSchema: z.ZodType<EntityCapabilities> = z.object(
   canGrantPoints: z.boolean(),
   canComplete: z.boolean(),
   allowedTransitions: z.array(z.string()).optional(),
+  // The six container verbs (177). PRESENT HERE BECAUSE THE OBJECT IS
+  // `.strict()`: the server computes all six on every container read, so
+  // omitting them turns a legitimate payload into `unrecognized_keys` and every
+  // container detail fails `EntityDetailSchema`.
+  //
+  // `tsc` cannot see that omission. `z.ZodType<T>` only requires the schema to
+  // PRODUCE a valid `T`, and a schema missing an OPTIONAL member still does —
+  // so the annotation type-checks while the runtime schema is incomplete, and
+  // `.strict()` converts the incompleteness into a rejection. Third instance of
+  // that shape in this file after the `EntityState`/`EntityContent` container
+  // arms; see `test/containers.test.ts` for the guard that now covers all three.
+  canStart: z.boolean().optional(),
+  canStop: z.boolean().optional(),
+  canDestroy: z.boolean().optional(),
+  canAttach: z.boolean().optional(),
+  canControl: z.boolean().optional(),
+  canExec: z.boolean().optional(),
 }).strict();
 
 export const HierarchySchema: z.ZodType<Hierarchy> = z.lazy(() => z.object({
@@ -685,15 +923,18 @@ export const EntityDetailSchema: z.ZodType<EntityDetail> = z.lazy(() => z.object
 // ---------------------------------------------------------------------------
 
 const GroupBySchema = z.union([
-  z.literal('workStatus'),
+  z.literal('status'),
   z.literal('assignee'),
-  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "workStatus", "assignee" or "axis:<name>"'),
+  z.literal('priority'),
+  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "status", "assignee", "priority" or "axis:<name>"'),
 ]);
 
 const CollectionFiltersSchema = z.object({
-  workStatus: z.array(WorkStatusSchema).optional(),
+  status: z.array(WorkStatusSchema).optional(),
   axes: z.record(z.array(z.string())).optional(),
   assigneeIds: z.array(EntityIdSchema).optional(),
+  priority: z.array(PrioritySchema).optional(),
+  assignedByIds: z.array(EntityIdSchema).optional(),
   edge: z.object({
     type: z.string(),
     direction: z.enum(['incoming', 'outgoing']),
@@ -706,6 +947,17 @@ const CollectionFiltersSchema = z.object({
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
   sessionStatus: z.array(WorkSessionStatusSchema).optional(),
+  // Validated as a real instant, not merely a string: an unparseable value
+  // would otherwise reach Postgres as a cast error, and a window filter that
+  // 500s is indistinguishable at the client from a node that is down.
+  activeSince: z.string().datetime({ offset: true }).optional(),
+  // Kind-neutral lifecycle bucket. Deliberately NOT refined against
+  // `sessionStatus` the way `status` and `priority` are: those two are
+  // task-only literals, so pairing them with a session filter is provably the
+  // empty set. `category` is a question a work_session will answer in a later
+  // phase, so the pair is a legitimate future query, and refusing it now would
+  // encode this phase's incompleteness as a permanent law.
+  category: z.array(StatusCategorySchema).optional(),
   deleted: z.enum(['exclude', 'only', 'include']).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
@@ -713,10 +965,18 @@ const CollectionFiltersSchema = z.object({
   // ever return the always-empty set — the confident-zero a caller reads as
   // "nothing matched" when the truth is "nothing COULD match". The pair was
   // unauthorable before sessionStatus existed, so refusing it is additive.
-  if (f.workStatus && f.workStatus.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
+  if (f.status && f.status.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'workStatus and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
+      message: 'status and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
+    });
+  }
+  // Same law for the priority axis: priority is task-only, so pairing it with
+  // sessionStatus is another always-empty conjunction that must refuse.
+  if (f.priority && f.priority.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'priority and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
     });
   }
 });
@@ -730,7 +990,7 @@ function collectionQueryShape() {
     filters: CollectionFiltersSchema.optional(),
     layout: z.enum(['list', 'board', 'tree', 'feed', 'gallery', 'graph']).optional(),
     groupBy: GroupBySchema.optional(),
-    sort: z.enum(['activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'priority']).optional(),
+    sort: z.enum(['activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority']).optional(),
     cursor: CursorSchema.optional(),
     limit: z.number().int().positive().optional(),
   };
@@ -763,7 +1023,7 @@ export const GraphQuerySchema: z.ZodType<GraphQuery> = z.object({
 
 export const GraphResultSchema: z.ZodType<GraphResult> = z.lazy(() => z.object({
   nodes: z.array(EntitySummarySchema),
-  edges: z.array(EdgeViewSchema),
+  edges: z.array(GraphEdgeViewSchema),
   clusters: z.array(z.object({ parentId: EntityIdSchema, childIds: z.array(EntityIdSchema) }).strict()),
   layout: z.record(z.object({ x: z.number(), y: z.number() }).strict()).optional(),
 }).strict());
@@ -870,39 +1130,46 @@ export const MessagePartSchema: z.ZodType<MessagePart> = z.discriminatedUnion('k
   }).strict(),
 ]);
 
-export const ChatThreadSummarySchema: z.ZodType<ChatThreadSummary> = z.object({
-  rootMessageId: EntityIdSchema,
-  anchorId: EntityIdSchema,
+export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
+  spaceId: SpaceIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
-  createdAt: IsoTimestamp,
-  lastReplyAt: IsoTimestamp.nullable(),
-  title: z.string().nullable().optional(),
-  replyCount: z.number().int().nonnegative().optional(),
-}).strict();
-
-export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.object({
-  rootMessageId: EntityIdSchema,
-  teammateId: EntityIdSchema,
-  model: z.string().min(1),
+  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
+  workdirMode: z.enum(['project', 'scratch']),
+  projectId: EntityIdSchema.nullable().optional(),
+  title: z.string().max(240).nullable().optional(),
+  body: z.string().min(1).max(10000),
+  attachmentIds: z.array(EntityIdSchema).max(16).optional(),
+  aboutId: EntityIdSchema.nullable().optional(),
   clientMutationId: z.string().min(1),
-}).strict();
+})
+  .strict()
+  // The pairing is refused HERE as well as in SQL, because a mismatch that only
+  // the database catches surfaces as a 500-shaped error with a Postgres message
+  // in it. Same rule, stated where the caller can read it.
+  .refine(
+    (input) => (input.workdirMode === 'project'
+      ? typeof input.projectId === 'string'
+      : input.projectId === undefined || input.projectId === null),
+    { message: 'projectId is required for workdirMode "project" and refused for "scratch"' },
+  ) as z.ZodType<StartChatInput>;
 
-export const StartChatThreadResultSchema: z.ZodType<StartChatThreadResult> = z.object({
-  thread: ChatThreadSummarySchema,
-}).strict();
+export const StartChatResultSchema: z.ZodType<StartChatResult> = z.lazy(() => z.object({
+  chat: EntitySummarySchema,
+  messageId: EntityIdSchema,
+}).strict()) as z.ZodType<StartChatResult>;
 
 export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('chat.turn.delta'),
-    threadRootId: EntityIdSchema,
+    chatId: EntityIdSchema,
     messageId: EntityIdSchema,
     seq: z.number().int().nonnegative(),
     part: MessagePartSchema,
   }).strict(),
   z.object({
     type: z.literal('chat.turn.done'),
-    threadRootId: EntityIdSchema,
+    chatId: EntityIdSchema,
     messageId: EntityIdSchema,
     usage: ChatTurnUsageSchema.nullable(),
   }).strict(),
@@ -918,11 +1185,24 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   lastReplyAt: z.string().nullable().optional(),
   replyParticipants: z.array(ActorSummarySchema).optional(),
   parts: z.array(MessagePartSchema).optional(),
+  turnInFlight: z.boolean().optional(),
 }).strict());
+
+export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>
+  z.object({
+    targetMessageId: z.string().min(1),
+    targetWorkSessionId: z.string().min(1),
+    status: z.enum(['accepted', 'skipped', 'undelivered']),
+    reason: z.string().min(1).optional(),
+    deliveryId: z.string().min(1).optional(),
+  }).strict());
 
 export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(() => z.object({
   messageBatchId: z.string().min(1),
   messages: z.array(MessageViewSchema).min(1).max(16),
+  // Optional, not nullable: absent means the batch named no session. An empty
+  // array would read as "every target failed" and is therefore never emitted.
+  delivery: z.array(MessageDeliveryDispositionSchema).min(1).optional(),
 }).strict());
 
 export const ActivityItemSchema: z.ZodType<ActivityItem> = z.lazy(() => z.object({
@@ -977,6 +1257,18 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     ...workspaceEventEnvelopeShape,
     type: z.enum(['entity.upsert', 'entity.deleted']),
     entity: EntitySummarySchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  // Recency-only touch (migration 165). Strict, like every other arm: an
+  // `entity` key smuggled onto this event would mean a producer emitted a full
+  // snapshot down the cheap path, which is the one thing this event exists to
+  // prevent.
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('entity.activity_touched'),
+    id: EntityIdSchema,
+    kind: EntityKindSchema,
+    activityAt: IsoTimestamp,
     clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
@@ -1315,6 +1607,7 @@ export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   actingAsTeamMemberId: z.string().uuid().nullable(),
   runtimeMemberId: z.string().uuid().nullable().optional(),
   runtimeThreadRootId: z.string().uuid().nullable().optional(),
+  runtimeChatId: z.string().uuid().nullable().optional(),
   label: z.string().nullable(),
   createdAt: IsoTimestamp.optional(),
   expiresAt: IsoTimestamp,
@@ -1371,6 +1664,53 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   claimed: z.boolean(),
   mode: z.enum(['single', 'multi']),
   signupPath: z.enum(['claim', 'invite', 'admin']),
+}).strict();
+
+export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
+  token: z.string().min(1),
+  claimUrl: z.string().min(1),
+  tokenPath: z.string().nullable(),
+}).strict();
+
+/**
+ * `auth.password.change`. Strict, and both fields required: this is CHANGE, so
+ * the current password is not optional. `newPassword` obeys the same 8–1024
+ * floor `auth.signup`/`auth.claim` do; `currentPassword` only has to be a
+ * non-empty string, because whatever the account currently holds is what will
+ * be proven against — refusing a short current password here would just leak
+ * that the stored one is short.
+ */
+export const AuthPasswordChangeInputSchema: z.ZodType<AuthPasswordChangeInput> = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  newPassword: AuthPasswordSchema,
+}).strict();
+
+export const AuthPasswordChangeResultSchema: z.ZodType<AuthPasswordChangeResult> = z.object({
+  accountId: z.string().uuid(),
+  revokedOtherSessions: z.number().int().nonnegative(),
+}).strict();
+
+/**
+ * `auth.invite.signup`. Claim-free, so — like `auth.invite.resolve` — strictness
+ * is the only control on this body and an `actorId`/`clientMutationId` on the
+ * wire is a 400 rather than a field nobody is in a position to check. The
+ * credential rules mirror `auth.signup`/`auth.claim`.
+ */
+export const AuthInviteSignupInputSchema: z.ZodType<AuthInviteSignupInput> = z.object({
+  code: z.string().min(1),
+  username: AuthUsernameSchema,
+  password: AuthPasswordSchema,
+  displayName: z.string().min(1).max(200).optional(),
+  email: z.string().min(3).max(320).optional(),
+  kind: z.enum(['browser', 'cli']).optional(),
+}).strict();
+
+export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z.object({
+  token: z.string().min(1),
+  account: AuthAccountViewSchema,
+  session: AuthSessionViewSchema,
+  spaceId: SpaceIdSchema,
+  memberId: EntityIdSchema,
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -1438,6 +1778,23 @@ export const CredentialsDeleteResultSchema: z.ZodType<CredentialsDeleteResult> =
   }).strict()),
 }).strict();
 
+/**
+ * One terminal dimension, for every operation that boots a PTY.
+ *
+ * The 1..1000 bound is PtyHostService's own clamp, restated here so a nonsense
+ * value is refused at the edge with a contract error rather than silently
+ * collapsing to the 80x24 default deep inside the PTY host. Shared rather than
+ * respelled per op: this was written three different ways (`min(1)` twice,
+ * `positive()` once) before it had a name, and three spellings of one rule is
+ * three chances for them to drift apart.
+ *
+ * NOT the same as the PTY SOCKET's resize bound, which is narrower (cols >= 2,
+ * rows <= 500). That asymmetry is pre-existing and left alone deliberately, but
+ * it does mean a session spawned taller than 500 rows can never be resized back
+ * to that height over the socket.
+ */
+const TerminalDimSchema = z.number().int().min(1).max(1000).optional();
+
 export const CredentialsLoginSessionStartInputSchema:
   z.ZodType<CredentialsLoginSessionStartInput> = z.object({
     spaceId: EntityIdSchema,
@@ -1445,8 +1802,8 @@ export const CredentialsLoginSessionStartInputSchema:
     // Geometry is the ONLY client input this operation accepts, and it is
     // bounded so a hostile value cannot reach `pty.spawn` as a resource claim.
     // There is deliberately no command/args/flags field: see the DTO.
-    cols: z.number().int().min(1).max(1000).optional(),
-    rows: z.number().int().min(1).max(1000).optional(),
+    cols: TerminalDimSchema,
+    rows: TerminalDimSchema,
     clientMutationId: z.string().min(1).optional(),
   }).strict();
 
@@ -1526,6 +1883,7 @@ export const CreateTaskInputSchema: z.ZodType<CreateTaskInput> = z.object({
   }).strict()).optional(),
   pointsEstimate: z.number().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
   attachTo: attachToSchema.optional(),
 }).strict();
 
@@ -1535,16 +1893,21 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   axes: z.record(z.string()).optional(),
-  workStatus: WorkStatusSchema.optional(),
+  status: WorkStatusSchema.optional(),
   priority: PrioritySchema.optional(),
   acceptanceCriteria: z.array(AcceptanceCriterionSchema).optional(),
   pointsEstimate: z.number().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
 }).strict();
 
 /** The runtime half of `CreatableEntityKind` — the one place the set is stated. */
 export const CreatableEntityKindSchema = z.union([
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact']),
+  // `chat` and `container` are excluded for the same reason `work_session`
+  // is: each is born only from its own door — `chat.start` and
+  // `containers.create` — which supply a runtime binding a generic create
+  // could not. A generic create would make a record with nothing behind it.
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container']),
   CustomEntityKindSchema,
 ]);
 
@@ -1715,6 +2078,7 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   mentionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   attachmentIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
+  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']).optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =
@@ -1843,6 +2207,45 @@ export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({
   position: z.number().finite(),
 }).strict();
 
+export const TaskWorkflowInputSchema: z.ZodType<TaskWorkflowInput> = z.object({
+  ...commandContextShape,
+  typeValue: z.string().min(1),
+  // The structural {open, working, done} rule is the DATABASE's constraint;
+  // duplicating it here would be a second copy free to drift.
+  statuses: z.array(WorkStatusSchema),
+}).strict();
+
+export const WorkflowStateInputSchema: z.ZodType<WorkflowStateInput> = z.object({
+  name: z.string().min(1),
+  category: StatusCategorySchema,
+  position: z.number().int().optional(),
+  isInitial: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+}).strict();
+
+export const WorkflowTransitionInputSchema: z.ZodType<WorkflowTransitionInput> = z.object({
+  // Absent and explicitly-null both mean ANY, and they must stay
+  // indistinguishable here: the SQL door treats a missing key and a null value
+  // identically, and a schema that admitted only one would make the two
+  // spellings disagree at the edge for no reason a caller could discover.
+  from: z.string().min(1).nullable().optional(),
+  to: z.string().min(1),
+  conditions: z.record(z.unknown()).optional(),
+}).strict();
+
+export const WorkflowInputSchema: z.ZodType<WorkflowInput> = z.object({
+  ...commandContextShape,
+  name: z.string().min(1),
+  kind: z.string().min(1).nullable(),
+  // Exactly-one-initial, the closed category set, unique names and unique
+  // positions are all the DATABASE's constraints — a second copy here would be
+  // free to drift from the rule that actually decides. What this asserts is
+  // only what the database cannot: that a workflow with no states at all never
+  // reaches it.
+  states: z.array(WorkflowStateInputSchema).min(1),
+  transitions: z.array(WorkflowTransitionInputSchema).optional(),
+}).strict();
+
 export const SavedViewInputSchema: z.ZodType<SavedViewInput> = z.object({
   ...commandContextShape,
   name: z.string().min(1),
@@ -1895,7 +2298,10 @@ export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.o
 // `files` widened 2026-08-10 in lockstep with the MenuViewRef type (R4 posture).
 // `git` widened 2026-08-12 in the same lockstep (Git UI wave: the project git screen).
 // `messages` widened 2026-08-13 in the same lockstep (the Messages surface).
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages']);
+// `board` widened 2026-08-16 in the same lockstep (the task kanban tab).
+// `help` widened 2026-08-19 in the same lockstep (the Help shelf). Menu-eligible
+// but not in the shipped default spine — see the type for why.
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board', 'craft', 'help', 'codebrain']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection
@@ -2307,6 +2713,7 @@ export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion(
 ]);
 
 const SpawnUuidSchema = z.string().uuid();
+
 const CredentialSourceSchema = z.enum(['member', 'node']);
 const CredentialSourcesSchema = z.object({
   anthropic: CredentialSourceSchema.optional(),
@@ -2337,6 +2744,8 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 /**
@@ -2356,8 +2765,8 @@ export const ExecutionTerminalStartInputSchema: z.ZodType<ExecutionTerminalStart
   projectId: SpawnUuidSchema.nullable().optional(),
   confirmUntrusted: z.literal(true).optional(),
   title: z.string().max(200).optional(),
-  cols: z.number().int().positive().max(1000).optional(),
-  rows: z.number().int().positive().max(1000).optional(),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 /**
@@ -2405,6 +2814,8 @@ export const ExecutionTerminateInputSchema: z.ZodType<ExecutionTerminateInput> =
 export const ExecutionResumeInputSchema: z.ZodType<ExecutionResumeInput> = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttachInput> = z.object({
@@ -2484,6 +2895,10 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
     used: z.number().int().nonnegative(),
     total: z.number().int().positive(),
   }).strict(),
+  // Nullable, never optional: "the mark cannot be established" is an ANSWER
+  // this read has to be able to give, and an absent field is the shape a
+  // consumer reads as zero — which means "replay the entire retained log".
+  eventHwm: z.number().int().nonnegative().nullable(),
 }).strict();
 
 /**
@@ -2653,6 +3068,12 @@ export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.o
   stuck: SessionTranscriptStuckSchema.nullable(),
   lastActivityAt: IsoTimestamp.nullable(),
   malformed: z.number().int().nonnegative(),
+  // The page-back cursor. Nullable rather than zero-defaulted for the same
+  // reason `stats` is: 0 is a REAL offset — the start of the file, the one
+  // place there is nothing older — so an unavailable page must not be able to
+  // claim it.
+  windowStart: z.number().int().nonnegative().nullable(),
+  hasOlder: z.boolean(),
   fileChanges: SessionFileChangesSchema.nullable().optional(),
 }).strict();
 
@@ -2692,9 +3113,18 @@ export const MessageDeliveryRecordSchema: z.ZodType<MessageDeliveryRecord> = z.o
   updatedAt: IsoTimestamp,
 }).strict();
 
+export const MessageChatTurnRecordSchema: z.ZodType<MessageChatTurnRecord> = z.object({
+  chatId: EntityIdSchema,
+  turnId: z.string().min(1),
+  state: z.enum(['queued', 'running', 'completed', 'error']),
+}).strict();
+
 export const MessageDeliveryViewSchema: z.ZodType<MessageDeliveryView> = z.lazy(() => z.object({
   message: MessageViewSchema,
   deliveries: z.array(MessageDeliveryRecordSchema),
+  // 176: optional under the rolling-node rule — an older node omits the key and
+  // that means "cannot tell you", never "this message woke no chat".
+  chatTurns: z.array(MessageChatTurnRecordSchema).optional(),
 }).strict());
 
 export const HandoffDeliveryStatusSchema = z.enum(['prepared', 'dispatching', 'delivered', 'refused', 'unknown']);
@@ -3089,7 +3519,11 @@ export const SpaceSummarySchema: z.ZodType<SpaceSummary> = z.object({
   name: z.string(),
   description: z.string(),
   memberCount: z.number().int().nonnegative(),
-  unreadTotal: z.number().int().nonnegative(),
+  // Nullable, not optional: absent would be a THIRD state to interpret, and a
+  // node that cannot measure unread should still say so out loud. See the
+  // field's note on `SpaceSummary` — a number stays valid, so a response from
+  // an older node parses unchanged.
+  unreadTotal: z.number().int().nonnegative().nullable(),
   githubRepo: z.string().nullable().optional(),
   createdAt: IsoTimestamp,
 }).strict();
@@ -3123,7 +3557,6 @@ export const HomeSnapshotSchema: z.ZodType<HomeSnapshot> = z.lazy(() => z.object
   inFlight: CollectionResultSchema,
   needsMe: CollectionResultSchema,
   activity: pageOf(ActivityItemSchema),
-  chatThreads: z.array(ChatThreadSummarySchema).optional(),
 }).strict());
 
 export const TaskAxisSchema: z.ZodType<TaskAxis> = z.object({
@@ -3133,6 +3566,45 @@ export const TaskAxisSchema: z.ZodType<TaskAxis> = z.object({
   axisValues: z.array(z.string()),
   kind: z.enum(['default', 'manual']),
   position: z.number(),
+}).strict();
+
+export const TaskWorkflowSchema: z.ZodType<TaskWorkflow> = z.object({
+  id: z.string(),
+  spaceId: SpaceIdSchema,
+  typeValue: z.string(),
+  statuses: z.array(WorkStatusSchema),
+}).strict();
+
+export const WorkflowStateSchema: z.ZodType<WorkflowState> = z.object({
+  id: z.string(),
+  workflowId: z.string(),
+  name: z.string(),
+  category: StatusCategorySchema,
+  position: z.number().int(),
+  isInitial: z.boolean(),
+  isDefault: z.boolean(),
+}).strict();
+
+export const WorkflowTransitionSchema: z.ZodType<WorkflowTransition> = z.object({
+  id: z.string(),
+  workflowId: z.string(),
+  fromStateId: z.string().nullable(),
+  toStateId: z.string(),
+  conditions: z.record(z.unknown()),
+}).strict();
+
+export const WorkflowSchema: z.ZodType<Workflow> = z.object({
+  id: z.string(),
+  // NULLABLE, and it is the design: the built-in default workflow belongs to no
+  // space. A schema that required a spaceId here would make the one row every
+  // kind falls back to unrepresentable on the wire.
+  spaceId: SpaceIdSchema.nullable(),
+  name: z.string(),
+  kind: z.string().nullable(),
+  states: z.array(WorkflowStateSchema),
+  // Empty is the NORMAL case — "the ruled category defaults apply" — never
+  // "nothing is allowed".
+  transitions: z.array(WorkflowTransitionSchema),
 }).strict();
 
 export const LeaderboardRowSchema: z.ZodType<LeaderboardRow> = z.object({
@@ -3169,6 +3641,7 @@ export const SpaceSettingsSchema: z.ZodType<SpaceSettings> = z.lazy(() => z.obje
     revoked: z.boolean(),
   }).strict()),
   taskAxes: z.array(TaskAxisSchema),
+  taskWorkflows: z.array(TaskWorkflowSchema).optional(),
 }).strict());
 
 export const SpaceSettingsViewSchema: z.ZodType<SpaceSettingsView> = z.lazy(() => z.object({
@@ -3188,6 +3661,7 @@ export const SpaceSettingsViewSchema: z.ZodType<SpaceSettingsView> = z.lazy(() =
     revoked: z.boolean(),
   }).strict()),
   taskAxes: z.array(TaskAxisSchema),
+  taskWorkflows: z.array(TaskWorkflowSchema).optional(),
   menu: MenuConfigSchema,
   defaultChannelId: EntityIdSchema.nullable(),
   defaultInteractionProfileId: EntityIdSchema.nullable(),
@@ -3271,6 +3745,411 @@ export const WireErrorBodySchema: z.ZodType<WireErrorBody> = z.object({
     requestId: z.string(),
     retryable: z.boolean(),
   }).strict(),
+}).strict();
+
+
+// --- containers (TM8-CONTAINERS-DESIGN §4.2) --------------------------------
+
+export const ContainerStatusSchema = z.enum([
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+]);
+export const ContainerProfileSchema = z.enum([
+  'shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom',
+]);
+export const ContainerIsolationClassSchema = z.enum([
+  'process', 'container', 'gvisor', 'microvm', 'vm',
+]);
+export const ContainerSurfaceKindSchema = z.enum([
+  'terminal', 'screen', 'browser', 'adb', 'docker', 'http',
+]);
+export const ContainerNetworkPresetSchema = z.enum(['open', 'balanced', 'locked']);
+/** The work_session vocabulary, deliberately. NOT the port-share one. */
+export const ContainerShareModeSchema = z.enum(['none', 'space', 'explicit']);
+/** The port vocabulary: `link`, no `explicit`. See the type's warning. */
+export const ContainerPortShareSchema = z.enum(['none', 'space', 'link']);
+
+/**
+ * ENV KEYS THAT LOOK LIKE SECRETS ARE REFUSED, BY NAME, AT THE CONTRACT.
+ *
+ * Secrets reach a machine through the credential path (§12.3), never through
+ * `spec.env` — an env var is stored on the container row, returned by every
+ * read of it, and visible to anything that can see the entity. The refusal is
+ * here rather than in the door so a caller gets a 400 that NAMES the key
+ * instead of a raw plpgsql error.
+ *
+ * THAT PROMISE ONLY HOLDS IF THIS IS AT LEAST AS BROAD AS THE DOOR, so it is,
+ * BY CONSTRUCTION: `DOOR_SECRET_TERMS` carries 177's alternatives verbatim
+ * (`177_container_kind.sql:866`) and matches them as SUBSTRINGS, exactly as
+ * `~*` does.
+ *
+ * It did not, and the gap was not academic: `AUTHOR` contains `auth`, so the
+ * door refused it with an unhandled `22023` AFTER this schema had accepted it
+ * — the precise experience the named-key 400 exists to prevent. Also
+ * `TOKENIZER`, `AUTHENTICATION`, `AUTHORIZED_KEYS`, `OAUTH`, `ACCESSKEY`,
+ * `MYTOKENVALUE`. They are refused HERE now, by name. Nothing became
+ * creatable that was not creatable before, and nothing that was refused is
+ * now accepted: the change is WHERE and HOW the refusal happens.
+ *
+ * `EXTRA_SECRET_TERMS` are stricter than the door and stay segment-delimited,
+ * because a substring `PWD` would refuse any key containing those three
+ * letters. Being stricter than the door is safe — it refuses at the contract,
+ * with a name — while being LOOSER is what produced the raw 22023.
+ *
+ * PINNED BY `test/containers.test.ts` ("is at least as broad as 177's door
+ * predicate"), which asserts the seven keys above are refused, that real
+ * secrets stay refused and ordinary vars stay accepted, and that the corpus
+ * size is conserved.
+ *
+ * THE RELATIONSHIP ITSELF IS PINNED, not merely described:
+ * `packages/server/test/w2/containers-secret-env-parity.test.ts` EXTRACTS
+ * 177's predicate from the migration text and asserts the
+ * door-refuses-contract-accepts set is EMPTY over a conserved 45-key corpus.
+ * It lives in the server package because it must read the migration and this
+ * package reads no files by design. If 177's predicate gains a term, that
+ * test reds.
+ *
+ * The contract being STRICTER than the door is allowed and is asserted to be
+ * non-empty there (`PWD`, `SESSION_KEY`) — that direction refuses at the
+ * contract, by name, and never reaches the database.
+ *
+ * THE DOOR REMAINS THE AUTHORITY. Making `AUTHOR` creatable AT ALL means
+ * LOOSENING the door, which is a migration and is on the P0 follow-up
+ * register; this change only moves its refusal to where it can be named.
+ *
+ * It is a NAME heuristic and it is deliberately broad: false positives cost a
+ * caller one rename, a false negative writes a credential into the graph.
+ */
+/** 177:866's alternatives, verbatim, matched as SUBSTRINGS as `~*` does. */
+const DOOR_SECRET_TERMS =
+  /(SECRET|TOKEN|PASSWORD|PASSWD|API[_-]?KEY|CREDENTIAL|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH)/;
+/** Terms the door does NOT carry. Segment-delimited: `PWD` as a substring is absurd. */
+const EXTRA_SECRET_TERMS = /(^|_)(PWD|SESSION_KEY|BEARER)(_|$)/;
+const SECRET_ENV_KEY_EXACT = new Set([
+  'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN', 'TM8_AGENT_TOKEN',
+]);
+
+/** True when this env var NAME looks like a secret. Exported for the tests. */
+export function isSecretLookingEnvKey(key: string): boolean {
+  const upper = key.toUpperCase();
+  return SECRET_ENV_KEY_EXACT.has(upper)
+    || DOOR_SECRET_TERMS.test(upper)
+    || EXTRA_SECRET_TERMS.test(upper);
+}
+
+const ContainerEnvSchema = z.record(z.string(), z.string().max(32768))
+  .refine((env) => Object.keys(env).length <= 256, { message: 'at most 256 env vars' })
+  .superRefine((env, ctx) => {
+    for (const key of Object.keys(env)) {
+      if (isSecretLookingEnvKey(key)) {
+        // The KEY, never the value — a refusal must not echo the secret it
+        // just refused into a log, a CLI transcript or an error body.
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `env key ${key} looks like a secret; secrets reach a container through the credential path, not spec.env`,
+          path: [key],
+        });
+      }
+    }
+  });
+
+export const ContainerMountInputSchema: z.ZodType<ContainerMountInput> = z.object({
+  host: z.string().min(1).max(4096),
+  guest: z.string().min(1).max(4096).regex(/^\//, 'guest must be an absolute path'),
+  ro: z.boolean(),
+}).strict();
+
+export const ContainerMountSchema: z.ZodType<ContainerMount> = z.object({
+  guest: z.string().min(1).max(4096).regex(/^\//, 'guest must be an absolute path'),
+  ro: z.boolean(),
+}).strict();
+
+export const ContainerNetworkPolicySchema: z.ZodType<ContainerNetworkPolicy> = z.object({
+  preset: ContainerNetworkPresetSchema,
+  allow: z.array(z.string().min(1).max(253)).max(256),
+}).strict();
+
+export const ContainerSurfaceSpecSchema: z.ZodType<ContainerSurfaceSpec> = z.object({
+  enabled: z.boolean(),
+  port: z.number().int().min(1).max(65535).optional(),
+}).strict();
+
+const containerSurfaceMapSchema = z.record(ContainerSurfaceKindSchema, ContainerSurfaceSpecSchema);
+
+const CPUS_MIN = 0.25;
+const CPUS_MAX = 16;
+const MEM_MIB_MIN = 128;
+const MEM_MIB_MAX = 65536;
+const DISK_MIB_MIN = 512;
+const DISK_MIB_MAX = 512000;
+
+export const ContainerSpecSchema: z.ZodType<ContainerSpec> = z.object({
+  profile: ContainerProfileSchema,
+  image: z.string().min(1).max(1024).optional(),
+  cpus: z.number().min(CPUS_MIN).max(CPUS_MAX),
+  memMiB: z.number().int().min(MEM_MIB_MIN).max(MEM_MIB_MAX),
+  diskMiB: z.number().int().min(DISK_MIB_MIN).max(DISK_MIB_MAX).optional(),
+  mounts: z.array(ContainerMountSchema).max(16),
+  env: ContainerEnvSchema,
+  ports: z.array(z.number().int().min(1).max(65535)).max(32),
+  network: ContainerNetworkPolicySchema,
+  surfaces: containerSurfaceMapSchema,
+  labels: z.record(z.string(), z.string().max(1024)),
+}).strict() as z.ZodType<ContainerSpec>;
+
+export const ContainerSpecInputSchema: z.ZodType<ContainerSpecInput> = z.object({
+  image: z.string().min(1).max(1024).optional(),
+  cpus: z.number().min(CPUS_MIN).max(CPUS_MAX).optional(),
+  memMiB: z.number().int().min(MEM_MIB_MIN).max(MEM_MIB_MAX).optional(),
+  diskMiB: z.number().int().min(DISK_MIB_MIN).max(DISK_MIB_MAX).optional(),
+  mounts: z.array(ContainerMountInputSchema).max(16).optional(),
+  env: ContainerEnvSchema.optional(),
+  ports: z.array(z.number().int().min(1).max(65535)).max(32).optional(),
+  network: ContainerNetworkPolicySchema.optional(),
+  surfaces: containerSurfaceMapSchema.optional(),
+  labels: z.record(z.string(), z.string().max(1024)).optional(),
+}).strict() as z.ZodType<ContainerSpecInput>;
+
+const TTL_MIN = 60;
+const TTL_MAX = 604800;
+
+export const ContainerLifecycleSchema: z.ZodType<ContainerLifecycle> = z.object({
+  ephemeral: z.boolean(),
+  ttlSeconds: z.number().int().min(TTL_MIN).max(TTL_MAX).nullable(),
+  idleHibernateSeconds: z.number().int().min(TTL_MIN).max(TTL_MAX).nullable(),
+  graceSeconds: z.number().int().min(0).max(86400),
+  snapshotOnStop: z.boolean(),
+}).strict();
+
+export const ContainerLifecycleInputSchema: z.ZodType<ContainerLifecycleInput> = z.object({
+  ephemeral: z.boolean().optional(),
+  ttlSeconds: z.number().int().min(TTL_MIN).max(TTL_MAX).nullable().optional(),
+  idleHibernateSeconds: z.number().int().min(TTL_MIN).max(TTL_MAX).nullable().optional(),
+  graceSeconds: z.number().int().min(0).max(86400).optional(),
+  snapshotOnStop: z.boolean().optional(),
+}).strict();
+
+export const ContainerProviderDescriptorSchema: z.ZodType<ContainerProviderDescriptor> = z.object({
+  id: z.string().min(1).max(64),
+  isolation: ContainerIsolationClassSchema,
+  profiles: z.array(ContainerProfileSchema),
+  surfaces: z.array(ContainerSurfaceKindSchema),
+  features: z.object({
+    pause: z.boolean(), snapshot: z.boolean(), fork: z.boolean(),
+    expose: z.boolean(), nested: z.boolean(), gpu: z.boolean(),
+  }).strict(),
+  limits: z.object({
+    maxContainers: z.number().int().nonnegative(),
+    maxCpus: z.number().nonnegative(),
+    maxMemMiB: z.number().int().nonnegative(),
+  }).strict(),
+  probe: z.object({
+    ok: z.boolean(), detail: z.string(), measuredAt: z.string().min(1),
+  }).strict(),
+}).strict();
+
+export const ContainersCreateInputSchema: z.ZodType<ContainersCreateInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpaceIdSchema,
+  title: z.string().min(1).max(512).nullable().optional(),
+  profile: ContainerProfileSchema,
+  provider: z.string().min(1).max(64).nullable().optional(),
+  nodeId: z.string().min(1).max(255).nullable().optional(),
+  image: z.string().min(1).max(1024).nullable().optional(),
+  spec: ContainerSpecInputSchema.optional(),
+  lifecycle: ContainerLifecycleInputSchema.optional(),
+  shareMode: ContainerShareModeSchema.optional(),
+  parentId: EntityIdSchema.nullable().optional(),
+  templateId: EntityIdSchema.nullable().optional(),
+  projectId: EntityIdSchema.nullable().optional(),
+  confirmUntrusted: z.literal(true).optional(),
+  start: z.boolean().optional(),
+}).strict() as z.ZodType<ContainersCreateInput>;
+
+const TIMEOUT_MS_MIN = 1000;
+const TIMEOUT_MS_MAX = 600000;
+
+export const ContainersLifecycleInputSchema: z.ZodType<ContainersLifecycleInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  timeoutMs: z.number().int().min(TIMEOUT_MS_MIN).max(TIMEOUT_MS_MAX).optional(),
+}).strict() as z.ZodType<ContainersLifecycleInput>;
+
+export const ContainersDestroyInputSchema: z.ZodType<ContainersDestroyInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  timeoutMs: z.number().int().min(TIMEOUT_MS_MIN).max(TIMEOUT_MS_MAX).optional(),
+  force: z.boolean().optional(),
+  keepSnapshot: z.boolean().optional(),
+}).strict() as z.ZodType<ContainersDestroyInput>;
+
+export const ContainersUpdateInputSchema: z.ZodType<ContainersUpdateInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  title: z.string().min(1).max(512).optional(),
+  lifecycle: ContainerLifecycleInputSchema.optional(),
+  shareMode: ContainerShareModeSchema.optional(),
+  labels: z.record(z.string(), z.string().max(1024)).optional(),
+}).strict() as z.ZodType<ContainersUpdateInput>;
+
+export const ContainersPolicySetInputSchema: z.ZodType<ContainersPolicySetInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  network: ContainerNetworkPolicySchema,
+}).strict() as z.ZodType<ContainersPolicySetInput>;
+
+export const ContainersRunInputSchema: z.ZodType<ContainersRunInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  argv: z.array(z.string()).min(1).max(256),
+  cwd: z.string().min(1).max(4096).optional(),
+  env: ContainerEnvSchema.optional(),
+  stdin: z.string().max(1048576).optional(),
+  timeoutMs: z.number().int().min(TIMEOUT_MS_MIN).max(TIMEOUT_MS_MAX).optional(),
+  user: z.string().min(1).max(255).optional(),
+}).strict() as z.ZodType<ContainersRunInput>;
+
+export const ContainersTerminalStartInputSchema: z.ZodType<ContainersTerminalStartInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  title: z.string().min(1).max(512).optional(),
+  cwd: z.string().min(1).max(4096).optional(),
+  cols: z.number().int().min(1).max(1000).optional(),
+  rows: z.number().int().min(1).max(1000).optional(),
+}).strict() as z.ZodType<ContainersTerminalStartInput>;
+
+export const ContainersAttachInputSchema: z.ZodType<ContainersAttachInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  surface: z.enum(['screen', 'browser', 'adb', 'docker']),
+  mode: z.enum(['view', 'drive']),
+}).strict() as z.ZodType<ContainersAttachInput>;
+
+export const ContainersComputerInputSchema: z.ZodType<ContainersComputerInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  action: z.enum(['screenshot', 'click', 'double_click', 'right_click', 'move',
+    'drag', 'type', 'key', 'scroll', 'wait', 'goto', 'text']),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  to: z.object({ x: z.number(), y: z.number() }).strict().optional(),
+  text: z.string().max(65536).optional(),
+  keys: z.string().max(256).optional(),
+  dx: z.number().optional(),
+  dy: z.number().optional(),
+  ms: z.number().int().min(0).max(60000).optional(),
+  url: z.string().min(1).max(4096).optional(),
+  screenshot: z.boolean().optional(),
+  keep: z.boolean().optional(),
+  scale: z.number().min(0.25).max(1).optional(),
+}).strict() as z.ZodType<ContainersComputerInput>;
+
+export const ContainersBrowserEndpointInputSchema: z.ZodType<ContainersBrowserEndpointInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  ttlSeconds: z.number().int().min(1).max(3600).optional(),
+}).strict() as z.ZodType<ContainersBrowserEndpointInput>;
+
+export const ContainersExposeInputSchema: z.ZodType<ContainersExposeInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  port: z.number().int().min(1).max(65535),
+  share: ContainerPortShareSchema.optional(),
+}).strict() as z.ZodType<ContainersExposeInput>;
+
+export const ContainersUnexposeInputSchema: z.ZodType<ContainersUnexposeInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  port: z.number().int().min(1).max(65535),
+}).strict() as z.ZodType<ContainersUnexposeInput>;
+
+export const ContainersSnapshotInputSchema: z.ZodType<ContainersSnapshotInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  name: z.string().min(1).max(255).optional(),
+  makeTemplate: z.boolean().optional(),
+}).strict() as z.ZodType<ContainersSnapshotInput>;
+
+export const ContainersForkInputSchema: z.ZodType<ContainersForkInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  title: z.string().min(1).max(512).optional(),
+  lifecycle: ContainerLifecycleInputSchema.optional(),
+  spec: ContainerSpecInputSchema.optional(),
+}).strict() as z.ZodType<ContainersForkInput>;
+
+export const ContainersAttentionInputSchema: z.ZodType<ContainersAttentionInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  reason: z.enum(['login', 'captcha', '2fa', 'payment', 'approval', 'other']),
+  detail: z.string().max(4096).optional(),
+  points: z.number().int().min(1).max(100).optional(),
+}).strict() as z.ZodType<ContainersAttentionInput>;
+
+export const ContainersPoolsSetInputSchema: z.ZodType<ContainersPoolsSetInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  warm: z.number().int().min(0).max(8),
+}).strict() as z.ZodType<ContainersPoolsSetInput>;
+
+export const ContainersProvidersListResultSchema: z.ZodType<ContainersProvidersListResult> = z.object({
+  nodeId: z.string().min(1),
+  providers: z.array(ContainerProviderDescriptorSchema),
+  images: z.array(z.object({
+    profile: ContainerProfileSchema,
+    ref: z.string().min(1),
+    digest: z.string().min(1).nullable(),
+    cached: z.boolean(),
+  }).strict()),
+  caps: z.object({
+    containers: z.number().int().nonnegative(),
+    live: z.number().int().nonnegative(),
+  }).strict(),
+}).strict();
+
+export const ContainersRunResultSchema: z.ZodType<ContainersRunResult> = z.object({
+  exitCode: z.number().int().nullable(),
+  stdout: z.string(),
+  stderr: z.string(),
+  truncated: z.boolean(),
+  durationMs: z.number().nonnegative(),
+  timedOut: z.boolean(),
+}).strict();
+
+export const ContainersTerminalStartResultSchema: z.ZodType<ContainersTerminalStartResult> = z.object({
+  workSessionId: EntityIdSchema,
+  containerId: EntityIdSchema,
+}).strict();
+
+export const SurfaceAttachGrantSchema: z.ZodType<SurfaceAttachGrant> = z.object({
+  containerId: EntityIdSchema,
+  surface: ContainerSurfaceKindSchema,
+  encoding: z.enum(['rfb', 'frames', 'cdp', 'adb', 'docker']),
+  url: z.string().min(1),
+  protocol: z.literal('ws'),
+  mode: z.enum(['view', 'drive']),
+  token: z.string().min(1),
+  expiresAt: z.string().min(1),
+  geometry: z.object({ w: z.number(), h: z.number(), dpr: z.number() }).strict().optional(),
+}).strict();
+
+export const ContainersLogsResultSchema: z.ZodType<ContainersLogsResult> = z.object({
+  containerId: EntityIdSchema,
+  lines: z.array(z.object({
+    ts: z.string().min(1),
+    stream: z.enum(['stdout', 'stderr']),
+    text: z.string(),
+  }).strict()),
+  truncated: z.boolean(),
 }).strict();
 
 export function envelopeOf<T>(data: z.ZodType<T>) {

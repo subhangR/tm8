@@ -27,19 +27,29 @@ import type { Notice } from '../shell/notices';
 import { usePanelPrimaries } from '../views/usePanelPrimaries';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
+import { attentionSectionFor } from '../views/attentionSurface';
 import { debugSurfaceFor } from '../views/debugSurface';
+import { sessionStatsSurfaceFor } from '../views/sessionStatsSurface';
 import { gitSurfaceFor } from '../views/gitSurface';
 import { mergePrPortFor } from '../views/mergePrPort';
 import { taskGitSectionFor } from '../views/taskGitSection';
 import { graphSurfaceFor } from '../views/graphSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from '../views/membershipSurface';
+import { conversationSurfaceFor } from '../views/conversationSurface';
+import type { TriggerOption } from '../rich-input';
+import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
+import type { ConnectionState } from '../data/seam';
+import type { ContentSurface } from '../routes';
 
 export interface GraphScreenData {
   spaceId: string;
   detailOf(id: string): EntityDetail | undefined;
   messagesOf(id: string): readonly MessageView[] | undefined;
-  postMessage(input: PostMessageInput): Promise<void>;
+  /* The result is IGNORED here but must be accepted: `GateData.postMessage`
+     returns the command result so a mutation journal can settle against it,
+     and a port that promises `void` cannot receive that host. */
+  postMessage(input: PostMessageInput): Promise<unknown>;
   livenessOf(id: string): SessionLiveness;
   /** Optional: without it the Debug surface renders its explained absence
    *  rather than a broken table. */
@@ -81,6 +91,25 @@ export interface GraphScreenProps {
   launch?: LaunchSources;
   /** Where a failed panel command reports. Absent ⇒ it fails silently. */
   onNotice?(notice: Notice): void;
+  /**
+   * The chat slot's host wiring — a PROP for the same reason `launch` is: the
+   * data port names what this screen reads, and these are the shell's ports.
+   * Absent (or with no `data.seam`) the panel renders its honest
+   * "unavailable in this view" fallback instead of a dead conversation tab.
+   */
+  chat?: {
+    channelFeedPort: ChannelFeedPort;
+    connection: ConnectionState;
+    viewerMemberId?: string | null;
+    /**
+     * The node this browser is talking to, for the chat composer's per-node
+     * model catalog. Part of the CHAT port rather than the top level because
+     * that is the only surface here that needs it, and this port is narrow by
+     * charter — see `seam?: Seam` above for the same posture.
+     */
+    nodeKey: string;
+    skillOptions?: readonly TriggerOption[];
+  };
   nodes: readonly EntitySummary[];
   edges: readonly EdgeView[];
   timeline?: readonly GraphTimelineStep[];
@@ -88,6 +117,16 @@ export interface GraphScreenProps {
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  /**
+   * The canvas's time window, relayed from the host that OWNS THE READ. It is
+   * passed through rather than held here because choosing a window re-queries
+   * the space; a screen holding it locally could only filter what it was handed
+   * while labelling the result as if the space had been searched.
+   */
+  window?: string;
+  onChooseWindow?: (id: string) => void;
+  atCeiling?: boolean;
+  nodeLimit?: number;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -97,6 +136,9 @@ export function GraphScreen(props: GraphScreenProps) {
 
   const [selectedId, setSelectedId] = useState<EntityId | null>(null);
   const [mode, setMode] = useState<DetailMode>('aside');
+  /* Terminal⇄chat request per subject — the chat surface's "switch to
+     terminal" must be a real handler at this mount too. */
+  const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface | null>>({});
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
 
@@ -129,9 +171,9 @@ export function GraphScreen(props: GraphScreenProps) {
       ? {
           onError: (_verb: ActionRef, _entityId: string, error: unknown) =>
             props.onNotice?.({
-              id: 'session-close-failed',
+              id: 'session-terminate-failed',
               tone: 'error',
-              title: 'Session could not be closed',
+              title: 'Session could not be terminated',
               body: String((error as { message?: string })?.message ?? error),
               ttlMs: 6_000,
             }),
@@ -181,7 +223,9 @@ export function GraphScreen(props: GraphScreenProps) {
       // so the pin verb is refused with the true reason, never hidden (L6).
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId))}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail ?? null, (id) => setSelectedId(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
@@ -189,6 +233,39 @@ export function GraphScreen(props: GraphScreenProps) {
       )}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
+      viewerMemberId={props.chat?.viewerMemberId}
+      contentSurface={contentSurfaces[selectedId] ?? null}
+      onContentSurfaceChange={(surface) => {
+        setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
+      }}
+      conversationSurface={props.chat && data.seam ? conversationSurfaceFor(detail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: props.chat.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort: props.chat.channelFeedPort,
+        viewerMemberId: props.chat.viewerMemberId,
+        nodeKey: props.chat.nodeKey,
+        ...(props.chat.skillOptions ? { skillOptions: props.chat.skillOptions } : {}),
+        onOpenEntity: (id) => setSelectedId(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      }) : undefined}
+      discussionSurface={props.chat && data.seam ? conversationSurfaceFor(detail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: props.chat.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort: props.chat.channelFeedPort,
+        viewerMemberId: props.chat.viewerMemberId,
+        nodeKey: props.chat.nodeKey,
+        ...(props.chat.skillOptions ? { skillOptions: props.chat.skillOptions } : {}),
+        onOpenEntity: (id) => setSelectedId(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      }, 'discussion') : undefined}
       messages={messages}
       // The executor the other three panel hosts pass. Without it every
       // title-editable kind selected here dresses its title as locked and
@@ -200,12 +277,10 @@ export function GraphScreen(props: GraphScreenProps) {
          import upward for the option data, so `@` and `/` stay plain text
          here — but a reply's attachments and mentions still reach the wire
          when the composer manages to stage any. */
-      onPostMessage={(post) => data.postMessage({
-        clientMutationId: `graph-post:${selectedId}:${Date.now()}`,
-        anchorIds: [selectedId],
-        ...post,
-      })}
       streaming={data.activity[selectedId] ?? false}
+      /* Reading sideways from the aside re-aims the SAME aside — the graph
+         stays put, exactly like a node click. */
+      onOpenEntity={(id) => setSelectedId(id as EntityId)}
       onPromote={() => setMode((m) => (m === 'aside' ? 'full' : 'aside'))}
       onClose={() => {
         setSelectedId(null);
@@ -223,6 +298,10 @@ export function GraphScreen(props: GraphScreenProps) {
       onSelect={(id) => setSelectedId(id)}
       livenessOf={data.livenessOf}
       selectedId={selectedId}
+      {...(props.window === undefined ? {} : { window: props.window })}
+      {...(props.onChooseWindow === undefined ? {} : { onChooseWindow: props.onChooseWindow })}
+      {...(props.atCeiling === undefined ? {} : { atCeiling: props.atCeiling })}
+      {...(props.nodeLimit === undefined ? {} : { nodeLimit: props.nodeLimit })}
     />
   );
 

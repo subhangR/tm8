@@ -1,0 +1,205 @@
+/* ==========================================================================
+   COMMAND PALETTE (T1-2) + the live-session bar's shell-side placement.
+   "/ or ⌘K · entities + views + actions · deferred features stay visible,
+   labeled, unclickable."
+   ========================================================================== */
+
+.cv2-root .pal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  /* 18vh from the top, centered — the canvas's placement. High enough that
+     the palette does not cover what you were reading. */
+  padding-top: 18vh;
+  /* Kinetic (W3): a whisper of a scrim — the glass panel below carries the
+     separation now, so the veil only needs to quiet the page, not dim it. */
+  background: color-mix(in srgb, var(--pn-ink) 20%, transparent);
+}
+
+.cv2-root .pal {
+  /* Overflow guard (fixmap): percentage chain, never vh (Chrome zoom law shell.css:949). */
+  max-height: 100%;
+  overflow-y: auto;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  /* Kinetic glass (W3): a near-opaque card surface over a backdrop blur —
+     elevation-high reads as material, not as a heavier border. The 92% keeps
+     text contrast effectively at card level; the blur does the "floating
+     over the workspace" work. */
+  background: color-mix(in srgb, var(--pn-card) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--pn-line-2);
+  /* 12px sits between --pn-r-md (10) and --pn-r-lg (14); kept as the measured
+     literal per D5 rather than snapped to the token scale. */
+  border-radius: 12px;
+  box-shadow: var(--pn-sh-lg);
+  overflow: hidden;
+}
+
+.cv2-root .pal__input-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .pal__icon { color: var(--pn-ink-3); font-size: 13px; }
+.cv2-root .pal__input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--pn-ink);
+  outline: none;
+}
+.cv2-root .pal__input::placeholder { color: var(--pn-ink-4); }
+.cv2-root .pal__esc {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  padding: 1px 6px;
+}
+
+.cv2-root .pal__results {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* The canvas draws a short list; real result sets are unbounded, so the
+     region scrolls rather than growing the overlay off-screen. */
+  max-height: 52vh;
+  overflow: auto;
+  padding: 7px 6px 4px;
+}
+/* RECLASSIFIED (W3 sweep): group heads are EYEBROWS — caps 11/700, house
+   tracking — not label-mono. */
+.cv2-root .pal__group {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  padding: 8px 10px 4px;
+}
+.cv2-root .pal__results > div:first-child .pal__group { padding-top: 2px; }
+
+.cv2-root .pal__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  /* Kinetic (W3): every option row shares the shell's 28px control rhythm. */
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  margin: 0 2px;
+  border-radius: var(--pn-r-sm);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+.cv2-root .pal__row:hover { background: var(--pn-hover); }
+/* Selected = brass fill + a 3px brass bar. Two channels, so the selection
+   survives both low contrast and a monochrome screenshot. */
+.cv2-root .pal__row--selected {
+  background: var(--pn-brand-soft);
+  border-left-color: var(--pn-brand);
+}
+.cv2-root .pal__row--selected .pal__row-label { font-weight: 600; }
+/*
+ * THE DISCOVERY ROW. Muted, cursor:default, NO hover response — and the
+ * keyboard skips it entirely (see CommandPalette.tsx). Visible so the user
+ * learns the feature exists; inert so it never eats an Enter meant for the
+ * row below it. Never hidden, never built (R7).
+ */
+.cv2-root .pal__row--disabled {
+  cursor: default;
+  opacity: 0.85;
+  border-left-color: transparent;
+}
+.cv2-root .pal__row--disabled:hover { background: transparent; }
+.cv2-root .pal__row--disabled .pal__row-glyph { color: var(--pn-ink-4); }
+.cv2-root .pal__row--disabled .pal__row-label { color: var(--pn-ink-3); }
+
+.cv2-root .pal__row-glyph { flex: none; font-size: 12px; color: var(--pn-ink-3); }
+/* RECLASSIFIED (W3 sweep): result rows speak ui 13/500 — mono survives in
+   this palette ONLY on the kbd hints (⏎ ▸ esc). */
+.cv2-root .pal__row-label {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .pal__row--disabled .pal__row-label { flex: none; }
+/* The meta is the row's KIND word ("Task", "view") — a classifier word. */
+.cv2-root .pal__row-meta {
+  flex: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+/* The status pill carries a WORD (C8/L10) — ui 11/600; tone colours come
+   from the kit-pill modifier riding the same element. */
+.cv2-root .pal__row-status {
+  flex: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  border-radius: var(--pn-r-pill);
+  padding: 1px 7px;
+}
+.cv2-root .pal__row-hint { flex: none; font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-4); }
+/* The reason is INLINE and right-aligned, never a tooltip: a row the keyboard
+   skips would never surface a hover-only explanation. A refusal sentence, so
+   it speaks ui (W3 sweep). */
+.cv2-root .pal__row-reason {
+  flex: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+.cv2-root .pal__spacer { flex: 1; min-width: 0; }
+
+.cv2-root .pal__empty {
+  padding: 18px 12px 22px;
+  text-align: center;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  margin: 0;
+}
+
+/* RECLASSIFIED (W3 sweep): the footer legend is words beside their keys
+   ("↑↓ navigate") in single text nodes, so the strip speaks ui 11 — the
+   arrows ride along; only the standalone kbd chips (.pal__esc, row hints)
+   keep mono. */
+.cv2-root .pal__footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--pn-line);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+.cv2-root .pal__footer-deferred {
+  color: var(--pn-ink-4);
+  opacity: 0.85;
+  cursor: default;
+}

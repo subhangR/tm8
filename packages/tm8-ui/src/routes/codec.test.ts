@@ -48,6 +48,9 @@ describe('grammar (WLT §2.2 verbatim)', () => {
       `#/s/${SPACE}/channel/${id(2)}?msg=${id(3)}`,
       { view: 'channel', channelId: id(2), msg: id(3) },
     ],
+    /* New Session (2026-08-16): hyphenated segment, camel member — the two
+       vocabularies are already deliberately different (`dashboard` ↔ `home`). */
+    [`#/s/${SPACE}/new-session`, { view: 'newSession' }],
     [`#/s/${SPACE}/settings`, { view: 'settings', section: null }],
     [`#/s/${SPACE}/settings/projects`, { view: 'settings', section: 'projects' }],
     [`#/s/${SPACE}/settings/menu`, { view: 'settings', section: 'menu' }],
@@ -88,21 +91,21 @@ describe('param encodings (SPEC-FINAL §4.2.2)', () => {
 
   it('percent-encodes ids that contain the delimiters', () => {
     const awkward = 'a.b:c,d e/f%g#h';
-    const route = routeOf({ panels: { ...emptyPanels(), stack: [awkward], tabs: { [awkward]: 'activity' } } });
+    const route = routeOf({ panels: { ...emptyPanels(), stack: [awkward], tabs: { [awkward]: 'connections' } } });
     const { hash } = build(route);
     // The dot delimiter is escaped explicitly — encodeURIComponent leaves it.
     expect(hash).not.toMatch(/p=[^&]*[^%]\./);
     const back = parse(hash).route!;
     expect(back.panels.stack).toEqual([awkward]);
-    expect(back.panels.tabs[awkward]).toBe('activity');
+    expect(back.panels.tabs[awkward]).toBe('connections');
   });
 });
 
 describe('round-trip (property)', () => {
   it('parse ∘ build is the identity on normalized routes', () => {
     const rand = lcg(20260728);
-    const tabs: PanelTab[] = ['content', 'discussion', 'connections', 'activity'];
-    const surfaces: ContentSurface[] = ['terminal', 'chat'];
+    const tabs: PanelTab[] = ['content', 'connections', 'discussion'];
+    const surfaces: ContentSurface[] = ['terminal', 'transcript'];
 
     for (let iteration = 0; iteration < 250; iteration += 1) {
       const stackCount = Math.floor(rand() * 4);
@@ -154,8 +157,8 @@ describe('normalize (LLD §5.2, §6)', () => {
         panels: {
           stack,
           pinned,
-          tabs: { [id(0)]: 'content', [id(1)]: 'activity', [id(99)]: 'discussion' },
-          contentSurface: { [id(2)]: 'chat', [id(99)]: 'terminal' },
+          tabs: { [id(0)]: 'content', [id(1)]: 'connections', [id(99)]: 'discussion' },
+          contentSurface: { [id(2)]: 'transcript', [id(99)]: 'terminal' },
           session: null,
         },
       });
@@ -181,13 +184,13 @@ describe('normalize (LLD §5.2, §6)', () => {
         panels: {
           ...emptyPanels(),
           stack: [id(1)],
-          tabs: { [id(1)]: 'activity', [id(7)]: 'discussion' },
-          contentSurface: { [id(1)]: 'chat', [id(7)]: 'terminal' },
+          tabs: { [id(1)]: 'connections', [id(7)]: 'discussion' },
+          contentSurface: { [id(1)]: 'transcript', [id(7)]: 'terminal' },
         },
       }),
     );
-    expect(canonical.panels.tabs).toEqual({ [id(1)]: 'activity' });
-    expect(canonical.panels.contentSurface).toEqual({ [id(1)]: 'chat' });
+    expect(canonical.panels.tabs).toEqual({ [id(1)]: 'connections' });
+    expect(canonical.panels.contentSurface).toEqual({ [id(1)]: 'transcript' });
   });
 
   it('drops explicit content tabs (an omitted pair already means content)', () => {
@@ -198,18 +201,34 @@ describe('normalize (LLD §5.2, §6)', () => {
   });
 });
 
-describe('D12 — contentSurface=…:chat is preserved and round-trips', () => {
-  it('accepts, preserves and rebuilds chat unchanged', () => {
+/**
+ * D12, AS IT NOW STANDS. The original rule read "`contentSurface=…:chat` is
+ * preserved and rebuilds unchanged", and it was protecting a link authored by a
+ * NEWER client from being made lossy by an older one — `chat` was then a
+ * FUTURE token this codec did not yet present.
+ *
+ * `chat` is now a RETIRED token, which inverts the situation the rule was
+ * written for. The link is still honoured — that half of D12 is untouched and
+ * is what these assertions are mostly about — but it resolves to the surface
+ * that token now names, and the retired spelling is not written back out.
+ * Nothing is lost by that rewrite: `transcript` is exactly what `chat` meant on
+ * a session panel. Re-emitting a name the app no longer uses anywhere else is
+ * what would keep the vocabulary alive after it was ruled dead.
+ */
+describe('D12 — a retired contentSurface token still resolves', () => {
+  it('accepts chat, resolves it to transcript, and does not write it back', () => {
     const hash = `#/s/${SPACE}/workspace?p=${id(1)}&contentSurface=${id(1)}:chat`;
     const { route, dropped } = parse(hash);
+    // STILL NOT DROPPED. An old link keeps working — that is the half of D12
+    // that matters to anyone holding one.
     expect(dropped).toEqual([]);
-    expect(route!.panels.contentSurface[id(1)]).toBe('chat');
+    expect(route!.panels.contentSurface[id(1)]).toBe('transcript');
 
-    // Never rewritten out of the URL: a Phase-2 deep link authored today must
-    // not be made lossy by a Phase-1 client. Clamping is presentation-only.
+    // One-directional: accepted on the way in, never emitted on the way out.
     const rebuilt = build(normalize(route!));
-    expect(rebuilt.hash).toContain(`contentSurface=${id(1)}:chat`);
-    expect(parse(rebuilt.hash).route!.panels.contentSurface[id(1)]).toBe('chat');
+    expect(rebuilt.hash).toContain(`contentSurface=${id(1)}:transcript`);
+    expect(rebuilt.hash).not.toContain(':chat');
+    expect(parse(rebuilt.hash).route!.panels.contentSurface[id(1)]).toBe('transcript');
   });
 
   it('is DISTINCT from the atomic discard of an unparseable surface value', () => {
@@ -224,12 +243,27 @@ describe('D12 — contentSurface=…:chat is preserved and round-trips', () => {
 describe('unparseable params are discarded ATOMICALLY', () => {
   it('discards the whole t param when any pair is malformed', () => {
     const { route, dropped } = parse(
-      `#/s/${SPACE}/workspace?p=${id(1)}.${id(2)}&t=${id(1)}:activity,${id(2)}:nonsense`,
+      `#/s/${SPACE}/workspace?p=${id(1)}.${id(2)}&t=${id(1)}:connections,${id(2)}:nonsense`,
     );
     expect(dropped).toContain('tabs');
     expect(route!.panels.tabs).toEqual({});
     // The other params survive: the discard is per-param, not per-hash.
     expect(route!.panels.stack).toEqual([id(1), id(2)]);
+  });
+
+  /**
+   * `activity` was a `t=` member until 2026-08-19 and links carrying it are
+   * already in people's hands. It gets NO legacy alias, unlike
+   * `chat`→`transcript`: the tab was removed, not renamed, so there is no
+   * current spelling to forward it to. This pins the degradation as DELIBERATE
+   * — the pair drops, the drop is reported, the rest of the route survives, and
+   * the panel opens on its default tab rather than on a surface that is gone.
+   */
+  it('a retired tab token drops the pair and reports it — the route still opens', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/workspace?p=${id(1)}&t=${id(1)}:activity`);
+    expect(dropped).toContain('tabs');
+    expect(route!.panels.tabs).toEqual({});
+    expect(route!.panels.stack).toEqual([id(1)]);
   });
 
   it('discards an unknown mode and an unregistered origin, keeping the route', () => {
@@ -251,8 +285,51 @@ describe('unparseable params are discarded ATOMICALLY', () => {
 
 describe('q codec v1 (SPEC-FINAL §4.2.4)', () => {
   it('round-trips the three carried members', () => {
-    const value = { v: 1 as const, filters: { workStatus: ['open' as const] }, sortBy: 'priority' as const, groupBy: 'axis:team' as const };
+    const value = { v: 1 as const, filters: { status: ['open' as const] }, sortBy: 'priority' as const, groupBy: 'axis:team' as const };
     expect(decodeQ(encodeQ(value))).toEqual(value);
+  });
+
+  /**
+   * PHASE 9 — a URL outlives the build that wrote it, so it is the one place
+   * the retired word can still ARRIVE from. `v` stays 1 because the change is
+   * to v1's VOCABULARY, not to the codec, and the decoder translates.
+   */
+  describe('a pre-rename `workStatus` link still works', () => {
+    const legacy = (payload: object) =>
+      btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    it('moves a legacy filter key onto `status`', () => {
+      expect(decodeQ(legacy({ v: 1, filters: { workStatus: ['working'] } }))).toEqual({
+        v: 1,
+        filters: { status: ['working'] },
+      });
+    });
+
+    it('accepts a legacy groupBy instead of DISCARDING THE WHOLE q', () => {
+      // The failure this prevents is not "the grouping is lost". `decodeQ`
+      // discards atomically, so an unrecognised groupBy took the user's
+      // FILTERS AND SORT down with it.
+      expect(
+        decodeQ(legacy({ v: 1, filters: { readyToPull: true }, sortBy: 'priority', groupBy: 'workStatus' })),
+      ).toEqual({ v: 1, filters: { readyToPull: true }, sortBy: 'priority', groupBy: 'status' });
+    });
+
+    it('lets an explicit `status` win when a link carries both', () => {
+      // Both spellings means a newer build wrote it; the new key is the one
+      // it meant, and the legacy key is dropped rather than merged.
+      expect(
+        decodeQ(legacy({ v: 1, filters: { workStatus: ['open'], status: ['done'] } })),
+      ).toEqual({ v: 1, filters: { status: ['done'] } });
+    });
+
+    it('never RE-EMITS the retired word — a translated link normalises itself', () => {
+      // The shim is a migration, not a second live sense: the first URL
+      // rewrite after a translated read carries only the new spelling.
+      const decoded = decodeQ(legacy({ v: 1, filters: { workStatus: ['working'] } }))!;
+      const round = JSON.parse(atob(encodeQ(decoded).replace(/-/g, '+').replace(/_/g, '/')));
+      expect(JSON.stringify(round)).not.toContain('workStatus');
+      expect(round.filters).toEqual({ status: ['working'] });
+    });
   });
 
   it('discards an unknown version atomically — never a partial read', () => {
@@ -283,8 +360,8 @@ describe('the 2048 cap and its ordered atomic drops', () => {
       panels: {
         stack,
         pinned: many(3),
-        tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
-        contentSurface: Object.fromEntries(stack.map((e) => [e, 'chat' as ContentSurface])),
+        tabs: Object.fromEntries(stack.map((e) => [e, 'connections' as PanelTab])),
+        contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
         session: null,
       },
     });
@@ -303,8 +380,8 @@ describe('the 2048 cap and its ordered atomic drops', () => {
         panels: {
           stack,
           pinned: many(3),
-          tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
-          contentSurface: Object.fromEntries(stack.map((e) => [e, 'chat' as ContentSurface])),
+          tabs: Object.fromEntries(stack.map((e) => [e, 'connections' as PanelTab])),
+          contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
           session: null,
         },
       });
@@ -337,8 +414,8 @@ describe('the 2048 cap and its ordered atomic drops', () => {
       panels: {
         stack,
         pinned: [],
-        tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
-        contentSurface: Object.fromEntries(stack.map((e) => [e, 'chat' as ContentSurface])),
+        tabs: Object.fromEntries(stack.map((e) => [e, 'connections' as PanelTab])),
+        contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
         session: null,
       },
     });
@@ -355,5 +432,269 @@ describe('the 2048 cap and its ordered atomic drops', () => {
     );
     expect(hash.length).toBeLessThanOrEqual(MAX_HASH_LENGTH);
     expect(parse(hash).route).not.toBeNull();
+  });
+});
+
+describe('the unified Home root and the right trail (task 01a00932)', () => {
+  it('round-trips /home/k/{slug} — a kind root is addressable', () => {
+    const route = routeOf({ target: { view: 'home', root: { type: 'kind', slug: 'tasks' } } });
+    const { hash } = build(route);
+    expect(hash).toContain('/home/k/tasks');
+    const back = parse(hash).route!;
+    expect(back.target).toEqual({ view: 'home', root: { type: 'kind', slug: 'tasks' } });
+  });
+
+  it('round-trips /home/chat/{id} — the open conversation is addressable', () => {
+    const route = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: 'th-1' } },
+    });
+    const { hash } = build(route);
+    expect(hash).toContain('/home/chat/th-1');
+    const back = parse(hash).route!;
+    expect(back.target).toEqual({ view: 'home', root: { type: 'chats', threadId: 'th-1' } });
+  });
+
+  it('canonicalizes chats-with-no-thread to bare /home — one address per place', () => {
+    const denormal = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null } },
+    });
+    expect(normalize(denormal).target).toEqual({ view: 'home' });
+    expect(build(normalize(denormal)).hash.endsWith('/home')).toBe(true);
+    // And a hand-typed /home/chat parses to that same denormal form.
+    expect(parse('#/s/sp/home/chat').route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: null },
+    });
+  });
+
+  it('round-trips the right trail through r=, dot-joined like p=', () => {
+    const route = normalize(
+      routeOf({ panels: { ...emptyPanels(), stack: ['a', 'b'], right: ['c', 'd'] } }),
+    );
+    const { hash } = build(route);
+    expect(hash).toContain('r=c.d');
+    expect(parse(hash).route?.panels.right).toEqual(['c', 'd']);
+  });
+
+  it('a malformed r is discarded atomically under its own drop class', () => {
+    const { route, dropped } = parse('#/s/sp/home?r=');
+    expect(route?.panels.right).toEqual([]);
+    expect(dropped).toContain('right');
+  });
+
+  it('normalize dedupes the right trail within itself, never against the stack', () => {
+    const route = routeOf({
+      panels: { ...emptyPanels(), stack: ['a'], right: ['a', 'b', 'b'] },
+    });
+    // The same entity open centre AND beside it is an honest viewer state.
+    expect(normalize(route).panels.right).toEqual(['a', 'b']);
+    expect(normalize(route).panels.stack).toEqual(['a']);
+  });
+
+  it('keeps tab state for a right-panel id — right ids are open ids', () => {
+    const route = routeOf({
+      panels: {
+        ...emptyPanels(),
+        right: ['c'],
+        tabs: { c: 'connections' as PanelTab },
+      },
+    });
+    expect(normalize(route).panels.tabs).toEqual({ c: 'connections' });
+  });
+
+  it('drops the right trail after the t tier and before pins', () => {
+    const stack = ['keep'];
+    const right = Array.from({ length: 60 }, (_, i) => `panel-entity-${i}-abcdefghijklmnopqrstuvwxyz`);
+    const pinned = ['pin-1'];
+    const route = routeOf({
+      panels: {
+        ...emptyPanels(),
+        stack,
+        right,
+        pinned,
+        tabs: { keep: 'connections' as PanelTab },
+      },
+    });
+    const { hash, dropped } = build(route);
+    expect(hash.length).toBeLessThanOrEqual(MAX_HASH_LENGTH);
+    // The right trail went; the pins and the centre stack survived it.
+    expect(dropped).toContain('right');
+    expect(dropped).not.toContain('pins');
+    expect(dropped).not.toContain('stack');
+    expect(hash).toContain('pin=');
+    expect(hash).toContain('p=');
+  });
+});
+
+describe('the chat subject param `?about=`', () => {
+  /* "Chat about this" is a NAVIGATION, not a command: `chat.start` needs a
+     teammate, a model and a mode, and a row's action cluster has nowhere to
+     ask for them. So the verb binds the subject into the address and the
+     composer commits it — which is why the subject has to survive a reload
+     and a paste, and therefore has to be a route token rather than state. */
+
+  it('parses a subject on the bare composer address', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/home/chat?about=${id(9)}`);
+    expect(dropped).toEqual([]);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: null, aboutId: id(9) },
+    });
+  });
+
+  it('round-trips through build, and keeps the `/chat` segment to carry it', () => {
+    const route = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null, aboutId: id(9) } },
+    });
+    const { hash, dropped } = build(normalize(route));
+    expect(dropped).toEqual([]);
+    /* Bare `/home` reads NEITHER `stage` nor `about`, so collapsing a subject-
+       bearing root to it would silently drop the subject — the same reason the
+       stage keeps the segment. `normalize` has to agree, or the canonical form
+       and the parsed form disagree about what the link said. */
+    expect(hash).toContain('/home/chat');
+    expect(hash).toContain(`about=${id(9)}`);
+    expect(parse(hash).route?.target).toEqual(route.target);
+  });
+
+  it('survives normalization: a subject-bearing root is NOT the bare Home form', () => {
+    const route = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null, aboutId: id(9) } },
+    });
+    expect(normalize(route).target).toEqual(route.target);
+    // …while a root with neither a thread, a stage nor a subject still is.
+    const bare = routeOf({ target: { view: 'home', root: { type: 'chats', threadId: null } } });
+    expect(normalize(bare).target).toEqual({ view: 'home' });
+  });
+
+  it('LOSSY-TOLERANT: a value that is not plausibly an id is silently ignored', () => {
+    /* A SHAPE GATE, not a validation — the route layer cannot know whether an
+       entity exists. It exists so a pasted `?about=hello` does not travel into
+       a composer as a subject; a subject that no longer exists is the screen's
+       to render honestly. */
+    for (const raw of ['about=hello', 'about=', 'about=%ZZ', 'about=../etc']) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat?${raw}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({ view: 'home', root: { type: 'chats', threadId: null } });
+    }
+  });
+
+  it('rides alongside a thread and a stage without displacing either', () => {
+    // Parse KEEPS it on a thread address (round-trip fidelity, the preserve
+    // rule); the Home screen is what ignores it once a thread is selected,
+    // because an open conversation's subject is already decided.
+    const { route } = parse(`#/s/${SPACE}/home/chat/${id(1)}?stage=fleet&about=${id(9)}`);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: id(1), stage: 'fleet', aboutId: id(9) },
+    });
+  });
+});
+
+describe('the Cockpit stage param `?stage=`', () => {
+  /* REPLACES `?graph=full` and `?gf=`. The Cockpit ruling retires the
+     fullscreen graph dialog and the facet rail that edited `gf`, and both
+     stages that remain are ordinary occupants of region B. The lossy-tolerant
+     parse is inherited verbatim, because a stale link to the retired
+     parameters must degrade to the plain conversation rather than announce
+     that it once meant something. */
+
+  it('parses each stage on an addressed conversation', () => {
+    for (const stage of ['fleet', 'graph'] as const) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?stage=${stage}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({
+        view: 'home',
+        root: { type: 'chats', threadId: id(1), stage },
+      });
+    }
+  });
+
+  it('round-trips through build, with and without a thread', () => {
+    for (const threadId of [id(1), null]) {
+      for (const stage of ['fleet', 'graph'] as const) {
+        const route = routeOf({
+          target: { view: 'home', root: { type: 'chats', threadId, stage } },
+        });
+        const { hash, dropped } = build(normalize(route));
+        expect(dropped).toEqual([]);
+        expect(hash).toContain(`stage=${stage}`);
+        expect(parse(hash).route?.target).toEqual(route.target);
+      }
+    }
+  });
+
+  it('LOSSY-TOLERANT: an unknown value is silently ignored — no drop, no crash', () => {
+    for (const raw of ['stage=weird', 'stage=', 'stage=%ZZ']) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?${raw}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({
+        view: 'home',
+        root: { type: 'chats', threadId: id(1) },
+      });
+    }
+  });
+
+  it('BACK-COMPAT: `?graph=full` decodes to the Graph stage, and is never encoded', () => {
+    /* Route-token preserve rule, per the coordinator's ruling. Links to
+       `?graph=full` are in histories and in pasted messages, and the view it
+       named still exists — it is a stage now. So an old link lands on the
+       thing it asked for, while `build` emits only `?stage=`, letting the
+       alias fade from every URL the app produces without breaking the ones it
+       already handed out. */
+    const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?graph=full`);
+    expect(dropped).toEqual([]);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: id(1), stage: 'graph' },
+    });
+    // Decode-only: re-encoding that route emits the new spelling, not the old.
+    const { hash } = build(normalize(routeOf({ target: route!.target })));
+    expect(hash).toContain('stage=graph');
+    expect(hash).not.toContain('graph=full');
+  });
+
+  it('`?stage=` WINS over the alias when a link carries both', () => {
+    const { route } = parse(`#/s/${SPACE}/home/chat/${id(1)}?stage=fleet&graph=full`);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: id(1), stage: 'fleet' },
+    });
+  });
+
+  it('`?gf=` dies undecoded — it addressed a rail that no longer exists', () => {
+    /* Unlike `graph`, this has nothing to alias TO: it was opaque at this
+       layer by design and named a facet rail the Cockpit ruling retired.
+       Asserting it stops a later reader from reviving a filter vocabulary to
+       honour its own URL. */
+    for (const raw of ['gf=k%3Atask%3Bm', 'gf=']) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?${raw}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({
+        view: 'home',
+        root: { type: 'chats', threadId: id(1) },
+      });
+    }
+  });
+
+  it('normalize still collapses a bare chats root, but never one holding a stage', () => {
+    const bare = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null } },
+    });
+    expect(normalize(bare).target).toEqual({ view: 'home' });
+    const staged = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null, stage: 'fleet' } },
+    });
+    expect(normalize(staged).target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: null, stage: 'fleet' },
+    });
+    // Idempotent, as normalize must stay.
+    expect(normalize(normalize(staged))).toEqual(normalize(staged));
+  });
+
+  it('bare /home never grows the param — only the /chat segment reads it', () => {
+    const { route } = parse(`#/s/${SPACE}/home?stage=fleet`);
+    expect(route?.target).toEqual({ view: 'home' });
   });
 });

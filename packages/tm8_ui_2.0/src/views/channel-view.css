@@ -1,0 +1,312 @@
+.chv-root {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+.chv-split {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.chv-main {
+  flex: 1;
+  min-width: 420px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-card);
+}
+
+/* Slimmer than it was: the header states which room you are in and gets out
+   of the way — the feed is the point of this screen. Type sits on the chat
+   scale (13px body, ~12px meta) instead of the 9–11px microcopy it had. */
+.chv-header {
+  min-height: 54px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.chv-header__hash {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-brand);
+  font-family: var(--pn-mono);
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--pn-card);
+}
+
+.chv-header__copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.chv-header__copy h1 {
+  margin: 0;
+  color: var(--pn-ink);
+  font-family: var(--pn-prose);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.chv-header__copy p {
+  margin: 0;
+  min-width: 0;
+  color: var(--pn-ink-3);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chv-header__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+}
+
+.chv-header__status span:last-child { color: var(--pn-brand); }
+
+/* One row, not a stacked section: the eyebrow sits INLINE beside the chips,
+   so the pinned shelf costs a single slim band instead of a label floor
+   over a chip floor. */
+.chv-shelf {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+.chv-eyebrow {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-caps);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+.chv-shelf__items { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.chv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+  font: 500 11.5px var(--pn-ui);
+  cursor: pointer;
+}
+.chv-chip:hover { border-color: var(--pn-brand); color: var(--pn-ink); }
+
+.chv-tabs {
+  min-height: 36px;
+  flex: none;
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  overflow-x: auto;
+}
+.chv-tab {
+  height: 35px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--pn-ink-3);
+  background: transparent;
+  font: 500 12px var(--pn-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chv-tab:hover { color: var(--pn-ink-2); }
+.chv-tab--active { border-bottom-color: var(--pn-brand); color: var(--pn-ink); font-weight: 600; }
+
+.chv-pane { flex: 1; min-height: 0; }
+
+/* `--chv-aside` is solved in `ChannelView` against the MEASURED split width and
+   the feed's own floor, for the reason the entity screen states at length: a
+   width a viewer drags cannot be clamped against a literal that lives in a
+   stylesheet. The `min(440px, 42vw)` fallback is the width this aside has
+   always had, kept for the frame before the first measurement lands. */
+.chv-aside {
+  width: var(--chv-aside, min(440px, 42vw));
+  min-width: 320px;
+  min-height: 0;
+  flex: none;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+.chv-aside > * { height: 100%; }
+
+.chv-error,
+.chv-collection__state {
+  margin: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--pn-ink-3);
+  font-size: 13px;
+}
+.chv-error strong { color: var(--pn-block); }
+.chv-error button {
+  padding: 3px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+  font: 500 10px var(--pn-mono);
+  cursor: pointer;
+}
+
+.chv-collection { list-style: none; margin: 0; padding: 12px; }
+.chv-collection li + li { margin-top: 3px; }
+.chv-collection button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.chv-collection button:hover { background: var(--pn-hover); }
+.chv-collection__glyph { width: 18px; color: var(--pn-brand); text-align: center; }
+.chv-collection__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chv-collection__kind { color: var(--pn-ink-4); font: 10.5px var(--pn-mono); }
+
+.chv-root--full { display: flex; flex-direction: column; }
+.chv-full__head {
+  height: 42px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-ink-3);
+  background: var(--pn-surface);
+  font: 9.5px var(--pn-mono);
+}
+.chv-collapse {
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 9px;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  font: inherit;
+  cursor: pointer;
+}
+.chv-spacer { flex: 1; }
+.chv-full__body { flex: 1; min-height: 0; }
+.chv-full__body > * { height: 100%; }
+
+/* No width step-down here any more: restating the aside's width at a
+   breakpoint would overwrite whatever the viewer dragged the moment the window
+   crossed it, which is the control appearing to work and then undoing itself.
+   The solver in `ChannelView` shrinks the aside to its floor by measurement
+   instead. The FLOORS still relax — that is a floor change, not a width. */
+@media (max-width: 900px) {
+  .chv-main { min-width: 320px; }
+  .chv-aside { min-width: 300px; }
+  .chv-header__status { display: none; }
+}
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-028, DEF-039.
+   ========================================================================== */
+
+/* DEF-028 — "Feed · 20" measured 74x35. The closest miss in the ledger, nine
+   pixels short, and it is the channel screen's only navigation.
+
+   `height: 35px` IS A HARD PIN and a `min-block-size` floor alone would have
+   lost to it, so the height is released to `auto` first and the floor set
+   under it — the shell contract's "unpin the container before growing what is
+   inside it", applied to a control that pins itself.
+
+   `.chv-tabs` is `min-height: 36px`, which is a floor rather than a clip, so
+   the strip grows on its own. It is restated at 44 anyway: a 36px floor
+   underneath a 44px child is a number that has silently stopped being true,
+   and the next reader of this file would take it for the strip's real height.
+
+   ── THE OVERFLOW QUESTION, AND MY FIRST ANSWER TO IT WAS WRONG ────────────
+
+   I originally wrote here that `.chv-tabs` being `overflow-x: auto` means a
+   channel with enough tabs "scrolls the strip rather than putting a tab past
+   the right edge". **That is not true of the measure this program uses.** The
+   instrument takes `getBoundingClientRect().right > innerWidth` PER ELEMENT,
+   and a tab sitting beyond a scroll port's right edge at `scrollLeft: 0` has
+   exactly that — scrolling changes what you can SEE, not where the box IS.
+   `overflow-x: auto` prevents the ANCESTOR from being dragged wider; it makes
+   no promise at all about the child rects the census reads.
+
+   So this strip is treated for the TOUCH FLOOR and is NOT wrapped, and that is
+   a deliberate partial rather than a complete fix (ledger R17 — say which
+   members of a shape are outstanding and why):
+
+     measured today ... 3 tabs, 0 offenders at 390 and 430. It fits.
+     outstanding ...... a channel with enough tabs to exceed the width would
+                        put the overflowing tab past the right edge and the
+                        census would flag it, scroll port or not.
+
+   NOT wrapped, because wrapping a tablist turns one row of tabs into two and
+   spends the vertical room this screen is already short of; horizontal scroll
+   is the right arrangement for a tablist and the honest gap is that the metric
+   cannot see it as safe. Recorded rather than papered over.
+
+   `.mobile-frame` is `overflow: hidden`, so any such tab would be CLIPPED
+   while a document-level measure still read 0 — which is why R3 requires the
+   per-element number and why the paragraph above matters. */
+.cv2-root[data-shell='mobile'] .chv-tab {
+  height: auto;
+  min-block-size: var(--mobile-touch-min);
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--pn-space-3);
+  font-size: 13px;
+}
+
+.cv2-root[data-shell='mobile'] .chv-tabs {
+  min-height: var(--mobile-touch-min);
+  align-items: stretch;
+}
+
+/* DEF-039 — the header's own small type, on the same derived 12px floor. */
+.cv2-root[data-shell='mobile'] .chv-header__status { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .chv-eyebrow { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .chv-chip {
+  font-size: 13px;
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}

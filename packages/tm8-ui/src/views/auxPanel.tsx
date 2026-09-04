@@ -22,8 +22,12 @@
  * task-git and graph surfaces, so every route out of this panel lands in the
  * same place.
  */
+import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { EntityDetailPanel, type ControlHost, type DetailReasons } from '../panels';
+import type { ContentSurface } from '../routes';
+import { channelFeedPortFromGateData } from './channel-feed-port';
+import { conversationSurfaceFor } from './conversationSurface';
 import type { ActionContext } from '../domain/types';
 import type { AttachmentsPort } from '../files/port';
 import type { GateData } from './useGateData';
@@ -32,7 +36,9 @@ import type { MembershipSurface } from './membershipSurface';
 import type { PanelPrimaries } from './usePanelPrimaries';
 import type { RowLifecycle } from './useRowLifecycle';
 import { mergePrPortFor } from './mergePrPort';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
+import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
@@ -69,6 +75,16 @@ export interface AuxEntityPanelProps {
 export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEntityPanelProps) {
   const { data, attachments } = host;
   const detail = data.detailOf(entityId) ?? null;
+  /* The feed port is a STATELESS adapter over the same GateData the host
+     already handed down — not a second executor; the stateful feed lives in
+     the surface, keyed on this identity, exactly as at the other mounts. */
+  const channelFeedPort = useMemo(
+    () => channelFeedPortFromGateData(data, host.viewerMemberId),
+    [data, host.viewerMemberId],
+  );
+  /* Terminal⇄chat request per subject, so the chat surface's "switch to
+     terminal" is a real handler at this mount too. */
+  const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface | null>>({});
   return (
     <EntityDetailPanel
       detail={detail}
@@ -87,7 +103,9 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       pinned={false}
       pinRefusal="Pinning lives in the Workspace"
       liveness={data.livenessOf(entityId)}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, entityId, () => data.pull?.(entityId))}
       debugSurface={debugSurfaceFor(data.seam, entityId, data.livenessOf)}
+      sessionStatsSurface={sessionStatsSurfaceFor(data.seam, entityId)}
       gitSurface={gitSurfaceFor(data.seam, entityId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => onOpenEntity(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, entityId, data.livenessOf, (id) =>
@@ -97,6 +115,38 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(entityId)}
       viewerMemberId={host.viewerMemberId}
+      contentSurface={contentSurfaces[entityId] ?? null}
+      onContentSurfaceChange={(surface) => {
+        setContentSurfaces((current) => ({ ...current, [entityId]: surface }));
+      }}
+      conversationSurface={conversationSurfaceFor(detail, entityId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort,
+        viewerMemberId: host.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
+        onOpenEntity: (id) => onOpenEntity(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [entityId]: 'terminal' }));
+        },
+      })}
+      discussionSurface={conversationSurfaceFor(detail, entityId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort,
+        viewerMemberId: host.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
+        onOpenEntity: (id) => onOpenEntity(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [entityId]: 'terminal' }));
+        },
+      }, 'discussion')}
       messages={data.messagesOf(entityId)}
       connections={data.connectionsOf(entityId)}
       linkedPullRequests={data.linkedPullRequestsOf?.(entityId) ?? []}

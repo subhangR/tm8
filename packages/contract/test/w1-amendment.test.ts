@@ -82,8 +82,23 @@ describe('W1 adopted catalog target', () => {
     // guarded write door to the forge.
     // 158 -> 159 (2026-08-13, merge union): chat.threads.start — MEASURED on
     // the merged tree; both sides moved this pin independently.
-    expect(OPERATIONS).toHaveLength(163);
-    expect(V1_OPERATIONS).toHaveLength(161);
+    // 159 -> 163: (unledgered upstream bumps — measured 163 on origin/main
+    // 9b938647; the literal had moved without its notes).
+    // 163 -> 166 (2026-08-16, W4/132): spaces.taskWorkflows.list (GET read) +
+    // .upsert (POST command) + .delete (DELETE command) — per-type status
+    // vocabularies. MEASURED per PIN RULE v3, never carried.
+    // 166 -> 169 (141): auth.password.change + auth.invite.signup +
+    // auth.claim.reissue — the account-lifecycle ops. MEASURED.
+    // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
+    // (POST command) + .delete (DELETE command) — the real workflow tables.
+    // MEASURED per PIN RULE v3, never carried.
+    // 172 -> 197 (2026-09-03, TM8-CONTAINERS-DESIGN §4.1): the 25 `containers.*`
+    // rows, all v1, so 170 -> 195. MEASURED on this tree per PIN RULE v3,
+    // never carried: `OPERATIONS.length` = 197, `V1_OPERATIONS.length` = 195.
+    // The Design's PROSE says 27 rows and is wrong; §4.1's list is 25 and the
+    // coordinator ruled on it.
+    expect(OPERATIONS).toHaveLength(197);
+    expect(V1_OPERATIONS).toHaveLength(195);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -103,12 +118,31 @@ describe('W1 adopted catalog target', () => {
     // auth.claim (POST command) join auth.invite.resolve (POST-with-kind-read,
     // so an invite code never reaches a URL) and spaces.members.updateRole
     // (PATCH). GET 58->59, POST 73->75, PATCH 10->11.
-    }).toEqual({ GET: 59, POST: 75, PATCH: 11, DELETE: 10, PUT: 7, WS: 1 });
+    // W4/132 (2026-08-16): GET 59->60 (taskWorkflows.list), POST 75->76
+    // (.upsert), DELETE 10->11 (.delete). MEASURED from the failing run.
+    // 141: POST 76->79 — auth.password.change + auth.invite.signup +
+    // auth.claim.reissue, all POST commands. MEASURED.
+    // 148: GET 60->61 (workflows.list), POST 79->80 (.upsert), DELETE 11->12
+    // (.delete). MEASURED from the failing run.
+    // Containers (§4.1): GET 61->65 (files.get, logs, proxy, providers.list),
+    // POST 80->98 (18 command rows), PATCH 11->12 (update), PUT 7->8
+    // (files.put), WS 1->2 (containers.stream). MEASURED on this tree.
+    //
+    // WS IS 2 AND MOUNTS ARE STILL 1. `containers.stream` re-declares
+    // `events.subscribe`'s `WS /v2/ws` so the family's socket is discoverable
+    // under its own name; it carries `aliasOf` and is excluded from
+    // MOUNTED_OPERATIONS, so nothing mounts a second socket. Counting rows and
+    // counting mounts are different questions and this pin asks the first.
+    }).toEqual({ GET: 65, POST: 98, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 63 /* +1 109: auth.invite.resolve */, command: 99 /* +1 109: spaces.members.updateRole; +1 2026-08-13: tracking.pr.merge */, stream: 1 });
+    // W4/132: read +1, command +2. MEASURED.
+    // 141: command 101->104 (three new commands). MEASURED.
+    // 148: read 64->65, command 104->106. MEASURED.
+    // Containers: read 65->69, command 106->126, stream 1->2. MEASURED.
+    }).toEqual({ read: 69, command: 126, stream: 2 });
   });
 });
 
@@ -157,6 +191,14 @@ describe('W1 frozen-row schema amendments', () => {
       'voice_channel', 'memory', 'worktree', 'artifact',
       // 2026-08-09: `loop` — the scheduled-work kind (dreamer-dispatcher §4.4).
       'loop',
+      // 2026-08-16: `graph` — the blueprint/diagram kind (Craft P1, R1-R3).
+      'graph',
+      // 2026-09-03: `chat` — a conversation with a teammate, as an entity
+      // (migration 176). Excluded from `CreatableEntityKind`: `chat.start` is
+      // its only door, the way `execution.spawn` is `work_session`'s.
+      'chat',
+      // 2026-09-03: `container` — the machine kind (177, CONTAINERS §3.1).
+      'container',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

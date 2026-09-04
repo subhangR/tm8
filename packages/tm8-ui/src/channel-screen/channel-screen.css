@@ -65,12 +65,12 @@
   padding: 7px 12px;
   background: var(--pn-wait-soft);
   border-bottom: 1px solid var(--pn-line);
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-wait);
 }
 .chs-needs-you__label {
   font-family: var(--pn-mono);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
   flex: none;
 }
@@ -154,7 +154,7 @@
 
 .chs-gutter__time {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
   line-height: 20px;
   white-space: nowrap;
@@ -173,6 +173,28 @@
   flex-direction: column;
   gap: 3px;
 }
+
+/* --- own-message sidedness (user ruling 2026-08-18) ------------------------
+   The viewer's messages sit RIGHT in a brand-tinted bubble; everyone else
+   keeps the left column with avatar and byline. Purely presentational —
+   DOM order, clustering, day separators and thread footers are untouched,
+   and a feed with no `viewerActorId` draws no row as anyone's own. */
+.chs-row[data-own] .chs-row__body { align-items: flex-end; }
+.chs-row[data-own] .chs-byline { flex-direction: row-reverse; }
+.chs-row[data-own] .chs-text {
+  align-self: flex-end;
+  max-width: 80%;
+  width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-brand-soft);
+}
+/* The own avatar says nothing the sidedness doesn't; follow rows keep their
+   gutter timestamp so "when" survives. Geometry is kept, not collapsed. */
+.chs-row[data-own]:not(.chs-row--follow) .chs-gutter { visibility: hidden; }
+.chs-row[data-own] .chs-references,
+.chs-row[data-own] .chs-thread-footer { align-self: flex-end; }
 
 /* --- hover actions -------------------------------------------------------- */
 
@@ -214,7 +236,7 @@
 }
 
 .chs-byline__who {
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   font-weight: 700;
   letter-spacing: var(--pn-track-tight);
   color: var(--pn-ink);
@@ -225,7 +247,7 @@
    without out-shouting the author's name it qualifies. */
 .chs-byline__kind {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -238,7 +260,7 @@
 .chs-byline__time,
 .chs-byline__edited {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
 
@@ -253,7 +275,7 @@
 .cv2-root .md-root.chs-text {
   margin: 0;
   font-family: var(--pn-ui);
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   line-height: 1.55;
   /* Full ink: the message is the primary content of this screen, and it must
      sit a clear step above its own metadata (ink-3/ink-4), which body-at-ink-2
@@ -267,6 +289,25 @@
   text-wrap: pretty;
   user-select: text;
   overflow-wrap: anywhere;
+}
+
+/* AN IN-FLIGHT TURN THAT HAS NOT EMITTED A PART YET.
+   Not a Markdown root, so it does not inherit `.md-root.chs-text` above — the
+   type facts it needs are repeated rather than shared, because the alternative
+   is rendering the stored body through Markdown, and that body is the claim
+   placeholder rather than anything the agent said (contract.ts:857-859).
+   Dimmed and italic so it reads as a STATUS, never as content. */
+.cv2-root .chs-text--pending {
+  margin: 0;
+  font-family: var(--pn-ui);
+  /* --pn-fs-sm IS 13px (tokens.css:71): this is the same rendered size, said
+     through the scale. #384 added this rule with a literal; #392's sweep and
+     its ban test were written against a base that predated it, so neither
+     side's CI ever saw the other. */
+  font-size: var(--pn-fs-sm);
+  line-height: 1.55;
+  color: var(--pn-ink-3);
+  font-style: italic;
 }
 
 /* A message is a chat line, so its blocks sit tight and its last one adds no
@@ -289,14 +330,14 @@
 .cv2-root .md-root.chs-text h5,
 .cv2-root .md-root.chs-text h6 {
   font-family: var(--pn-ui);
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   line-height: 1.4;
   margin: 0.7em 0 0.3em;
   padding-bottom: 0;
   border-bottom: none;
 }
-.cv2-root .md-root.chs-text h1 { font-family: var(--pn-ui); font-size: 14px; }
+.cv2-root .md-root.chs-text h1 { font-family: var(--pn-ui); font-size: var(--pn-fs-body); }
 
 /* A canonical mention, in place in the sentence it was typed in. */
 .chs-mention-inline {
@@ -329,13 +370,13 @@
   background: var(--pn-hover);
   padding: 2px 8px;
   font-family: var(--pn-ui);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
   text-align: left;
   cursor: pointer;
 }
 
-.chs-parent__glyph { color: var(--pn-ink-4); font-size: 10px; }
+.chs-parent__glyph { color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
 .chs-parent__label { color: var(--pn-ink-4); flex: none; }
 .chs-parent__author { color: var(--pn-ink-2); font-weight: 600; flex: none; }
 
@@ -354,14 +395,13 @@
   gap: 2px 10px;
   margin: 0;
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-ink-4);
 }
 
 .chs-message-meta__part,
 .chs-references,
-.chs-mentions,
-.chs-attachments {
+.chs-mentions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -387,22 +427,25 @@
   background: var(--pn-surface);
   padding: 2px 8px;
   color: var(--pn-ink-2);
-  font: 10px var(--pn-mono);
+  font: var(--pn-fs-fine) var(--pn-mono);
 }
 
 button.chs-session-chip { cursor: pointer; }
 button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-brand); }
 
 .chs-references { margin-top: 2px; }
-.chs-mentions,
-.chs-attachments {
+.chs-mentions {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.chs-ref-chip,
-.chs-attachment {
+/* The attachment row's own rules moved to `files/message-attachments.css` with
+   the component — the feed and the Chat transcript now draw the same one, and
+   a chip face that lives in one surface's stylesheet is only styled on that
+   surface. Nothing about this row's appearance changed here. */
+
+.chs-ref-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -412,16 +455,13 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: transparent;
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   cursor: pointer;
 }
 
-.chs-ref-chip:hover,
-.chs-attachment:hover { background: var(--pn-hover); border-color: var(--pn-line); }
+.chs-ref-chip:hover { background: var(--pn-hover); border-color: var(--pn-line); }
 
 .chs-ref-chip { color: var(--pn-brand); }
-
-.chs-attachment__mime { color: var(--pn-ink-4); font-family: var(--pn-mono); font-size: 9px; }
 
 .chs-delivery { display: inline-flex; align-self: center; }
 
@@ -449,7 +489,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   align-items: center;
   gap: 7px;
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
 }
 
 .chs-targets__name { color: var(--pn-ink-2); }
@@ -472,7 +512,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 6px;
   margin: 0;
   padding-top: 1px;
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
 }
 
@@ -500,7 +540,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-state__from,
 .chs-state__to {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-xs);
   padding: 0 5px;
@@ -508,7 +548,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-state__from { color: var(--pn-ink-4); }
 .chs-state__to { color: var(--pn-ink-2); }
-.chs-state__arrow { color: var(--pn-ink-4); font-size: 10px; }
+.chs-state__arrow { color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
 
 .chs-artifact {
   display: grid;
@@ -530,11 +570,11 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-xs);
   background: var(--pn-hover);
   color: var(--pn-ink-3);
-  font: 9px var(--pn-mono);
+  font: var(--pn-fs-tick) var(--pn-mono);
 }
-.chs-artifact__title { color: var(--pn-ink); font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
-.chs-artifact__excerpt { color: var(--pn-ink-3); font-size: 11px; min-width: 0; overflow-wrap: anywhere; }
-.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: 9px var(--pn-mono); }
+.chs-artifact__title { color: var(--pn-ink); font-size: var(--pn-fs-label); min-width: 0; overflow-wrap: anywhere; }
+.chs-artifact__excerpt { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); min-width: 0; overflow-wrap: anywhere; }
+.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
 
 /*
  * The safe card (S15). Dashed, because a dashed edge reads as "provisional"
@@ -552,14 +592,14 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   padding: 5px 10px;
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-4);
 }
 
-.chs-unknown__label { font-family: var(--pn-ui); font-size: 11px; color: var(--pn-ink-3); }
+.chs-unknown__label { font-family: var(--pn-ui); font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
 
 .chs-unknown__variant {
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-xs);
   padding: 0 5px;
@@ -571,8 +611,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 8px;
 }
 
-.chs-group__glyph { color: var(--pn-ink-4); font-size: 11px; }
-.chs-group__text { font-size: 11px; color: var(--pn-ink-3); }
+.chs-group__glyph { color: var(--pn-ink-4); font-size: var(--pn-fs-micro); }
+.chs-group__text { font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
 
 .chs-group__rows {
   list-style: none;
@@ -583,7 +623,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   flex-direction: column;
   gap: 2px;
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-4);
 }
 
@@ -610,7 +650,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-day__label {
   flex: none;
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   font-weight: 600;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
@@ -625,7 +665,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 8px;
   padding: 7px 0;
   font-family: var(--pn-mono);
-  font-size: 8.5px;
+  font-size: var(--pn-fs-tick);
   letter-spacing: 0.08em;
   color: var(--pn-brand);
 }
@@ -649,7 +689,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-surface);
   color: var(--pn-brand);
   padding: 5px 14px;
-  font: 10px var(--pn-mono);
+  font: var(--pn-fs-fine) var(--pn-mono);
   cursor: pointer;
 }
 
@@ -664,13 +704,13 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   text-align: center;
 }
 
-.chs-empty__glyph { font-size: 22px; color: var(--pn-ink-4); }
-.chs-empty__headline { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--pn-ink); }
+.chs-empty__glyph { font-size: var(--pn-fs-h2); color: var(--pn-ink-4); }
+.chs-empty__headline { margin: 0; font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink); }
 
 .chs-empty__note {
   margin: 0;
   max-width: 42ch;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   line-height: 1.55;
   color: var(--pn-ink-3);
   text-wrap: pretty;
@@ -681,7 +721,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   margin: 0;
   padding: 6px 0;
   font-family: var(--pn-mono);
-  font-size: 10.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
 
@@ -711,8 +751,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 }
 
 .chs-refusal__glyph { font-size: 20px; color: var(--pn-ink-4); }
-.chs-refusal__headline { margin: 0; font-size: 13px; font-weight: 600; color: var(--pn-ink-2); }
-.chs-refusal__note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--pn-ink-3); }
+.chs-refusal__headline { margin: 0; font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink-2); }
+.chs-refusal__note { margin: 0; font-size: var(--pn-fs-micro); line-height: 1.5; color: var(--pn-ink-3); }
 
 .chs-earlier {
   display: flex;
@@ -727,7 +767,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding-bottom: var(--pn-space-2);
   border-bottom: 1px solid var(--pn-line);
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   letter-spacing: 0.02em;
   color: var(--pn-ink-4);
 }
@@ -754,13 +794,15 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 8px;
 }
 
-.chs-composer__row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
+/* The card and its warnings track Chat Home's width: centred on the feed,
+   capped at the same 760px reading measure. The pickers are absolutely
+   positioned popovers and opt out. */
+.chs-composer > :not(.chs-mention-picker) {
+  box-sizing: border-box;
+  width: min(760px, 100%);
+  margin-inline: auto;
 }
 
-.chs-upload-list,
 .chs-mention-list {
   display: flex;
   flex-wrap: wrap;
@@ -770,7 +812,6 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 0;
 }
 
-.chs-upload,
 .chs-mention-list > li {
   display: flex;
   align-items: center;
@@ -779,14 +820,10 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 3px 5px 3px 9px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  font-size: 10.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
 
-.chs-upload[data-phase='failed'] { border-color: var(--pn-block); }
-.chs-upload__name { color: var(--pn-ink-2); overflow-wrap: anywhere; }
-.chs-upload__error { color: var(--pn-block); }
-.chs-upload button,
 .chs-mention-list button {
   min-width: 44px;
   min-height: 44px;
@@ -829,7 +866,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 6px 10px;
   border-bottom: 1px solid var(--pn-line);
   color: var(--pn-ink-4);
-  font-size: 10.5px;
+  font-size: var(--pn-fs-fine);
 }
 
 /* The workspace-attach picker's own search field — unlike the `@` list, this
@@ -843,7 +880,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-surface);
   color: var(--pn-ink);
   font-family: var(--pn-ui);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   outline: none;
 }
 
@@ -852,7 +889,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 /* The kind tag on an attached-entity chip ("task" / "doc"). */
 .chs-attach-kind {
   font-family: var(--pn-mono);
-  font-size: 8.5px;
+  font-size: var(--pn-fs-tick);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--pn-ink-4);
@@ -909,12 +946,12 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 }
 
 .chs-mention-picker__identity { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-.chs-mention-picker button span:last-child { color: var(--pn-ink-4); font: 9px var(--pn-mono); }
+.chs-mention-picker button span:last-child { color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
 .chs-mention-picker__empty {
   margin: 0;
   padding: 10px;
   color: var(--pn-ink-4);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
 }
 
 .chs-visually-hidden {
@@ -929,60 +966,28 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 0 !important;
 }
 
-.chs-composer__input {
-  flex: 1;
-  /* Shrinkable below its placeholder's min-content width — without this the
-     flex row overflows narrow hosts (the thread pane) instead of shrinking —
-     but floored well above zero: a verbose disabled-with-reason beside it
-     must wrap its own text, not squeeze the textarea into a one-column
-     sliver. Composers narrower than the wrap threshold stack instead. */
-  min-width: 200px;
-  height: 46px;
-  resize: none;
-  /* Card on surface: the input is the one fillable thing here and reads as a
-     well; surface-on-surface made it vanish into its own chrome. */
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-md);
-  color: var(--pn-ink);
-  font-family: var(--pn-ui);
-  font-size: 13px;
-  line-height: 1.5;
-  padding: 7px 11px;
-  outline: none;
-  box-sizing: border-box;
-}
+/* The field is the shared card's (`.ri-card textarea` in rich-input.css) —
+   borderless inside the bordered card, exactly as Chat Home draws it. */
 
-.chs-composer__input::placeholder { color: var(--pn-ink-3); }
-
-.chs-composer__input:focus {
-  border-color: var(--pn-brand);
-  box-shadow: 0 0 0 3px var(--pn-brand-soft);
-}
-
+/* Send matches Chat Home's: a compact primary at the foot's end. */
 .chs-composer__send {
-  min-height: 44px;
   flex: none;
-  padding: 0 18px;
-  border: none;
-  border-radius: var(--pn-r-md);
-  background: var(--pn-brand);
-  color: var(--pn-paper);
+  margin-left: var(--pn-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
   font-family: var(--pn-ui);
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  padding: 5px 9px;
   cursor: pointer;
   transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
-.chs-composer__send:hover:not(:disabled) { background: var(--pn-brand-2); }
+.chs-composer__send:hover:not(:disabled) { background: var(--pn-brand); }
 
-.chs-composer__send:disabled {
-  background: var(--pn-active);
-  color: var(--pn-ink-4);
-  cursor: default;
-}
+.chs-composer__send:disabled { opacity: 0.42; cursor: default; }
 
 /*
  * The exited-session warning is WAIT-toned, not BLOCK-toned, and that is a
@@ -999,7 +1004,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 1px solid var(--pn-wait-soft);
   border-radius: var(--pn-r-sm);
   padding: 5px 10px;
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-wait);
 }
 
@@ -1009,7 +1014,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   background: var(--pn-block-soft);
   color: var(--pn-block);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   line-height: 1.45;
 }
 
@@ -1022,7 +1027,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   background: var(--pn-wait-soft);
   color: var(--pn-wait);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   line-height: 1.4;
 }
 .chs-composer__uncertain span { flex: 1; }
@@ -1048,7 +1053,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-replying__label {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-brand);
   flex: none;
 }
@@ -1056,27 +1061,28 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-replying__excerpt {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* The keyboard tip rides in the card's foot, pushed against Send — the same
+   seat Chat Home gives it. */
 .chs-composer__hint {
-  margin: 0;
-  display: flex;
-  gap: 10px;
+  margin: 0 0 0 auto;
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-ink-4);
+  white-space: nowrap;
 }
 
 /* --- shared small controls ------------------------------------------------ */
 
 .chs-chip-btn {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
   background: transparent;
   border: 1px solid var(--pn-line-2);
@@ -1095,7 +1101,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-linkbtn {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-brand);
   background: transparent;
   border: none;
@@ -1108,18 +1114,23 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   white-space: normal;
 }
 
+/* Compact by default, like Chat Home's footer sigils; the 440px container
+   block below restores full 44px touch targets where fingers do the work. */
 .chs-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--pn-ink-4);
   background: transparent;
   border: none;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   line-height: 1;
   padding: 4px;
   border-radius: var(--pn-r-xs);
   cursor: pointer;
   flex: none;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 26px;
+  min-height: 26px;
 }
 
 .chs-iconbtn:hover { color: var(--pn-brand); }
@@ -1130,9 +1141,9 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   align-items: center;
 }
 
-.chs-composer__row .hon-disabled {
-  min-width: 44px;
-  min-height: 44px;
+.ri-card__foot .hon-disabled {
+  min-width: 26px;
+  min-height: 26px;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -1151,7 +1162,6 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-mention-picker input,
   .chs-composer__input,
   .chs-ref-chip,
-  .chs-attachment,
   .chs-mention-inline,
   .chs-parent__jump,
   .chs-thread-footer__open,
@@ -1211,7 +1221,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-thread__back { display: none; }
 .chs-thread__title {
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   font-weight: 600;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
@@ -1225,7 +1235,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   background: transparent;
   color: var(--pn-ink-3);
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   line-height: 1;
   cursor: pointer;
 }
@@ -1249,7 +1259,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 10px;
   margin: var(--pn-space-2) 0 var(--pn-space-1);
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   font-weight: 600;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
@@ -1264,7 +1274,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-thread__empty {
   margin: var(--pn-space-2) 0;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-3);
 }
 
@@ -1277,7 +1287,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 1px solid var(--pn-block, var(--pn-line));
   border-radius: var(--pn-r-sm);
   background: var(--pn-block-soft, transparent);
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-block, inherit);
 }
 
@@ -1297,7 +1307,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: none;
   padding: 2px 8px 2px 3px;
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-brand);
   cursor: pointer;
   transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
@@ -1306,7 +1316,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-brand-soft);
   border-color: var(--pn-brand-soft);
 }
-.chs-thread-footer__glyph { font-size: 9px; color: var(--pn-brand-2); }
+.chs-thread-footer__glyph { font-size: var(--pn-fs-tick); color: var(--pn-brand-2); }
 .chs-thread-footer__count { font-weight: 700; }
 .chs-thread-footer__faces {
   display: inline-flex;
@@ -1315,7 +1325,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 }
 .chs-thread-footer__names,
 .chs-thread-footer__when { color: var(--pn-ink-3); }
-.chs-thread-footer__when { font-family: var(--pn-mono); font-size: 9.5px; }
+.chs-thread-footer__when { font-family: var(--pn-mono); font-size: var(--pn-fs-fine); }
 
 /* Below the collapse threshold an open thread REPLACES the feed — a channel
    and its thread do not fit side by side, and a 180px feed sliver beside a
@@ -1331,7 +1341,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
     background: none;
     padding: 4px 6px;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--pn-fs-label);
     color: var(--pn-brand);
     cursor: pointer;
   }
@@ -1351,18 +1361,17 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-artifact { grid-template-columns: auto minmax(0, 1fr); }
   .chs-artifact .chs-linkbtn { grid-column: 1 / -1; justify-self: start; }
   .chs-composer { padding-inline: 8px; }
+  /* Touch targets grow back to the full 44px where fingers do the work. */
+  .chs-composer__send { min-height: 44px; }
+  .chs-iconbtn { min-width: 44px; min-height: 44px; }
 }
 
 /* The composer is its own query container (see `.chs-composer`), so this
-   answers to the COMPOSER's width — which is narrow both on a small screen
-   and inside the thread pane on a large one. The textarea takes the full
-   width on top and the controls drop to a row beneath it. 520 = the widest
-   composer whose single row could still squeeze the textarea under its
-   200px floor (3 × 44px icons + Send + gaps + padding). */
+   answers to the COMPOSER's width — narrow both on a small screen and
+   inside the thread pane on a large one. The card stacks field-over-foot
+   at every width; only copy sheds here, exactly as Chat Home's foot does. */
 @container (max-width: 520px) {
-  .chs-composer__row { flex-wrap: wrap; align-items: center; }
-  .chs-composer__input { order: -1; flex-basis: 100%; width: 100%; }
-  .chs-composer__send { margin-left: auto; }
+  .chs-composer__hint { display: none; }
   .chs-composer__uncertain { align-items: flex-start; flex-direction: column; }
 }
 
@@ -1380,10 +1389,9 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 @media (forced-colors: active) {
   .chs-root { forced-color-adjust: auto; }
   .chs-artifact,
-  .chs-upload,
+  .ri-attachment,
   .chs-mention-picker,
   .chs-ref-chip,
-  .chs-attachment,
   .chs-actions,
   .chs-parent__jump,
   .chs-tomb,
@@ -1391,4 +1399,169 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-new-items,
   .chs-composer__send { border: 1px solid ButtonText; }
   :where(button, textarea, input):focus-visible { outline: 3px solid Highlight; }
+}
+
+/* --- turn graph — the in-feed row that stands in for a turn's activity ----- */
+
+.chs-turn-graph {
+  list-style: none;
+  margin: var(--pn-space-2) var(--pn-space-4);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-paper);
+  overflow: hidden;
+}
+
+.chs-turn-graph__caption {
+  margin: 0;
+  padding: var(--pn-space-1) var(--pn-space-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+/* Compact: the row shares the strip's canvas but sits inside a transcript,
+   so it takes less height and is never sticky. The fresh-node animation is
+   inside `.chs-root`, whose reduced-motion rule above already stills it. */
+.chs-turn-graph .chs-livegraph__canvas {
+  height: 200px;
+  border-top: 0;
+}
+
+/* --- live graph strip — the collapsible whole-conversation strip ----------- */
+
+/* Sticky: the strip is the first child of a scrolling transcript, so without
+   this it scrolls off the top and a live graph becomes invisible the moment
+   the conversation is longer than the viewport. */
+.chs-livegraph {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+
+.chs-livegraph__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  padding: var(--pn-space-1) var(--pn-space-4);
+  cursor: pointer;
+  text-align: left;
+}
+
+.chs-livegraph__toggle:hover { background: var(--pn-hover); }
+
+.chs-livegraph__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.chs-livegraph__canvas {
+  height: 260px;
+  overflow: hidden;
+  background: var(--pn-paper);
+  border-top: 1px solid var(--pn-line);
+}
+
+/* The most recently touched node breathes once so live growth is visible. */
+.chs-livegraph__cell--fresh .sg-box {
+  stroke: var(--pn-brand);
+  animation: chs-livegraph-fresh var(--pn-dur-slow) var(--pn-ease-standard) 1;
+}
+
+@keyframes chs-livegraph-fresh {
+  from { stroke-width: 2.5; }
+  to { stroke-width: 1; }
+}
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-039, plus the thread-nav controls named below.
+
+   The `@container (max-width: 440px)` block above is NOT this. It answers to
+   the channel container's own width, so it fires inside a narrow desktop panel
+   too — which is why it stops at the two controls that were safe to grow
+   anywhere. This block answers to the SHELL, and only the phone has one.
+   ========================================================================== */
+
+/* --- DEF-039 — the type floor, applied at the TOKENS ---------------------- */
+
+/* Same reasoning as `chat-home.css`: the run reports a tinyText COUNT and a
+   six-element SAMPLE beside it, so a per-class list fixes the ones visible in
+   the sample and ships the rest. This file alone reads the three small steps
+   of the scale 52 times. Lifting them inside `.chs-root` reaches all of them.
+
+   12px is derived, not chosen: across all 283 tinyText findings in the run the
+   largest size ever flagged is 11.5, and nothing at 12 or above appears. Prose
+   takes 13. */
+.cv2-root[data-shell='mobile'] .chs-root {
+  --pn-fs-tick: 12px;
+  --pn-fs-fine: 12px;
+  --pn-fs-micro: 13px;
+}
+
+/* THE GUTTER IS WIDENED WITH THE TYPE IT HOLDS, and this is the row that made
+   the rule worth stating. `.chs-gutter` is `flex: none; width: 38px` — 30px
+   under the 440 container query — and `.chs-gutter__time` is a `nowrap` mono
+   timestamp inside it. Growing the type without growing the box gives a
+   timestamp that overflows its own container to the LEFT, which is invisible
+   to the instrument twice over: it is not a right-edge offender, so
+   `offenders[]` never sees it, and per DEF-037 nothing here measures vertical
+   or leading-edge clipping at all. It would have read as a clean fix.
+
+   IT IS SIZED TO ITS CONTENT RATHER THAN TO A NEW NUMBER, and that is the rule
+   rather than a detail of it. My first version of this line was `width: 46px`,
+   computed from "12:16" at 12px mono — which is a guess about the LOCALE, not
+   a measurement. A 12-hour format ("12:16 PM") is three characters longer and
+   would have clipped in exactly the way this rule exists to stop. `width:
+   auto` under a floor cannot be wrong about a string it has not seen, and
+   `.chs-row__body` is `flex: 1; min-width: 0`, so it absorbs whatever the
+   gutter takes. */
+.cv2-root[data-shell='mobile'] .chs-gutter {
+  width: auto;
+  min-width: 38px;
+}
+
+/* --- the thread-nav controls under the bar -------------------------------- */
+
+/* NOT LEDGER ROWS, AND I AM NOT CLAIMING THEM AS SUCH — triage is the only
+   writer of `lane` (RULE R9). They are in `tapWorst` for
+   `results[surface=chat-channel, viewport=phone-430]` in the before-run
+   alongside DEF-028's `chv-tab`, they are in Lane A's files, and thread
+   navigation is this task's stated work. Leaving known sub-44 controls on my
+   own surface while reporting the surface clean is the narrow pass this
+   ledger's §6b exists to catch. They are fixed here and reported to triage as
+   unfiled findings, for triage to row or decline.
+
+   `chs-thread-footer__open` — 299x23 and 246x23, three of them. "Open thread ·
+   3 replies" is how a phone reader reaches a thread at all.
+   `chs-linkbtn` — 84x24, twice. */
+.cv2-root[data-shell='mobile'] .chs-thread-footer__open {
+  min-block-size: var(--mobile-touch-min);
+  padding-block: var(--pn-space-1);
+}
+
+.cv2-root[data-shell='mobile'] .chs-linkbtn {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-2);
+}
+
+/* Send is 57x44 already — the 440 container query grew it — but it reads at
+   11px, which is the DEF-048 shape the gate filed against its own work: a 44px
+   button with type nobody can read is tappable and unreadable. The token lift
+   above carries it to 13. Its min-inline-size is restated so the two composers
+   agree; Chat Home's `.tch-send` takes the same floor. */
+.cv2-root[data-shell='mobile'] .chs-composer__send {
+  min-inline-size: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
 }

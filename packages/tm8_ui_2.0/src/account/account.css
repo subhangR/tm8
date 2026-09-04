@@ -1,0 +1,437 @@
+/* ==========================================================================
+   T3-3 · ACCOUNT MENU — "the who-am-I surface off the top-bar avatar".
+
+   Oracle: "T0-1 workspace structure review (1)/T3-3 Account Menu Hi-Fi.dc.html",
+   frames "T3-3 — Account menu anatomy" (light) and "T3-3 — Dark menu + 320
+   floor". Values below are EXTRACTED from that file's inline styles; the
+   oracle's hexes are named as tokens rather than retyped.
+
+   COLOUR IS TOKENS ONLY. `src/hex-ban.test.ts` scans this file — it is not one
+   of its four exclusions — and fails the package on any raw hex. Where the
+   oracle's light and dark values do NOT map to one token (the segmented
+   control's track, below), the pair is expressed as a LOCAL custom property
+   switched by the same `[data-theme="dark"]` scope tokens.css uses. No new
+   global token is introduced: this lane may not edit tokens.css or
+   canvas-extra.css, and a local property is the honest way to say "these two
+   values are one decision".
+
+   SELECTORS ARE UNSCOPED (no `.cv2-root` prefix), unlike auth.css. Reason:
+   the menu anchors itself with `position: fixed` so a host may portal it, and
+   a `.cv2-root` ancestor requirement would silently unstyle it if one did.
+   Class names are unique to this lane, so nothing needs the extra specificity.
+
+   FIDELITY IS DEFERRED (user program order): geometry follows the oracle where
+   following was cheap. A later parity session owns the pixels; the divergences
+   already known are listed in HANDOVER.md, not smoothed over here.
+
+   RECLASSIFIED (Kinetic W3 sweep). Mono now marks DATA only — the account
+   line (an address) and the version/node line in the footer. Every word a
+   person reads as a sentence or acts on — the pending/empty state, row
+   titles and their explanatory subs, the theme captions, the segmented
+   control's words, the footer hint — speaks Figtree through the --pn-fs-*
+   scale, 13px floor for interactive text. The oracle's micro-mono literals
+   quoted in comments above each block describe the T3-3 canvas, not this
+   build: Kinetic is the new reference, words and counts unchanged.
+   ========================================================================== */
+
+/* ── the popover ───────────────────────────────────────────────────────────
+   Oracle L~36: width 296 · surface · 1px line-2 · r10 · pop shadow · overflow
+   hidden. Geometry line: "anchored below avatar, right-aligned, 8px viewport
+   inset". The 320 floor clamps it to viewport − 16 (8px each side). */
+.acct-menu {
+  position: fixed;
+  top: 48px;
+  right: 8px;
+  z-index: 60;
+  width: 296px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  /* Fixmap: the menu had no height cap, and `overflow: hidden` silently hid
+     any growth past the viewport. Cap = 100% (initial containing block; a
+     fixed box resolves % against the viewport — PERCENTAGE form, never
+     viewport units, the fixmap law) minus the 48px top anchor + 8px bottom
+     inset, and let y scroll. x stays hidden so the radius still clips. */
+  max-height: calc(100% - 56px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+
+  /* The one value the oracle draws as two unrelated hexes: the segmented
+     track sits one step OFF the menu surface in each theme — #FFFFFF on a
+     #FBFAF6 menu (light), #1B1810 on a #221E15 menu (dark). */
+  --acct-seg-track: var(--pn-card);
+}
+[data-theme='dark'] .acct-menu {
+  --acct-seg-track: var(--pn-surface);
+}
+
+/* ── identity block ──────────────────────────────────────────────────────
+   Oracle: padding 12px 12px 10px · gap 10 · bottom hairline is --pn-line
+   (it BOUNDS the block, D4) · avatar 36 round · name 13.5/600 · role chip
+   mono 9/600 on --pn-active r4 1px 5px · account line mono 9.5 ink-3 ·
+   status mono 9.5/600. */
+.acct-menu__identity {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--pn-line);
+}
+/* Empty/pending state is a sentence about the viewer, not machine output. */
+.acct-menu__pending {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}
+.acct-menu__avatar {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 50%; /* round = human, always — the provenance rule */
+  background: var(--pn-active);
+  color: var(--pn-ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+}
+.acct-menu__who {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.acct-menu__nameline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.acct-menu__name {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+/* "Long names ellipsize; the chip and presence never collapse" (annotation 2)
+   — which is what `flex: none` on the chip buys. */
+.acct-menu__role {
+  flex: none;
+  /* A role is a word about a person — chip grammar (caps 600), not mono. */
+  font: 600 var(--pn-fs-fine) var(--pn-caps);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-2);
+  background: var(--pn-active);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+/* The account line is an ADDRESS — data, so it keeps its mono voice. */
+.acct-menu__account {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The status is a WORD ("active"), not machine output. */
+.acct-menu__status {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  color: var(--pn-run);
+}
+
+/* ── row groups ───────────────────────────────────────────────────────────
+   Oracle: group padding 4 · group tops are the SOFT hairline (#F0EDE4), which
+   is D4's "separates repeated siblings inside one component" side of the rule.
+   KNOWN DIVERGENCE, recorded in HANDOVER.md: the oracle's DARK frame draws
+   these group tops at #2C2719 (= --pn-line) rather than the dark soft value. */
+.acct-menu__group {
+  padding: 4px;
+  border-top: 1px solid var(--pn-x-hairline-soft);
+}
+.acct-menu__identity + .acct-menu__group {
+  border-top: 0;
+}
+
+.acct-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.acct-row:hover {
+  background: var(--pn-hover);
+}
+.acct-row:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px; /* inward — the menu clips x-overflow at its radius */
+}
+/* Refusals: dimmed and not-allowed, but FOCUSABLE and reasoned (D28). The
+   opacity is the oracle's own .62 for the acting-as row. */
+.acct-row--refused {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+.acct-row--refused:hover {
+  background: transparent;
+}
+.acct-row__glyph {
+  width: 14px;
+  flex: none;
+  text-align: center;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+  line-height: 1.4;
+}
+.acct-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Row words are interactive — 13px floor, ui 600. */
+.acct-row__title {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+}
+/* Subs are explanatory sentences, not machine output. */
+.acct-row__sub {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+.acct-row__chevron {
+  flex: none;
+  font-size: 11px;
+  color: var(--pn-ink-4);
+}
+
+/* ── theme, its one home (D1) ────────────────────────────────────────────
+   Oracle: section padding 6px 12px 10px · gap 6 · eyebrow mono 9.5/600 at
+   .1em · segmented 1px line-2, r7, overflow hidden · segment mono 10, 4px 0 ·
+   active = --pn-active fill + ink + 600 · separators --pn-line. */
+.acct-menu__theme {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px 10px;
+  border-top: 1px solid var(--pn-x-hairline-soft);
+}
+/* Eyebrow grammar (Kinetic W3): caps 11/700, mega tracking. */
+.acct-menu__eyebrow {
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.acct-seg {
+  display: flex;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  overflow: hidden;
+  background: var(--acct-seg-track);
+}
+/* Segment words are BUTTON words — ui at the interactive floor, compact
+   (28px) kit box inside the bordered track. */
+.acct-seg__btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.acct-seg__btn + .acct-seg__btn {
+  border-left: 1px solid var(--pn-line);
+}
+.acct-seg__btn:hover {
+  background: var(--pn-hover);
+}
+.acct-seg__btn--on {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+.acct-seg__btn--off {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+.acct-seg__btn--off:hover {
+  background: transparent;
+}
+.acct-seg__btn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: -2px; /* inward — the track clips at its radius */
+}
+/* Captions are honest sentences ("following your system setting — …"). */
+.acct-menu__caption {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+/* ── footer ──────────────────────────────────────────────────────────────
+   Oracle: h24 · top --pn-line (it BOUNDS the menu) · mono 9 ink-4.
+   Reclassified: the base voice is ui (the "esc closes" hint is words); the
+   FIRST span is the version/node line — an identifier, so it alone is data
+   and keeps mono. Structure is fixed in AccountMenu.tsx, so first-of-type
+   is a stable address for it. */
+.acct-menu__footer {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-top: 1px solid var(--pn-line);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
+  color: var(--pn-ink-4);
+}
+.acct-menu__footer > span:first-of-type {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 400;
+}
+.acct-menu__spacer {
+  flex: 1;
+}
+
+/* ── sign-out confirm ────────────────────────────────────────────────────
+   Oracle "SIGN-OUT CONFIRM — HONEST COPY": w262 · r10 · pop shadow · pad 14 ·
+   gap 9 · title 13.5/600 · body 11.5/1.55 ink-2 · Cancel outlined on --pn-card
+   · Sign out solid ink on paper text. */
+.acct-confirm__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--pn-ink) 28%, transparent);
+}
+.acct-confirm {
+  width: 262px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+}
+.acct-confirm__title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.acct-confirm__body {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+.acct-confirm__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+/* Kit button grammar, compact form (Kinetic W3): 28px box, r-sm, ui 600 at
+   the interactive floor, one focus grammar. Sign-out is NOT danger dress —
+   its own copy says it "ends this browser session only". */
+.acct-confirm__cancel,
+.acct-confirm__go {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.acct-confirm__cancel:focus-visible,
+.acct-confirm__go:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.acct-confirm__cancel {
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.acct-confirm__cancel:hover {
+  background: var(--pn-hover);
+}
+.acct-confirm__go {
+  border: 1px solid var(--pn-ink);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+.acct-confirm__go:hover {
+  background: var(--pn-x-btn-ink-hover);
+  border-color: var(--pn-x-btn-ink-hover);
+}
+
+/* ── the 320 floor ───────────────────────────────────────────────────────
+   "labels compact to glyphs — words in tooltips" (oracle, 320 frame). The word
+   is hidden VISUALLY only; each segment carries `aria-label` with the full
+   word at every width, so the accessible name never compacts. No row is
+   hidden here — the floor clamps the menu, it does not thin it. */
+@media (max-width: 380px) {
+  .acct-seg__word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

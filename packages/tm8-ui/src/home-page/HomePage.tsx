@@ -3,40 +3,27 @@
  *
  * ONE canvas, four altitudes:
  *
- *   1. The CHAT is the hero — the existing chat-home surface, mounted solo
- *      (its thread sidebar hidden by this module's stylesheet; full thread
- *      management stays on the Messages screen).
- *   2. NEEDS YOU directly beneath, only when it has rows — triage outranks
- *      everything, and an inbox-zero space shows rails only.
- *   3. AGENT SIGN-INS — the same live credential block Settings hosts, here
- *      as a first-class management section rather than a link away from Home.
- *   4. Glance RAILS for the daily collections (domain's `HOME_RAIL_KINDS`),
- *      with a compact sign-in strip immediately above Sessions, then teammate
- *      presence and the escape hatch to the full workspace.
+ *   1. NEEDS YOU, only when it has rows — triage outranks everything, and an
+ *      inbox-zero space stays quiet.
+ *   2. AGENT SIGN-INS — the same detailed credential block Settings hosts,
+ *      here as a first-class management section rather than a link away.
+ *   3. A compact provider strip immediately above the merged chat/list
+ *      surface, so it remains directly above that surface's Sessions content.
+ *   4. The CHAT remains the full-bleed hero, with main's root list, resizer,
+ *      focus mode and beside-it detail column left intact.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
  *   - `useHomeData` / `composeMyWork` (src/home) — the NEEDS YOU composition
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
- *   - `homeRowOf` — the one summary→row projection, so a rail card's status
- *     word and dot obey the same verdict-outranks-record law as every other
- *     surface.
- *
- * Rails are GLANCEABLE, not exhaustive: the top rows by `activityAt`,
- * sideways-scrolling, with the rail header opening the full collection. Depth
- * lives in Workspace; this page is peripheral vision around the conversation.
- *
- * §15.2: no kind literal appears in this directory — the rail and presence
- * kinds come from `domain/home-page.ts`, presence state is read structurally
- * (`'liveWork' in state`), and every glyph resolves through the registry.
+ *   - `CredentialsProviderBlock` and `ProviderRail` — one credential port and
+ *     one provider/verdict vocabulary at two deliberate densities.
  */
-import { Fragment, useMemo, type ReactNode } from 'react';
-import type { EntitySummary } from '@tm8/contract';
+import { useMemo, type ReactNode } from 'react';
 import type { Seam } from '../data/seam';
-import { HOME_PRESENCE_KIND, HOME_RAIL_KINDS, KindIcon, getKind } from '../domain';
+import { KindIcon } from '../domain';
 import {
   composeMyWork,
-  homeRowOf,
   useHomeData,
   type HomeRow,
   type HomeScreenData,
@@ -49,9 +36,6 @@ import {
 import { ProviderRail } from '../provider-rail';
 import './home-page.css';
 
-/** Cards per rail — a glance, not a list. The header opens the whole kind. */
-const RAIL_CARD_CAP = 6;
-
 /** Home's existing narrow read port plus the human-only credential operations. */
 export type HomePageData = Omit<HomeScreenData, 'seam'> & {
   seam: HomeScreenData['seam'] & Pick<Seam, 'credentials'>;
@@ -59,15 +43,40 @@ export type HomePageData = Omit<HomeScreenData, 'seam'> & {
 
 export interface HomePageProps {
   data: HomePageData;
-  /** The solo chat surface — the host mounts it (seam wiring is its business). */
+  /** The chat surface — the host mounts it (seam wiring is its business). */
   chat: ReactNode;
+  /**
+   * The entity opened FROM this page, shown BESIDE it rather than instead of
+   * it. Absent ⇒ no column at all: a host with nowhere to put a detail must
+   * not be handed a slot that draws an empty one.
+   *
+   * The column AND its chrome are the host's (`views/HomeView`), exactly as
+   * they are on the channel screen — this page only makes room. That is why
+   * the node lands here unwrapped: the separator that resizes the column has
+   * to be its SIBLING, not something inside it.
+   */
+  aside?: ReactNode;
+  /**
+   * The icon rail (task 01a00932 R4) — the host builds it (its state is the
+   * host's root selection); this page only seats it leftmost in the row,
+   * exactly as it makes room for the aside.
+   */
+  rail?: ReactNode;
+  /**
+   * Column A's separator — the drag handle when A is open, the reveal button
+   * when it is collapsed (task 01a00ac2). It seats INSIDE the chat section
+   * rather than beside the rail because A is not a child of this page at all:
+   * it is `.tch-sidebar`, a grid track inside the chat surface the host hands
+   * down. The section is the nearest box that starts and ends exactly where A
+   * does, which is what lets the handle line up with the edge it moves
+   * without this page having to know anything about that grid.
+   */
+  listRail?: ReactNode;
+  /** Rail + column A collapsed as one. Read by CSS off `data-focus`. */
+  focus?: boolean;
   onOpenEntity(id: string): void;
-  onOpenKind(kind: string): void;
   onOpenWorkspace(): void;
 }
-
-const byActivity = (a: EntitySummary, b: EntitySummary): number =>
-  b.activityAt.localeCompare(a.activityAt);
 
 function RowCard({ row, onOpen }: { row: HomeRow; onOpen(id: string): void }) {
   return (
@@ -124,9 +133,9 @@ export function HomePage(props: HomePageProps) {
     [data.seam, data.spaceId],
   );
 
-  /* The full T5-1 composition, reused for its NEEDS YOU section alone — the
-     other sections' facts render as rails below, where the whole space (not
-     just "mine") is the design. */
+  /* The full T5-1 composition is reused for NEEDS YOU alone. Main's merged
+     chat/list surface owns the collection inventory; Home does not recreate
+     the glance rails that moved to Work. */
   const needsYou = useMemo(() => {
     const work = composeMyWork({
       sessionPool: home.sessionPool,
@@ -142,18 +151,19 @@ export function HomePage(props: HomePageProps) {
     return work.sections.find((section) => section.emphasis === 'needs-you') ?? null;
   }, [home, data.livenessOf, data.activity]);
 
-  const presenceRows = data.rowsFor(HOME_PRESENCE_KIND)(undefined);
-
+  /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
+     merged conversation column — fills the canvas and triage rides above it.
+     The glance rails, the presence row and the per-kind counts strip retired
+     to the Work tab, where the inventory framing lives. */
   return (
-    <div className="hp-root" data-testid="home-page">
-      <div className="hp-scroll">
-        <section className="hp-chat" aria-label="Chat">
-          {props.chat}
-        </section>
-
-        {/* Triage first, and ONLY when it has rows — an inbox-zero space gets
-            a quiet canvas, not an empty amber box. A section empty because a
-            READ failed is a different fact and renders its honest note. */}
+    <div
+      className="hp-root hp-root--chat"
+      data-testid="home-page"
+      data-aside={props.aside ? 'open' : undefined}
+      data-focus={props.focus ? 'true' : undefined}
+    >
+      {props.rail ?? null}
+      <div className="hp-page">
         {needsYou && needsYou.rows.length > 0 ? (
           <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
         ) : needsYou && (home.viewerError || home.notificationsError) ? (
@@ -167,85 +177,24 @@ export function HomePage(props: HomePageProps) {
           <CredentialsProviderBlock port={credentialsPort} />
         </section>
 
-        {HOME_RAIL_KINDS.map((kind) => {
-          const config = getKind(kind);
-          const rows = [...data.rowsFor(kind)(undefined)].sort(byActivity).slice(0, RAIL_CARD_CAP);
-          return (
-            <Fragment key={kind}>
-              {kind === HOME_RAIL_KINDS[1] ? (
-                <section
-                  className="hp-provider-signins hp-rail"
-                  aria-label="Quick provider sign-ins"
-                  data-testid="home-provider-rail"
-                >
-                  <div className="hp-rail__head">
-                    <span className="hp-rail__label kit-eyebrow">Sign in to agents</span>
-                  </div>
-                  <ProviderRail port={credentialsPort} />
-                </section>
-              ) : null}
-              <section className="hp-rail" aria-label={config.labelPlural} data-testid={`hp-rail-${config.slug ?? kind}`}>
-                <div className="hp-rail__head">
-                  <button type="button" className="hp-rail__open" onClick={() => props.onOpenKind(kind)}>
-                    <span className="hp-rail__label kit-eyebrow">{config.labelPlural}</span>
-                    <span aria-hidden="true">▸</span>
-                  </button>
-                </div>
-                {rows.length > 0 ? (
-                  <div className="hp-rail__scroll">
-                    {rows.map((summary) => (
-                      <RowCard
-                        key={summary.id}
-                        row={homeRowOf(summary, {
-                          ...(config.list.liveTreatment
-                            ? { liveness: data.livenessOf(summary.id) }
-                            : {}),
-                          streaming: data.activity[summary.id] === true,
-                          compact: true,
-                        })}
-                        onOpen={props.onOpenEntity}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="hp-note">No {config.labelPlural.toLowerCase()} yet.</p>
-                )}
-              </section>
-            </Fragment>
-          );
-        })}
+        <section
+          className="hp-provider-signins hp-rail"
+          aria-label="Quick provider sign-ins"
+          data-testid="home-provider-rail"
+        >
+          <div className="hp-rail__head">
+            <span className="hp-rail__label kit-eyebrow">Sign in to agents</span>
+          </div>
+          <ProviderRail port={credentialsPort} />
+        </section>
 
-        {presenceRows.length > 0 ? (
-          <section className="hp-presence" aria-label="Teammates" data-testid="hp-presence">
-            {presenceRows.map((row) => {
-              const liveWork =
-                'liveWork' in row.state && row.state.liveWork ? row.state.liveWork : null;
-              return (
-                <button
-                  key={row.id}
-                  type="button"
-                  className="hp-presence__row"
-                  title={liveWork ? `${row.title} — working: ${liveWork.task.title}` : row.title}
-                  onClick={() => props.onOpenEntity(row.id)}
-                >
-                  <span
-                    className={`hp-presence__dot ${liveWork ? 'hp-presence__dot--working' : ''}`}
-                    aria-hidden="true"
-                  />
-                  <span className="hp-presence__name">{row.title}</span>
-                  {liveWork ? <span className="hp-presence__verb">working</span> : null}
-                </button>
-              );
-            })}
-          </section>
-        ) : null}
-
-        <footer className="hp-foot">
-          <button type="button" className="hp-foot__workspace" onClick={props.onOpenWorkspace}>
-            Open full workspace ⌗
-          </button>
-        </footer>
+        <section className="hp-chat hp-chat--full" aria-label="Chat">
+          {props.chat}
+          {props.listRail ?? null}
+        </section>
       </div>
+
+      {props.aside ?? null}
     </div>
   );
 }

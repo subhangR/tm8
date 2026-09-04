@@ -100,7 +100,7 @@ async function verifyInitialArgv(
         title: 'Prove the initial user turn runs',
         description: `Reply with exactly the single token ${m} and nothing else.`,
         priority: 'low',
-        workStatus: 'todo',
+        status: 'todo',
         acceptanceCriteria: [`Terminal output contains ${m}`],
       }],
     },

@@ -19,6 +19,7 @@ import type {
   EntityId,
   EntityKind,
   SpaceId,
+  StatusCategory,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type { PillTone } from '../kit';
@@ -68,11 +69,12 @@ export type IconRef = string;
  */
 export type TileBadgeSource =
   // task
-  | 'workStatus'
+  | 'status'
   | 'priority'
   | 'assignees'
   | 'acceptance'
   | 'dueDate'
+  | 'axes'
   // graph-wide badges (EntityBadges)
   | 'blocked'
   | 'pulls'
@@ -108,6 +110,12 @@ export type TileBadgeSource =
   | 'profileStatus'
   | 'profileVersions'
   | 'messageAuthor'
+  // chat (migration 176). `model` above already resolves for a chat — the
+  // source reads `state.model` and a chat state carries one — so only the
+  // facts no other kind has get their own members here.
+  | 'chatMode'
+  | 'chatTurnState'
+  | 'chatLastTurnAt'
   | 'customFields'
   // counters, present on every summary
   | 'points'
@@ -135,7 +143,7 @@ export interface PulseBinding {
  * kind has no status axis and renders no pill.
  */
 export type StatusSource =
-  | 'workStatus'
+  | 'status'
   | 'sessionStatus'
   | 'prState'
   | 'profileStatus'
@@ -345,6 +353,18 @@ export type ActionRef =
   // between and the verb commits directly.
   | 'start-terminal'
   | 'terminate'
+  // THE OTHER HALF OF THE PROCESS CONTROL. Terminate ends a run; this brings
+  // an ended one back with the agent's own conversation restored
+  // (`execution.resume`, a v1 catalog operation since the contract was
+  // written). The two share ONE slot and their gates are exact complements —
+  // see `hasEnded` in `domain/actions.ts`, which both consult.
+  //
+  // NOT wrapped in `launching()`, and the distinction is the same one
+  // `start-terminal` draws next door: a resume RESTORES a configuration
+  // rather than choosing one. Persona, project, tasks, model and workdir are
+  // re-read from the graph and the posture comes off the recorded manifest,
+  // so a launch config would open a card asking for things already decided.
+  | 'resume'
   | 'prompt-session'
   // §8 share-into-session (seam-deferred, §10.7)
   | 'share-into-session'
@@ -355,7 +375,10 @@ export type ActionRef =
   // path for a lane, deferred until a forge WRITE client exists.
   | 'merge-pr'
   // R7 deferred discovery rows (§4.2 disposition table)
-  | 'graph-view'
+  //
+  // `graph-view` was a member here until 2026-08-15. Graph shipped as a route
+  // and a rail destination, never as a verb, so retiring its deferral removed
+  // the ref outright instead of promoting it — see `domain/actions.ts`.
   | 'undo'
   | 'version-history'
   | 'leaderboard'
@@ -373,7 +396,26 @@ export type ActionRef =
   | 'unlink'
   | 'set-as-default'
   | 'mark-read'
-  | 'quote';
+  | 'quote'
+  /**
+   * OPEN A CHAT ABOUT THIS ROW (chat as an entity, 2026-09-03).
+   *
+   * A chat is an entity with an `about` edge to whatever it concerns, and
+   * `about` accepts every dst kind (`edge_types`, migration 056: `array['*']`),
+   * so this verb is universal by the same derivation `run` is — see
+   * `applyChatAbout` in the registry. Deriving it there rather than writing it
+   * into nineteen `rowActions` arrays is what keeps "which kinds can you chat
+   * about?" a question with one answer.
+   *
+   * IT NAVIGATES; IT DOES NOT SPAWN. `chat.start` needs a teammate, a model
+   * and a mode, and a row cluster has nowhere to ask for them — so the verb
+   * opens Home's new-conversation composer with the subject already bound
+   * (`/home/chat?about={id}`), and the human commits it there. That is the
+   * same two-clicks-to-launch rule `launch-session` follows, reached through
+   * the address instead of an expand: the composer IS the configuration, and
+   * the subject survives a reload and a paste.
+   */
+  | 'chat-about';
 
 export type ActionAvailability = { kind: 'available' } | { kind: 'disabled'; reason: string };
 
@@ -397,6 +439,18 @@ export interface ActionContext {
   capabilities?: EntityCapabilities | null;
   /** Seam verdict for work_session targets. Never computed here. */
   liveness?: SessionLiveness;
+  /**
+   * The target's CATEGORY — which of the four tabs it is under. Server truth,
+   * arriving on the row (`EntitySummary.category`); never derived here.
+   *
+   * Distinct from `liveness`, and the distinction is the point. Liveness is
+   * "is a process answering right now"; category is "has this reached its
+   * end". A stale session is not live and is not finished, and `terminate`
+   * needs the second question, not the first — gating it on liveness left
+   * every stale and unknown session with a dead Terminate button, which is
+   * exactly the row that needs retiring (user report 2026-08-19).
+   */
+  category?: StatusCategory;
   /**
    * WHO IS LOOKING — the viewer's own actor id in this space, resolved by the
    * shell from the identity read.
@@ -471,51 +525,86 @@ export interface ListSection {
 }
 
 /**
- * A lifecycle TIER — the Open / Done / Archived tabs the composed T0-1 canvas
- * draws on EVERY collection kind (user-ratified 2026-07-28, D41).
+ * ONE CATEGORY TAB — the To Do · In Progress · Done · Cancelled row the panel
+ * draws on EVERY kind.
  *
- * A tier is a different axis from a `ListSection`: the tier is the lifecycle
- * band you are looking at, the sections are triage grouping WITHIN it. T0-1
- * draws both at once — tabs above, `NEEDS ATTENTION` / `IN PROGRESS` group
- * headers below — so neither supersedes the other.
+ * PHASE 7 REPLACED `LifecycleTier`. Three things changed, and each was a lie
+ * the old shape could tell:
  *
- * `filter` stays contract-shaped, and `archived` is honestly expressible:
- * `deleted: 'only'` is a real `CollectionQuery` member, so the archive tier is
- * a genuine query rather than an invention. Where a kind has no state that can
- * land in a tier, `unsupported` carries the reason and the tab renders
- * HONESTLY EMPTY (L6) — never hidden, and never populated by a fabricated
- * partition.
+ *   1. **The id is a `StatusCategory`.** It used to be
+ *      `'open' | 'done' | 'archived'` — three ids that named neither a
+ *      contract member nor each other's opposite, and whose meaning was
+ *      whatever each kind's `filter` happened to say. Now the tab IS the
+ *      category, the closed four, identical on every kind, and the filter is
+ *      the mechanical `{ category: [id] }` that follows from it.
+ *   2. **`archived` is not one of them.** Archived is `deleted_at`, an axis
+ *      ORTHOGONAL to status — an archived task still has a status, and keeps
+ *      it across an archive/restore round-trip (design invariant 2). A tab row
+ *      is a partition: putting archived in it said "archived INSTEAD OF done",
+ *      and made the archive of an in-progress task unreachable from either
+ *      tab. It is a FILTER now (`FilterRow`'s `archived` spec), so it composes
+ *      with any category rather than replacing one.
+ *   3. **`cancelled` has its own tab.** It used to ride inside Done, which
+ *      told a user that abandoned work and finished work are the same
+ *      outcome. RULED (sub-doc 7 §3.4): cancelled work becomes permanently
+ *      visible, deliberately.
  *
- * D56: the D20 client-side partition is RETIRED. `CollectionQuery.filters`
- * gained a `sessionStatus` member (contract dd41e89), so every tier now carries
- * a contract-shaped filter the seam executes untranslated — including
- * work_session, which was the only kind that ever needed the workaround.
+ * A tab is a different axis from a `ListSection`: the tab is the category band
+ * you are looking at, the sections are triage grouping WITHIN it. T0-1 draws
+ * both at once — tabs above, group headers below — so neither supersedes the
+ * other.
  */
-export interface LifecycleTier {
-  id: 'open' | 'done' | 'archived';
+export interface StatusCategoryTab {
+  id: StatusCategory;
   label: string;
   filter: QueryFilter;
-  /**
-   * Set when this kind cannot populate this tier. The tab still renders — the
-   * count is honestly zero and the reason explains why, rather than the tier
-   * being silently dropped for some kinds and not others.
-   */
-  unsupported?: string;
 }
 
 export interface ListConfig {
   /** task: current / completed. */
   sections?: readonly ListSection[];
   /**
-   * Open / Done / Archived — universal across collection kinds (D41).
+   * To Do · In Progress · Done · Cancelled — the closed four, universal across
+   * every kind (D41, and PHASE 7's four-tab ruling).
    *
-   * Counts are NOT a field here. Each tier's count is its own query's
-   * `CollectionResult.page.total`, which feeds the tab label, the footer line
-   * ("9 open · 601 done · 33 archived") and the kind-selector total from ONE
+   * Counts are NOT a field here. Each tab's count is its own query's
+   * `CollectionResult.page.total` — a SERVER AGGREGATE since phase 7 — which
+   * feeds the tab label, the footer line and the kind-selector total from ONE
    * source. A count field would be a second source that could disagree with
    * the query it claims to summarise.
    */
-  lifecycle?: readonly LifecycleTier[];
+  categories?: readonly StatusCategoryTab[];
+  /**
+   * WHICH of those four the panel OPENS ON, before the viewer has ever picked
+   * a tab for this kind. Omitted means the first one, which is `to_do`.
+   *
+   * WHY THIS IS A PER-KIND FACT and not a constant. `categories` is one shared
+   * array precisely because the four buckets mean the same thing everywhere —
+   * that ruling is right and this does not touch it. What is NOT universal is
+   * where a kind's population SITS in them, and that follows from who writes
+   * the status:
+   *
+   *   AUTHORED kinds (task, doc, project, pull_request) are born `to_do` and a
+   *   human moves them along. Landing on To Do lands on the backlog, which is
+   *   the whole point of opening the list.
+   *
+   *   OBSERVED kinds have their category derived from something the user does
+   *   not author. A work_session's comes from the PROCESS (migration 155:
+   *   spawning→to_do, running/idle→in_progress, exited/failed→done), and
+   *   `spawning` is a sub-second birth transient. So To Do is not this kind's
+   *   backlog — it is a bucket nothing is ever caught in, and a running
+   *   session is structurally incapable of appearing there.
+   *
+   * Measured on the launch node, 477 sessions: To Do 0, In Progress 6, Done
+   * 471. Every other kind in the space had a populated To Do. So the sessions
+   * surface opened on the one permanently-empty tab it has, and the report
+   * this fixes ("doesn't show me live sessions") is that emptiness.
+   *
+   * RESOLVED AGAINST `categories`, never trusted blind: a value naming a tab
+   * this kind does not declare falls back to the first, so the panel cannot be
+   * pointed at a band it has no button for.
+   */
+  defaultCategory?: StatusCategory;
   /** task subtree; session coordinator→worker. */
   /**
    * `messagePulse` binds the tree's hairlines to live message provenance: a
@@ -590,6 +679,16 @@ export interface ListConfig {
    */
   valueControls?: readonly ValueControl[];
   /**
+   * Settable DATE fields the expanded row and the detail panel offer — a
+   * task's due date, today. Absent ⇒ this kind has no date to set.
+   *
+   * A plural list for the same reason `valueControls` is one: nothing here is
+   * about due dates specifically, and a second date field (a start date, a
+   * review-by) must not need a new prop. See `DateControl` for why it is not
+   * a `ValueControl`.
+   */
+  dateControls?: readonly DateControl[];
+  /**
    * The expanded row's ASSIGNEE picker. Absent ⇒ this kind is not assignable.
    *
    * Assignment is neither a state nor a content field: `state.assignees` is a
@@ -598,6 +697,24 @@ export interface ListConfig {
    * own declaration, for the same reason `valueControls` is not `stateControl`.
    */
   assignControl?: AssignControl;
+  /**
+   * The expanded row's PER-SPACE AXIS pickers (`state.axes`, migration 001's
+   * `task_axes` registry).
+   *
+   * SEPARATE FROM `valueControls` because the vocabulary is not the registry's
+   * to declare: a `ValueControl` carries a static `options` list, while an
+   * axis's legal values are PER-SPACE DATA the host reads from the node
+   * (`spaceSettings().taskAxes`) and hands over as `ControlHost.taskAxes`.
+   * Presence here only marks the kind whose state carries the `axes` record;
+   * a space with no axes renders no control at all, and a second axis arrives
+   * by server data alone — no registry edit, which is the whole point.
+   *
+   * The write is also different from `valueControls`: the server stores axes
+   * as ONE jsonb the patch replaces wholesale (`update_task_content`:
+   * `axes = coalesce(p_axes, axes)`, 038), so the executor merges the record
+   * before writing — one axis moves and the others survive.
+   */
+  axisControls?: { source: 'axes' };
   /**
    * Board mode (A2, doc 06 §1). Presence IS the declaration — a kind without
    * this field keeps its switcher position honestly disabled.
@@ -668,6 +785,44 @@ export interface ValueControl {
   options: readonly ValueOption[];
 }
 
+/**
+ * A settable CALENDAR DATE on the strip — a task's due date, today.
+ *
+ * SEPARATE FROM `valueControls` for the reason the registry's own `editFields`
+ * note gives: a `ValueControl` is "an enum member of `EntityState` this kind
+ * lets a user set" and renders a picker over declared `options`. A date has no
+ * vocabulary to declare, so folding it in would mean either an `options` list
+ * nobody can write or a picker branching on whether its own vocabulary is
+ * real — the same "one dispatch rule over two operations" this file refuses
+ * everywhere else.
+ *
+ * THE WRITE IS `valueControls`', though, and deliberately: `content[source]`,
+ * version-guarded, through the same `onSetValue` executor. What differs is the
+ * INPUT, not the patch, and a second executor would be a second place for the
+ * version guard to be forgotten.
+ *
+ * CLEARING IS A REAL WRITE HERE, unlike a `ValueControl` whose fields have no
+ * contract-level clear: `tasks.due_date` is nullable, so "no due date" is a
+ * value the database holds. Emptying the box sends an explicit `null`, which
+ * is the only thing `update_task_content`'s `coalesce` reads as a clear.
+ */
+export interface DateControl {
+  /**
+   * Which `EntityState` member carries the current value — read structurally,
+   * and written back under the SAME name in the kind's content patch.
+   *
+   * `dueDate` is the app's one field whose halves live apart: the server
+   * projects the column onto `state` and leaves it out of `contentOf`. That
+   * asymmetry is invisible from here because BOTH sides already name `source`
+   * — the strip reads `state[source]` exactly as `RowValueControl` does, and
+   * the executor writes `content[source]` exactly as it does for priority.
+   */
+  source: string;
+  label: string;
+  /** Shown when the field is unset. Not an option: null is not a value. */
+  emptyLabel: string;
+}
+
 export interface AssignControl {
   /** The `EntityState` member carrying the current `ActorSummary[]`. */
   source: string;
@@ -699,14 +854,50 @@ export interface StateOption {
   id: string;
   /** Route this value through a different verb than the control's default. */
   via?: ActionRef;
+  /**
+   * Which of the closed four this state belongs to — DATA, added by phase 7.
+   *
+   * The board needs it: its columns are `stateControl.options` ∩ the open
+   * CATEGORY TAB, and before the tabs became categories the intersection was
+   * computed by reading the tab's own `filter.status` array, i.e. by two
+   * different declarations of the same partition agreeing. They do not agree
+   * any more — the tab declares `{ category: [...] }` — and re-deriving it in
+   * the panel would be the seventh bucketing of statuses this program exists
+   * to retire. The option says which bucket it is in, once, beside its id.
+   *
+   * OPTIONAL: a control whose options carry no category has no per-category
+   * board partition to make, and every option shows on every tab. That is the
+   * honest fallback for a kind whose states this build cannot bucket.
+   */
+  category?: StatusCategory;
 }
 
 export interface StateControl {
   /**
    * Which `EntityState` member carries the CURRENT value. Read structurally,
    * so the panel never names a kind to find the field it is editing.
+   *
+   * PHASE 9 collapsed this union to ONE member. It used to read
+   * `'workStatus' | 'status'` — a task's position and a session's runtime
+   * liveness under two names — and the vocabulary sweep renamed the task arm
+   * to `status`, which is what it always was. Both kinds now answer the same
+   * structural read, which is the point: the panel reaches for a member, not
+   * for a kind.
    */
-  source: 'workStatus' | 'status';
+  source: 'status';
+  /**
+   * The `CollectionQuery.filters` key that asks the SERVER for rows at one of
+   * this control's option values — DATA, because `source` no longer
+   * distinguishes them. A task's settable values live on `filters.status`, a
+   * work_session's observed ones on `filters.sessionStatus`; before Phase 9
+   * the two filters were inferred from two distinct `source` names, and
+   * collapsing those names would otherwise have made a session's board read
+   * ask for a task filter it does not answer.
+   *
+   * OPTIONAL: a kind whose states are not exactly queryable simply omits it,
+   * and the board falls back to category columns and says why (`planFor`).
+   */
+  filterKey?: 'status' | 'sessionStatus';
   label: string;
   /** The verb every option dispatches through unless it declares its own `via`. */
   command: ActionRef;
@@ -758,15 +949,57 @@ export type BodyArchetype =
   // Surface wave (kind-bodies-2): project's governed body and
   // interaction_profile's restricted body.
   | 'governed'
-  | 'restricted';
+  | 'restricted'
+  /**
+   * THE BODY *IS* THE CONVERSATION (chat as an entity, 2026-09-03).
+   *
+   * Not `hub`: a hub renders its front-door regions and hangs the feed
+   * BENEATH them, which is right for a channel — a channel has a topic, a
+   * roster and a description that the conversation is about. A chat has none
+   * of that. Its title is generated from its first turn and its content
+   * arm is literally `{ kind: 'chat' }` (contract: "A chat has NO content
+   * beyond its summary"), so a fields block above the transcript would be a
+   * header printing the same sentence the first bubble already says.
+   *
+   * Not `terminal` either: that arm mounts `WorkSessionContent`, a five-surface
+   * strip over a live PTY. A chat has one surface.
+   *
+   * So the arm returns the host's conversation surface and nothing else.
+   * `composition: 'chat'` rides along and does the rest — no attachment strip,
+   * no attention section, no footer under a body that ends at its composer.
+   */
+  | 'conversation';
+
+/**
+ * WHICH conversation a kind's panel mounts — REGISTRY DATA, so no component
+ * and no host asks what kind it is holding (§15.2).
+ *
+ * The values are the `ConversationSurfaceKind`s `views/conversationSurface.tsx`
+ * can compose, minus the two a kind never declares for itself: `'discussion'`
+ * is the tab EVERY entity has (the host asks for it explicitly), and a host
+ * may still override any of these per call.
+ *
+ * Absent ⇒ the archetype default: a hub gets its channel feed, everything else
+ * gets the session transcript.
+ */
+export type PanelConversationSurface = 'channel-feed' | 'chat-thread' | 'transcript';
 
 export type ContentBlockKind =
   | 'fields'
   | 'link-summary'
   | 'file-preview'
-  // Artifact wave: metadata-only preview for the `artifact` kind. Execution of
-  // the bundle (the iframe) is release-gated on two open security decisions and
-  // is deliberately NOT part of this block.
+  // The blueprint canvas — a `graph` row's vertices AND edges drawn from the
+  // ONE content object it stores (R1), so the picture is a pure fold of the
+  // row and needs no seam, no per-node reads and no host wiring. Craft's
+  // studio is where you EDIT a blueprint; this block is where every other
+  // surface can SEE it, so a graph stops rendering two different ways.
+  | 'blueprint'
+  // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
+  // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
+  // superseding the earlier click-gate); the sandbox posture is unchanged —
+  // exactly `allow-scripts`, nothing else — and the preview URL is an opaque
+  // server-minted capability, origin-agnostic and never parsed or built by the
+  // UI. Full posture on `ArtifactPreviewBlock` in GenericBody.
   | 'artifact-preview'
   | 'items'
   | 'lifecycle'
@@ -822,9 +1055,6 @@ export interface ContentBlockRef {
   params?: Readonly<Record<string, string | number | boolean>>;
 }
 
-/** Complete work-session Content vocabulary; pin projection gates Chat. */
-export type ContentSurfaces = readonly ['terminal'] | readonly ['terminal', 'chat'];
-
 export interface PanelConfig {
   archetype: BodyArchetype;
   /** generic archetype: ordered blocks (§2.4). */
@@ -837,8 +1067,6 @@ export interface PanelConfig {
    * honest sentence.
    */
   capabilityReasons?: Partial<Record<keyof EntityCapabilities, string>>;
-  /** work_session only. */
-  contentSurfaces?: ContentSurfaces;
   /**
    * Git UI wave: the subtree body mounts the git section (tracked PRs,
    * commit provenance, completion-gate honesty) when the REGISTRY says so —
@@ -846,12 +1074,36 @@ export interface PanelConfig {
    */
   gitSection?: boolean;
   /**
-   * 'chat': the content body is a conversation that ENDS at its composer —
-   * the panel mounts no AttachmentStrip (the composer's + owns attach) and no
-   * PanelFooter below it. Terminal panels already skip both via the archetype
-   * arm; this flag states the same reason structurally for chat surfaces.
+   * THE BODY OWNS ITS OWN BOTTOM EDGE, and this says which way.
+   *
+   * EITHER value means the panel mounts no AttachmentStrip, no attention
+   * section and no PanelFooter beneath the body. Terminal panels already skip
+   * all three through the archetype arm; this flag states the same reason
+   * structurally for kinds that share the shape without sharing the archetype.
+   *
+   *   · 'chat'  — the body is a conversation that ENDS at its composer. The
+   *     composer's ＋ already owns attach, so a strip below it is duplication.
+   *   · 'frame' — the body is a VIEWPORT onto something else, and the panel
+   *     exists to show it (owner ruling 2026-08-20, the artifact screen). Its
+   *     controls ride the panel bar instead of a row of their own, and it takes
+   *     every pixel between that bar and the panel edge.
+   *
+   * Absent ⇒ the ordinary stacked body, which keeps all three. The gates read
+   * PRESENCE rather than each value, so a third composition cannot arrive and
+   * silently inherit a footer nobody chose for it.
    */
-  composition?: 'chat';
+  composition?: 'chat' | 'frame';
+  /**
+   * The kind's conversation surface, when it is not the archetype's default.
+   *
+   * DATA rather than a fork in the composer, for the reason `launchMode` is
+   * data on an `ActionDef`: without it `defaultConversationSurfaceKind` would
+   * have to read `detail.kind === 'chat'`, and a kind literal outside
+   * `domain/` is a build failure (§15.2). It also means a host can keep
+   * asking for a surface EXPLICITLY — the parameter still wins — so this
+   * changes what a kind gets by default and nothing else.
+   */
+  conversation?: PanelConversationSurface;
   /**
    * The kind's chat surface reads THREAD ROOTS and opens a reply branch in a
    * side pane (the Slack-thread model). REGISTRY DATA, not a kind literal: the
@@ -1020,17 +1272,20 @@ export interface KindConfig {
   /**
    * Can a session be launched ON this kind — the Run button.
    *
-   * Declared here rather than by hand-listing `'run'` in `list.rowActions` and
-   * `panel.primaries`, which is how it worked when task was the only launchable
-   * kind: the capability then lived in three separate string arrays per kind
-   * with nothing tying them together, so "which kinds can launch?" had no single
-   * answer and adding a kind meant remembering all three sites. `applyLaunch`
-   * in the registry derives those arrays from this one field.
+   * DERIVED, NOT DECLARED. A kind config does not set this; `applyLaunch` in
+   * the registry writes it from the `NOT_LAUNCHABLE` denylist, which is the one
+   * authority, and derives `list.rowActions`, `panel.primaries` and
+   * `palette.primaryAction` from the same answer so the three cannot disagree.
+   *
+   * It was declared per-row when `task` was the only launchable kind, and the
+   * cost of that showed up as absence: launching is open to every kind the
+   * server will derive a task for (migration 064 — all but `work_session`), but
+   * eleven kinds simply never set the flag and so never grew a Run button.
+   * Making the permissive case the default turns a forgotten flag from a
+   * silently missing feature into a deliberate opt-out.
    *
    * The subject need not be a task. The server derives a task to anchor the
-   * session on (migration 064) and the launched entity is what the agent is
-   * pointed at, so any kind that a person could sensibly ask an agent to work on
-   * may set this.
+   * session on and the launched entity is what the agent is pointed at.
    */
   launchable?: boolean;
 }

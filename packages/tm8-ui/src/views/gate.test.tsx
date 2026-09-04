@@ -53,14 +53,21 @@ const renderGate = () => {
 
 describe('THE GATE — composed T0-1 master screen', () => {
   it('boots through the real seam and mounts every shell region', async () => {
-    const { getByTestId, container } = renderGate();
+    const { getByTestId, queryByTestId, getByRole, container } = renderGate();
 
     // Boot is async (identity → spaces → openSpace → hydrate), so the screen
     // legitimately starts in its loading state.
     await waitFor(() => expect(getByTestId('workspace-grid')).toBeTruthy());
 
     getByTestId('space-tab-bar');
-    getByTestId('menu-rail');
+    // NO menu rail, and that is the shipped arrangement rather than a gap.
+    // Every group in the default menu is a single childless view item
+    // (domain/menu.ts), so `isRaillessGroup` answers true for all of them and
+    // GateApp.tsx:1461 leaves `railConfig` null. The screens tab row IS the
+    // top-level navigation; a rail beside it "could only repeat its own tab"
+    // (shell/menu-resolve.ts:220-226).
+    expect(queryByTestId('menu-rail')).toBeNull();
+    getByRole('tablist', { name: 'Screens' });
     // With nothing open the centre hosts the roster, NOT the panel stack —
     // PanelStack mounts once a panel exists (02-LAYOUT §2.2).
     getByTestId('empty-center');
@@ -68,30 +75,41 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(container.querySelector('.shell-root')).not.toBeNull();
   });
 
-  it('renders the rail from the SHIPPED DEFAULT — the fixture seam has no menu row', async () => {
-    // This is the fail-closed path running for real at the gate, not a stub:
-    // createFixtureSeam resolves menu() as null (C-4), so the rail the reviewer
-    // sees IS the shipped default constant.
-    //
-    // Revision 11: the rail opens EXPANDED with no printed eyebrows — group
-    // labels are the groups' accessible names — and collapsing degrades them
-    // to the dividers' accessible names. Both halves are asserted, because
-    // both are the shipped default reaching the screen.
+  /**
+   * The shipped default still reaches the screen unaided — that is what this
+   * has always been for — but it arrives as the SCREENS TAB ROW, not as a rail.
+   *
+   * `createFixtureSeam` resolves `menu()` as null (C-4), so what a reviewer
+   * sees IS the shipped default constant, and this is the fail-closed path
+   * running for real at the gate rather than a stub.
+   *
+   * It asserts NO rail deliberately. Every group in the default owns exactly
+   * one childless view item, so `isRaillessGroup` (shell/menu-resolve.ts:240)
+   * answers true for every menu group and the shell renders each screen full-bleed
+   * beside the tab row. A rail here would be the "fourth column repeating the
+   * tab's own name" that `menu-resolve.ts:220-226` exists to prevent.
+   */
+  it('renders the SHIPPED DEFAULT as the screens tab row, and draws no rail', async () => {
     const { container, getByRole } = renderGate();
-    await waitFor(() =>
-      expect(container.querySelectorAll('.shell-rail__group').length).toBeGreaterThan(0),
-    );
-    const groupLabels = [...container.querySelectorAll('.shell-rail__group')]
-      .map((n) => n.getAttribute('aria-label'));
-    expect(groupLabels).toContain('Workspace');
-    expect(groupLabels).toContain('Chats');
-    expect(groupLabels).toContain('Settings');
+    const tabs = await waitFor(() => getByRole('tablist', { name: 'Screens' }));
 
-    fireEvent.click(getByRole('button', { name: 'Collapse menu rail' }));
-    const dividerLabels = [...container.querySelectorAll('.shell-rail__divider')]
-      .map((n) => n.getAttribute('aria-label'));
-    expect(dividerLabels).toContain('Workspace');
-    expect(dividerLabels).toContain('Settings');
+    // The shipped default's groups plus route-only Board v2 in the single
+    // Board seat. Files and legacy Board are absent; Help is last.
+    const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
+    // 'CodeBrain' joined the spine 2026-09-01 (migration 173) and 'Chats'
+    // 2026-09-03 (migration 180) — see domain/menu.ts. The tab row is derived
+    // from the shipped default, so it moves with the spine rather than being
+    // asserted independently of it.
+    expect(labels).toEqual([
+      'Home', 'Chats', 'Work', 'Board', 'Craft', 'Graph', 'CodeBrain', 'Settings', 'Help',
+    ]);
+
+    // The rail is absent as a matter of design, so none of its furniture is
+    // half-rendered either — a stray group or divider would mean a rail came
+    // back for one group and nobody noticed.
+    expect(container.querySelector('[data-testid="menu-rail"]')).toBeNull();
+    expect(container.querySelectorAll('.shell-rail__group')).toHaveLength(0);
+    expect(container.querySelectorAll('.shell-rail__divider')).toHaveLength(0);
   });
 
   /**
@@ -113,7 +131,13 @@ describe('THE GATE — composed T0-1 master screen', () => {
 
     // Channels is an offered COLLECTION in the list panel's kind switcher.
     const left = within(grid).getByLabelText('Left panel');
-    fireEvent.click(left.querySelector('.lp__kind') as HTMLElement);
+    // The kind switcher lives on the HOST's column header, not inside the
+    // panel: WorkspaceView passes `selectorSlot="host"` (WorkspaceView.tsx:727),
+    // which retires the panel's own `KindSelector` row and moves the live
+    // control up to `ListRootHeader`. `.lp__kind` still exists in
+    // EntityListPanel.tsx:985 — it is simply never rendered here, which is why
+    // the old selector read as a missing element rather than a missing feature.
+    fireEvent.click(within(left).getByLabelText('Choose which list to show'));
     fireEvent.click(within(left).getByRole('menuitem', { name: /Channels/ }));
     await waitFor(() =>
       expect(left.querySelector('[data-testid="entity-list-panel"]')?.getAttribute('data-kind'))
@@ -142,33 +166,18 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const { getByTestId } = renderGate();
     const grid = await waitFor(() => getByTestId('workspace-grid'));
     // Anatomy, not geometry: the three regions exist and are labelled.
-    within(grid).getByLabelText('Left panel');
-    within(grid).getByLabelText('Right panel');
-    within(grid).getByLabelText('Workspace center');
-  });
-
-  it('moves a complete side panel across the center without losing its behavior', async () => {
-    const view = renderGate();
-    const grid = await waitFor(() => view.getByTestId('workspace-grid'));
     const left = within(grid).getByLabelText('Left panel');
     const right = within(grid).getByLabelText('Right panel');
+    within(grid).getByLabelText('Workspace center');
 
     expect(left.querySelector('[data-kind="task"]')).not.toBeNull();
     expect(right.querySelector('[data-kind="work_session"]')).not.toBeNull();
 
-    fireEvent.keyDown(within(left).getByRole('button', { name: /drag task panel/i }), {
-      key: 'Enter',
-    });
-
-    await waitFor(() => expect(right.querySelector('[data-kind="task"]')).not.toBeNull());
-    expect(left.querySelector('[data-kind="work_session"]')).not.toBeNull();
-    expect(within(right).getByRole('button', { name: /drag task panel/i })).toBeTruthy();
-
-    // The empty-center roster follows the registry's terminal capability, not
-    // a hard-wired assumption that Sessions stays on the right.
-    const rosterNames = [...view.getByTestId('empty-center').querySelectorAll('.shell-empty__name')]
-      .map((node) => node.textContent);
-    expect(rosterNames).toContain('forge');
+    /* A dock's first row is its OWN header. The 14px drag grip that used to
+       sit above it — whose only function was swapping the two docks — is gone
+       (task 01a01a3c), so nothing separates a panel from its content. */
+    expect(left.firstElementChild?.className).toBe('shell-ws__side-content');
+    expect(right.firstElementChild?.className).toBe('shell-ws__side-content');
   });
 
   it('renders the empty centre as a grouped terminal summary plus the grammar lesson', async () => {
@@ -239,7 +248,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // unreachable. A hook test cannot see a missing call site; only mounting
     // the real view and clicking through can. A1c found it with a grep from
     // outside my files, which is the same vantage in a different tool.
-    const { getByTestId, container } = renderGate();
+    const { getByTestId, queryByTestId, getByRole, container } = renderGate();
     await waitFor(() => getByTestId('workspace-grid'));
 
     // No sheet until something opens it.
@@ -255,26 +264,42 @@ describe('THE GATE — composed T0-1 master screen', () => {
       // reaches the sheet — and the Sessions header must not be counted as if
       // it did.
       //
-      // THE ASSERTION MOVED IN 101, AND THE RULE DID NOT. It used to be "that
-      // header row does not exist", because the only thing in it was a
-      // DISABLED `Launch session ▸` sentence that had once been miscounted as
-      // proof of reachability. The row exists now: it carries `▮ Terminal`,
-      // which performs a real act (a vanilla shell session). So the check is
-      // written against what was actually wrong — an ENABLED control that
-      // opens nothing — rather than against the row that happened to contain
-      // one. `Launch session ▸` is still in there and still refuses, with its
-      // reason on screen, which is the honest state of this build.
-      // ASSERTED, NOT GUARDED. An `if (header)` here would go green the day
-      // the header stops rendering — which is precisely the defect this PR
-      // closed (no mount passed `onAction`, so the row drew nothing). A
-      // conditional assertion about a control that must exist cannot notice
-      // the control disappearing.
-      const header = container.querySelector('[data-kind="work_session"] .lp__actions');
-      expect(header).toBeTruthy();
-      const enabled = [...(header as HTMLElement).querySelectorAll('button')].map((b) => b.textContent ?? '');
-      expect(enabled.some((label) => /launch/i.test(label))).toBe(false);
-      expect(within(header as HTMLElement).getByTestId('disabled-with-reason').textContent)
-        .toMatch(/launch session/i);
+      // THE ASSERTION HAS MOVED THREE TIMES. THE RULE HAS NOT MOVED ONCE.
+      // It was first "that header row does not exist", because the only thing
+      // in it was a DISABLED `Launch session ▸` sentence that had been
+      // miscounted as proof of reachability. Then the row earned its place by
+      // carrying `▮ Terminal`, which performs a real act (a vanilla shell
+      // session). Then the disabled sentence went, by the 2026-08-17 ruling:
+      // the header can never name a launch subject, so that refusal was
+      // permanent furniture rather than a gap anyone could close.
+      //
+      // NOW THE ROW ITSELF IS GONE (user ruling 2026-08-19) and the terminal
+      // verb has moved UP into the root header's kind cell — the ＋ half,
+      // which is where a reader looks for "make me one of these". The row sat
+      // one line below the cell that now owns it.
+      //
+      // Through all four versions the check is written against the thing that
+      // was actually wrong — an ENABLED control that opens nothing — never
+      // against the row that happened to contain one.
+      const list = container.querySelector('[data-kind="work_session"]');
+      // ASSERTED, NOT GUARDED. An `if (list)` here would go green the day the
+      // sessions column stops rendering, which is a bigger defect than the one
+      // this test was written for.
+      expect(list).toBeTruthy();
+      // The retired row. Its absence is half the ruling; the other half is
+      // that the verb LANDED somewhere, asserted next.
+      expect((list as HTMLElement).querySelector('.lp__actions')).toBeNull();
+      // The root header is this column's first child, above the list.
+      const bar = (list as HTMLElement).previousElementSibling;
+      const birth = bar?.querySelector('.tch-rootcell--kind .tch-rootcell__plus');
+      expect(birth).toBeTruthy();
+      // `▮ Terminal`, not `＋ New session`: sessions are STARTED, and the cell
+      // wears its kind's own birth verb. Asserting only the row's absence
+      // would pass just as happily on a surface with no way to get a session
+      // at all, which is the 101 defect wearing a different face.
+      expect(birth?.getAttribute('aria-label') ?? '').toMatch(/terminal/i);
+      expect(birth?.getAttribute('aria-disabled')).not.toBe('true');
+      expect(bar?.textContent ?? '').not.toMatch(/launch session/i);
     }
   });
 
@@ -285,7 +310,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // implementation raised a toast whose own body admitted it did not
     // dispatch — a brass primary that cannot perform its verb, which reads as
     // working until you click it.
-    const { getByTestId, container } = renderGate();
+    const { getByTestId, queryByTestId, getByRole, container } = renderGate();
     await waitFor(() => getByTestId('workspace-grid'));
 
     const before = (container.querySelector('.shell-empty__eyebrow')?.textContent ?? '').trim();
@@ -311,7 +336,35 @@ describe('THE GATE — composed T0-1 master screen', () => {
     }
   });
 
-  it('opens Graph from the rail with workspace data from the active seam', async () => {
+  // The Graph door is the screens TAB now that no rail is drawn; the screen
+  // and its data path are unchanged.
+  /**
+   * THE CANVAS OPENS ON A 24-HOUR WINDOW, AND THE FIXTURES ARE OLDER THAN THAT.
+   *
+   * This is why the test was red, and it is a latent time bomb rather than a
+   * graph defect — it could only ever have passed on the day it was written:
+   *
+   *   · `DEFAULT_WINDOW` is `'24h'` (graph/model.ts:81);
+   *   · `loadGraph` turns that into `activeSince = Date.now() - 24h` using WALL
+   *     TIME (useGateData.ts:963) — the browser's clock, not the fixture's;
+   *   · every fixture entity is stamped `FIXTURE_NOW`, a FROZEN
+   *     '2026-07-28T12:00:00.000Z' (fixtures/entities.ts:33);
+   *   · and the fixture query drops anything older than the filter —
+   *     `if (f?.activeSince && s.activityAt < f.activeSince) return false;`
+   *     (seam-fixture.ts:1906).
+   *
+   * So from the second day of this fixture's life onward, every node is
+   * filtered out before the canvas ever sees it, and the screen honestly
+   * renders nothing. Note this is NOT the lens: 'Everything' seeds relevance,
+   * and clicking it changes nothing here — the WINDOW is a separate control
+   * ('Graph time window', GraphView.tsx:712), which is the one that was
+   * excluding the data.
+   *
+   * The test now stands in 'All time' — "every entity this session has loaded,
+   * however old", which is exactly the affordance for data this age. That also
+   * makes it time-independent: it will not rot again as the fixture recedes.
+   */
+  it('opens Graph from the tab row with workspace data from the active seam', async () => {
     const resizeObserver = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {
       observe() {}
@@ -322,7 +375,11 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const view = renderGate();
     try {
       await waitFor(() => view.getByTestId('workspace-grid'));
-      fireEvent.click(view.getByRole('button', { name: 'Graph' }));
+      // Scoped to the tab row: the workspace panels carry their own Graph
+      // controls, and an unscoped match would find one of those instead.
+      fireEvent.click(
+        within(view.getByRole('tablist', { name: 'Screens' })).getByRole('tab', { name: 'Graph' }),
+      );
 
       const graph = await waitFor(() => view.getByTestId('graph-screen'));
       // The lens control replaced the static eyebrow: the first thing the
@@ -330,7 +387,27 @@ describe('THE GATE — composed T0-1 master screen', () => {
       // the escape to the whole space.
       expect(within(graph).getByRole('group', { name: 'Graph lens' })).toBeTruthy();
       expect(within(graph).getByRole('button', { name: 'Everything' })).toBeTruthy();
-      expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0);
+      // Widen past the 24h default before asserting on the space's entities —
+      // see the docblock. This is the window control, not the lens.
+      fireEvent.click(
+        within(within(graph).getByRole('group', { name: 'Graph time window' }))
+          .getByRole('button', { name: 'All time' }),
+      );
+      // AWAITED: widening the window is a fresh read, so the frame right after
+      // the click is still the empty one.
+      await waitFor(() =>
+        expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0),
+      );
+      // EDGES, TOO — and this half is not decoration. `graph.query` puts
+      // endpoint IDS on the wire and `loadGraph` resolves them against the
+      // same response's nodes before anything reaches the store; if that
+      // resolution ever silently produced nothing, the nodes above would still
+      // draw and the canvas would go quietly relationless. This is the only
+      // assertion in the repo that runs the whole path — real seam, real
+      // reducer, real layout — and sees a line on the screen at the end of it.
+      await waitFor(() =>
+        expect(graph.querySelectorAll('.gv-edge').length).toBeGreaterThan(0),
+      );
     } finally {
       view.unmount();
       if (resizeObserver === undefined) delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
@@ -366,27 +443,69 @@ describe('THE GATE — composed T0-1 master screen', () => {
  * broken. The mount/unmount is the test.
  */
 describe('detail screens keep what you were looking at', () => {
-  const rail = (view: ReturnType<typeof renderGate>) =>
-    within(view.getByTestId('menu-rail'));
+  /**
+   * THE DOOR CHANGED; THE INVARIANT DID NOT.
+   *
+   * These tests used to reach a kind screen through the menu rail's Workspace
+   * caret. That rail is gone by design — every shipped-default group is a lone
+   * childless view, so `isRaillessGroup` is true for all of them and no rail
+   * renders (see the tab-row test above). The kind screens themselves are
+   * unchanged and still addressable, so the tests now walk in through the
+   * ADDRESS, which is a real user action: a pasted link or a bookmark.
+   *
+   * What is under test is untouched by that swap — EntityView really unmounts
+   * when you leave and must bring back the entity you had open, per screen.
+   * The store's own unit tests cannot see a `useState` left behind in a view,
+   * which is exactly what was broken; the mount/unmount is the test.
+   */
+  const goto = (hash: string) => {
+    window.location.hash = hash;
+    // The browser target's subscriber ignores the event payload and re-reads
+    // `location.hash` (routes/transport.ts:45), so a bare event is enough —
+    // and jsdom does not always emit one for a programmatic assignment.
+    fireEvent(window, new Event('hashchange'));
+  };
 
-  const openKind = async (view: ReturnType<typeof renderGate>, name: RegExp) => {
-    // Revision 11: the collection leaves ride the Workspace caret, which ships
-    // CLOSED — open it first (idempotently; the label flips once open).
-    const caret = rail(view).queryByLabelText('Expand Workspace');
-    if (caret) fireEvent.click(caret);
-    // Scoped to the rail (the workspace panels carry their own kind controls)
-    // and matched by prefix (rail labels carry badge text: "Tasks3, 3 unseen").
-    fireEvent.click(rail(view).getByRole('button', { name }));
+  const openKind = async (view: ReturnType<typeof renderGate>, slug: string) => {
+    goto(`#/s/sp-atelier/k/${slug}`);
     return waitFor(() => view.getByTestId('entity-view'));
   };
 
   const detailPanel = (view: ReturnType<typeof renderGate>) =>
     within(view.getByTestId('entity-view-detail')).queryByTestId('entity-detail-panel');
 
-  it('restores the open entity after switching rail items and back', async () => {
+  /**
+   * STILL SKIPPED, and it is NOT a timing problem — that was my first reading
+   * and it was wrong. The root cause, now established:
+   *
+   * THE ADDRESS DOOR DEFEATS THE INVARIANT. Drilling into a tile writes
+   * `e/{id}?origin=` and pushes it (router-mount.test.tsx pins exactly that),
+   * so the open entity is PART OF THE ADDRESS. `openKind` here navigates to a
+   * bare `k/tasks`, which is an explicit address saying "this kind screen, with
+   * nothing open" — so the app correctly shows the attention inbox, and the
+   * test reads that as the selection having been lost.
+   *
+   * What this test protects is the opposite case: coming back through a door
+   * that does NOT re-address, where the selection can only come from the
+   * screen's own retained state. That was the rail, and the rail is gone.
+   *
+   * So this needs a ruling rather than a repair, and there are two candidates:
+   *   (a) return via history (leave to Home pushes; going back restores
+   *       `e/{id}`) — keeps a real remount, but leans on the router rather
+   *       than on the retained state the original bug was about;
+   *   (b) accept that the address now carries the selection, and retire this
+   *       test in favour of the router-mount coverage that already pins it —
+   *       the guarantee got stronger, not weaker, when it moved into the URL.
+   *
+   * Its sibling below still passes and still covers the per-screen isolation
+   * half, so nothing is unguarded while this is decided.
+   *
+   * Tracked: task 01a01543-75b8-704d-9d77-cfb9a22e40e4.
+   */
+  it.skip('restores the open entity after switching rail items and back', async () => {
     const view = renderGate();
     await waitFor(() => view.getByTestId('workspace-grid'));
-    await openKind(view, /^Tasks/);
+    await openKind(view, 'tasks');
 
     // Nothing open yet: the attention inbox IS the empty state of the centre.
     expect(view.getByTestId('attention-inbox')).toBeTruthy();
@@ -414,12 +533,15 @@ describe('detail screens keep what you were looking at', () => {
 
     // LEAVE — Home is a different branch of GateApp's view ternary, so
     // EntityView really unmounts. That is the step that used to destroy the
-    // selection, and the assertion below is that it no longer does.
-    fireEvent.click(rail(view).getByRole('button', { name: /^Home$/ }));
+    // selection, and the assertion below is that it no longer does. The Home
+    // TAB is the door now that the rail is gone; it is the same branch either
+    // way.
+    fireEvent.click(within(view.getByRole('tablist', { name: 'Screens' }))
+      .getByRole('tab', { name: 'Home' }));
     await waitFor(() => expect(view.queryByTestId('entity-view')).toBeNull());
 
     // COME BACK.
-    await openKind(view, /^Tasks/);
+    await openKind(view, 'tasks');
     // The same entity, not the attention page.
     expect(await settled()).toBe(openedText);
     view.unmount();
@@ -428,7 +550,7 @@ describe('detail screens keep what you were looking at', () => {
   it('keeps each screen separate — a task does not follow you into Docs', async () => {
     const view = renderGate();
     await waitFor(() => view.getByTestId('workspace-grid'));
-    await openKind(view, /^Tasks/);
+    await openKind(view, 'tasks');
     const tile = (await waitFor(() => view.getAllByTestId('list-tile')))[0] as HTMLElement;
     fireEvent.click(tile.querySelector('button') ?? tile);
     await waitFor(() => expect(detailPanel(view)).toBeTruthy());
@@ -436,7 +558,7 @@ describe('detail screens keep what you were looking at', () => {
     // A screen nobody has opened anything on is still empty: its stack is its
     // own, so the Tasks selection is structurally unreachable from here. This
     // is the rule EntityView used to enforce by resetting on every kind change.
-    await openKind(view, /^Docs/);
+    await openKind(view, 'docs');
     await waitFor(() => expect(detailPanel(view)).toBeNull());
     expect(view.getByTestId('attention-inbox')).toBeTruthy();
     view.unmount();

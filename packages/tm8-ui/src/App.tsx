@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { AuthGate } from './auth';
+import { JoinBanner, capturePendingJoin } from './join';
 import { GateApp } from './views/GateApp';
 import { useServerRegistry } from './servers';
 
@@ -25,14 +27,33 @@ import { useServerRegistry } from './servers';
  * change and not mine to make.
  */
 export function App() {
+  /**
+   * THE JOIN LINK IS CAPTURED HERE, above the gate, and once.
+   *
+   * `capturePendingJoin` strips the code out of the URL as it parks it (a code
+   * is a credential and should not sit in the address bar), so a second read
+   * of `location` would find nothing — the lazy initialiser makes "once"
+   * literal rather than once-per-first-render.
+   *
+   * It must be above `AuthGate` because the gate renders its flow INSTEAD of
+   * children while signed out, and an invite's recipient usually is: anything
+   * holding the code below this line is unmounted at exactly the moment the
+   * code matters. Parking is what lets the sign-in ceremony happen in between
+   * and still come back here.
+   *
+   * The gate is told only THAT a code is held, never what it is — see
+   * `JoinBanner` for why the banner reads nothing.
+   */
+  const [pendingJoin] = useState<string | null>(() => capturePendingJoin());
+
   return (
-    <AuthGate>
-      <ConnectedGateApp />
+    <AuthGate signedOutBanner={<JoinBanner pending={pendingJoin !== null} />}>
+      <ConnectedGateApp pendingJoin={pendingJoin} />
     </AuthGate>
   );
 }
 
-function ConnectedGateApp() {
+function ConnectedGateApp({ pendingJoin }: { pendingJoin: string | null }) {
   const registry = useServerRegistry();
   return (
     <GateApp
@@ -41,6 +62,10 @@ function ConnectedGateApp() {
       servers={registry.servers}
       onSelectServer={registry.selectServer}
       onAddServer={registry.addServer}
+      // Handed DOWN rather than re-read: `GateApp` is keyed on the active
+      // server and remounts when it changes, and by then the URL no longer
+      // holds the code.
+      pendingJoin={pendingJoin}
     />
   );
 }

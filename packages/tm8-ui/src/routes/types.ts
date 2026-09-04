@@ -5,19 +5,49 @@
  * `collab-v2/shell/router.ts:buildHash` is CONDEMNED (channel-route asymmetry,
  * SPEC-FINAL C-7) and is never imported, adapted, or consulted for shape.
  */
-import type { EntityId, SpaceId } from '@tm8/contract';
+import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
 import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain';
 
-/** The four outer panel tabs (D3: always four, fixed order). */
-export type PanelTab = 'content' | 'discussion' | 'connections' | 'activity';
-export const PANEL_TABS: readonly PanelTab[] = ['content', 'discussion', 'connections', 'activity'];
+/**
+ * The three outer panel tabs, fixed order — the vocabulary of `t=`.
+ *
+ * `activity` was a member until 2026-08-19 and is deliberately NOT given a
+ * `LEGACY_*` alias below: unlike `chat`→`transcript`, it was not renamed, it
+ * was removed, and there is no current spelling to forward a link to. A URL
+ * still carrying it decodes to the default tab and the codec REPORTS the drop,
+ * which is the honest reading — the addressed surface no longer exists.
+ */
+export type PanelTab = 'content' | 'connections' | 'discussion';
+export const PANEL_TABS: readonly PanelTab[] = ['content', 'connections', 'discussion'];
 
 /**
  * Per-panel content surface, meaningful only for work_session panels. NEVER
- * expands the `t` vocabulary. Phase 1 preserves-and-clamps `chat` (D12).
+ * expands the `t` vocabulary. Phase 1 preserves-and-clamps (D12).
  */
-export type ContentSurface = 'terminal' | 'chat' | 'git' | 'debug' | 'graph';
-export const CONTENT_SURFACES: readonly ContentSurface[] = ['terminal', 'chat', 'git', 'debug', 'graph'];
+export type ContentSurface = 'terminal' | 'transcript' | 'git' | 'debug' | 'graph';
+export const CONTENT_SURFACES: readonly ContentSurface[] = [
+  'terminal',
+  'transcript',
+  'git',
+  'debug',
+  'graph',
+];
+
+/**
+ * RETIRED TOKENS THAT STILL DECODE. `chat` was this slot's name until the
+ * session panel's surface became the agent transcript, and links carrying it
+ * are already in people's hands — in pasted URLs, in bookmarks, in messages in
+ * this app's own channels.
+ *
+ * The preserve-don't-rewrite ruling (DECISIONS.md) is why this exists and also
+ * why it is one-directional: an old token is ACCEPTED on the way in and is
+ * never EMITTED on the way out, so a link keeps working while the vocabulary
+ * still retires. A URL that arrives as `chat` leaves as `transcript` the next
+ * time the route is written.
+ */
+export const LEGACY_CONTENT_SURFACES: Readonly<Record<string, ContentSurface>> = {
+  chat: 'transcript',
+};
 
 /** `origin = {slug}[.{mode}]`, registry-validated. */
 export interface Origin {
@@ -33,14 +63,104 @@ export interface QValue {
   groupBy?: GroupByKey;
 }
 
+/**
+ * The Cockpit stages that are NOT an entity.
+ *
+ * The Cockpit's centre berth holds one of three things: the conversation, an
+ * entity (addressed by the panel stack), or one of these. Only these need a
+ * name in the route, because the other two already have addresses.
+ */
+export type CockpitStage = 'fleet' | 'graph';
+export const COCKPIT_STAGES: ReadonlySet<CockpitStage> = new Set(['fleet', 'graph']);
+
+/**
+ * The unified Home's ROOT (task 01a00932, UNIFIED-HOME-DESIGN.md D1): which
+ * population its left column lists — one collection kind (by slug, the same
+ * registry-validated vocabulary `origin` uses) or the chat threads, with the
+ * open conversation optionally addressed. Absent ⇒ the viewer's remembered
+ * root (D15 memory), which is what keeps a bare `/home` link personal.
+ */
+export type HomeRootTarget =
+  | { type: 'kind'; slug: string }
+  | {
+      type: 'chats';
+      threadId: EntityId | null;
+      /**
+       * `?stage=` — which COCKPIT STAGE is up: the fleet this conversation
+       * orchestrates, or its entity graph. The other occupant of that berth
+       * is an entity, which is addressed by the panel stack rather than here,
+       * so this names only the stages that are not entities.
+       *
+       * A URL rather than component state, for the reason `?graph=full` was
+       * one before it: Back closes the stage, a reload restores it, and a
+       * viewer can SEND someone the fleet of a conversation. A stage nobody
+       * can link to is a stage nobody shares.
+       *
+       * LOSSY-TOLERANT, inherited verbatim from the parameter it replaces: any
+       * unrecognised value is silently ignored at parse and degrades to the
+       * plain conversation. A stale or foreign link must never crash and must
+       * never announce itself.
+       *
+       * REPLACES `graph`/`gf`. The Cockpit ruling retires the fullscreen graph
+       * dialog and the facet rail that edited `gf`, and `gf` was OPAQUE to
+       * this layer by design — carrying an unreadable parameter forward for a
+       * UI that no longer exists is how dead vocabulary outlives its feature.
+       */
+      stage?: CockpitStage | null;
+      /**
+       * `?about=` — the entity a NEW conversation started here is about,
+       * written as an `about` edge by `chat.start`.
+       *
+       * IT IS AN ADDRESS BECAUSE THE VERB THAT SETS IT IS A NAVIGATION.
+       * "Chat about this" sits on a row's action cluster and on the Chats
+       * list header, and neither has anywhere to ask for a teammate, a model
+       * and a mode — so the verb opens Home's composer with the subject bound
+       * and the human commits it there. Carrying that binding in component
+       * state would lose it on a reload and make it unshareable, which is the
+       * same argument `?stage=` above makes for itself.
+       *
+       * ONLY MEANINGFUL WITH NO `threadId`. It configures the composer, and an
+       * OPEN conversation's subject is already decided — so a link carrying
+       * both names a thread and an intention that cannot both be honoured.
+       * Parse keeps it (round-trip fidelity, the preserve rule) and the Home
+       * screen ignores it once a thread is selected.
+       *
+       * LOSSY-TOLERANT like `?stage=`: any value that is not a plausible id is
+       * simply not carried, and a subject that no longer exists resolves to a
+       * chip that says so rather than blocking the composer.
+       */
+      aboutId?: EntityId | null;
+    };
+
 /** Where the view host points. One member per WLT §2.2 route line. */
 export type NavView =
-  | { view: 'home' }
+  | { view: 'home'; root?: HomeRootTarget | null }
   | { view: 'feed' }
   | { view: 'inbox' }
   | { view: 'workspace' }
   | { view: 'kind'; slug: string; mode: CollectionMode | null; q: QValue | null }
-  | { view: 'entity'; entityId: EntityId; origin: Origin | null }
+  /*
+   * `originView` — THE COMPANION THAT IS A VIEW RATHER THAN A COLLECTION.
+   *
+   * `origin` names a KIND's collection and is registry-validated against a
+   * slug, which is right for every screen the rail reaches by kind. It has no
+   * way to name a VIEW: `messages`, `inbox` and `dashboard` are `MenuViewRef`s,
+   * not kinds, so a view screen could not carry an open entity in its address
+   * and both halves of the route<->stack loop skipped it.
+   *
+   * ADDITIVE RATHER THAN A WIDENED `Origin`, deliberately. Making `Origin` a
+   * union would be tidier and would touch every consumer that reads
+   * `origin.slug` — `companionOf`, `landingOfRoute`, `routeViewOf`, the codec —
+   * and this lands on the router, which is the highest-risk file in this
+   * program and cannot be captured until the instrument queue clears. A second
+   * optional field breaks nothing that exists today and is deletable if the
+   * union is later preferred.
+   *
+   * MUTUALLY EXCLUSIVE WITH `origin` BY CONSTRUCTION, not by assertion: the
+   * codec reads ONE `origin=` parameter and decides which shape it is from the
+   * `v-` prefix, so an address cannot carry both.
+   */
+  | { view: 'entity'; entityId: EntityId; origin: Origin | null; originView?: MenuViewRef | null }
   | { view: 'channels' }
   | { view: 'channel'; channelId: EntityId; msg: EntityId | null }
   | { view: 'settings'; section: 'projects' | 'menu' | null }
@@ -62,6 +182,70 @@ export type NavView =
   | { view: 'files' }
   | { view: 'git' }
   | { view: 'messages' }
+  /* The task Board (2026-08-16): a whole-centre kanban screen, flat segment,
+     no parameters of its own — same posture as the four above. */
+  | { view: 'board' }
+  /* The Craft studio (2026-08-16): whole-centre split pane, flat segment. */
+  | { view: 'craft' }
+  /*
+   * The Help shelf (2026-08-19): whole-centre contents + reader. Addressable
+   * even though Help is not in the default tab spine — its door is a bar
+   * control, and a screen without a URL could not be linked to at all.
+   *
+   * `plate` (2026-08-20, the static Help library): WHICH of the 55 plates is
+   * open, as its registry slug. Shaped exactly like `settings/{section}` — an
+   * optional trailing segment, absent when the reader is on the contents.
+   *
+   * A SEGMENT AND NOT COMPONENT STATE, for the reason every other screen-level
+   * selection here is one: a plate is the unit people SEND each other. Held in
+   * `useState` it could not be linked to, could not be reloaded into, and Back
+   * would leave Help entirely instead of returning to the previous plate.
+   *
+   * LOSSY-TOLERANT: an unknown slug decodes to `null` rather than failing the
+   * route, so a link to a plate that has since been renumbered or retired opens
+   * the contents instead of a broken screen.
+   */
+  | { view: 'help'; plate: string | null }
+  /*
+   * CODEBRAIN (2026-09-01): the delivery pipeline module. A FLAT segment with
+   * no state of its own — the run it shows is the one the roster reports, so
+   * there is nothing selection-like to carry. When a phase becomes linkable it
+   * takes a trailing segment the way `help` carries `plate`.
+   *
+   * This snapshot has no CodeBrain SCREEN (`view-ref-screens.ts` says so). The
+   * ROUTE still exists, because the route table is shared: a `MenuViewRef`
+   * that cannot round-trip through the codec breaks deep links and the back
+   * button for every view that shares it, not only its own.
+   */
+  | { view: 'codebrain' }
+  /*
+   * BOARD V2 (2026-08-18, Kind/Status/Category/Workflow program): the
+   * universal board — any entity kind, columns = the four status categories
+   * (or one kind's workflow states). Whole-centre, flat segment.
+   *
+   * ROUTE-ONLY like `newSession`, and for the same reason: a `MenuViewRef`
+   * costs a contract enum widening, a menu revision and a DB migration
+   * (`menu_view_registry`, the seeder parity pin). While v2 runs BESIDE the
+   * shipping Board its tab is appended client-side by the shell instead —
+   * when v2 replaces Board by a later decision, THAT change takes the
+   * migration and this member migrates into `MenuViewRef`.
+   */
+  | { view: 'boardV2' }
+  /*
+   * NEW SESSION (2026-08-16): the create screen that mints a task from a typed
+   * prompt and spawns on it. Flat segment, no parameters.
+   *
+   * ROUTE-ONLY, AND DELIBERATELY NOT A `MenuViewRef`. The rail members above
+   * are contract enum entries and adding one costs a menu revision and a
+   * migration. This screen is reached from a quick action and from the
+   * sessions empty state, not from the rail, so it needs addressability and
+   * nothing else — `VIEW_REF_ROUTE` stays total over `MenuViewRef` without it.
+   *
+   * It carries no id because the screen exists BEFORE the thing it creates:
+   * once the session is spawned the app replaces this route with the session's
+   * own, so a New Session URL is never a link to a particular session.
+   */
+  | { view: 'newSession' }
   /*
    * A VOICE ROOM. Added 2026-08-14 to close a latent break, not to add a
    * feature.
@@ -83,10 +267,17 @@ export type NavView =
 
 /** The panel-engine state the URL mirrors (LLD §11: the URL owns all of it). */
 export interface PanelState {
-  /** `p` — bottom→top. */
+  /** `p` — bottom→top. On Home the stack IS the centre TRAIL: the top
+   *  renders, the rest are its breadcrumb (task 01a00932 R7/D2). */
   stack: EntityId[];
   /** `pin` — pin order. */
   pinned: EntityId[];
+  /**
+   * `r` — Home's RIGHT-PANEL trail, bottom→top, same encoding as `p`
+   * (task 01a00932 R6/R7). The top renders in the right panel; the rest are
+   * its breadcrumb. Empty ⇒ no right panel. Other views carry it verbatim.
+   */
+  right: EntityId[];
   /** `t` — omitted pairs default to `content`. */
   tabs: Record<EntityId, PanelTab>;
   /** `contentSurface` — preserved verbatim, including Phase-2 `chat` (D12). */
@@ -105,10 +296,20 @@ export interface Route {
  * The classes a drop notice may name. R4-7: the notice names the CLASS, never
  * a raw ID, and one notice covers a whole settle.
  */
-export type DropClass = 'tabs' | 'pins' | 'stack' | 'query' | 'origin' | 'mode' | 'session' | 'anchor';
+export type DropClass =
+  | 'tabs'
+  | 'right'
+  | 'pins'
+  | 'stack'
+  | 'query'
+  | 'origin'
+  | 'mode'
+  | 'session'
+  | 'anchor';
 
 export const DROP_CLASS_COPY: Readonly<Record<DropClass, string>> = {
   tabs: 'tab and surface state',
+  right: 'the side panel',
   pins: 'pinned panels',
   stack: 'open panels',
   query: 'filter state',
@@ -176,6 +377,21 @@ export interface BuildOutcome {
 
 export const MAX_HASH_LENGTH = 2048;
 
+/**
+ * THE ADDRESS THAT NAMES NOTHING — what the bar reads when this browser is not
+ * pointed at anybody's space.
+ *
+ * `parse` returns a null route for it (the space picker renders) and
+ * `createBrowserTarget` already treats an absent hash as this string, so it is
+ * the one form that means "no destination" rather than "a destination that
+ * failed to load". It was written as a bare `'#/'` literal in three places
+ * before it had a name — the Server-switch address reset, both transport
+ * fallbacks — and the sign-out reset made it four. A route the app can WRITE is
+ * the codec's business (L8: never hand-assemble a hash), even when the route is
+ * the empty one.
+ */
+export const UNADDRESSED_HASH = '#/';
+
 export function emptyPanels(): PanelState {
-  return { stack: [], pinned: [], tabs: {}, contentSurface: {}, session: null };
+  return { stack: [], pinned: [], right: [], tabs: {}, contentSurface: {}, session: null };
 }

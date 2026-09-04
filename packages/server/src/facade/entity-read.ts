@@ -26,9 +26,20 @@
  * All of it is plain SELECT through RLS. Nothing in this file writes.
  */
 import type {
+  WorkSessionEndedKind,
   WorkSessionKind,
   AcceptanceCriterion,
+  ContainerIsolationClass,
+  ContainerLifecycle,
+  ContainerProfile,
+  ContainerShareMode,
+  ContainerSpec,
+  ContainerStatus,
+  ContainerSurfaceKind,
+  ContainerUsage,
   ActorSummary,
+  ChatMode,
+  ChatWorkdirMode,
   EntityBadges,
   EntityCapabilities,
   EntityContent,
@@ -37,9 +48,12 @@ import type {
   EntityKind,
   EntityStaleness,
   EntityState,
+  GraphEdgeSpec,
+  GraphNode,
   EntitySummary,
   LiveWork,
   PullState,
+  TaskAssignment,
   Visibility,
   WorkStatus,
 } from '@tm8/contract';
@@ -52,6 +66,8 @@ import {
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
+// The ONE narrowing of the status columns, shared with `events/projector.ts`.
+import { categoryFragment, narrowWorkStatus } from './status.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -65,6 +81,12 @@ import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message
 export const ENTITY_COLUMNS = `
   e.id, e.space_id, e.kind, e.parent_id, e.position, e.visibility, e.version,
   e.activity_at, e.created_at, e.updated_at, e.deleted_at, e.created_by,
+  -- 147. Denormalized onto the envelope precisely so it can live in THIS
+  -- column list: the category is the tab/filter predicate, and a predicate
+  -- that needed the task join would be unavailable to the twenty kinds that
+  -- will carry a status in a later phase. MIRRORED by projector.ts's
+  -- SUMMARY_SQL — the two column lists must not drift.
+  e.status_category,
   coalesce(ec.likes, 0)    as likes,
   coalesce(ec.dislikes, 0) as dislikes,
   coalesce(ec.stars, 0)    as stars,
@@ -76,6 +98,7 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.memories, 0) as memories,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
+  t.start_date,
   t.completion_gate,
   d.title as doc_title, d.body as doc_body, d.format as doc_format,
   ch.name as channel_name, ch.topic as channel_topic,
@@ -94,6 +117,7 @@ export const ENTITY_COLUMNS = `
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
+  ws.ended_kind as ws_ended_kind, ws.ended_reason as ws_ended_reason,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -118,9 +142,24 @@ export const ENTITY_COLUMNS = `
   lp.prompt as loop_prompt, lp.config as loop_config,
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
+  cht.title as chat_title, cht.teammate_id as chat_teammate_id,
+  cht.model as chat_model, cht.provider as chat_provider, cht.agent_tool as chat_agent_tool,
+  cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
+  cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
+  chq.turn_state as chat_turn_state, chq.turn_count as chat_turn_count,
+  chq.last_turn_at as chat_last_turn_at,
+  gr.title as graph_title, gr.graph_type as graph_type,
+  gr.nodes as graph_nodes, gr.edges as graph_edges,
+  gr.layout as graph_layout, gr.source as graph_source,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
+  ctr.status as ctr_status, ctr.profile as ctr_profile, ctr.provider as ctr_provider,
+  ctr.isolation as ctr_isolation, ctr.node_id as ctr_node_id, ctr.image as ctr_image,
+  ctr.spec as ctr_spec, ctr.lifecycle as ctr_lifecycle, ctr.surfaces as ctr_surfaces,
+  ctr.share_mode as ctr_share_mode, ctr.started_at as ctr_started_at,
+  ctr.expires_at as ctr_expires_at, ctr.error as ctr_error, ctr.title as ctr_title,
+  ctrx.ports as ctr_exposed, crs.usage as ctr_usage,
   pr.title as pr_title, pr.repo as pr_repo, pr.number as pr_number,
   pr.state as pr_state, pr.ci_status as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
@@ -139,6 +178,117 @@ export const ENTITY_COLUMNS = `
  * them somewhere, and doing it once here beats a per-kind query path that can
  * drift kind by kind.
  */
+// --- containers (177) -------------------------------------------------------
+
+const CONTAINER_STATUSES_SET = new Set<ContainerStatus>([
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+]);
+
+/**
+ * A status the contract does not know is reported as `failed`, not dropped and
+ * not passed through. The column is CHECK-constrained, so this can only fire
+ * on a node reading a newer database than its own build — and the honest
+ * answer there is "something is wrong with this container", never a value the
+ * client's exhaustive switch will fall through.
+ */
+function ctrStatusOf(raw: string | null): ContainerStatus {
+  if (raw && CONTAINER_STATUSES_SET.has(raw as ContainerStatus)) return raw as ContainerStatus;
+  return 'failed';
+}
+
+function ctrProfileOf(raw: string | null): ContainerProfile {
+  const known: ContainerProfile[] = ['shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom'];
+  return known.includes(raw as ContainerProfile) ? (raw as ContainerProfile) : 'custom';
+}
+
+function ctrIsolationOf(raw: string | null): ContainerIsolationClass {
+  const known: ContainerIsolationClass[] = ['process', 'container', 'gvisor', 'microvm', 'vm'];
+  // `process` is the WEAKEST class, so an unknown value degrades to claiming
+  // the least isolation rather than the most. A wrong guess upward would tell
+  // a reader their container is more contained than it is.
+  return known.includes(raw as ContainerIsolationClass) ? (raw as ContainerIsolationClass) : 'process';
+}
+
+function ctrSurfacesOf(raw: unknown): ContainerSurfaceKind[] {
+  const known: ContainerSurfaceKind[] = ['terminal', 'screen', 'browser', 'adb', 'docker', 'http'];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((k): k is ContainerSurfaceKind => known.includes(k as ContainerSurfaceKind));
+}
+
+function ctrShareModeOf(raw: string | null): ContainerShareMode {
+  return raw === 'space' || raw === 'explicit' ? raw : 'none';
+}
+
+function ctrLifecycleOf(raw: Record<string, unknown> | null): ContainerLifecycle {
+  const row = raw ?? {};
+  const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+  return {
+    ephemeral: row.ephemeral !== false,
+    ttlSeconds: num(row.ttlSeconds),
+    idleHibernateSeconds: num(row.idleHibernateSeconds),
+    graceSeconds: typeof row.graceSeconds === 'number' ? row.graceSeconds : 600,
+    snapshotOnStop: row.snapshotOnStop === true,
+  };
+}
+
+function ctrSpecOf(raw: Record<string, unknown> | null, profile: ContainerProfile): ContainerSpec {
+  const row = (raw ?? {}) as Partial<ContainerSpec>;
+  return {
+    profile: row.profile ?? profile,
+    ...(row.image !== undefined ? { image: row.image } : {}),
+    cpus: typeof row.cpus === 'number' ? row.cpus : 1,
+    memMiB: typeof row.memMiB === 'number' ? row.memMiB : 1024,
+    ...(row.diskMiB !== undefined ? { diskMiB: row.diskMiB } : {}),
+    // Guest-only by construction: the door never writes a host path into
+    // `spec`, and this read would carry one to the client if it did (R5).
+    mounts: Array.isArray(row.mounts)
+      ? row.mounts.map((m: { guest?: unknown; ro?: unknown }) => ({
+        guest: String(m.guest ?? ''), ro: m.ro === true,
+      }))
+      : [],
+    env: (row.env ?? {}) as Record<string, string>,
+    ports: Array.isArray(row.ports) ? row.ports : [],
+    network: row.network ?? { preset: 'balanced', allow: [] },
+    surfaces: row.surfaces ?? {},
+    labels: (row.labels ?? {}) as Record<string, string>,
+  };
+}
+
+function ctrUsageOf(raw: Record<string, unknown> | null): ContainerUsage | null {
+  // NULL IS A MEASURED ABSENCE — no heartbeat has landed — and renders
+  // nothing. Defaulting to zeros would draw an idle machine.
+  if (!raw) return null;
+  const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+  return { cpuPct: num(raw.cpuPct), memMiB: num(raw.memMiB), diskMiB: num(raw.diskMiB) };
+}
+
+/**
+ * The URL is DERIVED from the container id and the port, not stored.
+ *
+ * `container_exposures` records the port, the share mode and a token hash; the
+ * path is `containers.proxy`'s binding and belongs to the catalog. Storing it
+ * would mean a row that keeps claiming an old path after the binding moves.
+ */
+function ctrExposedOf(raw: unknown, containerId: string): Array<{ port: number; url: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((r): r is { port: number } =>
+      typeof r === 'object' && r !== null && typeof (r as { port?: unknown }).port === 'number')
+    .map((r) => ({ port: r.port, url: `/v2/containers/${containerId}/ports/${r.port}/` }));
+}
+
+function ctrSurfaceDetailOf(
+  surfaces: ContainerSurfaceKind[],
+  live: boolean,
+): Partial<Record<ContainerSurfaceKind, { live: boolean }>> {
+  // PARTIAL by design: a container with no adb surface omits the key rather
+  // than carrying a fake one, so every consumer must guard.
+  const detail: Partial<Record<ContainerSurfaceKind, { live: boolean }>> = {};
+  for (const kind of surfaces) detail[kind] = { live };
+  return detail;
+}
+
 export const ENTITY_FROM = `
   from public.entities e
   left join public.entity_counters ec on ec.entity_id = e.id
@@ -167,10 +317,52 @@ export const ENTITY_FROM = `
   left join public.memories memo         on memo.entity_id = e.id
   left join public.worktrees wt          on wt.entity_id = e.id
   left join public.loops lp              on lp.entity_id = e.id
+  left join public.chats cht             on cht.entity_id = e.id
+  -- The turn QUEUE, folded to one row. A chat's list tile has to say "busy"
+  -- without a second read, and the busy fact is not on the chats row:
+  -- runtime_state is about the headless child, not about whether anything is
+  -- waiting for it. A lateral aggregate keeps this one query, not an N+1.
+  left join lateral (
+    select
+      case
+        when count(*) filter (where t.state = 'running') > 0 then 'running'
+        when count(*) filter (where t.state = 'queued') > 0 then 'queued'
+        else 'idle'
+      end as turn_state,
+      count(*)::int as turn_count,
+      max(t.queued_at) as last_turn_at
+      from public.chat_turns t
+     where t.chat_id = cht.entity_id
+  ) chq on cht.entity_id is not null
+  left join public.graphs gr             on gr.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
   left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
+  left join public.containers ctr        on ctr.entity_id = e.id
+  -- Usage is folded in AT READ TIME from the operational side table, which has
+  -- no capture_event and no version bump. Heartbeats must never touch the
+  -- entity: a 10s periodic write to the detail row would emit entity.upsert
+  -- per container and starve live renames (the migration-165 lesson, §15).
+  left join public.container_runtime_state crs on crs.container_entity_id = e.id
+  -- Exposed ports are their OWN TABLE (container_exposures), not a column: the
+  -- port is the natural key with share and a token hash beside it, and a jsonb
+  -- blob on the row could not carry the per-port RLS the table has. Aggregated
+  -- here so a read still answers in one query.
+  -- (No backticks in here: this whole query is a JS template literal.)
+  left join lateral (
+    select coalesce(
+             jsonb_agg(jsonb_build_object('port', ce.port, 'share', ce.share) order by ce.port),
+             '[]'::jsonb) as ports
+      from public.container_exposures ce
+     where ce.container_entity_id = e.id
+  ) ctrx on true
 `;
+// NOTE what is NOT selected above: `ctr.runtime_ref` and `ctr.host_spec`.
+// R5 — `internal.command_entity` (007:36) embeds entity_content in the command
+// result a client receives, so anything reachable here reaches the client.
+// Native runtime ids and host bind-mount paths stay server-side; they are
+// reachable through `containers.providers.list` and `containers.logs`, which
+// are node-side reads with their own authorization.
 
 export interface EntityRow {
   id: string;
@@ -185,6 +377,8 @@ export interface EntityRow {
   updated_at: Date | string;
   deleted_at: Date | string | null;
   created_by: string;
+  /** 147; optional keeps legacy row fixtures source-compatible. */
+  status_category?: string | null;
   likes: number;
   dislikes: number;
   stars: number;
@@ -204,6 +398,7 @@ export interface EntityRow {
   acceptance_criteria: AcceptanceCriterion[] | null;
   points_estimate: number | null;
   due_date: Date | string | null;
+  start_date: Date | string | null;
   doc_title: string | null;
   doc_body: string | null;
   doc_format: string | null;
@@ -240,6 +435,9 @@ export interface EntityRow {
   /** Lane facts (107); optional keeps legacy row fixtures source-compatible. */
   ws_checkout_branch?: string | null;
   ws_workdir_mode?: string | null;
+  /** Ending facts (171); optional for the same fixture-compatibility reason. */
+  ws_ended_kind?: string | null;
+  ws_ended_reason?: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -277,6 +475,24 @@ export interface EntityRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  chat_title: string | null;
+  chat_teammate_id: string | null;
+  chat_model: string | null;
+  chat_provider: string | null;
+  chat_agent_tool: string | null;
+  chat_mode: string | null;
+  chat_workdir_mode: string | null;
+  chat_project_id: string | null;
+  chat_runtime_state: 'cold' | 'live' | 'stopped' | null;
+  chat_turn_state: 'idle' | 'queued' | 'running' | null;
+  chat_turn_count: number | null;
+  chat_last_turn_at: Date | string | null;
+  graph_title: string | null;
+  graph_type: string | null;
+  graph_nodes: unknown[] | null;
+  graph_edges: unknown[] | null;
+  graph_layout: Record<string, { x: number; y: number }> | null;
+  graph_source: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -289,6 +505,24 @@ export interface EntityRow {
   wt_base_commit_oid: string | null;
   wt_status: string | null;
   wt_status_changed_at: Date | string | null;
+  // containers (177). NO `ctr_runtime_ref` and NO `ctr_host_spec` — see the
+  // note under ENTITY_FROM.
+  ctr_status: string | null;
+  ctr_profile: string | null;
+  ctr_provider: string | null;
+  ctr_isolation: string | null;
+  ctr_node_id: string | null;
+  ctr_image: string | null;
+  ctr_spec: Record<string, unknown> | null;
+  ctr_lifecycle: Record<string, unknown> | null;
+  ctr_surfaces: unknown;
+  ctr_share_mode: string | null;
+  ctr_started_at: Date | string | null;
+  ctr_expires_at: Date | string | null;
+  ctr_error: string | null;
+  ctr_title: string | null;
+  ctr_exposed: unknown;
+  ctr_usage: Record<string, unknown> | null;
   /** pull_requests mirror columns; optional keeps legacy row fixtures source-compatible. */
   pr_title?: string | null;
   pr_repo?: string | null;
@@ -345,6 +579,24 @@ export function iso(value: Date | string): string {
 
 export function isoOrNull(value: Date | string | null): string | null {
   return value === null || value === undefined ? null : iso(value);
+}
+
+/**
+ * `work_sessions.ended_kind` (171) narrowed to the contract enum. A value the
+ * contract does not know is projected as `null` rather than passed through:
+ * the summary state is `.strict()`, so an unrecognised string would fail
+ * validation and take the whole entity read down with it — a schema drift on
+ * one column must not make a session unreadable.
+ */
+export function isEndedKind(value: string | null | undefined): value is WorkSessionEndedKind {
+  return (
+    value === 'completed' ||
+    value === 'stopped_by_operator' ||
+    value === 'server_restart' ||
+    value === 'out_of_memory' ||
+    value === 'crashed' ||
+    value === 'unknown'
+  );
 }
 
 /** `date` columns must not acquire a timezone on the way out. */
@@ -547,6 +799,20 @@ export function actorOf(actors: Map<string, ActorSummary>, id: string | null): A
   return actors.get(id) ?? unknownActor(id);
 }
 
+/**
+ * The persona a SESSION id resolves to, or null.
+ *
+ * `loadActors` already answers this — a session with a `participates_in`
+ * persona comes back kinded `team_member`, one without comes back kinded
+ * `work_session`. This narrows that to the question a session summary asks:
+ * null for "no persona to name", never `unknownActor`, because a run at a
+ * human's terminal has no teammate and a placeholder would invent one.
+ */
+function personaOf(actors: Map<string, ActorSummary>, sessionId: string): ActorSummary | null {
+  const actor = actors.get(sessionId);
+  return actor && actor.kind === 'team_member' ? actor : null;
+}
+
 // ---------------------------------------------------------------------------
 // Relations, batched
 // ---------------------------------------------------------------------------
@@ -556,6 +822,12 @@ export interface EntityRelations {
   attention: Map<string, EntityAttentionSummary>;
   /** `assigned_to` targets, per task. */
   assignees: Map<string, string[]>;
+  /** Current assignment edges with their actor/time provenance, per task. */
+  assignments: Map<string, Array<{
+    assigneeId: string;
+    assignedById: string | null;
+    assignedAt: string;
+  }>>;
   /**
    * `has_member` targets, per channel — the roster (080).
    *
@@ -577,6 +849,14 @@ export interface EntityRelations {
   completedBy: Map<string, { actorId: string; at: string }>;
   /** `contains` count, per collection. */
   itemCounts: Map<string, number>;
+  /**
+   * `defaults_to_profile` target, per teammate — the profile a launch preselects.
+   *
+   * A SCALAR, not a list, and the database is what makes that safe:
+   * `edges_defaults_to_profile_source_idx` (015) is UNIQUE on `src_id` for this
+   * type, so a teammate cannot have two. There is no "which one wins" to decide.
+   */
+  defaultProfiles: Map<string, string>;
   /** Raw mark-edge material for `badges.staleness` — derived in badgesOf, never stored. */
   marks: Map<string, EntityMarks>;
 }
@@ -604,6 +884,7 @@ export interface EntityMarks {
 const EMPTY_RELATIONS: EntityRelations = {
   attention: new Map(),
   assignees: new Map(),
+  assignments: new Map(),
   members: new Map(),
   childCounts: new Map(),
   blockedBy: new Map(),
@@ -611,6 +892,7 @@ const EMPTY_RELATIONS: EntityRelations = {
   workingOn: new Map(),
   completedBy: new Map(),
   itemCounts: new Map(),
+  defaultProfiles: new Map(),
   marks: new Map(),
 };
 
@@ -631,6 +913,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   const relations: EntityRelations = {
     attention: new Map(),
     assignees: new Map(),
+    assignments: new Map(),
     members: new Map(),
     childCounts: new Map(),
     blockedBy: new Map(),
@@ -638,6 +921,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     workingOn: new Map(),
     completedBy: new Map(),
     itemCounts: new Map(),
+    defaultProfiles: new Map(),
     marks: new Map(),
   };
 
@@ -648,10 +932,12 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     type: string;
     props: Record<string, unknown>;
     created_at: Date | string;
+    assigned_by: string | null;
+    assigned_at: Date | string | null;
   }>(
-    `select id, src_id, dst_id, type, props, created_at
+    `select id, src_id, dst_id, type, props, created_at, assigned_by, assigned_at
        from public.edges
-      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'based_on', 'copy_of', 'completed_by'))
+      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'based_on', 'copy_of', 'completed_by', 'defaults_to_profile'))
          -- \`contains\` alone filters tombstoned members: itemCount must agree
          -- with every list the UI draws (content.items, connections and
          -- collections.query all exclude deleted endpoints), and the projector
@@ -709,7 +995,17 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   for (const edge of edgeRows) {
     switch (edge.type) {
       case 'assigned_to':
-        if (wanted.has(edge.src_id)) push(relations.assignees, edge.src_id, edge.dst_id);
+        if (wanted.has(edge.src_id)) {
+          push(relations.assignees, edge.src_id, edge.dst_id);
+          // 129 backfills assigned_at from the edge's creation time, so every
+          // current assignment has a timestamp even when its pre-129 assigner
+          // is unknowable (assigned_by = NULL).
+          push(relations.assignments, edge.src_id, {
+            assigneeId: edge.dst_id,
+            assignedById: edge.assigned_by,
+            assignedAt: iso(edge.assigned_at ?? edge.created_at),
+          });
+        }
         break;
       case 'has_member':
         if (wanted.has(edge.src_id)) push(relations.members, edge.src_id, edge.dst_id);
@@ -729,6 +1025,14 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
         if (wanted.has(edge.src_id)) {
           relations.itemCounts.set(edge.src_id, (relations.itemCounts.get(edge.src_id) ?? 0) + 1);
         }
+        break;
+      /* THE SAME SHAPE AS `contains` ABOVE — a scalar derived from an outbound
+         edge, riding the batch query rather than asking per row. `set` rather
+         than an accumulate because the type is UNIQUE on `src_id` (015:297);
+         if that index were ever dropped this would silently keep the last row
+         the query returned, which is why the invariant is named here. */
+      case 'defaults_to_profile':
+        if (wanted.has(edge.src_id)) relations.defaultProfiles.set(edge.src_id, edge.dst_id);
         break;
       case 'depends_on':
         if (wanted.has(edge.src_id)) {
@@ -896,9 +1200,13 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     }
   }
 
-  // Resolution is a per-kind rule (a task is resolved when done, a PR when
-  // merged), so it is asked of the database rather than reimplemented here
-  // where the two definitions could drift.
+  // Resolution is asked of the database rather than reimplemented here, where
+  // the two definitions could drift. Since phase 5 (migration 152) the rule is
+  // UNIVERSAL — `status_category = 'done'` for every kind, with `pull_request`
+  // overridden to the forge's merged state — so this predicate now answers for
+  // docs, sessions and the other eighteen as well as for tasks. It is the same
+  // one call it always was, which is exactly why that widening needed no edit
+  // here.
   const hardTargets = [...new Set(dependsOn.filter((d) => d.hard).map((d) => d.dst))];
   if (hardTargets.length > 0) {
     const resolved = await q.query<{ id: string; resolved: boolean }>(
@@ -1062,6 +1370,18 @@ export function titleOf(row: EntityRow): string {
       // twin. `entities` has no title column, so an unnamed loop must fall back
       // to something a human can read rather than to an id (L3).
       return row.loop_title ?? 'Loop';
+    case 'graph':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.graph_title ?? 'Graph';
+    case 'chat':
+      // The chat's own title, which `start_chat` seeds from the opening message.
+      // An empty one is legal (the column defaults to '') and must still render
+      // as something a human can read, never as an id (L3).
+      return row.chat_title && row.chat_title.length > 0 ? row.chat_title : 'Chat';
+    case 'container':
+      // Its own detail-row title — MIRRORS the projector twin, the same way
+      // graph and artifact do.
+      return row.ctr_title ?? 'Container';
     case 'worktree':
       // The branch IS the human name of a worktree; paths are server-computed
       // noise and ids are forbidden as titles (L3).
@@ -1108,6 +1428,10 @@ function excerptOf(row: EntityRow): string | undefined {
       // The schedule is the one fact that makes a loop legible in a list: what
       // it does is the prompt, but WHEN is what distinguishes two of them.
       return excerpt(row.loop_schedule);
+    case 'graph':
+      // The type is what makes a graph legible in a list — an orchestratable
+      // blueprint and a mermaid sketch answer to different intents.
+      return excerpt(row.graph_type);
     default:
       return undefined;
   }
@@ -1161,16 +1485,35 @@ function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | '
   return raw === 'terminal' || raw === 'chat' ? { initialContentSurface: raw } : {};
 }
 
-function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
+/**
+ * Exported alongside its twin `contentOf` so the per-kind arms can be tested
+ * directly. Without it a state arm is only reachable through a full assembly,
+ * which needs a populated `AssemblyContext` — and a test that builds one is
+ * testing assembly, not the arm.
+ */
+export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
   switch (row.kind) {
     case 'task':
       return {
         kind: 'task',
-        workStatus: (row.work_status ?? 'open') as WorkStatus,
+        // Raises rather than casting. This was `(row.work_status ?? 'open') as
+        // WorkStatus` — an UNCHECKED cast, while the event path had already
+        // been made to raise on the same value (phase 0). The two paths
+        // disagreeing about a drifted status is worse than either posture, and
+        // the loud one is the ruled direction: see `facade/status.ts`.
+        status: narrowWorkStatus(row.work_status, row.id),
         priority: (row.priority ?? 'medium') as 'low' | 'medium' | 'high' | 'urgent',
         axes: row.task_axes ?? {},
         dueDate: dateOnly(row.due_date),
+        startDate: dateOnly(row.start_date),
         assignees: (ctx.relations.assignees.get(row.id) ?? []).map((id) => actorOf(ctx.actors, id)),
+        assignments: (ctx.relations.assignments.get(row.id) ?? []).map((assignment): TaskAssignment => ({
+          assignee: actorOf(ctx.actors, assignment.assigneeId),
+          assignedBy: assignment.assignedById === null
+            ? null
+            : actorOf(ctx.actors, assignment.assignedById),
+          assignedAt: assignment.assignedAt,
+        })),
         acceptance: acceptanceOf(row),
         completionGate: row.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
       };
@@ -1232,6 +1575,10 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         model: row.team_member_model,
         agentTool: row.team_member_agent_tool,
         liveWork: null,
+        // `null`, never omitted: the field's contract is that absence MEANS
+        // "no default of its own", so a teammate that genuinely has none must
+        // say so rather than look like a row that forgot to carry the answer.
+        defaultProfileId: ctx.relations.defaultProfiles.get(row.id) ?? null,
       };
     case 'work_session':
       return {
@@ -1259,6 +1606,19 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         row.ws_workdir_mode === 'scratch'
           ? { workdirMode: row.ws_workdir_mode }
           : {}),
+        // The ending facts (171), projected exactly like the lane facts above:
+        // nullable-and-present, so an explicit null reads as "no ending was
+        // recorded" and never as a default. `endedKind` is projected only when
+        // the column holds one of its CHECK values — the enum is the contract,
+        // and a row carrying something else is a bug to surface, not to render.
+        endedKind: isEndedKind(row.ws_ended_kind) ? row.ws_ended_kind : null,
+        endedReason: row.ws_ended_reason ?? null,
+        // The persona, via the SAME resolver that attributes this session's
+        // messages — `loadActors` keyed by the session's own id already does
+        // the `participates_in` hop. A session with no persona resolves to a
+        // `work_session`-kinded summary there, and that is the honest null
+        // here: no teammate to name, not a teammate we failed to look up.
+        teammate: personaOf(ctx.actors, row.id),
       };
     case 'collection':
       return {
@@ -1320,6 +1680,51 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         lastRunAt: isoOrNull(row.loop_last_run_at),
         lastError: row.loop_last_error,
       };
+    case 'graph':
+      // Which type and how big — the vertices/edges are content, not state
+      // (they can be large and a list row never needs them).
+      return {
+        kind: 'graph',
+        graphType: row.graph_type ?? 'entity',
+        nodeCount: Array.isArray(row.graph_nodes) ? row.graph_nodes.length : 0,
+        edgeCount: Array.isArray(row.graph_edges) ? row.graph_edges.length : 0,
+      };
+    case 'chat':
+      // Who it is with, what it is running, and whether it is busy. The two
+      // state axes are independent and both are projected: `runtimeState` is the
+      // durable claim about the headless child, `turnState` is the queue.
+      return {
+        kind: 'chat',
+        teammateId: row.chat_teammate_id ?? '',
+        model: row.chat_model ?? '',
+        provider: row.chat_provider ?? '',
+        agentTool: row.chat_agent_tool ?? '',
+        mode: (row.chat_mode ?? 'ask') as ChatMode,
+        workdirMode: (row.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
+        projectId: row.chat_project_id,
+        runtimeState: row.chat_runtime_state ?? 'cold',
+        turnState: row.chat_turn_state ?? 'idle',
+        turnCount: Number(row.chat_turn_count ?? 0),
+        lastTurnAt: isoOrNull(row.chat_last_turn_at),
+      };
+    case 'container': {
+      // Hot and small — this rides EVERY list row, so it carries the surface
+      // KINDS that exist and not their detail. `usage` is content, not state.
+      const profile = ctrProfileOf(row.ctr_profile);
+      return {
+        kind: 'container',
+        status: ctrStatusOf(row.ctr_status),
+        profile,
+        provider: row.ctr_provider ?? '',
+        isolation: ctrIsolationOf(row.ctr_isolation),
+        nodeId: row.ctr_node_id ?? '',
+        surfaces: ctrSurfacesOf(row.ctr_surfaces),
+        ephemeral: ctrLifecycleOf(row.ctr_lifecycle).ephemeral,
+        shareMode: ctrShareModeOf(row.ctr_share_mode),
+        startedAt: isoOrNull(row.ctr_started_at),
+        expiresAt: isoOrNull(row.ctr_expires_at),
+      };
+    }
     case 'worktree':
       // SEMANTIC lifecycle only. Operational disk health lives in
       // worktree_allocations, which is deliberately not on this read: state
@@ -1404,18 +1809,26 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
         contentStale: pinnedVersion > 0 && pinnedVersion < row.version,
         // The discussion moved on if the entity saw activity after the pull.
         discussionMoved: Date.parse(iso(row.activity_at)) > Date.parse(pulledAt),
-        workStatus: (pull.props.workStatus as string | null | undefined) ?? null,
+        status: (pull.props.status as string | null | undefined) ?? null,
         pulledAt,
       };
     });
   }
 
   const working = ctx.relations.workingOn.get(row.id) ?? [];
-  // The other half of the §2.3 tense rule: a terminal task is not being
-  // worked on, whatever its edges say. Past tense ("Worked on by") is a
+  // The other half of the §2.3 tense rule: an entity that has STOPPED is not
+  // being worked on, whatever its edges say. Past tense ("Worked on by") is a
   // detail-panel aggregation, never a tile badge.
-  const terminal = row.kind === 'task' && (row.work_status === 'done' || row.work_status === 'cancelled');
-  if (working.length > 0 && !terminal && ctx.related) {
+  //
+  // PHASE 9: this reads the CATEGORY, not two task status literals and a kind
+  // check. It used to be `row.kind === 'task' && work_status in (done,
+  // cancelled)`, which was three assumptions at once — that only tasks stop,
+  // that stopping is spelled by those two words, and that a custom status
+  // meaning "shipped" is still in flight. `status_category` answers all three
+  // for every kind, and `done`/`cancelled` are the closed pair that means
+  // stopped. A row with NO category has not stopped; it has no status at all.
+  const stopped = row.status_category === 'done' || row.status_category === 'cancelled';
+  if (working.length > 0 && !stopped && ctx.related) {
     const self = ctx.related.get(row.id);
     if (self) {
       badges.workingActors = working.map(
@@ -1547,7 +1960,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session']);
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph']);
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
@@ -1562,8 +1975,172 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
     canReact: live,
     canGrantPoints: live && (row.kind === 'member' || row.kind === 'team_member'),
     // Not gated on acceptance criteria — see the note above.
-    canComplete: live && row.kind === 'task' && row.work_status !== 'done',
+    //
+    // KEYED ON THE COMPLETION SURFACE, NOT ON A KIND NAME. This read
+    // `row.kind === 'task'` for as long as it has existed, which made a
+    // structural fact ("does this row have a work status to move to done")
+    // into a name check — the shape §15.2 forbids in the client and that has
+    // no better claim here. `work_status` is `public.tasks.work_status`,
+    // LEFT JOINed: it is non-null exactly for rows that carry a work-status
+    // record and null for every other kind, so this is the same set today,
+    // arrived at from the row's own surface rather than from its label.
+    //
+    // It stays in step with `complete_task` for free. That RPC selects
+    // `where kind = 'task'` and then reads `public.tasks` — so a row this
+    // grants the affordance to is a row that RPC can find, which is the
+    // property a name check only had by coincidence.
+    //
+    // THE LATER PHASE THIS NOTE PROMISED IS HERE, FOR SESSIONS ONLY. This read
+    // "does NOT widen completion to sessions or to any other kind"; the second
+    // arm widens it to exactly one, because exactly one grew a door (migration
+    // 156, `public.set_session_done`) — user ruling 2026-08-19: "i want to mark
+    // sessions done, but not close them to revisit later".
+    //
+    // The arms are deliberately NOT unified into a single `status_category`
+    // test, which would read cleaner and would be wrong: it would grant the
+    // affordance to every doc, file and member in the space, none of which has
+    // a completion door to reach. A flag is a promise that a door will answer.
+    //
+    // NO `!== 'done'` ON THE SESSION ARM, unlike the task arm beside it. The
+    // session tick is a TOGGLE — ticking a done session reopens it — so the
+    // affordance is exactly as available in one direction as the other. The
+    // task arm keeps its check because `complete_task` has no inverse.
+    //
+    // `typeof === 'string'` rather than `!== null`: a hand-built row fixture
+    // that omits the column would slip past a null check as `undefined` and
+    // claim the affordance on a kind that has no work status at all.
+    canComplete:
+      live &&
+      ((typeof row.work_status === 'string' && row.work_status !== 'done') ||
+        row.kind === 'work_session'),
   };
+}
+
+/**
+ * The WHOLE capability rule: the base above, plus the per-kind narrowings.
+ *
+ * `capabilitiesOf` alone is NOT the answer any surface should render. It is
+ * the kind-and-liveness base, and several kinds refuse more than it knows —
+ * most importantly `canDelete`, which it grants to everything except `member`
+ * while `message`, `work_session`, `project` and `interaction_profile` all
+ * genuinely refuse deletion. A caller that renders the base draws an Archive
+ * control on four kinds that will bounce it.
+ *
+ * This lived privately in the w2 service, which is what serves `entities.get`,
+ * so the live detail read applied these narrowings and the OTHER detail
+ * assembler (`buildDetail`, behind command results) did not — the same entity
+ * answered differently depending on which door you came through. Hoisted here,
+ * beside the base it wraps, so summary, detail and command result cannot
+ * disagree.
+ *
+ * Takes the ROW, not the assembled summary: it only ever consulted `kind` and
+ * `deletedAt`, both of which are the row's own `kind` and `deleted_at`. Reading
+ * the row directly is what lets `toEntitySummary` call it while the summary it
+ * would otherwise need is still being built.
+ */
+export function entityCapabilities(row: EntityRow): EntityCapabilities {
+  const base = capabilitiesOf(row);
+  const live = row.deleted_at === null;
+  if (row.kind === 'project' || row.kind === 'interaction_profile') {
+    return {
+      canEdit: false,
+      canDelete: false,
+      canAddChild: false,
+      canLink: live,
+      canPull: false,
+      canReact: live,
+      canGrantPoints: false,
+      canComplete: false,
+    };
+  }
+  if (row.kind === 'message') {
+    return { ...base, canEdit: false, canDelete: false, canAddChild: false };
+  }
+  // A session is still not deletable and has no children — it is born from a
+  // spawn and it exits. But its canEdit is now left as `capabilitiesOf`
+  // computed it, which since 085 is true for a live session and means exactly
+  // one thing: the display title. Forcing it false here would leave the panel
+  // dressing the title as locked while the patch door accepts the rename.
+  if (row.kind === 'work_session') {
+    return { ...base, canDelete: false, canAddChild: false };
+  }
+  if (row.kind === 'pull_request' || row.kind === 'commit' || row.kind === 'file') {
+    return { ...base, canEdit: live };
+  }
+  if (row.kind.startsWith('c:')) {
+    return { ...base, canEdit: live, canAddChild: live, canPull: live };
+  }
+  if (row.kind === 'container') {
+    // The six container verbs (§15), derived from status + share_mode.
+    //
+    // They GATE THE BUTTON, not the dot. `canAttach` says the viewer is
+    // ALLOWED to open the screen; whether pixels are flowing comes from
+    // `seam.liveness.statusOf` (R-UI-5) and is a different question.
+    //
+    // `canDelete` stays false: a container is not deleted, it is DESTROYED,
+    // and `entities.delete` refuses the kind. Offering a delete control that
+    // the only door for it refuses would be a lie in the UI.
+    const status = ctrStatusOf(row.ctr_status);
+    const running = status === 'running';
+    const surfaces = ctrSurfacesOf(row.ctr_surfaces);
+    // `terminal` is reached through `containers.terminal.start`, not through a
+    // surface grant — so it does not make a container attachable.
+    const attachable = surfaces.some((kind) => kind !== 'terminal');
+    return {
+      ...base,
+      canEdit: live,
+      canDelete: false,
+      /*
+       * ONE BOOLEAN GATING TWO DOORS, disambiguated by status: Start when
+       * `stopped`, Resume when `paused`. 177's transition table admits BOTH
+       * `stopped -> running` and `paused -> running`, and `canStart <=> stopped`
+       * alone left a paused container with `canStop` true and nothing to bring
+       * it back — a UI dead end for a legal transition.
+       *
+       * It was invisible because the six were derived from the VERB LIST
+       * (start/stop/destroy/attach/control/exec); `pause`/`resume` live in the
+       * state machine and not in that list, and P0 never exercises pause. A
+       * capability set derived from the verbs cannot see a transition the verbs
+       * do not name — the authority is the transition table in 177.
+       *
+       * A seventh `canResume` was the alternative and was rejected: every
+       * member costs two edits (interface and the `.strict()` schema) and moves
+       * every consumer.
+       */
+      canStart: status === 'stopped' || status === 'paused',
+      canStop: running || status === 'paused',
+      canDestroy: live && status !== 'destroying' && status !== 'destroyed',
+      canAttach: running && attachable,
+      /*
+       * CONTROL IS NARROWER THAN ATTACH, and it has to be decided from the ROW
+       * alone — `capabilitiesOf` receives an `EntityRow` and no viewer, so no
+       * capability in this function can be actor-dependent. My own frozen spec
+       * said `canControl = canAttach && the actor may drive`, which this
+       * signature cannot express; implementing the expressible half silently
+       * would have been the defect.
+       *
+       * So it answers the question the row CAN answer: `share_mode = 'space'`
+       * means every reader of this container may drive it, and RLS has already
+       * established that this viewer is a reader. For `none` (creator and the
+       * agents acting for them) and `explicit` (a named list) the row does not
+       * know whether THIS viewer qualifies, so it answers false.
+       *
+       * That is a deliberate FALSE NEGATIVE in those two cases: a creator who
+       * may in fact drive sees no control until the door is asked. The other
+       * direction would hand a view-only viewer a "Take over" button that
+       * `grant_surface_attach` refuses with `42501 attach refused` — a control
+       * whose only outcome is a 403, which is the same lie as advertising a
+       * Move that `entities.move` refuses.
+       *
+       * `canAttach` stays row-derived and permissive because VIEW is what
+       * share_mode 'space' and a live surface already justify; the drive/view
+       * split is exactly what the grant door's `p_mode` decides.
+       */
+      canControl: running && attachable && ctrShareModeOf(row.ctr_share_mode) === 'space',
+      canExec: running,
+    };
+  }
+  return base;
 }
 
 export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySummary {
@@ -1581,6 +2158,10 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
     updatedAt: iso(row.updated_at),
     deletedAt: isoOrNull(row.deleted_at),
     createdBy: actorOf(ctx.actors, row.created_by),
+    // Spread-when-known, like the 108 counters above it and for the same
+    // reason: an entity with no status must OMIT the key rather than claim a
+    // bucket. MIRRORED by projector.ts's summary literal.
+    ...categoryFragment(row.status_category, row.id),
     counters: {
       likes: row.likes,
       dislikes: row.dislikes,
@@ -1598,6 +2179,21 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
     },
     state: stateOf(row, ctx),
     badges: badgesOf(row, ctx),
+    // The SAME rule the detail read applies, from the SAME helper — not a fork
+    // of it, and deliberately the FULL rule rather than the `capabilitiesOf`
+    // base (a base-only projection would promise `canDelete` on the four kinds
+    // that refuse deletion, and a tile that hides Archive on server truth would
+    // then show it exactly where it bounces).
+    //
+    // A tile gates its row actions on this. Before it rode the summary, a list
+    // row had to wait for a detail read to learn its own permissions — and a
+    // COLLAPSED row never gets one, so every capability-gated verb was refused
+    // there permanently.
+    //
+    // Free, and safe: the rule reads only the row already in hand (kind,
+    // liveness, work_status), so it adds no query, cannot become an N+1, and
+    // cannot widen a viewer's view — the row already cleared RLS to get here.
+    capabilities: entityCapabilities(row),
   };
   const ex = excerptOf(row);
   return ex === undefined ? summary : { ...summary, excerpt: ex };
@@ -1711,6 +2307,40 @@ export function contentOf(row: EntityRow): EntityContent {
         lastRunAt: isoOrNull(row.loop_last_run_at),
         lastError: row.loop_last_error,
       };
+    case 'chat':
+      // R5: a chat's working directory and native runtime session id are
+      // server-side, and nothing else on the row is content rather than state.
+      // The arm exists so the discriminated union is total, and says so.
+      return { kind: 'chat' };
+    case 'graph':
+      // The whole row IS the graph (R1): one read hands a renderer or an
+      // orchestrating agent everything. Lean fallbacks keep a hypothetical
+      // stray envelope readable rather than failing the strict schema.
+      return {
+        kind: 'graph',
+        graphType: row.graph_type ?? 'entity',
+        nodes: (Array.isArray(row.graph_nodes) ? row.graph_nodes : []) as GraphNode[],
+        edges: (Array.isArray(row.graph_edges) ? row.graph_edges : []) as GraphEdgeSpec[],
+        layout: row.graph_layout ?? {},
+        source: row.graph_source,
+      };
+    case 'container': {
+      const status = ctrStatusOf(row.ctr_status);
+      const surfaces = ctrSurfacesOf(row.ctr_surfaces);
+      const profile = ctrProfileOf(row.ctr_profile);
+      return {
+        kind: 'container',
+        image: row.ctr_image ?? '',
+        spec: ctrSpecOf(row.ctr_spec, profile),
+        lifecycle: ctrLifecycleOf(row.ctr_lifecycle),
+        // A surface is live only while the machine is; a recorded surface on a
+        // stopped container is a fact about its shape, not about a pipe.
+        surfaceDetail: ctrSurfaceDetailOf(surfaces, status === 'running'),
+        error: row.ctr_error ?? null,
+        usage: ctrUsageOf(row.ctr_usage),
+        exposed: ctrExposedOf(row.ctr_exposed, row.id),
+      };
+    }
     case 'worktree':
       return {
         kind: 'worktree',
@@ -1801,8 +2431,18 @@ export async function assembleSummaries(
     r.created_by,
     r.author_id ?? '',
     r.team_member_owner_id ?? '',
+    // A work_session's OWN id, so `loadActors` runs its `participates_in` hop
+    // for it and the summary can name the persona behind the run. Free when
+    // the page has no sessions; one extra batched query when it does.
+    r.kind === 'work_session' ? r.id : '',
   ]);
   for (const list of relations.assignees.values()) actorIds.push(...list);
+  for (const list of relations.assignments.values()) {
+    for (const assignment of list) {
+      actorIds.push(assignment.assigneeId);
+      if (assignment.assignedById !== null) actorIds.push(assignment.assignedById);
+    }
+  }
   for (const list of relations.members.values()) actorIds.push(...list);
   for (const list of relations.pulls.values()) actorIds.push(...list.map((p) => p.actorId));
   for (const list of relations.workingOn.values()) actorIds.push(...list.map((w) => w.actorId));

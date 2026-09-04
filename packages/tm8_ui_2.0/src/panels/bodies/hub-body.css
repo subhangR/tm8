@@ -1,0 +1,154 @@
+/* ==========================================================================
+   HUB BODY — the `hub` archetype's interior.
+   Source: T0-4 Entity Detail Panels Hi-Fi, frame 2, the `channel` region
+   (oracle lines 248–271). Every value below is EXTRACTED from that markup's
+   inline styles, with the line cited; nothing here is eyeballed.
+
+   Colours are tokens only — §14, and the package guard at src/hex-ban.test.ts
+   scans this file. The oracle's own bytes map onto the ramp exactly, so this
+   sheet introduces NO new colour: #E7E3D9 = --pn-line · #FFFFFF = --pn-card ·
+   #5B564C = --pn-ink-2 · #8E897B = --pn-ink-3 · #B7B2A4 = --pn-ink-4 ·
+   #23201B = --pn-ink · rgba(178,106,43,.11) = --pn-brand-soft ·
+   #9A581F = --pn-brand-2. Dark is therefore free (D-ledger: "dark theme is
+   free if you use tokens") and this file carries no per-theme override.
+
+   The micro-type literals (11.5 / 10 / 9px) are D5-verbatim and stay as-is:
+   the global scale is the single `zoom` lever on .cv2-root, never a
+   per-element bump, which is what keeps a canvas diff comparable.
+
+   GEOMETRY REUSED RATHER THAN RESTATED: the body box itself (padding 12,
+   gap 12, overflow auto — oracle line 248) is `pn-body`, the description is
+   `pn-prose` (12.5/1.55, line 249), the chip row is `pn-chiprow` (gap 5,
+   wrap, line 252) and the pins are the kit `Chip`, whose declarations are
+   already byte-identical to the oracle's pinned chip (line 253). Only what
+   the panel family has no home for is declared here.
+   ========================================================================== */
+
+/* An eyebrow and the row it heads. The oracle spends its gap as
+   `padding-bottom:5px` on the eyebrow (line 251, and again on line 258); as a
+   flex gap it is the same 5px and it survives the eyebrow being absent. */
+.cv2-root .hub-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* HUB TABS — the pill row (line 259) and its pills (lines 260–263). Pills are
+   static text, not controls: the oracle gives them no pointer cursor, and the
+   surface that switches them is the hub the redirect note points at. */
+.cv2-root .hub-tabrow {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cv2-root .hub-tab {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 9px;
+  background: var(--pn-card);
+}
+.cv2-root .hub-tab__label {
+  min-width: min-content;
+  overflow-wrap: anywhere;
+}
+.cv2-root .hub-tab__count {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 5ch;
+  overflow: hidden;
+  color: var(--pn-ink-4);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* THE LATEST-MESSAGE CARD (line 266). A CARD, so its edge is --pn-line: the
+   hairline rule (D-ledger) puts --pn-line on what BOUNDS a component and
+   --pn-x-hairline-soft only between repeated siblings inside one. There is
+   exactly one card here and it has no siblings to separate. */
+.cv2-root .hub-latest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+}
+.cv2-root .hub-latest__col {
+  min-width: 0;
+  flex: 1;
+}
+/* One line, ellipsized (line 268) — the card is a pointer at the feed, not a
+   place to read a message. L4: `min-width:0` above is what lets it actually
+   clip instead of pushing the panel wide. */
+.cv2-root .hub-latest__line {
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .hub-latest__who {
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .hub-latest__meta {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+/* THE REDIRECT NOTE (line 270). Deliberately NOT `pn-notice`, which is the
+   9.5px mono voice: this one is the 11.5px UI face at ink-4. The declarations
+   currently coincide with `pn-section__empty`, which is a coincidence of
+   values and not of meaning — that class states an absence, this one states
+   where the feed lives — so they are kept apart rather than shared. */
+.cv2-root .hub-redirect {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--pn-ink-4);
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   THE HUB WITH A LIVE FEED BENEATH IT (user ruling 2026-08-01).
+
+   `pn-body` is `flex: 1 1 auto` with its own scroll, which is right when the
+   body IS the panel's content. It is wrong the moment a feed renders below it:
+   measured on the real app, a hub whose entire front door was ONE 21px line of
+   description claimed 355px, and the feed — the thing the reader opened the
+   channel for — was left 261px and could not grow. The empty band between the
+   description and the first message was that mis-split, not a spacing bug.
+
+   So the modifier hands the growth back. The front door takes its NATURAL
+   height and the feed takes the rest; `min-height: 0` on the feed is what
+   lets its inner scroller actually scroll inside a flex column (without it a
+   flex child refuses to shrink below its content and the scroll moves to the
+   panel, which then scrolls the header away).
+
+   The front door keeps a ceiling rather than growing without limit: a long
+   description plus a full pin shelf could otherwise push the composer off the
+   panel. At the cap it scrolls on its own, which is the same treatment the
+   unmodified body already has.
+   ========================================================================== */
+.cv2-root .hub-body--with-feed {
+  flex: 0 1 auto;
+  max-height: 38%;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .pn-hub-feed {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The feed's own root already asks for `height: 100%` in a flex column; it
+   just never had a sized parent to fill. Nothing to add for it here. */

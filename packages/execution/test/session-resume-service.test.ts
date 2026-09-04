@@ -16,11 +16,20 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
+import { resolveAgentBinary } from '../src/spawn/manifest.js';
 import { SpawnError, type WorkSessionResumeInfo } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
+
+// The one test below drives resume PAST its binary preflight (assertAgentRuntime)
+// to reach the PTY-reuse race. That preflight legitimately fails closed when the
+// real `claude` CLI is absent — as it is on CI — so the scenario is only
+// reachable where the binary exists. Gate it on binary presence, the same way
+// credential-injection-live.test.ts gates its real-CLI probes, so CI skips it
+// cleanly instead of surfacing 'agent CLI claude was not found' as a failure.
+const CLAUDE_BINARY = resolveAgentBinary('claude', process.env.PATH ?? '');
 
 const SESSION_ID = '44444444-4444-4444-8444-444444444444';
 const SPACE_ID = '11111111-1111-4111-8111-111111111111';
@@ -169,7 +178,31 @@ describe('SpawnService.resume — guards and orchestration', () => {
 
     const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
 
-    expect(result.manifest.coordinator).toEqual({ sessionId: coordinatorSessionId });
+    expect(result.manifest.coordinator).toEqual({
+      sessionId: coordinatorSessionId,
+      kind: 'work_session',
+    });
+  });
+
+  it('restores a CHAT coordinator as a chat, not as a session (176)', async () => {
+    // Resume re-reads the parent's kind rather than trusting the recorded
+    // manifest: a worker that comes back must be told the same thing about its
+    // return address as it was told at launch, and a chat that has since been
+    // deleted should stop being described as one.
+    const chatId = '66666666-6666-4666-8666-666666666666';
+    graph.resumeInfo = {
+      ...RESUME_INFO,
+      mode: 'coordinated-worker',
+      parentSessionId: chatId,
+    };
+    graph.resumeReplayed = true;
+
+    graph.parentKind = 'chat';
+
+    const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+
+    expect(result.manifest.coordinator).toEqual({ sessionId: chatId, kind: 'chat' });
+    expect(graph.spawnContextInputs.at(-1)?.parentSessionId).toBe(chatId);
   });
 
   it('does not boot a second child on a ledger replay', async () => {
@@ -178,6 +211,37 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(pty.hasSession(SESSION_ID)).toBe(false);
     // A replay is a transport retry — the status must not be re-driven.
     expect(graph.statusesFor(SESSION_ID)).toHaveLength(0);
+  });
+
+  it.runIf(CLAUDE_BINARY !== null)('does not kill a live PTY reused after the optimistic resume guard', async () => {
+    // Reproduce the race instead of returning a decorative `reused` flag from
+    // a fake: the host owns a REAL, live PTY. The initial guard observes the
+    // pre-race state, then the real spawnIfAbsent discovers and reuses it.
+    pty.spawn({
+      sessionId: SESSION_ID,
+      command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify('setInterval(() => {}, 1_000)')}`,
+      cwd: projectDir,
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: dataDir,
+        SHELL: '/bin/sh',
+      },
+    });
+    expect(pty.hasSession(SESSION_ID)).toBe(true);
+
+    vi.spyOn(pty, 'hasSession').mockReturnValueOnce(false);
+    const kill = vi.spyOn(pty, 'kill');
+    vi.spyOn(graph, 'transition').mockRejectedValueOnce(
+      new Error('injected graph failure after PTY reuse'),
+    );
+
+    await expect(
+      serviceWith({ HOME: dataDir }).resume(AUTH, { sessionId: SESSION_ID }),
+    ).rejects.toThrow('injected graph failure after PTY reuse');
+
+    expect(kill).not.toHaveBeenCalled();
+    expect(pty.hasSession(SESSION_ID)).toBe(true);
+    expect(graph.statusesFor(SESSION_ID)).toEqual(['failed']);
   });
 
   // --- defect D: a write-once collision is fatal, not silent ----------------

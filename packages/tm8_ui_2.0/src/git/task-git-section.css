@@ -1,0 +1,95 @@
+/* ==========================================================================
+   TASK GIT SECTION — tracked PRs (Lane B chips, consumed), commits with
+   provenance, and the completion-gate verdict stated before the click.
+
+   Tokens only (hex-ban); `.cv2-root`-scoped; the gate verdict speaks in
+   `--pn-block` when it blocks, exactly the tone the conflict banner and the
+   CI-red chip already use. See GIT-UI.md.
+   ========================================================================== */
+
+.cv2-root .pn-task-git {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3) 0;
+  border-top: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-task-git__heading {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-task-git__gate {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-run);
+}
+
+.cv2-root .pn-task-git__gate--blocked {
+  color: var(--pn-block);
+}
+
+.cv2-root .pn-task-git__commits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-task-git__commits li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.cv2-root .pn-task-git__commit-msg {
+  color: var(--pn-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .pn-task-git__link {
+  font: inherit;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cv2-root .pn-task-git__link:disabled {
+  color: var(--pn-ink-3);
+  cursor: default;
+}
+
+.cv2-root .pn-task-git__link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.cv2-root .pn-task-git__session {
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-task-git__note {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-task-git__error {
+  margin: 0;
+  color: var(--pn-block);
+  font-size: var(--pn-fs-micro);
+}

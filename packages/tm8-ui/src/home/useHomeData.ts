@@ -164,7 +164,7 @@ export function useHomeData(data: HomeScreenData): HomeData {
   const myReview =
     me && reviewValues.length > 0
       ? taskKinds.flatMap((kind) => [
-          ...data.rowsFor(kind)({ assigneeIds: [me], workStatus: reviewValues }),
+          ...data.rowsFor(kind)({ assigneeIds: [me], status: reviewValues }),
         ])
       : [];
 

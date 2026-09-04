@@ -1,0 +1,429 @@
+/* AttentionInbox — the entity-detail blank state.
+   Every colour resolves through a token (§14): no literals, no per-theme
+   override. The points number is the loudest thing on the row because it is
+   what the list is ranked by. */
+
+.cv2-root .att-inbox {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--pn-space-6) var(--pn-space-4);
+}
+
+.cv2-root .att-inbox__inner {
+  width: 100%;
+  max-width: 520px;
+}
+
+/* The quiet states (loading / error / nothing waiting) centre themselves
+   instead of sitting at the top where a list would start. */
+.cv2-root .att-inbox__inner--quiet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60%;
+  text-align: center;
+}
+
+.cv2-root .att-inbox__eyebrow {
+  margin-bottom: var(--pn-space-3);
+  color: var(--pn-ink-4);
+  font-family: var(--pn-caps);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.cv2-root .att-inbox__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv2-root .att-inbox__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-3);
+  width: 100%;
+  padding: var(--pn-space-2) var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  font-family: var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cv2-root .att-inbox__row:hover {
+  background: var(--pn-hover);
+}
+
+/* Attention is a WAIT state — the same colour the roster uses for it, so the
+   two surfaces agree about what waiting looks like. */
+.cv2-root .att-inbox__points {
+  flex: none;
+  min-width: 34px;
+  padding: 2px 6px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.cv2-root .att-inbox__requester {
+  flex: none;
+  width: 72px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  overflow: hidden;
+}
+.cv2-root .att-inbox__requester > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .att-inbox__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cv2-root .att-inbox__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cv2-root .att-inbox__glyph-sm {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .att-inbox__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An id standing in for a title must not read like a title. */
+.cv2-root .att-inbox__name--raw {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 400;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .att-inbox__kind {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .att-inbox__reason {
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .att-inbox__count {
+  flex: none;
+  align-self: center;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.cv2-root .att-inbox__glyph {
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-h2);
+  margin-bottom: var(--pn-space-2);
+}
+
+.cv2-root .att-inbox__none {
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-body);
+}
+
+.cv2-root .att-inbox__hint,
+.cv2-root .att-inbox__more {
+  margin: var(--pn-space-3) 0 0;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .att-inbox__error {
+  margin: 0;
+  color: var(--pn-block);
+  font-size: var(--pn-fs-body);
+}
+
+.cv2-root .att-inbox__error-detail {
+  margin: var(--pn-space-2) 0 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+/* ---------------------------------------------------------------------------
+   AttentionRequests — one entity's full escalation record, mounted as a
+   `pn-section` inside a detail body (and on the Activity tab for the terminal
+   and chat archetypes, which own their own height).
+
+   Every colour resolves through a token (§14). `box-sizing: border-box` is set
+   explicitly on each padded box: this package has NO border-box reset
+   (panels.css:2525), so a padded element that also has a width overflows by
+   exactly its padding, and that has been a live defect here before.
+
+   The four statuses are distinguished by the SEMANTIC status tokens rather than
+   by four new colours — waiting is `--pn-wait` because that is what the badge
+   uses, seen is `--pn-info`, resolved is `--pn-run`, declined is `--pn-idle`.
+   Declined is deliberately the QUIETEST: it is the outcome that means "this did
+   not need doing", and it should not draw the eye like a resolved one.
+   --------------------------------------------------------------------------- */
+
+.cv2-root .att-req__list {
+  list-style: none;
+  margin: var(--pn-space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .att-req__row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-surface);
+}
+
+/* A settled row recedes. It stays fully legible — it is the record, and the
+   record is the point — but it must not compete with a row still waiting. */
+.cv2-root .att-req__row[data-status='resolved'],
+.cv2-root .att-req__row[data-status='dismissed'] {
+  background: transparent;
+  border-color: var(--pn-line);
+}
+
+.cv2-root .att-req__row[data-status='open'] {
+  border-color: var(--pn-wait);
+}
+
+.cv2-root .att-req__points {
+  box-sizing: border-box;
+  flex: none;
+  min-width: 34px;
+  padding: 2px 6px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* The score is loud only while it still means something. On a settled row it
+   is history, and a bright 100 on a closed request reads as an active alarm. */
+.cv2-root .att-req__row[data-status='open'] .att-req__points,
+.cv2-root .att-req__row[data-status='acknowledged'] .att-req__points {
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+
+.cv2-root .att-req__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cv2-root .att-req__reason {
+  margin: 0;
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-snug);
+  /* WRAPS, unlike the inbox row's single ellipsised line. The inbox is a
+     ranked index where one line each is the format; this is the record, and a
+     truncated reason is the one thing a record must not do. */
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .att-req__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-2);
+  margin: var(--pn-space-2) 0 0;
+}
+
+.cv2-root .att-req__status {
+  box-sizing: border-box;
+  padding: 1px 7px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+
+.cv2-root .att-req__status[data-status='open'] {
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+
+.cv2-root .att-req__status[data-status='acknowledged'] {
+  background: var(--pn-info-soft);
+  color: var(--pn-info);
+}
+
+.cv2-root .att-req__status[data-status='resolved'] {
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+}
+
+.cv2-root .att-req__status[data-status='dismissed'] {
+  background: var(--pn-idle-soft);
+  color: var(--pn-idle);
+}
+
+.cv2-root .att-req__by {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+/* The resolver's own words, marked as a quotation rather than as more chrome —
+   it is the only free text on the row that a human chose to write. */
+.cv2-root .att-req__note {
+  box-sizing: border-box;
+  margin: var(--pn-space-2) 0 0;
+  padding-left: var(--pn-space-3);
+  border-left: 2px solid var(--pn-line-2);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .att-req__actions,
+.cv2-root .att-req__draft-acts {
+  display: flex;
+  gap: var(--pn-space-2);
+  margin: var(--pn-space-2) 0 0;
+}
+
+.cv2-root .att-req__act {
+  box-sizing: border-box;
+  padding: 3px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: inherit;
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .att-req__act:hover:not(:disabled) {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.cv2-root .att-req__act:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cv2-root .att-req__act--primary {
+  border-color: var(--pn-brand);
+  color: var(--pn-brand);
+}
+
+.cv2-root .att-req__draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  margin: var(--pn-space-2) 0 0;
+}
+
+.cv2-root .att-req__draft-label {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+
+.cv2-root .att-req__draft-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--pn-space-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-family: inherit;
+  font-size: var(--pn-fs-sm);
+}
+
+/* A failed WRITE, reported above the list without blanking it — the history
+   below is still true and must survive the failure that could not change it. */
+.cv2-root .att-req__notice {
+  box-sizing: border-box;
+  margin: var(--pn-space-2) 0 0;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .att-req__error {
+  margin: var(--pn-space-2) 0 0;
+  color: var(--pn-block);
+  font-size: var(--pn-fs-body);
+}
+
+.cv2-root .att-req__error-detail,
+.cv2-root .att-req__more,
+.cv2-root .att-req__footnote {
+  margin: var(--pn-space-2) 0 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-snug);
+}
+
+.cv2-root .att-req__error-detail {
+  font-family: var(--pn-mono);
+}

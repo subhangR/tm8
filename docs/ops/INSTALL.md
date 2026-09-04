@@ -23,7 +23,7 @@ Eleven phases, in this order, because each one depends on the last:
 
 | # | Phase | Why it cannot be skipped |
 |---|---|---|
-| 1 | Prerequisites | node **22** (node-pty's prebuilds are proven on that major), bun, a Postgres **16** server and client, git, curl |
+| 1 | Prerequisites | node **22** (node-pty's prebuilds are proven on that major), bun, a Postgres **16 or newer** server and client (16 is the floor per `deploy/environments.sh`; this repo's clusters run 18), git, curl, and — to run agents — an agent CLI (`claude` or `codex`) the host is logged in to |
 | 2 | Cluster | Nothing in this repo starts Postgres — see [below](#the-sidecar-that-never-ran) |
 | 3 | Superuser + loopback trust | The subtle one. See [below](#why-loopback-trust-is-a-real-step) |
 | 4 | Database | Created **empty** |
@@ -142,13 +142,19 @@ applied versus on disk, and whether the delivery role can authenticate. It used
 to check node's version, three ports and `node_modules` — all of which are true
 of an installation with no database at all, in which every operation answers 501.
 
+**Then run `tm8 doctor`** (the CLI, once built) — it additionally checks the
+agent CLI: whether `claude`/`codex` are on PATH AND logged in. tm8 stores no
+agent credential, so a node can pass every check above and still be unable to run
+a single agent; this is the check that says so.
+
 | Symptom | Cause |
 |---|---|
 | `graph: NOT CONFIGURED … all operations answer 501` | No `TM8_DATABASE_URL`. Run `./install.sh`. |
 | Everything returns `501 not_implemented` | Same. A tm8 with no database looks like a running tm8. |
+| A spawned session sits at `running` and never finishes | No agent CLI the host is logged in to. tm8 runs the host's `claude`/`codex`; with none, the spawn's PTY comes up (so tm8 reads it as "running") but the agent immediately refuses in the terminal. Run `tm8 doctor`. |
 | Messages send but never appear in a terminal | `tm8_delivery_worker` cannot authenticate. See [above](#why-loopback-trust-is-a-real-step). |
 | `503` on `/v2/execution/spawn`, or "spawning is broken" | node-pty's `spawn-helper` lost its executable bit. `bash scripts/repair-node-pty.sh`. |
-| Server is new but the UI is stale | `bun run build` is **tsc only**. The UI needs its own `vite build` (`cd packages/tm8-ui && bun run build`). |
+| Server is new but the UI is stale | `bun run build` is **tsc only**. The UI needs its own `vite build` (`cd packages/tm8_ui_2.0 && bun run build`). |
 | `psql: command not found`, or a version mismatch | A bare `psql` is whichever formula got linked. Set `TM8_PSQL` to a versioned path. |
 | The unit is `inactive` after a "restart" | Something signalled the process. A clean Node exit is status 0, so `Restart=on-failure` does not bring it back. Use `systemctl` only. |
 

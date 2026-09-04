@@ -20,8 +20,12 @@ import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import type { GateData } from './useGateData';
+import type { ContentSurface } from '../routes';
+import { conversationSurfaceFor } from './conversationSurface';
 import './channel-view.css';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
+import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
@@ -64,6 +68,9 @@ export interface ChannelViewProps {
   onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
   /** Where a failed command reports. Absent ⇒ nothing to say it failed. */
   onNotice?(notice: Notice): void;
+  /** The viewer, for the session chat beside the feed — same identity every
+   *  other EntityDetailPanel host passes. */
+  viewerMemberId?: string | null;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -79,13 +86,21 @@ export function ChannelView({
   reasons,
   onSpawn,
   onNotice,
+  viewerMemberId,
 }: ChannelViewProps) {
   const [activeTab, setActiveTab] = useState(FEED_KEY);
+  /* The aside's terminal⇄chat request, per entity — the same memory
+     EntityView keeps, so the chat surface's "switch to terminal" is a real
+     handler here too (no-op-handler-ban's reasoning). */
+  const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface | null>>({});
   /* ONE feed implementation, shared with the panel-hosted ChannelChatSurface
      (channel-screen/useChannelFeed). This view used to own it inline; the
      2026-08-01 ruling gave channels a second host, and two copies of the @tag
      dispatch — which can SPAWN a teammate — is not a thing to keep. */
-  const feedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const feedPort = useMemo(
+    () => channelFeedPortFromGateData(data, viewerMemberId),
+    [data, viewerMemberId],
+  );
   /* The entity beside the feed is a FULL panel, so its primaries are wired
      from the same two hooks the workspace uses. A session opened from a
      channel message otherwise carried the same permanently-dead Terminate. */
@@ -97,16 +112,15 @@ export function ChannelView({
       ? {
           onError: (_verb: ActionRef, _entityId: string, error: unknown) =>
             onNotice({
-              id: 'session-close-failed',
+              id: 'session-terminate-failed',
               tone: 'error',
-              title: 'Session could not be closed',
+              title: 'Session could not be terminated',
               body: String((error as { message?: string })?.message ?? error),
               ttlMs: 6_000,
             }),
         }
       : {}),
   });
-  const feed = useChannelFeed(feedPort, channelId);
   /*
    * Per-CHANNEL stack (user ruling 2026-07-31): each channel keeps its own
    * history, not one shared "channels" stack. Held outside the component
@@ -168,6 +182,11 @@ export function ChannelView({
      glyph comes from the same row (`chip.glyph`), for the same reason. */
   const kindRow = detail ? getKind(detail.kind) : null;
   const threadsEnabled = kindRow?.panel.threads === true;
+  /* Declared AFTER `threadsEnabled` because the hook consumes it: the branch
+     read is a capability of every anchor, but whether this surface offers it
+     is registry data (`panel.threads`), and the hook must not open a branch a
+     kind does not show. Unconditional, so hook order is unchanged. */
+  const feed = useChannelFeed(feedPort, channelId, { threads: threadsEnabled });
   const anchorTitle = detail
     ? `${kindRow?.chip?.glyph ?? ''}${detail.title}`
     : 'this channel';
@@ -225,7 +244,9 @@ export function ChannelView({
       pinned={false}
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId))}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, selectedDetail ?? null, (id) => setSelectedId(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
@@ -234,14 +255,42 @@ export function ChannelView({
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       livenessOf={data.livenessOf}
+      viewerMemberId={viewerMemberId}
+      contentSurface={contentSurfaces[selectedId] ?? null}
+      onContentSurfaceChange={(surface) => {
+        setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
+      }}
+      conversationSurface={conversationSurfaceFor(selectedDetail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort: feedPort,
+        viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
+        onOpenEntity: (id) => setSelectedId(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      })}
+      discussionSurface={conversationSurfaceFor(selectedDetail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort: feedPort,
+        viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
+        onOpenEntity: (id) => setSelectedId(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      }, 'discussion')}
       messages={selectedMessages}
       connections={data.connectionsOf(selectedId)}
       linkedPullRequestsOf={data.linkedPullRequestsOf}
-      onPostMessage={(post) => data.postMessage({
-        clientMutationId: `entity-post:${selectedId}:${Date.now()}`,
-        anchorIds: [selectedId],
-        ...post,
-      })}
       mentionOptions={data.mentionOptions}
       skillOptions={data.skillOptions}
       commands={data.seam.commands}
@@ -333,6 +382,7 @@ export function ChannelView({
                 </div>
               ) : (
           <LazyChannelScreen
+                  viewerActorId={viewerMemberId ?? undefined}
                   anchorId={channelId}
                   anchorNoun="this channel"
                   page={feed.page}
@@ -341,6 +391,8 @@ export function ChannelView({
                   refusal={feed.refusal}
                   connection={data.connection}
                   onPost={feed.post}
+                  draft={feed.draft}
+                  onDraftChange={feed.onDraftChange}
                   mentionOptions={feed.mentionOptions}
                   skillOptions={feed.skillOptions}
                   attachEntityOptions={feed.attachEntityOptions}

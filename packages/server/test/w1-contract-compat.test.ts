@@ -70,7 +70,7 @@ function summary(id: string): EntitySummary {
     counters: { likes: 0, dislikes: 0, stars: 0, points: 0, messages: 0, viewerReaction: null },
     state: {
       kind: 'task',
-      workStatus: 'open',
+      status: 'open',
       priority: 'medium',
       axes: {},
       dueDate: null,
@@ -547,7 +547,7 @@ describe('W1 honest W2-only skeletons', () => {
       owner,
     });
     const spawn = vi.spyOn(runtime.spawnService, 'spawn').mockResolvedValue({ commandResult: {} } as never);
-    return { registry, owner, spawn, tx, db };
+    return { registry, owner, spawn, tx, db, q };
   }
 
   /**
@@ -559,9 +559,9 @@ describe('W1 honest W2-only skeletons', () => {
    * within a process. The DB→WS e2e proof rides the Delta 3 harness.
    */
   it('A21: execution.liveness scopes the PTY map to the readable space and answers strict-contract', async () => {
-    const { registry, db } = (() => {
+    const { registry, db, q } = (() => {
       const fixture = executionFixture();
-      return { registry: fixture.registry, db: fixture.db };
+      return { registry: fixture.registry, db: fixture.db, q: fixture.q };
     })();
     const handler = registry.get('execution.liveness');
     if (!handler) throw new Error('execution.liveness was not registered');
@@ -571,6 +571,10 @@ describe('W1 honest W2-only skeletons', () => {
       .mockResolvedValueOnce([{ id: SPACE }])              // space readable
       .mockResolvedValueOnce([{ id: SOURCE }])              // one live id is ours
       .mockResolvedValueOnce([{ used: 1 }]);                // process-wide session capacity
+    // The event high-water mark, read under the same claims through
+    // PgDurableSeqSource. bigint arrives from node-postgres as a STRING.
+    const bound = q.query as unknown as ReturnType<typeof vi.fn>;
+    bound.mockResolvedValueOnce([{ last_seq: '108477' }]);
     const ctx = { ...context('execution.liveness', undefined), params: { spaceId: SPACE } };
     const result = (await handler(ctx)) as { kind: string; data: unknown };
     expect(result.kind).toBe('json');
@@ -580,7 +584,25 @@ describe('W1 honest W2-only skeletons', () => {
       expect(parsed.data.liveEntityIds).toEqual([SOURCE]);
       expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
       expect(parsed.data.capacity).toEqual({ used: 1, total: 8 });
+      // Carried so a client can open a space at the tail of the log instead of
+      // paging the whole retained log to discover the same number.
+      expect(parsed.data.eventHwm).toBe(108477);
     }
+    expect((bound.mock.calls[0] as unknown[])[1]).toEqual([SPACE]);
+
+    // NO ROW IS NOT ZERO. `space_event_seq` is member-readable, so an
+    // unbound/non-member caller simply gets nothing back — and 0 would tell a
+    // client "start at the beginning of the log", the one answer that is
+    // catastrophic here.
+    bound.mockResolvedValueOnce([]);
+    query
+      .mockResolvedValueOnce([{ id: SPACE }])
+      .mockResolvedValueOnce([{ id: SOURCE }])
+      .mockResolvedValueOnce([{ used: 1 }]);
+    const unestablished = (await handler({
+      ...context('execution.liveness', undefined), params: { spaceId: SPACE },
+    })) as { data: { eventHwm: unknown } };
+    expect(unestablished.data.eventHwm).toBeNull();
     // The intersection query received the FULL live-pty id set (scoping is
     // the database's under the caller's claims, not a pre-filter here).
     const intersectArgs = query.mock.calls[1] as unknown[];

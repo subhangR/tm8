@@ -178,7 +178,7 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
       spaceId: fixture.spaceId,
       kinds: ['task'],
       parentId: fixture.rootId,
-      groupBy: 'workStatus',
+      groupBy: 'status',
       sort: 'position',
       limit: 1,
     };
@@ -207,6 +207,56 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect(outsider.page.items).toEqual([]);
   });
 
+  it('filters and groups tasks by priority (Board tab wave)', async () => {
+    // Fixture priorities: Root=medium, Child=high, Sibling=low, Deleted=urgent (soft-deleted).
+    const high = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: ['task'], filters: { priority: ['high'] } },
+      fixture.identityId,
+    ));
+    expect(high.page.items.map((item) => item.id)).toEqual([fixture.childId]);
+
+    const widened = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: ['task'], filters: { priority: ['high', 'low'] } },
+      fixture.identityId,
+    ));
+    expect(widened.page.items.map((item) => item.id).sort()).toEqual(
+      [fixture.childId, fixture.siblingId].sort(),
+    );
+
+    // The only urgent task is soft-deleted; the default deleted filter must still apply.
+    const urgent = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: ['task'], filters: { priority: ['urgent'] } },
+      fixture.identityId,
+    ));
+    expect(urgent.page.items).toEqual([]);
+
+    const grouped = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: ['task'], groupBy: 'priority', limit: 10 },
+      fixture.identityId,
+    ));
+    const byKey = new Map((grouped.groups ?? []).map((group) => [group.key, group]));
+    expect([...byKey.keys()].sort()).toEqual(['high', 'low', 'medium']);
+    expect(byKey.get('high')).toMatchObject({ label: 'High', total: 1 });
+    expect(byKey.get('high')!.items.map((item) => item.id)).toEqual([fixture.childId]);
+    expect(byKey.get('medium')!.items.map((item) => item.id)).toEqual([fixture.rootId]);
+
+    // The filter ANDs with status (both are task-narrowing predicates).
+    const anded = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      {
+        spaceId: fixture.spaceId,
+        kinds: ['task'],
+        filters: { priority: ['high'], status: ['done'] },
+      },
+      fixture.identityId,
+    ));
+    expect(anded.page.items).toEqual([]);
+  });
+
   it('bounds graph traversal and excludes non-live or unreadable endpoints and edges', async () => {
     const query: GraphQuery = {
       spaceId: fixture.spaceId,
@@ -220,9 +270,19 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect(graph.edges).toHaveLength(1);
     expect(graph.edges[0]).toMatchObject({
       type: 'depends_on',
-      source: { id: fixture.rootId },
-      target: { id: fixture.childId },
+      sourceId: fixture.rootId,
+      targetId: fixture.childId,
     });
+    // THE CONTRACT THE ID SHAPE RESTS ON: every endpoint of every returned
+    // edge is in this same response's `nodes`, so a client can always resolve
+    // `sourceId`/`targetId` locally and never has to tolerate a dangling one.
+    // Asserted against the DB, where the RLS carve-outs above could in
+    // principle admit an edge whose endpoint the node selection dropped.
+    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+    for (const edge of graph.edges) {
+      expect(nodeIds.has(edge.sourceId)).toBe(true);
+      expect(nodeIds.has(edge.targetId)).toBe(true);
+    }
     expect(graph.clusters).toEqual([{ parentId: fixture.rootId, childIds: [fixture.childId] }]);
 
     const outsider = await asApp(database, fixture.outsiderIdentityId, (q) => queryGraph(

@@ -301,7 +301,8 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // 137 -> 138 (2026-08-09): execution.dispatch (public, `session dispatch`).
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(rows.length).toBe(163);
+    // 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. MEASURED.
+    expect(rows.length).toBe(197);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);
@@ -405,6 +406,19 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   // action must not have two names), so its `all` reaches the wire only from
   // the UI seam — there is no CLI flag to collide with.
   all: '`session git commit --all`, the CLI-local spelling of execution.gitCommit body.all (2026-08-12)',
+  // 148: WorkflowStateInputSchema's two flags live INSIDE a repeated --state,
+  // one element per state, so they cannot be top-level booleans — `--is-initial`
+  // could not say WHICH state it meant. The spelling is a colon suffix on the
+  // element: `--state Draft:to_do:initial`, `--state Building:in_progress:default`.
+  isInitial: '`--state <name>:<category>:initial`, a per-element suffix — a top-level --is-initial could not name which state it meant (2026-08-18)',
+  isDefault: '`--state <name>:<category>:default`, the same per-element suffix (2026-08-18)',
+  // Containers (§14). Three booleans whose CLI spelling is deliberately not the
+  // kebab of the field, each for a reason that would be a defect to "simplify".
+  start: '--no-start, the NEGATIVE spelling — `containers.create` defaults start:true, so the flag a caller needs is the one that turns it off (2026-09-03)',
+  screenshot: '--no-screenshot, the same negative spelling — `containers.computer` returns an image by default (2026-09-03)',
+  // `ro` is not a top-level flag and must not become one: it belongs to ONE
+  // mount, and a bare `--ro` could not say WHICH. Same shape as isInitial above.
+  ro: '`--mount <host>:<guest>:ro`, a per-element suffix — a top-level --ro could not name which mount it meant (2026-09-03)',
 };
 
 describe('CLASS SWEEP: every boolean the frozen input schemas accept is expressible', () => {

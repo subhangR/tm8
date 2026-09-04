@@ -1,13 +1,42 @@
 /**
- * SpaceTabBar — the compact top bar: product mark, inbox bell, palette hint,
- * copy-link slot, account avatar.
+ * SpaceTabBar — the top row: product mark, the server⋄space switcher slot,
+ * the top-level TABS, palette hint, the inbox bell, copy-link
+ * slot, account avatar.
+ *
+ * REVISION 20 (Help/top-tab ruling, 2026-08-20): the shipped row is exactly
+ * Home | Work | Board | Craft | Graph | Settings | Help. Board is the client-
+ * owned Board v2 route tab; legacy Board and Files remain valid views without
+ * shipping in the default spine. Help is the final tab, so the old dedicated
+ * `?` control is retired below.
+ *
+ * REVISION 12 (top-tab ruling R1/R2, 2026-08-15): the identity block moved
+ * HERE from the rail head, and the menu's GROUPS render as top-level tabs —
+ * the exact group set has evolved since. The single-home rule
+ * survives with a new address: identity is still ONE control (`switcherSlot`,
+ * occupied by `SpaceSwitcher`), never a server chip beside a space list — the
+ * old read-only server label is NOT restored. The rail below stops listing
+ * groups and renders only the active tab's contents.
+ *
+ * The tabs are DATA-DRIVEN from the resolved MenuConfig's groups (the host
+ * maps them); this component hardcodes no tab names. `tabs` absent renders no
+ * tablist, so a bar without a host keeps the r11 product-bar shape.
+ *
+ * THE MARK IS A DOOR to the conversation surface: with `onGoHome` wired the
+ * product mark becomes a button back to it. Left unwired it stays inert text,
+ * so every bar rendered without a host is unchanged.
+ *
+ * It arrived in revision 13, when the `home` group was retired and the mark
+ * was the ONLY way back. Revision 14 restored that tab (as Chats), so the mark
+ * is now a SECOND door — kept deliberately, because a clickable product mark
+ * is a convention people already try, and the objection 13 raised was never to
+ * this button. What holds is that it is not a TAB: it never reads current, so
+ * it cannot disagree with the tab row about where you are.
  *
  * REVISION 11 (single-home ruling, 2026-08-14): the server chip and the space
- * tablist LEFT THIS BAR. A (server, space) pair is one fact — the context you
- * stand in — and it now has one home: the rail's identity block
- * (`SpaceSwitcher`), which also absorbed the add-space affordance. The name
- * `SpaceTabBar` survives for continuity of tests and imports; what remains is
- * the product bar.
+ * tablist left this bar for the rail's identity block. R1 moves that block
+ * into the bar — the ruling's ONE-home invariant holds; only the address
+ * changed. The name `SpaceTabBar` survives for continuity of tests and
+ * imports.
  *
  * THE BELL is Inbox's new door. Inbox left the menu rail because its rows
  * already feed the Home page's NEEDS YOU / MENTIONS sections — a rail row, a
@@ -27,7 +56,34 @@
 import type { ReactNode } from 'react';
 import { BrandMark } from '../kit';
 
+/** One top-level tab — a menu GROUP, mapped by the host. */
+export interface ShellTab {
+  id: string;
+  label: string;
+}
+
 export interface SpaceTabBarProps {
+  /**
+   * The identity block — `SpaceSwitcher`, mounted by the host (R1). A slot
+   * for the same reason `accountSlot` is one: the bar has no business knowing
+   * how servers are listed or what a space switch resets. Left undefined the
+   * bar simply has no identity control, which is every pre-R1 test.
+   */
+  switcherSlot?: ReactNode;
+  /**
+   * The top-level tabs, derived from the resolved menu config's groups (R2).
+   * Data, not chrome: the bar never invents a tab. Absent → no tablist.
+   */
+  tabs?: readonly ShellTab[];
+  /** Which tab reads as current — the group owning the active target. */
+  activeTabId?: string | null;
+  onSelectTab?(id: string): void;
+  /**
+   * Back to the conversation surface — the mark's verb (revision 13). Absent
+   * ⇒ the mark is inert text, exactly as it was before Home became the
+   * container.
+   */
+  onGoHome?(): void;
   /** Opens the Inbox screen — the bell. Absent, the bell renders disabled. */
   onOpenInbox?(): void;
   /** Account menu — theme's home per D1. */
@@ -58,16 +114,66 @@ export interface SpaceTabBarProps {
    * keep working.
    */
   shareSlot?: ReactNode;
+  /**
+   * THE DOOR TO THE ALTERNATE 2.0 UI, when this bundle is serving the root.
+   *
+   * A slot and not a rendered control, for the same reason as `shareSlot`: the
+   * bar has no business knowing this package has a sibling. Left undefined the
+   * bar is unchanged, which is every existing shell test and this bundle
+   * rendered anywhere the switch is not in play.
+   *
+   * It sits FIRST in the right-hand cluster, before the palette hint: a door a
+   * viewer is looking for should not be the control they find last.
+   */
+  uiSwitchSlot?: ReactNode;
 }
 
 export function SpaceTabBar(props: SpaceTabBarProps) {
   return (
     <header className="shell-tabbar" data-testid="space-tab-bar">
-      <div className="shell-tabbar__mark" aria-label="tm8">
-        <BrandMark /> tm8
-      </div>
+      {props.onGoHome ? (
+        <button
+          type="button"
+          className="shell-tabbar__mark shell-tabbar__mark--door"
+          data-testid="go-home"
+          aria-label="tm8 — back to conversations"
+          title="Back to conversations"
+          onClick={props.onGoHome}
+        >
+          <BrandMark />
+        </button>
+      ) : (
+        <div className="shell-tabbar__mark" aria-label="tm8">
+          <BrandMark />
+        </div>
+      )}
+
+      {props.switcherSlot ?? null}
+
+      {props.tabs && props.tabs.length > 0 ? (
+        <nav className="shell-tabbar__tabs" role="tablist" aria-label="Screens">
+          {props.tabs.map((tab) => {
+            const active = tab.id === props.activeTabId;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`shell-tabbar__tab ${active ? 'shell-tabbar__tab--active' : ''}`}
+                onClick={() => props.onSelectTab?.(tab.id)}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
 
       <div className="shell-tabbar__spacer" />
+
+      {/* The exit to the product UI, ahead of everything else on the right. */}
+      {props.uiSwitchSlot ?? null}
 
       {props.onOpenPrompts ? (
         <button
@@ -84,6 +190,10 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
       <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
         / palette · ⌘K
       </button>
+
+      {/* RETIRED 2026-08-20: Help now owns the final tab in the shipped menu.
+          Keep no duplicate `?` door in chrome. The view, route and palette
+          eligibility remain; only this dedicated control is gone. */}
 
       {/* The bell keeps the D28 posture when no host wired it: focusable,
           aria-disabled, with the reason on it — never hidden. */}

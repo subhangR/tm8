@@ -2,12 +2,12 @@
 # tm8 STAGING environment — the LIVE tree.
 #
 # Staging is not a build. It runs straight out of this working tree, so an edit
-# to packages/server or packages/tm8-ui shows up on staging without a deploy.
+# to packages/server or packages/tm8_ui_2.0 shows up on staging without a deploy.
 # That is the whole point of it: prod (7777/7778) is a frozen snapshot under
 # ~/.local/share/tm8-stable and never reloads; staging is where you watch your
 # changes land.
 #
-#   staging UI      http://127.0.0.1:8888   (vite dev, HMR, packages/tm8-ui)
+#   staging UI      http://127.0.0.1:8888   (vite dev, HMR, packages/tm8_ui_2.0)
 #   staging server  http://127.0.0.1:8887   (node + tsc -b --watch, auto-restart)
 #   staging DB      tm8_staging @ 5442      (created fresh 2026-07-31, migrated from 001)
 #   staging data    ~/.tm8-staging          (ISOLATED — shares nothing with prod)
@@ -39,11 +39,18 @@ export TM8_LOG_LEVEL=debug
 # Same two switches the stable build documents, for the same reasons:
 #   TM8_IDEMPOTENCY_ENABLED=0 — the ledger gate refuses saves from the authoring
 #     lane's resetting `au-<n>` clientMutationIds.
-#   TM8_PREVIEW_ENABLED=0 — TM8_PREVIEW_PORT is a FIXED 4613 already held
-#     elsewhere, AND setting config.preview deletes `localhost` from this node's
-#     own host allowlist, which breaks reaching the UI as localhost:8888.
+#   (Artifact preview is back ON by default since 2026-08-16: it is a /p/
+#     route on the app socket now, so neither old reason to disable it — the
+#     fixed-4613 EADDRINUSE and the localhost host-allowlist deletion —
+#     exists anymore.)
 export TM8_IDEMPOTENCY_ENABLED=0
-export TM8_PREVIEW_ENABLED=0
 
-# The vite dev proxy target (packages/tm8-ui/vite.config.ts reads this).
+# WHO IS ALLOWED TO FRAME A PREVIEW. The UI is served from :8888 while the API
+# binds :8887 — a different origin — and the node cannot infer that, so without
+# this `frame-ancestors` names only the API origin and the browser refuses to
+# paint the preview frame (an empty box, no error text). A framing permission
+# only: the sandbox is untouched and the frame stays opaque-origin.
+export TM8_PREVIEW_FRAME_ANCESTORS="http://127.0.0.1:${TM8_UI_PORT} http://localhost:${TM8_UI_PORT}"
+
+# The vite dev proxy target (packages/tm8_ui_2.0/vite.config.ts reads this).
 export TM8_SERVER_ORIGIN="http://127.0.0.1:8887"

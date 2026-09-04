@@ -15,6 +15,65 @@ const FAKE_AGENT = fileURLToPath(new URL('../harness/headless-agent.mjs', import
 const NATIVE_SESSION_ID = '018f47f2-c091-7b2e-8f8a-101010101010';
 const ALLOWED_TOOLS = ['mcp__tm8__tm8_read', 'mcp__tm8__tm8_messages'] as const;
 
+/**
+ * HOW LONG "BOOTED" TAKES, AS A MEASUREMENT RATHER THAN A GUESS.
+ *
+ * `awaitBoot` resolves `bootSettlementMs` after the OS-level `spawn` event, and
+ * the whole point of the wait is that it must OUTLAST Node's module startup:
+ * the fake agent writes its argv file and an immediate-crash wrapper throws,
+ * both from module scope. A window shorter than startup does not report a
+ * slower machine — it reports the WRONG ANSWER, in two directions at once:
+ * `startThread` resolves before the argv file exists (`ENOENT … argv.json`) and
+ * a crash that has not happened yet reads as a clean boot.
+ *
+ * The window used to be a flat 100 ms, which is a claim about the machine, not
+ * about the adapter. MEASURED on this repo's shared build node — 4 cores, load
+ * average ~17, up to eight agent sessions running suites at once — that claim
+ * is false: 10 consecutive runs of this file gave 1 pass and 9 fails, the
+ * failing SET differing every run (1, 2, 3, 4, 5, 6 and 7 cases), which is the
+ * signature of a race and not of a defect. Every failure was one of the two
+ * shapes above.
+ *
+ * 2000 ms is not a slower test; it is the same test with a window that fits a
+ * loaded box. Nothing waits the full window on a quiet one — the cases that
+ * read a file poll for it (`readRecorded` below) and return the moment it is
+ * there. Override with `TM8_TEST_BOOT_SETTLEMENT_MS` to reproduce the tight
+ * window deliberately.
+ */
+const BOOT_SETTLEMENT_MS = Number(process.env['TM8_TEST_BOOT_SETTLEMENT_MS'] ?? 2000);
+
+/**
+ * Read a file the SPAWNED process writes, waiting for it rather than assuming
+ * it is already there.
+ *
+ * A bare `readFile` here encodes "the child has finished its module scope by
+ * now", which is the same unmeasured assumption as the boot window above and
+ * fails the same way under load. Polling keeps the fast path fast — on an idle
+ * box the first attempt succeeds — and turns a load-induced `ENOENT` into what
+ * it always was: a wait, not a result. If the deadline really does pass, the
+ * error names the file, so a genuine "the child never wrote it" still reads as
+ * a failure rather than as a timeout with no subject.
+ */
+async function readRecorded<T>(file: string, timeoutMs = BOOT_SETTLEMENT_MS * 5): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return JSON.parse(await readFile(file, 'utf8')) as T;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // ENOENT: not written yet. A partial write parses as invalid JSON, which
+      // is also "not yet" — both are retried, and both surface if time runs out.
+      const retryable = code === 'ENOENT' || error instanceof SyntaxError;
+      if (!retryable || Date.now() >= deadline) {
+        throw new Error(
+          `the spawned agent never produced ${file} within ${String(timeoutMs)}ms: ${String(error)}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+}
+
 async function collect(stream: AsyncIterable<TurnItem>): Promise<TurnItem[]> {
   const items: TurnItem[] = [];
   for await (const item of stream) items.push(item);
@@ -56,6 +115,7 @@ describe('ClaudeHeadlessAdapter', () => {
       cwd: root,
       systemPrompt: 'Use only the TM8 graph tools.',
       mcpConfigPath: join(root, 'mcp.json'),
+      availableTools: ['Read', 'Bash'],
       allowedTools: ALLOWED_TOOLS,
       ...overrides,
     };
@@ -70,8 +130,8 @@ describe('ClaudeHeadlessAdapter', () => {
       env: process.env,
       // Wait through actual Node module startup, not merely the OS-level spawn
       // event, so an immediate wrapper crash is classified as a boot failure.
-      bootSettlementMs: 100,
-      closeGraceMs: 100,
+      bootSettlementMs: BOOT_SETTLEMENT_MS,
+      closeGraceMs: BOOT_SETTLEMENT_MS,
       ...overrides,
     });
     adapters.push(value);
@@ -89,11 +149,11 @@ describe('ClaudeHeadlessAdapter', () => {
       threadId: thread.threadId,
       nativeSessionId: NATIVE_SESSION_ID,
     });
-    const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as {
+    const recorded = await readRecorded<{
       args: string[];
       home: string | null;
       marker: string | null;
-    };
+    }>(argvFile);
 
     expect(recorded.args).toEqual([
       '-p',
@@ -110,8 +170,10 @@ describe('ClaudeHeadlessAdapter', () => {
       '--mcp-config',
       join(root, 'mcp.json'),
       '--strict-mcp-config',
+      '--permission-mode',
+      'bypassPermissions',
       '--tools',
-      '',
+      'Read,Bash',
       '--allowed-tools',
       ...ALLOWED_TOOLS,
       '--session-id',
@@ -122,6 +184,46 @@ describe('ClaudeHeadlessAdapter', () => {
     expect(recorded.args).not.toContain('--bare');
     expect(recorded.home).toBe(process.env.HOME ?? null);
     expect(recorded.marker).toBe('per-thread');
+  });
+
+  it('loads a curated skills plugin dir and enables slash commands when configured', async () => {
+    const argvFile = join(root, 'skills-argv.json');
+    const runtime = adapter({ pluginDir: '/opt/tm8/skills' });
+    await runtime.startThread(input({ env: { TM8_FAKE_ARGV_FILE: argvFile } }));
+    const recorded = await readRecorded<{ args: string[] }>(argvFile);
+    // The plugin dir is passed, and the slash-command surface it resolves
+    // through is NOT disabled.
+    const pluginIdx = recorded.args.indexOf('--plugin-dir');
+    expect(pluginIdx).toBeGreaterThanOrEqual(0);
+    expect(recorded.args[pluginIdx + 1]).toBe('/opt/tm8/skills');
+    expect(recorded.args).not.toContain('--disable-slash-commands');
+  });
+
+  it('keeps slash commands disabled when no skills plugin dir is configured', async () => {
+    const argvFile = join(root, 'no-skills-argv.json');
+    const runtime = adapter();
+    await runtime.startThread(input({ env: { TM8_FAKE_ARGV_FILE: argvFile } }));
+    const recorded = await readRecorded<{ args: string[] }>(argvFile);
+    expect(recorded.args).toContain('--disable-slash-commands');
+    expect(recorded.args).not.toContain('--plugin-dir');
+  });
+
+  it('explicitly disallows Claude built-ins when the visible native set is empty', async () => {
+    const argvFile = join(root, 'orchestrate-argv.json');
+    const runtime = adapter();
+    const thread = input({
+      availableTools: [],
+      env: { TM8_FAKE_ARGV_FILE: argvFile },
+    });
+
+    await runtime.startThread(thread);
+    const recorded = await readRecorded<{ args: string[] }>(argvFile);
+    expect(recorded.args).not.toContain('--tools');
+    expect(recorded.args).toContain('--disallowed-tools');
+    for (const tool of ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch']) {
+      expect(recorded.args).toContain(tool);
+    }
+    expect(recorded.args).toContain('--allowed-tools');
   });
 
   it('refuses any per-thread HOME override before spawning', async () => {
@@ -267,7 +369,7 @@ describe('ClaudeHeadlessAdapter', () => {
       resume: 'post_interrupt',
       env: { TM8_FAKE_ARGV_FILE: argvFile },
     });
-    const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as { args: string[] };
+    const recorded = await readRecorded<{ args: string[] }>(argvFile);
     expect(recorded.args).toContain('--resume');
     expect(recorded.args).not.toContain('--session-id');
     expect(runtime.hasInterruptedThreadHint(thread.threadId)).toBe(false);
@@ -287,7 +389,7 @@ describe('ClaudeHeadlessAdapter', () => {
     // This adapter has no in-memory interrupted tombstone. The durable caller
     // is authoritative after a node restart, so the vendor lookup decides.
     await runtime.startThread(thread);
-    const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as { args: string[] };
+    const recorded = await readRecorded<{ args: string[] }>(argvFile);
     expect(recorded.args).toContain('--resume');
     expect(recorded.args).not.toContain('--session-id');
     await expect(
@@ -366,7 +468,16 @@ describe('ClaudeHeadlessAdapter', () => {
     let resolveExit!: (event: AgentThreadExit) => void;
     const exited = new Promise<AgentThreadExit>((resolve) => (resolveExit = resolve));
     const runtime = adapter({ onThreadExit: resolveExit });
-    const thread = input({ env: { TM8_FAKE_HEADLESS_MODE: 'idle-crash' } });
+    const thread = input({
+      env: {
+        TM8_FAKE_HEADLESS_MODE: 'idle-crash',
+        // The crash must land AFTER the boot window closes or it is a boot
+        // failure and this callback is never reached. The fake's old fixed
+        // 180 ms only outran the old fixed 100 ms window; both move together
+        // now, so the ordering holds at any window this file is run with.
+        TM8_FAKE_IDLE_CRASH_MS: String(BOOT_SETTLEMENT_MS + 500),
+      },
+    });
     await runtime.startThread(thread);
 
     await expect(exited).resolves.toMatchObject({

@@ -17,10 +17,17 @@ const FAKE_GHP = `ghp_${'C'.repeat(36)}`;
 const FAKE_GHO = `gho_${'D'.repeat(36)}`;
 const FAKE_GH_PAT = `github_pat_${'e'.repeat(60)}`;
 const FAKE_SLACK = `xoxb-${'1'.repeat(12)}-abcdef`;
+// tm8's own bearer tokens (session `tm8s_`, agent `tm8a_`, runtime, claim
+// `tm8c_`) are 32-byte base64url secrets. The chat runtime writes its live 24h
+// `tm8s_` agent-runtime token into a per-thread mcp.json, and under the trusted
+// bypassPermissions posture chat Bash can read that file — so an echoed token
+// must be scrubbed from any tool output the same as a vendor key.
+const FAKE_TM8_SESSION = `tm8s_${'F'.repeat(43)}`;
+const FAKE_TM8_CLAIM = `tm8c_${'g'.repeat(43)}`;
 
 describe('redactSecretTokens', () => {
   it('redacts credential-shaped tokens wherever they sit in free text', () => {
-    for (const token of [FAKE_ANTHROPIC, FAKE_OPENAI, FAKE_GHP, FAKE_GHO, FAKE_GH_PAT, FAKE_SLACK]) {
+    for (const token of [FAKE_ANTHROPIC, FAKE_OPENAI, FAKE_GHP, FAKE_GHO, FAKE_GH_PAT, FAKE_SLACK, FAKE_TM8_SESSION, FAKE_TM8_CLAIM]) {
       const text = `the key is ${token} — use it`;
       expect(containsSecretToken(text)).toBe(true);
       const redacted = redactSecretTokens(text);

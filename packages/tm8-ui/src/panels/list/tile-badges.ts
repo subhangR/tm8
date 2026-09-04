@@ -1,4 +1,4 @@
-import type { ActorSummary, EntitySummary } from '@tm8/contract';
+import type { ActorSummary, EntitySummary, StatusCategory } from '@tm8/contract';
 import type { TileBadgeSource } from '../../domain';
 import { actorPresentation } from '../../domain';
 import type { PillTone } from '../../kit';
@@ -71,8 +71,28 @@ const WORK_STATUS_TONE: Record<string, PillTone> = {
   blocked: 'block',
   cancelled: 'idle',
 };
-/** Hollow ring = not yet started / not alive; solid = in motion or settled. */
-const WORK_STATUS_HOLLOW = new Set(['open', 'pulled', 'cancelled']);
+/**
+ * Hollow ring = not yet started / not alive; solid = in motion or settled.
+ *
+ * PHASE 9 — DERIVED FROM THE CATEGORY, not from a hand-kept list of status
+ * words. `WORK_STATUS_HOLLOW = new Set(['open','pulled','cancelled'])` said the
+ * same thing this does, exactly (open/pulled ARE `to_do` and `cancelled` IS
+ * `cancelled`), but it said it in a vocabulary that goes stale the moment a
+ * space names its own statuses — a `Triaged` state would silently draw solid
+ * because nobody added the word here.
+ *
+ * The two hollow categories are the two that are not in motion: `to_do` has
+ * not started, `cancelled` stopped without finishing. `in_progress` and `done`
+ * are solid. A row with NO category has no status to draw a verdict about, and
+ * hollow is the honest ring for that.
+ */
+const HOLLOW_CATEGORIES: ReadonlySet<StatusCategory> = new Set<StatusCategory>([
+  'to_do',
+  'cancelled',
+]);
+
+const categoryDot = (category: StatusCategory | undefined): 'hollow' | 'solid' =>
+  category === undefined || HOLLOW_CATEGORIES.has(category) ? 'hollow' : 'solid';
 
 const SESSION_STATUS_TONE: Record<string, PillTone> = {
   spawning: 'wait',
@@ -87,6 +107,15 @@ const PR_STATE_TONE: Record<string, PillTone> = {
   draft: 'idle',
   merged: 'brand',
   closed: 'idle',
+};
+
+/**
+ * The chat queue's two working words. `idle` is deliberately absent: it is
+ * filtered before the lookup (see the case), so a tone for it would be dead.
+ */
+const CHAT_TURN_TONE: Record<string, PillTone> = {
+  queued: 'wait',
+  running: 'run',
 };
 
 const PRIORITY_TONE: Record<string, PillTone> = {
@@ -118,14 +147,14 @@ const meta = (text: string | null): TileSlot | null => (text ? { slot: 'meta', t
 export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSlot | null {
   switch (source) {
     // -- status: the dot + word pair on line 1 ------------------------------
-    case 'workStatus': {
-      const v = str(field(row, 'workStatus'));
+    case 'status': {
+      const v = str(field(row, 'status'));
       if (!v) return null;
       return {
         slot: 'status',
         word: v.replace(/_/g, ' '),
         tone: WORK_STATUS_TONE[v] ?? 'idle',
-        dot: WORK_STATUS_HOLLOW.has(v) ? 'hollow' : 'solid',
+        dot: categoryDot(row.category),
       };
     }
     case 'sessionStatus': {
@@ -211,6 +240,19 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
     }
     case 'dueDate':
       return meta(str(field(row, 'dueDate')) && `due ${str(field(row, 'dueDate'))}`);
+    case 'axes': {
+      // The task's per-space axis values (`state.axes`, a {axis: value}
+      // record). Rendered as `axis:value` pairs because two axes with bare
+      // values would be ambiguous on one line; an unset axis is simply
+      // absent, which `hideWhenEmpty` already makes distinguishable.
+      const a = field(row, 'axes');
+      if (a === null || typeof a !== 'object') return null;
+      const entries = Object.entries(a as Record<string, unknown>).filter(
+        (pair): pair is [string, string] => typeof pair[1] === 'string' && pair[1].length > 0,
+      );
+      if (entries.length === 0) return null;
+      return meta(entries.map(([axis, value]) => `${axis}:${value}`).join(' · '));
+    }
     case 'blocked': {
       const n = row.badges.blocked?.unresolvedHardDependencyCount ?? 0;
       return n > 0 ? meta(`blocked ×${n}`) : null;
@@ -233,6 +275,33 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return meta(str(field(row, 'agentTool')));
     case 'model':
       return meta(str(field(row, 'model')));
+    /*
+     * CHAT (migration 176). Three facts no other kind has; `model` above
+     * already answers for a chat, because that source reads `state.model`
+     * structurally and a chat state carries one.
+     *
+     * `turnState` is the QUEUE and it is drawn as a STATUS PILL rather than a
+     * meta word, because it is the one fact on the row that changes while you
+     * are looking at it. `idle` renders NOTHING: a chat that is not working is
+     * the resting state of every row in the list, and a pill on all of them
+     * would be a pill that says nothing. That is the same rule `shareMode`
+     * follows two cases down for `none`.
+     */
+    case 'chatMode':
+      return meta(str(field(row, 'mode')));
+    case 'chatTurnState': {
+      const v = str(field(row, 'turnState'));
+      if (!v || v === 'idle') return null;
+      return { slot: 'status', word: v, tone: CHAT_TURN_TONE[v] ?? 'info', dot: 'solid' };
+    }
+    case 'chatLastTurnAt': {
+      /* The ISO instant, verbatim — this module formats no dates (`dueDate`
+         above prints the stored string too). The tile's own chrome renders
+         relative time from `activityAt`; this is the chat's OWN clock, which
+         is a different fact: a renamed chat moves `activityAt` and not this. */
+      const v = str(field(row, 'lastTurnAt'));
+      return meta(v && `last turn ${v}`);
+    }
     case 'shareMode': {
       const v = str(field(row, 'shareMode'));
       return v && v !== 'none' ? meta(`shared: ${v}`) : null;
@@ -307,8 +376,8 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
  * that silently loses its anatomy.
  */
 export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSource>([
-  'workStatus', 'sessionStatus', 'prState', 'profileStatus',
-  'priority', 'entityActor', 'createdBy',
+  'status', 'sessionStatus', 'prState', 'profileStatus',
+  'priority', 'axes', 'entityActor', 'createdBy',
   'workingActors', 'liveWork', 'owner', 'messageAuthor',
   'assignees', 'acceptance', 'dueDate', 'blocked', 'pulls', 'restricted',
   'messages', 'points', 'agentTool', 'model', 'shareMode',
@@ -316,4 +385,5 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   'memberRole', 'score', 'taskDoneCount', 'repository', 'sha',
   'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',
   'projectVersion', 'profileVersions', 'customFields',
+  'chatMode', 'chatTurnState', 'chatLastTurnAt',
 ]);

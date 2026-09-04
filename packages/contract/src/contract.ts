@@ -36,7 +36,26 @@ export type CoreEntityKind =
   | 'memory'
   | 'artifact'
   | 'worktree'
-  | 'loop';
+  | 'loop'
+  // Craft P1 (2026-08-16, rulings R1-R3 on task 01a00a0b): the general
+  // diagram/flow primitive. ONE ROW holds vertices AND edges — a lean,
+  // self-contained blueprint; referenced entities stay outside, the flow
+  // between them lives inside the row. Content-discriminated `graphType`
+  // ('entity' = orchestratable blueprint, 'mermaid' = durable diagram source,
+  // more later). It never writes real public.edges while being crafted.
+  | 'graph'
+  // Chat as an Entity (2026-09-03, migration 176). A conversation with a
+  // teammate is the ANCHOR of its own transcript, a spawn parent, and an
+  // `authored_from` destination — everything a work session already was, which
+  // is the whole point (ruling R-B). It is deliberately NOT creatable through
+  // `entities.create`: `chat.start` is the only door, because a chat is born
+  // with a runtime binding (teammate, model, working directory) that a generic
+  // create could not supply.
+  | 'chat'
+  // Containers (TM8-CONTAINERS-DESIGN §3.1, migration 177): a machine an
+  // agent runs IN or drives. It is an entity so hierarchy, edges, messages
+  // and attention all work on it for free; the RUNTIME behind it is not.
+  | 'container';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -45,6 +64,28 @@ export type EntityKind = CoreEntityKind | CustomEntityKind;
 
 export type WorkStatus = 'open' | 'pulled' | 'working' | 'in_review'
   | 'done' | 'blocked' | 'cancelled';
+
+/**
+ * The four lifecycle buckets every status maps to. CLOSED FOREVER.
+ *
+ * Statuses are open and (from a later phase) user-defined; a workflow may name
+ * as many as it likes. This union is the ONLY status concept anything outside
+ * a workflow may read — tabs, filters, rollups and "is it finished" all branch
+ * on the category, never on a status NAME. That asymmetry is the whole point:
+ * a space that renames `in_review` to `Awaiting Sign-off` must not break a
+ * single caller, and a space that invents `Triaging` must land somewhere the
+ * product already understands.
+ *
+ * `cancelled` is deliberately its own arm rather than a flavour of `done`.
+ * Abandoned work and finished work are the same thing only to a progress bar;
+ * to a person reading a list they are opposites, and folding them lost that.
+ *
+ * ARCHIVED IS NOT HERE, and never will be. Archival is `deletedAt` — an
+ * orthogonal axis an entity carries ACROSS a status, not a status it occupies.
+ * The existing `LifecycleTier` (`open`/`done`/`archived`) is this abstraction
+ * built wrong, mixing the two axes into one three-valued field.
+ */
+export type StatusCategory = 'to_do' | 'in_progress' | 'done' | 'cancelled';
 
 export type Visibility = 'space' | 'restricted';
 
@@ -113,11 +154,84 @@ export interface EntitySummary {
   counters: EntityCounters;
   state: EntityState;             // discriminator-specific Z1/Z2 fields
   badges: EntityBadges;
+  /**
+   * What the RPCs will actually permit on this row — the SAME fact
+   * `EntityDetail` carries, projected onto the summary so a TILE can reach it.
+   *
+   * ## Why the summary needs it at all
+   *
+   * Every capability-gated row action resolves through `capabilityGate`, which
+   * refuses whenever capabilities are absent ("absent ⇒ not permitted", and
+   * that rule is correct — an optimistic all-true would claim a permission
+   * nobody granted). But a list row is an `EntitySummary`, and capabilities
+   * lived only on `EntityDetail`, so the client's only source was the detail
+   * cache. A freshly-paged row is not in that cache, so on a collapsed tile
+   * EVERY such verb — Run, Archive, Collections — sat permanently refused, and
+   * the only thing that asked for a detail was the EXPANDED strip. The verb
+   * was drawn, and dead, and the honest refusal made it look deliberate.
+   *
+   * This is the `badges.workingActors` / `LinkedPullRequestBadge` ruling again,
+   * for the same reason: a fact that arrives WITH the row it describes has no
+   * hydration lottery. Any tile that renders at all can gate honestly.
+   *
+   * ## Why it costs nothing
+   *
+   * `capabilitiesOf` is a pure function of the entity row the summary is
+   * already assembled from — kind, liveness and work_status, nothing else. It
+   * adds no query and cannot introduce an N+1, and because it reads only a row
+   * that already cleared RLS it cannot widen what a viewer sees.
+   *
+   * ## OPTIONAL, deliberately
+   *
+   * Additive like `docs`/`memories`/`assignments` and under the same law: a
+   * rolling node that predates this omits the key, and ABSENCE IS NOT A
+   * VERDICT — it means "this server never told us", which the client already
+   * renders as `CheckingPermission`, i.e. exactly today's behaviour. Required
+   * here would make an older node's every list read fail `.strict()` parsing,
+   * turning a missing affordance into a blank panel.
+   */
+  capabilities?: EntityCapabilities;
+  /**
+   * Which of the four lifecycle buckets this entity currently sits in —
+   * denormalized from its status onto the envelope, because this is the
+   * predicate every tab, filter and rollup reads.
+   *
+   * ## OPTIONAL, and what ABSENCE means
+   *
+   * Absent means **this entity has no status** — not "unknown", not "to do".
+   * Today only `task` rows carry one, so a doc, a channel and a commit all
+   * omit the key, and that is the honest report: they have no position in any
+   * workflow to project. A later phase gives every kind a workflow and the
+   * field becomes near-universal; until then a defaulted `'to_do'` would put
+   * twenty kinds into a bucket nobody put them in.
+   *
+   * It is also optional for the rolling-node reason `capabilities` is: a node
+   * that predates the column omits the key, and `.strict()` parsing must keep
+   * accepting that rather than turning an older server's every list read into
+   * a parse failure.
+   *
+   * ## Why it rides the SUMMARY
+   *
+   * Same ruling as `capabilities` and `badges.workingActors`: a fact that
+   * arrives WITH the row it describes has no hydration lottery. A category tab
+   * that had to wait for a detail read would be wrong on every collapsed tile.
+   */
+  category?: StatusCategory;
+}
+
+/** Provenance for one task's current `assigned_to` edge. */
+export interface TaskAssignment {
+  assignee: ActorSummary;
+  assignedBy: ActorSummary | null;
+  assignedAt: string;
 }
 
 export type CoreEntityState =
-  | { kind: 'task'; workStatus: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
-      axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
+  | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
+      axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
+      assignees: ActorSummary[];
+      /** Additive: absent on payloads produced before assignment provenance shipped. */
+      assignments?: TaskAssignment[];
       acceptance: { total: number; completed: number };
       /**
        * 082's opt-in completion gate, ADDITIVE and OPTIONAL. 'pr_merged'
@@ -133,8 +247,23 @@ export type CoreEntityState =
   | { kind: 'message'; anchorId: EntityId; rootMessageId: EntityId | null; author: ActorSummary;
       messageBatchId: string | null; editedAt?: string | null; redactedAt?: string | null }
   | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
+  /* `defaultProfileId` is the teammate's own `defaults_to_profile` target, and
+     it is ADDITIVE and OPTIONAL like `model`/`agentTool` above.
+
+     IT EXISTS SO THAT READING IT IS NOT A REQUEST. Every consumer that wants a
+     teammate's default profile has the teammate row already; before this field
+     the only way to answer was `entities.connections(teammate.id)`, once per
+     teammate, and a launch picker wants the answer for ALL of them. That made
+     it an N+1 on the one read whose count scales with the space — measured at
+     136 round trips and ~3s of a 3.9s workspace boot. The edge rides the batch
+     edge query `loadRelations` already runs for the page, so this costs zero
+     extra queries.
+
+     ABSENT OR `null` MEANS THE TEAMMATE HAS NO DEFAULT OF ITS OWN — the space
+     default applies. It never means "not loaded yet"; that distinction is the
+     whole point of projecting it onto the row rather than resolving it later. */
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
-      liveWork?: LiveWork | null }
+      liveWork?: LiveWork | null; defaultProfileId?: EntityId | null }
   // `ciStatus`/`mergeState` are ADDITIVE and OPTIONAL (forge observer).
   // `null` means this node has no verdict — nothing has observed the pull
   // request yet, or the observer runs unauthenticated — and a consumer renders
@@ -214,7 +343,53 @@ export type CoreEntityState =
        * be a lie about attribution.
        */
       checkoutBranch?: string | null;
-      workdirMode?: WorkSessionWorkdirMode }
+      workdirMode?: WorkSessionWorkdirMode;
+      /**
+       * WHY THIS SESSION ENDED (171). ADDITIVE and OPTIONAL, like the lane
+       * facts above: a node that predates 171 omits them and a consumer
+       * renders no ending claim.
+       *
+       * Until 171 the only ending facts a client could see were `status` and
+       * `exitedAt`. That is how the 2026-08-22 11:04 incident hid: a deploy
+       * SIGKILLed the server with four live agents, and all four were recorded
+       * as ordinary exits. `exitCode` was NULL (it always is on that path) and
+       * the `error` column — which did hold an accurate reason — is not on
+       * this object at all. Four unexplained deaths were indistinguishable
+       * from four clean finishes.
+       *
+       * `endedReason` is ONE PLAIN-ENGLISH SENTENCE, written for a person who
+       * is not a developer: "Stopped by a server restart at 11:04." Never a
+       * signal name, exit code, or stack trace. Render it verbatim.
+       *
+       * `endedKind` is the closed vocabulary for code to branch on. It exists
+       * chiefly so `out_of_memory` stays RECOGNISABLE rather than folded in
+       * with every other ending — under the standing policy, resource
+       * exhaustion is the one involuntary death that is allowed to happen, so
+       * it is the one a client must be able to single out. It is kernel
+       * evidence (the cgroup `oom_kill` counter), not an inference from a
+       * signal number.
+       *
+       * `null` on either is a MEASURED absence — a pre-171 row, or a session
+       * that has not ended — and renders nothing, never a default. Both are
+       * cleared when a session is resumed: the ending belonged to the run that
+       * ended, not to the one now starting.
+       */
+      endedKind?: WorkSessionEndedKind | null;
+      endedReason?: string | null;
+      /**
+       * WHO IS RUNNING THIS SESSION — the persona resolved through the
+       * session's most recent `participates_in` edge, the SAME hop
+       * `loadActors` attributes messages by. Carried on the summary so a
+       * session row can name the teammate and the tool together without a
+       * second graph read.
+       *
+       * ADDITIVE AND OPTIONAL, and its two absences are different claims.
+       * A MISSING KEY is a node that predates this field. An explicit `null`
+       * is a measured absence: a run with no participating team_member — a
+       * human at a terminal, or a shell — for which a consumer renders the
+       * tool alone and invents no persona.
+       */
+      teammate?: ActorSummary | null }
   | { kind: 'collection'; collectionType: string; itemCount: number }
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
@@ -249,7 +424,47 @@ export type CoreEntityState =
    */
   | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
       subjectId: EntityId | null; nextRunAt: string | null; lastRunAt: string | null;
-      lastError: string | null };
+      lastError: string | null }
+  /**
+   * Craft P1: enough for a list row — which type of graph, and how big. The
+   * vertices and edges themselves are content, not state: a summary never
+   * needs them and they can be large.
+   */
+  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number }
+  /**
+   * A chat's row facts (176). Everything here answers a question a list row
+   * asks — who is it with, what is it running, is it busy — without a second
+   * read, which is the same rule `capabilities` and `category` ride on.
+   *
+   * `runtimeState` is the DURABLE claim about the headless child: 'cold' means
+   * one has never started, 'live' that a node holds it, 'stopped' that the next
+   * turn takes the lazy-resume path. `turnState` is the QUEUE, which is a
+   * different fact: a chat can be 'stopped' with a queued turn waiting, and
+   * that pair is exactly what "the node restarted, your message is still
+   * coming" looks like. Neither is derivable from the other.
+   */
+  | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
+      mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
+      runtimeState: 'cold' | 'live' | 'stopped';
+      turnState: 'idle' | 'queued' | 'running';
+      turnCount: number; lastTurnAt: string | null }
+  /**
+   * Containers (§4.2). Hot and small — this arrives on EVERY list row, so it
+   * carries the surface KINDS that are live and not their detail; the panel
+   * hydrates `surfaceDetail` from content.
+   *
+   * `nodeId` is `string`, NOT `string | null`: the create door refuses a null
+   * `p_node_id` with `22023`, so a container always has a home node and a
+   * consumer never has to render "nowhere".
+   *
+   * `startedAt`/`expiresAt` null are MEASURED absences — never started, and
+   * no TTL — and render nothing, never a default.
+   */
+  | { kind: 'container'; status: ContainerStatus; profile: ContainerProfile;
+      provider: string; isolation: ContainerIsolationClass; nodeId: string;
+      surfaces: ContainerSurfaceKind[]; ephemeral: boolean;
+      shareMode: ContainerShareMode;
+      startedAt: string | null; expiresAt: string | null };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -406,7 +621,7 @@ export interface PullState {
   pinnedVersion: number;
   contentStale: boolean;          // pinnedVersion < entity.version
   discussionMoved: boolean;       // activity changed after the pull
-  workStatus?: string | null;
+  status?: string | null;
   pulledAt: string;
 }
 
@@ -434,6 +649,54 @@ export interface WorkSessionInteractionProfileProjection {
   feedPolicy: FeedPolicy;
   composerPolicy: ComposerInteractionPolicy;
 }
+
+/**
+ * Craft P1 — the lean blueprint vocabulary (rulings R1-R3, task 01a00a0b).
+ *
+ * DELIBERATELY A SKETCH, NOT A PROGRAM SCHEMA. A node is either a REFERENCE
+ * to an existing entity (`id`) or a SPEC for one that does not exist yet
+ * (`{kind, title, hint?}` — the orchestrating agent writes the real body when
+ * it materializes, R2). `key` is row-local so specs can be wired before they
+ * exist. Edges carry the registered edge vocabulary as INTENT — the agent
+ * treats them as instruction, never as a schema-validated DAG. Everything is
+ * optional beyond the discriminants and validation is soft: unknown members
+ * pass through so future graph types cost no contract change.
+ */
+export interface GraphNodeSpec { kind?: string; title?: string; hint?: string; [extra: string]: unknown }
+/**
+ * THE PINNED NODE SHAPE (Craft P1, settled 2026-08-16 — read this before
+ * writing a blueprint row).
+ *
+ *   id    the ROW-LOCAL key. Edges' `src`/`dst` name it. Not an entity id.
+ *   ref   the entity id, when this node points at something that REALLY EXISTS.
+ *   spec  {kind,title,hint} when the node does NOT exist yet.
+ *
+ * A node is a REFERENCE **iff it carries `ref`**; otherwise it is a SPEC.
+ * Entity-hood is never inferred from `id` — that inference is precisely the
+ * defect this pin removes: writers universally reach for `id` as the node's
+ * local identity (11 of 11 nodes on the first real blueprint row did, and none
+ * carried `key`), so a reader treating `id` as an entity id turned every spec
+ * into a broken reference reading "unavailable entity".
+ *
+ * LEGACY ALIASES, accepted forever, never written: `key` for `id` (it wins
+ * when both are present, because that is the key old edges named) and
+ * `entityId` for `ref`. One migration branch covers rows written before the
+ * pin: no `ref`, no `spec`, and an `id` in UUID form ⇒ `id` is the ref. A node
+ * carrying `spec` is never subject to it.
+ */
+export interface GraphNode {
+  /** Row-local key — the edge namespace. */
+  id?: string;
+  /** The referenced entity. Present ⇔ this node is a reference. */
+  ref?: EntityId;
+  spec?: GraphNodeSpec;
+  /** @deprecated legacy alias for `id`; still honored, and it wins over `id`. */
+  key?: string;
+  /** @deprecated legacy alias for `ref`. */
+  entityId?: EntityId;
+  [extra: string]: unknown;
+}
+export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note?: string; [extra: string]: unknown }
 
 export type CoreEntityContent =
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
@@ -469,7 +732,48 @@ export type CoreEntityContent =
       statusChangedAt: string | null }
   | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
       subjectId: EntityId | null; prompt: string; config: Record<string, unknown>;
-      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null };
+      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null }
+  /**
+   * Craft P1: the whole graph in one row (R1). `graphType` discriminates
+   * (R3): 'entity' uses nodes/edges/layout; 'mermaid' uses `source`; future
+   * types choose their own members. All four carry on every read — an arm a
+   * type does not use is simply empty. `layout` is presentation only.
+   */
+  /**
+   * A chat has NO content beyond its summary (R5). The working directory and
+   * the native runtime session id are the two facts a client could want here
+   * and the two that stay server-side, so the arm exists to satisfy the
+   * discriminated union and says so rather than inventing a payload.
+   */
+  | { kind: 'chat' }
+  | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
+      layout: Record<string, { x: number; y: number }>; source: string | null }
+  /**
+   * Containers (§4.2), hydrated in the panel.
+   *
+   * THERE IS NO `runtimeRef` HERE, and there must never be one (R5). This arm
+   * is embedded in the command result by `internal.command_entity` (007:36),
+   * so every member of it reaches the client; the door subtracts
+   * `runtime_ref` and `host_spec` for exactly that reason. Runtime ids are
+   * reachable through `containers.providers.list` and `containers.logs`,
+   * which are node-side reads with their own authorization.
+   *
+   * `surfaceDetail` is PARTIAL: a container with no `adb` surface omits the
+   * key rather than carrying a fake one, so every read of it must guard.
+   *
+   * `usage` is folded in from `container_runtime_state` AT READ TIME and is
+   * null when no sample exists. Heartbeats deliberately never touch the
+   * entity (§15, the migration-165 lesson): a 10 s periodic UPDATE on the
+   * detail row would emit `entity.upsert` per container and starve live
+   * renames. Do not read freshness off `version`.
+   */
+  | { kind: 'container'; image: string; spec: ContainerSpec;
+      lifecycle: ContainerLifecycle;
+      surfaceDetail: Partial<Record<ContainerSurfaceKind, {
+        live: boolean; geometry?: ContainerGeometry; meta?: Record<string, unknown> }>>;
+      error: string | null;
+      usage: ContainerUsage | null;
+      exposed: Array<{ port: number; url: string }> };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -490,6 +794,27 @@ export interface Connections {
 export interface EdgeGroup { type: string; direction: 'outgoing'|'incoming'; label: string; edges: EdgeView[]; nextCursor?: Cursor }
 
 export interface EdgeView { id: string; type: string; source: EntitySummary; target: EntitySummary; props: Record<string, unknown>;
+  createdBy: ActorSummary; createdAt: string; updatedAt: string; resolved?: boolean; hard?: boolean }
+
+/**
+ * `graph.query`'s edge projection: the same edge facts as `EdgeView`, but the
+ * endpoints are IDS rather than embedded summaries.
+ *
+ * WHY A SECOND SHAPE. A graph result carries its endpoints ALREADY — every
+ * edge `graph.query` returns has both endpoints in the same response's `nodes`
+ * array, because the query only admits an edge when both endpoints survived
+ * node selection (`queryGraph`, and the `visibleEdgeRows` filter that re-checks
+ * it). Embedding the summaries again made the endpoints THREE QUARTERS of the
+ * payload: measured on a real 150-node space, 998 KB of a 1 356 KB response
+ * was `source` + `target`, every byte a duplicate of a node already present.
+ *
+ * The invariant is the contract: a consumer resolves `sourceId`/`targetId`
+ * against `nodes` and is guaranteed a hit. `EdgeView` is unchanged and still
+ * the shape everywhere an endpoint is NOT already in hand — `entities.connections`,
+ * the event feed, command results.
+ */
+export interface GraphEdgeView { id: string; type: string; sourceId: EntityId; targetId: EntityId;
+  props: Record<string, unknown>;
   createdBy: ActorSummary; createdAt: string; updatedAt: string; resolved?: boolean; hard?: boolean }
 
 /** Flat `entities.connections` query; cursors bind this complete fingerprint. */
@@ -518,7 +843,45 @@ export interface EntityCapabilities { canEdit: boolean; canDelete: boolean; canA
    * (doc 06 §1.5). Today no server matrix exists, so no server populates it;
    * the field lands with the contract so both old and new servers are legal.
    */
-  allowedTransitions?: string[] }
+  allowedTransitions?: string[];
+  /**
+   * CONTAINER VERBS (§15), derived from status + share_mode + actor.
+   *
+   * ADDITIVE AND OPTIONAL, structurally exactly like `allowedTransitions`
+   * above — and WITH THE OPPOSITE MEANING WHEN ABSENT. Read that sentence
+   * twice before adding a seventh member here.
+   *
+   *   `allowedTransitions` absent  → NO MATRIX; fall back to the registry
+   *                                  vocabulary, which is MORE permissive.
+   *   a capability boolean absent  → NOT PERMITTED. Deny.
+   *
+   * Two members of one interface, the same shape, opposite defaults. The
+   * reason they differ: `allowedTransitions` narrows a permission that
+   * already exists, so having nothing to say means "do not narrow". These
+   * GRANT a permission that otherwise does not exist, so having nothing to
+   * say means "no grant". A reader who reaches for the neighbouring
+   * precedent gets the wrong answer, which is why this is spelled out.
+   *
+   * Concretely, a consumer has three states and must treat them as:
+   *   `true`      → the control is live.
+   *   `false`     → disabled, with the registry's `capabilityReasons` sentence.
+   *   `undefined` → disabled, "capabilities not loaded". NEVER as `true`.
+   *
+   * Do not "simplify" `?? false` into `?? true`, and do not delete the
+   * `undefined` arm as dead code because today's server always populates
+   * these: absence is legal in the contract, and an older server is a legal
+   * peer. They are absent on every non-container kind by design.
+   *
+   * They gate the BUTTON, not the DOT. Liveness comes from
+   * `seam.liveness.statusOf` (R-UI-5): `canAttach: true` says the viewer is
+   * ALLOWED to open the screen, not that pixels are flowing.
+   */
+  canStart?: boolean;
+  canStop?: boolean;
+  canDestroy?: boolean;
+  canAttach?: boolean;
+  canControl?: boolean;
+  canExec?: boolean }
 
 export interface Page<T> { items: T[]; nextCursor: Cursor | null; total?: number }
 
@@ -535,7 +898,15 @@ export interface CollectionQuery {
   subtreeOf?: EntityId;
   parentId?: EntityId | null;
   filters?: {
-    workStatus?: WorkStatus[]; axes?: Record<string, string[]>; assigneeIds?: EntityId[];
+    status?: WorkStatus[]; axes?: Record<string, string[]>; assigneeIds?: EntityId[];
+    /**
+     * Additive (Board tab wave, 2026-08-16): tasks at any of these priorities.
+     * Same kind-narrowing semantics as `status` — priority lives on the
+     * task arm only, so a non-task row never matches.
+     */
+    priority?: ('low'|'medium'|'high'|'urgent')[];
+    /** Tasks with any current assignment performed by one of these actors. */
+    assignedByIds?: EntityId[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
     readyToPull?: boolean; inReviewForActorId?: EntityId; mentionedActorId?: EntityId;
     /**
@@ -559,18 +930,59 @@ export interface CollectionQuery {
     /**
      * A22 (additive): only `work_session` rows in these statuses. While
      * present the query returns work_sessions exclusively — the same
-     * kind-narrowing semantics `workStatus` has for tasks (a NULL state axis
-     * never matches). Combining it with `workStatus` is REFUSED as
+     * kind-narrowing semantics `status` has for tasks (a NULL state axis
+     * never matches). Combining it with `status` is REFUSED as
      * `invalid_input` (schema refinement): the filters are kind-disjoint, so
      * the pair could only ever produce the always-empty set, and a confident
      * zero is worse than a refusal that names the mechanism.
      */
     sessionStatus?: WorkSessionStatus[];
+    /**
+     * Additive: entities whose `activityAt` is at or after this instant — a
+     * TIME WINDOW, expressed as an absolute ISO timestamp rather than a
+     * duration so the server never has to agree with the caller about "now".
+     *
+     * The graph canvas is why this exists. `activityAt_desc` is already the
+     * default sort, so a bounded read has always returned a RANK window ("the
+     * newest N"), and a rank window cannot answer "what happened today" — the
+     * caller learns how many things it got, never how far back they reach. A
+     * clock predicate makes the window a property of the QUERY, so a client
+     * offering "last hour / last day / last week" is describing what it asked
+     * for instead of describing what happened to arrive.
+     *
+     * Still bounded by `limit` like every other read: a window wider than the
+     * page returns its most recent page, and a full page is the caller's
+     * signal that more of the window exists.
+     */
+    activeSince?: string;
+    /**
+     * Entities in any of these lifecycle buckets — the closed, kind-neutral
+     * form of `status`, and the predicate the four category tabs run.
+     *
+     * The two filters are NOT alternatives with the same reach. `status`
+     * names task-only literals, so it can only ever describe tasks; `category`
+     * asks a question every kind will eventually answer, and asking it today
+     * simply returns the kinds that already can. That makes it the filter a
+     * generic list may hold while `status` stays the task board's.
+     *
+     * Same kind-narrowing semantics as `status` and `priority`, by the
+     * same mechanism: an entity with no status has a NULL category, and
+     * `NULL = any(...)` is never true — so the filter's PRESENCE restricts the
+     * result to entities that have a status at all. In this phase that means
+     * tasks. Combining it with `status` is legal and means what it reads
+     * as (intersection), because both name the same rows.
+     *
+     * An ARRAY, not a scalar, so "To Do or In Progress" — the in-flight
+     * question the codebase currently answers six incompatible ways — is one
+     * query rather than a client-side union of two pages.
+     */
+    category?: StatusCategory[];
     deleted?: 'exclude'|'only'|'include';
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
-  groupBy?: 'workStatus'|'assignee'|`axis:${string}`;
-  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
+  /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
+  groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
+  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority';
   cursor?: Cursor; limit?: number;
 }
 
@@ -586,7 +998,7 @@ export interface CollectionGroup {
   total?: number;
 }
 export interface GraphQuery extends CollectionQuery { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
-export interface GraphResult { nodes: EntitySummary[]; edges: EdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
+export interface GraphResult { nodes: EntitySummary[]; edges: GraphEdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
   layout?: Record<EntityId, { x: number; y: number }> }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +1024,14 @@ export interface MessageView extends EntitySummary {
   lastReplyAt?: string | null; replyParticipants?: ActorSummary[];
   /** Structured runtime output, appended durably in stream order. */
   parts?: MessagePart[];
+  /**
+   * True while this message is a chat turn's agent message and that turn has
+   * not completed (`chat_turns.state` in `queued`/`running`). The stored body
+   * is then the claim placeholder, not content — parts-aware surfaces should
+   * draw the streaming parts and suppress the body. Server-set; absent
+   * everywhere else.
+   */
+  turnInFlight?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -681,38 +1101,73 @@ export interface MessageDonePart extends MessagePartBase {
   payload: { reason: 'success' | 'error' | 'interrupted' | 'closed' };
 }
 
-/** One write-once runtime binding for a human-authored message-thread root. */
-export interface ChatThreadSummary {
-  rootMessageId: EntityId;
-  anchorId: EntityId;
-  teammateId: EntityId;
-  model: string;
-  createdAt: string;
-  lastReplyAt: string | null;
-  /**
-   * Root message body excerpt (PR188 review F4): without it every list row
-   * reads "Conversation" and threads are indistinguishable. Optional so the
-   * write path's minted summary (start_chat_thread) stays valid.
-   */
-  title?: string | null;
-  /** Reply count for the thread footer; optional for the same reason. */
-  replyCount?: number;
-}
+/** One write-once runtime binding for a human-authored message-thread root.
+ *  `craft` joined 2026-08-16 (Craft P1): the blueprint-sketching mode — edits
+ *  a graph entity's row, never the real graph; style-only like every mode. */
+export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'craft';
 
-export interface StartChatThreadInput {
-  rootMessageId: EntityId;
+/**
+ * WHERE a chat thread works, named rather than inferred (2026-08-21).
+ *
+ * The same vocabulary `work_sessions.workdir_mode` has always used, minus
+ * `worktree`: that lane exists in the schema and has zero rows on any live
+ * node, so chat does not offer what nobody has exercised. Widening this union
+ * later costs one forward migration and one option in the composer.
+ *
+ *  * `project` — the linked project's `working_dir` AS IT STANDS, including
+ *    anything uncommitted. No clone, no branch, and no requirement that the
+ *    directory be a git repository at all.
+ *  * `scratch` — a server-owned empty per-thread directory. Chosen explicitly,
+ *    or defaulted to only when the Space links no project whatsoever.
+ */
+export type ChatWorkdirMode = 'project' | 'scratch';
+
+/**
+ * `chat.start` — the ONE door a chat is born from (176).
+ *
+ * It replaced `chat.threads.start`, which configured an ALREADY-POSTED root
+ * message: the caller posted, then bound a thread to what it had posted, and
+ * the chat was that message for the rest of its life. Here the chat entity is
+ * created and its opening message is posted in one transaction, so there is no
+ * window in which a chat exists without its first turn, and no id that means
+ * "the message this conversation started from" rather than "the conversation".
+ *
+ * `aboutId` replaces the anchor the composer used to have to supply. A chat
+ * anchors its own transcript now, so the entity a chat was opened ABOUT — the
+ * Craft blueprint, the task, the pull request — is a relation (`about`), which
+ * a human can see and correct, rather than a hidden binding column.
+ */
+export interface StartChatInput {
+  spaceId: SpaceId;
   teammateId: EntityId;
   model: string;
+  mode: ChatMode;
+  workdirMode: ChatWorkdirMode;
+  /**
+   * Required when `workdirMode` is `project`, refused otherwise. The server
+   * resolves the actual path from `projects.working_dir` — a caller never names
+   * a directory for a project chat, so the id and the path cannot disagree.
+   */
+  projectId?: EntityId | null;
+  /** Defaults to the opening body, trimmed to 240 characters. */
+  title?: string | null;
+  /** The opening turn. A chat is never created empty. */
+  body: string;
+  attachmentIds?: EntityId[];
+  /** The entity this chat is about; written as an `about` edge. */
+  aboutId?: EntityId | null;
   clientMutationId: string;
 }
 
-export interface StartChatThreadResult {
-  thread: ChatThreadSummary;
+export interface StartChatResult {
+  chat: EntitySummary;
+  /** The opening message, already queued as turn one. */
+  messageId: EntityId;
 }
 
 export interface ChatTurnDeltaFrame {
   type: 'chat.turn.delta';
-  threadRootId: EntityId;
+  chatId: EntityId;
   messageId: EntityId;
   seq: number;
   part: MessagePart;
@@ -720,7 +1175,7 @@ export interface ChatTurnDeltaFrame {
 
 export interface ChatTurnDoneFrame {
   type: 'chat.turn.done';
-  threadRootId: EntityId;
+  chatId: EntityId;
   messageId: EntityId;
   usage: ChatTurnUsage | null;
 }
@@ -776,6 +1231,23 @@ export interface WorkspaceEventEnvelope {
  */
 export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'entity.upsert'|'entity.deleted'; entity: EntitySummary; clientMutationId?: string }
+ /**
+  * The entity's recency hint moved and NOTHING ELSE did — an edge was written
+  * to it, a message landed on it. It is deliberately NOT an `EntitySummary`:
+  * carrying one would defeat the point, which is that 34% of all entity events
+  * were full 462-byte snapshots of a row whose only mover was a timestamp
+  * (migration 165 has the census).
+  *
+  * A consumer that folds this must guard on `activityAt`, NOT on `version` —
+  * the whole class of events is defined by `version` NOT having changed, so a
+  * version guard compares a field this event never moves.
+  *
+  * `kind` rides along so a consumer can act without a lookup; the client's
+  * session-liveness cadence keys on `work_session` and holds no entity cache
+  * at that layer.
+  */
+ | { type: 'entity.activity_touched'; id: EntityId; kind: EntityKind; activityAt: string;
+     clientMutationId?: string }
  | { type: 'edge.upsert'|'edge.deleted'; edge: EdgeView; clientMutationId?: string }
  | { type: 'message.created'|'message.updated'|'message.deleted'; anchorId: EntityId;
      // ENVELOPE provenance, sitting next to `anchorId` (the target): the SENDER
@@ -1173,8 +1645,10 @@ export interface AuthSessionView {
   actingAsTeamMemberId: string | null;
   /** Present only for a chat runtime: the requesting human member. */
   runtimeMemberId?: string | null;
-  /** Present only for a chat runtime: the root message whose process owns it. */
+  /** Pre-176 chat runtimes only: the root message whose process owned it. */
   runtimeThreadRootId?: string | null;
+  /** Present only for a chat runtime: the chat entity whose process owns it. */
+  runtimeChatId?: string | null;
   label: string | null;
   /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
   createdAt?: string;
@@ -1323,6 +1797,88 @@ export interface AuthClaimResult {
   session: AuthSessionView;
 }
 
+/**
+ * `auth.claim.reissue` — rotate the first-run claim token when the printed one
+ * is lost (design §3.1, §4.3).
+ *
+ * ON-BOX BY CONSTRUCTION. The handler admits only the loopback auto-owner arm,
+ * and the fresh secret is written to the 0600 `<dataDir>/setup-token`. The
+ * plaintext is returned here too, but only ever over that loopback-gated
+ * response — the same trust boundary that already lets a loopback caller act as
+ * owner without a password. On a CLAIMED node the operation is inert (a claimed
+ * node's token can authorize nothing), and it refuses rather than minting a
+ * token that would only ever be dead.
+ */
+export interface AuthClaimReissueResult {
+  /** The fresh `tm8c_…` plaintext. Returned only to an on-box loopback caller. */
+  token: string;
+  /** The claim URL the operator can open, fragment-carried like the boot log's. */
+  claimUrl: string;
+  /** The 0600 file the durable copy was written to, or null if the write failed. */
+  tokenPath: string | null;
+}
+
+/**
+ * `auth.password.change` — rotate your OWN credential (design §10.3).
+ *
+ * CHANGE, NOT RESET: the current password is required and proven server-side, so
+ * an open session cannot silently re-credential the account. There is
+ * deliberately no reset-without-the-old-password variant — that needs an
+ * out-of-band capability, and an unauthenticated one would hand the node to
+ * anyone who can reach it. The write is `set_account_credential` under the
+ * caller's own claims (an account may set its own credential without node
+ * admin); every OTHER live session for the account is then revoked, the one
+ * making the change spared.
+ */
+export interface AuthPasswordChangeInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface AuthPasswordChangeResult {
+  accountId: string;
+  /**
+   * How many OTHER live sessions were revoked. The session making the change is
+   * deliberately kept, so a caller is not logged out of the shell or browser
+   * they just used. A loopback auto-owner carries no session, so nothing is
+   * spared and the count is every live bearer session for the account.
+   */
+  revokedOtherSessions: number;
+}
+
+/**
+ * `auth.invite.signup` — join a space by redeeming an invite that also CREATES
+ * your account (design D5, §4.4, §5.3).
+ *
+ * CLAIM-FREE, and the INVITE CODE is the authorization: the invited person has
+ * no account until this call, so no claim can be bound. `signup_via_invite`
+ * validates the invite, creates the account (never an admin, never an owner —
+ * §7.3), creates the member row and consumes the invite ATOMICALLY. Signing up
+ * SIGNS YOU IN — the result is `auth.login`'s shape plus the space you joined,
+ * so the operator never sets or learns your password.
+ */
+export interface AuthInviteSignupInput {
+  /** `inv_…` — the code handed to the invited person out of band. */
+  code: string;
+  username: string;
+  password: string;
+  displayName?: string;
+  email?: string;
+  /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
+  kind?: 'browser' | 'cli';
+}
+
+export interface AuthInviteSignupResult {
+  /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
+  token: string;
+  account: AuthAccountView;
+  session: AuthSessionView;
+  /** The space the invite joined you to. */
+  spaceId: SpaceId;
+  /** The member row created for you in that space. */
+  memberId: EntityId;
+}
+
 // ---------------------------------------------------------------------------
 // credentials.* — Tier B per-member vendor credentials (sub-doc 11 §D).
 //
@@ -1386,7 +1942,7 @@ export interface CredentialConnectionView {
    * installed here — and is deliberately carried in the same field because the
    * UI's question is a single one ("what may I say about this provider?") and a
    * second nullable field would let a caller render a state that contradicts
-   * this one. It is never persisted in that column, and migration 123 does not
+   * this one. It is never persisted in that column, and migration 181 does not
    * widen the CHECK to admit it.
    *
    * When it is set, `connected` is always false: a stored credential whose
@@ -1529,6 +2085,7 @@ export interface CreateTaskInput extends CommandContext {
   acceptanceCriteria?: Array<Pick<AcceptanceCriterion, 'text'> & Partial<AcceptanceCriterion>>;
   pointsEstimate?: number | null;
   dueDate?: string | null;
+  startDate?: string | null;
   /** Creates the task and the edge atomically (channel-create / promote-message). */
   attachTo?: { entityId: EntityId; edgeType: 'attached_to' | 'relates_to' };
 }
@@ -1538,11 +2095,13 @@ export interface PatchTaskInput extends CommandContext {
   title?: string;
   description?: string;
   axes?: Record<string, string>;
-  workStatus?: WorkStatus;
+  status?: WorkStatus;
   priority?: 'low'|'medium'|'high'|'urgent';
   acceptanceCriteria?: AcceptanceCriterion[];
   pointsEstimate?: number | null;
   dueDate?: string | null;
+  /** Explicit `null` CLEARS, exactly as `dueDate` does. */
+  startDate?: string | null;
 }
 
 /**
@@ -1558,6 +2117,14 @@ export interface PatchTaskInput extends CommandContext {
 export type CreatableEntityKind = Exclude<
   EntityKind,
   'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'
+  // `chat` joins that list for the same reason `work_session` is on it: it is
+  // born only from its own door (`chat.start`), never from a generic create.
+  | 'chat'
+  // `container` is born ONLY from `containers.create`, which reserves the
+  // record and then provisions a runtime (§8.4). A generic create would
+  // produce a container record with no machine behind it — a row that
+  // renders, lists and counts while every verb on it fails.
+  | 'container'
 >;
 
 export interface CreateEntityInput extends CommandContext {
@@ -1667,6 +2234,12 @@ export interface PostMessageInput extends CommandContext {
    * session reads and answers the thread it was tagged into.
    */
   pokeSessionIds?: EntityId[];
+  /**
+   * Optional per-turn chat mode chosen at send time. Only meaningful when the
+   * post targets a chat thread; the Server stamps it onto the message so the
+   * enqueued chat turn runs under it (else the thread's default mode applies).
+   */
+  mode?: ChatMode;
 }
 
 /** Accepted only at the versioned input migration boundary. */
@@ -1676,9 +2249,33 @@ export type PostMessageWireInput = Omit<PostMessageInput, 'anchorIds'> & {
   anchorId?: EntityId;
 };
 
+/**
+ * What one named session's live copy did. See `MessageBatchResult.delivery`.
+ *
+ * `accepted` is not `delivered`: the durable reservation exists and the write
+ * is in flight, and the terminal outcome settles later on the delivery row.
+ */
+export interface MessageDeliveryDisposition {
+  targetMessageId: string;
+  targetWorkSessionId: string;
+  status: 'accepted' | 'skipped' | 'undelivered';
+  /** Stable slug on `skipped` / `undelivered`; never raw error text. */
+  reason?: string;
+  /** Present on `accepted`, to follow the row to its settlement. */
+  deliveryId?: string;
+}
+
 export interface MessageBatchResult {
   messageBatchId: string;
   messages: MessageView[];
+  /**
+   * Per-target delivery outcome, present exactly when this batch named at least
+   * one work session. A stored message is NOT a delivered one: a post can route
+   * to a live agent and still put nothing on its terminal, and before this
+   * field existed that case was indistinguishable from success. Absent means
+   * the batch owed nobody a live copy — not that delivery failed.
+   */
+  delivery?: MessageDeliveryDisposition[];
 }
 
 export interface PatchMessageInput extends CommandContext {
@@ -1787,6 +2384,61 @@ export interface TaskAxisInput extends CommandContext {
   axisValues: string[];
   kind: 'default'|'manual';
   position: number;
+}
+
+/** POST /v2/spaces/:spaceId/task-workflows — upsert on (space, typeValue). */
+export interface TaskWorkflowInput extends CommandContext {
+  typeValue: string;
+  statuses: WorkStatus[];
+}
+
+/**
+ * POST /v2/spaces/:spaceId/workflows — upsert on (space, kind, name).
+ *
+ * WHOLE-DOCUMENT, not per-state CRUD. The invariants are about a workflow as a
+ * whole — exactly one initial state, unique positions, transitions whose
+ * endpoints are its own states — so one door makes them a property of a single
+ * statement. Per-row doors would make "delete In Review" legal only in the same
+ * transaction as whatever replaces it, and quadruple the catalog surface to buy
+ * a UI nobody has asked for.
+ *
+ * `states` REPLACES the state set. A state that entities are sitting in cannot
+ * be dropped (`entities.status_id` is ON DELETE RESTRICT) and the call refuses
+ * rather than stripping the status off live work.
+ */
+export interface WorkflowInput extends CommandContext {
+  name: string;
+  /** The kind this workflow governs. `null` is reserved for the built-in default. */
+  kind: string | null;
+  states: WorkflowStateInput[];
+  /**
+   * OVERRIDES, not rules. Omit entirely and the workflow still works: the ruled
+   * category-level defaults apply to every state. See `WorkflowTransition`.
+   */
+  transitions?: WorkflowTransitionInput[];
+}
+
+export interface WorkflowStateInput {
+  name: string;
+  category: StatusCategory;
+  /** 1-based. Defaults to array order. Ties are impossible — unique per workflow. */
+  position?: number;
+  /** EXACTLY ONE per workflow, and it must be `to_do`. Where an entity is born. */
+  isInitial?: boolean;
+  /**
+   * At most one per (workflow, category), and only a TIEBREAK: the default state
+   * of a category is the `isDefault` one, or the lowest-position one. Leaving it
+   * unset is the point — a freshly authored workflow resolves with no flags.
+   */
+  isDefault?: boolean;
+}
+
+/** Endpoints are state NAMES: a caller authoring a workflow has no ids yet. */
+export interface WorkflowTransitionInput {
+  /** Absent or `null` = ANY source state. */
+  from?: string | null;
+  to: string;
+  conditions?: Record<string, unknown>;
 }
 
 export interface SavedViewInput extends CommandContext {
@@ -1912,7 +2564,24 @@ export type InvitePreview =
  * `message` KIND: `message` stays excluded from `MenuKindRef` because it is
  * anchored, slugless and has no collection list, which is precisely why the
  * conversation surface needs a view ref of its own to be addressable. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages';
+/** `board` added 2026-08-16 (same R4 additive widening) for the task Board —
+ * the full-screen kanban over the task collection (switchable grouping,
+ * priority/assignee filters). A VIEW: it renders the `task` KIND's rows, so
+ * no kind ref moves; the tab is a presentation of an existing collection. */
+/** `craft` added 2026-08-16 (Craft P1, same R4 additive widening): the
+ * split-pane blueprint studio — a craft-mode chat anchored to a `graph`
+ * entity beside a canvas rendering that entity's row. A VIEW over the new
+ * `graph` kind's rows; the kind itself stays an ordinary collection kind. */
+/** `help` added 2026-08-19 (same R4 additive widening): the Help shelf — a
+ * curated reading order over `artifact` rows, read from the Space's own graph
+ * (a `collection` and its ordered `contains` edges), rendered through the
+ * existing artifact-preview path. A VIEW over an existing kind, so no kind ref
+ * moves. It is menu-ELIGIBLE but NOT in the shipped default spine: the seven
+ * default groups are surfaces you inhabit and Help is a reference you consult,
+ * so its default door is a control on the tab bar (the `inbox` precedent). The
+ * registry row exists all the same, because an operator who places Help in
+ * their own menu must not be refused by the server validator. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft' | 'help' | 'codebrain';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -1974,28 +2643,53 @@ export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
 ] as const satisfies readonly MenuKindRef[];
 
 /**
- * The ordered rows in the default Chats group (single-home ruling, 2026-08-14):
- * the conversation surfaces, clustered — the channel collection and the
- * cross-entity Messages browser. Live voice rooms are appended beneath them at
- * runtime (GateApp's dynamic group), exactly as the old Voice group worked.
+ * The ordered rows in the default Channels group (five-tab ruling R2/R4,
+ * 2026-08-15; formerly the Chats group of the single-home ruling): the
+ * conversation surfaces, clustered — the channel collection and the
+ * cross-entity Messages browser (D2: `messages` moved here rather than dying
+ * with the retired `chats` group). Live voice rooms are appended beneath them
+ * at runtime (GateApp's dynamic group), exactly as the old Voice group worked.
  * Same twin-joining job as the other spines: the server seeder and the client
  * fallback each prove their copy against this list.
  */
-export const DEFAULT_MENU_CHATS_SPINE = [
+export const DEFAULT_MENU_CHANNELS_SPINE = [
   { type: 'kind', ref: 'channel' },
   { type: 'view', ref: 'messages' },
 ] as const satisfies readonly MenuItem[];
 
 /**
- * The ordered caret children beneath the default Code row (the `git` view).
- * The dev-tracking collections live under one caret rather than as four
- * always-visible rows — the same trim the Workspace caret already made.
+ * The three dev-tracking collections. R3 (2026-08-15): "code is not a
+ * top-level anything" — the `code` group is retired and these become ordinary
+ * Work rows beside the Workspace caret, with the `git` view surviving as a
+ * plain Work row too (D1). The constant keeps its name because the pre-125
+ * defaults in persisted Space menus still carry it as the Code caret and the
+ * upgrade migrations characterize against that shape.
  */
 export const DEFAULT_MENU_CODE_KIND_SPINE = [
   'project',
   'pull_request',
   'worktree',
 ] as const satisfies readonly MenuKindRef[];
+
+/**
+ * The ordered items of the default Work group under the five-tab ruling
+ * (R2/R3/D1, 2026-08-15): the Workspace caret with its eight kinds, then the
+ * three dev collections as ordinary rows and the git topology view as a plain
+ * row. No `files` view here — the File browser is its own TAB (user
+ * amendment, same day) and menu refs are globally unique, so the row cannot
+ * also live in Work; the `file` KIND stays in the Workspace caret (owner
+ * ruling R9's two doors, now on two tabs). One list so the seeder (migration
+ * 125) and the client fallback prove the whole group against a single truth.
+ */
+export const DEFAULT_MENU_WORK_ITEM_SPINE = [
+  {
+    type: 'view',
+    ref: 'workspace',
+    children: DEFAULT_MENU_WORKSPACE_KIND_SPINE.map((ref) => ({ type: 'kind' as const, ref })),
+  },
+  ...DEFAULT_MENU_CODE_KIND_SPINE.map((ref) => ({ type: 'kind' as const, ref })),
+  { type: 'view', ref: 'git' },
+] satisfies readonly MenuItem[];
 
 /**
  * The ordered rows in the default Library group.
@@ -2024,7 +2718,7 @@ export const DEFAULT_MENU_LIBRARY_SPINE = [
  * The default menu's group spine — ONE shared truth for its two twins.
  *
  * The server seeder (`internal.w1_default_menu_payload()`, last redefined in
- * db/migrations/093) and the client shipped default (tm8-ui
+ * db/migrations/164) and the client shipped default (tm8-ui
  * `SHIPPED_DEFAULT_MENU`) each carry a hand-written copy of the default
  * menu's groups, and the ids DIFFER in one place for historical reasons
  * (`work` server-side, `workspace` client-side). Until 2026-07-31 nothing
@@ -2039,21 +2733,129 @@ export const DEFAULT_MENU_LIBRARY_SPINE = [
  * Additive export only: no schema, operation, or DTO changes ride on it.
  */
 export const DEFAULT_MENU_GROUP_SPINE = [
-  // 2026-08-14 (single-home ruling): the rail reorganized around INTENTS
-  // rather than kinds — six groups, ~8 always-visible rows. Home is the merged
-  // chat-first landing; Chats clusters the conversation surfaces (channel
-  // collection + Messages + live voice rows via the dynamic group, retiring the
-  // items-empty `voice` group); Workspace absorbs the Library rows behind its
-  // caret; Code is the old Tracking group behind the git row's caret; `collab`
-  // (the `member` row) left the shipped rail for the palette and the kind
-  // switcher. Inbox left the rail for the top-bar bell. Nothing was deleted:
-  // every ref keeps its route, its chord and its menu-editor eligibility.
-  { serverId: 'home', clientId: 'home' },
+  // 2026-08-15 (five-tab ruling R2, plus the same-day Files amendment): the
+  // groups ARE the top-level tabs —
+  //   home | work | graph | channels | files | settings
+  // drawn in the top row by the shell; the rail renders only the ACTIVE
+  // group's contents. R3 retired the `code` group: project / pull_request /
+  // worktree became ordinary Work rows and the git view survives as a plain
+  // Work row (D1). R4 renamed `chats` to `channels` — Home is the chat view,
+  // Channels is the channel kind's own tab (`messages` rides with it, D2).
+  // The File browser view is its own tab (user amendment) — it left Work
+  // because menu refs are globally unique. Nothing was deleted: every ref
+  // keeps its route, its chord and its menu-editor eligibility.
+  //
+  // (The pre-125 rail history — six intent clusters, Chats group, Code caret —
+  // is characterized by migrations 122-124 and their parity tests.)
+  //
+  // LATER THE SAME DAY (conversation-axis ruling, migration 126): the `home`
+  // GROUP is retired, leaving —
+  //   work | graph | channels | files | settings
+  // Home stopped being a destination and became the CONTAINER: the
+  // conversation surface the shell falls back to. A tab for it, plus a rail
+  // row inside that tab repeating its own name, were two more doors to the
+  // place you were already standing in. The `dashboard` VIEW REF is
+  // untouched — still registered, still routable, still the
+  // no-remembered-place landing, still offerable through the menu editor.
+  // A rail edit, not a feature removal: the same posture 125 took toward
+  // `chats` and `code`.
+  //
+  // AND REVERSED THE SAME DAY (user ruling, migration 127): a group leads
+  // `dashboard` again, now named CHATS —
+  //   chats | work | graph | channels | files | settings
+  // 126 read the redundancy correctly and drew the wrong conclusion from it.
+  // The duplicated door was the RAIL ROW, not the tab: standing on the
+  // conversation surface, the rail drew one row repeating the tab's own name.
+  // Retiring the group deleted the tab too, which left the brand mark as the
+  // only way back to conversations — a door with no label, discoverable only
+  // by guessing. So the tab returns and the RAIL is what stays gone:
+  // `dashboard` joins the railless view refs (tm8-ui `menu-resolve.ts`), and
+  // the surface is exactly two panes — the conversation LIST is the
+  // navigation, and it belongs to the screen.
+  //
+  // The id is `chats` on both sides. It is free: 125 RENAMED the old `chats`
+  // group to `channels` (it was the channel collection's group, never this
+  // surface's), so nothing else claims it and no space can hold both.
+  // 2026-08-16 LATER (unified Home, task 01a00932, migration 134): the
+  // `work` and `channels` GROUPS retire and `chats` is relabelled HOME —
+  //   chats(Home) | board | graph | files | settings
+  // Home's screen lists chat threads OR any collection kind (the root
+  // column + registry-driven icon rail), so a Work tab beside it would be a
+  // second door to every list Home already owns, and Channels' contents
+  // await the redesigned Collab surface (a later feature). Nothing was
+  // deleted: `workspace`, `git`, `messages` and every retired kind ref keep
+  // their routes, their chords and their menu-editor eligibility — the same
+  // rail-edit posture as 125/126/127.
   { serverId: 'chats', clientId: 'chats' },
-  { serverId: 'work', clientId: 'workspace' },
-  { serverId: 'code', clientId: 'code' },
+  // 2026-09-03 (chat as an entity, migration 180): CHATS becomes a tab of its
+  // own, seated after Home —
+  //   chats(Home) | conversations(Chats) | work | craft | graph | codebrain | settings | help
+  // Migration 176 gave a chat the core kind `chat`; this is the tab that
+  // lists it. The group's single item is a KIND ref, not a view, so it needs
+  // no `menu_view_registry` row and it draws a rail (tm8-ui's
+  // `isRaillessGroup` keys on a lone childless VIEW).
+  //
+  // THE ID IS `conversations` BECAUSE `chats` IS HOME. Ids are wire-stable and
+  // the group above has held `chats` since 127 — 134 relabelled it Home
+  // without renaming it. `chat` was rejected as a neighbour of `chats`: two
+  // ids one letter apart, one of them labelled Home, is a payload a reader
+  // gets wrong. The LABEL is what a viewer sees, and it is "Chats".
+  //
+  // THIS IS THE EIGHTH GROUP, AND THE DB CAP IS EIGHT
+  // (`internal.w2_normalize_menu_payload`, 071:61 — `> 8` raises 22023). A
+  // ninth shipped tab needs that limit raised first.
+  { serverId: 'conversations', clientId: 'conversations' },
+  // 2026-08-16 LATER STILL (user ruling, migration 140): a WORK tab returns
+  // beside Home —
+  //   chats(Home) | work | board | craft | graph | files | settings
+  // 134 retired the group on the reasoning that Home's root column already
+  // lists every collection kind, so Work was a second door to the same
+  // lists. That was true of 134's Work group, which was a RAIL of rows
+  // (Workspace caret + the three dev kinds + git). It is not true of this
+  // one: the group holds the single childless `workspace` VIEW, so the tab
+  // is the three-panel workspace itself — left panel, center entity, right
+  // panel — which is a LAYOUT Home does not offer, not a duplicate list.
+  //
+  // The group is re-minted rather than restored, so its id is `work` on BOTH
+  // sides. The historical `work`/`workspace` divergence noted above belongs
+  // to the pre-134 group; nothing persists under the old client id, so there
+  // is no reason to carry the asymmetry into a group being created fresh.
+  //
+  // Railless BY SHAPE: one childless view item, so tm8-ui's
+  // `isRaillessGroup` answers true and the workspace renders full-bleed
+  // beside the tab row ('workspace' joined RAILLESS_VIEW_REFS in the same
+  // change). Pre-134 menus that still carry the OLD Work group are
+  // untouched by that set — their `workspace` item has eight caret
+  // children, and the rule keys on the shape, so they keep their rail.
+  { serverId: 'work', clientId: 'work' },
+  // 2026-08-16 (Board tab wave, migration 130): the task kanban is its own
+  // full-bleed tab — a railless group holding the single `board` VIEW, the
+  // same posture as graph/files/chats. It PRESENTS the task collection; the
+  // `task` kind stays a Home root, so this is a second door to tasks, not a
+  // move (the R9 two-doors posture files set).
+  // 2026-08-20 (Help library ruling, migration 164): the legacy Board menu
+  // group leaves the shipped spine. Its MenuViewRef, route and registry row
+  // remain; tm8-ui inserts the route-only Board v2 screen into this position
+  // and labels that tab exactly "Board".
+  // { serverId: 'board', clientId: 'board' },
+  // 2026-08-16 (Craft P1, migration 137): the blueprint studio joins beside
+  // Board — a railless group holding the single `craft` VIEW (chat + canvas
+  // over one `graph` entity's row). Placed between Board and Graph: it sits
+  // with the other full-bleed work surfaces, and tab position is a one-line
+  // edit here if the pending position ruling says otherwise.
+  { serverId: 'craft', clientId: 'craft' },
   { serverId: 'graph', clientId: 'graph' },
+  // 2026-09-01 (CodeBrain, migration 173): the delivery pipeline's own tab,
+  // seated after Graph and before the utility tabs. This constant is the ONE
+  // place both parity tests read, so the group cannot land on one side alone
+  // — the 059 lesson this spine exists to encode.
+  { serverId: 'codebrain', clientId: 'codebrain' },
+  // Files is no longer a shipped tab, but remains a legal customized-menu ref.
+  // { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
+  // Help is a first-class final tab. Migration 160 already registered the
+  // view; 164 places it in the default spine.
+  { serverId: 'help', clientId: 'help' },
 ] as const;
 
 export interface MenuConfigPayload {
@@ -2087,7 +2889,26 @@ export interface SpaceSummary {
   name: string;
   description: string;
   memberCount: number;
-  unreadTotal: number;
+  /**
+   * `null` ⇒ NOT MEASURED on the path that produced this summary, which is
+   * every path that produces one. Counting unread means scanning
+   * `public.messages` under an RLS policy that applies two SECURITY DEFINER
+   * `internal.entity_readable()` calls per row, and `spaces.list` is the
+   * request that gates workspace boot. The server-side reasoning, with the
+   * measurements, is on `SPACE_COLUMNS` in `facade/handlers/spaces.ts`.
+   *
+   * It is `null` rather than `0` because those are different statements and
+   * only one of them is true. A `0` renders identically to "you are caught up"
+   * and nothing catches it. `null` renders as nothing and forces every consumer
+   * to say which it meant — the same rule `messages-model.ts` states for
+   * per-anchor unread ("a row rendering `0 unread` would claim a measurement
+   * nobody took").
+   *
+   * The measured per-space number is `SpaceNavigation.unreadTotal` below, a
+   * lazy per-space read off the boot path. A `number` is still legal here so an
+   * older node's response validates unchanged.
+   */
+  unreadTotal: number | null;
   githubRepo?: string | null;
   createdAt: string;
 }
@@ -2127,14 +2948,19 @@ export interface KindCounts { total: number; unseen: number }
  */
 export type SpaceKindCounts = Partial<Record<EntityKind, KindCounts>>;
 
-/** Home — chat threads plus the legacy My Work snapshot during migration. */
+/**
+ * Home — the My Work snapshot.
+ *
+ * `chatThreads` is GONE (176). It was a bespoke projection over `chat_threads`
+ * that existed only because a chat had no kind to list by; a chat is an entity
+ * now, so the list is `entities.list kind=chat` like every other list in the
+ * product, with the same paging, filtering and permissions.
+ */
 export interface HomeSnapshot {
   readyToPull: CollectionResult;
   inFlight: CollectionResult;
   needsMe: CollectionResult;
   activity: Page<ActivityItem>;
-  /** Additive: every configured chat root readable by this viewer. */
-  chatThreads?: ChatThreadSummary[];
 }
 
 /** GET /v2/spaces/:spaceId/task-axes */
@@ -2145,6 +2971,76 @@ export interface TaskAxis {
   axisValues: string[];
   kind: 'default'|'manual';
   position: number;
+}
+
+/**
+ * GET /v2/spaces/:spaceId/task-workflows (W4, 132).
+ *
+ * One row per (space, `type` value): the SUBSET of work statuses tasks of
+ * that type may be moved TO. `{open, working, done}` are STRUCTURAL — the
+ * schema requires them in every vocabulary (creation, the spawn door, and
+ * completion must never be authorable out of existence) — so the narrowable
+ * set is exactly {pulled, in_review, blocked, cancelled}. Enforcement is a
+ * trigger on `tasks`; a task whose status falls outside its type's
+ * vocabulary (after a type change) is off-workflow: a DERIVED fact, flagged
+ * by clients, never stored and never rewritten.
+ */
+export interface TaskWorkflow {
+  id: string;
+  spaceId: SpaceId;
+  /** The `type` AXIS value this rule governs (strictly `type`, by ruling). */
+  typeValue: string;
+  statuses: WorkStatus[];
+}
+
+/**
+ * GET /v2/spaces/:spaceId/workflows — a named set of states and transitions.
+ *
+ * SUPERSEDES `TaskWorkflow`, which stays in place read-only until phase 6. The
+ * difference that matters: a `TaskWorkflow` is a SUBSET of seven hardcoded
+ * statuses, and a `Workflow` is an open set of user-named states each carrying
+ * one of the four closed CATEGORIES. Today the statuses are hardcoded and the
+ * subset is data; here the categories are hardcoded and the statuses are data.
+ */
+export interface Workflow {
+  id: string;
+  /** `null` for THE built-in default workflow — one global row, no space owns it. */
+  spaceId: SpaceId | null;
+  name: string;
+  /** `null` = governs any kind. Only the built-in default is allowed to say that. */
+  kind: string | null;
+  states: WorkflowState[];
+  /**
+   * OVERRIDES. Empty is the NORMAL case and means "the ruled category-level
+   * defaults apply", not "nothing is allowed" — a twelve-state workflow with an
+   * empty array here works with zero configuration, which is the entire design.
+   */
+  transitions: WorkflowTransition[];
+}
+
+export interface WorkflowState {
+  id: string;
+  workflowId: string;
+  /** OPEN and user-defined. Nothing outside a workflow may branch on it. */
+  name: string;
+  /** The closed four. The only status concept anything outside a workflow reads. */
+  category: StatusCategory;
+  position: number;
+  isInitial: boolean;
+  isDefault: boolean;
+}
+
+export interface WorkflowTransition {
+  id: string;
+  workflowId: string;
+  /** `null` = ANY source state. */
+  fromStateId: string | null;
+  toStateId: string;
+  /**
+   * Preconditions on entering the TARGET state (acceptance criteria, the
+   * `pr_merged` gate). Empty until phase 4 moves them off `complete_task`.
+   */
+  conditions: Record<string, unknown>;
 }
 
 /** GET /v2/spaces/:spaceId/leaderboard */
@@ -2169,6 +3065,12 @@ export interface SpaceSettings {
   /** `role` (118) is the role redemption confers — 'admin' or 'member', never 'owner'. */
   invites: Array<{ id: string; code: string; role: Exclude<SpaceMemberRole, 'owner'>; maxUses: number; uses: number; expiresAt: string | null; revoked: boolean }>;
   taskAxes: TaskAxis[];
+  /**
+   * W4 ride-along: the same one settings round trip that carries `taskAxes`
+   * carries the workflows keyed on them — the two are curated together and
+   * read together. Optional so pre-132 fixtures read as "none defined".
+   */
+  taskWorkflows?: TaskWorkflow[];
 }
 
 /** Member-authorized settings projection returned by A03 and settings reads. */
@@ -2264,6 +3166,447 @@ export type WorkSessionKind = 'agent' | 'credential' | 'shell';
  * branch is not exclusively the session's, 'scratch' has no project repo.
  */
 export type WorkSessionWorkdirMode = 'project' | 'worktree' | 'scratch';
+
+/**
+ * WHAT CLASS OF ENDING a session had — `work_sessions.ended_kind`'s CHECK
+ * verbatim (171). The machine-readable half of the ending; `endedReason`
+ * carries the sentence a person reads.
+ *
+ *   completed            — the agent finished on its own terms, exit 0.
+ *   stopped_by_operator  — somebody asked it to stop.
+ *   server_restart       — the server process it lived in went away: a deploy,
+ *                          a restart, a crash of the host. The agent did not
+ *                          choose this and nothing was wrong with it.
+ *   out_of_memory        — killed for memory. KERNEL EVIDENCE, from the
+ *                          cgroup's `oom_kill` counter, never inferred from a
+ *                          signal number. Kept as its own value because under
+ *                          the standing policy resource exhaustion is the ONE
+ *                          involuntary death that may legitimately happen, so
+ *                          it must never be folded in with the others.
+ *   crashed              — the agent's own process died badly: a non-zero exit
+ *                          or a signal that was not a managed stop.
+ *   unknown              — an ending was observed but nothing explains it.
+ *                          Deliberately available: an honest "we do not know"
+ *                          beats picking the nearest plausible value.
+ */
+export type WorkSessionEndedKind =
+  | 'completed'
+  | 'stopped_by_operator'
+  | 'server_restart'
+  | 'out_of_memory'
+  | 'crashed'
+  // 177: the two endings a CONTAINER causes. `container_stopped` is
+  // orderly — the machine an exec session lived in was stopped, so the
+  // session ended with it and nothing was wrong. `runtime_lost` is the
+  // involuntary one: reconciliation found the runtime gone underneath a
+  // session that was still running. They stay distinct for the same
+  // reason `out_of_memory` does — folding them together would hide the
+  // only one of the two that means something broke.
+  | 'container_stopped'
+  | 'runtime_lost'
+  | 'unknown';
+
+
+// --- containers (TM8-CONTAINERS-DESIGN §4, migration 177) -------------------
+
+/**
+ * The nine statuses. SINGLE WRITER: `public.set_container_status` — the guard
+ * trigger refuses a direct `update containers set status` with `23514`, the
+ * same shape as the worktree status guard (057:100-119). The legal edges live
+ * in `internal.container_transition_allowed`, not here.
+ */
+export type ContainerStatus =
+  | 'requested' | 'provisioning' | 'running' | 'paused' | 'stopping'
+  | 'stopped' | 'destroying' | 'destroyed' | 'failed';
+
+/** A profile is a promise about surfaces plus a default image (§9). */
+export type ContainerProfile =
+  | 'shell' | 'desktop' | 'browser' | 'android' | 'ios' | 'dind' | 'custom';
+
+/**
+ * Ordered WEAKEST TO STRONGEST — the isolation policy (§12.1) compares two of
+ * these, so the order of this union is load-bearing and `CONTAINER_ISOLATION_RANK`
+ * below is the machine-readable half. A new class must be inserted at its real
+ * strength, never appended.
+ */
+export type ContainerIsolationClass =
+  | 'process' | 'container' | 'gvisor' | 'microvm' | 'vm';
+
+/**
+ * What you can attach to. `terminal` is the exec PTY — it is reached through
+ * `containers.terminal.start`, which mints a real work_session, NOT through
+ * `containers.attach`. That is why `ContainersAttachInput.surface` is a
+ * narrower union than this type.
+ */
+export type ContainerSurfaceKind =
+  | 'terminal' | 'screen' | 'browser' | 'adb' | 'docker' | 'http';
+
+export type ContainerNetworkPreset = 'open' | 'balanced' | 'locked';
+
+/**
+ * THE SAME VOCABULARY AS `work_sessions.share_mode`, deliberately (§4.2) — an
+ * alias, not a parallel enum, so one share control serves both kinds.
+ *
+ * IT IS NOT THE EXPOSED-PORT VOCABULARY. `ContainerPortShare` has `link` and
+ * no `explicit`; this one has `explicit` and no `link`. They read alike and
+ * mean different things, so they stay two types.
+ */
+export type ContainerShareMode = WorkSessionShareMode;
+
+/** Exposed-port sharing (§6.5). See the warning on `ContainerShareMode`. */
+export type ContainerPortShare = 'none' | 'space' | 'link';
+
+/**
+ * INPUT side only. `host` is a node-local absolute path.
+ *
+ * R5 (Design v4 §3.1): host paths and native runtime identifiers stay
+ * server-side — `internal.command_entity` (007:36) embeds `entity_content` in
+ * the command result a client receives, so anything in the read arm reaches
+ * the client. The door splits an incoming spec, routing `mounts[].host` into
+ * the server-only `containers.host_spec`. A mount therefore CANNOT round-trip:
+ * you send a host path and you never read one back.
+ */
+export interface ContainerMountInput { host: string; guest: string; ro: boolean }
+
+/** READ side. What `ContainerSpec.mounts` carries — no host path, by R5. */
+export interface ContainerMount { guest: string; ro: boolean }
+
+export interface ContainerNetworkPolicy { preset: ContainerNetworkPreset; allow: string[] }
+export interface ContainerSurfaceSpec { enabled: boolean; port?: number }
+
+/** The RESOLVED spec, as stored and as read back. */
+export interface ContainerSpec {
+  profile: ContainerProfile;
+  image?: string;
+  cpus: number;
+  memMiB: number;
+  diskMiB?: number;
+  /** Guest paths only (R5). */
+  mounts: ContainerMount[];
+  /** NON-secret only — the contract REFUSES known secret-looking keys. */
+  env: Record<string, string>;
+  ports: number[];
+  network: ContainerNetworkPolicy;
+  surfaces: Partial<Record<ContainerSurfaceKind, ContainerSurfaceSpec>>;
+  /** Always includes `tm8.container=<entityId>` and `tm8.space=<spaceId>`. */
+  labels: Record<string, string>;
+}
+
+/**
+ * What a CALLER may send. Every member optional; the node fills the rest from
+ * the profile catalog. `profile` is NOT here — it is a top-level field of
+ * `ContainersCreateInput`, because it selects the defaults this partial
+ * overrides and so cannot itself be one of them.
+ */
+export interface ContainerSpecInput {
+  image?: string;
+  cpus?: number;
+  memMiB?: number;
+  diskMiB?: number;
+  /** Input flavour: carries the host path. */
+  mounts?: ContainerMountInput[];
+  env?: Record<string, string>;
+  ports?: number[];
+  network?: ContainerNetworkPolicy;
+  surfaces?: Partial<Record<ContainerSurfaceKind, ContainerSurfaceSpec>>;
+  labels?: Record<string, string>;
+}
+
+/**
+ * Every member REQUIRED on the read side. `ttlSeconds` and
+ * `idleHibernateSeconds` are explicitly nullable and `null` means NO TTL / NO
+ * idle hibernation — a measured absence, never "not loaded".
+ */
+export interface ContainerLifecycle {
+  ephemeral: boolean;
+  ttlSeconds: number | null;
+  idleHibernateSeconds: number | null;
+  /** How long a stopped ephemeral machine survives so a human can read it (§11.2). */
+  graceSeconds: number;
+  snapshotOnStop: boolean;
+}
+
+/** The input flavour of `ContainerLifecycle` — all optional, same meanings. */
+export interface ContainerLifecycleInput {
+  ephemeral?: boolean;
+  ttlSeconds?: number | null;
+  idleHibernateSeconds?: number | null;
+  graceSeconds?: number;
+  snapshotOnStop?: boolean;
+}
+
+export interface ContainerUsage { cpuPct: number; memMiB: number; diskMiB: number }
+export interface ContainerGeometry { w: number; h: number; dpr: number }
+
+/**
+ * §5's provider descriptor, as `containers.providers.list` returns it.
+ *
+ * `probe` IS PRODUCED BY DOING — actually creating and destroying a tiny
+ * container — never by checking for a binary on PATH. That is the whole point
+ * of the field: `ok: false` with a `detail` is the honest answer a node gives
+ * when docker is installed and not working, which a PATH check calls healthy.
+ */
+export interface ContainerProviderDescriptor {
+  id: string;
+  isolation: ContainerIsolationClass;
+  profiles: ContainerProfile[];
+  surfaces: ContainerSurfaceKind[];
+  features: { pause: boolean; snapshot: boolean; fork: boolean; expose: boolean; nested: boolean; gpu: boolean };
+  limits: { maxContainers: number; maxCpus: number; maxMemMiB: number };
+  probe: { ok: boolean; detail: string; measuredAt: string };
+}
+
+/**
+ * The execution block's error codes (§4.3), mapped to the closed taxonomy in
+ * the handler layer exactly as `SpawnError.code` is.
+ */
+export type ContainerErrorCode =
+  | 'invalid_spec' | 'not_found' | 'forbidden' | 'policy'
+  | 'state' | 'budget' | 'no_provider' | 'runtime' | 'timeout';
+
+/** Isolation strength, machine-readable. See `ContainerIsolationClass`. */
+export const CONTAINER_ISOLATION_RANK: Record<ContainerIsolationClass, number> = {
+  process: 0, container: 1, gvisor: 2, microvm: 3, vm: 4,
+};
+
+/** The nine statuses as a value, for exhaustive iteration in tests and UI. */
+export const CONTAINER_STATUSES = [
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+] as const satisfies readonly ContainerStatus[];
+
+export const CONTAINER_PROFILES = [
+  'shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom',
+] as const satisfies readonly ContainerProfile[];
+
+export const CONTAINER_SURFACE_KINDS = [
+  'terminal', 'screen', 'browser', 'adb', 'docker', 'http',
+] as const satisfies readonly ContainerSurfaceKind[];
+
+// --- containers: operation inputs and results (§4.2) ------------------------
+
+export interface ContainersCreateInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: SpaceId;
+  title?: string | null;
+  profile: ContainerProfile;
+  /** null = the node picks the best provider satisfying policy (§12.1). */
+  provider?: string | null;
+  /** null = the serving node; else a `server_connections` name it can reach. */
+  nodeId?: string | null;
+  image?: string | null;
+  spec?: ContainerSpecInput;
+  lifecycle?: ContainerLifecycleInput;
+  shareMode?: ContainerShareMode;
+  /** Nesting: the parent must be a RUNNING `dind`/microvm container, same space. */
+  parentId?: EntityId | null;
+  templateId?: EntityId | null;
+  /** When set, the project's working dir mounts at /workspace (rw) + `mounts` edge. */
+  projectId?: EntityId | null;
+  /** Required when `projectId` is untrusted — the same gate as `execution.spawn`. */
+  confirmUntrusted?: true;
+  /** Default TRUE: create and start in one call. */
+  start?: boolean;
+}
+
+/** start | stop | pause | resume. */
+export interface ContainersLifecycleInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  timeoutMs?: number;
+}
+
+export interface ContainersDestroyInput extends ContainersLifecycleInput {
+  force?: boolean;
+  keepSnapshot?: boolean;
+}
+
+export interface ContainersUpdateInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  title?: string;
+  lifecycle?: ContainerLifecycleInput;
+  shareMode?: ContainerShareMode;
+  labels?: Record<string, string>;
+}
+
+export interface ContainersPolicySetInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  network: ContainerNetworkPolicy;
+}
+
+export interface ContainersRunInput extends CommandContext {
+  clientMutationId: string;
+  argv: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  stdin?: string;
+  timeoutMs?: number;
+  user?: string;
+}
+
+export interface ContainersRunResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  durationMs: number;
+  timedOut: boolean;
+}
+
+/**
+ * NO `argv` MEMBER, and this is deliberate. The exec terminal runs the image's
+ * own login shell, which is the same RCE boundary `execution.terminal.start`
+ * already draws. An argv here would let any caller with terminal permission
+ * run an arbitrary command as a different boundary than the one reviewed.
+ */
+export interface ContainersTerminalStartInput extends CommandContext {
+  clientMutationId: string;
+  title?: string;
+  cwd?: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface ContainersTerminalStartResult {
+  workSessionId: EntityId;
+  containerId: EntityId;
+}
+
+export interface ContainersAttachInput extends CommandContext {
+  clientMutationId: string;
+  /** NOT `terminal` (that is `containers.terminal.start`) and NOT `http`. */
+  surface: 'screen' | 'browser' | 'adb' | 'docker';
+  mode: 'view' | 'drive';
+}
+
+/**
+ * THE TOKEN TRAVELS ONLY IN THE SUBPROTOCOL `tm8-grant.<token>`, NEVER IN THE
+ * URL — `ptyTransport` already refuses token-bearing URLs, so a URL-token dial
+ * does not degrade, it fails.
+ */
+export interface SurfaceAttachGrant {
+  containerId: EntityId;
+  surface: ContainerSurfaceKind;
+  encoding: 'rfb' | 'frames' | 'cdp' | 'adb' | 'docker';
+  url: string;
+  protocol: 'ws';
+  mode: 'view' | 'drive';
+  token: string;
+  expiresAt: string;
+  geometry?: ContainerGeometry;
+}
+
+/**
+ * The vocabulary is deliberately the INTERSECTION of Anthropic's computer-use
+ * tool, Playwright and adb (§7.2), so a computer-use model wires in without a
+ * translation layer. Do not add an action only one driver can serve.
+ */
+export interface ContainersComputerInput extends CommandContext {
+  clientMutationId: string;
+  action: 'screenshot' | 'click' | 'double_click' | 'right_click' | 'move'
+    | 'drag' | 'type' | 'key' | 'scroll' | 'wait' | 'goto' | 'text';
+  x?: number;
+  y?: number;
+  to?: { x: number; y: number };
+  text?: string;
+  keys?: string;
+  dx?: number;
+  dy?: number;
+  ms?: number;
+  url?: string;
+  /** Default true: return a screenshot after the action. */
+  screenshot?: boolean;
+  /** Store the screenshot as an artifact revision on the container. */
+  keep?: boolean;
+  /** 0.25–1; default node-chosen so the long edge is <= 1568 px. */
+  scale?: number;
+}
+
+export interface ContainersComputerResult {
+  ok: boolean;
+  screenshot?: { mime: 'image/png' | 'image/jpeg'; base64: string; w: number; h: number; scale: number };
+  text?: string;
+  artifactRevision?: { artifactId: EntityId; revisionNumber: number };
+}
+
+export interface ContainersBrowserEndpointInput extends CommandContext {
+  clientMutationId: string;
+  ttlSeconds?: number;
+}
+
+/**
+ * `wsEndpoint` is a BEARER-BOUND URL (`/v2/containers/:id/cdp/<grantId>`) —
+ * the one documented exception to subprotocol-only grants (§16.1), because
+ * Playwright's `connectOverCDP` cannot send a subprotocol. Multi-use, <= 1 h,
+ * bound to actor + container, revoked on stop, never logged.
+ */
+export interface ContainersBrowserEndpointResult {
+  wsEndpoint: string;
+  expiresAt: string;
+  cdpVersion: string;
+}
+
+export interface ContainersExposeInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  port: number;
+  share?: ContainerPortShare;
+}
+
+export interface ContainersExposeResult {
+  port: number;
+  url: string;
+  shareToken?: string;
+}
+
+export interface ContainersUnexposeInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  port: number;
+}
+
+export interface ContainersSnapshotInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  name?: string;
+  makeTemplate?: boolean;
+}
+
+export interface ContainersForkInput extends CommandContext {
+  clientMutationId: string;
+  title?: string;
+  lifecycle?: ContainerLifecycleInput;
+  spec?: ContainerSpecInput;
+}
+
+export interface ContainersAttentionInput extends CommandContext {
+  clientMutationId: string;
+  reason: 'login' | 'captcha' | '2fa' | 'payment' | 'approval' | 'other';
+  detail?: string;
+  points?: number;
+}
+
+export interface ContainersPoolsSetInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  /** 0–8 warm children kept ready on a template container. */
+  warm: number;
+}
+
+export interface ContainersProvidersListResult {
+  nodeId: string;
+  providers: ContainerProviderDescriptor[];
+  images: Array<{ profile: ContainerProfile; ref: string; digest: string | null; cached: boolean }>;
+  caps: { containers: number; live: number };
+}
+
+export interface ContainersLogsResult {
+  containerId: EntityId;
+  lines: Array<{ ts: string; stream: 'stdout' | 'stderr'; text: string }>;
+  truncated: boolean;
+}
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 
@@ -2792,6 +4135,18 @@ export interface ExecutionSpawnInput extends CommandContext {
    * `remembers` set; nothing is written to the graph.
    */
   memoryIds?: EntityId[];
+  /**
+   * The terminal geometry the client has measured for the pane this session
+   * will be shown in, so the PTY BOOTS at the real width instead of the 80x24
+   * default. Load-bearing, not cosmetic: a full-screen agent TUI lays its
+   * entire frame out for the width it is given at startup, and the browser can
+   * only correct that afterwards via a resize round trip — which the PTY socket
+   * suppresses when the fitted size happens to match what it already has,
+   * leaving the 80-column frame frozen on screen until a human resizes the
+   * window. Omitted (a headless or non-visual caller) keeps the 80x24 default.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -2912,6 +4267,9 @@ export interface ExecutionTerminateInput extends CommandContext {
  */
 export interface ExecutionResumeInput extends CommandContext {
   clientMutationId: string;
+  /** Same geometry contract as `ExecutionSpawnInput` — a resume re-spawns the PTY. */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -3210,6 +4568,26 @@ export interface ExecutionLiveness {
   checkedAt: string;
   /** Node-wide admission truth used by execution.spawn's concurrency gate. */
   capacity: { used: number; total: number };
+  /**
+   * The durable event high-water mark for this space — `space_event_seq
+   * .last_seq`, read under the CALLER's claims, exactly as the WS `subscribe`
+   * path already reads it.
+   *
+   * It rides this read rather than getting its own because a client opening a
+   * space needs the mark and `nodeBootId` together (the mark is only meaningful
+   * within one boot, which is what `nodeBootId` identifies), and this read is
+   * already on that path — so carrying it here costs ZERO extra round trips.
+   * Without it a client has no way to ASK where the log ends, and the only
+   * remaining way to find out is to page the whole retained log and throw every
+   * payload away.
+   *
+   * `null` means the mark CANNOT BE ESTABLISHED, never "this space has no
+   * events" — the `space_event_seq` row is member-readable, so an unbound or
+   * non-member identity simply gets no row. A consumer must fall back to an
+   * explicit cursor-carrying scan on null; treating it as 0 would replay the
+   * entire retained log. See `DurableSeqSource.latest` for the full argument.
+   */
+  eventHwm: number | null;
 }
 
 // --- execution.journal — the session CLI command journal --------------------
@@ -3510,6 +4888,34 @@ export interface SessionTranscriptPage {
   /** Lines the reader could not parse — surfaced, never silently dropped. */
   malformed: number;
   /**
+   * THE PAGE-BACK CURSOR: the byte offset, in the agent's own transcript file,
+   * of the record behind the FIRST entry in `entries`. Pass it back as the
+   * `before` query parameter to read the window immediately older than this
+   * one. Null only when the page is unavailable — there is no cursor into a
+   * file that was never opened.
+   *
+   * A BYTE offset, deliberately, where `SessionJournalPage` pages on a line
+   * ordinal: the journal reads its whole file and can afford an ordinal, while
+   * this reader exists to avoid reading a file that can run to tens of
+   * megabytes, so an ordinal would reintroduce a full scan on every page. A
+   * transcript is APPEND-ONLY, so a byte offset never moves and costs one seek
+   * to reach.
+   *
+   * Consecutive windows ABUT — no record read twice, none skipped — because
+   * the offset names a record boundary. That is what lets a client accumulate
+   * older pages by plain concatenation, with no dedupe.
+   */
+  windowStart: number | null;
+  /**
+   * True iff transcript exists BEFORE this window: `windowStart > 0`.
+   *
+   * Named `hasOlder` rather than the journal's `hasMore` because here "more"
+   * has exactly one direction. False is an EARNED claim, not a default: it
+   * says this window reaches the first byte of the file, so its first turn
+   * really is where the session began.
+   */
+  hasOlder: boolean;
+  /**
    * Present only when the caller asked (`files=1`) AND the dialect supports
    * it (claude-code). WHAT THIS IS: the file writes the harness OBSERVED this
    * session's agent make through its Edit/Write tools, parsed from the whole
@@ -3652,9 +5058,30 @@ export interface MessageDeliveryRecord {
   updatedAt: string;
 }
 
+/**
+ * One chat turn this message queued (176).
+ *
+ * A chat's delivery ledger is `chat_turns`, not `session_message_deliveries`:
+ * the latter's target column FKs `work_sessions` and a chat delivery cannot be
+ * a row in it (blocker B3). Without this arm, `messages.delivery.get` — and
+ * therefore `tm8 message send --wait settled` — would report "no deliveries"
+ * for a message that DID wake a chat, which is a worse answer than none.
+ */
+export interface MessageChatTurnRecord {
+  chatId: EntityId;
+  turnId: string;
+  state: 'queued' | 'running' | 'completed' | 'error';
+}
+
 export interface MessageDeliveryView {
   message: MessageView;
   deliveries: MessageDeliveryRecord[];
+  /**
+   * ADDITIVE and OPTIONAL, under the rolling-node rule every additive field
+   * here carries: a node that predates 176 omits the key, and its absence means
+   * "this node cannot tell you", never "this message woke no chat".
+   */
+  chatTurns?: MessageChatTurnRecord[];
 }
 
 export type HandoffDeliveryStatus = 'prepared' | 'dispatching' | 'delivered' | 'refused' | 'unknown';

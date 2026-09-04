@@ -104,7 +104,7 @@ describe.sequential('W3.G09 saved views and actions through the production Serve
         clientMutationId: 'w3-g09-private-update',
         name: 'My focused tasks',
         shareMode: 'private',
-        query: { spaceId, kinds: ['task'], filters: { workStatus: ['open'] } },
+        query: { spaceId, kinds: ['task'], filters: { status: ['open'] } },
       }),
     );
     expect(updated).toMatchObject({ id: privateViewId, name: 'My focused tasks', shareMode: 'private' });

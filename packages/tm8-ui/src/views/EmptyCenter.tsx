@@ -17,6 +17,18 @@
 import type { SessionLiveness } from '../data/seam';
 import type { SessionRow } from '../terminal';
 import { Avatar } from '../kit';
+import { DisabledIconControl, type UnavailableReason } from '../panels';
+
+/**
+ * The first-run create handle, shaped exactly like the docks' `useNewTask`
+ * result: a non-null `unavailable` renders the control DISABLED-WITH-REASON
+ * rather than hidden or live-and-inert (the same honesty posture the header
+ * quick actions hold to).
+ */
+export interface EmptyCenterNewTask {
+  unavailable: { cause: string; remedy: string } | null;
+  create(): void | Promise<void>;
+}
 
 export interface EmptyCenterProps {
   /** The seam's live set — the same array the bar counts. */
@@ -28,7 +40,20 @@ export interface EmptyCenterProps {
   /** Sessions blocked on the viewer — dormant per R8, rendered when it fires. */
   attentionIds?: readonly string[];
   onFocusSession?(id: string): void;
+  /**
+   * "＋ New task" — the first-run action. A workspace with no sessions and no
+   * tasks is a dead end otherwise: this is the one move that starts everything
+   * (a session launches ON a task). Absent ⇒ the control renders refused.
+   */
+  newTask?: EmptyCenterNewTask;
+  /** "Start a terminal ▸" — the secondary, when the host can start one. */
+  onStartTerminal?(): void;
 }
+
+const NEW_TASK_NOT_WIRED: UnavailableReason = {
+  cause: 'Creating a task isn’t connected here',
+  remedy: 'this screen exposes the handler and its host has not supplied one yet',
+};
 
 /**
  * Verdict presentation remains separate from recorded lifecycle status. The
@@ -130,7 +155,46 @@ export function EmptyCenter(props: EmptyCenterProps) {
         </div>
 
         {visibleGroups.length === 0 ? (
-          <div className="shell-empty__none">No active or recent terminals.</div>
+          <div className="shell-empty__firstrun" data-testid="empty-center-firstrun">
+            <p className="shell-empty__none">No active or recent terminals.</p>
+            {/* WHAT THIS IS, in one line — a new user has no way to know what a
+                "session" or "terminal" means here, and the roster above stays
+                blank until they do something. Say it, then offer the one move
+                that starts everything: a session runs ON a task. */}
+            <p className="shell-empty__lede">
+              A session is a teammate working in a terminal — it runs on a task and reports its
+              progress here. Nothing is running yet.
+            </p>
+            <div className="shell-empty__cta">
+              {props.newTask && props.newTask.unavailable === null ? (
+                <button
+                  type="button"
+                  className="shell-empty__cta-btn shell-empty__cta-btn--primary"
+                  onClick={() => void props.newTask?.create()}
+                >
+                  ＋ New task
+                </button>
+              ) : (
+                <DisabledIconControl
+                  label="New task"
+                  reason={props.newTask?.unavailable ?? NEW_TASK_NOT_WIRED}
+                >
+                  <span className="shell-empty__cta-btn shell-empty__cta-btn--primary shell-empty__cta-btn--off">
+                    ＋ New task
+                  </span>
+                </DisabledIconControl>
+              )}
+              {props.onStartTerminal ? (
+                <button
+                  type="button"
+                  className="shell-empty__cta-btn"
+                  onClick={() => props.onStartTerminal?.()}
+                >
+                  Start a terminal ▸
+                </button>
+              ) : null}
+            </div>
+          </div>
         ) : (
           <div className="shell-empty__groups">
             {visibleGroups.map(({ config, sessions }) => {

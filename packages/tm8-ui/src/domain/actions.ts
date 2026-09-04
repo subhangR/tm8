@@ -49,6 +49,12 @@ export const REASONS = {
   cannotReact: 'Reactions are not available on this entity.',
   cannotGrantPoints: 'You do not have permission to grant points here.',
   notLive: 'This session is not live — there is nothing running to act on.',
+  alreadyEnded: 'This session has already ended — it is under Done.',
+  /* Resume's refusal, and the exact complement of the line above. It is
+     reached only where the tail slot is drawn without the swap (the palette,
+     a surface that names the verb directly); on a row the swap means this
+     state shows Terminate instead, so the two are never both refused. */
+  notEnded: 'This session hasn’t ended — there is nothing to resume.',
   livenessUnknown: 'Liveness is unverified on this node right now — the session cannot be acted on until it is confirmed.',
   // §10.7 deferred seam amendments (dual re-consensus pending)
   handoffSendDeferred:
@@ -56,7 +62,14 @@ export const REASONS = {
   handoffWithdrawDeferred:
     'Withdrawing a handoff is deferred: handoffs.withdraw is not in the stamped facade seam, and withdrawal is not reversible once it is.',
   // R7 deferred features (never hidden, never built)
-  graphDeferred: 'Graph view isn’t available yet.',
+  //
+  // `graphDeferred` RETIRED 2026-08-15. It read "Graph view isn't available
+  // yet." while `{ view: 'graph' }` was an addressable route, a live rail
+  // group and a live palette destination — so the palette rendered a disabled
+  // discovery row for a screen the row above it would happily open. The
+  // route-side half of this went with #220; this is its other half. The copy
+  // goes rather than being rewritten, because there is no longer anything for
+  // it to be honest ABOUT: a deferral notice must not outlive the deferral.
   undoDeferred: 'Undo isn’t available yet — actions in this build are not reversible.',
   versionHistoryDeferred: 'Version history isn’t available yet.',
   leaderboardDeferred: 'The leaderboard isn’t available yet.',
@@ -90,6 +103,132 @@ function capabilityGate(
   if (!ctx.entityId) return disabled(REASONS.noEntity);
   if (ctx.capabilities == null) return disabled(REASONS.unknownCapabilities);
   return ctx.capabilities[flag] ? null : disabled(reason);
+}
+
+/**
+ * A verb that retires a row: permitted until the row has already reached its
+ * end. USER RULING 2026-08-19 — "if session is alive, or in progress or to do
+ * the terminate button should always be available, hitting that should
+ * terminate it and move it to done. this removes the cases where some sessions
+ * are terminated, but have no terminate button enabled".
+ *
+ * THE OLD GATE WAS THE WRONG QUESTION. `terminate` was `livenessGate`d, which
+ * permits it only on a `live` seam verdict — so a session that is `stale` or
+ * `unknown` drew a dead Terminate button. Those are precisely the rows that
+ * need retiring: a ghost left `running` by a node restart is not live, is not
+ * finished, and sat in To Do or In Progress with no way to move it.
+ *
+ * The server was never the obstacle. `SpawnService.terminate` already treats a
+ * missing PTY as success — "'not_found' is not an error: terminating an
+ * already-dead session is the user cancelling something that just finished" —
+ * and writes `status: 'exited'` regardless, which since migration 155 files the
+ * row under Done. The client was refusing an operation the node performs.
+ *
+ * `done` is the one refusal left, and it is a statement rather than a
+ * capability guess: a row that already ended cannot be ended again. Absent
+ * category ⇒ PERMITTED, not refused — the same posture `capabilityGate` takes
+ * for a missing flag inverted, because here the failure mode of guessing wrong
+ * is a harmless second terminate rather than a stuck row.
+ *
+ * BUT `done` ALONE IS NOT "ENDED" ANY MORE, and that is this same PR's doing.
+ * The tick files a RUNNING session under Done without closing it — that is the
+ * whole ruling — so `category === 'done'` and "a process is answering" are now
+ * compatible states, and the first no longer implies the second. Gating on the
+ * category alone made the headline feature eat itself: tick a live session and
+ * Terminate went dead on every surface (the row cluster and the panel's
+ * primary both resolve THIS def), refusing with "This session has already
+ * ended" about a session that was still streaming. Measured before this line
+ * existed: `{liveness:'live', category:'done'}` -> disabled.
+ *
+ * So the refusal asks for BOTH halves — filed under Done AND nothing is
+ * answering. That keeps every case the ruling above cares about:
+ *
+ *   ghost (stale/unknown, not done)   PERMITTED — the reported defect.
+ *   exited or failed (done, no PTY)   REFUSED — it genuinely ended.
+ *   ticked while running (done, live) PERMITTED — it has NOT ended, and the
+ *                                     tick was never a claim that it had.
+ *
+ * A non-`live` verdict on a ticked session still refuses, which is the
+ * conservative side of the one genuinely ambiguous case and matches how an
+ * exited row reads. `liveness` is consulted here and NOT in the ruling above
+ * because it is being asked a different question: not "may I act on this" but
+ * "is the thing I would be ending still there".
+ */
+function endableGate(ctx: ActionContext): ActionAvailability | null {
+  if (!ctx.entityId) return disabled(REASONS.noEntity);
+  if (hasEnded(ctx)) return disabled(REASONS.alreadyEnded);
+  return null;
+}
+
+/**
+ * HAS THIS ROW'S RUN ENDED — the ONE predicate the tail slot turns on.
+ *
+ * Terminate and Resume are a single control sharing one slot: a row shows
+ * ⏻ Terminate while something could still be answering, and ↺ Resume once
+ * nothing is. That swap is only TOTAL and UNAMBIGUOUS — never two buttons,
+ * never zero — while both halves ask the identical question, so the question
+ * has exactly one definition and lives here. Inline either copy of it and the
+ * two drift the first time the rule is amended, which is the state this
+ * function was extracted out of: `endableGate` had it written into its body,
+ * and a complement written by hand beside it would be a second copy.
+ *
+ * The row cluster consults it a third time, to drop the tick on an ended run
+ * (`EntityControls.RowActionCluster`), so this is also what keeps the count of
+ * controls in that state at one rather than two-with-one-greyed.
+ *
+ * WHY BOTH HALVES AND NOT JUST THE CATEGORY: since the tick shipped, `done`
+ * and "a process is answering" are compatible — ticking a running session
+ * files it under Done without closing it — so the category alone no longer
+ * implies the run is over. See `endableGate` above for the measured failure.
+ *
+ * KNOWN, ACCEPTED IMPRECISION. `ActionContext` carries no session STATUS
+ * (see its docblock in `types.ts`), and the server's real guard on resume is
+ * `status IN ('exited','failed')`. So a session ticked while `spawning` that
+ * never ran reads as ended here and is offered a Resume the node will refuse
+ * with `only exited or failed sessions can be resumed`. That is the right
+ * trade: a refused resume is NON-DESTRUCTIVE and the node's message is
+ * honest, whereas adding a status field to this context to pre-empt it would
+ * make this layer COMPUTE a verdict it is supposed to present (R-UI-5).
+ */
+export function hasEnded(ctx: Pick<ActionContext, 'category' | 'liveness'>): boolean {
+  return ctx.category === 'done' && ctx.liveness !== 'live';
+}
+
+/** The literal complement of `endableGate`'s refusal — see `hasEnded`. */
+function resumableGate(ctx: ActionContext): ActionAvailability | null {
+  if (!ctx.entityId) return disabled(REASONS.noEntity);
+  if (!hasEnded(ctx)) return disabled(REASONS.notEnded);
+  return null;
+}
+
+/**
+ * THE TWO HALVES OF THE PROCESS CONTROL, named once.
+ *
+ * Both the row cluster and the panel action bar resolve one declared slot to
+ * one of these per row. Naming the pair here rather than writing
+ * `ref === 'terminate' ? 'resume' : ref` at each site keeps the action-id
+ * literals out of the components (§15.2) and — the part with teeth — lets the
+ * mount-site guard DERIVE which verbs a surface can reach. `resume` is
+ * declared by no registry row (see work_session's `rowActions`), so a guard
+ * that only reads the registry would call the dispatcher's resume dead code.
+ */
+export const PROCESS_CONTROL = {
+  /** While something could still be answering. */
+  running: 'terminate',
+  /** Once the run has ended. */
+  ended: 'resume',
+} as const satisfies { running: ActionRef; ended: ActionRef };
+
+/**
+ * Resolve the process control's slot for one row. Any other verb passes
+ * through untouched, so a surface can map its whole declared list through it
+ * without asking which entry is the process control.
+ */
+export function processControlFor(
+  ref: ActionRef,
+  ctx: Pick<ActionContext, 'category' | 'liveness'>,
+): ActionRef {
+  return ref === PROCESS_CONTROL.running && hasEnded(ctx) ? PROCESS_CONTROL.ended : ref;
 }
 
 /** A verdict-gated session verb: only a `live` seam verdict permits it. */
@@ -336,7 +475,36 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     'terminate',
     'Terminate',
     '⏻',
-    (ctx) => opGate(ctx, 'execution.terminate') ?? livenessGate(ctx) ?? AVAILABLE,
+    /* `endableGate`, NOT `livenessGate` — see that function for the ruling and
+       for why the node was never the obstacle. Terminate is how a row REACHES
+       Done, so refusing it on everything that is not currently answering was
+       refusing the one verb that fixes a stuck row. */
+    (ctx) => opGate(ctx, 'execution.terminate') ?? endableGate(ctx) ?? AVAILABLE,
+  ),
+
+  /**
+   * THE OTHER HALF OF THE PROCESS CONTROL — `execution.resume`.
+   *
+   * A finished session row used to offer two controls and neither worked: a
+   * Terminate correctly refused with "this session has already ended", and a
+   * tick that drew live, dispatched, wrote, and moved nothing (an `exited`
+   * session resolves to `done` whatever the tick says — 156's own header says
+   * so). Meanwhile the one verb that IS eligible on exactly those rows had no
+   * button anywhere in the registry.
+   *
+   * NOT `launching()`. See the union member in `types.ts`: a resume restores a
+   * configuration rather than choosing one, so there is nothing for a launch
+   * config to ask.
+   *
+   * The gate is `resumableGate`, which is `endableGate`'s refusal inverted
+   * through the one shared `hasEnded`. That is what makes the tail slot total:
+   * for any row, exactly one of these two verbs is offered.
+   */
+  resume: define(
+    'resume',
+    'Resume',
+    '↺',
+    (ctx) => opGate(ctx, 'execution.resume') ?? resumableGate(ctx) ?? AVAILABLE,
   ),
 
   'prompt-session': define(
@@ -386,7 +554,14 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   },
 
   // R7 disposition table (LLD §4.2) — every deferred member has a home.
-  'graph-view': deferred('graph-view', 'Graph view', '◈', REASONS.graphDeferred),
+  //
+  // `graph-view` LEFT THIS TABLE on 2026-08-15, and it left the `ActionRef`
+  // union with it rather than becoming a live verb. Graph is reached the way
+  // every other screen is reached — through the navigation vocabulary
+  // (`{ view: 'graph' }`, the rail, the palette's view rows), not through a
+  // verb — so there was no live action underneath the deferral waiting to be
+  // uncovered. Keeping the ref as an available no-op would have traded a
+  // stale refusal for an enabled-inert affordance, which is the worse lie.
   undo: deferred('undo', 'Undo', '↶', REASONS.undoDeferred),
   'version-history': deferred('version-history', 'Version history', '⟲', REASONS.versionHistoryDeferred),
   leaderboard: deferred('leaderboard', 'Leaderboard', '☰', REASONS.leaderboardDeferred),
@@ -405,6 +580,40 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'set-as-default': deferred('set-as-default', 'Set as default', '◎', REASONS.setAsDefaultDeferred),
   'mark-read': deferred('mark-read', 'Mark read', '✓', REASONS.markReadDeferred),
   quote: deferred('quote', 'Quote', '❝', REASONS.quoteDeferred),
+
+  /**
+   * OPEN A CHAT ABOUT THIS (chat as an entity, 2026-09-03).
+   *
+   * Gated on `chat.start` — the operation the composer it opens will commit —
+   * and on nothing else. Two things it deliberately does NOT gate on:
+   *
+   *   · A CAPABILITY OF THE SUBJECT. `about` is an edge FROM the new chat, and
+   *     `entities.connections`' write side gates on the chat, which does not
+   *     exist yet. Requiring `canEdit` on the subject would refuse the verb on
+   *     every row a viewer can read and not write — which is most of a space,
+   *     and none of it is a reason you cannot talk about the thing.
+   *   · A SUBJECT AT ALL, beyond one being selected. Every kind is a legal
+   *     `about` target (`edge_types`, 056: `dst_kinds = array['*']`), so there
+   *     is no per-kind refusal to write here and inventing one would be this
+   *     package asserting a rule the graph does not have.
+   *
+   * It is NOT `launching()`: that flow marker opens the SPAWN config, whose
+   * five sections are about an execution — project, worktree, posture. A chat
+   * is configured in its own composer, which is where this verb lands.
+   */
+  'chat-about': define(
+    'chat-about',
+    'Chat about this',
+    '❝',
+    /*
+     * A SUBJECT IS OPTIONAL. Every other entity verb refuses without one
+     * because it acts ON the row; this one opens a composer, and a composer
+     * with no subject bound is bare Home's new conversation — the honest
+     * reading of pressing it from the Chats list HEADER, which has no row.
+     * So the only gate is the operation the composer will commit.
+     */
+    (ctx) => opGate(ctx, 'chat.start') ?? AVAILABLE,
+  ),
 };
 
 /** Resolve a ref to its definition. Total over `ActionRef` — never throws. */

@@ -1,0 +1,168 @@
+/* ==========================================================================
+   THE PROJECT FOLDER PICKER — the node-side browser the attachment strip opens.
+
+   NO RAW HEX: `src/hex-ban.test.ts` and this lane's own guard scan every .css
+   here, so every colour resolves through a `--pn-*` token.
+
+   It sits at the same stacking layer as the Space onboarding dialog
+   (projects.css) because it is the same class of thing — a modal over a live
+   panel — and two node-path browsers landing on different layers is how one
+   ends up under the other.
+   ========================================================================== */
+
+.fn-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: var(--pn-space-4);
+  background: color-mix(in srgb, var(--pn-ink) 58%, transparent);
+}
+
+.fn-picker__panel {
+  width: min(560px, 100%);
+  max-height: min(680px, calc(100vh - 32px));
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-4);
+  color: var(--pn-ink);
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  box-shadow: none;
+}
+
+.fn-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+}
+
+.fn-picker__head h2 {
+  margin: 0;
+  font-size: var(--pn-fs-h3);
+}
+
+.fn-picker__close {
+  font: inherit;
+  font-size: var(--pn-fs-title);
+  line-height: 1;
+  padding: 0 var(--pn-space-1);
+  border: 0;
+  background: none;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+
+.fn-picker__close:hover {
+  color: var(--pn-ink);
+}
+
+.fn-picker__projects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+}
+
+.fn-picker__project {
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  padding: 2px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.fn-picker__project--on {
+  border-color: var(--pn-brand);
+  color: var(--pn-ink);
+}
+
+/* The node path is the load-bearing fact on this screen: it is the only thing
+   that says WHICH machine and WHICH folder is being read. It wraps rather than
+   truncating — a path elided in the middle is a path you cannot verify. */
+.fn-picker__path {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  overflow-wrap: anywhere;
+}
+
+.fn-picker__up {
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  align-self: flex-start;
+  padding: 2px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.fn-picker__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fn-picker__row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  text-align: left;
+  padding: var(--pn-space-1) var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+
+.fn-picker__row:hover:not(:disabled) {
+  background: var(--pn-hover);
+}
+
+/* Disabled means "we know why, and it is in the title" — never hidden. */
+.fn-picker__row:disabled {
+  color: var(--pn-ink-4);
+  cursor: not-allowed;
+}
+
+.fn-picker__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fn-picker__size,
+.fn-picker__state {
+  flex: 0 0 auto;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.fn-picker__empty,
+.fn-picker__note {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.fn-picker__error {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-block);
+}

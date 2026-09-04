@@ -365,6 +365,36 @@
 .gv-node__focus:focus-visible {
   opacity: 1;
 }
+
+/* ON A TOUCH DEVICE THIS BUTTON WAS SIMPLY INVISIBLE. It is `opacity: 0` until
+   `:hover`, and a finger produces no hover — so the only ways to reveal it were
+   two things a touch device cannot do. It stayed hit-testable the whole time,
+   which is worse than being hidden: the control was there, it worked, and
+   nothing on screen said so.
+
+   `(pointer: coarse)` rather than the mobile shell, deliberately — the graph has
+   no phone port and serves the refusal screen at 390px, so scoping this under
+   `.mobile-frame` would fix nothing. Where it IS reachable on touch is the
+   coarse-pointer tablet, which runs the DESKTOP shell at 768px. That is the
+   surface this rule is for.
+
+   Revealed at rest rather than on tap: there is no second gesture to spend on
+   disclosing a control, and a graph node is not a control the user is hunting
+   for — it has to be visible to be found. */
+@media (pointer: coarse) {
+  .gv-node__focus {
+    opacity: 1;
+  }
+  /* 44px of hit area around a box that stays 20px. Taken as a transparent
+     outset rather than as padding, because this element carries a visible
+     border and a background — padding would drag both out to 44px and redraw
+     the control, which is exactly what must not change. */
+  .gv-node__focus::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+}
 .gv-node__focus:hover {
   background: var(--pn-hover);
   color: var(--pn-ink);
@@ -441,6 +471,10 @@
 }
 
 .gv-node__meta--ghost { color: var(--pn-block); }
+
+/* The hub badge — "◈27". Deliberately quiet: it explains the partition, it does
+   not claim the node is more important than the work around it. */
+.gv-node__meta--hub { color: var(--pn-ink-2); }
 
 /* The fold badge — "+12" on a hub that swallowed twelve leaves. Brand-soft so
    it reads as an available expansion, and it must stay legible when the card is

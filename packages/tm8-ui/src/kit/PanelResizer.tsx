@@ -159,6 +159,7 @@ export function PanelResizer(props: PanelResizerProps) {
  */
 const WIDTH_PREFIX = 'tm8ui.panel-width.';
 const FLAG_PREFIX = 'tm8ui.panel-flag.';
+const CHOICE_PREFIX = 'tm8ui.panel-choice.';
 
 function readNumber(key: string): number | null {
   try {
@@ -305,6 +306,63 @@ export function usePanelFlag(
   );
 
   return [flag, set];
+}
+
+/**
+ * A persisted CHOICE FROM A CLOSED SET — "which category tab is open on this
+ * kind's list". The third shape beside `usePanelWidth` and `usePanelFlag`, and
+ * keyed the same way, because it fails the same way when it is not: the list
+ * panel swaps `kind` on a mounted component, so a read-on-mount hook would
+ * serve Tasks' tab to Docs and then persist it there (see `useKeyedState`).
+ *
+ * `valid` is REQUIRED, not an optional courtesy. What comes back out of
+ * storage is a string written by some earlier build, and the caller is the
+ * only one that knows this key's current vocabulary; an id that is no longer
+ * offered must read as "nothing remembered" and fall to the caller's default,
+ * never be handed back as a selection no control can show.
+ */
+export function usePanelChoice(
+  key: string,
+  fallback: string,
+  valid: (candidate: string) => boolean,
+): [string, (next: string) => void] {
+  const storageKey = `${CHOICE_PREFIX}${key}`;
+  /* `valid` is a fresh closure on most renders, so it is read through a ref
+     rather than closed over by `load` — otherwise `useKeyedState`'s memo of
+     `load` would change identity every render and re-read storage each time.
+     The ref always holds this render's predicate, which is the one that
+     matters: `load` only ever runs during a render. */
+  const validRef = useRef(valid);
+  validRef.current = valid;
+  const load = useCallback(
+    (target: string) => {
+      if (typeof window === 'undefined') return fallback;
+      try {
+        const raw = window.localStorage.getItem(target);
+        return raw !== null && validRef.current(raw) ? raw : fallback;
+      } catch {
+        return fallback;
+      }
+    },
+    [fallback],
+  );
+  const [stored, setState] = useKeyedState<string>(storageKey, load);
+  /* The stored value can also go stale WITHOUT the key changing — a build that
+     retires a tab id leaves it sitting in state from a load that accepted it.
+     Re-checking on read costs one predicate call and keeps the invariant
+     ("what this hook returns is always in the current vocabulary") true for
+     every render rather than only the first after a key change. */
+  const choice = valid(stored) ? stored : fallback;
+
+  const set = useCallback(
+    (next: string) => {
+      setState(next);
+      write(storageKey, next);
+    },
+    [storageKey, setState],
+  );
+
+  return [choice, set];
 }
 
 // ---------------------------------------------------------------------------

@@ -45,7 +45,7 @@ export interface ManifestTask {
   title?: string;
   description?: string;
   priority?: string;
-  workStatus?: string;
+  status?: string;
   /**
    * The agent's definition of done. Composed into the manifest from the graph
    * but previously dropped by this reader, so an agent could not tell when its
@@ -72,6 +72,12 @@ export interface ManifestLaunch {
 /** Present when a coordinator spawned this session — the return path. */
 export interface ManifestCoordinator {
   sessionId?: string;
+  /**
+   * `work_session | chat` — WHAT `sessionId` names (176). Carried verbatim
+   * rather than validated here: the composer owns the vocabulary and folds
+   * anything it does not recognise, including absent, to `work_session`.
+   */
+  kind?: string;
   displayName?: string;
 }
 
@@ -195,7 +201,10 @@ function projectBootstrap(bootstrap: BootstrapManifestV2): Tm8Manifest {
     }),
     tasks: taskIds.length > 0 ? taskIds.map((id) => ({ id })) : undefined,
     coordinator: coordinated
-      ? { sessionId: session.coordinatorSessionId as string }
+      ? defined<ManifestCoordinator>({
+          sessionId: session.coordinatorSessionId as string,
+          kind: session.coordinatorKind,
+        })
       : undefined,
   });
 }
@@ -225,7 +234,7 @@ export function parseManifest(raw: unknown): Tm8Manifest {
                 title: str(t.title),
                 description: str(t.description),
                 priority: str(t.priority),
-                workStatus: str(t.workStatus),
+                status: str(t.status),
                 // Kept RAW (`unknown[]`) rather than coerced to strings here:
                 // the graph column is free-form jsonb, and narrowing at the
                 // reader would silently discard structured criteria that a
@@ -275,6 +284,7 @@ export function parseManifest(raw: unknown): Tm8Manifest {
     coordinator: coordRaw
       ? defined<ManifestCoordinator>({
           sessionId: str(coordRaw.sessionId),
+          kind: str(coordRaw.kind),
           displayName: str(coordRaw.displayName),
         })
       : undefined,

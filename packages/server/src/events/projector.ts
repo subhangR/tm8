@@ -31,6 +31,8 @@ import {
   EntityKindSchema,
   plainExcerpt,
   type ActorSummary,
+  type ChatMode,
+  type ChatWorkdirMode,
   type CustomEntityKind,
   type EntityCounters,
   type EntityAttentionSummary,
@@ -38,13 +40,25 @@ import {
   type CustomEntityState,
   type EntityState,
   type EntitySummary,
+  type TaskAssignment,
+  type WorkStatus,
 } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { loadUnreadCounts } from '../facade/entity-read.js';
+import { isEndedKind, loadUnreadCounts } from '../facade/entity-read.js';
+// The ONE narrowing of the status columns, shared with the read path. Both
+// files used to narrow `work_status` on their own and DISAGREED about an
+// unrecognised value; `facade/status.ts` is the fix and its docblock is the
+// argument. `WorkStatusDriftError` is re-exported below because it was this
+// module's export first and callers (and a test) name it here.
+import {
+  categoryFragment,
+  narrowWorkStatus,
+  WorkStatusDriftError,
+} from '../facade/status.js';
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from '../facade/message-author-projection.js';
 import {
   loadLinkedPullRequestBadges,
@@ -88,6 +102,12 @@ export class EntityKindDriftError extends Error {
  * `EntityKind` has a template-literal arm (`c:${string}`) that an array of
  * literals cannot express — a list would reject every custom kind.
  */
+// Re-exported, not re-declared: this class was `projector.ts`'s export before
+// the narrowing moved to `facade/status.ts`, and `test/events/
+// projector-work-status-drift.test.ts` imports it from here. Keeping the name
+// resolvable at its original address costs one line and breaks nothing.
+export { WorkStatusDriftError };
+
 function entityKind(raw: string, entityId: string): EntityKind {
   const parsed = EntityKindSchema.safeParse(raw);
   if (!parsed.success) throw new EntityKindDriftError(raw, entityId);
@@ -117,14 +137,20 @@ function oneOf<T extends string>(raw: unknown, allowed: readonly T[], fallback: 
  */
 const TOMBSTONE_TITLE = 'Deleted';
 
-const WORK_STATUSES = ['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled'] as const;
-const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
+const PRIORITIES =['low', 'medium', 'high', 'urgent'] as const;
 const DOC_FORMATS = ['markdown', 'mermaid', 'excalidraw'] as const;
 const MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
 const WS_STATUSES = ['spawning', 'running', 'idle', 'exited', 'failed'] as const;
 const WS_SHARE_MODES = ['none', 'space', 'explicit'] as const;
 const IP_STATUSES = ['draft', 'active', 'retired'] as const;
 const WT_STATUSES = ['active', 'merged', 'abandoned', 'deleted'] as const;
+// containers (177). MIRRORS entity-read.ts — see the note on the join below.
+const CTR_STATUSES = ['requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed'] as const;
+const CTR_PROFILES = ['shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom'] as const;
+const CTR_ISOLATION = ['process', 'container', 'gvisor', 'microvm', 'vm'] as const;
+const CTR_SURFACES = ['terminal', 'screen', 'browser', 'adb', 'docker', 'http'] as const;
+const CTR_SHARE_MODES = ['none', 'space', 'explicit'] as const;
 
 /**
  * Hydrates the entity-shaped payloads an event projection needs.
@@ -171,6 +197,8 @@ interface SummaryRow {
   updated_at: Date | string;
   deleted_at: Date | string | null;
   created_by: string;
+  /** 147; optional keeps pre-147 row fixtures source-compatible. */
+  status_category?: string | null;
   likes: number | null;
   dislikes: number | null;
   stars: number | null;
@@ -188,6 +216,7 @@ interface SummaryRow {
   completion_gate: string | null;
   axes: Record<string, unknown> | null;
   due_date: Date | string | null;
+  start_date: Date | string | null;
   acceptance_criteria: unknown[] | null;
   doc_title: string | null;
   doc_body: string | null;
@@ -213,6 +242,7 @@ interface SummaryRow {
   tm_owner_member_id: string | null;
   tm_model: string | null;
   tm_agent_tool: string | null;
+  tm_default_profile_id: string | null;
   tm_avatar: string | null;
   ws_title: string | null;
   ws_status: string | null;
@@ -223,6 +253,8 @@ interface SummaryRow {
   ws_exited_at: Date | string | null;
   ws_checkout_branch: string | null;
   ws_workdir_mode: string | null;
+  ws_ended_kind: string | null;
+  ws_ended_reason: string | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -263,6 +295,22 @@ interface SummaryRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  chat_title: string | null;
+  chat_teammate_id: string | null;
+  chat_model: string | null;
+  chat_provider: string | null;
+  chat_agent_tool: string | null;
+  chat_mode: string | null;
+  chat_workdir_mode: string | null;
+  chat_project_id: string | null;
+  chat_runtime_state: 'cold' | 'live' | 'stopped' | null;
+  chat_turn_state: 'idle' | 'queued' | 'running' | null;
+  chat_turn_count: number | null;
+  chat_last_turn_at: Date | string | null;
+  graph_title: string | null;
+  graph_type: string | null;
+  graph_node_count: number | null;
+  graph_edge_count: number | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -273,6 +321,17 @@ interface SummaryRow {
   wt_base_ref: string | null;
   wt_base_commit_oid: string | null;
   wt_status: string | null;
+  ctr_title: string | null;
+  ctr_status: string | null;
+  ctr_profile: string | null;
+  ctr_provider: string | null;
+  ctr_isolation: string | null;
+  ctr_node_id: string | null;
+  ctr_surfaces: unknown;
+  ctr_lifecycle: Record<string, unknown> | null;
+  ctr_share_mode: string | null;
+  ctr_started_at: Date | string | null;
+  ctr_expires_at: Date | string | null;
   artifact_name: string | null;
   artifact_description: string | null;
   artifact_revision_number: number | null;
@@ -292,11 +351,17 @@ const SUMMARY_SQL = `
 select
   e.id, e.space_id, e.kind, e.parent_id, e.position, e.visibility, e.version,
   e.activity_at, e.created_at, e.updated_at, e.deleted_at, e.created_by,
+  -- MIRRORS entity-read's ENTITY_COLUMNS. The envelope carries the category so
+  -- the event feed and the read path agree about which tab a row belongs in;
+  -- omitting it here would make a live status change move a row on refresh but
+  -- not on the socket, which reads as a caching bug for a week.
+  e.status_category,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
   t.title            as task_title,
   t.description      as task_description,
-  t.work_status, t.priority, t.axes, t.due_date, t.acceptance_criteria, t.completion_gate,
+  t.work_status, t.priority, t.axes, t.due_date, t.start_date,
+  t.acceptance_criteria, t.completion_gate,
   d.title            as doc_title,
   d.body             as doc_body,
   d.format           as doc_format,
@@ -320,6 +385,7 @@ select
   tm.owner_member_id as tm_owner_member_id,
   tm.model           as tm_model,
   tm.agent_tool      as tm_agent_tool,
+  dtp.dst_id         as tm_default_profile_id,
   tm.avatar          as tm_avatar,
   ws.title           as ws_title,
   ws.status          as ws_status,
@@ -330,6 +396,8 @@ select
   ws.exited_at       as ws_exited_at,
   ws.checkout_branch as ws_checkout_branch,
   ws.workdir_mode    as ws_workdir_mode,
+  ws.ended_kind      as ws_ended_kind,
+  ws.ended_reason    as ws_ended_reason,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
   f.size_bytes       as file_size_bytes,
@@ -375,11 +443,38 @@ select
   lp.next_run_at     as loop_next_run_at,
   lp.last_run_at     as loop_last_run_at,
   lp.last_error      as loop_last_error,
+  cht.title          as chat_title,
+  cht.teammate_id    as chat_teammate_id,
+  cht.model          as chat_model,
+  cht.provider       as chat_provider,
+  cht.agent_tool     as chat_agent_tool,
+  cht.chat_mode      as chat_mode,
+  cht.workdir_mode   as chat_workdir_mode,
+  cht.project_id     as chat_project_id,
+  cht.runtime_state  as chat_runtime_state,
+  chq.turn_state     as chat_turn_state,
+  chq.turn_count     as chat_turn_count,
+  chq.last_turn_at   as chat_last_turn_at,
+  gr.title           as graph_title,
+  gr.graph_type      as graph_type,
+  coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
+  coalesce(jsonb_array_length(gr.edges), 0) as graph_edge_count,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
   wt.base_commit_oid as wt_base_commit_oid,
   wt.status          as wt_status,
+  ctr.title          as ctr_title,
+  ctr.status         as ctr_status,
+  ctr.profile        as ctr_profile,
+  ctr.provider       as ctr_provider,
+  ctr.isolation      as ctr_isolation,
+  ctr.node_id        as ctr_node_id,
+  ctr.surfaces       as ctr_surfaces,
+  ctr.lifecycle      as ctr_lifecycle,
+  ctr.share_mode     as ctr_share_mode,
+  ctr.started_at     as ctr_started_at,
+  ctr.expires_at     as ctr_expires_at,
   art.name           as artifact_name,
   art.description    as artifact_description,
   arev.revision_number as artifact_revision_number,
@@ -394,6 +489,16 @@ left join public.messages msg        on msg.entity_id = e.id
 left join public.members mem         on mem.entity_id = e.id
 left join public.user_profiles up    on up.identity_id = mem.identity_id
 left join public.team_members tm     on tm.entity_id  = e.id
+-- AT MOST ONE ROW, guaranteed by edges_defaults_to_profile_source_idx (015:297),
+-- which is UNIQUE on src_id for this type -- so this cannot fan the result out,
+-- and the same partial index serves the lookup. The projector is a SECOND
+-- hand-maintained copy of the entity-read.ts state switch; omitting this join
+-- would ship an entity.upsert whose team_member summary silently lacks
+-- defaultProfileId, and the client merge-on-ingest would then blank a field the
+-- boot read had correctly filled.
+-- (No backticks in here: this whole query is a JS template literal.)
+left join public.edges dtp           on dtp.src_id    = e.id
+                                    and dtp.type      = 'defaults_to_profile'
 left join public.work_sessions ws    on ws.entity_id  = e.id
 left join public.files f             on f.entity_id   = e.id
 left join public.pull_requests pr    on pr.entity_id  = e.id
@@ -409,6 +514,27 @@ left join public.interaction_profile_versions profile_version
 left join public.memories memo       on memo.entity_id = e.id
 left join public.worktrees wt        on wt.entity_id = e.id
 left join public.loops lp            on lp.entity_id = e.id
+left join public.chats cht           on cht.entity_id = e.id
+left join lateral (
+  select
+    case
+      when count(*) filter (where t.state = 'running') > 0 then 'running'
+      when count(*) filter (where t.state = 'queued') > 0 then 'queued'
+      else 'idle'
+    end as turn_state,
+    count(*)::int as turn_count,
+    max(t.queued_at) as last_turn_at
+    from public.chat_turns t
+   where t.chat_id = cht.entity_id
+) chq on cht.entity_id is not null
+left join public.graphs gr           on gr.entity_id = e.id
+left join public.containers ctr      on ctr.entity_id = e.id
+-- No container_runtime_state join, and no runtime_ref / host_spec columns.
+-- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
+-- event at all (§15) -- joining the side table here would put a value on the
+-- event path that nothing ever refreshes it for. runtime_ref and host_spec
+-- stay server-side under R5, exactly as in entity-read.ts.
+-- (No backticks in here: this whole query is a JS template literal.)
 left join public.artifacts art       on art.entity_id = e.id
 left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 left join public.custom_entities cev on cev.entity_id = e.id
@@ -424,7 +550,7 @@ where e.id = any($1::uuid[])
  * a channel has nobody when the graph says otherwise.
  */
 const EDGE_SQL = `
-select src_id, dst_id, type
+select src_id, dst_id, type, created_at, assigned_by, assigned_at
   from public.edges
  where type in ('likes','dislikes','stars','assigned_to','has_member')
    and (dst_id = any($1::uuid[]) or src_id = any($1::uuid[]))
@@ -444,6 +570,29 @@ function iso(v: Date | string | null | undefined): string | null {
   if (v instanceof Date) return v.toISOString();
   const parsed = new Date(v);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+/**
+ * Normalize a `date` column WITHOUT letting it acquire a time or a timezone.
+ *
+ * This is deliberately NOT `iso`. A `date` has no instant in it, and `iso`
+ * widens one to midnight UTC — so `start_date = 2026-08-28` would read back as
+ * `2026-08-28T00:00:00.000Z` here while `entity-read.ts` (which uses its own
+ * `dateOnly`) returns `2026-08-28` for the same row. Two readers of one column
+ * disagreeing on its shape is a bug waiting for the first consumer that
+ * compares them.
+ *
+ * ⚠ `due_date` STILL GOES THROUGH `iso` and still has that divergence. Fixing
+ * it is a wire-format change to a field already shipped on public prod, so it
+ * is deliberately NOT bundled into the migration that adds `start_date` — see
+ * the note at `iso`. This helper is what `due_date` should use when someone
+ * rules on that. Until then: `startDate` is correct, `dueDate` is legacy, and
+ * the difference is intentional rather than overlooked.
+ */
+function dateOnly(v: Date | string | null | undefined): string | null {
+  if (v === null || v === undefined) return null;
+  const s = v instanceof Date ? v.toISOString() : String(v);
+  return s.slice(0, 10);
 }
 
 /** `iso` for the non-nullable timestamp columns, which are `not null` in the DDL. */
@@ -486,7 +635,14 @@ export class PgEntityProjector implements EntityProjector {
       for (const id of authors.ids) actorIds.add(id);
     }
 
-    const edges = await q.query<{ src_id: string; dst_id: string; type: string }>(EDGE_SQL, [unique]);
+    const edges = await q.query<{
+      src_id: string;
+      dst_id: string;
+      type: string;
+      created_at: Date | string;
+      assigned_by: string | null;
+      assigned_at: Date | string | null;
+    }>(EDGE_SQL, [unique]);
     const attentionRows = await q.query<{
       entity_id: string;
       pending_count: number;
@@ -519,6 +675,11 @@ export class PgEntityProjector implements EntityProjector {
     // and the second to src kind channel (080) — but keeping them apart means
     // this code says which relation it is holding instead of relying on that.
     const assigneeIds = new Map<string, string[]>();
+    const assignments = new Map<string, Array<{
+      assigneeId: string;
+      assignedById: string | null;
+      assignedAt: string;
+    }>>();
     const memberIds = new Map<string, string[]>();
     for (const edge of edges) {
       const target =
@@ -528,6 +689,16 @@ export class PgEntityProjector implements EntityProjector {
       list.push(edge.dst_id);
       target.set(edge.src_id, list);
       actorIds.add(edge.dst_id);
+      if (edge.type === 'assigned_to') {
+        const taskAssignments = assignments.get(edge.src_id) ?? [];
+        taskAssignments.push({
+          assigneeId: edge.dst_id,
+          assignedById: edge.assigned_by,
+          assignedAt: isoRequired(edge.assigned_at ?? edge.created_at),
+        });
+        assignments.set(edge.src_id, taskAssignments);
+        if (edge.assigned_by !== null) actorIds.add(edge.assigned_by);
+      }
     }
 
     const missingActors = [...actorIds].filter((id) => !unique.includes(id));
@@ -589,7 +760,8 @@ export class PgEntityProjector implements EntityProjector {
     for (const r of rows) {
       out.set(
         r.id,
-        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], memberIds.get(r.id) ?? [],
+        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], assignments.get(r.id) ?? [],
+          memberIds.get(r.id) ?? [],
           viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
           pullRequests.get(r.id), humanMessageAuthors.get(r.id)),
       );
@@ -658,6 +830,11 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    assignments: readonly {
+      assigneeId: string;
+      assignedById: string | null;
+      assignedAt: string;
+    }[],
     members: readonly string[],
     viewerReaction: EntityCounters['viewerReaction'],
     attention: EntityAttentionSummary | undefined,
@@ -696,8 +873,11 @@ export class PgEntityProjector implements EntityProjector {
       updatedAt: isoRequired(r.updated_at),
       deletedAt: iso(r.deleted_at),
       createdBy: actors.get(r.created_by) ?? this.unknownActor(r.created_by),
+      // MIRRORS entity-read's toEntitySummary, spread for spread: the key is
+      // ABSENT when the entity has no status, never a defaulted bucket.
+      ...categoryFragment(r.status_category, r.id),
       counters,
-      state: this.stateOf(r, actors, assignees, members, unreadCounts, containsCounts),
+      state: this.stateOf(r, actors, assignees, assignments, members, unreadCounts, containsCounts),
       // `EntityBadges` fields are all optional, so `{}` is a valid and honest
       // "no badges computed" — unlike `state`, which has required fields and
       // cannot be honestly empty. `restricted` is the one badge derivable from
@@ -827,6 +1007,16 @@ export class PgEntityProjector implements EntityProjector {
         // Its own detail-row title — MIRRORS entity-read.ts titleOf, same
         // fallback. `entities` has no title column for it to fall back to.
         return r.loop_title ?? 'Loop';
+      case 'graph':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.graph_title ?? 'Graph';
+      case 'chat':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf, including
+        // the empty-string fallback (the column defaults to '').
+        return r.chat_title && r.chat_title.length > 0 ? r.chat_title : 'Chat';
+      case 'container':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.ctr_title ?? 'Container';
       case 'worktree':
         // The branch is the human name — MIRRORS entity-read.ts titleOf.
         return r.wt_branch ?? 'Worktree';
@@ -869,6 +1059,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'memory' ? r.memory_statement
       : r.kind === 'artifact' ? r.artifact_description
       : r.kind === 'loop' ? r.loop_schedule
+      : r.kind === 'graph' ? r.graph_type
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -886,6 +1077,11 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    assignments: readonly {
+      assigneeId: string;
+      assignedById: string | null;
+      assignedAt: string;
+    }[],
     members: readonly string[],
     unreadCounts: ReadonlyMap<string, number>,
     containsCounts: ReadonlyMap<string, number>,
@@ -898,11 +1094,22 @@ export class PgEntityProjector implements EntityProjector {
         ).length;
         return {
           kind: 'task',
-          workStatus: oneOf(r.work_status, WORK_STATUSES, 'open'),
+          // Raises rather than coercing: see WorkStatusDriftError.
+          status: narrowWorkStatus(r.work_status, r.id),
           priority: oneOf(r.priority, PRIORITIES, 'medium'),
           axes: asStringRecord(r.axes),
           dueDate: iso(r.due_date),
+          // `dateOnly`, not `iso` — see the helper. A `date` column must not
+          // acquire midnight UTC on the way out.
+          startDate: dateOnly(r.start_date),
           assignees: assignees.map((id) => actors.get(id) ?? this.unknownActor(id)),
+          assignments: assignments.map((assignment): TaskAssignment => ({
+            assignee: actors.get(assignment.assigneeId) ?? this.unknownActor(assignment.assigneeId),
+            assignedBy: assignment.assignedById === null
+              ? null
+              : actors.get(assignment.assignedById) ?? this.unknownActor(assignment.assignedById),
+            assignedAt: assignment.assignedAt,
+          })),
           acceptance: { total: criteria.length, completed },
           completionGate: r.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
         };
@@ -971,6 +1178,9 @@ export class PgEntityProjector implements EntityProjector {
           model: r.tm_model,
           agentTool: r.tm_agent_tool,
           liveWork: null,
+          // `null`, never omitted — same contract as the facade assembler:
+          // absence MEANS "no default of its own", so it must be stated.
+          defaultProfileId: r.tm_default_profile_id,
         };
       case 'work_session':
         return {
@@ -991,6 +1201,12 @@ export class PgEntityProjector implements EntityProjector {
           r.ws_workdir_mode === 'scratch'
             ? { workdirMode: r.ws_workdir_mode }
             : {}),
+          // The ending facts (171) — MIRRORS entity-read.ts stateOf for the
+          // same reason the lane facts do: an event-borne summary and a read
+          // summary that disagree about the same row is the drift 165 exists
+          // to prevent. An unrecognised kind projects null, never through.
+          endedKind: isEndedKind(r.ws_ended_kind) ? r.ws_ended_kind : null,
+          endedReason: r.ws_ended_reason ?? null,
         };
       case 'file':
         return {
@@ -1095,6 +1311,59 @@ export class PgEntityProjector implements EntityProjector {
           lastRunAt: iso(r.loop_last_run_at),
           lastError: r.loop_last_error,
         };
+      case 'graph':
+        // MIRRORS entity-read.ts stateOf: which type of graph and how big —
+        // the vertices/edges themselves are content, never summary state.
+        return {
+          kind: 'graph',
+          graphType: r.graph_type ?? 'entity',
+          nodeCount: r.graph_node_count ?? 0,
+          edgeCount: r.graph_edge_count ?? 0,
+        };
+      case 'chat':
+        // MIRRORS entity-read.ts stateOf field for field. Parity is the point:
+        // a chat tile hydrated from the event feed and one fetched over
+        // entities.get must carry the same facts under the same names, or the
+        // tile changes shape depending on which door answered.
+        return {
+          kind: 'chat',
+          teammateId: r.chat_teammate_id ?? '',
+          model: r.chat_model ?? '',
+          provider: r.chat_provider ?? '',
+          agentTool: r.chat_agent_tool ?? '',
+          mode: (r.chat_mode ?? 'ask') as ChatMode,
+          workdirMode: (r.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
+          projectId: r.chat_project_id,
+          runtimeState: r.chat_runtime_state ?? 'cold',
+          turnState: r.chat_turn_state ?? 'idle',
+          turnCount: Number(r.chat_turn_count ?? 0),
+          lastTurnAt: iso(r.chat_last_turn_at),
+        };
+      case 'container': {
+        // MIRRORS entity-read.ts stateOf. The two must agree exactly: a field
+        // that differs between the boot read and the event is drift a client
+        // sees as a value that changes for no reason on the next poll.
+        const surfaces = Array.isArray(r.ctr_surfaces)
+          ? r.ctr_surfaces.filter((k): k is typeof CTR_SURFACES[number] =>
+            (CTR_SURFACES as readonly string[]).includes(k as string))
+          : [];
+        const lifecycle = r.ctr_lifecycle ?? {};
+        return {
+          kind: 'container',
+          status: oneOf(r.ctr_status, CTR_STATUSES, 'failed'),
+          profile: oneOf(r.ctr_profile, CTR_PROFILES, 'custom'),
+          provider: r.ctr_provider ?? '',
+          // `process` is the WEAKEST class: an unknown value must degrade to
+          // claiming the LEAST isolation, never the most.
+          isolation: oneOf(r.ctr_isolation, CTR_ISOLATION, 'process'),
+          nodeId: r.ctr_node_id ?? '',
+          surfaces,
+          ephemeral: lifecycle.ephemeral !== false,
+          shareMode: oneOf(r.ctr_share_mode, CTR_SHARE_MODES, 'none'),
+          startedAt: iso(r.ctr_started_at),
+          expiresAt: iso(r.ctr_expires_at),
+        };
+      }
       case 'worktree':
         // Semantic lifecycle only — allocation (disk) state is deliberately
         // not on the event path either. MIRRORS entity-read.ts stateOf.

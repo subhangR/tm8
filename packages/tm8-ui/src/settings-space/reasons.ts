@@ -186,9 +186,22 @@ export const INVITE_REVOKE_NOT_ADMIN = reason(
   'revoking a join code needs admin or owner in this space.',
 );
 
+/**
+ * THE ROUTE LANDED (2026-08-17) AND THIS REASON HAD TO CHANGE WITH IT.
+ *
+ * It used to say "no /join route mounts this card against them yet. Redeem
+ * from the CLI in the meantime." Both halves are now false: `src/join/` reads
+ * a `/join/{code}` link, previews it and redeems it in the browser.
+ *
+ * What remains true is narrower and belongs to THIS CARD. `RedeemLanding`
+ * takes every fact as a prop — "this page has no reads of its own" — so the
+ * dev board feeds it specimen values. A card that joined on those would be
+ * acting on facts nobody read. The live landing asks `auth.invite.resolve`
+ * first, which is exactly the difference.
+ */
 export const INVITE_REDEEM_LANDING_UNWIRED = reason(
-  'Joining from this card has no executor yet',
-  'the verbs exist — `auth.invite.resolve` reads a code before you join and `spaces.invites.redeem` performs the join — but no /join route mounts this card against them yet. Redeem from the CLI in the meantime: `tm8 space invite redeem <code>`.',
+  'This preview card can’t join',
+  'it takes every fact as a prop and reads nothing — the live path is the /join/<code> landing, which previews with auth.invite.resolve before performing spaces.invites.redeem.',
 );
 
 export const INVITE_REDEEM_NOT_HERE = reason(
@@ -205,10 +218,12 @@ export const SPACE_EDIT_UNAVAILABLE = reason(
   'seam.commands has no space-mutation verb; spaces() is a read.',
 );
 
-export const AXES_UNREADABLE = reason(
-  'No task-axis configuration exists to read',
-  'CollectionQuery consumes axes as a filter, but nothing in the seam or the contract DEFINES the axis set for a space.',
-);
+/* AXES_UNREADABLE stood here until 2026-08-16 and was measured FALSE on both
+   halves: `TaskAxis` is in the contract (contract.ts) and `seam.spaceSettings()`
+   already carried `taskAxes` on the round trip `port.ts` makes for invites.
+   Deleted with the gap it named (W2 wired the real read + CRUD) — the SECOND
+   stale refusal found in this file; re-verify the mechanism a reason cites
+   before trusting it. */
 
 export const DANGER_ZONE_UNAVAILABLE = reason(
   'Transfer and delete have no executor in this build',
@@ -242,7 +257,6 @@ export const ALL_SETTINGS_REASONS: readonly UnavailableReason[] = [
   INVITE_REDEEM_NOT_HERE,
   INVITE_REDEEM_LANDING_UNWIRED,
   SPACE_EDIT_UNAVAILABLE,
-  AXES_UNREADABLE,
   DANGER_ZONE_UNAVAILABLE,
   SECTION_NOT_MOUNTED,
 ];

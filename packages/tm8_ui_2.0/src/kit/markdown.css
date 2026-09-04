@@ -1,0 +1,501 @@
+/* ==========================================================================
+   MARKDOWN — the rendered doc body, one stylesheet for every surface that
+   shows markdown (the reader column and the editor's preview pane).
+
+   The type scale is the package's own (`--pn-fs-*`, `--pn-prose` for the
+   reading voice, `--pn-mono` for code); nothing here invents a size. Colours
+   are tokens only — the package hex guard scans this file.
+   ========================================================================== */
+
+.cv2-root .md-root {
+  font-family: var(--pn-prose);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+  min-width: 0;
+  /* PROSE WRAPS. ALWAYS.
+     Measured on the deployed bundle 2026-08-31: the doc reader's body carried
+     168px of horizontal scroll, and scrolling it slid the entire reading column
+     left so that every line was cut at both edges — the defect the owner
+     screenshotted. Its cause was a sibling, not this sheet (see reader-body's
+     `.rd-facts .hon-tip`), but the class of defect has a second entrance that
+     IS this sheet's: one unbreakable token — a path, a URL, a 60-character
+     identifier, all of which these documents are full of — sets the column's
+     min-content width to its own length and pushes every paragraph past the
+     edge with it.
+     `break-word` rather than `anywhere`: `anywhere` also lets the browser count
+     the break opportunity when it computes min-content, which shrinks the
+     column to one character in a flex measurement and is how a reading surface
+     ends up a letter wide. `break-word` breaks only a word that cannot fit on a
+     line of its own, which is exactly the case being defended against. */
+  overflow-wrap: break-word;
+  /* Wrap where the sentence wants to, not where the box runs out. */
+  text-wrap: pretty;
+}
+
+/* --- THE DOCUMENT STANCE --------------------------------------------------
+   `.md-root` is worn by three different things — a chat bubble, a task
+   description, a document — and only one of them is read for minutes at a
+   time. This is the stance for that one: the reading size and leading the chat
+   transcript already uses (`--pn-fs-read` / `--pn-lh-read`), and a MEASURE, so
+   an expanded panel does not serve a 1,400px line of prose.
+
+   THE MEASURE IS IN CHARACTERS (`--pn-measure`, 68ch), which is why it is set
+   on the children rather than on the root, and why a heading's cap resolves
+   wider in pixels than a paragraph's: 68 characters is the same reading span at
+   every size, and pixels are not. A cap in px would have had to pick a size to
+   be right for.
+
+   WHAT BREAKS OUT. A table, a code fence and a diagram are not prose and are
+   not read at a measure — they are scanned, and cutting them to a text column
+   makes a 5-column table scroll that had no need to. They take the full width
+   of whatever pane they are in, and each already scrolls inside its own box. */
+.cv2-root .md-doc {
+  font-size: var(--pn-fs-read);
+  line-height: var(--pn-lh-read);
+}
+.cv2-root .md-doc > * {
+  max-width: var(--pn-measure);
+}
+.cv2-root .md-doc > .md-tablewrap,
+.cv2-root .md-doc > .md-fence,
+.cv2-root .md-doc > .md-mermaid,
+.cv2-root .md-doc > hr {
+  max-width: none;
+}
+
+/* --- headings -------------------------------------------------------------
+   Real heading levels, and the reason it matters: the reader used to promote
+   every heading into an outline chip and render the body as flat prose, so a
+   document's structure existed only in the chip row. These give the body its
+   own structure back. The outline still lists them — one is navigation, the
+   other is the document. */
+.cv2-root .md-root h1,
+.cv2-root .md-root h2,
+.cv2-root .md-root h3,
+.cv2-root .md-root h4,
+.cv2-root .md-root h5,
+.cv2-root .md-root h6 {
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+  line-height: var(--pn-lh-snug);
+  letter-spacing: var(--pn-track-tight);
+  margin: 1.4em 0 0.5em;
+  /* A jumped-to heading must not land flush against the top edge of the
+     scroller. The reader's outline scrolls headings into view with
+     `block:'start'`, which without this puts the heading's first pixel on the
+     boundary — its own `margin-top` collapses out of the calculation, so the
+     section title reads as clipped and the rule under it sits off-screen.
+     `scroll-margin` is the only property that reserves that gap without moving
+     the heading in normal flow. */
+  scroll-margin-top: 10px;
+}
+
+/* A heading is focusable ONLY as the target of an outline jump (`tabIndex=-1`,
+   set by the renderer alongside the pairing attribute), which means the focus
+   ring here is not decoration: it is the sole confirmation a keyboard user gets
+   that the jump landed. `:focus-visible` rather than `:focus` so a mouse jump
+   does not leave a ring behind on the heading it scrolled to. */
+.cv2-root .md-root :is(h1, h2, h3, h4, h5, h6):focus-visible {
+  outline: 2px solid rgba(var(--pn-brand-rgb), 0.5);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+.cv2-root .md-root > :first-child { margin-top: 0; }
+.cv2-root .md-root h1 { font-family: var(--pn-prose); font-size: var(--pn-fs-h1); font-weight: 600; }
+.cv2-root .md-root h2 { font-size: var(--pn-fs-h2); font-weight: 600; }
+.cv2-root .md-root h3 { font-size: var(--pn-fs-h3); font-weight: 600; }
+/* SIX LEVELS, SIX APPEARANCES. h4, h5 and h6 used to share one declaration —
+   `--pn-fs-title` at 600 — so a document that nests three levels deep drew
+   three IDENTICAL headings and the hierarchy the author wrote existed only in
+   the source. The real documents in this space nest that far (`### A third
+   level`, `#### …`, and the design docs run to `§` sub-sections), so the
+   collision was reachable, not theoretical.
+   h6 becomes an EYEBROW rather than a fourth small bold line: at the bottom of
+   the scale, weight and size have run out of room to say "smaller again", and
+   caps + tracking is the package's own existing answer for a label (`t-eyebrow`
+   in tokens.css). Same face, same scale, no new vocabulary. */
+.cv2-root .md-root h4 { font-size: var(--pn-fs-title); font-weight: 700; }
+.cv2-root .md-root h5 { font-size: var(--pn-fs-body); font-weight: 700; }
+.cv2-root .md-root h6 {
+  font-size: var(--pn-fs-label);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+
+/* A rule under h1/h2 only — the two levels that open a section. */
+.cv2-root .md-root h1,
+.cv2-root .md-root h2 {
+  padding-bottom: 0.24em;
+  border-bottom: 1px solid var(--pn-line);
+}
+/* MORE AIR ABOVE A SECTION THAN INSIDE IT. A heading belongs to what follows
+   it, so the gap above must be visibly larger than the gap below or the eye
+   groups it with the paragraph it just finished. The two levels that open a
+   section get the widest gap; `:first-child` above still zeroes the top of the
+   document. */
+.cv2-root .md-root h1 { margin-top: 2em; }
+.cv2-root .md-root h2 { margin-top: 1.9em; }
+
+/* --- prose ---------------------------------------------------------------- */
+.cv2-root .md-root p { margin: 0 0 0.85em; }
+.cv2-root .md-root strong { font-weight: 600; color: var(--pn-ink); }
+.cv2-root .md-root em { font-style: italic; }
+.cv2-root .md-root del { text-decoration: line-through; color: var(--pn-ink-3); }
+/* `---` IS A SECTION BREAK, and in these documents it is load-bearing: the
+   design docs use it between a status banner and the body, and one uses nine of
+   them. At 1.6em it read as a slightly emphatic paragraph gap. It now takes
+   more air than any heading, which is what makes it legible as the thing that
+   outranks a heading. */
+.cv2-root .md-root hr {
+  border: none;
+  border-top: 1px solid var(--pn-line);
+  margin: 2.2em 0;
+}
+
+.cv2-root .md-link {
+  color: var(--pn-brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cv2-root .md-link:hover { color: var(--pn-ink); }
+/* Kit focus grammar — links were the last kit interactive left on the UA
+   default outline. 1px offset + a small radius so the ring hugs the word. */
+.cv2-root .md-link:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* --- lists ----------------------------------------------------------------
+   The shape the old parser destroyed most visibly: every bullet joined into
+   one paragraph. Nesting is preserved and indentation is per level. */
+.cv2-root .md-root ul,
+.cv2-root .md-root ol {
+  margin: 0 0 0.85em;
+  padding-left: 1.5em;
+}
+.cv2-root .md-root li { margin: 0.2em 0; }
+.cv2-root .md-root li > ul,
+.cv2-root .md-root li > ol { margin: 0.2em 0; }
+/* THE MARKER IS NOT THE ITEM. A bullet set in the body's own ink competes with
+   the first word of every line; quieted, it does the one job it has — telling
+   the eye where a row starts — and the list becomes scannable, which is the
+   whole reason an author reached for a list. `--pn-ink-4` is the package's
+   quietest ink and is what the facts line and fence label already use.
+   `::marker` only accepts a short list of properties; colour is one of them. */
+.cv2-root .md-root li::marker {
+  color: var(--pn-ink-4);
+}
+/* A list item that carries its own paragraphs — the shape every long
+   design-doc bullet in this space has — must not double-space itself. */
+.cv2-root .md-root li > p { margin: 0 0 0.4em; }
+.cv2-root .md-root li > p:last-child { margin-bottom: 0; }
+/* GFM task lists: the checkbox is a rendered state, never an input the viewer
+   can toggle — nothing here writes back to the document. */
+.cv2-root .md-root li input[type='checkbox'] {
+  margin-right: 0.45em;
+  pointer-events: none;
+}
+
+/* --- quotes ---------------------------------------------------------------
+   A QUOTE IS NO LONGER SET IN ITALIC, and that is a legibility decision taken
+   against the real corpus rather than a taste one. Italic is right for the one
+   or two lines a quotation usually runs to. In this space a blockquote is
+   routinely a TWELVE-LINE status banner (`DESIGN 1 — Harness registry` opens
+   with one), because a banner is what authors reach for when the renderer has
+   no callout — and twelve italic lines in a sans face is the least readable
+   thing the reader draws. The callout below is the right home for that content
+   and this rule stops punishing the documents that have not moved yet.
+
+   It stays DISTINCT from body text without italics: an inset ground, a rule
+   that is now the two-step `--pn-line-2` against the body's `--pn-line`, and
+   its own colour.
+
+   `:not(.md-callout)` IS LOAD-BEARING, not tidiness. A callout IS a
+   `<blockquote>` — that is what the author wrote and what the transform below
+   re-labels — so this selector matched it, and at `.cv2-root .md-root
+   blockquote` (0,2,1) it OUTRANKED `.cv2-root .md-callout` (0,2,0) and painted
+   every tone's rule and ground back to the quote's. Measured in Firefox against
+   the working tree before the exclusion: a `[!WARNING]` callout's title was
+   correctly `--pn-wait` (it reads the tone through an inherited custom
+   property, which no specificity contest can reach) while its border was
+   `--pn-line-2` and its ground `--pn-hover`. The half-applied result is the
+   giveaway, and it is exactly the failure a `css: false` test suite cannot
+   see. Excluding by class rather than out-specifying it means the two
+   treatments can never contest again. */
+.cv2-root .md-root blockquote:not(.md-callout) {
+  margin: 0 0 0.9em;
+  padding: 0.5em 0.9em;
+  border-left: 3px solid var(--pn-line-2);
+  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+  background: var(--pn-hover);
+  color: var(--pn-ink-3);
+}
+.cv2-root .md-root blockquote p:last-child { margin-bottom: 0; }
+
+/* --- callouts -------------------------------------------------------------
+   THE TONE IS THE MESSAGE. Five kinds, each bound to the token this package
+   already spends on that state everywhere else — so a warning in a document is
+   the same amber as a waiting session and a caution is the same red as a
+   blocked one. Nothing here picks a colour; it names a state and the state
+   brings its colour. That is the difference between colour that carries meaning
+   and colour as decoration, and it is why authors get five tones and not a
+   palette.
+
+   `--md-tone` / `--md-tone-soft` are set once per tone and read three times
+   (rule, mark, ground), so a tone cannot half-apply. See kit/Markdown's
+   `remarkCallouts` for what admits a blockquote to this treatment. */
+.cv2-root .md-callout {
+  --md-tone: var(--pn-ink-3);
+  --md-tone-soft: var(--pn-hover);
+  margin: 0 0 1em;
+  padding: 0.6em 0.9em 0.7em;
+  border: 1px solid var(--pn-line);
+  border-left: 3px solid var(--md-tone);
+  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+  background: var(--md-tone-soft);
+  color: var(--pn-ink-2);
+  /* Body voice, not quote voice — a callout is the document speaking, and it
+     was the italics that made the banner unreadable in the first place. */
+  font-style: normal;
+}
+.cv2-root .md-callout[data-tone='note']      { --md-tone: var(--pn-info);  --md-tone-soft: var(--pn-info-soft); }
+.cv2-root .md-callout[data-tone='tip']       { --md-tone: var(--pn-run);   --md-tone-soft: var(--pn-run-soft); }
+.cv2-root .md-callout[data-tone='important'] { --md-tone: var(--pn-brand); --md-tone-soft: var(--pn-brand-soft); }
+.cv2-root .md-callout[data-tone='warning']   { --md-tone: var(--pn-wait);  --md-tone-soft: var(--pn-wait-soft); }
+.cv2-root .md-callout[data-tone='caution']   { --md-tone: var(--pn-block); --md-tone-soft: var(--pn-block-soft); }
+
+.cv2-root .md-callout__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0.35em;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 700;
+  line-height: var(--pn-lh-snug);
+  letter-spacing: var(--pn-track-tight);
+  /* The title carries the tone; the BODY stays in reading ink. A whole
+     paragraph in signal colour is a paragraph nobody finishes. */
+  color: var(--md-tone);
+}
+/* `VectorIcon` strokes in `currentColor`, so the mark takes the tone from the
+   title above it and there is no second place a tone could disagree. */
+.cv2-root .md-callout__title .kit-vicon { flex: none; }
+.cv2-root .md-callout > :last-child { margin-bottom: 0; }
+/* Inside a callout, a fence keeps its own box but drops the second ground —
+   two nested tints read as a rendering error. */
+.cv2-root .md-callout .md-fence { background: var(--pn-paper); }
+
+/* --- code -----------------------------------------------------------------
+   Inline spans stay inline. Fenced blocks get a real box with the language
+   named — no syntax highlighting ships, and the flat tokens are the honest
+   rendering of that rather than a half-coloured guess. */
+.cv2-root .md-code {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--pn-ink);
+  /* An inline code span in these documents is almost always an IDENTIFIER — a
+     sha, a path, a token name — and those are the exact tokens with no space in
+     them. `anywhere` rather than the root's `break-word` because breaking a
+     path mid-segment is what a reader expects of a path, and because an atomic
+     span is where the root's rule stops helping. */
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .md-fence {
+  display: block;
+  position: relative;
+  margin: 0 0 0.9em;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  overflow: hidden;
+}
+.cv2-root .md-fence__lang {
+  display: block;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  text-transform: lowercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-4);
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .md-fence__pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  white-space: pre;
+  tab-size: 2;
+}
+.cv2-root .md-fence__pre code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* --- tables ---------------------------------------------------------------
+   THE MOST-USED STRUCTURE IN THIS SPACE, and worth saying why the work went
+   here: reading all 40 documents in the live space on 2026-08-31, 27 of them
+   contain a table and one contains 95 rows, against ONE mermaid fence and zero
+   callouts in the whole corpus. Whatever a table does badly, it does badly to
+   most of the documents anyone opens.
+
+   WHAT CHANGED AND WHY. It was a full 1px grid — every cell boxed on four
+   sides — which is the treatment that makes a 95-row table read as a fence
+   rather than as data. Vertical rules are removed and the work they were doing
+   is given to alignment and to a zebra ground; horizontal rules stay, because
+   the row is the unit a reader tracks along. The wrapper takes the border now,
+   so the table has ONE outline instead of one per cell.
+
+   The wrapper still scrolls, so a wide table never widens the reading column —
+   that was already right and is untouched. */
+.cv2-root .md-tablewrap {
+  display: block;
+  overflow-x: auto;
+  margin: 0 0 1em;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .md-table {
+  border-collapse: collapse;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+  min-width: 100%;
+}
+.cv2-root .md-table th,
+.cv2-root .md-table td {
+  border-bottom: 1px solid var(--pn-line);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+/* No rule under the last row: the wrapper's own border is already there, and
+   the two together draw a doubled line. */
+.cv2-root .md-table tr:last-child td { border-bottom: none; }
+
+/* THE HEADER ROW READS AS A HEADER, not as a bolder first row. Caps at the
+   label size with the package's widest tracking is `t-eyebrow`'s grammar from
+   tokens.css — the same treatment every column label in the app already wears —
+   so a header cell is distinguishable from data even when the data is also
+   short and also bold. */
+.cv2-root .md-table th {
+  background: var(--pn-surface);
+  border-bottom: 2px solid var(--pn-line-2);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+/* ZEBRA — the vertical rules' replacement. Tracking one row of a five-column
+   table across a scrolling box is the thing the old grid was trying and failing
+   to help with; a ground stripe does it without drawing 400 lines. `--pn-hover`
+   is the package's lightest ground and is a TINT of the surface in both themes,
+   so this survives the dark pairing without a second rule. */
+.cv2-root .md-table tbody tr:nth-child(even) { background: var(--pn-hover); }
+
+/* A cell's first column is what a reader scans down, so it keeps full ink. */
+.cv2-root .md-table td:first-child { color: var(--pn-ink); }
+
+/* --- images ---------------------------------------------------------------
+   The cap is on the ELEMENT, not just on `.md-img`: an image that escaped the
+   override still must not widen the reading column. */
+.cv2-root .md-root img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--pn-r-sm);
+}
+
+/* The two refusals and the remote link share one chip, because to a reader
+   they are one fact: something is there and it is not being shown. It reads as
+   a small inline label rather than a broken-image box — see kit/Markdown's
+   `img` override for why the request is never made. */
+.cv2-root .md-img-chip {
+  display: inline-block;
+  max-width: 100%;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border: 1px dashed var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  padding: 3px 8px;
+  overflow-wrap: anywhere;
+}
+.cv2-root a.md-img-chip { color: var(--pn-brand); }
+
+/* --- mermaid diagrams ------------------------------------------------------
+   The diagram is CENTRED and allowed to scroll sideways rather than being
+   scaled down: a shrunk flowchart with unreadable labels is worse than one you
+   pan. Mermaid bakes its palette into the SVG at render time (see kit/Mermaid),
+   so almost nothing about the drawing itself is styleable from here — this is
+   the frame around it. */
+.cv2-root .md-mermaid {
+  display: block;
+  margin: 0 0 0.9em;
+  padding: 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  overflow-x: auto;
+  text-align: center;
+}
+.cv2-root .md-mermaid__svg svg {
+  max-width: 100%;
+  height: auto;
+}
+.cv2-root .md-mermaid__pending {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+/* A diagram that would not parse. It keeps its SOURCE — the author needs the
+   text to fix it — and states the parser's own words rather than "invalid". */
+.cv2-root .md-mermaid--failed {
+  text-align: left;
+  border-color: var(--pn-block);
+  background: var(--pn-block-soft);
+}
+.cv2-root .md-mermaid__error {
+  margin: 0 0 8px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}
+.cv2-root .md-mermaid__error strong { color: var(--pn-ink); }
+.cv2-root .md-mermaid__source {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-card);
+  overflow-x: auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  white-space: pre;
+  text-align: left;
+}

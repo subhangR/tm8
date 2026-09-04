@@ -37,6 +37,7 @@ import { KIND_COMMANDS } from './kind.js';
 import { SPACE_COMMANDS } from './space.js';
 import { IDENTITY_COMMANDS } from './identity.js';
 import { AUTH_COMMANDS } from './auth.js';
+import { NODE_COMMANDS } from './node.js';
 import { EDGE_COMMANDS } from './edge.js';
 import { COLLECTION_COMMANDS } from './collection.js';
 import { PLACEMENT_COMMANDS } from './placement.js';
@@ -48,6 +49,7 @@ import { PRESENCE_COMMANDS } from './presence.js';
 import { PROJECT_COMMANDS } from './project.js';
 import { FILE_COMMANDS } from './file.js';
 import { MESSAGE_COMMANDS } from './message.js';
+import { CHAT_COMMANDS } from './chat.js';
 import { HANDOFF_COMMANDS } from './handoff.js';
 import { SESSION_COMMANDS } from './session.js';
 import { SESSION_GIT_COMMANDS } from './session-git.js';
@@ -65,6 +67,7 @@ import { UNDO_COMMANDS } from './undo.js';
 import { SERVER_COMMANDS } from './server.js';
 import { ARTIFACT_COMMANDS } from './artifact.js';
 import { VOICE_COMMANDS } from './voice.js';
+import { CONTAINER_COMMANDS } from './container.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -110,6 +113,7 @@ export const COMMANDS: CommandModule[] = [
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,
   ...AUTH_COMMANDS,
+  ...NODE_COMMANDS,
   ...EDGE_COMMANDS,
   ...COLLECTION_COMMANDS,
   ...PLACEMENT_COMMANDS,
@@ -121,6 +125,7 @@ export const COMMANDS: CommandModule[] = [
   ...PROJECT_COMMANDS,
   ...FILE_COMMANDS,
   ...MESSAGE_COMMANDS,
+  ...CHAT_COMMANDS,
   ...HANDOFF_COMMANDS,
   ...SESSION_COMMANDS,
   ...SESSION_GIT_COMMANDS,
@@ -137,6 +142,7 @@ export const COMMANDS: CommandModule[] = [
   ...UNDO_COMMANDS,
   ...ARTIFACT_COMMANDS,
   ...VOICE_COMMANDS,
+  ...CONTAINER_COMMANDS,
 ];
 
 const REGISTERED = new Map<string, CommandModule>(COMMANDS.map((c) => [c.path.join(' '), c]));

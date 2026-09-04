@@ -17,12 +17,13 @@
  *     is never rewritten, because a Phase-2 deep link authored today must not
  *     be made lossy by a Phase-1 client.
  */
-import type { EntityId, SpaceId } from '@tm8/contract';
-import { ALL_MODES, kindBySlug } from '../domain';
+import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
+import { ALL_MODES, VIEW_REF_ROUTE, kindBySlug } from '../domain';
 import type { CollectionMode } from '../domain';
 import { decodeQ, encodeQ } from './q';
 import type {
   BuildOutcome,
+  CockpitStage,
   ContentSurface,
   DropClass,
   NavView,
@@ -33,7 +34,14 @@ import type {
   QValue,
   Route,
 } from './types';
-import { CONTENT_SURFACES, MAX_HASH_LENGTH, PANEL_TABS, emptyPanels } from './types';
+import {
+  COCKPIT_STAGES,
+  CONTENT_SURFACES,
+  LEGACY_CONTENT_SURFACES,
+  MAX_HASH_LENGTH,
+  PANEL_TABS,
+  emptyPanels,
+} from './types';
 
 // ---------------------------------------------------------------------------
 // Percent-encoding (RFC 3986)
@@ -60,9 +68,21 @@ function dec(value: string): string | null {
 // parse
 // ---------------------------------------------------------------------------
 
+/**
+ * "Plausibly an entity id" for a query parameter that names one.
+ *
+ * DELIBERATELY LOOSE — this is a shape gate, not a validation. The route layer
+ * cannot know whether an entity exists, and a strict uuid pattern would refuse
+ * a legitimate id form the graph adopts later. It exists only so that a
+ * pasted `?about=hello` does not travel into a composer as a subject.
+ */
+const ID_LIKE = /^[0-9a-zA-Z_-]{8,64}$/;
+
 const MODES = new Set<string>(ALL_MODES);
 const TABS = new Set<string>(PANEL_TABS);
-const SURFACES = new Set<string>(CONTENT_SURFACES);
+// Retired tokens are ACCEPTED here and canonicalized below — see
+// LEGACY_CONTENT_SURFACES for why a dead name still parses.
+const SURFACES = new Set<string>([...CONTENT_SURFACES, ...Object.keys(LEGACY_CONTENT_SURFACES)]);
 
 /**
  * Query values are kept RAW here on purpose. `URLSearchParams` would decode
@@ -124,6 +144,9 @@ function parsePairs<T extends string>(
   raw: string | null,
   allowed: ReadonlySet<string>,
   onDrop: () => void,
+  /** Retired tokens mapped to their current spelling. Applied AFTER `allowed`,
+   *  so an alias must also be a member of `allowed` to survive. */
+  canonical: Readonly<Record<string, string>> = {},
 ): Record<EntityId, T> {
   if (raw === null) return {};
   if (raw.length === 0) {
@@ -143,7 +166,7 @@ function parsePairs<T extends string>(
       onDrop();
       return {};
     }
-    out[id] = value as T;
+    out[id] = (canonical[value] ?? value) as T;
   }
   return out;
 }
@@ -155,6 +178,9 @@ function parseOrigin(raw: string | null, onDrop: () => void): Origin | null {
   const modeRaw = dot === -1 ? null : raw.slice(dot + 1);
   // Registry-validated: a slug no row (and no `c-` custom kind) answers to is
   // not an origin we can honestly render a companion for.
+  /* A `v-` value belongs to `parseOriginView`; returning null here without
+     dropping keeps the two parsers from reporting the same parameter twice. */
+  if (raw.startsWith('v-')) return null;
   const known = kindBySlug(slug) !== null || (slug.startsWith('c-') && slug.length > 2);
   if (!known || slug.length === 0) {
     onDrop();
@@ -165,6 +191,35 @@ function parseOrigin(raw: string | null, onDrop: () => void): Origin | null {
     return null;
   }
   return { slug, mode: (modeRaw as CollectionMode | null) ?? null };
+}
+
+/**
+ * `origin=v-{ref}` — the VIEW companion, told apart from a collection origin by
+ * a prefix that cannot collide.
+ *
+ * WHY A PREFIX AND NOT A SECOND PARAMETER. One `origin=` carries one companion,
+ * so an address can never name two, and the mutual exclusion is structural
+ * rather than something a reader has to check. The `c-` custom-kind prefix is
+ * the existing precedent for discriminating inside this value.
+ *
+ * `v-` CANNOT COLLIDE: a collection origin is a registry slug or a `c-` custom
+ * kind, and no kind's slug begins `v-`. `kindBySlug` is consulted first for the
+ * unprefixed form, so the two parsers never see each other's input.
+ *
+ * REGISTRY-VALIDATED LIKE ITS SIBLING. `VIEW_REF_ROUTE` is `Record<MenuViewRef,
+ * …>`, so a ref no view answers to is dropped rather than carried — the same
+ * honesty `parseOrigin` applies to an unknown slug, for the same reason: a
+ * companion we cannot render is worse than no companion.
+ */
+function parseOriginView(raw: string | null, onDrop: () => void): MenuViewRef | null {
+  if (raw === null) return null;
+  if (!raw.startsWith('v-') || raw.length <= 2) return null;
+  const ref = dec(raw.slice(2)) ?? '';
+  if (!Object.prototype.hasOwnProperty.call(VIEW_REF_ROUTE, ref)) {
+    onDrop();
+    return null;
+  }
+  return ref as MenuViewRef;
 }
 
 function parseMode(raw: string | null, onDrop: () => void): CollectionMode | null {
@@ -209,8 +264,14 @@ export function parse(hash: string): ParseOutcome {
   const panels: PanelState = {
     stack: parseIdList(query.get('p'), drop('stack')),
     pinned: parseIdList(query.get('pin'), drop('pins')),
+    right: parseIdList(query.get('r'), drop('right')),
     tabs: parsePairs<PanelTab>(query.get('t'), TABS, drop('tabs')),
-    contentSurface: parsePairs<ContentSurface>(query.get('contentSurface'), SURFACES, drop('tabs')),
+    contentSurface: parsePairs<ContentSurface>(
+      query.get('contentSurface'),
+      SURFACES,
+      drop('tabs'),
+      LEGACY_CONTENT_SURFACES,
+    ),
     session: null,
   };
 
@@ -233,8 +294,60 @@ function parseTarget(
   const head = rest[0];
   switch (head) {
     case undefined:
-    case 'home':
       return { view: 'home' };
+    case 'home': {
+      /* The unified Home's root segments (task 01a00932):
+           /home              → the viewer's remembered root
+           /home/k/{slug}     → root = that kind's list
+           /home/chat[/{id}]  → root = chats, optionally the open thread.
+         An unknown sub-segment is not a partial route: bare Home renders,
+         same posture as the outer default case. The slug is deliberately
+         pass-through (like `k/`) — the Home screen validates it against the
+         registry and falls back to the remembered root, which keeps parse
+         pure. */
+      if (rest[1] === 'k' && rest[2]) {
+        return { view: 'home', root: { type: 'kind', slug: rest[2] } };
+      }
+      if (rest[1] === 'chat') {
+        /* `?stage=` names a Cockpit stage that is not an entity. Deliberately
+           NOT a drop-notice param: any other value is a stale or foreign link
+           and silently renders the plain conversation — lossy-tolerant, the
+           rule inherited from the `?graph=full` parameter this replaces.
+
+           BACK-COMPAT, decode-only (route-token preserve rule): `?graph=full`
+           was the address of the fullscreen entity graph, and links to it are
+           in histories and in pasted messages. It DECODES to the Graph stage,
+           which is where that view lives now, so an old link still lands on
+           the thing it named. Nothing ENCODES it — `build` only ever emits
+           `?stage=`, so the alias fades from every URL the app produces
+           without breaking the ones it already handed out.
+
+           `?gf=` is not aliased and simply dies undecoded: it was opaque at
+           this layer by design, it addressed a facet rail that no longer
+           exists, and its state is reconstructible by the viewer in two
+           clicks. Reviving a filter vocabulary to honour it would be keeping
+           a feature alive to honour its own URL. */
+        const raw = query.get('stage') ?? (query.get('graph') === 'full' ? 'graph' : null);
+        const stage = COCKPIT_STAGES.has(raw as CockpitStage) ? (raw as CockpitStage) : null;
+        /* `?about=` — the subject a new conversation here is about. Same
+           lossy-tolerant posture as `?stage=`: anything that is not
+           plausibly an entity id is simply not carried, and a subject that no
+           longer exists is the SCREEN's problem to render honestly, not a
+           reason to refuse the route. */
+        const about = query.get('about');
+        const aboutId = about && ID_LIKE.test(about) ? (about as EntityId) : null;
+        return {
+          view: 'home',
+          root: {
+            type: 'chats',
+            threadId: rest[2] ?? null,
+            ...(stage ? { stage } : {}),
+            ...(aboutId ? { aboutId } : {}),
+          },
+        };
+      }
+      return { view: 'home' };
+    }
     case 'feed':
       return { view: 'feed' };
     case 'inbox':
@@ -255,6 +368,32 @@ function parseTarget(
       return { view: 'git' };
     case 'messages':
       return { view: 'messages' };
+    case 'board':
+      /* The task Board (2026-08-16) — same flat whole-centre posture. */
+      return { view: 'board' };
+    case 'craft':
+      /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
+      return { view: 'craft' };
+    case 'codebrain':
+      /* CodeBrain (2026-09-01) — same flat whole-centre posture. */
+      return { view: 'codebrain' };
+    case 'help': {
+      /* The Help shelf (2026-08-19), with an optional open plate (2026-08-20)
+         in the `settings/{section}` shape. The slug is NOT checked against the
+         plate registry here: the codec owns the grammar and the screen is the
+         one place that knows which plates exist, so an unknown slug arrives
+         intact and Help falls back to its contents. */
+      const plate = rest[1];
+      return { view: 'help', plate: plate && plate.length > 0 ? plate : null };
+    }
+    case 'board-v2':
+      /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
+         `new-session` precedent. */
+      return { view: 'boardV2' };
+    case 'new-session':
+      /* Hyphenated in the URL, camel in the union: the segment is read by
+         people and the member is read by TypeScript. */
+      return { view: 'newSession' };
     case 'voice': {
       /* Shaped like `channel/{id}`, because a voice room is addressed the same
          way one channel is: an id in the path, no collection view behind it. A
@@ -294,7 +433,15 @@ function parseTarget(
     case 'e': {
       const entityId = rest[1];
       if (!entityId) return { view: 'home' };
-      return { view: 'entity', entityId, origin: parseOrigin(query.get('origin'), drop('origin')) };
+      {
+        const rawOrigin = query.get('origin');
+        const originView = parseOriginView(rawOrigin, drop('origin'));
+        /* The view form wins when present, and the collection parser is not
+           consulted for it — see `parseOriginView`. */
+        return originView
+          ? { view: 'entity', entityId, origin: null, originView }
+          : { view: 'entity', entityId, origin: parseOrigin(rawOrigin, drop('origin')) };
+      }
     }
     default:
       // An unknown view segment is not a partial route: fall back to the
@@ -311,8 +458,17 @@ function pathOf(route: Route): string {
   const base = `#/s/${enc(route.spaceId)}`;
   const t = route.target;
   switch (t.view) {
-    case 'home':
+    case 'home': {
+      const root = t.root ?? null;
+      if (root?.type === 'kind') return `${base}/home/k/${enc(root.slug)}`;
+      if (root?.type === 'chats' && root.threadId) return `${base}/home/chat/${enc(root.threadId)}`;
+      /* `chats` with no thread is the default root: `/home` IS that address,
+         so the canonical form drops the segment (normalize agrees) — UNLESS a
+         stage is up, which needs the `/chat` segment to survive a round-trip,
+         since bare `/home` does not read `stage` (nor the `graph` alias). */
+      if (root?.type === 'chats' && (root.stage || root.aboutId)) return `${base}/home/chat`;
       return `${base}/home`;
+    }
     case 'feed':
       return `${base}/feed`;
     case 'inbox':
@@ -329,6 +485,18 @@ function pathOf(route: Route): string {
       return `${base}/git`;
     case 'messages':
       return `${base}/messages`;
+    case 'board':
+      return `${base}/board`;
+    case 'craft':
+      return `${base}/craft`;
+    case 'codebrain':
+      return `${base}/codebrain`;
+    case 'help':
+      return t.plate ? `${base}/help/${enc(t.plate)}` : `${base}/help`;
+    case 'boardV2':
+      return `${base}/board-v2`;
+    case 'newSession':
+      return `${base}/new-session`;
     case 'voice':
       /* Must match `registry.ts`'s voice `routeBuilder` exactly — that builder
          is the authority and has been emitting this shape all along. */
@@ -371,10 +539,17 @@ export function build(route: Route): BuildOutcome {
   const t = route.target;
 
   const viewParams: Param[] = [];
-  if (t.view === 'kind') {
+  if (t.view === 'home') {
+    if (t.root?.type === 'chats' && t.root.stage) viewParams.push(['stage', t.root.stage]);
+    if (t.root?.type === 'chats' && t.root.aboutId) viewParams.push(['about', t.root.aboutId]);
+  } else if (t.view === 'kind') {
     if (t.mode) viewParams.push(['mode', t.mode]);
   } else if (t.view === 'entity') {
-    if (t.origin) {
+    if (t.originView) {
+      /* Same parameter, prefixed form — so the address carries exactly one
+         companion and round-trips through `parseOriginView`. */
+      viewParams.push(['origin', `v-${enc(t.originView)}`]);
+    } else if (t.origin) {
       const value = t.origin.mode ? `${enc(t.origin.slug)}.${t.origin.mode}` : enc(t.origin.slug);
       viewParams.push(['origin', value]);
     }
@@ -386,6 +561,10 @@ export function build(route: Route): BuildOutcome {
   const qParam: Param[] = t.view === 'kind' && t.q ? [['q', encodeQ(t.q)]] : [];
   const stackParam: Param[] = route.panels.stack.length ? [['p', idList(route.panels.stack)]] : [];
   const pinParam: Param[] = route.panels.pinned.length ? [['pin', idList(route.panels.pinned)]] : [];
+  /* Tolerant of hand-built pre-`right` shapes (stored last-places, fixtures). */
+  const rightParam: Param[] = (route.panels.right ?? []).length
+    ? [['r', idList(route.panels.right)]]
+    : [];
   const tabsParam: Param[] = [];
   if (Object.keys(route.panels.tabs).length) tabsParam.push(['t', pairs(route.panels.tabs)]);
   if (Object.keys(route.panels.contentSurface).length) {
@@ -394,9 +573,11 @@ export function build(route: Route): BuildOutcome {
 
   // Drop tiers, most-droppable first. `t` and contentSurface go TOGETHER —
   // they are one tier, because surface state without tab state is a lie about
-  // which panel the surface belongs to.
+  // which panel the surface belongs to. The right trail outranks only that
+  // pair: a side panel is a supplement to the centre it annotates.
   const tiers: { cls: DropClass; params: Param[] }[] = [
     { cls: 'tabs', params: tabsParam },
+    { cls: 'right', params: rightParam },
     { cls: 'pins', params: pinParam },
     { cls: 'stack', params: stackParam },
     { cls: 'query', params: qParam },
@@ -440,7 +621,11 @@ export function normalize(route: Route): Route {
   const pinned = dedupe(route.panels.pinned);
   const pinnedSet = new Set(pinned);
   const stack = dedupe(route.panels.stack).filter((id) => !pinnedSet.has(id));
-  const open = new Set([...pinned, ...stack]);
+  /* The right trail dedupes within itself only — it is a separate panel, not
+     a third host in the pin/stack single-host law, and the same entity open
+     in the centre AND beside it is a state the viewer can honestly make. */
+  const right = dedupe(route.panels.right ?? []);
+  const open = new Set([...pinned, ...stack, ...right]);
 
   const tabs: Record<EntityId, PanelTab> = {};
   for (const [id, tab] of Object.entries(route.panels.tabs)) {
@@ -452,10 +637,24 @@ export function normalize(route: Route): Route {
     if (open.has(id)) contentSurface[id] = surface;
   }
 
+  /* Canonical Home root: `chats` with no thread IS the bare `/home` form —
+     unless a stage is up or a subject is bound, both of which only the
+     `/chat` segment carries (bare `/home` reads neither, so collapsing would
+     lose them). */
+  const target: NavView =
+    route.target.view === 'home' &&
+    route.target.root &&
+    route.target.root.type === 'chats' &&
+    route.target.root.threadId === null &&
+    !route.target.root.stage &&
+    !route.target.root.aboutId
+      ? { view: 'home' }
+      : route.target;
+
   return {
     spaceId: route.spaceId,
-    target: route.target,
-    panels: { stack, pinned, tabs, contentSurface, session: route.panels.session },
+    target,
+    panels: { stack, pinned, right, tabs, contentSurface, session: route.panels.session },
   };
 }
 

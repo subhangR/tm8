@@ -29,6 +29,7 @@ import {
   EDGES_NOT_HYDRATED_REASON,
   ADDITIONAL_PROJECTS_UNAVAILABLE_REASON,
   PROFILE_PINNED_CAPTION,
+  REASONS,
   describeProfile,
   profileRefusal,
   profileSelectable,
@@ -44,15 +45,17 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 20 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 22 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
-    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20.
+    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20;
+    // then `graph` joined with migration 135 (Craft P1) → 21;
+    // then `chat` joined with migration 176 (Chat as an Entity) → 22.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(20);
+    expect(CORE_KINDS.length).toBe(22);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -81,7 +84,11 @@ describe('loop management is registry-declared and fully wired', () => {
     ]);
     expect(loop.editFields?.find((field) => field.source === 'schedule')?.valueType).toBe('schedule');
     expect(loop.editFields?.find((field) => field.source === 'config')?.valueType).toBe('json-object');
-    expect(loop.panel.primaries).toEqual(['edit']);
+    // `run` LEADS since launching became a denylist (owner ruling 2026-08-17
+    // launches `loop`). It does NOT mean "fire this loop now" — that is
+    // `loop-controls`, the first panel block, and it stays the loop's own verb.
+    // Run means what it means everywhere: point an agent at this row.
+    expect(loop.panel.primaries).toEqual(['run', 'edit']);
     // RUNS is the third block on purpose: a loop's firing history IS its
     // inbound `triggered_by` edges, so a panel without it hides the only
     // record of what the loop has done. `membership` follows (2026-08-12) —
@@ -116,6 +123,7 @@ describe('slugs, reserved words and route strategies (WLT §2.1 verbatim)', () =
     // the Entity List Panel. The slug is PLURAL because `channel` is a WLT
     // §2.1 reserved word — see the registry row.
     channel: 'channels',
+    chat: 'chats',
     message: null,
   };
 
@@ -183,13 +191,16 @@ describe('collection modes (D13)', () => {
 describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', () => {
   // Every surviving behavior names the FIELD that carries it. A behavior with
   // no field is a spec defect, not an inline special case.
-  it('1. task current/completed sections → list.sections', () => {
-    const sections = getKind('task').list.sections;
-    expect(sections?.map((s) => s.id)).toEqual(['current', 'completed']);
-    expect(sections?.[1].collapsedByDefault).toBe(true);
-    // Contract-shaped: the seam can execute these without translation.
-    expect(sections?.[0].filter.workStatus).toContain('working');
-    expect(sections?.[1].filter.workStatus).toContain('done');
+  it('1. PHASE 7 — task declares NO sections: the tab row owns that axis', () => {
+    // It used to declare `current` / `completed`, keyed on task status
+    // literals, and that partition is EXACTLY what the four category tabs are.
+    // Two controls for one axis is what the deleted `deleted` chip was, and
+    // the harm was concrete: every row in the Done tab fell into `completed`,
+    // which is `collapsedByDefault`, so opening Done showed a collapsed
+    // heading and no work. `sections` survives in the TYPE for triage grouping
+    // that is not the status axis; no kind declares one today.
+    expect(getKind('task').list.sections).toBeUndefined();
+    for (const row of allKinds()) expect(row.list.sections).toBeUndefined();
   });
 
   it('2. hierarchy expansion → list.tree', () => {
@@ -216,15 +227,37 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // shape here is asymmetric with the task's on purpose — `status: true`
     // would mount a picker over a value no client may write.
     expect(session.inlineEdit).toEqual({ title: true });
-    expect(session.rowActions).toEqual(['complete', 'terminate']);
+    // The tick and Terminate, since 156 gave the tick a door (see `5c` below).
+    // Note this sits directly under `inlineEdit` refusing `status: true` and
+    // does NOT contradict it: the tick writes the ENVELOPE's category, never
+    // `work_sessions.status`, which remains the PTY's to report.
+    // `chat-about` is APPENDED by derivation (`applyChatAbout`), on every kind
+    // that can be an `about` target — which is every kind, because the edge is
+    // registered `dst_kinds = array['*']` (migration 056). It lands last: the
+    // cluster's `RULED_ORDER` ranks `complete` and `run`, an unranked verb
+    // keeps its declared position, and `terminate` is pulled to the tail by
+    // `TAIL_ORDER` regardless of where it sits here.
+    expect(session.rowActions).toEqual(['complete', 'terminate', 'chat-about']);
   });
 
-  it("keeps both session row verbs but only Terminate in the compact panel toolbar", () => {
+  it('keeps Terminate as the session verb, on the row and in the compact toolbar', () => {
     // USER RULING 2026-07-29: terminal panels use the Task panel's pressure
-    // budget — one primary beside tabs and window controls. Complete remains
-    // reachable on the session row; Terminate is the in-panel session verb.
+    // budget — one primary beside tabs and window controls. Terminate is that
+    // primary, and it stays the ONLY panel primary even now that the tick is
+    // back on the row: the panel's budget is one verb, and between "stop this
+    // process" and "file this away" the destructive one is the one that must
+    // not be buried.
+    //
+    // The ROW has room for both, and needs both — the tick is how you clear a
+    // running session off In Progress without killing it, which is exactly the
+    // thing you want to do from a list rather than from inside the session.
     const session = getKind('work_session');
-    expect(session.list.rowActions).toEqual(['complete', 'terminate']);
+    expect(session.list.rowActions).toEqual(['complete', 'terminate', 'chat-about']);
+    // The PANEL's budget is untouched by the row's third verb: `chat-about` is
+    // derived onto `list.rowActions` only. `applyLaunch` writes to both arrays
+    // because Run is a verb about the entity; this one opens a conversation
+    // ELSEWHERE, and the panel's one-primary budget is for acting on what you
+    // are looking at.
     expect(session.panel.primaries).toEqual(['terminate']);
   });
 
@@ -249,17 +282,38 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     }
   });
 
-  it('4b. every kind a person can ask an agent to work on is launchable', () => {
-    const launchable = allKinds().filter((r) => r.launchable).map((r) => r.kind).sort();
-    expect(launchable).toEqual([
-      'artifact', 'doc', 'memory', 'project', 'pull_request', 'task', 'team_member', 'worktree',
-    ]);
+  /**
+   * PINNED AS THE DENYLIST, because that is now the authority.
+   *
+   * This used to enumerate the eight launchable kinds, and the enumeration was
+   * the bug it should have caught: launching is open to every kind the server
+   * will derive a task for (all but `work_session`), so the eight were not a
+   * ruling but the subset somebody had remembered to flag — eleven kinds were
+   * silently missing a Run button and this test agreed with them.
+   *
+   * Asserting the REFUSALS instead means a newly minted kind cannot quietly
+   * join a list; it is launchable by default, and taking that away is an edit
+   * to `NOT_LAUNCHABLE` that lands right here.
+   */
+  it('4b. work_session is the ONLY unlaunchable kind; everything else launches', () => {
+    const notLaunchable = allKinds().filter((r) => !r.launchable).map((r) => r.kind).sort();
+    // One refusal, and it is the server's: `derive_task_for_entity` raises for
+    // `work_session` and derives a task for every other live kind. So this list
+    // is not a product preference to be re-argued per kind — it mirrors what
+    // the backend will actually do, and it should only ever change when that
+    // does. (`graph` and `loop` were briefly here on inherited rationale;
+    // owner ruling 2026-08-17 launches both.)
+    expect(notLaunchable).toEqual(['work_session']);
+    // The complement is everything else — stated as a relationship rather than
+    // a second list, so the two cannot disagree.
+    expect(allKinds().filter((r) => r.launchable).length).toBe(allKinds().length - 1);
   });
 
   it('4c. task keeps Run FIRST and its own row ordering', () => {
     // applyLaunch is additive, not a rebuild: a row that already names `run`
-    // keeps the order it authored.
-    expect(getKind('task').list.rowActions).toEqual(['run', 'complete']);
+    // keeps the order it authored. `applyChatAbout` is additive at the other
+    // end — it appends, so the kind's own ordering survives both derivations.
+    expect(getKind('task').list.rowActions).toEqual(['run', 'complete', 'chat-about']);
   });
 
   /**
@@ -277,73 +331,174 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(getKind('task').panel.primaries).toEqual(['run', 'edit']);
   });
 
-  it('5. sessions lifecycle → list.lifecycle, D20 partition RETIRED (D56)', () => {
-    const tiers = getKind('work_session').list.lifecycle;
-    expect(tiers?.map((t) => t.id)).toEqual(['open', 'done', 'archived']);
-    // The contract now carries `sessionStatus`, so these are ordinary filters
-    // the seam executes untranslated — no client-side partition anywhere.
-    expect(tiers?.[0].filter.sessionStatus).toEqual(['spawning', 'running', 'idle']);
-    expect(tiers?.[1].filter.sessionStatus).toEqual(['exited', 'failed']);
-    for (const tier of tiers ?? []) expect(tier.filter).toBeTruthy();
+  it('5. PHASE 7 — a session partitions by CATEGORY, like every other kind', () => {
+    // The session tabs used to be keyed on `sessionStatus` literals, which is
+    // how a session that CRASHED came to be filed under "Done". Its states now
+    // declare their own categories (registry data) and its TABS are the same
+    // four every kind draws — one partition, one vocabulary, no kind-specific
+    // tab row left in this file.
+    const tabs = getKind('work_session').list.categories;
+    expect(tabs?.map((t) => t.id)).toEqual(['to_do', 'in_progress', 'done', 'cancelled']);
+    for (const tab of tabs ?? []) {
+      expect(tab.filter).toEqual({ category: [tab.id], deleted: 'exclude' });
+    }
   });
 
-  it('D56 — no tier anywhere carries a client-side partition any more', () => {
+  it('5b. PHASE 7 — the session state options carry the ruled categories', () => {
+    const options = getKind('work_session').list.stateControl?.options ?? [];
+    expect(options.map((o) => [o.id, o.category])).toEqual([
+      // `spawning` is `to_do` as of migration 155, and this copy MIRRORS
+      // `internal.session_status_category` rather than deciding anything. Two
+      // reasons, either sufficient: it is 147's `pulled -> to_do` ("claimed is
+      // not started") applied to the same shape of fact, and it is what makes
+      // `execution_resume` — which returns an exited session to `spawning` —
+      // the ruled `done -> to_do` reopen instead of a `done -> in_progress`
+      // that `category_transition_allowed` refuses outright.
+      ['spawning', 'to_do'],
+      ['running', 'in_progress'],
+      ['idle', 'in_progress'],
+      // `failed` is `done`, NOT `cancelled`: failure is a runtime fact that
+      // gets a badge, and the run did reach its end — nobody cancelled it.
+      ['exited', 'done'],
+      ['failed', 'done'],
+    ]);
+  });
+
+  it('5c. a session declares the two verbs the node now answers — the tick is BACK', () => {
+    // `complete` was removed from here because it was dead three times over:
+    // the server computed `canComplete` off `tasks.work_status` (NULL for a
+    // session), the door was `complete_task` (`where kind = 'task'`), and there
+    // was nothing for it to write. All three were true, and none of them said
+    // the verb is meaningless for a session — they said nobody had built it.
+    //
+    // Migration 156 builds it (user ruling 2026-08-19). The tick now files a
+    // session under Done WITHOUT stopping it, which is a thing terminate
+    // cannot do and a thing the lifecycle cannot do for you. The two verbs sit
+    // side by side because they answer different questions: terminate ends the
+    // PROCESS, complete ends the row's claim on your attention.
+    const rowActions = getKind('work_session').list.rowActions ?? [];
+    expect(rowActions).toContain('complete');
+    expect(rowActions).toContain('terminate');
+    // `run` stays out for its own reason: `derive_task_for_entity` raises for a
+    // work_session, which is what `NOT_LAUNCHABLE` records.
+    expect(getKind('work_session').launchable).toBe(false);
+  });
+
+  it('D56 — no tab anywhere carries a client-side partition any more', () => {
     // The retirement is a DELETION, not a translation: if the field comes back
     // on any row, the workaround has been reintroduced beside the contract
     // member that replaced it, and the two would diverge silently.
     for (const row of allKinds()) {
-      for (const tier of row.list.lifecycle ?? []) {
-        expect(tier).not.toHaveProperty('statuses');
+      for (const tab of row.list.categories ?? []) {
+        expect(tab).not.toHaveProperty('statuses');
       }
     }
   });
 
-  it('D41 — every COLLECTION kind carries all three tiers, in order', () => {
-    // Universal by ruling. A kind that forgot them would silently lose its
-    // tabs, so the test asserts presence rather than trusting each row.
-    for (const row of collectionKinds()) {
-      expect(row.list.lifecycle?.map((t) => t.id)).toEqual(['open', 'done', 'archived']);
+  it('PHASE 7 — every kind carries THE SAME four category tabs, in order', () => {
+    // Universal by ruling, and now universal in the strongest sense: not four
+    // tabs each kind spells its own way, but ONE declaration. The ids are the
+    // contract's closed `StatusCategory` union, so a kind cannot invent a
+    // fifth bucket and a space that names its own statuses is filed correctly
+    // without touching the registry.
+    const FOUR = ['to_do', 'in_progress', 'done', 'cancelled'];
+    /*
+     * THE FIVE FACT KINDS ARE EXEMPT, and the exemption is the ruling, not a
+     * hole in it. `152_universal_status.sql` seeds commit, message, file,
+     * memory and artifact to `done` so a fact about the past cannot block a
+     * `depends_on` forever. That `done` is a RESOLUTION PREDICATE, not a
+     * lifecycle position — a memory is a recorded observation, never an
+     * intention, and it was never `to_do`. Handing them the four-stage row
+     * asked a question the kind has no answer to, and because the row opens on
+     * `tabs[0]` it also made every one of them invisible on arrival.
+     *
+     * Listed literally rather than derived so that ADDING a kind here is a
+     * deliberate edit someone must justify against migration 152's seed table.
+     */
+    const FACT_KINDS = ['commit', 'message', 'file', 'memory', 'artifact'];
+    for (const row of allKinds()) {
+      if (FACT_KINDS.includes(row.kind)) {
+        expect(row.list.categories, `${row.kind} is a fact kind: no lifecycle row`).toBeUndefined();
+        continue;
+      }
+      expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(FOUR);
+      expect(row.list.categories?.map((t) => t.label)).toEqual([
+        'To Do',
+        'In Progress',
+        'Done',
+        'Cancelled',
+      ]);
     }
-    expect(getKind(CUSTOM_KIND_FALLBACK).list.lifecycle?.map((t) => t.id)).toEqual([
-      'open',
-      'done',
-      'archived',
-    ]);
+    // The exemption must not silently swallow a kind that never opted out.
+    for (const kind of FACT_KINDS) {
+      expect(getKind(kind).list.categories, `${kind} must declare categories: null`).toBeUndefined();
+    }
+    expect(getKind(CUSTOM_KIND_FALLBACK).list.categories?.map((t) => t.id)).toEqual(FOUR);
+    expect(collectionKinds().length).toBeGreaterThan(0);
   });
 
-  it('D41 — archived is a REAL query for every kind, never an invention', () => {
-    // `deleted: 'only'` is a genuine CollectionQuery member, which is why the
-    // archive tier is honest universally where `done` is not.
+  it('PHASE 7 — every tab is the SAME mechanical category query, on every kind', () => {
+    // The whole point of the rename: `open` used to mean five status literals
+    // on task, three sessionStatus literals on work_session and two categories
+    // everywhere else — one tab id, three incompatible predicates. There is
+    // one predicate now and it follows from the id.
     for (const row of allKinds()) {
-      const archived = row.list.lifecycle?.find((t) => t.id === 'archived');
-      expect(archived?.filter).toEqual({ deleted: 'only' });
-      expect(archived?.unsupported).toBeUndefined();
-    }
-  });
-
-  it('D41 — a tier the contract cannot express is UNSUPPORTED with a reason, never faked', () => {
-    // Only task (workStatus) and work_session (sessionStatus, D56) can express
-    // completion. Everything else says so out loud rather than inventing one.
-    const canExpressDone = ['task', 'work_session'];
-    for (const row of allKinds()) {
-      const done = row.list.lifecycle?.find((t) => t.id === 'done');
-      if (canExpressDone.includes(row.kind)) {
-        expect(done?.unsupported).toBeUndefined();
-      } else {
-        expect(done?.unsupported).toBeTruthy();
-        // The tab still exists — honest-empty, never hidden (L6).
-        expect(done?.label).toBe('Done');
+      for (const tab of row.list.categories ?? []) {
+        expect(tab.filter, `${row.kind}/${tab.id}`).toEqual({
+          category: [tab.id],
+          deleted: 'exclude',
+        });
       }
     }
   });
 
-  it('D41 — carries NO count field: counts come from each tier query total', () => {
+  it('PHASE 7 — ARCHIVED IS NOT A TAB; it is a filter that composes', () => {
+    // Archived is `deleted_at`, orthogonal to status — an archived task keeps
+    // its status across the round-trip. As a TAB it was a partition member,
+    // so it said "archived INSTEAD OF done" and made the archive of an
+    // in-progress row unreachable from any tab. As a chip it narrows whichever
+    // category tab is open, which is a question the tab row could not ask.
+    for (const row of allKinds()) {
+      // `?? []` on purpose: a fact kind has no tab row at all, which satisfies
+      // "archived is not a tab" more completely than any assertion could.
+      expect((row.list.categories ?? []).some((t) => (t.id as string) === 'archived')).toBe(false);
+      // Every tab EXCLUDES archived rows, so the chip is the only control
+      // naming `deleted` and cannot contradict a tab.
+      for (const tab of row.list.categories ?? []) expect(tab.filter.deleted).toBe('exclude');
+
+      const chip = row.list.filters.find((f) => f.id === 'archived');
+      expect(chip, `${row.kind} lost the archive filter`).toBeTruthy();
+      expect(chip?.options.map((o) => o.filter.deleted)).toEqual(['only', 'include']);
+      // NOT multi: `deleted` takes one value, and two options that cannot
+      // combine must not be offered as though they did.
+      expect(chip?.multi).toBeFalsy();
+    }
+  });
+
+  it('PHASE 7 — cancelled has its OWN tab; it no longer hides inside Done', () => {
+    // RULED (sub-doc 7 §3.4). Done used to carry `['done','cancelled']`, which
+    // told a user that abandoned work and finished work are one outcome.
+    // Only kinds that HAVE a lifecycle row: the five fact kinds carry none,
+    // and that exemption is asserted by the four-tabs test above rather than
+    // being re-derived (or silently tolerated by `?.`) here.
+    const tabbed = allKinds().filter((row) => row.list.categories !== undefined);
+    expect(tabbed.length, 'no kind has tabs — this test would pass vacuously').toBeGreaterThan(0);
+    for (const row of tabbed) {
+      const done = row.list.categories?.find((t) => t.id === 'done');
+      expect(done?.filter.category, `${row.kind}`).toEqual(['done']);
+      const cancelled = row.list.categories?.find((t) => t.id === 'cancelled');
+      expect(cancelled?.label).toBe('Cancelled');
+      expect(cancelled?.filter.category).toEqual(['cancelled']);
+    }
+  });
+
+  it('D41 — carries NO count field: counts come from each tab query total', () => {
     // One source, three surfaces (tab label, footer line, selector total). A
     // count field would be a second source that could disagree with the query.
     for (const row of allKinds()) {
-      for (const tier of row.list.lifecycle ?? []) {
-        expect(tier).not.toHaveProperty('count');
-        expect(tier).not.toHaveProperty('total');
+      for (const tab of row.list.categories ?? []) {
+        expect(tab).not.toHaveProperty('count');
+        expect(tab).not.toHaveProperty('total');
       }
     }
   });
@@ -371,7 +526,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   it('uses only the CLOSED §2.2 field vocabulary', () => {
     const CLOSED: readonly (keyof ListConfig)[] = [
       'sections',
-      'lifecycle',
+      'categories',
       'tree',
       'tile',
       'liveCount',
@@ -395,6 +550,19 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          assignment by an edge — three different writes, so they are three
          fields rather than one overloaded `controls`. */
       'valueControls',
+      /* Opened 2026-08-28 with the due date on the strip. Not `valueControls`
+         because that field is explicitly "an enum member of `EntityState` this
+         kind lets a user set" and renders a picker over declared `options` — a
+         date has no vocabulary to declare. The WRITE is the same
+         version-guarded content patch, and deliberately so; only the input
+         differs. See `DateControl`. */
+      'dateControls',
+      /* Opened 2026-08-16 with W1: axis pickers are DATA-driven — the field
+         only marks the kind whose state carries `axes`; the vocabulary is the
+         space's own `task_axes` rows, handed over by the host. Not
+         `valueControls` because a ValueControl's options are static registry
+         config and an axis's are per-space server data. */
+      'axisControls',
       'assignControl',
       /* Opened 2026-08-05 with A2: the board is declared per-kind as DATA —
          only the grouping axis, because vocabulary/order/tone stay owned by
@@ -405,6 +573,15 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          Not `assignControl` because the write is the addItem/removeItem pair
          (set → member), not a generic edge from the row. */
       'membership',
+      /* Opened 2026-08-22 with the sessions-surface fix. WHICH of the four
+         shared category tabs a kind OPENS ON, which used to be `[0]` — To Do —
+         for every kind. Deliberately NOT a member of `categories`: the four
+         bands and their order are universal (D41) and stay exactly one array;
+         what is per-kind is where a kind's population SITS in them. An AUTHORED
+         kind is born in To Do; an OBSERVED one is not, and work_session's To Do
+         holds only the sub-second `spawning` transient (migration 155) — so the
+         sessions list opened on a band a running session cannot be in. */
+      'defaultCategory',
     ];
     for (const row of allKinds()) {
       for (const key of Object.keys(row.list)) {
@@ -605,6 +782,34 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     expect(PROFILE_PINNED_CAPTION).toContain('even if the profile is edited or retired later');
   });
 
+  it('carries caller-stated terminal geometry, and omits the fields entirely without it', () => {
+    // A create flow spawns with NO terminal on screen, so the ops layer's
+    // measurement fallback has nothing real to read — it returns a stale global
+    // or nothing at all. Such a caller must be able to STATE its geometry, and
+    // an absent statement must stay absent so the measurement still wins.
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-sonnet-5' });
+    const stated = buildSpawnInput({
+      clientMutationId: 'c', spaceId: 's', config, geometry: { cols: 173, rows: 44 },
+    });
+    expect(stated.cols).toBe(173);
+    expect(stated.rows).toBe(44);
+
+    // Key-ABSENCE, not `undefined`: the ops layer resolves geometry per field
+    // and JSON.stringify drops undefined, so an explicitly-undefined key and a
+    // missing one are the same on the wire but not in the type. Assert the
+    // stronger of the two.
+    const silent = buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config });
+    expect('cols' in silent).toBe(false);
+    expect('rows' in silent).toBe(false);
+
+    // A HALF-stated geometry is unrepresentable — `geometry` is one object with
+    // both fields required, so this is a compile error rather than a value that
+    // gets silently discarded at runtime. Kept as a type-level assertion
+    // because that is where the guarantee lives.
+    // @ts-expect-error partial geometry must not type-check
+    buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config, geometry: { cols: 173 } });
+  });
+
   it('D51.4 — extra projects are ADDITIVE and never silently accepted', () => {
     // The launch root is genuinely performable; the extras are in_project edges
     // the stamped seam cannot write, so they are refused with the mechanism.
@@ -782,21 +987,35 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     }
   });
 
-  it('ships Terminal and Chat on work_session only', () => {
-    expect(getKind('work_session').panel.contentSurfaces).toEqual(['terminal', 'chat']);
-    for (const row of allKinds()) {
-      if (row.kind === 'work_session') continue;
-      expect(row.panel.contentSurfaces).toBeUndefined();
-    }
-  });
+  // `panel.contentSurfaces` is gone. It declared `['terminal','chat']` and
+  // claimed to be "the complete work-session surface vocabulary" while the
+  // strip shipped five surfaces, and it had no production reader at all — this
+  // test was its only one. The live vocabulary is CONTENT_SURFACES in
+  // routes/types.ts, which the switch actually reads.
 
-  it("D2: chat surfaces end at the composer — composition:'chat' on channel and work_session only", () => {
-    // The flag is what the panel's strip/footer exclusion reads; work_session
-    // is already excluded via the terminal arm, so there it states the reason
-    // structurally rather than changing behaviour.
+  it('D2: composition is declared by exactly the kinds whose body owns its own bottom edge', () => {
+    // The flag is what the panel's strip/attention/footer exclusion reads, and
+    // that gate tests PRESENCE rather than value — so this pins the whole
+    // census, not one word. work_session is already excluded via the terminal
+    // arm, so there it states the reason structurally rather than changing
+    // behaviour.
+    //
+    //   · 'chat'  — a conversation ends at its composer, whose ＋ owns attach.
+    //   · 'frame' — the artifact panel IS the viewer (owner ruling 2026-08-20).
+    //     A strip and a footer stapled under a viewport were most of the ~320px
+    //     of chrome that ruling removed.
+    const expected: Record<string, 'chat' | 'frame' | undefined> = {
+      channel: 'chat',
+      work_session: 'chat',
+      artifact: 'frame',
+      // A chat entity's panel body IS its transcript, ending at the composer
+      // (migration 176 + the `conversation` archetype). Same declaration and
+      // the same reason as the two above; work_session reaches the exclusion
+      // through the terminal arm as well, this one only through here.
+      chat: 'chat',
+    };
     for (const row of allKinds()) {
-      const expected = row.kind === 'channel' || row.kind === 'work_session' ? 'chat' : undefined;
-      expect(row.panel.composition, String(row.kind)).toBe(expected);
+      expect(row.panel.composition, String(row.kind)).toBe(expected[row.kind]);
     }
   });
 
@@ -897,7 +1116,6 @@ describe('the ActionRef registry (§2.5)', () => {
   it('gives every R7 deferred member a disabled-with-reason home (§4.2 table)', () => {
     const ids = deferredActions().map((a) => a.id);
     for (const ref of [
-      'graph-view',
       'undo',
       'version-history',
       'leaderboard',
@@ -913,6 +1131,31 @@ describe('the ActionRef registry (§2.5)', () => {
       const verdict = resolveAction(ref).availability({ spaceId: 's' });
       expect(verdict.kind).toBe('disabled');
       if (verdict.kind === 'disabled') expect(verdict.reason.length).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * A DEFERRAL NOTICE MUST NOT OUTLIVE THE DEFERRAL (the principle recorded
+   * with #220, which retired the route-side half of this same drift).
+   *
+   * `graph-view` sat in the table above carrying "Graph view isn't available
+   * yet." long after `{ view: 'graph' }` became an addressable route and a
+   * live rail destination — so the palette's R7 discovery block rendered a
+   * disabled row for a screen the viewer could open from the row above it.
+   *
+   * The guard is by IDENTITY, not by reading a string: nothing in the shipped
+   * registry may name Graph as deferred again, and the reason key may not come
+   * back. The palette needs no assertion of its own — its discovery rows are
+   * derived from `deferredActions()`, so the row left when the entry did.
+   */
+  it('no longer carries a deferral for Graph — the feature shipped (#220 principle)', () => {
+    expect(allActions().map((a) => a.id)).not.toContain('graph-view');
+    expect(deferredActions().map((a) => a.id)).not.toContain('graph-view');
+    expect(Object.keys(REASONS)).not.toContain('graphDeferred');
+    // Nor under some other key: no authored copy anywhere in the honesty
+    // vocabulary may still call Graph unavailable.
+    for (const reason of Object.values(REASONS)) {
+      expect(reason.toLowerCase()).not.toContain('graph');
     }
   });
 
@@ -964,17 +1207,153 @@ describe('the ActionRef registry (§2.5)', () => {
     });
   });
 
-  it('refuses session verbs on any verdict but live, and says which', () => {
+  it('refuses PROMPT on any verdict but live, and says which', () => {
+    // Prompt genuinely needs a process to talk to, so it keeps `livenessGate`.
     const base = { spaceId: 's', entityId: 'sess-1' } as const;
-    expect(resolveAction('terminate').availability({ ...base, liveness: 'live' })).toEqual({
+    expect(resolveAction('prompt-session').availability({ ...base, liveness: 'live' })).toEqual({
       kind: 'available',
     });
     for (const verdict of ['stale', 'not-running', 'unknown'] as const) {
-      const result = resolveAction('terminate').availability({ ...base, liveness: verdict });
+      const result = resolveAction('prompt-session').availability({ ...base, liveness: verdict });
       expect(result.kind).toBe('disabled');
     }
     // No verdict at all is NOT permission — unknown is never treated as live.
-    expect(resolveAction('terminate').availability(base).kind).toBe('disabled');
+    expect(resolveAction('prompt-session').availability(base).kind).toBe('disabled');
+  });
+
+  it('but TERMINATE is offered on every verdict — it is how a row reaches Done', () => {
+    /**
+     * USER RULING 2026-08-19: "if session is alive, or in progress or to do the
+     * terminate button should always be available … this removes the cases
+     * where some sessions are terminated, but have no terminate button
+     * enabled".
+     *
+     * Terminate was `livenessGate`d, which refused it on every `stale` and
+     * `unknown` verdict — precisely the rows that need retiring. A ghost left
+     * `running` by a node restart is not live, is not finished, and had no way
+     * out of In Progress.
+     *
+     * The node was never the obstacle: `SpawnService.terminate` treats a
+     * missing PTY as success and writes `exited` regardless, which since 155
+     * files the row under Done. The client was refusing an operation the
+     * server performs.
+     */
+    const base = { spaceId: 's', entityId: 'sess-1' } as const;
+    for (const verdict of ['live', 'stale', 'not-running', 'unknown'] as const) {
+      expect(resolveAction('terminate').availability({ ...base, liveness: verdict })).toEqual({
+        kind: 'available',
+      });
+    }
+    // No verdict at all is now PERMISSION, inverting the old posture on
+    // purpose: the cost of guessing wrong here is a harmless second terminate,
+    // where the cost of the old guess was a row nobody could retire.
+    expect(resolveAction('terminate').availability(base)).toEqual({ kind: 'available' });
+  });
+
+  it('and refuses it on a row that has already ended', () => {
+    // The one refusal left, and it is a statement rather than a capability
+    // guess: a row under Done with nothing answering cannot be ended again.
+    const result = resolveAction('terminate').availability({
+      spaceId: 's',
+      entityId: 'sess-1',
+      liveness: 'not-running',
+      category: 'done',
+    });
+    expect(result.kind).toBe('disabled');
+  });
+
+  it('but a session TICKED WHILE RUNNING keeps its Terminate', () => {
+    /**
+     * THE CASE THIS PR CREATES, and the one that made the refusal above too
+     * broad while it was keyed on the category alone.
+     *
+     * The tick's entire ruling is "mark done, do not close": a session under
+     * Done may still be running, streaming and holding a PTY. Refusing
+     * Terminate on `category === 'done'` therefore ate the feature — tick a
+     * live session and the verb went dead on BOTH surfaces (the row cluster
+     * and `panel.primaries` resolve the same def), refusing with "This session
+     * has already ended" about a session that had not ended at all. Measured
+     * at the time: `{liveness:'live', category:'done'}` -> disabled.
+     *
+     * "Ended" needs both halves — filed under Done AND nothing answering.
+     */
+    expect(
+      resolveAction('terminate').availability({
+        spaceId: 's',
+        entityId: 'sess-1',
+        liveness: 'live',
+        category: 'done',
+      }),
+    ).toEqual({ kind: 'available' });
+
+    // And the ghost the ruling is about is still permitted, unchanged.
+    expect(
+      resolveAction('terminate').availability({
+        spaceId: 's',
+        entityId: 'sess-1',
+        liveness: 'stale',
+        category: 'in_progress',
+      }),
+    ).toEqual({ kind: 'available' });
+  });
+
+  /**
+   * THE PROCESS CONTROL'S TWO GATES ARE EXACT COMPLEMENTS (ruled 2026-08-19).
+   *
+   * That is what makes the shared tail slot total: for any row exactly one of
+   * the pair is permitted, so the swap can never draw two controls or none.
+   * Asserted as an EXCLUSIVE-OR over the whole cross product rather than as a
+   * handful of cases, because the failure this guards against is a later
+   * amendment moving one gate and not the other — and a case list would have
+   * to be remembered to be extended.
+   */
+  it('terminate and resume are exact complements, on every category × liveness', () => {
+    const categories = ['to_do', 'in_progress', 'done', 'blocked'] as const;
+    const verdicts = ['live', 'stale', 'not-running', 'unknown'] as const;
+    const both: string[] = [];
+    const neither: string[] = [];
+    for (const category of categories) {
+      for (const liveness of verdicts) {
+        const ctx = { spaceId: 's', entityId: 'sess-1', category, liveness } as const;
+        const canEnd = resolveAction('terminate').availability(ctx).kind === 'available';
+        const canResume = resolveAction('resume').availability(ctx).kind === 'available';
+        if (canEnd && canResume) both.push(`${category}/${liveness}`);
+        if (!canEnd && !canResume) neither.push(`${category}/${liveness}`);
+      }
+    }
+    expect({ both, neither }).toEqual({ both: [], neither: [] });
+  });
+
+  it('resume is offered on exactly the row the defect was reported about', () => {
+    // `exited`/`failed` reads here as done + nothing answering. This is the row
+    // that had a refused Terminate beside a tick that wrote and moved nothing.
+    expect(
+      resolveAction('resume').availability({
+        spaceId: 's',
+        entityId: 'sess-1',
+        liveness: 'not-running',
+        category: 'done',
+      }),
+    ).toEqual({ kind: 'available' });
+
+    // A session TICKED WHILE RUNNING has not ended, so it is not resumable —
+    // the headline state #425 shipped 4012 tests without ever pairing.
+    expect(
+      resolveAction('resume').availability({
+        spaceId: 's',
+        entityId: 'sess-1',
+        liveness: 'live',
+        category: 'done',
+      }).kind,
+    ).toBe('disabled');
+  });
+
+  it('resume is NOT a launch — it restores a configuration rather than choosing one', () => {
+    // A `flow: 'launch'` verb opens the config instead of dispatching, which
+    // would put a teammate/model card in front of a session whose persona,
+    // project, model and workdir are re-read from the graph.
+    expect(resolveAction('resume').flow).toBeUndefined();
+    expect(resolveAction('resume').label).toBe('Resume');
   });
 
   it('never runs a disabled action', async () => {
@@ -1105,18 +1484,38 @@ describe('§15.1 — edit declares its fields, and fields declare their verb', (
    *   · NOT `required` — `tasks.due_date` is nullable, so "no due date" is a
    *     value the database holds rather than a hole in the record.
    */
-  it('the task offers a Title and a due date read from state, written to content', () => {
+  it('the task offers a Title and BOTH dates, read from state, written to content', () => {
     const fields = getKind('task').editFields ?? [];
-    expect(fields.map((f) => f.label)).toEqual(['Title', 'Due date']);
+    expect(fields.map((f) => f.label)).toEqual(['Title', 'Start date', 'Due date']);
 
-    const dueDate = fields.find((f) => f.source === 'dueDate');
-    expect(dueDate?.target).toBe('content');
-    expect(dueDate?.readFrom).toBe('state');
-    expect(dueDate?.valueType).toBe('date');
-    expect(dueDate?.required ?? false).toBe(false);
+    /* THE SAME FOUR PROPERTIES ON EACH, checked in a loop rather than written
+       twice: both columns are nullable `date`s whose halves live apart — the
+       server projects them onto `state` and leaves them out of `contentOf` —
+       so a `readFrom` missing on either opens the dialog blank on a task that
+       HAS the value and clears it on Save. That is a silent data loss, and it
+       is the one property here worth holding for every date rather than for
+       the one that happened to be written first. */
+    for (const source of ['startDate', 'dueDate']) {
+      const field = fields.find((f) => f.source === source);
+      expect(field, source).toBeDefined();
+      expect(field?.target).toBe('content');
+      expect(field?.readFrom).toBe('state');
+      expect(field?.valueType).toBe('date');
+      expect(field?.required ?? false).toBe(false);
 
-    // The sort this row already offered now has something a human can fill.
-    expect(getKind('task').list.sort.map((s) => s.key)).toContain('dueDate');
+      // Each sort now has something a human can fill — `dueDate`'s row existed
+      // and could only be filled by the CLI; `startDate`'s ships filled.
+      expect(getKind('task').list.sort.map((s) => s.key)).toContain(source);
+    }
+
+    /* The dialog row and the strip control are the SAME registry `source` and
+       the same patch, so the two surfaces cannot disagree about a field name.
+       Holding it here is what would catch a date added to one and not the
+       other — the state the due date sat in for as long as it was invisible. */
+    const strip = getKind('task').list.dateControls ?? [];
+    expect(strip.map((c) => c.source)).toEqual(
+      fields.filter((f) => f.valueType === 'date').map((f) => f.source),
+    );
   });
 
   it('the channel offers exactly Name and an OPTIONAL Topic (user ruling 2026-08-07)', () => {

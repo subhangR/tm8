@@ -1,0 +1,873 @@
+/* ==========================================================================
+   T2 GOVERNANCE SURFACES — projects & trust (T2-2), interaction profiles
+   (T2-4), custom-kind authoring (T2-5).
+
+   COLOUR: tokens only. `src/hex-ban.test.ts` scans this file (it is a package
+   law, not a lane guard) and there is no exclusion for it — deliberately.
+   Every value below resolves through `styles/tokens.css` or through the two
+   canvas-extra custom properties this package already ships
+   (`--pn-x-hairline-soft`, `--pn-x-warn-fill`). Alpha variants are
+   `color-mix(...)` or `rgba(var(--pn-brand-rgb), α)`, both of which re-theme
+   for free — see canvas-extra.css's own note on why they are NOT declared as
+   new tokens.
+
+   WHAT IS DELIBERATELY NOT HERE: the four T2 colours this lane could not
+   introduce. The oracle paints the node-admin cards on its own dark ramp
+   (`#221E15` card over `#1D1912` stage, `#3B3524` border) and the amber
+   consent banner on `rgba(189,138,42,.1)`. A NEW measured colour's only legal
+   home is `styles/canvas-extra.css`, an EXISTING file this lane may not edit
+   (file-ownership boundary, this wave). So `--pn-card`/`--pn-line` carry the
+   node cards and a wait-ramp mix carries the banner: correct in both themes,
+   one step off the oracle's specimen. Both are listed under COLOR NEEDS in
+   HANDOVER.md for the parity session that owns fidelity.
+
+   TYPE: the micro sizes were D5-verbatim canvas literals — SUPERSEDED for
+   VOICE by the Kinetic W3 reclassification: mono is for DATA only (paths,
+   versions, run counts, slugs, payloads — everything `.gov-mono` wraps and
+   the machine-string inputs); sentences, labels, button words, empty states
+   and consequences speak Figtree on the --pn-fs-* scale (13px floor for
+   interactive text), and absences add italic where mono used to carry the
+   "not content" distinction. Buttons/inputs take the kit grammar (28px
+   compact, r-sm, ui 600, ONE focus ring through
+   var(--pn-focus, var(--pn-brand-2)), hover fill). Words and counts are
+   unchanged. Global scale is still the single `zoom: 1.1` lever on
+   `.cv2-root`.
+
+   HAIRLINES (D-ledgered): `--pn-line` BOUNDS a component (card edges, header
+   rules, action bars); `--pn-x-hairline-soft` SEPARATES repeated siblings
+   inside one (list rows, field rows). Every divider below is placed by asking
+   which side of that boundary it sits on.
+   ========================================================================== */
+
+.cv2-root .gov-screen {
+  display: flex;
+  gap: var(--pn-space-4);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding: var(--pn-space-4);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+}
+
+.cv2-root .gov-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.cv2-root .gov-col--wide {
+  flex: 1.4 1 420px;
+}
+
+/* -- card ----------------------------------------------------------------- */
+
+.cv2-root .gov-card {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The NODE-side card. The oracle's whole point at T2-2 is that space-side and
+   node-side truths never share a treatment, so this one sits on the surface
+   ramp with a stronger edge rather than repeating the paper card. */
+.cv2-root .gov-card--node {
+  background: var(--pn-card);
+  border-color: var(--pn-line-2);
+}
+
+.cv2-root .gov-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .gov-card__title {
+  font-family: var(--pn-prose);
+  font-size: 16px;
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .gov-card__sub {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 500;
+  color: var(--pn-ink-4);
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .gov-card__spacer {
+  flex: 1;
+}
+
+.cv2-root .gov-card__foot {
+  border-top: 1px solid var(--pn-line);
+  padding: 6px 10px;
+  /* A footer SENTENCE ("retired profiles stay referenceable…"). */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .gov-note {
+  margin: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+/* -- rows ----------------------------------------------------------------- */
+
+.cv2-root .gov-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cv2-root .gov-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px;
+  border-left: 2px solid transparent;
+  /* SIBLING separator, not a component bound. */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+
+.cv2-root .gov-row:last-child {
+  border-bottom: none;
+}
+
+.cv2-root .gov-row--selected {
+  background: var(--pn-hover);
+  border-left-color: var(--pn-brand);
+}
+
+.cv2-root .gov-row__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.cv2-root .gov-row__glyph {
+  color: var(--pn-ink-3);
+  font-size: 11px;
+}
+
+.cv2-root .gov-row__title {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+}
+
+.cv2-root .gov-row__open {
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cv2-root .gov-row__open:hover {
+  color: var(--pn-brand);
+}
+
+/* The meta line's VOICE is words; the machine strings inside it (`.gov-mono`
+   spans — paths, versions, run counts) keep the data voice. */
+.cv2-root .gov-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .gov-row__dot {
+  color: var(--pn-line-2);
+}
+
+.cv2-root .gov-row__frozen {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 500;
+  color: var(--pn-wait);
+}
+
+.cv2-root .gov-row__space {
+  color: var(--pn-brand);
+  text-decoration: underline;
+}
+
+/* -- values, absences, prose ---------------------------------------------- */
+
+.cv2-root .gov-mono {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+}
+
+/* A value that was never read. Deliberately NOT the block ramp: an unread
+   fact is not an error, and painting it red would teach the reader to expect
+   something broken instead of something unasked. The words ("trust unread")
+   are WORDS — ui italic; declared after .gov-mono so the combo class renders
+   as the sentence it is. */
+.cv2-root .gov-unknown {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-style: italic;
+  color: var(--pn-ink-4);
+}
+
+/* An inline absence ("none in this state") is a stated sentence. */
+.cv2-root .gov-empty-inline {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-style: italic;
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .gov-empty,
+.cv2-root .gov-loading {
+  padding: 12px 14px;
+  font-size: var(--pn-fs-sm); /* empty states at the floor */
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gov-unread {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 10px 14px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+}
+
+.cv2-root .gov-unread__cause {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .gov-unread__remedy {
+  /* A remedy is a sentence a person acts on. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gov-prose {
+  margin: 0;
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+
+.cv2-root .gov-prose--quiet {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gov-collapsed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 14px;
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+/* -- controls -------------------------------------------------------------- */
+
+.cv2-root .gov-refused {
+  display: inline-flex;
+  font-size: var(--pn-fs-label);
+}
+
+.cv2-root .gov-refused--primary .hon-disabled {
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  border-radius: var(--pn-r-sm);
+  padding: 2px 9px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+
+/* Kit button grammar, compact form (Kinetic W3): 28px box, bordered r-sm,
+   ui 600 at the interactive floor, hover fill, one focus ring (below). */
+.cv2-root .gov-btn {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.cv2-root .gov-btn:hover {
+  background: var(--pn-hover);
+}
+
+.cv2-root .gov-btn--ink {
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  border-color: var(--pn-ink);
+}
+
+.cv2-root .gov-btn--ink:hover {
+  background: var(--pn-x-btn-ink-hover);
+}
+
+.cv2-root .gov-btn--dashed {
+  align-self: flex-start;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--pn-brand) 50%, transparent);
+  color: var(--pn-brand-2);
+}
+
+/* A link is an interactive WORD — ui at the floor. */
+.cv2-root .gov-link {
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-brand-2);
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* -- T2-2 · trust ---------------------------------------------------------- */
+
+.cv2-root .gov-trust {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.cv2-root .gov-trust__unread {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-style: italic;
+  color: var(--pn-ink-4);
+}
+
+/* "agents cannot run here until someone with admin trusts it" — a sentence. */
+.cv2-root .gov-consequence {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 500;
+  color: var(--pn-wait);
+}
+
+.cv2-root .gov-registry-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--pn-line);
+}
+
+.cv2-root .gov-field {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 5px 10px;
+  align-items: center;
+}
+
+/* Field labels are words — ui at the floor. */
+.cv2-root .gov-field__label {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .gov-field__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  flex-wrap: wrap;
+}
+
+.cv2-root .gov-segment {
+  display: inline-flex;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  overflow: hidden;
+  background: var(--pn-card);
+}
+
+.cv2-root .gov-segment .hon-disabled-group + .hon-disabled-group {
+  border-left: 1px solid var(--pn-line);
+}
+
+/* -- T2-2 · consent -------------------------------------------------------- */
+
+.cv2-root .gov-consent {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 15px;
+}
+
+.cv2-root .gov-consent__title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.cv2-root .gov-consent__body {
+  margin: 0;
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+
+.cv2-root .gov-consent__banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-wait);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+}
+
+/* An interactive checkbox label — ui at the floor. */
+.cv2-root .gov-consent__check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.cv2-root .gov-consent__actions {
+  display: flex;
+  gap: var(--pn-space-2);
+  justify-content: flex-end;
+  align-items: center;
+  padding-top: 2px;
+}
+
+/* -- T2-2 · session projects ---------------------------------------------- */
+
+.cv2-root .gov-session-projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: 12px 14px;
+}
+
+.cv2-root .gov-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.cv2-root .gov-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  /* A chip names a THING (a project) — the name is a word, kit-chip voice. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 9px;
+  background: var(--pn-card);
+}
+
+/* Provenance is a DIFFERENT treatment from the chips on purpose (oracle note
+   L268): one locked mono line, no border, no remove affordance anywhere in its
+   shape — so history cannot be rewritten by editing chips. */
+.cv2-root .gov-provenance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px dotted var(--pn-line);
+  padding-top: 8px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gov-provenance__key {
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+
+/* -- T2-4 · profiles ------------------------------------------------------- */
+
+.cv2-root .gov-groups {
+  display: flex;
+  flex-direction: column;
+}
+
+.cv2-root .gov-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 0 2px;
+}
+
+.cv2-root .gov-group > .kit-eyebrow {
+  padding: 0 10px;
+}
+
+.cv2-root .gov-group > .gov-empty-inline {
+  padding: 0 10px 4px;
+}
+
+.cv2-root .gov-lifecycle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: 12px 14px;
+}
+
+.cv2-root .gov-lifecycle__rail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv2-root .gov-lifecycle__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv2-root .gov-lifecycle__arrow {
+  color: var(--pn-line-2);
+}
+
+.cv2-root .gov-verbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  align-items: flex-start;
+}
+
+/* -- T2-5 · authoring ------------------------------------------------------ */
+
+.cv2-root .gov-form {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 12px 14px;
+}
+
+.cv2-root .gov-form__pair {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cv2-root .gov-field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.cv2-root .gov-input {
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 9px;
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  min-width: 0;
+}
+
+.cv2-root .gov-input--mono {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  height: 26px;
+  flex: 1 1 90px;
+}
+
+/* ONE focus grammar (Kinetic W3) for every interactive this sheet styles. */
+.cv2-root .gov-input:focus-visible,
+.cv2-root .gov-select:focus-visible,
+.cv2-root .gov-btn:focus-visible,
+.cv2-root .gov-link:focus-visible,
+.cv2-root .gov-row__open:focus-visible,
+.cv2-root .gov-glyph:focus-visible,
+.cv2-root .gov-handle:focus-visible,
+.cv2-root .gov-remove:focus-visible,
+.cv2-root .gov-req:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+
+.cv2-root .gov-select {
+  font: inherit;
+  /* Its options are WORDS (archetypes), not machine strings. */
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  height: 26px;
+  padding: 0 6px;
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .gov-glyphs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cv2-root .gov-glyph {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-paper);
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cv2-root .gov-glyph--on {
+  border-color: var(--pn-brand);
+  background: var(--pn-card);
+  color: var(--pn-brand-2);
+}
+
+.cv2-root .gov-field-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cv2-root .gov-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Micro row controls. `req`/`opt` are WORDS a person toggles — ui; the
+   handle and ✕ are glyphs and size with them. */
+.cv2-root .gov-handle,
+.cv2-root .gov-remove,
+.cv2-root .gov-req {
+  font: inherit;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
+}
+
+.cv2-root .gov-handle {
+  font-size: 10px;
+  cursor: grab;
+}
+
+.cv2-root .gov-req--on {
+  color: var(--pn-brand-2);
+  font-weight: 600;
+}
+
+.cv2-root .gov-remove:hover {
+  color: var(--pn-block);
+}
+
+.cv2-root .gov-issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-basis: 100%;
+  /* Validation issues are sentences. */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 500;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-block);
+}
+
+.cv2-root .gov-spine {
+  margin: 0;
+  border-top: 1px dotted var(--pn-line);
+  padding-top: 8px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+/* -- T2-5 · preview -------------------------------------------------------- */
+
+.cv2-root .gov-preview,
+.cv2-root .gov-payload,
+.cv2-root .gov-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 14px;
+}
+
+.cv2-root .gov-fallback {
+  border-top: 1px solid var(--pn-line);
+}
+
+.cv2-root .gov-chip--preview {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cv2-root .gov-preview-card {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cv2-root .gov-preview-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.cv2-root .gov-preview-card__title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root .gov-preview-fields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gov-preview-fields__name {
+  color: var(--pn-ink-3);
+}
+
+/* The three treatments the oracle names, so the preview shows the DIFFERENCE
+   rather than three identical dashes. */
+.cv2-root .gov-treat {
+  margin-left: 5px;
+}
+
+.cv2-root .gov-treat--word-chip {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: var(--pn-r-pill);
+  padding: 0 6px;
+  background: var(--pn-hover);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gov-treat--value {
+  color: var(--pn-ink);
+  font-weight: 500;
+}
+
+.cv2-root .gov-treat--mono {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gov-verdict ul {
+  margin: 4px 0 0;
+  padding-left: 14px;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gov-pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-2);
+  overflow-x: auto;
+}

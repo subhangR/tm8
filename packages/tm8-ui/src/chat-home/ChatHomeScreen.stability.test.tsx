@@ -57,7 +57,16 @@ describe('Chat Home stability', () => {
     const gated = gateReads(port);
     const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
     act(() => gated.release());
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    // Scoped to the PANEL row. The working-set tab strip forced this (it made
+    // a bare text query match twice) and revision 14 removed the strip again,
+    // but the scoping is KEPT: the panel row is precisely what "the thread has
+    // loaded into the list" means here, where a bare query would also accept
+    // the conversation head. Same for the two cases below.
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Quick follow-up.' },
@@ -69,14 +78,14 @@ describe('Chat Home stability', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         seq: 0,
         part: { kind: 'text', text: 'Fast answer.' },
       });
       controls.emit({
         type: 'chat.turn.done',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         usage: { output_tokens: 5 },
       });
@@ -84,14 +93,18 @@ describe('Chat Home stability', () => {
     act(() => gated.release());
 
     await waitFor(() => expect(view.getByText('Fast answer.')).toBeTruthy());
-    expect(view.queryByText('Agent is working')).toBeNull();
+    expect(view.queryByTestId('tch-send-working')).toBeNull();
     expect(view.queryByTestId('chat-thinking')).toBeNull();
   });
 
   it('sends on plain Enter and keeps Shift+Enter as a newline', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     const composer = view.getByLabelText('Message the chat agent');
     fireEvent.change(composer, { target: { value: 'Line one' } });
@@ -122,7 +135,7 @@ describe('Chat Home stability', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId: '019f0000-0000-7000-8000-0000000000bb' as EntityId,
         seq: 0,
         part: { kind: 'text', text: 'Reply to another member.' },
@@ -137,12 +150,16 @@ describe('Chat Home stability', () => {
   it('marks a sidebar thread live when its frames stream while it is not active', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId: '019f0000-0000-7000-8000-0000000000cc' as EntityId,
         seq: 0,
         part: { kind: 'text', text: 'Working…' },
@@ -169,12 +186,12 @@ describe('Chat Home cross-thread and multiplayer safety', () => {
     await waitFor(() => expect(controls.posts).toHaveLength(1));
 
     // Switch to the new-thread composer while the post-send read is gated.
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
-    await waitFor(() => expect(view.getByText('What should we work on?')).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
     act(() => gated.release());
 
     // Thread A's snapshot must not overwrite the new-thread screen.
-    await waitFor(() => expect(view.getByText('What should we work on?')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
     expect(view.queryByTestId('chat-usage-card')).toBeNull();
   });
 
@@ -186,14 +203,14 @@ describe('Chat Home cross-thread and multiplayer safety', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId: '019f0000-0000-7000-8000-0000000000ff' as EntityId,
         seq: 0,
         part: { kind: 'text', text: 'Someone else’s agent is answering.' },
       });
     });
 
-    await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
     const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
     expect(composer.disabled).toBe(false);
     fireEvent.change(composer, { target: { value: 'I can still type and send.' } });
@@ -232,14 +249,14 @@ describe('Chat Home snapshot reconciliation', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         seq: 0,
         part: { kind: 'text', text: 'Streamed after the snapshot.' },
       });
       controls.emit({
         type: 'chat.turn.done',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         usage: { output_tokens: 3 },
       });
@@ -253,7 +270,7 @@ describe('Chat Home snapshot reconciliation', () => {
       for (const release of waiting) release();
     });
     await waitFor(() => expect(view.getByText('Streamed after the snapshot.')).toBeTruthy());
-    expect(view.queryByText('Agent is working')).toBeNull();
+    expect(view.queryByTestId('tch-send-working')).toBeNull();
   });
 
   it('keeps a newly typed draft when an older thread’s send resolves late', async () => {
@@ -271,7 +288,7 @@ describe('Chat Home snapshot reconciliation', () => {
     fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
     await waitFor(() => expect(controls.posts).toHaveLength(1));
 
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
     const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
     fireEvent.change(composer, { target: { value: 'Fresh draft for a new conversation.' } });
     act(() => gated.release());
@@ -292,7 +309,7 @@ describe('Chat Home entity chip suppression', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         seq: 0,
         part: {
@@ -305,7 +322,7 @@ describe('Chat Home entity chip suppression', () => {
       });
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         seq: 1,
         part: {
@@ -316,8 +333,23 @@ describe('Chat Home entity chip suppression', () => {
       });
     });
 
-    await waitFor(() => expect(view.getByText('Foreign task')).toBeTruthy());
-    const chips = view.getAllByTestId('chat-entity-chip');
-    expect(chips.some((chip) => chip.textContent?.includes('000000000011'))).toBe(false);
+    /* The chips are gone (S3/S4) — the surviving surface is the ledger's
+       counted read line, and the suppression rule survives by CONSTRUCTION:
+       ruling 2 counts only full summaries in RESULTS, and the own message id
+       appeared only in the call's args. One foreign task read ⇒ 'Read 1
+       task', and the own id surfaces nowhere. */
+    /* The sentence stays exact; S3b's aria-hidden expansion caret is
+       affordance chrome and is stripped before comparing. */
+    const sentenceOf = (line: HTMLElement): string => {
+      const clone = line.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
+      return clone.textContent ?? '';
+    };
+    await waitFor(() =>
+      expect(
+        view.getAllByTestId('chat-ledger-reads').some((line) => sentenceOf(line) === 'Read 1 task'),
+      ).toBe(true),
+    );
+    expect(view.container.textContent).not.toContain('000000000011');
   });
 });

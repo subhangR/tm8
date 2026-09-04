@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Same work, three views · tm8 Help</title>
+<style id="tm8-foundation">
+/* ============================================================
+   tm8 Help — FOUNDATION STYLE (v2 · Letterpress)
+   Lift this whole <style> block verbatim into every Help artifact.
+   Layer your artifact's CONTENT accents on top; never edit this layer.
+   ============================================================ */
+
+/* --- 1. Token sheet (v2) --- */
+:root {
+  --bg: #F2EFE9;          /* page: warm paper */
+  --surface: #FAF8F3;     /* cards, panels */
+  --ink: #211F1A;         /* primary text: warm near-black */
+  --muted: #6E6759;       /* secondary text */
+  --line: #DDD6C8;        /* hairlines */
+  --line-strong: #B9AF9B; /* node strokes, masthead rules */
+  --accent: #A97B2F;      /* bronze: strokes, marks, focus — never a fill */
+  --accent-ink: #7C5A1E;  /* links, accent-colored text (AA on paper) */
+  --accent-2: #54708D;    /* second data series: slate */
+  --code-bg: #1A1713;     /* terminal canvas (dark in BOTH themes) */
+  --code-ink: #D9D3C7;
+  --code-accent: #C99C52; /* prompt glyphs on the canvas (fixed, both themes) */
+  --ok: #41784E; --warn: #8F5B0B; --danger: #A93B32;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181511; --surface: #1F1B15; --ink: #E9E2D2; --muted: #A79E8B;
+    --line: #373025; --line-strong: #57503F;
+    --accent: #C99C52; --accent-ink: #D8B36C; --accent-2: #8CA8C4;
+    --code-bg: #100E0A; --code-ink: #D6D0C3;
+    --ok: #7CB98B; --warn: #D9A94E; --danger: #DD8074;
+  }
+}
+
+/* --- 1b. Foundation constants (type, motion, ghost ink) --- */
+:root {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body-face: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dur-fast: 120ms;   /* micro feedback: hovers, presses */
+  --dur-base: 180ms;   /* state changes: reveal, toggle, chip */
+  --dur-slow: 280ms;   /* scene changes: a node arriving, an edge drawing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ghost-opacity: 0.62;
+  --ghost-dash: 5 4;
+  --r: 4px;
+}
+
+/* --- 2. Base --- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16.5px/1.62 var(--body-face); }
+.mono, code, pre, kbd, samp { font-family: var(--mono); font-style: normal; }
+main { max-width: 1040px; margin: 0 auto; padding: 26px 26px 72px; }
+h1, h2, h3 { font-family: var(--serif); line-height: 1.16; letter-spacing: 0; }
+h1 { font-size: 42px; font-weight: 400; margin: 10px 0 12px; }
+h2 { font-size: 28px; font-weight: 500; margin: 0 0 14px; display: flex; align-items: baseline; gap: 14px; }
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+h2 .no { font: 400 13px/1 var(--mono); color: var(--accent-ink); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+section { border-top: 1px solid var(--line); margin-top: 56px; padding-top: 26px; }
+.kicker { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-ink); }
+p, li { max-width: 68ch; }
+p { margin: 8px 0; }
+.lede { font-size: 19px; font-style: italic; color: var(--muted); max-width: 58ch; margin: 0 0 28px; }
+.caption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); }
+.caption.mono, .caption .mono { font-style: normal; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 13.5px; overflow-wrap: anywhere; }
+pre code { background: none; border: 0; padding: 0; }
+strong, b { font-weight: 700; }
+
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 2px; }
+a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration-color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: 8px; top: -48px; z-index: 10; background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line-strong); border-radius: 3px; padding: 8px 12px; transition: top var(--dur-fast) var(--ease-out); }
+.skip:focus { top: 8px; }
+
+header.site { position: sticky; top: 0; z-index: 5; height: 54px; display: flex; align-items: baseline; gap: 12px; padding: 14px 26px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line-strong); box-shadow: 0 3px 0 -2px var(--line-strong); }
+header.site .brand { font: 600 17px var(--serif); letter-spacing: 0.02em; }
+header.site .brand i { font-style: normal; color: var(--accent); }
+header.site .crumb { font-style: italic; color: var(--muted); font-size: 14px; }
+header.site .hub-note { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); font: 12px var(--mono); max-width: 1040px; margin: 0 auto; padding: 18px 26px 48px; }
+
+/* --- 3. Terminal block: a matted plate, named bar, no traffic lights --- */
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 5px; margin: 14px 0; font-family: var(--mono); font-size: 13.5px; }
+.term__bar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-bg); border-radius: 2px 2px 0 0; border-bottom: 1px solid rgb(255 255 255 / 0.09); }
+.term__name { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(217 211 199 / 0.55); }
+.term__tag { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(217 211 199 / 0.5); border: 1px solid rgb(217 211 199 / 0.28); border-radius: 3px; padding: 1px 6px; }
+.term pre { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-ink); border-radius: 0 0 2px 2px; overflow-x: auto; line-height: 1.6; }
+.term .p::before { content: "$ "; color: var(--code-accent); }
+.term .out { color: var(--code-ink); }
+.term .dim { color: rgb(217 211 199 / 0.55); }
+
+/* --- 4. Cards, panels, plates, pills, buttons --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; }
+.plate { margin: 14px 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px; }
+.plate figcaption { font: italic 13.5px/1.5 var(--body-face); color: var(--muted); padding: 9px 6px 2px; }
+.grid { display: grid; gap: 16px; }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2.5px 10px; font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pill--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.pill--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.pill--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.pill--accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+@keyframes tm8-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 3px; padding: 6.5px 14px; background: transparent; color: var(--ink); font: 600 13.5px var(--body-face); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.btn--primary { border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* --- 5. Identity chips: member = circle, teammate = rounded square --- */
+.who { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px 2px 3px; background: var(--surface); font-size: 13px; }
+.who__avatar { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font: 700 9px var(--mono); color: var(--ink); }
+.who--member .who__avatar { border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.who--teammate .who__avatar { border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.who__kind { font: 600 9px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* --- 6. Kind icons (16×16, stroke currentColor 1.4, from tm8-ui kind-art) --- */
+.ki { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.ki use, .ki path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* --- 7. Graph-node visual language + edge lines --- */
+.gfx { width: 100%; height: auto; display: block; }
+.gnode { transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
+.gnode rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; rx: 5px; }
+.gnode.is-active rect { stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { fill: var(--ink); font: 600 12px var(--body-face); }
+.gnode .gnode__kind { fill: var(--muted); font: 600 8.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.gnode .ki { color: var(--accent); }
+.gnode--ghost rect { stroke-dasharray: var(--ghost-dash); }
+.gnode--ghost { opacity: var(--ghost-opacity); }
+.gedge line, .gedge path { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+.gedge text { fill: var(--muted); font: 9.5px var(--mono); }
+.gedge--ghost line, .gedge--ghost path { stroke-dasharray: var(--ghost-dash); opacity: var(--ghost-opacity); }
+.gedge--accent line, .gedge--accent path { stroke: var(--accent); }
+.glive { fill: var(--ok); }
+.glive--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* --- 8. Two-inks honesty devices --- */
+.ink-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+.ink-legend b { color: var(--ink); font-weight: 650; }
+.ink-legend .swatch { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.ink-legend .swatch--solid { background: var(--surface); border: 1.5px solid var(--ink); }
+.ink-legend .swatch--ghost { background: transparent; border: 1.5px dashed var(--muted); opacity: var(--ghost-opacity); }
+.ghost { opacity: var(--ghost-opacity); border-style: dashed !important; }
+
+.gap-card { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: var(--surface); border-radius: var(--r); padding: 12px 16px; margin: 12px 0; font-size: 14.5px; }
+.gap-card b { display: block; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--warn); margin-bottom: 4px; }
+
+.stamp { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 10px; background: var(--surface); }
+.stamp::before { content: "✓"; color: var(--ok); font-weight: 700; }
+
+/* --- 9. Control cluster: one bordered transport bar --- */
+.tmc { display: flex; align-items: center; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.tmc .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 14px; }
+.tmc .btn:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tmc input[type="range"] { flex: 1 1 110px; min-width: 80px; accent-color: var(--accent); margin: 0 12px; }
+.tmc .tmc-count { font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 46px; text-align: right; padding-right: 12px; }
+
+/* --- 10. Hover-reveal + type/comes-back toggle --- */
+.reveal { position: relative; border-bottom: 1px dashed var(--accent); cursor: help; border-radius: 2px; }
+.reveal__tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); width: max-content; max-width: 280px; z-index: 6; background: var(--ink); color: var(--bg); font: 13.5px/1.45 var(--body-face); border-radius: 3px; padding: 8px 12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.reveal:hover .reveal__tip, .reveal:focus-visible .reveal__tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toggle2__panes > * { display: none; }
+.toggle2__panes > .is-shown { display: block; }
+
+/* --- 11. Reduced motion: genuine still-useful variants --- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.force-reduced *, .force-reduced *::before, .force-reduced *::after { animation: none !important; transition: none !important; }
+
+/* ============================================================
+   PRODUCT REPLICAS (.pn scope) — the rendered look of tm8-ui
+   components, distilled to static HTML/CSS. Tokens harvested from
+   packages/tm8-ui/src/styles/tokens.css. Use ONLY inside a
+   .pn frame so demos read as the real product.
+   ============================================================ */
+.pn {
+  --pn-paper: #F4F2EC; --pn-surface: #FBFAF6; --pn-card: #FFFFFF;
+  --pn-hover: #F2EFE8; --pn-active: #ECE8DF;
+  --pn-line: #E7E3D9; --pn-line-2: #D8D3C6;
+  --pn-ink: #23201B; --pn-ink-2: #5B564C; --pn-ink-3: #8E897B; --pn-ink-4: #B7B2A4;
+  --pn-run: #3E8E5A;   --pn-run-soft: rgba(62,142,90,0.12);
+  --pn-wait: #BD8A2A;  --pn-wait-soft: rgba(189,138,42,0.14);
+  --pn-block: #BB4D3D; --pn-block-soft: rgba(187,77,61,0.12);
+  --pn-info: #3F6C90;  --pn-info-soft: rgba(63,108,144,0.12);
+  --pn-idle: #A29C8E;  --pn-idle-soft: rgba(162,156,142,0.16);
+  --pn-brand: #B26A2B; --pn-brand-soft: rgba(178,106,43,0.11);
+  --pn-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pn-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pn-paper); color: var(--pn-ink);
+  font-family: var(--pn-ui); font-size: 14px; line-height: 1.5;
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+}
+.pn--dark {
+  --pn-paper: #1D1912; --pn-surface: #1B1810; --pn-card: #221E15;
+  --pn-hover: #262117; --pn-active: #302A1D;
+  --pn-line: #2C2719; --pn-line-2: #3B3524;
+  --pn-ink: #EFE9DB; --pn-ink-2: #BDB5A2; --pn-ink-3: #8C8470; --pn-ink-4: #665E4C;
+  --pn-run: #5CB381;   --pn-run-soft: rgba(92,179,129,0.17);
+  --pn-wait: #D9AA49;  --pn-wait-soft: rgba(217,170,73,0.18);
+  --pn-block: #DA7D6A; --pn-block-soft: rgba(218,125,106,0.17);
+  --pn-info: #6F9FC7;  --pn-info-soft: rgba(111,159,199,0.17);
+  --pn-idle: #7A7360;  --pn-idle-soft: rgba(122,115,96,0.20);
+  --pn-brand: #E0A45A; --pn-brand-soft: rgba(224,164,90,0.15);
+}
+.pn *:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* board column + task cards */
+.pn-col { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 8px; min-width: 240px; }
+.pn-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--pn-line); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pn-ink-3); }
+.pn-col__body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.pn-tcard { border: 1px solid var(--pn-line-2); border-radius: 7px; background: var(--pn-surface); padding: 8px 10px; }
+.pn-tcard:hover { border-color: var(--pn-ink-4); }
+.pn-tcard__title { color: var(--pn-ink); font-size: 12.5px; font-weight: 550; line-height: 1.35; }
+.pn-tcard__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pn-tcard__accept { font-size: 10.5px; color: var(--pn-ink-3); font-family: var(--pn-mono); white-space: nowrap; }
+
+/* status pills */
+.pn-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.pn-pill--run   { color: var(--pn-run);   background: var(--pn-run-soft); }
+.pn-pill--wait  { color: var(--pn-wait);  background: var(--pn-wait-soft); }
+.pn-pill--block { color: var(--pn-block); background: var(--pn-block-soft); }
+.pn-pill--info  { color: var(--pn-info);  background: var(--pn-info-soft); }
+.pn-pill--idle  { color: var(--pn-idle);  background: var(--pn-idle-soft); }
+.pn-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pn-pill__dot--hollow { background: transparent; border: 1.5px solid currentColor; opacity: 0.6; }
+.pn-pill__dot--pulse { animation: tm8-pulse 1.6s var(--ease-standard) infinite; }
+
+/* panel tabs */
+.pn-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); border-radius: 8px 8px 0 0; }
+.pn-tab { min-width: 76px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--pn-ink-3); font: 600 10px/1 var(--pn-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pn-tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.pn-tab[aria-selected="true"] { color: var(--pn-ink); border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* avatars: circle = member (human), 5px square = teammate (agent) */
+.pn-avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 9px var(--pn-mono); color: var(--pn-ink); }
+.pn-avatar--human { border-radius: 50%; }
+.pn-avatar--agent { border-radius: 5px; }
+.pn-avatar--tone-run   { background: color-mix(in srgb, var(--pn-run) 28%, var(--pn-card)); }
+.pn-avatar--tone-info  { background: color-mix(in srgb, var(--pn-info) 28%, var(--pn-card)); }
+.pn-avatar--tone-brand { background: color-mix(in srgb, var(--pn-brand) 28%, var(--pn-card)); }
+.pn-avatar--tone-wait  { background: color-mix(in srgb, var(--pn-wait) 28%, var(--pn-card)); }
+
+/* message thread */
+.pn-thread { display: flex; flex-direction: column; gap: 14px; background: var(--pn-paper); padding: 14px; border-radius: 0 0 8px 8px; }
+.pn-turn__byline { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--pn-ink-3); font-size: 10px; }
+.pn-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
+.pn-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
+.pn-bubble { max-width: 80%; width: fit-content; margin-left: 26px; padding: 8px 11px; border: 1px solid var(--pn-line); border-radius: 10px; background: var(--pn-card); color: var(--pn-ink-2); font-size: 13px; line-height: 1.55; }
+.pn-turn--me .pn-turn__byline { justify-content: flex-end; }
+.pn-turn--me .pn-bubble { margin-left: auto; margin-right: 26px; }
+.pn-turn--agent .pn-bubble { background: transparent; border-color: transparent; padding-left: 0; max-width: 70ch; color: var(--pn-ink-2); }
+
+/* entity chip (as in chat transcripts / lists) */
+.pn-echip { display: inline-flex; gap: 4px; align-items: center; max-width: 260px; padding: 2px 8px; border: 1px solid var(--pn-line); border-radius: 7px; background: var(--pn-surface); color: var(--pn-ink-2); font: 10px var(--pn-mono); }
+.pn-echip:hover { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.pn-echip .ki { width: 12px; height: 12px; color: var(--pn-brand); vertical-align: -2px; }
+.pn-echip__kind { color: var(--pn-ink-4); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* terminal strip (session chrome; canvas always dark) */
+.pn-termstrip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--pn-surface); border: 1px solid var(--pn-line); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.pn-termstrip__avatar { flex: none; width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9px var(--pn-mono); background: var(--pn-brand-soft); color: var(--pn-brand); }
+.pn-termstrip__name { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); white-space: nowrap; }
+.pn-termstrip__provider { font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); }
+.pn-termcanvas { background: #0D0B07; color: #D8D2C2; border: 1px solid var(--pn-line); border-top: 0; border-radius: 0 0 8px 8px; margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--pn-mono); overflow-x: auto; }
+</style>
+<style id="help27-content">
+/* Artifact 27 content layer. The binding tm8 foundation above is unchanged. */
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.intro-rule { width: 58px; border-top: 2px solid var(--accent); margin: 22px 0 28px; }
+.projection-lab { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line-strong); }
+.lab-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
+.lab-heading h2 { margin: 0; }
+.lab-heading p { margin: 0; color: var(--muted); font-size: 14px; text-align: right; }
+.view-toolbar { display: flex; align-items: stretch; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.view-switch { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); }
+.view-switch .btn { min-width: 96px; min-height: 44px; justify-content: center; border: 0; border-right: 1px solid var(--line); border-radius: 0; }
+.view-switch .btn:last-child { border-right: 0; }
+.view-switch .btn[aria-pressed="true"] { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 -2px 0 var(--accent); }
+.view-glyph { width: 15px; height: 15px; color: var(--accent-ink); }
+.view-glyph path, .view-glyph rect, .view-glyph circle, .view-glyph line { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.tour-btn { min-height: 44px; margin-left: auto; }
+.view-summary { display: flex; align-items: center; gap: 10px; min-height: 32px; margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+.view-summary::before { content: ""; width: 24px; border-top: 1px solid var(--accent); }
+.projection-frame { position: relative; overflow: hidden; min-height: 606px; padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface); }
+.projection-frame.pn {
+  /* Darker replica data inks preserve the product palette while meeting small-text contrast. */
+  --pn-run: #2F744A; --pn-info: #315E80; --pn-idle: #615D54; --pn-block: #92392F; --pn-wait: #7B5716;
+}
+.projection-frame::after { content: ""; position: absolute; inset: 5px; border: 1px solid var(--line); pointer-events: none; }
+.workflow-label { position: relative; z-index: 4; display: flex; justify-content: space-between; gap: 12px; padding: 4px 4px 12px; font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.workflow-label strong { color: var(--ink); }
+.task-grid { position: relative; z-index: 3; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(4, 126px); gap: 14px; min-height: 546px; padding: 30px 8px 0; }
+.board-guides { position: absolute; z-index: 1; inset: 52px 20px 18px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; opacity: 0; transition: opacity var(--dur-base) var(--ease-out); }
+.board-lane { border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 72%, transparent); }
+.board-lane__head { display: block; padding: 9px 8px; border-bottom: 1px solid var(--line); font: 650 9px/1.25 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+.board-lane__cat { display: block; margin-top: 5px; color: var(--muted); font-size: 8px; letter-spacing: 0; text-transform: none; }
+.projection-frame[data-view="board"] .board-guides { opacity: 1; }
+.edge-layer { position: absolute; z-index: 2; inset: 52px 20px 18px; width: calc(100% - 40px); height: calc(100% - 70px); pointer-events: none; overflow: visible; }
+.edge-layer path { fill: none; stroke: var(--line-strong); stroke-width: 1.35; vector-effect: non-scaling-stroke; transition: opacity var(--dur-base) var(--ease-out), stroke var(--dur-base) var(--ease-out); }
+.edge-layer path.is-dependency { stroke: var(--accent); stroke-dasharray: 6 4; }
+.edge-layer text { fill: var(--muted); font: 9.5px var(--mono); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.projection-frame[data-view="board"] .edge-layer { opacity: 0; }
+.task-node {
+  position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 0; min-height: 112px;
+  padding: 11px 12px; text-align: left; color: var(--pn-ink); background: var(--pn-card); border: 1px solid var(--pn-line-2);
+  border-radius: 7px; font-family: var(--pn-ui); cursor: pointer; box-shadow: 0 1px 0 rgb(0 0 0 / .035);
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.task-node:hover { border-color: var(--pn-brand); background: color-mix(in srgb, var(--pn-brand) 5%, var(--pn-card)); }
+.task-node[aria-pressed="true"] { border-color: var(--pn-brand); box-shadow: inset 0 0 0 1px var(--pn-brand); }
+.task-node[aria-pressed="true"]::before { content: "selected"; position: absolute; right: 8px; top: -10px; padding: 1px 6px; border: 1px solid var(--pn-brand); border-radius: 999px; background: var(--pn-card); color: var(--accent-ink); font: 600 8px var(--pn-mono); letter-spacing: .06em; text-transform: uppercase; }
+.node-top { display: flex; align-items: center; gap: 6px; color: var(--pn-ink-2); font: 9px var(--pn-mono); }
+.node-top .ki { width: 14px; height: 14px; color: var(--pn-brand); }
+.node-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-kind { margin-left: auto; letter-spacing: .08em; text-transform: uppercase; }
+.node-title { display: block; margin: 7px 0 8px; color: var(--pn-ink); font-size: 13.5px; font-weight: 650; line-height: 1.25; }
+.node-meta { display: flex; align-items: center; gap: 5px; margin-top: auto; min-width: 0; }
+.node-category { overflow: hidden; color: var(--pn-ink-2); font: 8.5px var(--pn-mono); text-overflow: ellipsis; white-space: nowrap; }
+.node-people { display: flex; margin-left: auto; }
+.node-people .pn-avatar { margin-left: -4px; border: 1px solid var(--pn-card); }
+.lane-on-mobile { display: none; color: var(--pn-ink-2); font: 650 9px var(--pn-mono); letter-spacing: .06em; text-transform: uppercase; }
+.mobile-empty-lane { display: none; }
+.n-parent { grid-column: 1 / span 3; grid-row: 1; }
+.n-qa { grid-column: 2 / span 2; grid-row: 2; }
+.n-docs { grid-column: 2 / span 2; grid-row: 3; }
+.n-retire { grid-column: 2 / span 2; grid-row: 4; }
+.projection-frame[data-view="board"] .n-docs { grid-column: 1; grid-row: 2; }
+.projection-frame[data-view="board"] .n-parent { grid-column: 2; grid-row: 2; }
+.projection-frame[data-view="board"] .n-qa { grid-column: 3; grid-row: 2; }
+.projection-frame[data-view="board"] .n-retire { grid-column: 4; grid-row: 2; }
+.projection-frame[data-view="graph"] .n-parent { grid-column: 3; grid-row: 2; }
+.projection-frame[data-view="graph"] .n-docs { grid-column: 1; grid-row: 1; }
+.projection-frame[data-view="graph"] .n-qa { grid-column: 5; grid-row: 1; }
+.projection-frame[data-view="graph"] .n-retire { grid-column: 5; grid-row: 4; }
+.invariant-section { margin-top: 48px; }
+.invariant-intro { color: var(--muted); }
+.invariant-grid { display: grid; grid-template-columns: 1.05fr 1fr 1.15fr; gap: 0; margin-top: 18px; border: 1px solid var(--line-strong); background: var(--surface); }
+.invariant-card { min-width: 0; padding: 18px 20px; border-right: 1px solid var(--line); }
+.invariant-card:last-child { border-right: 0; }
+.invariant-card h3 { margin: 0 0 12px; font-size: 17px; }
+.fact-list { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 7px 10px; margin: 0; }
+.fact-list dt { color: var(--muted); font: 9.5px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+.fact-list dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 14px; }
+.selected-title { color: var(--accent-ink); }
+.law-strip { display: grid; grid-template-columns: 1.2fr 2fr; gap: 24px; align-items: center; margin-top: 18px; padding: 16px 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.law-strip p { margin: 0; }
+.category-law { display: flex; flex-wrap: wrap; gap: 6px; }
+.category-law code { background: transparent; }
+.gap-card { margin-top: 18px; }
+.dto-details { margin-top: 18px; }
+.dto-details summary { min-height: 44px; display: flex; align-items: center; width: fit-content; color: var(--accent-ink); cursor: pointer; font-weight: 650; }
+.dto-details summary::marker { color: var(--accent); }
+.dto-details .term { max-width: 760px; }
+.dim-line { opacity: .62; }
+.projection-note { margin-top: 14px; color: var(--muted); font-size: 14px; }
+.projection-note strong { color: var(--ink); }
+@media (max-width: 760px) {
+  header.site { padding-inline: 18px; }
+  header.site .hub-note { display: none; }
+  main { padding: 22px 18px 56px; }
+  h1 { font-size: 34px; }
+  .lab-heading { display: block; }
+  .lab-heading p { margin-top: 6px; text-align: left; }
+  .view-toolbar { display: block; }
+  .view-switch { display: flex; width: 100%; }
+  .view-switch .btn { flex: 1 1 0; min-width: 0; padding-inline: 8px; }
+  .tour-btn { width: 100%; justify-content: center; margin: 10px 0 0; }
+  .projection-frame { min-height: 698px; padding-inline: 8px; }
+  .workflow-label { display: block; padding-inline: 8px; }
+  .workflow-label span:last-child { display: block; margin-top: 3px; }
+  .task-grid { grid-template-columns: minmax(0,1fr); grid-template-rows: repeat(4, 136px); min-height: 620px; padding: 24px 12px 0; }
+  .board-guides { display: none; }
+  .n-parent { grid-column: 1; grid-row: 1; }
+  .n-qa { grid-column: 1; grid-row: 2; margin-left: 22px; }
+  .n-docs { grid-column: 1; grid-row: 3; margin-left: 22px; }
+  .n-retire { grid-column: 1; grid-row: 4; margin-left: 22px; }
+  .projection-frame[data-view="board"] .task-grid { grid-template-columns: minmax(0,1fr); grid-template-rows: repeat(4, 142px); }
+  .projection-frame[data-view="board"] .task-node { grid-column: 1; margin-left: 0; }
+  .projection-frame[data-view="board"] .n-docs { grid-row: 1; }
+  .projection-frame[data-view="board"] .n-parent { grid-row: 2; }
+  .projection-frame[data-view="board"] .n-qa { grid-row: 3; }
+  .projection-frame[data-view="board"] .n-retire { grid-row: 4; }
+  .projection-frame[data-view="board"] .lane-on-mobile { display: block; margin-bottom: 3px; }
+  .projection-frame[data-view="board"] { min-height: 752px; }
+  .projection-frame[data-view="board"] .mobile-empty-lane { position: absolute; z-index: 3; left: 20px; right: 20px; bottom: 14px; display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px dashed var(--pn-line-2); color: var(--pn-ink-3); background: var(--pn-card); font: 650 9px var(--pn-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .projection-frame[data-view="graph"] { min-height: 710px; }
+  .projection-frame[data-view="graph"] .task-grid { grid-template-columns: repeat(2, minmax(0,1fr)); grid-template-rows: repeat(4, 145px); gap: 12px; }
+  .projection-frame[data-view="graph"] .n-parent { grid-column: 1 / span 2; grid-row: 2; margin: 0 16px; }
+  .projection-frame[data-view="graph"] .n-docs { grid-column: 1; grid-row: 1; margin: 0; }
+  .projection-frame[data-view="graph"] .n-qa { grid-column: 2; grid-row: 1; margin: 0; }
+  .projection-frame[data-view="graph"] .n-retire { grid-column: 2; grid-row: 4; margin: 0; }
+  .edge-layer { inset-inline: 14px; width: calc(100% - 28px); }
+  .invariant-grid { grid-template-columns: 1fr; }
+  .invariant-card { border-right: 0; border-bottom: 1px solid var(--line); }
+  .invariant-card:last-child { border-bottom: 0; }
+  .law-strip { grid-template-columns: 1fr; gap: 12px; }
+}
+@media (max-width: 420px) {
+  .view-switch .btn { font-size: 12px; gap: 4px; }
+  .projection-frame[data-view="graph"] .task-grid { grid-template-columns: 1fr; grid-template-rows: repeat(4, 140px); }
+  .projection-frame[data-view="graph"] .task-node { grid-column: 1; margin: 0; }
+  .projection-frame[data-view="graph"] .n-docs { grid-row: 1; }
+  .projection-frame[data-view="graph"] .n-parent { grid-row: 2; }
+  .projection-frame[data-view="graph"] .n-qa { grid-row: 3; }
+  .projection-frame[data-view="graph"] .n-retire { grid-row: 4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .projection-frame { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <span class="brand">tm8 <i>·</i> Help</span>
+  <span class="crumb">Work / Same work, three views</span>
+  <span class="hub-note">Part of <strong>tm8 Help</strong> — open the hub from your tm8 artifacts list</span>
+</header>
+
+<svg id="tm8-icons" aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ki-task" viewBox="0 0 16 16"><path d="M3.4 5.6a2.2 2.2 0 0 1 2.2-2.2h4.8a2.2 2.2 0 0 1 2.2 2.2v4.8a2.2 2.2 0 0 1-2.2 2.2H5.6a2.2 2.2 0 0 1-2.2-2.2z"/><path d="M6 8.1 7.4 9.5 10.1 6.6"/></symbol>
+</svg>
+
+<main id="main">
+  <p class="kicker">tm8 Help · Work · 27 of 55</p>
+  <h1>Same work, three views</h1>
+  <p class="lede">Tree, board, and graph do not make copies. Change the projection and watch the same task entities move—their identity, work state, assignees, and relationships stay put.</p>
+  <div class="intro-rule" aria-hidden="true"></div>
+
+  <section class="projection-lab" aria-labelledby="projection-title">
+    <div class="lab-heading">
+      <h2 id="projection-title"><span class="no">01</span>Change the projection</h2>
+      <p><strong>Release lane</strong> workflow · four tasks · one shared graph</p>
+    </div>
+
+    <div class="view-toolbar">
+      <div class="view-switch" role="group" aria-label="Choose a task projection" data-view-switch>
+        <button class="btn" type="button" data-view="tree" aria-pressed="true">
+          <svg class="view-glyph" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 3v10M3 6h4M3 11h4"/><rect x="7" y="4" width="6" height="4" rx="1"/><rect x="7" y="9" width="6" height="4" rx="1"/></svg>
+          Tree
+        </button>
+        <button class="btn" type="button" data-view="board" aria-pressed="false">
+          <svg class="view-glyph" aria-hidden="true" viewBox="0 0 16 16"><rect x="2" y="3" width="3" height="10" rx=".7"/><rect x="6.5" y="3" width="3" height="10" rx=".7"/><rect x="11" y="3" width="3" height="10" rx=".7"/></svg>
+          Board
+        </button>
+        <button class="btn" type="button" data-view="graph" aria-pressed="false">
+          <svg class="view-glyph" aria-hidden="true" viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.7"/><circle cx="12.5" cy="3.5" r="1.7"/><circle cx="12.5" cy="12.5" r="1.7"/><line x1="4.5" y1="7.2" x2="11" y2="4.3"/><line x1="4.5" y1="8.8" x2="11" y2="11.7"/></svg>
+          Graph
+        </button>
+      </div>
+      <button class="btn btn--primary tour-btn" type="button" id="tour-button">Play the three views once</button>
+    </div>
+
+    <p class="view-summary" id="view-summary" aria-live="polite">Tree groups three child tasks beneath their parent. The lines come from <code>parentId</code>.</p>
+
+    <div class="projection-frame pn" id="projection-frame" data-view="tree" aria-describedby="projection-alt">
+      <p id="projection-alt" class="sr-only">Four task buttons remain the same in every view. Ship invite flow is the parent. QA invite email, write migration notes, and retire token sign-in are its children. Write migration notes depends on QA invite email. Each button exposes the task id, status, category, and assignees.</p>
+      <div class="workflow-label" aria-hidden="true"><strong>One entity set</strong><span>Pick a task to inspect what survives the move</span></div>
+
+      <div class="board-guides" aria-hidden="true">
+        <div class="board-lane"><span class="board-lane__head">Backlog<span class="board-lane__cat">to_do · birth</span></span></div>
+        <div class="board-lane"><span class="board-lane__head">Building<span class="board-lane__cat">in_progress</span></span></div>
+        <div class="board-lane"><span class="board-lane__head">Review<span class="board-lane__cat">in_progress</span></span></div>
+        <div class="board-lane"><span class="board-lane__head">Shipped<span class="board-lane__cat">done</span></span></div>
+        <div class="board-lane"><span class="board-lane__head">Cancelled<span class="board-lane__cat">cancelled · empty</span></span></div>
+      </div>
+
+      <svg class="edge-layer" aria-hidden="true">
+        <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 7 3.5 0 7z" style="fill:var(--accent);stroke:none"/></marker></defs>
+        <path data-edge="parent-qa"></path><text data-label="parent-qa">parentId</text>
+        <path data-edge="parent-docs"></path><text data-label="parent-docs">parentId</text>
+        <path data-edge="parent-retire"></path><text data-label="parent-retire">parentId</text>
+        <path class="is-dependency" data-edge="depends" marker-end="url(#arrow)"></path><text data-label="depends">depends_on</text>
+      </svg>
+
+      <div class="task-grid">
+        <button class="task-node n-parent" type="button" data-task="parent" aria-pressed="true">
+          <span class="lane-on-mobile">Building · in_progress</span>
+          <span class="node-top"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg><span class="node-id">…e110</span><span class="node-kind">task</span></span>
+          <span class="node-title">Ship invite flow</span>
+          <span class="node-meta"><span class="pn-pill pn-pill--run"><span class="pn-pill__dot"></span>Building</span><span class="node-category">in_progress</span><span class="node-people" aria-label="Assigned to Mara Voss and Callisto"><span class="pn-avatar pn-avatar--human pn-avatar--tone-info" aria-hidden="true">MV</span><span class="pn-avatar pn-avatar--agent pn-avatar--tone-brand" aria-hidden="true">CA</span></span></span>
+        </button>
+
+        <button class="task-node n-qa" type="button" data-task="qa" aria-pressed="false">
+          <span class="lane-on-mobile">Review · in_progress</span>
+          <span class="node-top"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg><span class="node-id">…e221</span><span class="node-kind">task</span></span>
+          <span class="node-title">QA invite email</span>
+          <span class="node-meta"><span class="pn-pill pn-pill--info"><span class="pn-pill__dot"></span>Review</span><span class="node-category">in_progress</span><span class="node-people" aria-label="Assigned to Mara Voss"><span class="pn-avatar pn-avatar--human pn-avatar--tone-info" aria-hidden="true">MV</span></span></span>
+        </button>
+
+        <button class="task-node n-docs" type="button" data-task="docs" aria-pressed="false">
+          <span class="lane-on-mobile">Backlog · to_do</span>
+          <span class="node-top"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg><span class="node-id">…e332</span><span class="node-kind">task</span></span>
+          <span class="node-title">Write migration notes</span>
+          <span class="node-meta"><span class="pn-pill pn-pill--idle"><span class="pn-pill__dot pn-pill__dot--hollow"></span>Backlog</span><span class="node-category">to_do</span><span class="node-people" aria-label="Unassigned"><span class="node-category">unassigned</span></span></span>
+        </button>
+
+        <button class="task-node n-retire" type="button" data-task="retire" aria-pressed="false">
+          <span class="lane-on-mobile">Shipped · done</span>
+          <span class="node-top"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg><span class="node-id">…e443</span><span class="node-kind">task</span></span>
+          <span class="node-title">Retire token sign-in</span>
+          <span class="node-meta"><span class="pn-pill pn-pill--run"><span class="pn-pill__dot"></span>Shipped</span><span class="node-category">done</span><span class="node-people" aria-label="Assigned to Callisto"><span class="pn-avatar pn-avatar--agent pn-avatar--tone-brand" aria-hidden="true">CA</span></span></span>
+        </button>
+      </div>
+      <div class="mobile-empty-lane" aria-hidden="true">Cancelled · cancelled · empty workflow column</div>
+    </div>
+    <p class="projection-note"><strong>Look for the proof:</strong> the short id stays on each card while only its position and surrounding grammar change.</p>
+  </section>
+
+  <section class="invariant-section" aria-labelledby="invariant-title">
+    <h2 id="invariant-title"><span class="no">02</span>What the view cannot change</h2>
+    <p class="invariant-intro">Select any task above. These fields belong to the entity; no projection owns them.</p>
+    <div class="invariant-grid" aria-live="polite" aria-atomic="true">
+      <article class="invariant-card">
+        <h3 class="selected-title" id="fact-title">Ship invite flow</h3>
+        <dl class="fact-list"><dt>id</dt><dd><code id="fact-id">01a09f31-4c00-7a11-8b2e-0d3f5a7ce110</code></dd><dt>kind</dt><dd><code>task</code></dd><dt>version</dt><dd><code id="fact-version">7</code></dd></dl>
+      </article>
+      <article class="invariant-card">
+        <h3>Work state</h3>
+        <dl class="fact-list"><dt>status</dt><dd id="fact-status">Building</dd><dt>category</dt><dd><code id="fact-category">in_progress</code></dd><dt>workflow</dt><dd>Release lane</dd></dl>
+      </article>
+      <article class="invariant-card">
+        <h3>Assignment &amp; relationships</h3>
+        <dl class="fact-list"><dt>assigned</dt><dd id="fact-assigned">Mara Voss; Callisto</dd><dt>record</dt><dd id="fact-record">Callisto assigned by Mara · 10:04</dd><dt>links</dt><dd id="fact-links">Parent of 3 tasks</dd></dl>
+      </article>
+    </div>
+
+    <div class="law-strip" role="note" aria-label="Status category law">
+      <p><strong>Status uses your words.</strong> This workflow names columns Backlog, Building, Review, Shipped, and Cancelled. Building and Review both carry the same category.</p>
+      <div><p class="kicker">StatusCategory · closed law</p><div class="category-law"><code>to_do</code><code>in_progress</code><code>done</code><code>cancelled</code></div></div>
+    </div>
+
+    <div class="gap-card"><b>Version-skew note</b>The deployed stable server may still expose the retired task-axis surface. Latest main uses <code>kind + status + category + workflow</code>; Help teaches that current model.</div>
+
+    <details class="dto-details">
+      <summary>See the selected task as a context-shaped excerpt</summary>
+      <div class="term">
+        <div class="term__bar"><span class="term__name">workspace — entity context</span><span class="term__tag">JSON</span></div>
+        <pre><span class="p">tm8 entity context <span id="cmd-id">01a09f31…e110</span> --format json</span>
+<span class="out" id="dto-output"></span></pre>
+      </div>
+      <p class="caption">The example is fictional Northlake data with DTO-true field placement. The command and envelope shape are real.</p>
+    </details>
+  </section>
+</main>
+
+<footer class="site">Last updated 2026-08-20 · Same work, three views · tm8 Help v1 · <span class="stamp">Section 4 workflow model applied</span></footer>
+
+<script>
+(function () {
+  'use strict';
+  var frame = document.getElementById('projection-frame');
+  var viewButtons = Array.prototype.slice.call(document.querySelectorAll('[data-view-switch] [data-view]'));
+  var taskButtons = Array.prototype.slice.call(document.querySelectorAll('[data-task]'));
+  var summary = document.getElementById('view-summary');
+  var tour = document.getElementById('tour-button');
+  var motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var currentView = 'tree';
+  var tourTimer = null;
+
+  var viewCopy = {
+    tree: 'Tree groups three child tasks beneath their parent. The lines come from parentId.',
+    board: 'Board turns the Release lane workflow into columns. Status names make columns; category does not.',
+    graph: 'Graph makes parentId and depends_on relationships explicit. The four task identities are unchanged.'
+  };
+
+  var tasks = {
+    parent: { title: 'Ship invite flow', id: '01a09f31-4c00-7a11-8b2e-0d3f5a7ce110', short: '01a09f31…e110', version: 7, status: 'Building', category: 'in_progress', assigned: 'Mara Voss; Callisto', record: 'Callisto assigned by Mara · 10:04', links: 'Parent of 3 tasks', parentId: null },
+    qa: { title: 'QA invite email', id: '01a09f32-5d10-7b22-9c3f-1e4a6b8de221', short: '01a09f32…e221', version: 5, status: 'Review', category: 'in_progress', assigned: 'Mara Voss', record: 'Mara assigned by Theo · 10:18', links: 'Child of Ship invite flow', parentId: '01a09f31-4c00-7a11-8b2e-0d3f5a7ce110' },
+    docs: { title: 'Write migration notes', id: '01a09f33-6e20-7c33-8d40-2f5b7c9ee332', short: '01a09f33…e332', version: 2, status: 'Backlog', category: 'to_do', assigned: 'Unassigned', record: 'No assignment record', links: 'Child of Ship invite flow; depends_on QA invite email', parentId: '01a09f31-4c00-7a11-8b2e-0d3f5a7ce110' },
+    retire: { title: 'Retire token sign-in', id: '01a09f34-7f30-7d44-9e51-3a6c8d0fe443', short: '01a09f34…e443', version: 9, status: 'Shipped', category: 'done', assigned: 'Callisto', record: 'Callisto assigned by Mara · 09:42', links: 'Child of Ship invite flow', parentId: '01a09f31-4c00-7a11-8b2e-0d3f5a7ce110' }
+  };
+
+  function rectMap() {
+    var map = {};
+    taskButtons.forEach(function (button) { map[button.dataset.task] = button.getBoundingClientRect(); });
+    return map;
+  }
+
+  function stopTour() {
+    if (tourTimer) { window.clearTimeout(tourTimer); tourTimer = null; }
+    tour.textContent = 'Play the three views once';
+    tour.setAttribute('aria-pressed', 'false');
+  }
+
+  function setView(view, announce) {
+    if (!viewCopy[view]) return;
+    var before = rectMap();
+    currentView = view;
+    frame.dataset.view = view;
+    viewButtons.forEach(function (button) { button.setAttribute('aria-pressed', String(button.dataset.view === view)); });
+    summary.innerHTML = viewCopy[view].replace('parentId', '<code>parentId</code>').replace('depends_on', '<code>depends_on</code>');
+    window.requestAnimationFrame(function () {
+      var after = rectMap();
+      if (!motionQuery.matches && typeof taskButtons[0].animate === 'function') {
+        taskButtons.forEach(function (button) {
+          var key = button.dataset.task;
+          var dx = before[key].left - after[key].left;
+          var dy = before[key].top - after[key].top;
+          button.animate([
+            { transform: 'translate(' + dx + 'px,' + dy + 'px)', opacity: .78 },
+            { transform: 'translate(0,0)', opacity: 1 }
+          ], { duration: 420, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+        });
+      }
+      drawEdges();
+    });
+    if (announce) summary.setAttribute('data-announcement', String(Date.now()));
+  }
+
+  function point(button, side) {
+    var r = button.getBoundingClientRect();
+    var s = frame.querySelector('.edge-layer').getBoundingClientRect();
+    var x = r.left - s.left + r.width / 2;
+    var y = r.top - s.top + r.height / 2;
+    if (side === 'top') y = r.top - s.top;
+    if (side === 'bottom') y = r.bottom - s.top;
+    return { x: x, y: y };
+  }
+
+  function setPath(name, fromButton, toButton, dependency) {
+    var path = document.querySelector('[data-edge="' + name + '"]');
+    var label = document.querySelector('[data-label="' + name + '"]');
+    if (!path || !label) return;
+    var a = point(fromButton, 'bottom');
+    var b = point(toButton, 'top');
+    if (dependency && currentView === 'graph') { a = point(fromButton); b = point(toButton); }
+    var bend = (a.y + b.y) / 2;
+    path.setAttribute('d', 'M ' + a.x + ' ' + a.y + ' C ' + a.x + ' ' + bend + ', ' + b.x + ' ' + bend + ', ' + b.x + ' ' + b.y);
+    label.setAttribute('x', String((a.x + b.x) / 2 + 5));
+    label.setAttribute('y', String((a.y + b.y) / 2 - 5));
+    var visible = currentView === 'tree' ? !dependency : currentView === 'graph';
+    path.style.opacity = visible ? '1' : '0';
+    label.style.opacity = visible ? '1' : '0';
+  }
+
+  function drawEdges() {
+    var byKey = {};
+    taskButtons.forEach(function (button) { byKey[button.dataset.task] = button; });
+    setPath('parent-qa', byKey.parent, byKey.qa, false);
+    setPath('parent-docs', byKey.parent, byKey.docs, false);
+    setPath('parent-retire', byKey.parent, byKey.retire, false);
+    setPath('depends', byKey.docs, byKey.qa, true);
+  }
+
+  function selectTask(key) {
+    var task = tasks[key];
+    if (!task) return;
+    taskButtons.forEach(function (button) { button.setAttribute('aria-pressed', String(button.dataset.task === key)); });
+    document.getElementById('fact-title').textContent = task.title;
+    document.getElementById('fact-id').textContent = task.id;
+    document.getElementById('fact-version').textContent = String(task.version);
+    document.getElementById('fact-status').textContent = task.status;
+    document.getElementById('fact-category').textContent = task.category;
+    document.getElementById('fact-assigned').textContent = task.assigned;
+    document.getElementById('fact-record').textContent = task.record;
+    document.getElementById('fact-links').textContent = task.links;
+    document.getElementById('cmd-id').textContent = task.short;
+    var identityByName = {
+      'Mara Voss': { id: '01a09e01-1111-7111-8111-aaaaaaaaaaa1', kind: 'member', displayName: 'Mara Voss', avatar: null, role: 'member', isAgent: false },
+      'Callisto': { id: '01a09e11-4444-7444-8444-ddddddddddd4', kind: 'team_member', displayName: 'Callisto', avatar: null, role: null, ownerMemberId: '01a09e01-1111-7111-8111-aaaaaaaaaaa1', isAgent: true }
+    };
+    var assignees = task.assigned === 'Unassigned' ? [] : task.assigned.split('; ').map(function (name) { return identityByName[name]; });
+    document.getElementById('dto-output').textContent = JSON.stringify({
+      schemaVersion: 'tm8.entity-context.v1',
+      root: { id: task.id, kind: 'task', title: task.title, parentId: task.parentId, version: task.version, category: task.category,
+        state: { kind: 'task', status: task.status, assignees: assignees } }
+    }, null, 2);
+  }
+
+  viewButtons.forEach(function (button, index) {
+    button.addEventListener('click', function () { stopTour(); setView(button.dataset.view, true); });
+    button.addEventListener('keydown', function (event) {
+      var next = null;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % viewButtons.length;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + viewButtons.length) % viewButtons.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = viewButtons.length - 1;
+      if (next !== null) { event.preventDefault(); viewButtons[next].focus(); viewButtons[next].click(); }
+    });
+  });
+  taskButtons.forEach(function (button) { button.addEventListener('click', function () { selectTask(button.dataset.task); }); });
+
+  tour.addEventListener('click', function () {
+    if (tourTimer) { stopTour(); return; }
+    var order = ['tree', 'board', 'graph'];
+    var at = 0;
+    tour.textContent = 'Pause the view tour';
+    tour.setAttribute('aria-pressed', 'true');
+    function advance() {
+      setView(order[at], true);
+      at += 1;
+      if (at >= order.length) { tourTimer = window.setTimeout(stopTour, motionQuery.matches ? 1900 : 1300); return; }
+      tourTimer = window.setTimeout(advance, motionQuery.matches ? 1900 : 1600);
+    }
+    advance();
+  });
+
+  window.addEventListener('resize', function () { window.requestAnimationFrame(drawEdges); });
+  if (motionQuery.addEventListener) motionQuery.addEventListener('change', stopTour);
+  selectTask('parent');
+  window.requestAnimationFrame(drawEdges);
+}());
+</script>
+</body>
+</html>

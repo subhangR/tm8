@@ -10,13 +10,20 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
-import type { EntityId, MenuConfig, SpaceId, SpaceSummary } from '@tm8/contract';
+import {
+  DEFAULT_MENU_CHANNELS_SPINE,
+  DEFAULT_MENU_WORK_ITEM_SPINE,
+  type EntityId,
+  type MenuConfig,
+  type SpaceId,
+  type SpaceSummary,
+} from '@tm8/contract';
 import { MenuRail, type KindPresenter, type RefPresentation } from './MenuRail';
 import { SpaceTabBar } from './SpaceTabBar';
 import { SpaceSwitcher, SWITCHER_ADD_SERVER_REASON } from './SpaceSwitcher';
 import { PanelStack } from './PanelStack';
 import { NoticeHost } from './NoticeHost';
-import { SHIPPED_DEFAULT_MENU } from '../domain';
+
 import { resolveMenu } from './menu-resolve';
 import { demotionNotice, describeDropped, overflowNotice } from './notices';
 import type { NavPort } from './nav-port';
@@ -41,11 +48,33 @@ const presentKind: KindPresenter = (ref) => {
   return table[ref] ?? null;
 };
 
+/**
+ * The ROW-GRAMMAR fixture: the revision-16 arrangement as a server-authored
+ * config. Revision 17's shipped default is all railless single-view groups
+ * (the unified Home owns its own icon rail), so it no longer exercises the
+ * caret/leaf/kind-row grammars — but server-authored menus still do, and the
+ * rail must keep rendering them. The spines are the contract's own retired
+ * constants, kept exported for exactly this characterization.
+ */
+const RAILED_MENU: MenuConfig = {
+  schemaVersion: 1,
+  revision: 16,
+  groups: [
+    { id: 'chats', label: 'Collab', items: [{ type: 'view', ref: 'dashboard' }] },
+    { id: 'workspace', label: 'Work', items: [...DEFAULT_MENU_WORK_ITEM_SPINE] },
+    { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },
+    { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
+    { id: 'channels', label: 'Channels', items: [...DEFAULT_MENU_CHANNELS_SPINE] },
+    { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
+    { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+  ],
+};
+
 const renderRail = (props: Partial<React.ComponentProps<typeof MenuRail>> = {}) =>
   render(
     <div className="cv2-root">
       <MenuRail
-        config={SHIPPED_DEFAULT_MENU}
+        config={RAILED_MENU}
         collapsed={false}
         onToggle={() => {}}
         onNavigate={() => {}}
@@ -64,9 +93,9 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     const { container } = renderRail();
     expect(container.querySelectorAll('.shell-rail__header')).toHaveLength(0);
     const groups = [...container.querySelectorAll('.shell-rail__group')];
-    expect(groups).toHaveLength(SHIPPED_DEFAULT_MENU.groups.length);
+    expect(groups).toHaveLength(RAILED_MENU.groups.length);
     expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(
-      SHIPPED_DEFAULT_MENU.groups.map((g) => g.label),
+      RAILED_MENU.groups.map((g) => g.label),
     );
   });
 
@@ -77,28 +106,103 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
    * use it — so this asserts the mechanism still works AND that no channel row
    * or Channels header rides along on the shipped default.
    */
-  it('appends dynamic voice rows beneath the Chats cluster (revision 11)', () => {
+  it('appends dynamic voice rows beneath the Channels cluster (revision 12)', () => {
     const onNavigate = vi.fn();
     const { container, getByText } = renderRail({
       onNavigate,
       dynamicGroups: {
-        chats: {
+        channels: {
           items: [{ id: 'vc-studio', kind: 'voice_channel', label: 'studio', icon: '\u266a', live: 2 }],
         },
       },
     });
 
-    const chats = [...container.querySelectorAll('.shell-rail__group')].find(
-      (group) => group.getAttribute('aria-label') === 'Chats',
+    const channels = [...container.querySelectorAll('.shell-rail__group')].find(
+      (group) => group.getAttribute('aria-label') === 'Channels',
     ) as HTMLElement;
-    expect(chats).toBeDefined();
+    expect(channels).toBeDefined();
     // Authored conversation rows stay \u2014 the dynamic rows APPEND, never replace.
-    expect(within(chats).getByText('Channels')).toBeTruthy();
-    expect(within(chats).getByText('Messages')).toBeTruthy();
-    expect(chats.querySelectorAll('[data-entity-id]')).toHaveLength(1);
+    expect(within(channels).getByText('Channels')).toBeTruthy();
+    expect(within(channels).getByText('Messages')).toBeTruthy();
+    expect(channels.querySelectorAll('[data-entity-id]')).toHaveLength(1);
 
     fireEvent.click(getByText('studio'));
     expect(onNavigate).toHaveBeenCalledWith({ type: 'entity', ref: 'vc-studio', kind: 'voice_channel' });
+  });
+
+  /**
+   * NESTED DYNAMIC ROWS DEFAULT SHUT (user ruling 2026-08-17). These rows used
+   * to recurse unconditionally with no disclosure state anywhere, so a channel
+   * with children printed its whole hierarchy on first paint and offered no way
+   * to close it — the one hierarchy in this rail that disagreed with the
+   * revision-11 "every caret CLOSED" ruling above.
+   */
+  it('a nested dynamic entity row ships CLOSED and opens on its own caret', () => {
+    const onNavigate = vi.fn();
+    const nested = {
+      channels: {
+        items: [
+          { id: 'ch-root', kind: 'channel', label: 'design', icon: '#' },
+          { id: 'ch-kid', kind: 'channel', label: 'design-crit', icon: '#', parentId: 'ch-root' },
+        ],
+      },
+    };
+    const { container, getByLabelText, queryByText } = renderRail({ onNavigate, dynamicGroups: nested });
+
+    expect(queryByText('design')).toBeTruthy();
+    expect(queryByText('design-crit'), 'the child is not drawn until asked for').toBeNull();
+
+    // The caret opens it WITHOUT navigating — same independence the static
+    // caret rows have.
+    fireEvent.click(getByLabelText('Expand design'));
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(queryByText('design-crit')).toBeTruthy();
+    expect(container.querySelectorAll('[data-entity-id]')).toHaveLength(2);
+
+    fireEvent.click(getByLabelText('Collapse design'));
+    expect(queryByText('design-crit')).toBeNull();
+  });
+
+  it('a childless dynamic row draws NO caret — the affordance follows the data', () => {
+    const { queryByLabelText } = renderRail({
+      dynamicGroups: {
+        channels: { items: [{ id: 'ch-flat', kind: 'channel', label: 'general', icon: '#' }] },
+      },
+    });
+    expect(queryByLabelText('Expand general')).toBeNull();
+  });
+
+  it('the ICON-ONLY rail still shows every descendant, exactly as its leaves do', () => {
+    // Identical reasoning to the static leaves: the caret control renders only
+    // in the expanded rail, so honouring a closed caret at 48px would strand
+    // these rows with no affordance anywhere to reach them.
+    const { queryByText } = renderRail({
+      collapsed: true,
+      dynamicGroups: {
+        channels: {
+          items: [
+            { id: 'ch-root', kind: 'channel', label: 'design', icon: '#' },
+            { id: 'ch-kid', kind: 'channel', label: 'design-crit', icon: '#', parentId: 'ch-root' },
+          ],
+        },
+      },
+    });
+    expect(queryByText('design-crit')).toBeTruthy();
+  });
+
+  it('the ACTIVE row reveals itself — navigating to a nested channel opens its parent', () => {
+    const { queryByText } = renderRail({
+      activeTarget: { type: 'entity', ref: 'ch-kid', kind: 'channel' },
+      dynamicGroups: {
+        channels: {
+          items: [
+            { id: 'ch-root', kind: 'channel', label: 'design', icon: '#' },
+            { id: 'ch-kid', kind: 'channel', label: 'design-crit', icon: '#', parentId: 'ch-root' },
+          ],
+        },
+      },
+    });
+    expect(queryByText('design-crit'), 'the current row is never hidden behind a shut parent').toBeTruthy();
   });
 
   it('GRAMMAR 2: a plain item renders one navigating row with its glyph', () => {
@@ -154,17 +258,23 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     ]);
   });
 
-  it('gives Code its own caret carrying the dev collections (revision 11)', () => {
-    const { container, getByLabelText, queryByText } = renderRail();
-    expect(queryByText('Pull requests')).toBeNull();
-    fireEvent.click(getByLabelText('Expand Code'));
-    const code = [...container.querySelectorAll('.shell-rail__group')].find(
-      (group) => group.getAttribute('aria-label') === 'Code',
-    );
-    const leaves = [...(code?.querySelectorAll('.shell-rail__leaf') ?? [])];
-    expect(leaves.map((row) => row.querySelector('.shell-rail__label')?.textContent)).toEqual([
-      'Projects', 'Pull requests', 'Worktrees',
+  it('renders the dev collections as ordinary Work rows with the git view beneath (revision 12, R3/D1)', () => {
+    // The Code caret retired with its group: no caret hides these three, and
+    // the git topology view survives as a plain navigating row.
+    const onNavigate = vi.fn();
+    const { container, getByText, queryByLabelText } = renderRail({ onNavigate });
+    expect(queryByLabelText('Expand Code')).toBeNull();
+    const work = [...container.querySelectorAll('.shell-rail__group')].find(
+      (group) => group.getAttribute('aria-label') === 'Work',
+    ) as HTMLElement;
+    const rows = [...work.querySelectorAll('.shell-rail__row')];
+    expect(rows.map((row) => row.querySelector('.shell-rail__label')?.textContent)).toEqual([
+      'Workspace', 'Projects', 'Pull requests', 'Worktrees', 'Code',
     ]);
+    fireEvent.click(within(work).getByText('Pull requests'));
+    expect(onNavigate).toHaveBeenCalledWith({ type: 'kind', ref: 'pull_request' });
+    fireEvent.click(within(work).getByText('Code'));
+    expect(onNavigate).toHaveBeenCalledWith({ type: 'view', ref: 'git' });
   });
 
   it('marks the active target with aria-current, and only that one', () => {
@@ -174,40 +284,47 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     expect(current[0]?.textContent).toContain('Channels');
   });
 
-  it('is DISCRETE: 165 expanded, 48 collapsed, nothing between', () => {
+  it('is DISCRETE: 165 expanded, 72 collapsed, nothing between', () => {
     const { container: expanded } = renderRail({ collapsed: false });
     const { container: collapsed } = renderRail({ collapsed: true });
     expect((expanded.querySelector('[data-testid="menu-rail"]') as HTMLElement).style.width).toBe(
       '165px',
     );
+    // 72, not 48: the collapsed rail keeps each destination's word under its
+    // mark, and 48px fits a glyph and nothing else.
     expect((collapsed.querySelector('[data-testid="menu-rail"]') as HTMLElement).style.width).toBe(
-      '48px',
+      '72px',
     );
   });
 
   /**
-   * REWRITTEN, and the rename records what changed. This used to assert that
-   * LEAVES GO when the rail collapses, and that was survivable only while the
-   * rail opened expanded — collapsing was then a deliberate act by someone who
-   * knew what they were hiding. The rail now opens COLLAPSED, and the shipped
-   * default hangs eight destinations (Tasks, Sessions, Docs, Channels,
-   * Teammates, Memories, Artifacts, Loops) off one caret row: dropping leaves
-   * would make the first paint of the product unable to reach any of them.
+   * REWRITTEN TWICE, and both rewrites are the same correction arriving in two
+   * steps. It first asserted that LEAVES GO when the rail collapses; that was
+   * survivable only while the rail opened expanded, and stopped being so once
+   * the shipped default hung eight destinations (Tasks, Sessions, Docs,
+   * Teammates, Memories, Artifacts, Loops, Files) off one caret row. It then
+   * asserted ICONS ONLY — which kept every destination but made each one
+   * identifiable only by hovering for a tooltip.
    *
-   * What a 48px rail has no room for is the WORD, not the row. So the law the
-   * assertions below hold is the one that was always meant: collapsed renders
-   * ICONS ONLY. Every label goes; nothing navigable goes with it.
+   * The law now is the one that was always meant: collapsed loses the rail's
+   * WIDTH, not its legibility. Every row keeps its word, printed under its
+   * mark; what goes is the group eyebrow, the caret and the inline counts.
    */
-  it('collapsed renders icons only — labels and headers go, destinations do not', () => {
-    const { container, queryByText, getByRole } = renderRail({ collapsed: true });
-    // No WORDS anywhere: not on the row, not on the leaf.
-    expect(queryByText('Tasks')).toBeNull();
-    expect(container.querySelectorAll('.shell-rail__label')).toHaveLength(0);
+  it('collapsed keeps every word under its icon — chrome goes, destinations do not', () => {
+    const { container, getByText, getByRole } = renderRail({ collapsed: true });
+    // The caption is the SAME element the expanded rail uses; only its
+    // geometry changes, which is what keeps the two states from drifting.
+    const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
+    expect(labels).toContain('Workspace');
+    expect(labels).toContain('Tasks');
+    getByText('Settings');
+    // What a narrow rail genuinely has no room for: the printed group eyebrow
+    // (it degrades to a divider) and the caret.
     expect(container.querySelectorAll('.shell-rail__header')).toHaveLength(0);
-    // Group headers degrade to dividers rather than vanishing.
+    expect(container.querySelectorAll('.shell-rail__caret')).toHaveLength(0);
     expect(container.querySelectorAll('.shell-rail__divider').length).toBeGreaterThan(0);
     // The leaf is still THERE, still navigable, and still says what it is to
-    // assistive tech — an icon whose only name is a tooltip is not a control.
+    // assistive tech — the composed name carries the counts the caption cannot.
     expect(container.querySelectorAll('.shell-rail__leaf').length).toBeGreaterThan(0);
     expect(getByRole('button', { name: /^Tasks/ })).toBeTruthy();
   });
@@ -326,8 +443,10 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     // that returns null after that check has already passed.
     const { queryByText } = renderRail({ presentKind: () => null });
     expect(queryByText('Channels')).toBeNull();
-    // View refs still resolve — they are shell's own table.
-    expect(queryByText('Home')).not.toBeNull();
+    // View refs still resolve — they are shell's own table. (Revision 13
+    // retired the Home group, so the surviving witness is Workspace, whose
+    // row is a VIEW ref even though its caret children are kinds.)
+    expect(queryByText('Workspace')).not.toBeNull();
   });
 });
 
@@ -339,11 +458,15 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
 
   it('renders the shipped default when the seam resolves null (the Phase-1 path)', () => {
     // createFixtureSeam ships no menu row, so this IS the gate rendering.
+    // Revision 20: Files and legacy Board are retained as valid views but no
+    // longer ship in the menu spine; Help is the final graph-driven group.
     const { container, getByText } = renderResolved(null);
     const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
-    expect(labels).toContain('Workspace');
+    expect(labels).toContain('Home');
     expect(labels).toContain('Settings');
-    getByText('Channels');
+    expect(labels).not.toContain('Board');
+    expect(labels).not.toContain('File browser');
+    getByText('Help');
   });
 
   it('renders the shipped default for a future schemaVersion instead of nothing', () => {
@@ -368,7 +491,8 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
     expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Ops', 'Admin']);
     getByText('Tasks');
     // The shipped default's groups are NOT merged in.
-    expect(queryByText('Chats')).toBeNull();
+    expect(queryByText('Home')).toBeNull();
+    expect(queryByText('Board')).toBeNull();
   });
 
   it('always keeps a route to settings, whatever the server said', () => {

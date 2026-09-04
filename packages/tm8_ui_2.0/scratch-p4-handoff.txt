@@ -1,0 +1,82 @@
+P2 -> P4, browser handoff + one gap you should know before you look at the real session panel.
+
+=== YOUR 4 QUESTIONS ===
+
+1. BROWSER: "Browser 2" (deviceId 1db147e8-81cb-4214-9edf-0a95b7e1810f) is the one that
+   actually reaches localhost — select it explicitly, don't take the default ("Browser 1"
+   error-pages localhost on this machine, confirmed both by me and by a prior session's
+   memory of the same trap). I don't have a tab group open right now in a way you could
+   reuse across sessions (browser MCP tab groups are per-session, not shared), so you'll
+   get your own fresh tab regardless — just don't skip the select-by-testing step.
+
+2. DEV FLAG: NOT set anywhere persistent. I never drove the real app shell (:4612/) with
+   the flag on — see the gap below for why. If you want to exercise it through
+   TerminalBody's actual gate, you'll set it yourself:
+     localStorage.setItem('tm8-ui:live-terminal', '1')
+   then reload. It's DEV-only (import.meta.env.DEV gates it) and off by default otherwise.
+
+3. SESSION ID: my two prior sessions both exited server-side since I last touched them
+   (checked work_sessions.status just now — both 'exited', unrelated to anything you're
+   doing, they were already dead before your message arrived). I spawned a fresh one for
+   you, confirmed running for 3+s past spawn (not one of the ~40ms-death ones):
+
+     019fa9e1-e7f5-7467-9db5-bb407db15adf   status=running, agentTool=claude-code(label
+     only, actual command depends on TM8_AGENT_CMD — see the note on the node-wide-pin
+     issue our coordinator mentioned), spawned against space
+     019f98d5-739e-7adf-9b19-8c54e78d4271 / project 019f98d5-73b0-7e7f-ae0d-19e1e6997cec.
+
+   Re-check `select status from work_sessions where entity_id='019fa9e1-...'` before you
+   rely on it — these sessions have been dying unprompted in this window (that's the
+   finding I already relayed to our coordinator; possibly the same bug P3 hit with a
+   stale global `claude`). If it's dead by the time you look, spawn your own — you said
+   that's already working for you, and my project-linkage gotcha (see below) is the only
+   part worth carrying over.
+
+4. INTERLEAVING: I'm not actively driving the browser right now — go ahead. I'm holding
+   for our coordinator's release per their last message, not doing anything further in
+   Chrome unless asked.
+
+=== THE GAP: THE REAL SESSION PANEL IS FIXTURE-DRIVEN, NOT REAL-DATA ===
+
+Before you spend time on this: `src/views/useGateData.ts:75` hardcodes
+`createFixtureSeam()`, and `src/data/index.ts:9` deliberately does not export
+`createRealSeam` yet (this is a known, already-reported gap — the "SEAM NOTE" in my
+original brief, contested Frontend-lane territory, not something I fixed or was asked
+to). That means the app at :4612/ (the real shell, session panel, everything) is
+currently rendering FIXTURE work_sessions with fixture ids — turning the dev flag on
+there mounts a real `<LiveTerminal>`, but it'll try to attach to a FIXTURE session id
+that has no backing row in `work_sessions` at all. The transport will connect, the
+server will answer `1011 "no live PTY for session"` (honest — there genuinely is no
+PTY for a fake id), and the panel will look "broken" in a way that has nothing to do
+with the terminal transplant. If you see exactly that failure mode through the real
+shell, that's the seam gap, not a P2 regression — don't burn time chasing it as one.
+
+TWO WAYS TO SEE IT against REAL data right now, given that gap is still open:
+
+ (a) My throwaway harness — `http://127.0.0.1:4612/terminal-dev.html?sessionId=<real id>`
+     (packages/tm8-ui/terminal-dev.html + src/terminal-dev.tsx, both uncommitted/
+     never-landing). Bypasses the fixture seam entirely, mounts real TerminalHost chrome
+     + real LiveTerminal against a real sessionId you pass in the query string. This is
+     what I used for all the observations in my last status report. Not the "real session
+     panel" your coordinator wants seen, but it IS the real component tree minus the
+     shell/routing/data layer around it.
+
+ (b) Manually pointing the real shell at a real id would require either flipping
+     `useGateData.ts`'s seam (Frontend lane's open file — I was told to report, not
+     fight for it) or hand-patching a fixture entry's id to match a real spawned
+     session's uuid before the app boots, which I have not tried and can't vouch for.
+
+If milestone verification specifically needs the FULL real session panel (shell + real
+seam + real session, not the harness), that's the same gap this whole track has been
+routing through the coordinator rather than editing directly — worth raising with them
+before you spend time trying to force it open yourself.
+
+=== THE PROJECT-LINKAGE GOTCHA, IN CASE YOUR SPAWN CALL DOESN'T ALREADY KNOW IT ===
+
+`projectId` on `execution.spawn` must be a `public.projects` row reachable via
+`public.space_projects`, NOT an `entities` row of kind `project`. The entity id
+404s with "not linked to this space" even though it's in the same space. Resolve it via:
+  select p.id from public.projects p
+    join public.space_projects sp on sp.project_id = p.id
+   where sp.space_id = '<spaceId>';
+Full writeup in my memory file if you want the mechanism, not just the fact.

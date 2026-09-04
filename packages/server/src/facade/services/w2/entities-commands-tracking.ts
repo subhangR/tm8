@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
   CollabError,
+  GraphContentInputSchema,
   decodeCursor,
   encodeCursor,
   isCollabError,
@@ -40,7 +41,7 @@ import {
   MICROS,
   actorOf,
   assembleSummaries,
-  capabilitiesOf,
+  entityCapabilities,
   contentOf,
   ENTITY_COLUMNS,
   ENTITY_FROM,
@@ -61,6 +62,19 @@ const RESTRICTED_LIFECYCLE_KINDS = new Set([
   'project',
   'interaction_profile',
   'artifact',
+  // `container` (177) is here for exactly the reason `work_session` is: it is
+  // born from `containers.create`, which RESERVES the record and then
+  // provisions a runtime under a saga. A generic `entities.create container`
+  // would produce a record with no machine behind it — one that renders in a
+  // list, counts in the rail, and fails every verb — and a generic
+  // `entities.delete` would orphan a running runtime the graph no longer
+  // knows about. Destruction is `containers.destroy`, which stops the runtime
+  // first and soft-deletes the envelope after.
+  //
+  // Unlike `work_session`, this kind does NOT open a rename door here: the
+  // title is patched through `containers.update`, which is ledgered and
+  // asserts a version like the rest of the family.
+  'container',
 ]);
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because
@@ -194,45 +208,6 @@ function customScalarFields(value: unknown): Record<string, CustomFieldValue> {
     }
   }
   return fields;
-}
-
-function capabilitiesFor(row: EntityRow, summary: EntitySummary): EntityCapabilities {
-  const base = capabilitiesOf(row);
-  if (summary.kind === 'project' || summary.kind === 'interaction_profile') {
-    return {
-      canEdit: false,
-      canDelete: false,
-      canAddChild: false,
-      canLink: summary.deletedAt === null,
-      canPull: false,
-      canReact: summary.deletedAt === null,
-      canGrantPoints: false,
-      canComplete: false,
-    };
-  }
-  if (summary.kind === 'message') {
-    return { ...base, canEdit: false, canDelete: false, canAddChild: false };
-  }
-  // A session is still not deletable and has no children — it is born from a
-  // spawn and it exits. But its canEdit is now left as `capabilitiesOf`
-  // computed it, which since 085 is true for a live session and means exactly
-  // one thing: the display title. Forcing it false here would leave the panel
-  // dressing the title as locked while the patch door accepts the rename.
-  if (summary.kind === 'work_session') {
-    return { ...base, canDelete: false, canAddChild: false };
-  }
-  if (summary.kind === 'pull_request' || summary.kind === 'commit' || summary.kind === 'file') {
-    return { ...base, canEdit: summary.deletedAt === null };
-  }
-  if (summary.kind.startsWith('c:')) {
-    return {
-      ...base,
-      canEdit: summary.deletedAt === null,
-      canAddChild: summary.deletedAt === null,
-      canPull: summary.deletedAt === null,
-    };
-  }
-  return base;
 }
 
 function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): EntitySummary {
@@ -742,7 +717,7 @@ async function buildUniversalDetail(
       incoming: byType('incoming'),
       unresolvedHardDependencyCount,
     },
-    capabilities: capabilitiesFor(row, summary),
+    capabilities: entityCapabilities(row),
   };
 }
 
@@ -920,6 +895,22 @@ async function kindFor(q: Querier, id: string): Promise<string> {
  * An EXISTING stamp on a still-done criterion is PRESERVED, never refreshed:
  * it records when the condition was met, not when the row was last patched.
  */
+/**
+ * Craft P1: the graph door's SOFT gate. Container shapes only (R2 — lean by
+ * law): a malformed member is refused by name here, before the RPC, so the
+ * caller sees `invalid_input` with zod's path rather than a bare SQLSTATE;
+ * everything the schema does not name passes through untouched.
+ */
+function softGraphContent(content: Record<string, unknown>) {
+  const parsed = GraphContentInputSchema.safeParse(content);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new CollabError('invalid_input',
+      `graph content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`);
+  }
+  return parsed.data;
+}
+
 function acceptanceCriteria(
   content: Record<string, unknown>,
   actorId: string | null,
@@ -1048,7 +1039,8 @@ export class W2EntitiesCommandsTrackingService {
             content.description ?? '', content.axes ?? {}, input.parentId ?? null, input.position ?? null,
             content.priority ?? 'medium',
             JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
-            content.pointsEstimate ?? null, content.dueDate ?? null, input.attachTo?.entityId ?? null,
+            content.pointsEstimate ?? null, content.dueDate ?? null, content.startDate ?? null,
+            input.attachTo?.entityId ?? null,
             input.attachTo?.edgeType ?? 'attached_to', envelope.clientMutationId ?? null]);
           break;
         case 'doc':
@@ -1130,6 +1122,19 @@ export class W2EntitiesCommandsTrackingService {
             content.enabled ?? true, content.nextRunAt ?? null,
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
+        case 'graph': {
+          // Craft P1 (135): SOFT validation by law (R2) — the schema asserts
+          // node/edge/layout container shapes and passes unknown members
+          // through; it must never grow into a program schema. The same 056
+          // posture as memory/loop: zero new catalog rows.
+          const graph = softGraphContent(content);
+          raw = await q.rpc('create_graph_entity', [input.spaceId, input.title, envelope.actorId ?? null,
+            graph.graphType ?? 'entity',
+            JSON.stringify(graph.nodes ?? []), JSON.stringify(graph.edges ?? []),
+            JSON.stringify(graph.layout ?? {}), graph.source ?? null,
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         default:
           if (!input.kind.startsWith('c:')) {
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
@@ -1163,11 +1168,12 @@ export class W2EntitiesCommandsTrackingService {
           case 'task':
             raw = await q.rpc('update_task_content', [id, input.expectedVersion, envelope.actorId ?? null,
               input.title ?? null, content.description ?? null, content.axes ?? null,
-              content.workStatus ?? null, content.priority ?? null,
+              content.status ?? null, content.priority ?? null,
               content.acceptanceCriteria === undefined
                 ? null
                 : JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
               content.pointsEstimate ?? null, content.dueDate ?? null, content.dueDate === null,
+              content.startDate ?? null, content.startDate === null,
               envelope.clientMutationId ?? null]);
             break;
           case 'doc':
@@ -1260,6 +1266,20 @@ export class W2EntitiesCommandsTrackingService {
               null, null, false,
               envelope.clientMutationId ?? null]);
             break;
+          case 'graph': {
+            // Craft P1: `null` MERGES (a patch carries only what it changes —
+            // the one-guarded-patch-per-turn crafting flow), and an explicit
+            // `source: null` is the clear signal, the loop pattern exactly.
+            const graph = softGraphContent(content);
+            raw = await q.rpc('update_graph_entity', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, graph.graphType ?? null,
+              graph.nodes === undefined ? null : JSON.stringify(graph.nodes),
+              graph.edges === undefined ? null : JSON.stringify(graph.edges),
+              graph.layout === undefined || graph.layout === null ? null : JSON.stringify(graph.layout),
+              graph.source ?? null, graph.source === null,
+              envelope.clientMutationId ?? null]);
+            break;
+          }
           case 'worktree': {
             // The door accepts EXACTLY a status transition (+ an optional
             // preflight token). Everything else is refused BY NAME with

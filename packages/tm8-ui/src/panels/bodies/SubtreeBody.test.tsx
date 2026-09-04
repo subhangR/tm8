@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
@@ -17,6 +17,7 @@ import {
   taskTombstone,
   taskUuidTitle,
 } from '../../fixtures';
+import { resetFoldStateForTests } from './CollapsibleSection';
 import { SubtreeBody } from './SubtreeBody';
 
 /**
@@ -66,11 +67,23 @@ function taskDetail(): EntityDetail {
 /**
  * SUBTREE children.
  *
- * `taskTombstone` is the ONLY task summary in the fixtures carrying a CLOSED
- * workStatus, so it is doing double duty as the done-row specimen. That is a
- * fixture gap, not a design choice — reported to the coordinator rather than
- * papered over here.
+ * THE FIXTURE GAP THIS FILLS LOCALLY: no shared task summary carries
+ * `status: 'done'` / `category: 'done'`. `taskTombstone` (`cancelled`) used to
+ * stand in for one, which worked only while cancelled counted as done — phase
+ * 7 separated them, so the stand-in became a specimen of the OPPOSITE case and
+ * the test would have passed for the wrong reason. The done specimen is built
+ * here rather than added to `fixtures/` because every count pin in the suite
+ * reads that module.
  */
+const taskDone: EntitySummary = {
+  ...taskBlocked,
+  id: 'task-done-specimen' as EntitySummary['id'],
+  title: 'Shipped the thing',
+  category: 'done',
+  state: { ...taskBlocked.state, status: 'done' } as EntitySummary['state'],
+};
+
+/** The SUBTREE children a detail is rendered with. */
 function withChildren(children: readonly EntitySummary[]): EntityDetail {
   const base = taskDetail();
   return {
@@ -112,6 +125,34 @@ function renderBody(over: Partial<React.ComponentProps<typeof SubtreeBody>> = {}
   return render(<SubtreeBody detail={taskDetail()} {...over} />);
 }
 
+/*
+ * FOLDS (2026-08-16 redesign): sections collapse to hairline rows and persist
+ * per section id in localStorage, and EMPTY sections leave the flow entirely
+ * behind the `⋯ N empty sections` toggle. So: state is cleared between tests,
+ * and assertions on section CONTENT expand (and where empty, reveal) first —
+ * expand before asserting, never delete an assertion.
+ */
+beforeEach(() => {
+  try {
+    window.localStorage.clear();
+  } catch {
+    // this jsdom exposes no storage — the store's in-memory fallback is live
+  }
+  resetFoldStateForTests();
+});
+
+function expandFold(section: HTMLElement): HTMLElement {
+  const head = section.querySelector('.pn-fold__head');
+  if (head instanceof HTMLElement && head.getAttribute('aria-expanded') === 'false') {
+    fireEvent.click(head);
+  }
+  return section;
+}
+
+function revealEmpties(view: { getByTestId: (id: string) => HTMLElement }): void {
+  fireEvent.click(view.getByTestId('empty-sections-toggle'));
+}
+
 // ---------------------------------------------------------------------------
 
 describe('the composed metadata grid', () => {
@@ -129,14 +170,23 @@ describe('the composed metadata grid', () => {
     const grid = getByTestId('subtree-grid');
     expect(grid.textContent).toContain(taskUuidTitle.id);
     /*
-     * `dueDate` is EDITABLE now (the task's `editFields` dialog) and the grid
-     * is still where it is READ. Not a contradiction: suppression is keyed on
-     * `valueControls`/`assignControl` — the controls mounted PERSISTENTLY in
-     * the strip above this body, which would otherwise be drawn twice on one
-     * screen. A dialog is modal and absent the rest of the time, so removing
-     * the row would leave the due date visible nowhere.
+     * `Due` LEFT THIS GRID on 2026-08-28, and the reason is the rule the next
+     * test states rather than an exception to it.
+     *
+     * It used to be read here precisely BECAUSE the only writer was the modal
+     * `editFields` dialog: a control that is absent the rest of the time
+     * cannot also be the place the value is read, so suppressing the row would
+     * have left the due date visible nowhere. The task now declares
+     * `dateControls`, which mounts a PERSISTENT picker in the strip above this
+     * body — so the premise is gone, and keeping the cell would put a
+     * read-only `Due 2026-09-01` under a live one. `controlled` is keyed off
+     * the registry, so this followed from the declaration with no edit here.
+     *
+     * The scalars with no strip control keep their cells, which is what the
+     * assertions below hold.
      */
-    expect(grid.textContent).toMatch(/Due/);
+    expect(grid.textContent).not.toMatch(/Due/);
+    expect(grid.textContent).toContain('Points');
   });
 
   /**
@@ -290,8 +340,10 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
   it('lists every criterion and counts the completed ones', () => {
     const { getByTestId } = renderBody();
     const section = getByTestId('acceptance-section');
-    // The fixture carries four criteria, two of them done.
-    expect(section.textContent).toMatch(/ACCEPTANCE · 2\/4/);
+    // The fixture carries four criteria, two of them done. The fold head
+    // carries the label and the right-aligned n/m count.
+    expect(section.textContent).toContain('ACCEPTANCE');
+    expect(section.textContent).toContain('2/4');
     expect(section.textContent).toContain('Crash reproduced under fixture data');
     expect(section.textContent).toContain('Reviewed by a human');
     expect(within(section).getAllByTestId('acceptance-row')).toHaveLength(4);
@@ -325,7 +377,7 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     const persisted = criteriaOf(taskDetail());
     const draft = persisted.map((c) => ({ ...c, done: true }));
     const section = renderBody({ criteriaDraft: draft }).getByTestId('acceptance-section');
-    expect(section.textContent).toMatch(/ACCEPTANCE · 4\/4/);
+    expect(section.textContent).toContain('4/4');
   });
 
   it('CLEARS doneBy/doneAt when a criterion is un-ticked', () => {
@@ -389,8 +441,12 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
   });
 
   it('states an empty criteria list rather than drawing an empty region', () => {
-    const { getByTestId } = renderBody({ detail: withCriteria([]) });
-    expect(getByTestId('acceptance-section').textContent).toMatch(/no acceptance criteria/i);
+    // Empty ⇒ behind the one reveal toggle, then a closed fold. Reveal,
+    // expand, and the quiet line is still there — hidden, never lost.
+    const view = renderBody({ detail: withCriteria([]) });
+    revealEmpties(view);
+    const section = expandFold(view.getByTestId('acceptance-section'));
+    expect(section.textContent).toMatch(/no acceptance criteria/i);
   });
 
   it('draws NO region for a content shape that carries no criteria member', () => {
@@ -406,17 +462,26 @@ describe('SUBTREE — child work, counted and struck from registry data', () => 
   it('lists the children and counts them in the eyebrow', () => {
     const { getByTestId } = renderBody({ detail: withChildren([taskTombstone, taskBlocked]) });
     const section = getByTestId('subtree-section');
-    expect(section.textContent).toMatch(/SUBTREE · 2/);
+    expect(section.textContent).toContain('SUBTREE');
+    expect(section.textContent).toContain('2');
     expect(within(section).getAllByTestId('subtree-row')).toHaveLength(2);
   });
 
-  it('strikes a child whose status is in its kind’s DONE lifecycle tier', () => {
-    const { getByTestId } = renderBody({ detail: withChildren([taskTombstone, taskBlocked]) });
+  it('strikes a child in the DONE category — and NOT a cancelled one', () => {
+    const { getByTestId } = renderBody({
+      detail: withChildren([taskDone, taskTombstone, taskBlocked]),
+    });
     const rows = within(getByTestId('subtree-section')).getAllByTestId('subtree-row');
-    // taskTombstone: workStatus 'cancelled' — a member of the task row's done
-    // tier filter. taskBlocked: 'blocked' — an open status.
-    expect(rows[0]?.getAttribute('data-done')).toBe('true');
-    expect(rows[1]?.getAttribute('data-done')).toBe('false');
+    // PHASE 9/C3 — ONE definition of completed: `category === 'done'`.
+    //
+    // The row for `taskTombstone` (status `cancelled`) USED TO BE STRUCK: the
+    // rule scraped the done TIER's filter, which carried `['done','cancelled']`
+    // because cancelled rode inside Done. It does not any more, and the change
+    // is the ruling, not a regression — a cancelled task STOPPED, it did not
+    // finish, and the fourth category exists so the product can say so.
+    expect(rows[0]?.getAttribute('data-done'), 'done').toBe('true');
+    expect(rows[1]?.getAttribute('data-done'), 'cancelled is not done').toBe('false');
+    expect(rows[2]?.getAttribute('data-done'), 'blocked').toBe('false');
   });
 
   it('takes the status WORD from the registry, including its authored label', () => {
@@ -437,13 +502,16 @@ describe('SUBTREE — child work, counted and struck from registry data', () => 
   });
 
   it('states an empty subtree in one quiet line rather than an empty region', () => {
+    // No rows and no wired dispatch: the refused add-child keeps the fold
+    // VISIBLE (a hidden refusal is a hidden reason) — closed, so expand first.
     const { getByTestId } = renderBody({ detail: withChildren([]) });
-    expect(getByTestId('subtree-section').textContent).toMatch(/no child work/i);
+    expect(expandFold(getByTestId('subtree-section')).textContent).toMatch(/no child work/i);
   });
 
   it('renders `add child` DISABLED-WITH-REASON while no dispatch is wired (R7)', () => {
     const { getByTestId } = renderBody({ detail: withChildren([]) });
-    const control = within(getByTestId('subtree-section')).getByTestId('disabled-with-reason');
+    const section = expandFold(getByTestId('subtree-section'));
+    const control = within(section).getByTestId('disabled-with-reason');
     expect(control.textContent).toMatch(/add child/i);
   });
 });
@@ -454,7 +522,7 @@ describe('RUNS — the verdict is handed in, never derived (D6, brief §2.7)', (
     // "does this kind's registry row present a liveness verdict" is what keeps
     // this file free of a kind literal.
     const { getByTestId } = renderBody({ livenessOf: staleVerdict });
-    expect(getByTestId('subtree-section').textContent).toMatch(/no child work/i);
+    expect(expandFold(getByTestId('subtree-section')).textContent).toMatch(/no child work/i);
     expect(within(getByTestId('runs-section')).getAllByTestId('run-row')).toHaveLength(1);
   });
 
@@ -490,18 +558,52 @@ describe('RUNS — the verdict is handed in, never derived (D6, brief §2.7)', (
       ...base,
       hierarchy: { ...base.hierarchy, children: { items: [], nextCursor: null, total: 0 } },
     };
-    const { getByTestId } = renderBody({ detail });
-    expect(getByTestId('runs-section').textContent).toMatch(/no runs recorded/i);
+    // Zero runs ⇒ the strip joins the empty set; reveal it, and the quiet
+    // line is still stated rather than lost.
+    const view = renderBody({ detail });
+    revealEmpties(view);
+    expect(view.getByTestId('runs-section').textContent).toMatch(/no runs recorded/i);
+  });
+});
+
+describe('LIVE SESSION — the Phase 3 card renders only on a MEASURED live verdict', () => {
+  it('draws the card when a run measures live, and names the session', () => {
+    const { getByTestId } = renderBody({ livenessOf: () => 'live' });
+    const card = within(getByTestId('live-session-section')).getAllByTestId('live-session-card');
+    expect(card).toHaveLength(1);
+    expect(card[0]?.textContent).toContain(sessionStale.title);
+  });
+
+  it('draws NOTHING when the verdict is not live — the stored status is not the authority (D6)', () => {
+    // The fixture session's record claims `running`; the measured verdict says
+    // stale. A card off the record would be the exact lie the two-source rule
+    // forbids, so its absence is the assertion.
+    expect(sessionStale.state).toMatchObject({ status: 'running' });
+    const { queryByTestId } = renderBody({ livenessOf: staleVerdict });
+    expect(queryByTestId('live-session-section')).toBeNull();
+  });
+
+  it('draws NOTHING when nobody measured — no livenessOf, no card', () => {
+    const { queryByTestId } = renderBody();
+    expect(queryByTestId('live-session-section')).toBeNull();
+  });
+
+  it('opens the session on click', () => {
+    const onOpenEntity = vi.fn();
+    const { getByTestId } = renderBody({ livenessOf: () => 'live', onOpenEntity });
+    fireEvent.click(within(getByTestId('live-session-section')).getAllByTestId('live-session-card')[0]!);
+    expect(onOpenEntity).toHaveBeenCalledWith(sessionStale.id);
   });
 });
 
 describe('LINKED — connection peers as chips', () => {
   it('chips every non-session peer, counted', () => {
     const { getByTestId } = renderBody();
-    const section = getByTestId('linked-section');
+    const section = expandFold(getByTestId('linked-section'));
     // Git UI wave: the fixture task now also tracks a PR and carries a
     // created_in commit — both are non-session peers, so the count is 4.
-    expect(section.textContent).toMatch(/LINKED · 4/);
+    expect(section.textContent).toContain('LINKED');
+    expect(section.textContent).toContain('4');
     expect(section.textContent).toContain(taskBlocked.title);
     expect(section.textContent).toContain(docLayoutSpec.title);
     expect(section.textContent).toContain(prTransplant.title);
@@ -511,7 +613,8 @@ describe('LINKED — connection peers as chips', () => {
   it('opens a peer on click', () => {
     const onOpenEntity = vi.fn();
     const { getByTestId } = renderBody({ onOpenEntity });
-    fireEvent.click(within(getByTestId('linked-section')).getByText(taskBlocked.title));
+    const section = expandFold(getByTestId('linked-section'));
+    fireEvent.click(within(section).getByText(taskBlocked.title));
     expect(onOpenEntity).toHaveBeenCalledWith(taskBlocked.id);
   });
 });
@@ -617,6 +720,7 @@ describe('a task holds a memory working set, and a declared block must draw', ()
     });
     const section = getByTestId('memory-set-section');
     expect(section.textContent).toContain('MEMORIES');
+    expandFold(section);
     expect(section.textContent).toContain('tokens.css is verbatim');
   });
 
@@ -630,7 +734,7 @@ describe('a task holds a memory working set, and a declared block must draw', ()
       detail: taskWithMemory(),
       blocks: getKind('task').panel.blocks,
     });
-    const linked = getByTestId('linked-section').textContent ?? '';
+    const linked = expandFold(getByTestId('linked-section')).textContent ?? '';
     expect(linked).not.toContain('tokens.css is verbatim');
     // …and the ordinary link types are untouched by the filter.
     expect(linked).toContain(docLayoutSpec.title);
@@ -704,6 +808,7 @@ describe('a loop-fired task says which loop fired it', () => {
     });
     const section = getByTestId('peer-rows-section');
     expect(section.textContent).toContain('TRIGGERED BY');
+    expandFold(section);
     expect(section.textContent).toContain('Dreamer sweep');
     // The KIND in words — a glyph alone cannot tell a loop from a task.
     expect(section.textContent).toContain('Loop');
@@ -714,20 +819,144 @@ describe('a loop-fired task says which loop fired it', () => {
       detail: taskFiredByLoop(),
       blocks: getKind('task').panel.blocks,
     });
-    const linked = getByTestId('linked-section').textContent ?? '';
+    const linked = expandFold(getByTestId('linked-section')).textContent ?? '';
     expect(linked).not.toContain('Dreamer sweep');
     // The filter is exactly two group types wide, not "anything unfamiliar".
     expect(linked).toContain(docLayoutSpec.title);
   });
 
   it('states the absence when no loop fired it, rather than drawing nothing', () => {
-    // Most tasks are made by hand, and that is a fact worth rendering — an
-    // empty region reads as a loading bug.
-    const { getByTestId } = renderBody({
+    // Most tasks are made by hand, and that is a fact worth rendering. The
+    // empty provenance fold leaves the flow, but reveal + expand still reads
+    // the absence in words — hidden by default, never lost.
+    const view = renderBody({
       detail: taskDetail(),
       blocks: getKind('task').panel.blocks,
     });
-    expect(getByTestId('peer-rows-section').textContent)
+    revealEmpties(view);
+    expect(expandFold(view.getByTestId('peer-rows-section')).textContent)
       .toContain('this task was created directly');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE 2026-08-16 REDESIGN'S OWN CONTRACTS: hairline folds that persist per
+ * section id, one reveal line for the empties, the honesty rule that a refusal
+ * is never "empty", run chips with a +N overflow, and the measured column.
+ */
+describe('folds — hairline sections, persisted globally per section id', () => {
+  it('keeps its testid and its count on the collapsed head, content only when open', () => {
+    const { getByTestId } = renderBody({ detail: withChildren([taskBlocked, taskTombstone]) });
+    const section = getByTestId('subtree-section');
+    const head = section.querySelector('.pn-fold__head') as HTMLElement;
+    // Count > 0 ⇒ open by default; collapse and the section (and testid) stay.
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    expect(head.getAttribute('aria-controls')).toBe(section.querySelector('[role="region"]')?.id);
+    fireEvent.click(head);
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    expect(getByTestId('subtree-section')).toBeTruthy();
+    expect(within(section).queryAllByTestId('subtree-row')).toHaveLength(0);
+  });
+
+  it('persists fold state GLOBALLY per section id — collapsed here is collapsed on the next task', () => {
+    const first = render(<SubtreeBody detail={withChildren([taskBlocked])} />);
+    const head = first.getByTestId('subtree-section').querySelector('.pn-fold__head') as HTMLElement;
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(head);
+    first.unmount();
+
+    // A DIFFERENT task: the touched state rides, the default no longer applies.
+    const second = render(
+      <SubtreeBody detail={{ ...withChildren([taskBlocked]), id: 'another-task' }} />,
+    );
+    const head2 = second.getByTestId('subtree-section').querySelector('.pn-fold__head') as HTMLElement;
+    expect(head2.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('hides empty sections behind ⋯ N empty sections, and reveals them IN ORDER', () => {
+    const view = renderBody({ detail: withCriteria([]) });
+    // Empty ⇒ out of the flow entirely…
+    expect(view.queryByTestId('acceptance-section')).toBeNull();
+    const toggle = view.getByTestId('empty-sections-toggle');
+    expect(toggle.textContent).toMatch(/1 empty section/);
+    // …revealed in its normal place: ACCEPTANCE above SUBTREE, not appended.
+    fireEvent.click(toggle);
+    const acceptance = view.getByTestId('acceptance-section');
+    expect(
+      acceptance.compareDocumentPosition(view.getByTestId('subtree-section')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The toggle flips its words and hides them again.
+    expect(view.getByTestId('empty-sections-toggle').textContent).toMatch(/hide empty/i);
+    fireEvent.click(view.getByTestId('empty-sections-toggle'));
+    expect(view.queryByTestId('acceptance-section')).toBeNull();
+  });
+
+  it('a section whose only content is a disabled-with-reason affordance is NOT empty', () => {
+    // No dispatch wired ⇒ the add-child affordance is a REFUSAL, and hiding a
+    // refusal hides its reason — so the childless SUBTREE fold stays visible.
+    const refused = renderBody({ detail: withChildren([]) });
+    expect(refused.getByTestId('subtree-section')).toBeTruthy();
+    refused.unmount();
+
+    // The same section with a LIVE affordance and no rows IS empty: the
+    // affordance survives behind the reveal, and nothing is refused by hiding it.
+    const live = render(<SubtreeBody detail={withChildren([])} onAddChild={vi.fn()} />);
+    expect(live.queryByTestId('subtree-section')).toBeNull();
+    revealEmpties(live);
+    expect(
+      within(expandFold(live.getByTestId('subtree-section'))).getByRole('button', {
+        name: /add child/i,
+      }),
+    ).toBeTruthy();
+  });
+
+  it('the body opts into the measured reading column', () => {
+    expect(renderBody().getByTestId('subtree-body').className).toContain('pn-body--measured');
+  });
+});
+
+describe('run chips — the inline cluster that replaced the run rows', () => {
+  const runFleet = (n: number): EntitySummary[] =>
+    Array.from({ length: n }, (_, i) => ({
+      ...sessionStale,
+      id: `ws-fleet-${i}`,
+      title: `Fleet run ${i}`,
+    }));
+
+  it('shows six chips and folds the rest into +N more, expanding IN PLACE', () => {
+    const view = renderBody({ detail: withChildren(runFleet(9)), livenessOf: () => 'stale' });
+    expect(within(view.getByTestId('runs-section')).getAllByTestId('run-row')).toHaveLength(6);
+    fireEvent.click(view.getByText('+3 more'));
+    expect(within(view.getByTestId('runs-section')).getAllByTestId('run-row')).toHaveLength(9);
+    expect(view.queryByText(/more$/)).toBeNull();
+  });
+
+  it('puts LIVE first and tinted, and never loses model or verdict to the ellipsis', () => {
+    const [a, b] = runFleet(2) as [EntitySummary, EntitySummary];
+    const view = renderBody({
+      detail: withChildren([a, b]),
+      livenessOf: (id) => (id === b.id ? 'live' : 'stale'),
+    });
+    const chips = view.getByTestId('runs-section').querySelectorAll('.sb-runchip');
+    // Live leads the cluster and carries the tint class…
+    expect(chips[0]?.className).toContain('sb-runchip--live');
+    expect(chips[0]?.textContent).toContain(b.title);
+    // …and the accessible name states title · model · verdict word in full.
+    const label = chips[0]?.getAttribute('aria-label') ?? '';
+    expect(label).toContain(b.title);
+    expect(label).toContain('claude-sonnet-5');
+    const treatment = getKind(sessionStale.kind).list.liveTreatment;
+    if (!treatment) throw new Error('the session registry row must carry a liveTreatment');
+    expect(label).toContain(treatment('live').shortLabel ?? treatment('live').label);
+  });
+
+  it('opens the session from a chip, exactly as the old row did', () => {
+    const onOpenEntity = vi.fn();
+    const view = renderBody({ livenessOf: staleVerdict, onOpenEntity });
+    fireEvent.click(within(view.getByTestId('runs-section')).getAllByTestId('run-row')[0]!);
+    expect(onOpenEntity).toHaveBeenCalledWith(sessionStale.id);
   });
 });

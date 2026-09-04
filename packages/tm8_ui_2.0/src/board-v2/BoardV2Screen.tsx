@@ -1,0 +1,970 @@
+/**
+ * BOARD V2 — the universal board as a full-bleed screen (`#/s/{s}/board-v2`),
+ * built on the Kind/Status/Category/Workflow model. Structure and honesty
+ * rules inherited from Board v1 (optimistic-with-a-confession drops, empty
+ * columns as real answers, refusals rendered inline at the refusing column);
+ * what is NEW is universality:
+ *
+ *   · a KIND SELECTOR drives the whole board — population `collectionKinds()`,
+ *     behaviour resolved per kind from the registry config and the space's
+ *     workflows, never from a kind name;
+ *   · columns are the FOUR CATEGORIES (each a real `filters.category` read),
+ *     with a 'No status yet' column for rows the category reads structurally
+ *     cannot return — server truth (`summary.category` absent), never a
+ *     client-invented bucket;
+ *   · WORKFLOW COLUMNS when the selected kind's workflow can be drawn exactly
+ *     (see `planFor`), states grouped under category bands;
+ *   · ARCHIVED IS A FILTER (`filters.deleted`), never a column;
+ *   · a drop resolves through the plan's drop seam; where a kind cannot move
+ *     yet, the drop REFUSES VISIBLY with the phase that unlocks it.
+ *
+ * A CARD OPENS ITS ENTITY HERE, not somewhere else. Pressing a card used to
+ * navigate to the workspace, which unmounted the board and took the kind, the
+ * filters, the search and the scroll position with it — the user asked a
+ * question of the board and reading one answer destroyed the question. The
+ * detail now opens as the app's ONE panel (`BoardEntityColumn` →
+ * `AuxEntityPanel`) OVER the last column, at that column's width, so the board
+ * is still there when it closes.
+ *
+ * ASYNC WRITES READ THROUGH REFS, exactly as v1: the lifecycle executor is a
+ * render-time snapshot, and a write must not consult the stale render it
+ * started in.
+ */
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ActorSummary, EntityId, EntitySummary, SpaceId, Workflow } from '@tm8/contract';
+import { collectionKinds, getKind } from '../domain';
+import type { SetStateOutcome } from '../domain';
+import { placeholderTitleFor, useNewTask } from '../authoring';
+import { placeholderNameFor } from '../domain/title-grammar';
+import { DisabledIconControl, toReason, type DetailReasons } from '../panels';
+import { AvatarStack } from '../kit';
+import { Badge } from '@astryxdesign/core/Badge';
+import { Card } from '@astryxdesign/core/Card';
+import { ProgressBar } from '@astryxdesign/core/ProgressBar';
+import { Timestamp } from '@astryxdesign/core/Timestamp';
+import type { Notice } from '../shell/notices';
+import type { GateData } from '../views/useGateData';
+import { useRowLifecycle } from '../views/useRowLifecycle';
+import { BoardEntityColumn } from './BoardEntityColumn';
+import { BoardSummaryStrip } from './BoardSummaryStrip';
+import { BoardTimeline } from './BoardTimeline';
+import {
+  BOARD_VIEWS,
+  EMPTY_FILTERS,
+  UNCATEGORISED_KEY,
+  anyFilterActive,
+  applyMoves,
+  axisFor,
+  buildFilters,
+  columnFilter,
+  isLive,
+  liveNarrow,
+  liveSignalsFor,
+  matching,
+  planFor,
+  resolveWorkflow,
+  settledMoves,
+  summarise,
+  timelineGroups,
+  todayKey,
+  uncategorised,
+  type BoardColumn,
+  type BoardFilterState,
+  type BoardView,
+  type ColumnPlan,
+  type LiveContext,
+  type LiveSignalId,
+  type Move,
+} from './board-model';
+import { FilterSelect, type FilterOption } from './FilterSelect';
+import './board.css';
+
+/** An unloaded roster is not an empty space, and must not read as one. */
+const ROSTER_EMPTY = 'The people and teammates for this space have not loaded yet.';
+
+interface BoardV2ScreenProps {
+  data: GateData & { pull?: (id: string) => void };
+  viewerMemberId?: string | null;
+  onNotice: (notice: Notice) => void;
+  /** The panel's refusal copy — the same bundle every other panel host takes. */
+  reasons: DetailReasons;
+  serverBaseUrl?: string | undefined;
+}
+
+export function BoardV2Screen({
+  data,
+  viewerMemberId,
+  onNotice,
+  reasons,
+  serverBaseUrl,
+}: BoardV2ScreenProps) {
+  const lifecycle = useRowLifecycle({ data, viewerMemberId, onNotice });
+
+  /* The selected KIND. Default is the kind the program's phases have already
+     given real categories — found via the registry, and the same default the
+     v1 board served. */
+  const [kindName, setKindName] = useState<string>('task');
+  const [filters, setFilters] = useState<BoardFilterState>(EMPTY_FILTERS);
+  const [search, setSearch] = useState('');
+  const [useWorkflowCols, setUseWorkflowCols] = useState(false);
+  /* THE VIEW. Columns is the default — it is what the board has always been,
+     and a new view earns its place by being chosen rather than imposed. State,
+     not a route, so switching keeps the kind, the filters, the search and the
+     open panel (the same reason a card opens the panel instead of navigating). */
+  const [view, setView] = useState<BoardView>('columns');
+  /** card id → both endpoints of its optimistic move. */
+  const [moves, setMoves] = useState<ReadonlyMap<string, Move>>(new Map());
+  const [refusal, setRefusal] = useState<{ column: string; reason: string } | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<{ row: EntitySummary; from: string } | null>(null);
+  /** §8.1 roving focus is an ENTITY identity, never a transient coordinate. */
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  /** The card whose entity the panel is showing, or null for none. */
+  const [openId, setOpenId] = useState<EntityId | null>(null);
+  const [moveStatus, setMoveStatus] = useState('');
+  const pendingIdRef = useRef<string | null>(null);
+  const cardButtonsRef = useRef(new Map<string, HTMLButtonElement>());
+  const panelRef = useRef<HTMLElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const panelWasOpenRef = useRef(false);
+
+  // Render-time snapshots made async-safe (see the module docblock).
+  const lifecycleRef = useRef(lifecycle);
+  lifecycleRef.current = lifecycle;
+
+  const kind = getKind(kindName);
+  const kinds = useMemo(() => collectionKinds(), []);
+
+  /* THE WORKFLOWS READ — `spaces.workflows.list`, once per space. A failure
+     is a stated downgrade (category columns keep working off `filters.
+     category` alone), never a blank board. */
+  const [workflows, setWorkflows] = useState<
+    { list?: Workflow[]; error?: string } | undefined
+  >(undefined);
+  useEffect(() => {
+    if (!data.ready || !data.spaceId) return;
+    let alive = true;
+    setWorkflows(undefined);
+    data.seam
+      .workflows(data.spaceId as SpaceId)
+      .then((list) => {
+        if (alive) setWorkflows({ list });
+      })
+      .catch((error: unknown) => {
+        if (alive) setWorkflows({ error: String((error as { message?: string })?.message ?? error) });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [data.ready, data.spaceId, data.seam]);
+
+  const workflow = resolveWorkflow(kind, workflows?.list);
+  const plan = useMemo(
+    () => planFor(kind, workflow, useWorkflowCols),
+    [kind, workflow, useWorkflowCols],
+  );
+
+  const newEntity = useNewTask({
+    spaceId: data.spaceId,
+    kind: kind.kind,
+    placeholderTitle: placeholderNameFor(kind, placeholderTitleFor(kind.label)),
+    commands: data.seam.commands,
+    onCreated: (id, result) => {
+      data.reconcileCommand(result);
+      openEntity(id as EntityId);
+    },
+  });
+
+  const stateControl = kind.list.stateControl;
+  const assignControl = kind.list.assignControl;
+
+  /* One door for every route in: a card press, Enter on the focused card, a
+     freshly created entity, and a drill sideways from inside the panel all
+     REPLACE the panel's subject rather than opening a second surface. */
+  const openEntity = (id: EntityId): void => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.matches('[data-b2-card-trigger]')) {
+      openerRef.current = active;
+    } else if (openId === null) {
+      openerRef.current = null;
+    }
+    setOpenId(id);
+  };
+
+  const closeEntity = (): void => {
+    const opener = openerRef.current;
+    setOpenId(null);
+    queueMicrotask(() => {
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    });
+  };
+
+  useEffect(() => {
+    const isOpen = openId !== null;
+    if (isOpen && !panelWasOpenRef.current) {
+      panelRef.current?.focus({ preventScroll: true });
+    }
+    panelWasOpenRef.current = isOpen;
+  }, [openId]);
+
+  /* Esc closes the panel — at the DOCUMENT, because the focus may well be
+     inside the panel rather than on the board's own key handler, and only when
+     the event arrives unclaimed so a menu or a composer inside the panel gets
+     it first. */
+  useEffect(() => {
+    if (openId === null) return undefined;
+    const onEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      closeEntity();
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [openId]);
+
+  /** The people axis (only offered when the kind is assignable at all). */
+  const roster = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ActorSummary[] = [];
+    for (const actor of lifecycle.assignable) {
+      if (seen.has(actor.id as string)) continue;
+      seen.add(actor.id as string);
+      out.push(actor);
+    }
+    return out;
+  }, [lifecycle.assignable]);
+  const peopleOptions = useMemo<FilterOption[]>(
+    () => roster.map((actor) => ({ id: actor.id as string, label: actor.displayName, actor })),
+    [roster],
+  );
+  const kindOptions = useMemo<FilterOption[]>(
+    () => kinds.map((row) => ({ id: row.kind, label: row.labelPlural })),
+    [kinds],
+  );
+
+  const base = useMemo(() => buildFilters(filters), [filters]);
+
+  /* EVERY COLUMN IS A REAL READ. `rowsFor` caches per (kind, filter) and the
+     durable stream keeps each key current; `pageStateOf` distinguishes "in
+     flight" from "empty" so a loading column shimmers instead of claiming
+     emptiness. The uncategorised column narrows the BASE read on the
+     server-computed `category` being absent. */
+  const rowsOf = data.rowsFor(kind.kind);
+  const pageOf = data.pageStateOf(kind.kind);
+  const rawColumns: BoardColumn[] = plan.columns.map((col) => {
+    const filter = columnFilter(base, col);
+    const rows = col.filter === null ? uncategorised(rowsOf(filter)) : rowsOf(filter);
+    const page = pageOf(filter);
+    return {
+      plan: col,
+      items: page.loading && rows.length === 0 ? undefined : rows,
+      hasMore: page.hasMore,
+    };
+  });
+
+  // A fresh read that answers the overlay settles it (§ board-model).
+  useEffect(() => {
+    if (moves.size === 0) return;
+    const settled = settledMoves(rawColumns, moves);
+    if (settled.length === 0) return;
+    setMoves((prior) => {
+      const next = new Map(prior);
+      for (const id of settled) next.delete(id);
+      return next;
+    });
+  });
+
+  const columns = useMemo(() => applyMoves(rawColumns, moves), [rawColumns, moves]);
+  /* 'No status yet' renders only when it has something to say: it is not a
+     drop target, so unlike the category columns an empty one answers no
+     question and would spend a column of width claiming one. */
+  const shownColumns = columns.filter(
+    (c) => c.plan.key !== UNCATEGORISED_KEY || (c.items?.length ?? 0) > 0,
+  );
+  /* THE LIVE AXIS. `livenessOf` IS the seam's verdict function, handed down
+     untouched — this screen never derives a verdict and never reads a status
+     field to guess one. `activity` can only REFINE a live verdict into a
+     pulsing one, never promote a dead session (the two-source law). */
+  const liveCtx: LiveContext = { livenessOf: data.livenessOf, activity: data.activity };
+  const liveSignals = useMemo(() => liveSignalsFor(kind), [kind]);
+  const liveOptions = useMemo<FilterOption[]>(
+    () => liveSignals.map((signal) => ({ id: signal.id, label: signal.label })),
+    [liveSignals],
+  );
+  /* Live by ANY signal the kind can answer — what the strip counts, and what
+     the timeline's per-row `live` chip states. Distinct from `filters.live`,
+     which is only the signals the reader has PRESSED. */
+  const isRowLive = (row: EntitySummary): boolean =>
+    isLive(row, liveSignals.map((signal) => signal.id), liveCtx);
+
+  const shownOf = (column: BoardColumn): readonly EntitySummary[] =>
+    liveNarrow(matching(column.items ?? [], search), filters.live, liveCtx);
+  const shownRows = shownColumns.map(shownOf);
+
+  /* THE TIMELINE'S INPUTS — all of them pure functions of the rows already
+     drawn. `today` is read ONCE per render and threaded through, so the axis
+     marker, every defaulted week and the strip cannot disagree about what day
+     it is mid-render. */
+  const today = todayKey();
+  const groups = useMemo(
+    () => timelineGroups(shownColumns, shownRows, today),
+    // Recomputed with the rows; `shownRows` is rebuilt every render by design.
+    [shownColumns, shownRows, today],
+  );
+  const axis = useMemo(
+    () => axisFor(groups.flatMap((group) => group.rows.map((r) => r.span)), today),
+    [groups, today],
+  );
+  const summary = summarise(shownColumns, shownRows, today, isRowLive);
+  const liveCountLabel = kind.list.liveCount?.label?.(summary.live) ?? `${summary.live} live`;
+  const locateCard = (id: string | null): { col: number; row: number; item: EntitySummary } | null => {
+    if (id === null) return null;
+    for (let col = 0; col < shownRows.length; col += 1) {
+      const row = shownRows[col]!.findIndex((item) => item.id === id);
+      if (row >= 0) return { col, row, item: shownRows[col]![row]! };
+    }
+    return null;
+  };
+  const activeCard = locateCard(focusedId)
+    ?? shownRows.flatMap((items, col) => items.slice(0, 1).map((item) => ({ col, row: 0, item })))[0]
+    ?? null;
+
+  const onKind = (next: string): void => {
+    if (next === kindName) return;
+    setKindName(next);
+    // The overlay's keys are the OLD kind's rows — meaningless now.
+    setMoves(new Map());
+    setRefusal(null);
+    setFocusedId(null);
+  };
+
+  const toggle = (axis: 'people' | 'assignedBy', key: string): void => {
+    setFilters((prior) => {
+      const list = prior[axis];
+      const next = list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
+      return { ...prior, [axis]: next };
+    });
+  };
+  const clearAxis = (axis: 'people' | 'assignedBy'): void => {
+    setFilters((prior) => ({ ...prior, [axis]: [] }));
+  };
+
+  const performMove = async (row: EntitySummary, plan: ColumnPlan): Promise<SetStateOutcome> => {
+    if (plan.drop.kind === 'refuse') return { ok: false, reason: plan.drop.reason };
+    if (!stateControl) {
+      return { ok: false, reason: `${kind.labelPlural} have no settable state on this build.` };
+    }
+    return lifecycleRef.current.setState(
+      row.id,
+      plan.drop.optionId,
+      plan.drop.via ?? stateControl.command,
+      { notify: false },
+    );
+  };
+
+  const dispatchDrop = (row: EntitySummary, fromKey: string, target: ColumnPlan): void => {
+    if (target.key === fromKey) return;
+    if (pendingIdRef.current !== null) {
+      setMoveStatus(
+        pendingIdRef.current === row.id
+          ? `${row.title} is already moving.`
+          : 'Wait for the current card move to finish.',
+      );
+      return;
+    }
+    setRefusal(null);
+    /* A refusing column refuses BEFORE the overlay claims anything — the card
+       never moves, and the reason renders where the drop happened. */
+    if (target.drop.kind === 'refuse') {
+      setRefusal({ column: target.key, reason: target.drop.reason });
+      return;
+    }
+    pendingIdRef.current = row.id;
+    setPendingId(row.id);
+    setMoveStatus(`Moving ${row.title} to ${target.label}.`);
+    setMoves((prior) => new Map(prior).set(row.id, { to: target.key, from: fromKey }));
+    void performMove(row, target).then((outcome) => {
+      if (pendingIdRef.current === row.id) pendingIdRef.current = null;
+      setPendingId((prior) => (prior === row.id ? null : prior));
+      if (!outcome.ok) {
+        // Roll the overlay back and confess at the column that refused (§1.5).
+        setMoves((prior) => {
+          const next = new Map(prior);
+          next.delete(row.id);
+          return next;
+        });
+        setRefusal({ column: target.key, reason: outcome.reason });
+        setMoveStatus(`Could not move ${row.title}: ${outcome.reason}`);
+      } else {
+        setMoveStatus(`Moved ${row.title} to ${target.label}.`);
+      }
+    });
+  };
+
+  const focusCard = (id: string): void => {
+    setFocusedId(id);
+    cardButtonsRef.current.get(id)?.focus({ preventScroll: true });
+    queueMicrotask(() => cardButtonsRef.current.get(id)?.focus({ preventScroll: true }));
+  };
+
+  // §8.1 — drag is never the only path: mod+arrow moves the DOM-focused card
+  // through the SAME dispatch a drop uses. Only a card trigger may enter this
+  // handler, so panel editors and every other interactive descendant keep
+  // their native arrows, hjkl, Enter, and typing.
+  const onKeyDown = (event: React.KeyboardEvent): void => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLButtonElement>('[data-b2-card-trigger]')
+      : null;
+    if (!target || target.closest('[data-testid="b2-entity-panel"]')) return;
+    const position = locateCard(target.dataset.entity ?? null);
+    if (!position) return;
+
+    const mod = event.metaKey || event.ctrlKey;
+    const colCount = shownColumns.length;
+    const { col, row, item: focused } = position;
+    const rows = shownRows[col]!;
+
+    const move = (delta: number): void => {
+      const target = shownColumns[col + delta];
+      if (!target) return;
+      dispatchDrop(focused, shownColumns[col]!.plan.key, target.plan);
+      focusCard(focused.id);
+    };
+
+    const focusAcross = (delta: number): void => {
+      for (let next = col + delta; next >= 0 && next < colCount; next += delta) {
+        const item = shownRows[next]![0];
+        if (item) {
+          focusCard(item.id);
+          return;
+        }
+      }
+    };
+
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'h':
+        if (mod) move(-1);
+        else focusAcross(-1);
+        break;
+      case 'ArrowRight':
+      case 'l':
+        if (mod) move(1);
+        else focusAcross(1);
+        break;
+      case 'ArrowDown':
+      case 'j':
+        if (rows[Math.min(rows.length - 1, row + 1)]) {
+          focusCard(rows[Math.min(rows.length - 1, row + 1)]!.id);
+        }
+        break;
+      case 'ArrowUp':
+      case 'k':
+        if (rows[Math.max(0, row - 1)]) focusCard(rows[Math.max(0, row - 1)]!.id);
+        break;
+      case 'Enter':
+        openEntity(focused.id as EntityId);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const loading = shownColumns.every((c) => c.items === undefined);
+  const workflowToggleReason =
+    plan.workflowUnavailable
+    ?? workflows?.error
+    ?? (workflow === undefined ? 'This space’s workflows have not loaded yet.' : null);
+
+  return (
+    <section
+      className="b2"
+      data-testid="board-v2-screen"
+      /* W3E, board edition: the selected kind's palette family as registry
+         DATA (never a kind name), so board.css can rail every card in the
+         same colour its list tile wears. Gray is the declared fallback,
+         exactly as the tile anatomies default it. */
+      data-family={kind.graphFamily ?? 'gray'}
+    >
+      <header className="b2__bar" data-testid="b2-filters">
+        {/* THE VIEW SWITCH — a control on the board's own header, not a route.
+            Two shapes of one answer; Columns stays the default. */}
+        <span className="b2__pivots" role="group" aria-label="Board view">
+          {BOARD_VIEWS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className="b2__pivot"
+              aria-pressed={view === option.id}
+              data-testid={`b2-view-${option.id}`}
+              onClick={() => setView(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </span>
+
+        <span className="b2__sep" aria-hidden />
+
+        {/* THE KIND SELECTOR — what makes this board universal. Radio
+            semantics on the shared dropdown: choosing a kind replaces the
+            previous choice. */}
+        <FilterSelect
+          label="Kind"
+          testId="b2-kind"
+          options={kindOptions}
+          selected={[kind.kind]}
+          onToggle={onKind}
+          onClear={() => onKind('task')}
+          emptyNote="This build declares no collection kinds."
+        />
+
+        {/* WORKFLOW COLUMNS toggle — offered whenever a workflow resolves;
+            disabled WITH THE REASON when its states cannot be drawn exactly. */}
+        {workflowToggleReason === null ? (
+          <button
+            type="button"
+            className="b2__pivot"
+            aria-pressed={plan.mode === 'workflow'}
+            data-testid="b2-workflow-toggle"
+            onClick={() => setUseWorkflowCols((v) => !v)}
+          >
+            {plan.mode === 'workflow' ? `Workflow: ${plan.workflowName}` : 'Workflow columns'}
+          </button>
+        ) : (
+          <DisabledIconControl label="Workflow columns" reason={toReason(workflowToggleReason)}>
+            <span className="b2__pivot b2__pivot--off" data-testid="b2-workflow-toggle">
+              Workflow columns
+            </span>
+          </DisabledIconControl>
+        )}
+
+        <span className="b2__sep" aria-hidden />
+
+        {/* The people axes exist only for kinds the registry says are
+            assignable — a filter over an axis the kind cannot carry would be
+            a control that always answers nothing. */}
+        {assignControl ? (
+          <>
+            <FilterSelect
+              label="Assigned to"
+              testId="b2-filter-person"
+              options={peopleOptions}
+              selected={filters.people}
+              onToggle={(id) => toggle('people', id)}
+              onClear={() => clearAxis('people')}
+              emptyNote={ROSTER_EMPTY}
+            />
+            <FilterSelect
+              label="Assigned by"
+              testId="b2-filter-assignedby"
+              options={peopleOptions}
+              selected={filters.assignedBy}
+              onToggle={(id) => toggle('assignedBy', id)}
+              onClear={() => clearAxis('assignedBy')}
+              emptyNote={ROSTER_EMPTY}
+            />
+          </>
+        ) : null}
+
+        {/* LIVE WORK. Offered only where the REGISTRY says the selected kind
+            can answer a liveness question at all (`liveSignalsFor`): a "live"
+            chip on a kind with no verdict and no working_on badge could only
+            ever narrow to zero, which is a control that lies about having
+            found nothing. The narrowing itself is CLIENT-SIDE and page-scoped
+            — see `liveNarrow`; there is no server-side liveness predicate,
+            because liveness is the node's live PTY set and no collection query
+            consults it. */}
+        {liveSignals.length > 0 ? (
+          <FilterSelect
+            label="Live"
+            testId="b2-filter-live"
+            options={liveOptions}
+            selected={filters.live}
+            onToggle={(id) =>
+              setFilters((prior) => {
+                const list = prior.live;
+                const next = list.includes(id as LiveSignalId)
+                  ? list.filter((k) => k !== id)
+                  : [...list, id as LiveSignalId];
+                return { ...prior, live: next };
+              })
+            }
+            onClear={() => setFilters((prior) => ({ ...prior, live: [] }))}
+            emptyNote={`${kind.labelPlural} carry no liveness signal on this build.`}
+          />
+        ) : null}
+
+        {/* ARCHIVED IS A FILTER, NEVER A COLUMN (the ruling, verbatim): the
+            toggle swaps the whole board onto the archived rows, composing
+            with every column rather than replacing one. */}
+        <button
+          type="button"
+          className="b2__pivot"
+          aria-pressed={filters.archived}
+          data-testid="b2-filter-archived"
+          onClick={() => setFilters((prior) => ({ ...prior, archived: !prior.archived }))}
+        >
+          Archived
+        </button>
+
+        <input
+          className="b2__search"
+          type="search"
+          placeholder="Filter by title…"
+          aria-label="Filter cards by title"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        {anyFilterActive(filters) ? (
+          <button
+            type="button"
+            className="b2__clear"
+            data-testid="b2-clear-filters"
+            onClick={() => setFilters(EMPTY_FILTERS)}
+          >
+            Clear filters
+          </button>
+        ) : null}
+
+        {newEntity.unavailable === null ? (
+          <button
+            type="button"
+            className="b2__new"
+            data-testid="b2-new-task"
+            onClick={() => void newEntity.create()}
+          >
+            + New {kind.label.toLowerCase()}
+          </button>
+        ) : (
+          <DisabledIconControl label={`New ${kind.label.toLowerCase()}`} reason={newEntity.unavailable}>
+            <span className="b2__new b2__new--off" data-testid="b2-new-task">
+              + New {kind.label.toLowerCase()}
+            </span>
+          </DisabledIconControl>
+        )}
+      </header>
+
+      {/* THE DASHBOARD STRIP — counts of the rows the board is drawing, from
+          the same arrays it draws them from. Never a placeholder. */}
+      <BoardSummaryStrip
+        summary={summary}
+        liveLabel={liveCountLabel}
+        liveNote={
+          liveSignals.length === 0
+            ? null
+            : liveSignals.map((signal) => signal.describe).join(' ')
+        }
+      />
+
+      <div
+        className="b2__body"
+        role="region"
+        aria-label={`${kind.labelPlural} board`}
+        onKeyDown={onKeyDown}
+      >
+        <p className="sr-only" role="status" aria-live="polite" data-testid="b2-move-status">
+          {moveStatus}
+        </p>
+        {/* WHAT THE BOARD IS, said once, only when it is genuinely empty. */}
+        {!loading && !anyFilterActive(filters) && search.trim() === ''
+          && shownColumns.every((column) => (column.items?.length ?? 0) === 0) ? (
+          <div className="b2__firstrun" data-testid="b2-firstrun">
+            Every {kind.label.toLowerCase()} in this space shows up here, in a column for where
+            it stands. There are none yet — use + New {kind.label.toLowerCase()} above to add
+            the first.
+          </div>
+        ) : null}
+        {/* The stage publishes the column COUNT so the panel can derive one
+            column's width in CSS — see `.b2__panel`. */}
+        <div
+          className="b2__stage"
+          style={{ ['--b2-cols' as string]: String(Math.max(1, shownColumns.length)) }}
+        >
+          {view === 'timeline' ? (
+            <BoardTimeline
+              axis={axis}
+              groups={groups}
+              focusedId={activeCard?.item.id ?? null}
+              isRowLive={isRowLive}
+              loading={summary.loading}
+              onOpen={(id) => openEntity(id as EntityId)}
+              onFocus={setFocusedId}
+              buttonRef={(id, node) => {
+                if (node) cardButtonsRef.current.set(id, node);
+                else cardButtonsRef.current.delete(id);
+              }}
+            />
+          ) : (
+            <div className="b2__cols">
+              {shownColumns.map((column, index) => (
+                <ColumnView
+                  key={column.plan.key}
+                  column={column}
+                  shown={column.items === undefined ? undefined : shownRows[index]}
+                  band={plan.mode === 'workflow' ? column.plan.category : null}
+                  focusedId={activeCard?.item.id ?? null}
+                  refusal={refusal?.column === column.plan.key ? refusal.reason : null}
+                  pendingId={pendingId}
+                  dragging={dragging}
+                  onDragStart={setDragging}
+                  onDrop={dispatchDrop}
+                  onOpen={(id) => openEntity(id as EntityId)}
+                  onCardFocus={setFocusedId}
+                  buttonRef={(id, node) => {
+                    if (node) cardButtonsRef.current.set(id, node);
+                    else cardButtonsRef.current.delete(id);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {openId !== null ? (
+            <aside
+              ref={panelRef}
+              className="b2__panel"
+              aria-labelledby="b2-entity-panel-title"
+              data-testid="b2-entity-panel"
+              tabIndex={-1}
+            >
+              <h2 id="b2-entity-panel-title" className="sr-only">Entity details</h2>
+              <BoardEntityColumn
+                data={data}
+                reasons={reasons}
+                serverBaseUrl={serverBaseUrl}
+                viewerMemberId={viewerMemberId}
+                onNotice={onNotice}
+                rowLifecycle={lifecycle}
+                entityId={openId}
+                onOpenEntity={openEntity}
+                onClose={closeEntity}
+              />
+            </aside>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const BAND_LABELS: Readonly<Record<string, string>> = {
+  to_do: 'To Do',
+  in_progress: 'In Progress',
+  done: 'Done',
+  cancelled: 'Cancelled',
+};
+
+function ColumnView({
+  column,
+  shown,
+  band,
+  focusedId,
+  refusal,
+  pendingId,
+  dragging,
+  onDragStart,
+  onDrop,
+  onOpen,
+  onCardFocus,
+  buttonRef,
+}: {
+  column: BoardColumn;
+  /** `undefined` ⇒ loading: header renders, body shimmers (§8.2). */
+  shown: readonly EntitySummary[] | undefined;
+  /** The category band a workflow-state column sits under, or null. */
+  band: string | null;
+  focusedId: string | null;
+  refusal: string | null;
+  pendingId: string | null;
+  dragging: { row: EntitySummary; from: string } | null;
+  onDragStart: (d: { row: EntitySummary; from: string } | null) => void;
+  onDrop: (row: EntitySummary, fromKey: string, target: ColumnPlan) => void;
+  onOpen: (id: string) => void;
+  onCardFocus: (id: string) => void;
+  buttonRef: (id: string, node: HTMLButtonElement | null) => void;
+}) {
+  // Page-scoped counts hedge with `+` when another page exists — a bare
+  // number would claim a total this screen never read.
+  const count = shown === undefined ? '…' : column.hasMore ? `${shown.length}+` : `${shown.length}`;
+
+  return (
+    <section
+      className="b2__col"
+      data-testid="b2-column"
+      data-column={column.plan.key}
+      aria-label={column.plan.label}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const id = event.dataTransfer.getData('text/plain');
+        const drag = dragging && dragging.row.id === id ? dragging : null;
+        onDragStart(null);
+        if (drag) onDrop(drag.row, drag.from, column.plan);
+      }}
+    >
+      <header className="b2__col-head">
+        {band !== null ? (
+          <span className="b2__col-band" data-testid="b2-col-band">
+            {BAND_LABELS[band] ?? band}
+          </span>
+        ) : null}
+        <h2 className="b2__col-title">{column.plan.label}</h2>
+        <span className="b2__col-count">{count}</span>
+      </header>
+
+      {refusal ? (
+        <p className="b2__refusal" role="alert" data-testid="b2-refusal">
+          {refusal}
+        </p>
+      ) : null}
+
+      <div className="b2__cards" role="list">
+        {shown === undefined ? (
+          <>
+            <div className="b2__skeleton" aria-hidden data-testid="b2-skeleton" />
+            <div className="b2__skeleton" aria-hidden />
+          </>
+        ) : shown.length === 0 ? (
+          // §1.3: an empty column is a real answer — and (where the plan
+          // allows) the drop target that makes the answer changeable.
+          <p className="b2__empty">{`nothing in ${column.plan.label}`}</p>
+        ) : (
+          shown.map((row, index) => (
+            <CardView
+              key={row.id}
+              row={row}
+              fromKey={column.plan.key}
+              pending={row.id === pendingId}
+              draggingId={dragging?.row.id ?? null}
+              cardFocused={row.id === focusedId}
+              onDragStart={onDragStart}
+              onOpen={onOpen}
+              onFocus={onCardFocus}
+              buttonRef={buttonRef}
+            />
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* Medium is the task default, so repeating it on nearly every card adds no
+   signal. Exceptional priorities remain visible: high/urgent use the error
+   tone, while low and unknown words stay neutral rather than inventing
+   urgency. */
+const PRIORITY_BADGE: Record<string, 'error' | 'warning' | 'info' | 'neutral'> = {
+  urgent: 'error',
+  high: 'error',
+  low: 'neutral',
+};
+
+function CardView({
+  row,
+  fromKey,
+  pending,
+  draggingId,
+  cardFocused,
+  onDragStart,
+  onOpen,
+  onFocus,
+  buttonRef,
+}: {
+  row: EntitySummary;
+  fromKey: string;
+  pending: boolean;
+  draggingId: string | null;
+  cardFocused: boolean;
+  onDragStart: (d: { row: EntitySummary; from: string } | null) => void;
+  onOpen: (id: string) => void;
+  onFocus: (id: string) => void;
+  buttonRef: (id: string, node: HTMLButtonElement | null) => void;
+}) {
+  /* Meta renders STRUCTURALLY off the summary's state — fields that exist,
+     drawn; fields the kind does not carry, absent. No kind is named. */
+  const state = row.state as Partial<{
+    priority: string;
+    dueDate: string | null;
+    assignees: ActorSummary[];
+    acceptance: { total: number; completed: number };
+  }>;
+  const cls = [
+    'b2__card',
+    pending ? 'b2__card--pending' : '',
+    row.id === draggingId ? 'b2__card--dragging' : '',
+    cardFocused ? 'b2__card--focused' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <Card
+      role="listitem"
+      className={cls}
+      data-testid="b2-card"
+      data-entity={row.id}
+      variant="default"
+      padding={2}
+      elevation="none"
+      aria-busy={pending || undefined}
+      draggable={!pending}
+      onDragStart={(event) => {
+        if (pending) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.setData('text/plain', row.id);
+        event.dataTransfer.effectAllowed = 'move';
+        onDragStart({ row, from: fromKey });
+      }}
+      onDragEnd={() => onDragStart(null)}
+    >
+      <button
+        ref={(node) => buttonRef(row.id, node)}
+        type="button"
+        className="b2__card-title"
+        data-b2-card-trigger=""
+        data-entity={row.id}
+        tabIndex={cardFocused ? 0 : -1}
+        onFocus={() => onFocus(row.id)}
+        onClick={() => onOpen(row.id)}
+      >
+        {row.title}
+      </button>
+      <div className="b2__card-meta">
+        {typeof state.priority === 'string' && state.priority !== 'medium' ? (
+          <Badge variant={PRIORITY_BADGE[state.priority] ?? 'neutral'} label={state.priority} />
+        ) : null}
+        {state.dueDate ? (
+          <span
+            className="b2__card-due"
+            data-overdue={new Date(state.dueDate).getTime() < Date.now() || undefined}
+          >
+            {'due '}
+            <Timestamp value={state.dueDate} format="relative_short" hasTooltip={false} />
+          </span>
+        ) : null}
+        {state.acceptance && state.acceptance.total > 0 ? (
+          <div
+            className="b2__card-accept"
+            title={`${state.acceptance.completed} of ${state.acceptance.total} acceptance criteria met`}
+          >
+            <ProgressBar
+              value={state.acceptance.completed}
+              max={state.acceptance.total}
+              label={`Acceptance: ${state.acceptance.completed} of ${state.acceptance.total} met`}
+              isLabelHidden
+            />
+            <span className="b2__card-accept-count">{`${state.acceptance.completed}/${state.acceptance.total}`}</span>
+          </div>
+        ) : null}
+        {state.assignees && state.assignees.length > 0 ? <AvatarStack actors={state.assignees} /> : null}
+      </div>
+    </Card>
+  );
+}

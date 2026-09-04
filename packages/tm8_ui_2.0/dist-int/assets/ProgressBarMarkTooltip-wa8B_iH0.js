@@ -1,0 +1,1 @@
+import{Tooltip as t}from"./Tooltip-DNcgD6hg.js";import{j as e}from"./index-k28_XSwc.js";import"./useTooltip-BPTqOzU-.js";function n({content:o,children:r}){return e.jsx(t,{content:o,placement:"above",focusTrigger:"always",children:r})}export{n as default};

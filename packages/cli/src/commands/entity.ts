@@ -438,11 +438,16 @@ function byteBudgetOption(cmd: CommandContext, name: string, min: number, max: n
   return value;
 }
 
-async function entityContext(cmd: CommandContext): Promise<ExitCode> {
-  refuseMutationId('entity context', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['sections', 'total-bytes', 'section-bytes']);
-  const id = requireArg(cmd, 0, '<entity-id>');
-
+/**
+ * The `entities.context` query, validated once.
+ *
+ * EXPORTED because `tm8 chat show` is a second spelling of this read, and two
+ * spellings of one operation must not have two validations: a `--sections`
+ * that was checked here and unchecked there would fail as a usage error on one
+ * command and as a wire 400 quoting zod internals on the other, for the same
+ * typo. The three flags are ALL that bind (`EntityContextQuery`).
+ */
+export function contextQuery(cmd: CommandContext): Record<string, string> {
   // One comma-separated value, exactly as the Server splits it. Each part is
   // validated HERE against the closed enum — a typoed section name must fail
   // as a usage error, not as a wire 400 quoting zod internals.
@@ -467,13 +472,21 @@ async function entityContext(cmd: CommandContext): Promise<ExitCode> {
   const totalBytes = byteBudgetOption(cmd, 'total-bytes', 1024, 32_768);
   const sectionBytes = byteBudgetOption(cmd, 'section-bytes', 512, 8192);
 
+  return {
+    ...(sections === undefined ? {} : { sections }),
+    ...(totalBytes === undefined ? {} : { totalBytes: String(totalBytes) }),
+    ...(sectionBytes === undefined ? {} : { sectionBytes: String(sectionBytes) }),
+  };
+}
+
+async function entityContext(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('entity context', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, ['sections', 'total-bytes', 'section-bytes']);
+  const id = requireArg(cmd, 0, '<entity-id>');
+
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.context', {
     params: { id },
-    query: {
-      ...(sections === undefined ? {} : { sections }),
-      ...(totalBytes === undefined ? {} : { totalBytes: String(totalBytes) }),
-      ...(sectionBytes === undefined ? {} : { sectionBytes: String(sectionBytes) }),
-    },
+    query: contextQuery(cmd),
   });
   cmd.out.data(data, renderContext);
   return EXIT_OK;
@@ -488,18 +501,20 @@ async function entityContext(cmd: CommandContext): Promise<ExitCode> {
  */
 async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['kind', 'subtree', 'work-status', 'assignee', 'ready', 'limit', 'cursor']);
+  assertKnownOptions(cmd, ['kind', 'subtree', 'status', 'assignee', 'ready', 'limit', 'cursor']);
 
   const kinds = cmd.options.values('kind');
   const subtreeOf = cmd.options.value('subtree');
-  const workStatus = cmd.options.values('work-status');
+  /* `--status`, NOT `--work-status` (phase 9's rename table). The flag names
+     the `CollectionQuery.filters` member, and that member is `status` now. */
+  const status = cmd.options.values('status');
   const assigneeIds = cmd.options.values('assignee');
   const ready = cmd.options.bool('ready');
   const limit = cmd.options.integer('limit');
   const cursor = cmd.options.value('cursor');
 
   const filters: Record<string, unknown> = {};
-  if (workStatus.length > 0) filters.workStatus = workStatus;
+  if (status.length > 0) filters.status = status;
   if (assigneeIds.length > 0) filters.assigneeIds = assigneeIds;
   if (ready) filters.readyToPull = true;
 

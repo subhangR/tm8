@@ -1,0 +1,188 @@
+/* THE FLEET PANE — the workers this conversation is running.
+
+   Chrome only. Status colour comes from the kit's pill tones and PR chips
+   come with their own stylesheet, so nothing here re-states a status colour:
+   a second source of truth for "red means failing" is how two surfaces end up
+   disagreeing about it. */
+
+.fleet {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 18px 24px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.fleet__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fleet__head h2 {
+  margin: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.fleet__summary {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+
+/* Empty state: ui 13 (Kinetic W3) — the sentence itself is unchanged. */
+.fleet__empty {
+  margin: 0;
+  max-width: 52ch;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+}
+
+.fleet__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A real eyebrow (Kinetic grammar): caps 11/700; its COUNT is data → mono. */
+.fleet__eyebrow {
+  margin: 0;
+  font-family: var(--pn-caps);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.fleet__count {
+  font-family: var(--pn-mono);
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.fleet__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The row is a GRID, not a button: PR chips carry real <a> links and cannot
+   nest inside the open button, so the button and the chips are siblings. */
+.fleet__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-surface);
+  padding: 6px 10px;
+}
+
+.fleet__open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 2px 0;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.fleet__open:disabled { cursor: default; }
+.fleet__open:hover:not(:disabled) { color: var(--pn-ink); }
+.fleet__open:focus-visible {
+  outline: 2px solid var(--pn-focus);
+  outline-offset: 2px;
+}
+
+.fleet__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink);
+}
+
+/* A placeholder title is a truncated id standing in for a name we do not
+   have. It reads as provisional so nobody mistakes it for the entity's
+   actual title. */
+.fleet__title[data-placeholder] {
+  font-family: var(--pn-mono, ui-monospace, monospace);
+  font-size: var(--pn-fs-label);
+  font-weight: 400;
+  color: var(--pn-ink-3);
+}
+
+/* An unread COUNT is data — mono (Kinetic W3). */
+.fleet__unread {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  border: 1px dashed var(--pn-line);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+/* A real button on the kit grammar's compact metrics (Kinetic W3): 28px box,
+   bordered, r-sm, ui 600 at the interactive floor, hover fill, focus ring. */
+.fleet__transcript {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.fleet__transcript:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.fleet__transcript:focus-visible {
+  outline: 2px solid var(--pn-focus);
+  outline-offset: 2px;
+}
+
+/* A row whose read never settled is quieter, but it is STILL A ROW — the
+   conversation named it and that fact does not depend on a read. */
+.fleet__row[data-read='pending'] { opacity: 0.75; }
+
+/* An honesty sentence ("…and N more") at reading size, ui voice. */
+.fleet__overflow {
+  margin: 0;
+  max-width: 60ch;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+}

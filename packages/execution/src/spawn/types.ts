@@ -15,6 +15,9 @@
 //      makes that mistake impossible to make here.
 
 import type { CredentialProviderName } from '@tm8/contract';
+import type { CoordinatorKind } from '@tm8/prompt';
+
+export type { CoordinatorKind };
 
 /** Agent execution mode — mirrors work_sessions.mode's CHECK constraint. */
 export type AgentMode =
@@ -26,6 +29,25 @@ export type AgentMode =
 
 /** work_sessions.status — the five states 001_core_graph.sql:703 allows. */
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
+
+/**
+ * work_sessions.ended_kind — the six classes 171's CHECK allows. Mirrored here
+ * rather than imported from the contract, exactly as WorkSessionStatus above
+ * is: this package states the database's vocabulary, and the contract states
+ * the wire's. They are kept identical deliberately, not by coupling.
+ *
+ * `out_of_memory` is kernel evidence (the cgroup oom_kill counter), never an
+ * inference from a signal number — a SIGKILL from a deploy and a SIGKILL from
+ * the OOM killer look identical at the process level, and only one of them is
+ * a legitimate death.
+ */
+export type WorkSessionEndedKind =
+  | 'completed'
+  | 'stopped_by_operator'
+  | 'server_restart'
+  | 'out_of_memory'
+  | 'crashed'
+  | 'unknown';
 
 /**
  * Permission posture handed to the agent. Named for old maestro's vocabulary
@@ -147,6 +169,12 @@ export interface LoadSpawnContextInput {
   projectId?: string | null;
   taskIds?: string[];
   /**
+   * The spawning parent, when there is one, so the loader can resolve its KIND
+   * for the manifest's coordinator block (176). Absent ⇒ a root spawn, and the
+   * loader reads nothing extra.
+   */
+  parentSessionId?: string | null;
+  /**
    * Memory entities explicitly named by the spawn request (D3a). The graph
    * validates them (same space, kind `memory`, live) and folds them into the
    * teammate's injected memory set for this session only.
@@ -220,8 +248,15 @@ export interface TaskContext {
   title: string;
   description: string;
   priority: string;
-  workStatus: string;
+  status: string;
   acceptanceCriteria: unknown[];
+  /** File entities attached directly to this task. Identity/metadata only;
+   * bytes remain behind the authenticated `tm8 file download` command. */
+  attachments?: Array<{
+    fileEntityId: string;
+    name: string;
+    mime: string;
+  }>;
   /**
    * Set when the task was derived from a thread message (064/099): the thread
    * root and the channel it is anchored on. Rendered into the assignment
@@ -247,6 +282,20 @@ export interface SpawnContext {
   project: ProjectContext | null;
   teamMember: TeamMemberContext;
   tasks: TaskContext[];
+  /**
+   * What `SpawnRequest.parentSessionId` actually points at (176).
+   *
+   * Since a chat became an entity it may parent a work session, so a
+   * coordinated worker's return address is no longer always a work_session.
+   * The kind is READ FROM THE GRAPH beside the persona rather than asserted by
+   * the caller — a spawn's parent is graph state, and a client-supplied kind
+   * would be a claim about someone else's row.
+   *
+   * `null` means "no parent, or a parent this reader could not resolve", and
+   * every consumer folds that to `work_session`: the pre-176 meaning, and what
+   * a manifest written by an older node says by omission.
+   */
+  parentKind?: CoordinatorKind | null;
   /**
    * Skills resolved across the team member's ancestor chain, nearest-first, and
    * already de-duplicated — see `resolveSkills` in ./skills.ts. Optional only so
@@ -372,6 +421,18 @@ export interface TransitionInput {
   status: WorkSessionStatus;
   exitCode?: number | null;
   error?: string | null;
+  /**
+   * The ending facts (171). Only meaningful with a terminal status; the RPC
+   * ignores them otherwise rather than date-stamping an ending that has not
+   * happened.
+   *
+   * `endedReason` is ONE PLAIN-ENGLISH SENTENCE, for a reader who is not a
+   * developer. `error` keeps the technical diagnostic — the two are not
+   * interchangeable, and the reason must never be a signal name or an exit
+   * code.
+   */
+  endedKind?: WorkSessionEndedKind | null;
+  endedReason?: string | null;
 }
 
 export interface RecordCommandInput {
@@ -434,6 +495,17 @@ export interface ResumeRequest {
  * single GraphPort instance serves every request on the node — a port that
  * captured claims at construction would hand one caller's identity to the next.
  */
+/**
+ * What a ghost sweep did, and what it could not do — the shape its worktree
+ * sibling (`WorktreeReconcileReport`) already has, for the reason that sibling's
+ * failures reach the operator at boot and this one's did not.
+ */
+export interface GhostReconcileReport {
+  readonly retired: number;
+  /** Empty on a clean sweep. Non-empty means rows were left claiming to be alive. */
+  readonly errors: readonly { readonly message: string }[];
+}
+
 export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
@@ -746,8 +818,12 @@ export interface Tm8Manifest {
    *  omitted so the CLI's shape stays stable. */
   skills: Array<{ name: string; body: string }>;
 
-  /** Present for coordinated modes — the concrete work-session return path. */
-  coordinator: { sessionId: string; displayName?: string } | null;
+  /**
+   * Present for coordinated modes — the concrete return path, and since 176
+   * WHAT it is. `kind` is always written (never inferred from presence), so a
+   * reader can tell "a work session" from "a manifest that predates the field".
+   */
+  coordinator: { sessionId: string; kind: CoordinatorKind; displayName?: string } | null;
 
   /** Coordinator directive delivery is post-G1A; always null in this wave. */
   directive: { subject: string; message: string; fromSessionId: string } | null;

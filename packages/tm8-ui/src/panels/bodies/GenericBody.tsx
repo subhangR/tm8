@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
@@ -6,6 +7,7 @@ import type {
   EntityDetail,
   EntitySummary,
 } from '@tm8/contract';
+import type { ArtifactRevisionsList, ArtifactRevisionSummary } from '../../data/seam';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon } from '../../domain';
 import { Chip, Eyebrow, Markdown } from '../../kit';
@@ -14,19 +16,23 @@ import type { DownloadHref } from '../../files/FilesScreen';
 import { EmptyBody } from '../detail/PanelStates';
 import type { AuthoringCommands } from '../../authoring';
 import { LoopControls } from '../../loops/LoopControls';
+import { BlueprintBlock } from './BlueprintBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 import type { EntityListPanelProps } from '../EntityListPanel';
 
 /**
- * The one command this body can execute (threaded from the host's seam
- * assignment, like `AuthoringCommands`): mint a preview capability so the
- * artifact-preview block's Run button renders the bundle. Structural subset
- * of `Seam['commands']` — a host assigns `seam.commands` with no cast.
+ * The artifact viewer's port (threaded from the host's seam assignment, like
+ * `AuthoringCommands`): mint a preview capability, list the published
+ * revisions, and fetch a revision's zip bytes. Structural subset of
+ * `Seam['commands']` — a host assigns `seam.commands` with no cast.
  */
 export interface ArtifactPreviewCommands {
   previewArtifact(id: string, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
+  /** Amendment 12 pair — the revision switcher's read and download's bytes. */
+  listArtifactRevisions(id: string): Promise<ArtifactRevisionsList>;
+  exportArtifactRevision(id: string, revisionNumber: number): Promise<Blob>;
 }
 
 type GenericBodyCommands = Partial<
@@ -59,12 +65,21 @@ export function GenericBody({
   downloadHref,
   membership,
   membersHost,
+  barSlot,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   onOpenEntity?: (id: string) => void;
   commands?: GenericBodyCommands | null;
   onSaved?: (result: CommandResult) => void;
+  /**
+   * The panel bar's end slot, for a block whose controls act on a VIEWPORT and
+   * therefore belong beside the tabs rather than in a row above it — the
+   * artifact viewer, under `composition: 'frame'`. Absent or null ⇒ the block
+   * draws its controls in place, exactly as before, so this arranges and never
+   * requires.
+   */
+  barSlot?: HTMLElement | null;
   /**
    * Authoring for the `membership` block — the same intent-only split the
    * subtree body uses for its sections. Absent ⇒ read-only, never dead
@@ -108,6 +123,7 @@ export function GenericBody({
           downloadHref={downloadHref}
           membership={membership}
           membersHost={membersHost}
+          barSlot={barSlot}
         />
       ))}
     </div>
@@ -123,6 +139,7 @@ function ContentBlock({
   downloadHref,
   membership,
   membersHost,
+  barSlot,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
@@ -132,6 +149,7 @@ function ContentBlock({
   downloadHref?: DownloadHref;
   membership?: MembershipAuthoring | null;
   membersHost?: EntityListPanelProps | null;
+  barSlot?: HTMLElement | null;
 }) {
   const body = (() => {
     switch (block.block) {
@@ -141,8 +159,23 @@ function ContentBlock({
         return <LinkSummaryBlock detail={detail} />;
       case 'file-preview':
         return <FilePreviewBlock detail={detail} downloadHref={downloadHref} />;
+      /* The blueprint canvas, folded from the row itself — see its docblock
+         for why it needs nothing from the host but `onOpenEntity`. */
+      case 'blueprint':
+        return <BlueprintBlock detail={detail} onOpenEntity={onOpenEntity} />;
       case 'artifact-preview':
-        return <ArtifactPreviewBlock detail={detail} previewArtifact={commands?.previewArtifact} />;
+        /* Keyed by entity id: a panel that re-points to another artifact must
+           reset the viewer's whole run state (selected revision, mint timer,
+           fullscreen) rather than mint the OLD artifact's revision number
+           against the new id. */
+        return (
+          <ArtifactPreviewBlock
+            key={detail.id}
+            detail={detail}
+            commands={commands ?? undefined}
+            barSlot={barSlot ?? null}
+          />
+        );
       case 'loop-controls':
         return (
           <LoopControls
@@ -353,94 +386,382 @@ function noPreviewWords(mime: string, reachable: boolean): string {
   return `no preview for ${mime || 'this type'}`;
 }
 
+/** Re-mint this far before the capability lapses, so the frame never dies mid-view. */
+const REMINT_MARGIN_MS = 60_000;
 /**
- * ARTIFACT-PREVIEW — metadata, and a Run button that EXECUTES (the two
- * security decisions that gated this — second origin + accepted iframe
- * residual — were ratified 2026-07-31; TM8-ARTIFACTS-DESIGN §9/§12.1).
+ * Floor under the re-mint delay. A session can arrive already inside the
+ * margin — or already past it (the fixture's deterministic clock is in the
+ * past by construction) — and a delay clamped to zero would re-mint in a
+ * tight loop rather than on a cadence.
+ */
+const REMINT_FLOOR_MS = 30_000;
+
+/**
+ * The server's own zip naming (`zipFilename`), mirrored so the two agree.
+ * The empty-name fallback deliberately differs from the server's — §15.2
+ * bans quoted kind literals in this file, and a filename is not worth an
+ * exemption in the scanner.
+ */
+function zipFilename(name: string, revisionNumber: number): string {
+  const base = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\/]/g, '_').trim().slice(0, 80) || 'bundle';
+  return `${base}-r${revisionNumber}.zip`;
+}
+
+/**
+ * ARTIFACT VIEWER — the rendered bundle, and essentially nothing else.
  *
- * Preview never autoruns (§9.5): the iframe does not exist until the user
- * clicks Run, so list and feed rendering execute nothing and the metadata is
- * visible BEFORE execution. The frame is `sandbox="allow-scripts"` and
+ * THE BLOCK IS THE FRAME (owner ruling 2026-08-18) AND NOW THE PANEL IS TOO
+ * (owner ruling 2026-08-20). The first ruling took the bordered banner, the
+ * `PREVIEW` eyebrow and the empty ＋ tile; the sentence the banner carried moved
+ * onto the frame's own `title`, the accessible name of the element actually
+ * running the code (see `frameTitle`). The second took what was left: the
+ * DETAILS and COLLECTIONS blocks came off the registry row, the attachment
+ * strip and footer came off with `composition: 'frame'`, and the controls that
+ * used to sit in a row of their own now RIDE THE PANEL BAR.
+ *
+ * THE CONTROLS PORTAL, AND THEY DEGRADE. `barSlot` is the panel bar's end slot
+ * — the same one the work session's surface chips use. Given one, the chrome
+ * renders there as marks; given null (a fixture, a host that mounts this block
+ * outside the artifact panel, the dev harness), it renders in place exactly as
+ * it did before. `WorkSessionContent`'s `switchSlot` is the precedent and the
+ * reason: a portal that REQUIRED its target would turn a missing div into
+ * missing controls, silently.
+ *
+ * WHY MARKS AND NOT WORDS: `.pn-tabs` is the only flexible child of the panel
+ * bar and its scrollbar is hidden, so anything the end cluster takes is paid
+ * for by the tab LABELS with nothing on screen saying so — "Connections" simply
+ * renders as "Co". Words cost ~300px here; ▷ ⛶ ⇩ cost ~90. Each keeps its verb
+ * as `aria-label` and tooltip, so nothing becomes unnameable.
+ *
+ * AUTORUNS when the detail opens (owner ruling 2026-08-16, superseding the
+ * §9.5 click-gate; the block mounts only inside the artifact DETAIL panel, so
+ * list and feed tiles still execute nothing). The sandbox posture is
+ * UNCHANGED and is the whole security model: `sandbox="allow-scripts"` and
  * NOTHING else — never `allow-same-origin` (with allow-scripts a frame could
- * strip its own sandbox), never top-navigation/popups/downloads/forms — and
- * the src is the server-minted capability URL on the PREVIEW origin,
- * verbatim. This file never builds a preview URL itself: a node without the
- * second-origin listener answers without `previewUrl`, and the honest render
- * is the refusal text, not a broken frame.
+ * strip its own sandbox), never top-navigation/popups/downloads/forms/modals.
+ * `previewUrl` is an OPAQUE server-minted capability used verbatim: this file
+ * never parses or builds one, and it renders from whatever origin the node
+ * chose — the block cannot tell and must not care. A node that answers
+ * without `previewUrl` gets the refusal text, never a broken frame; a mount
+ * with no command executor says so in words.
+ *
+ * The capability expires (~600s), so a successful mint schedules its own
+ * replacement at `expiresAt` minus a margin and swaps the frame src in place —
+ * a panel left open must still show a live page, not a silently dead one.
+ *
+ * The accepted residual (TM8-ARTIFACTS-DESIGN §12.1): a hostile bundle can
+ * draw a pixel-perfect fake tm8 login and POST keystrokes anywhere — open
+ * network inside the frame is server policy. The publisher line and the
+ * third-party wording are the compensating control for exactly that; they now
+ * ride the frame's accessible name instead of a banner, so they are reachable
+ * on the element at risk rather than merely adjacent to it.
  */
 function ArtifactPreviewBlock({
   detail,
-  previewArtifact,
+  commands,
+  barSlot,
 }: {
   detail: EntityDetail;
-  previewArtifact?: ArtifactPreviewCommands['previewArtifact'];
+  commands?: GenericBodyCommands;
+  /** The panel bar's end slot. Null ⇒ the chrome renders in place. */
+  barSlot?: HTMLElement | null;
 }) {
+  const previewArtifact = commands?.previewArtifact;
+  const listArtifactRevisions = commands?.listArtifactRevisions;
+  const exportArtifactRevision = commands?.exportArtifactRevision;
+
   const state = detail.state as unknown as Record<string, unknown>;
   const content = detail.content as unknown as Record<string, unknown>;
-  const description = typeof content.description === 'string' ? content.description : null;
-  const revision = typeof state.revisionNumber === 'number' ? state.revisionNumber : null;
+  const currentRevision = typeof state.revisionNumber === 'number' ? state.revisionNumber : null;
   const fileCount = typeof content.fileCount === 'number' ? content.fileCount : null;
   const totalBytes = typeof content.totalSizeBytes === 'number' ? content.totalSizeBytes : null;
+  /* The two DETAILS rows that were NOT already in `frameTitle` — they ride the
+     revision picker's tooltip rather than a five-row table, because they are
+     facts ABOUT the revision you are looking at. The sha is the only thing a
+     person can verify a downloaded bundle against, so it is carried in full
+     rather than truncated for the tooltip's sake. */
+  const entrypoint = typeof content.entrypoint === 'string' ? content.entrypoint : null;
+  const manifestSha = typeof content.manifestSha256 === 'string' ? content.manifestSha256 : null;
 
   const [run, setRun] = useState<
-    | { phase: 'idle' }
     | { phase: 'starting' }
-    | { phase: 'running'; previewUrl: string; expiresAt: string }
+    | { phase: 'running'; previewUrl: string; revisionNumber: number }
     | { phase: 'error'; message: string }
-  >({ phase: 'idle' });
+  >({ phase: 'starting' });
+  /** `null` = the artifact's current revision (the server's default). */
+  const [selectedRevision, setSelectedRevision] = useState<number | null>(null);
+  const [revisions, setRevisions] = useState<ArtifactRevisionSummary[] | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [restartNonce, setRestartNonce] = useState(0);
 
-  const facts: string[] = [];
-  if (revision != null) facts.push(`revision ${revision}`);
-  if (fileCount != null) facts.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
-  if (totalBytes != null) facts.push(formatBytes(totalBytes));
-
-  const onRun = async () => {
+  useEffect(() => {
     if (!previewArtifact) return;
-    setRun({ phase: 'starting' });
-    try {
-      const session = await previewArtifact(detail.id, {
-        clientMutationId: crypto.randomUUID(),
-      });
-      if (session.previewUrl) {
-        setRun({ phase: 'running', previewUrl: session.previewUrl, expiresAt: session.expiresAt });
-      } else {
-        setRun({ phase: 'error', message: 'This node does not run a preview origin, so the bundle cannot be rendered here.' });
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // `revisionToRequest` is undefined ONLY on the very first mint of a
+    // latest-revision view — the server resolves "current" once, and every
+    // TTL re-mint then PINS the revision that answer named. Without the pin,
+    // a concurrent publish would make a background re-mint silently swap the
+    // page under the viewer; tracking latest stays an explicit act (the
+    // switcher, or Restart). Under React StrictMode's dev double-mount the
+    // first mint runs twice — the orphaned session is never rendered and the
+    // server reaps it at TTL, so no cleanup path is owed here.
+    const mint = async (revisionToRequest: number | undefined, isFirst: boolean) => {
+      if (isFirst) setRun({ phase: 'starting' });
+      try {
+        const session = await previewArtifact(detail.id, {
+          clientMutationId: crypto.randomUUID(),
+          ...(revisionToRequest != null ? { revisionNumber: revisionToRequest } : {}),
+        });
+        if (cancelled) return;
+        if (!session.previewUrl) {
+          setRun({ phase: 'error', message: 'This node did not mint a preview URL, so the bundle cannot be rendered here.' });
+          return;
+        }
+        setRun({ phase: 'running', previewUrl: session.previewUrl, revisionNumber: session.revisionNumber });
+        // A re-mint keeps the frame alive across the TTL; on failure the
+        // catch below reports it instead of leaving a dead frame that still
+        // looks rendered. A malformed expiresAt falls to the floor cadence
+        // rather than to setTimeout(NaN)'s run-now loop.
+        const untilMargin = Date.parse(session.expiresAt) - Date.now() - REMINT_MARGIN_MS;
+        timer = setTimeout(
+          () => void mint(session.revisionNumber, false),
+          Number.isFinite(untilMargin) ? Math.max(untilMargin, REMINT_FLOOR_MS) : REMINT_FLOOR_MS,
+        );
+      } catch (err) {
+        if (!cancelled) setRun({ phase: 'error', message: err instanceof Error ? err.message : 'preview could not be started' });
       }
+    };
+    void mint(selectedRevision ?? undefined, true);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [detail.id, selectedRevision, restartNonce, previewArtifact]);
+
+  useEffect(() => {
+    if (!listArtifactRevisions) return;
+    let cancelled = false;
+    listArtifactRevisions(detail.id).then(
+      (page) => { if (!cancelled) setRevisions(page.revisions); },
+      // A failed history read degrades to "no switcher", not to a dead viewer:
+      // the frame renders from the current revision either way.
+      () => { if (!cancelled) setRevisions(null); },
+    );
+    return () => { cancelled = true; };
+  }, [detail.id, listArtifactRevisions]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    // Keydown reaches this document only while focus sits OUTSIDE the frame —
+    // a cross-origin sandboxed iframe swallows its own keys and cannot be
+    // listened into. The Exit-fullscreen button stays visible for that case.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  /**
+   * The one revision number the whole chrome speaks with — and the one
+   * Download fetches. When a frame is live this is the MINT-TIME revision
+   * (`run.revisionNumber`), never the detail-fetch-time state: the two can
+   * diverge across a concurrent publish, and a download that disagrees with
+   * the page on screen is the review finding this line closes (F1).
+   */
+  const shownRevision = run.phase === 'running' ? run.revisionNumber : selectedRevision ?? currentRevision;
+
+  const onDownload = async () => {
+    if (!exportArtifactRevision) return;
+    const revisionNumber = shownRevision;
+    if (revisionNumber == null) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const blob = await exportArtifactRevision(detail.id, revisionNumber);
+      // RAW BYTES → object URL → anchor click. The URL is revoked immediately:
+      // the click has already handed the blob to the download, and a leaked
+      // object URL pins the whole zip in memory for the panel's lifetime.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = zipFilename(detail.title, revisionNumber);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      setRun({ phase: 'error', message: err instanceof Error ? err.message : 'preview could not be started' });
+      setExportError(err instanceof Error ? err.message : 'export failed');
+    } finally {
+      setExporting(false);
     }
   };
 
+  const facts: string[] = [];
+  if (fileCount != null) facts.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
+  if (totalBytes != null) facts.push(formatBytes(totalBytes));
+
+  /**
+   * The provenance sentence, now carried by the FRAME rather than by a banner
+   * above it (owner ruling 2026-08-18: the chrome was eating the viewport the
+   * artifact exists to fill). It is still the accessible name of the very
+   * element that runs the third-party code — a screen reader announces it on
+   * entry and a pointer surfaces it on hover — so §12.1's compensating control
+   * keeps naming the publisher and disowning the content; what it no longer
+   * does is claim 200px of a 900px panel to say so on every phase.
+   */
+  const frameTitle = [
+    `artifact preview · ${detail.title}`,
+    `published by ${detail.createdBy.displayName} (${detail.createdBy.isAgent ? 'agent' : 'human'})`,
+    ...(shownRevision != null ? [`revision ${shownRevision}`] : []),
+    ...facts,
+    "third-party content — this page is the artifact's own code, not tm8 UI; never enter tm8 credentials into it",
+  ].join(' · ');
+
+  /*
+   * ONE REVISION IS NOT A CHOICE, so it does not draw a control (owner ruling
+   * 2026-08-20). Most artifacts have exactly one, including every one on the
+   * help shelf, and a picker with a single option is a widget that cannot do
+   * anything — in the one row where width is paid for by the tab labels. The
+   * revision is still stated: it is in `frameTitle`, and the entrypoint and
+   * manifest sha ride the picker only when the picker exists. Where it does
+   * not, `frameTitle` is the whole of the provenance, which is exactly what
+   * that string is for.
+   */
+  const revisionFacts = [
+    'revision — ✓ marks the artifact\'s current one',
+    ...(entrypoint != null ? [`entrypoint ${entrypoint}`] : []),
+    ...(manifestSha != null ? [`manifest sha256 ${manifestSha}`] : []),
+  ].join(' · ');
+
+  const chrome = (
+    <div className="pn-preview__chrome" data-testid="artifact-chrome">
+      {revisions !== null && revisions.length > 1 ? (
+        <select
+          className="pn-preview__revpick"
+          aria-label="revision"
+          title={revisionFacts || undefined}
+          value={String(selectedRevision ?? currentRevision ?? revisions[0]!.revisionNumber)}
+          onChange={(e) => setSelectedRevision(Number(e.target.value))}
+        >
+          {/* A `<select>` is as wide as its WIDEST OPTION, so " · current"
+              was not costing eleven characters on one row — it was setting the
+              width of the control on every row. MEASURED at a 428px panel:
+              the picker was 132px of a 331px cluster, which left the three tabs
+              56px and scrolled Connections and Discussion out of the document
+              view entirely, with the strip's scrollbar hidden so nothing said
+              so. The ✓ carries the same fact in one character, and the word it
+              replaces is spelled out in the control's own tooltip. */}
+          {revisions.map((r) => (
+            <option key={r.revisionNumber} value={String(r.revisionNumber)}>
+              {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' ✓' : ''}`}
+            </option>
+          ))}
+        </select>
+      ) : null}
+      {/* THE WORD IS THE ACCESSIBLE NAME, THE GLYPH IS THE BUTTON. Every one of
+          these keeps `aria-label` and `title`, so `getByRole('button', { name })`
+          still finds it and a pointer still reads it — what they give up is the
+          ~210px of label text that the panel bar charges to the tab strip. */}
+      {/* THE NAME DOES NOT CHANGE WHILE THE VERB WORKS. As a word the button
+          said "Starting…" mid-mint, which was fine as a caption and is not fine
+          as an ACCESSIBLE NAME: the control a screen reader just announced
+          renames itself under the cursor, and `getByRole('button', { name })`
+          finds it or not depending on timing. Worse, an unwired mount never
+          leaves `starting`, so a panel with no executor described its Restart
+          button as permanently starting something. The transient state is
+          `aria-busy` and the tooltip, which is what both are for; the disabled
+          attribute already stops the second press. */}
+      <button
+        type="button"
+        className="pn-btn pn-btn--mark"
+        aria-label="Restart"
+        aria-busy={previewArtifact !== undefined && run.phase === 'starting'}
+        title={
+          previewArtifact === undefined
+            ? 'Restart — preview is not wired here.'
+            : run.phase === 'starting'
+              ? 'Starting…'
+              : 'Restart — mint a fresh preview and reload the frame.'
+        }
+        disabled={previewArtifact === undefined || run.phase === 'starting'}
+        onClick={() => setRestartNonce((n) => n + 1)}
+      >
+        <span aria-hidden>▷</span>
+      </button>
+      <button
+        type="button"
+        className="pn-btn pn-btn--mark"
+        aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        aria-pressed={fullscreen}
+        onClick={() => setFullscreen((f) => !f)}
+      >
+        <span aria-hidden>{fullscreen ? '⛶̸' : '⛶'}</span>
+      </button>
+      <button
+        type="button"
+        className="pn-btn pn-btn--mark"
+        aria-label="Download"
+        aria-busy={exporting}
+        title={
+          exportArtifactRevision === undefined
+            ? 'Download — export is not wired here.'
+            : exporting
+              ? 'Saving…'
+              : 'Download this revision as a zip.'
+        }
+        disabled={exportArtifactRevision === undefined || exporting || shownRevision == null}
+        onClick={() => void onDownload()}
+      >
+        <span aria-hidden>⇩</span>
+      </button>
+    </div>
+  );
+
   return (
-    <div className="pn-preview">
-      {run.phase === 'running' ? (
+    <div className={`pn-preview pn-preview--viewer${fullscreen ? ' pn-preview--fullscreen' : ''}`}>
+      {/* Portalled to the panel bar where the host offers a slot, drawn in place
+          where it does not — see the docblock. FULLSCREEN ALWAYS DRAWS IN PLACE:
+          the fullscreen element is `position: fixed` over the whole app, so
+          controls left behind in the panel bar would be underneath it, and Exit
+          would be unreachable by anything but Escape — which a cross-origin
+          frame swallows the moment focus is inside it. */}
+      {barSlot && !fullscreen ? createPortal(chrome, barSlot) : chrome}
+      {previewArtifact === undefined ? (
+        <div className="pn-preview__box pn-preview__box--none">
+          <span className="pn-preview__label">
+            Preview is not wired here — this mount has no command executor, so the bundle stays unexecuted.
+          </span>
+        </div>
+      ) : run.phase === 'running' ? (
         <iframe
           className="pn-preview__frame"
-          title={`artifact preview · ${detail.title}`}
+          title={frameTitle}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           src={run.previewUrl}
-          style={{ width: '100%', minHeight: '320px', border: '1px solid var(--border, #444)', borderRadius: '4px', background: '#fff' }}
         />
       ) : (
         <div className="pn-preview__box pn-preview__box--none">
           <span className="pn-preview__label">
-            {detail.title}
-            {facts.length > 0 ? ` · ${facts.join(' · ')}` : ''}
+            {run.phase === 'starting' ? 'starting preview…' : run.message}
           </span>
         </div>
       )}
-      {description ? <p className="pn-prose">{description}</p> : null}
-      {run.phase === 'error' ? <p className="pn-section__empty">{run.message}</p> : null}
-      <button
-        type="button"
-        className="pn-btn"
-        disabled={previewArtifact === undefined || run.phase === 'starting'}
-        title={previewArtifact === undefined ? 'Preview is not wired here.' : 'Render this bundle in a sandboxed frame.'}
-        onClick={() => void onRun()}
-      >
-        {run.phase === 'running' ? 'Restart ▷' : run.phase === 'starting' ? 'Starting…' : 'Run ▷'}
-      </button>
+      {/* The description paragraph is gone (owner ruling 2026-08-20). Every
+          artifact that has one repeats it as its own subtitle INSIDE the bundle
+          — visibly, in the first screenful of the frame directly above — so it
+          was a duplicate rendered outside the thing it describes. It survives
+          where a reader needs it without the frame: the list tile's excerpt.
+
+          The export error stays. It is the one thing here that the frame cannot
+          say for itself: a failed download leaves the page on screen looking
+          perfectly fine. */}
+      {exportError ? <p className="pn-section__empty">{exportError}</p> : null}
     </div>
   );
 }

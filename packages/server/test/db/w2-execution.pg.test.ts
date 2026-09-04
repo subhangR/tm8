@@ -1,31 +1,17 @@
 /**
- * W2 G11 — B2, proved by execution against a real Postgres.
+ * W2 delivery authority, proved through the production server path against a
+ * real Postgres.
  *
- * B2: every Teammate-authored live delivery uses ONE DURABLE UNORDERED PAIR
- * BUDGET, so that no thread root and no process restart mints a fresh
- * allowance. Both adjectives are load-bearing and both are proved here by
- * OBSERVATION rather than by reading that a value was stored:
+ * Migration 135 removes the wake-pair row and the copied version that used to
+ * travel reserve -> claim -> settle. The copied value was not optimistic
+ * concurrency: claim and settle never re-read the pair row and the copy never
+ * changed. Their concurrency boundary is the delivery row `FOR UPDATE`, while
+ * the unique (message,target,attempt) key protects logical reservation identity.
  *
- *   DURABLE   — the process is destroyed. The `W2ExecutionDeliveryService`,
- *               the `W2MessageDeliveryAdapter` inside it and the pg `Pool`
- *               underneath it are all torn down and rebuilt from nothing, and
- *               the budget is then observed to CONTINUE rather than restart.
- *               A comment saying "the counter lives in Postgres" is not this
- *               test; a fresh process that gets four more wakes would fail it.
- *   UNORDERED — {A,B} and {B,A} are shown to be one row and one counter, by
- *               driving a wake in each direction and counting both.
- *
- * WHAT THIS FILE DELIBERATELY DOES NOT RE-PROVE. 015's own suite already
- * establishes the schema-level facts (5-way concurrent reserve → 4 pending + 1
- * `failed_permanent`, budget {wakes: 4, version: 4}, claim/settle, the Member
- * reset). Re-asserting them here would inflate the evidence without adding
- * any. What was NOT covered anywhere, and is the entire reason G11 exists, is
- * that NOTHING IN THE SERVER EVER CALLED ANY OF IT: `mintSystemDeliveryPrincipal`
- * had zero production call sites, `W2MessageDeliveryAdapter` had zero
- * production instantiations, and the `options.messageDelivery` seam G04 cut and
- * labelled "G11 owns this" was filled by no caller in src or test. A written
- * authorizer that nothing invokes is a comment, not a defence. So this file's
- * subject is the SERVER PATH, end to end, over the real RPCs.
+ * This file now proves those surviving boundaries directly: distinct messages
+ * on one pair reserve concurrently, duplicate logical attempts cannot fork, and
+ * concurrent claim/settle calls serialize on one durable row. It also proves
+ * the removed table, columns, reset RPC and cleanup key are actually absent.
  *
  * MEASUREMENT VALIDITY — read this before trusting the result.
  * Every existing pg test reaches the three delivery RPCs by running as the
@@ -76,10 +62,9 @@ interface Fixture {
 /**
  * The graph a delivery needs, and nothing more.
  *
- * `authored_from` edges are what make a message a TEAMMATE wake — 015's
- * `reserve_session_message_delivery` refuses a team_member-authored message
- * with no source session, because a wake with no provenance cannot be charged
- * to a pair.
+ * `authored_from` edges are immutable source-session provenance. Reserve
+ * refuses a team_member-authored message without one, and uses it to enforce
+ * same-Space endpoints and self-contact refusal.
  */
 async function seedSpace(database: W1ScratchDatabase): Promise<Fixture> {
   return database.transaction(async (client) => {
@@ -185,29 +170,6 @@ async function newTeammateMessage(
   });
 }
 
-/** A Member reply under a Teammate message — the human turn that resets B2. */
-async function newMemberReply(
-  database: W1ScratchDatabase,
-  fx: Fixture,
-  parentMessageId: string,
-): Promise<string> {
-  return database.transaction(async (client) => {
-    await client.query('set local role tm8_graph_owner');
-    const id = (await client.query<{ id: string }>(`select internal.new_id()::text id`)).rows[0]!.id;
-    await client.query(
-      `insert into public.entities(id, space_id, kind, parent_id, created_by)
-       values ($1, $2, 'message', $3, $4)`,
-      [id, fx.spaceId, parentMessageId, fx.memberId],
-    );
-    await client.query(
-      `insert into public.messages(entity_id, anchor_id, root_message_id, author_id, body)
-       values ($1, $2, $3, $4, 'human turn')`,
-      [id, fx.channelId, parentMessageId, fx.memberId],
-    );
-    return id;
-  });
-}
-
 // ---------------------------------------------------------------------------
 // the "process"
 // ---------------------------------------------------------------------------
@@ -257,9 +219,7 @@ interface ServerProcess {
  *
  * `boot`/`shutdown` is the whole restart apparatus: a new `ServerProcess` shares
  * NO object with the previous one — new pool, new sockets, new adapter, new
- * dedup map, new PTY. If any wake state were process-local, a fresh boot would
- * hand out a fresh allowance, and that is the failure this test is shaped to
- * catch.
+ * dedup map, new PTY. Durable delivery rows are the only shared state.
  */
 function boot(deliveryUrl: string, liveSessions: readonly string[]): ServerProcess {
   const rpc = PgW2DeliveryRpcPort.fromConnectionString(deliveryUrl, 8);
@@ -308,29 +268,11 @@ async function deliver(
 
 // ---------------------------------------------------------------------------
 
-describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RPCs', () => {
+describe('W2 delivery principal without wake-pair machinery, over the real delivery RPCs', () => {
   let database: W1ScratchDatabase;
   let fx: Fixture;
   let deliveryUrl: string;
   let appUrl: string;
-
-  const budgetOf = async (a: string, b: string) =>
-    (await database.query<{ consecutive_agent_wakes: number; version: number }>(
-      `select consecutive_agent_wakes, version from public.session_wake_budgets
-        where low_work_session_id = least($1::uuid, $2::uuid)
-          and high_work_session_id = greatest($1::uuid, $2::uuid)`,
-      [a, b],
-    ))[0] ?? null;
-
-  const budgetRowCount = async (a: string, b: string) =>
-    Number(
-      (await database.query<{ n: string }>(
-        `select count(*)::text n from public.session_wake_budgets
-          where (low_work_session_id, high_work_session_id)
-                in ((least($1::uuid,$2::uuid), greatest($1::uuid,$2::uuid)))`,
-        [a, b],
-      ))[0]!.n,
-    );
 
   beforeAll(async () => {
     database = await createW1ScratchDatabase('g11_execution');
@@ -378,6 +320,7 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     expect(files[0]).toBe('001_core_graph.sql');
     expect(files).toContain('015_w1_foundations.sql');
     expect(files).toContain('019_w2_messages_handoffs.sql');
+    expect(files).toContain('146_remove_wake_budget_machinery.sql');
     // No 025/026/028 exist, and G11 does not add one.
     expect(files).not.toContain('026_w2_execution.sql');
   });
@@ -394,9 +337,9 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
               has_function_privilege('tm8_app',
                 'public.reserve_session_message_delivery(uuid,uuid,uuid,integer)', 'EXECUTE') as reserve,
               has_function_privilege('tm8_app',
-                'public.claim_session_message_delivery(uuid,uuid,uuid,integer)', 'EXECUTE') as claim,
+                'public.claim_session_message_delivery(uuid,uuid,uuid)', 'EXECUTE') as claim,
               has_function_privilege('tm8_app',
-                'public.settle_session_message_delivery(uuid,uuid,uuid,integer,text,text)', 'EXECUTE') as settle`,
+                'public.settle_session_message_delivery(uuid,uuid,uuid,text,text)', 'EXECUTE') as settle`,
     ))[0]!;
     expect(privileges).toEqual({ member: false, reserve: false, claim: false, settle: false });
 
@@ -430,184 +373,141 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     }
   });
 
-  // -- B2: one budget across thread roots -------------------------------------
+  it('removes the table, pair columns, reset/cleanup functions, and old RPC overloads', async () => {
+    const removed = (await database.query<{
+      wake_table: string | null;
+      reset_rpc: string | null;
+      cleanup_function: string | null;
+      old_claim: string | null;
+      old_settle: string | null;
+      new_claim: string | null;
+      new_settle: string | null;
+    }>(
+      `select to_regclass('public.session_wake_budgets')::text as wake_table,
+              to_regprocedure('public.reset_session_wake_budget_for_member_reply(uuid,text)')::text as reset_rpc,
+              to_regprocedure('internal.w1_refresh_wake_budget_cleanup_eligibility()')::text as cleanup_function,
+              to_regprocedure('public.claim_session_message_delivery(uuid,uuid,uuid,integer)')::text as old_claim,
+              to_regprocedure('public.settle_session_message_delivery(uuid,uuid,uuid,integer,text,text)')::text as old_settle,
+              to_regprocedure('public.claim_session_message_delivery(uuid,uuid,uuid)')::text as new_claim,
+              to_regprocedure('public.settle_session_message_delivery(uuid,uuid,uuid,text,text)')::text as new_settle`,
+    ))[0]!;
+    expect(removed).toMatchObject({
+      wake_table: null,
+      reset_rpc: null,
+      cleanup_function: null,
+      old_claim: null,
+      old_settle: null,
+    });
+    expect(removed.new_claim).not.toBeNull();
+    expect(removed.new_settle).not.toBeNull();
 
-  it('a top-level wake and a reply wake share ONE budget — no thread root mints an allowance', async () => {
-    const source = await newSession(database, fx, 'G11 source');
-    const target = await newSession(database, fx, 'G11 target');
+    const columns = await database.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema='public' and table_name='session_message_deliveries'
+          and column_name like 'pair_%' order by column_name`,
+    );
+    expect(columns).toEqual([]);
+  });
+
+  it('distinct messages on one session pair reserve and settle concurrently', async () => {
+    const source = await newSession(database, fx, 'G11 concurrent source');
+    const target = await newSession(database, fx, 'G11 concurrent target');
+    const messages = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => newTeammateMessage(database, fx, source, `parallel ${i}`)),
+    );
     const proc = boot(deliveryUrl, [target]);
     try {
-      const root = await newTeammateMessage(database, fx, source, 'top level');
-      const reply = await newTeammateMessage(database, fx, source, 'in thread', root);
-
-      // Concurrent, because a budget that only holds when calls are serialized
-      // is not a budget — 015 takes `for update` on the pair row and this is
-      // what exercises it from the server path.
-      const [a, b] = await Promise.all([
-        deliver(proc, root, target, 'wake one'),
-        deliver(proc, reply, target, 'wake two'),
-      ]);
-      expect([a.outcome, b.outcome]).toEqual(['delivered', 'delivered']);
-
-      expect(await budgetRowCount(source, target)).toBe(1);
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 2 });
-      expect(proc.pty.bytes).toBeGreaterThan(0);
-    } finally {
-      await proc.shutdown();
-    }
-  }, 60_000);
-
-  it('{A,B} and {B,A} are the SAME budget — the pair is unordered', async () => {
-    const alpha = await newSession(database, fx, 'G11 alpha');
-    const beta = await newSession(database, fx, 'G11 beta');
-    const proc = boot(deliveryUrl, [alpha, beta]);
-    try {
-      const fromAlpha = await newTeammateMessage(database, fx, alpha, 'alpha speaks');
-      expect((await deliver(proc, fromAlpha, beta, 'a to b')).outcome).toBe('delivered');
-      expect(await budgetOf(alpha, beta)).toMatchObject({ consecutive_agent_wakes: 1 });
-
-      // The other direction. If direction minted its own row this would read 1.
-      const fromBeta = await newTeammateMessage(database, fx, beta, 'beta answers');
-      expect((await deliver(proc, fromBeta, alpha, 'b to a')).outcome).toBe('delivered');
-
-      expect(await budgetRowCount(alpha, beta)).toBe(1);
-      expect(await budgetRowCount(beta, alpha)).toBe(1);
-      expect(await budgetOf(beta, alpha)).toMatchObject({ consecutive_agent_wakes: 2 });
-    } finally {
-      await proc.shutdown();
-    }
-  }, 60_000);
-
-  // -- B2 after 120: the counter is durable, and it no longer gates -----------
-
-  /**
-   * ══════════════════════════════════════════════════════════════════════════
-   * THIS TEST CHANGED SIDES — 2026-08-14, by migration `120`.
-   *
-   * It used to be the restart proof for the CAP: five and six were refused as
-   * `failed_permanent`/`automated_wake_limit`, and a restart at the limit did
-   * not hand out a fresh allowance. `120` removed that cap, so the refusal it
-   * asserted no longer exists and asserting it would pin behaviour the schema
-   * has deliberately dropped.
-   *
-   * What it still has to prove is the half that DID survive, and it is the
-   * half that is easy to lose by accident. `consecutive_agent_wakes` is still
-   * counted and `version` is still bumped, per pair, in the same transaction
-   * that reserves the delivery — because `version` is the optimistic pin
-   * threaded through reserve -> claim -> settle and asserted by
-   * `internal.require_delivery_principal`. A "cleanup" that stopped writing the
-   * pair row along with the cap would take the pin with it, and the failure
-   * would surface as claims that cannot find their reservation, not as a
-   * missing counter. So: a restart still shares one durable pair row, the count
-   * still continues across it, and it now walks straight past four.
-   * ══════════════════════════════════════════════════════════════════════════
-   */
-  it('the pair counter is still durable across a restart — and no longer refuses at four', async () => {
-    const source = await newSession(database, fx, 'G11 restart source');
-    const target = await newSession(database, fx, 'G11 restart target');
-    const messages: string[] = [];
-    for (let i = 0; i < 6; i += 1) {
-      messages.push(await newTeammateMessage(database, fx, source, `wake ${i}`));
-    }
-
-    // ── process 1 ──
-    const first = boot(deliveryUrl, [target]);
-    expect((await deliver(first, messages[0]!, target, 'one')).outcome).toBe('delivered');
-    expect((await deliver(first, messages[1]!, target, 'two')).outcome).toBe('delivered');
-    expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 2 });
-    const bytesBefore = first.pty.bytes;
-    expect(bytesBefore).toBeGreaterThan(0);
-
-    // ── the restart. Pool, adapter, dedup map and PTY are all destroyed. ──
-    await first.shutdown();
-
-    // ── process 2: shares no object with process 1 ──
-    const second = boot(deliveryUrl, [target]);
-    try {
-      expect(second.pty.bytes).toBe(0);
-
-      // The count CONTINUES across the restart. A process-local counter would
-      // read 2 here instead of 4 — which is the property 120 had to preserve
-      // while removing the thing the count used to feed.
-      expect((await deliver(second, messages[2]!, target, 'three')).outcome).toBe('delivered');
-      expect((await deliver(second, messages[3]!, target, 'four')).outcome).toBe('delivered');
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 4 });
-
-      // THE FIFTH. This is the assertion 120 inverted. It delivers, it writes
-      // real bytes, and the counter walks past the boundary the dropped CHECK
-      // used to hold it at — proving both halves of the cap are gone, not just
-      // the branch. A chain that dropped the branch and kept
-      // `session_wake_budgets_consecutive_agent_wakes_check` would fail HERE,
-      // with a 23514 out of the UPDATE rather than a settled refusal.
-      const bytesAtFour = second.pty.bytes;
-      expect((await deliver(second, messages[4]!, target, 'five')).outcome).toBe('delivered');
-      expect(second.pty.bytes).toBeGreaterThan(bytesAtFour);
-      expect(second.pty.deliveries).toHaveLength(3);
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 5 });
-
-      // And NO row anywhere in this pair's history was ever refused for the
-      // reason that no longer exists.
-      const refusals = await database.query<{ n: string }>(
-        `select count(*)::text n from public.session_message_deliveries
-          where failure_reason = 'automated_wake_limit'`,
+      const results = await Promise.all(
+        messages.map((message, i) => deliver(proc, message, target, `parallel ${i}`)),
       );
-      expect(refusals[0]!.n).toBe('0');
-
-      // ── once more across a restart, well past the old ceiling ──
-      await second.shutdown();
-      const third = boot(deliveryUrl, [target]);
-      try {
-        expect((await deliver(third, messages[5]!, target, 'six')).outcome).toBe('delivered');
-        expect(third.pty.bytes).toBeGreaterThan(0);
-        expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 6 });
-        // Still ONE row: unbounded wakes, not unbounded pairs.
-        expect(await budgetRowCount(source, target)).toBe(1);
-      } finally {
-        await third.shutdown();
-      }
+      expect(results.map((result) => result.outcome)).toEqual(Array(8).fill('delivered'));
+      expect(proc.pty.deliveries).toHaveLength(8);
+      const rows = await database.query<{ n: string }>(
+        `select count(*)::text n from public.session_message_deliveries
+          where message_id = any($1::uuid[]) and status='delivered'`,
+        [messages],
+      );
+      expect(rows[0]!.n).toBe('8');
     } finally {
-      await second.shutdown().catch(() => undefined);
+      await proc.shutdown();
     }
   }, 120_000);
 
-  // -- B2: Member reset and retry ---------------------------------------------
-
-  it('a Member reply resets the budget, and the SAME pair then wakes again', async () => {
-    const source = await newSession(database, fx, 'G11 reset source');
-    const target = await newSession(database, fx, 'G11 reset target');
-    const proc = boot(deliveryUrl, [target]);
+  it('the unique logical-attempt key still prevents concurrent reservation forks', async () => {
+    const source = await newSession(database, fx, 'G11 duplicate source');
+    const target = await newSession(database, fx, 'G11 duplicate target');
+    const message = await newTeammateMessage(database, fx, source, 'one logical attempt');
+    const first = boot(deliveryUrl, [target]);
+    const second = boot(deliveryUrl, [target]);
     try {
-      const first = await newTeammateMessage(database, fx, source, 'before the human');
-      expect((await deliver(proc, first, target, 'pre-reset')).outcome).toBe('delivered');
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 1 });
-
-      const reply = await newMemberReply(database, fx, first);
-      // A BOUND caller: `tm8.identity_id` names a real member of the space.
-      // Deliberately so — the authorization on this RPC is tightening in a
-      // migration authored elsewhere, and a proof that depended on an UNBOUND
-      // caller reaching it would be a proof of the defect, not of B2.
-      const reset = await database.transaction(async (client) => {
-        await client.query('set local role tm8_app');
-        await client.query(`select set_config('tm8.identity_id', $1, true)`, [fx.identityId]);
-        return (await client.query<{ reset: { reset: boolean } }>(
-          `select public.reset_session_wake_budget_for_member_reply($1, $2) as reset`,
-          [reply, `g11-reset-${randomUUID()}`],
-        )).rows[0]!.reset;
-      });
-      expect(reset).toMatchObject({ reset: true });
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 0 });
-
-      // Still ONE row: a reset is a reset, not a new budget.
-      expect(await budgetRowCount(source, target)).toBe(1);
-      const after = await newTeammateMessage(database, fx, source, 'after the human');
-      expect((await deliver(proc, after, target, 'post-reset')).outcome).toBe('delivered');
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 1 });
+      const results = await Promise.allSettled([
+        first.service.reserve({ messageId: message, targetWorkSessionId: target, content: 'a', mode: 'send' }),
+        second.service.reserve({ messageId: message, targetWorkSessionId: target, content: 'b', mode: 'send' }),
+      ]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      const rows = await database.query<{ n: string }>(
+        `select count(*)::text n from public.session_message_deliveries
+          where message_id=$1 and target_work_session_id=$2 and attempt_no=1`,
+        [message, target],
+      );
+      expect(rows[0]!.n).toBe('1');
     } finally {
-      await proc.shutdown();
+      await Promise.all([first.shutdown(), second.shutdown()]);
     }
-  }, 60_000);
+  }, 120_000);
 
-  it('a RETRY consumes the same allowance rather than a fresh one', async () => {
+  it('claim and settle serialize on the delivery row and keep idempotent replay', async () => {
+    const source = await newSession(database, fx, 'G11 transition source');
+    const target = await newSession(database, fx, 'G11 transition target');
+    const message = await newTeammateMessage(database, fx, source, 'one durable row');
+    const rpc = PgW2DeliveryRpcPort.fromConnectionString(deliveryUrl, 8);
+    const lease = {
+      deliveryId: randomUUID(),
+      messageId: message,
+      targetWorkSessionId: target,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    try {
+      expect((await rpc.reserve(lease, 1)).status).toBe('pending');
+      const claimed = await Promise.all([rpc.claim(lease), rpc.claim(lease)]);
+      expect(claimed.map((row) => row.status)).toEqual(['dispatching', 'dispatching']);
+      const settled = await Promise.all([
+        rpc.settle(lease, 'delivered', null),
+        rpc.settle(lease, 'delivered', null),
+      ]);
+      expect(settled.map((row) => row.status)).toEqual(['delivered', 'delivered']);
+      await expect(rpc.settle(lease, 'failed_permanent', 'late_conflict')).rejects.toThrow(
+        /delivery cannot settle from status delivered/,
+      );
+    } finally {
+      await rpc.close();
+    }
+  }, 120_000);
+
+  it('durable delivery rows survive a complete server-process rebuild', async () => {
+    const source = await newSession(database, fx, 'G11 restart source');
+    const target = await newSession(database, fx, 'G11 restart target');
+    const firstMessage = await newTeammateMessage(database, fx, source, 'before restart');
+    const secondMessage = await newTeammateMessage(database, fx, source, 'after restart');
+    const first = boot(deliveryUrl, [target]);
+    expect((await deliver(first, firstMessage, target, 'before')).outcome).toBe('delivered');
+    await first.shutdown();
+    const second = boot(deliveryUrl, [target]);
+    try {
+      expect((await deliver(second, secondMessage, target, 'after')).outcome).toBe('delivered');
+      const rows = await database.query<{ n: string }>(
+        `select count(*)::text n from public.session_message_deliveries
+          where message_id in ($1,$2) and status='delivered'`,
+        [firstMessage, secondMessage],
+      );
+      expect(rows[0]!.n).toBe('2');
+    } finally {
+      await second.shutdown();
+    }
+  }, 120_000);
+
+  it('a retry remains a distinct durable attempt', async () => {
     const source = await newSession(database, fx, 'G11 retry source');
     const target = await newSession(database, fx, 'G11 retry target');
     // The target has NO live terminal, so the first attempt settles refused —
@@ -617,7 +517,6 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
       const message = await newTeammateMessage(database, fx, source, 'retry me');
       expect((await deliver(proc, message, target, 'attempt one')).outcome).toBe('refused');
       expect(proc.pty.bytes).toBe(0);
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 1 });
 
       const stored = (await database.query<{ status: string; failure_reason: string }>(
         `select status, failure_reason from public.session_message_deliveries
@@ -626,11 +525,17 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
       ))[0]!;
       expect(stored).toEqual({ status: 'failed_retryable', failure_reason: 'no_live_terminal' });
 
-      // Attempt 2 is a NEW delivery id against the SAME message and target, and
-      // it charges the same pair again. A retry that reset the count would read 1.
+      // Attempt 2 is a NEW delivery id against the SAME message and target.
       expect((await deliver(proc, message, target, 'attempt two', 2)).outcome).toBe('refused');
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 2 });
-      expect(await budgetRowCount(source, target)).toBe(1);
+      const attempts = await database.query<{ attempt_no: number; status: string }>(
+        `select attempt_no,status from public.session_message_deliveries
+          where message_id=$1 order by attempt_no`,
+        [message],
+      );
+      expect(attempts).toEqual([
+        { attempt_no: 1, status: 'failed_retryable' },
+        { attempt_no: 2, status: 'failed_retryable' },
+      ]);
     } finally {
       await proc.shutdown();
     }
@@ -639,6 +544,11 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
   // -- retention, through the path that already owns it -----------------------
 
   /**
+   * SECOND PREMISE EXPIRED — migration 135 removes the pair columns themselves.
+   * The long record below is retained as history for the 019/040 defect, but the
+   * live regression assertion now pins the exited-target outcome and immutable
+   * source provenance without reintroducing the retired pair shape.
+   *
    * ══════════════════════════════════════════════════════════════════════════
    * ⚠ PREMISE EXPIRED — 2026-07-27, by migration `040`.
    *
@@ -723,22 +633,7 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
    * When 019 is properly repaired, step 1 stops raising and this test goes RED
    * — loudly, and in the right direction.
    */
-  /**
-   * REGRESSION GUARD, replacing the expired causation pin above.
-   *
-   * KNOWN-GOOD half: the behaviour `040` repaired. A Teammate-authored wake at an
-   * exited target must write exactly ONE `failed_permanent` / `session_not_live`
-   * row WITH its three `pair_*` columns populated. Before `040` this raised 23514
-   * and wrote ZERO rows; if `040` is ever reverted or overwritten by a later
-   * `create or replace`, this goes red on the row count and the pair columns.
-   *
-   * THE PAIR COLUMNS ARE ASSERTED INDIVIDUALLY AND NOT JUST THE STATUS. The
-   * status pair was already reachable for a MEMBER-authored message before `040`
-   * — that branch always worked — so asserting only `failed_permanent` /
-   * `session_not_live` would be satisfied by the half that was never broken.
-   * The `pair_*` columns are what distinguishes the repaired Teammate path.
-   */
-  it('REGRESSION GUARD (040): a Teammate wake at an exited target writes ONE row WITH pair columns', async () => {
+  it('a Teammate wake at an exited target writes one settled row with source provenance', async () => {
     const source = await newSession(database, fx, 'G11 dead source');
     const target = await newSession(database, fx, 'G11 dead target', 'exited');
     const message = await newTeammateMessage(database, fx, source, 'nobody home');
@@ -757,12 +652,8 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
       status: string;
       failure_reason: string;
       source_work_session_id: string | null;
-      pair_low_session_id: string | null;
-      pair_high_session_id: string | null;
-      pair_budget_version: number | null;
     }>(
-      `select status, failure_reason, source_work_session_id::text,
-              pair_low_session_id::text, pair_high_session_id::text, pair_budget_version
+      `select status, failure_reason, source_work_session_id::text
          from public.session_message_deliveries where message_id = $1`,
       [message],
     );
@@ -771,34 +662,30 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     const row = rows[0]!;
     expect(row.status).toBe('failed_permanent');
     expect(row.failure_reason).toBe('session_not_live');
-    // A Teammate carries provenance, so `pair_shape` requires all four together.
-    expect(row.source_work_session_id).not.toBeNull();
-    expect(row.pair_low_session_id).not.toBeNull();
-    expect(row.pair_high_session_id).not.toBeNull();
-    expect(row.pair_budget_version).not.toBeNull();
-    // ...and the pair is the unordered {source, target} identity, not an arbitrary pair.
-    expect([row.pair_low_session_id, row.pair_high_session_id].sort())
-      .toEqual([source, target].sort());
+    expect(row.source_work_session_id).toBe(source);
   }, 120_000);
 
   /**
-   * KNOWN-BAD half, and it SURVIVES `040` — which is the property the coordinator
-   * required and the reason this guard is worth anything.
+   * 168 — THE REPAIR. This assertion used to be its exact inverse: a
+   * `team_member`-authored message with no `authored_from` edge was REFUSED at
+   * reservation, and the test asserted the refusal and zero rows.
    *
-   * A detector that loses its red at the moment of the fix cannot demonstrate it
-   * would still catch a regression; it can only demonstrate that today is fine.
-   * So the red is taken from a DIFFERENT, still-live guard on the same function:
-   * a `team_member`-authored message with NO `authored_from` edge.
+   * That guard was written in 019, when the only Teammate that could speak WAS
+   * a work session, so a missing edge meant provenance had been lost. It stopped
+   * meaning that. TM8 Chat teammates (104/105) and 103's forge watcher are
+   * authenticated Teammates that do not speak from a session and never carry the
+   * edge — so on the live node every message they addressed to a session was
+   * dropped here: stored, routed, 200, and zero delivery rows. 19 routes, 19
+   * drops, no exceptions, since the class first appeared.
    *
-   * MEASURED on the landed 37-file chain via `pg_get_functiondef`, not read off a
-   * migration: that raise sits at the top of `reserve_session_message_delivery`,
-   * BEFORE the `target_status in ('exited','failed')` branch `040` rewrote, so
-   * `040` does not touch it. It is a real production guard producing a real
-   * refusal — not a synthetic mutation — which is why it can prove the harness
-   * still detects a refusal at all.
+   * The message now reserves with `source_work_session_id` NULL, which is what a
+   * Member author has always done, and the envelope renders that null as
+   * `attribution="recorded_only"` — it never claims a session that did not
+   * speak. The `verified` attribution still requires the edge, and the edge
+   * still has exactly one writer.
    */
-  it('...and the detector keeps a live known-bad: a Teammate message with no provenance is refused', async () => {
-    const target = await newSession(database, fx, 'G11 no-provenance target', 'exited');
+  it('168: a Teammate message with no source session is DELIVERED, attributed recorded_only', async () => {
+    const target = await newSession(database, fx, 'G11 no-provenance target');
     // Deliberately NOT newTeammateMessage(): that helper writes the
     // `authored_from` edge, which is exactly the provenance being withheld here.
     const message = await database.transaction(async (client) => {
@@ -820,15 +707,63 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     });
 
     const proc = boot(deliveryUrl, [target]);
+    try {
+      const attempt = await deliver(proc, message, target, 'a steer with no session behind it');
+      expect(attempt.reserved).toBe(true);
+      expect(attempt.outcome).toBe('delivered');
+      // The bytes reached the terminal, which is the whole point: a stored
+      // message that never enters the PTY is the defect this file now pins.
+      expect(proc.pty.deliveries).toHaveLength(1);
+      expect(proc.pty.deliveries[0]!.sessionId).toBe(target);
+    } finally {
+      await proc.shutdown();
+    }
+
+    const rows = await database.query<{
+      status: string; source_work_session_id: string | null;
+    }>(
+      `select status, source_work_session_id::text
+         from public.session_message_deliveries where message_id = $1`,
+      [message],
+    );
+    // ZERO rows was the defect. Exactly one, with a NULL source, is the repair.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('delivered');
+    expect(rows[0]!.source_work_session_id).toBeNull();
+  }, 120_000);
+
+  /**
+   * KNOWN-BAD half, and it SURVIVES both `040` and `168` — which is the property
+   * the coordinator required and the reason this guard is worth anything.
+   *
+   * A detector that loses its red at the moment of the fix cannot demonstrate it
+   * would still catch a regression; it can only demonstrate that today is fine.
+   * The red used to be taken from the no-provenance refusal — which `168` has
+   * now deliberately removed, so it can no longer serve. It is taken instead
+   * from another still-live guard on the same function: SELF-CONTACT, where a
+   * message's `authored_from` session IS the delivery target.
+   *
+   * That raise sits between the provenance branch `168` rewrote and the
+   * `target_status in ('exited','failed')` branch `040` rewrote, so neither file
+   * touches it. It is a real production guard producing a real refusal — not a
+   * synthetic mutation — which is why it can still prove the harness detects a
+   * refusal at all.
+   */
+  it('...and the detector keeps a live known-bad: a session may not be handed its own message', async () => {
+    const session = await newSession(database, fx, 'G11 self-contact session');
+    // WITH provenance this time, and pointing at the delivery target itself.
+    const message = await newTeammateMessage(database, fx, session, 'talking to myself');
+
+    const proc = boot(deliveryUrl, [session]);
     let error: string | null = null;
     try {
-      await deliver(proc, message, target, 'into the void');
+      await deliver(proc, message, session, 'into the void');
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       await proc.shutdown();
     }
-    expect(error).toMatch(/Teammate delivery requires immutable source-session provenance/);
+    expect(error).toMatch(/self-contact is forbidden/);
 
     const rows = await database.query<{ n: string }>(
       `select count(*)::text n from public.session_message_deliveries where message_id = $1`,
@@ -849,9 +784,9 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     // test defeating a production guard for its own convenience.
     const source = await newSession(database, fx, 'G11 done source');
     const target = await newSession(database, fx, 'G11 done target');
+    const message = await newTeammateMessage(database, fx, source, 'last words');
     const proc = boot(deliveryUrl, [target]);
     try {
-      const message = await newTeammateMessage(database, fx, source, 'last words');
       expect((await deliver(proc, message, target, 'final')).outcome).toBe('delivered');
     } finally {
       await proc.shutdown();
@@ -868,22 +803,18 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
       });
     }
 
-    // Eligibility is derived, not asserted by the delivery role: both sessions
-    // are terminal and nothing is pending or dispatching.
-    await database.query(`select internal.w1_refresh_wake_budget_cleanup_eligibility()`);
-    const eligible = (await database.query<{ eligible_for_cleanup_at: string | null }>(
-      `select eligible_for_cleanup_at from public.session_wake_budgets
-        where low_work_session_id = least($1::uuid,$2::uuid)
-          and high_work_session_id = greatest($1::uuid,$2::uuid)`,
-      [source, target],
-    ))[0]!;
-    expect(eligible.eligible_for_cleanup_at).not.toBeNull();
-
-    const pruned = (await database.query<{ result: { budgetsDeleted: number } }>(
+    const pruned = (await database.query<{
+      result: { deliveriesDeleted: number; budgetsDeleted?: number };
+    }>(
       `select internal.w1_prune_operational_state(now() + interval '31 days') as result`,
     ))[0]!.result;
-    expect(pruned.budgetsDeleted).toBeGreaterThanOrEqual(1);
-    expect(await budgetRowCount(source, target)).toBe(0);
+    expect(pruned.deliveriesDeleted).toBeGreaterThanOrEqual(1);
+    expect(pruned).not.toHaveProperty('budgetsDeleted');
+    const retained = await database.query<{ n: string }>(
+      `select count(*)::text n from public.session_message_deliveries where message_id=$1`,
+      [message],
+    );
+    expect(retained[0]!.n).toBe('0');
 
     // The delivery role's surface is still exactly three functions.
     const granted = await database.query<{ proname: string }>(

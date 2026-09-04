@@ -44,6 +44,43 @@ interface LaneRow {
   project_name: string;
 }
 
+/**
+ * The prefix that says "this is not a forge repository, and no join against a
+ * pull request mirror's `repo` should ever succeed against it".
+ *
+ * A project with no remote url still produces commits worth recording — the
+ * session→commit provenance edge is the whole point of this job, and it is
+ * useful whether or not the code was ever pushed. But the value written into
+ * `public.commits.repo` used to be the bare PROJECT NAME, and that is wrong in
+ * both directions:
+ *
+ *   - It can never match. `internal.pr_owning_session` tier 2 (103:359) joins
+ *     `c.repo = pr.repo`, where `pr.repo` is always a forge `owner/name`. A
+ *     project called "tm8" never equals that, so tier 2 silently never fired
+ *     for local-only projects — a dead code path that reads as working.
+ *   - It can match the WRONG thing. Nothing stops a project being NAMED
+ *     `acme/forge`, at which point its purely local commits join an unrelated
+ *     pull request mirror and hand that PR's session an addressee it never
+ *     produced. Same failure class as the 148 branch-name leak.
+ *
+ * `local:` cannot be either, because a forge slug is `owner/name` and this is
+ * not. One-time cost of the change: a repo_url-less project whose commits were
+ * already recorded under the bare name gets a second mirror entity for the same
+ * sha (the dedupe key in `record_session_commit` is space+provider+repo+sha).
+ * That is a cosmetic duplicate on a path that was already producing an
+ * unjoinable value, not a regression.
+ */
+const LOCAL_REPO_PREFIX = 'local:';
+
+/**
+ * The `repo` a lane's commits are recorded under: the forge slug when the
+ * project has a remote we can read one from, and an explicitly non-forge
+ * marker when it does not. Never a value that merely LOOKS like a slug.
+ */
+export function laneRepo(repoUrl: string | null, projectName: string): string {
+  return repoFromUrl(repoUrl) ?? `${LOCAL_REPO_PREFIX}${projectName}`;
+}
+
 /** Cap the memo so a long-lived node cannot grow it unbounded. */
 const SEEN_CAP = 20_000;
 const seen = new Set<string>();
@@ -84,7 +121,7 @@ export async function runCommitRecorderTick(
       unreadable += 1;
       continue;
     }
-    const repo = repoFromUrl(lane.repo_url) ?? lane.project_name;
+    const repo = laneRepo(lane.repo_url, lane.project_name);
     for (const commit of commits) {
       const key = `${lane.worktree_id}:${commit.sha}`;
       if (seen.has(key)) continue;
