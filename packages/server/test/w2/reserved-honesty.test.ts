@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  MOUNTED_OPERATIONS,
   OPERATIONS,
   RESERVED_OPERATIONS,
   V1_OPERATIONS,
@@ -114,7 +115,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('keeps the exact 172 = 170 v1 + 2 reserved, 171 HTTP + 1 WS boundary (+3 148)', () => {
+  it('keeps the exact 197 = 195 v1 + 2 reserved, 195 mounted HTTP + 1 mounted WS boundary (+25 177)', () => {
     // A21 (execution.liveness), then voice.token.create, are the +1s on every axis they touch.
     // The six artifacts rows (create/publish/revisions.list/preview.start/export/restore) are
     // the latest +6 on OPERATIONS and V1: +4 POST commands, +2 GET reads.
@@ -130,15 +131,23 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
     // gitMerge (POST commands).
     // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge, one POST command.
-    expect(OPERATIONS).toHaveLength(172); // +3 148 spaces.workflows, MEASURED
-    expect(V1_OPERATIONS).toHaveLength(170);
+    expect(OPERATIONS).toHaveLength(197); // +25 (177) containers, MEASURED
+    expect(V1_OPERATIONS).toHaveLength(195);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(171);
+    // TWO WS ROWS now, one mounted socket: `containers.stream` re-declares
+    // `events.subscribe`'s binding under the container family's own name.
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(195);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
+      // The alias, and it must declare itself as one: `aliasOf` is what keeps
+      // it out of MOUNTED_OPERATIONS and out of the uniqueness assertions. A
+      // second WS row WITHOUT it would be a genuine duplicate binding.
+      expect.objectContaining({
+        name: 'containers.stream', path: '/v2/ws', status: 'v1', aliasOf: 'events.subscribe',
+      }),
     ]);
     // 123 -> 124 (2026-08-02): execution.launch again. It is the same +1 as the
     // 126 -> 127 above, and this pin was the one line of the four that did not get
@@ -150,7 +159,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // auth.claim.reissue) — 163 -> 166.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(169); // 166 -> 169 (148): spaces.workflows.*
+    )).toHaveLength(193); // 169 -> 193 (177): the container handlers
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {
@@ -274,14 +283,24 @@ describe('W2.G15 reserved routes through the real frame', () => {
     }
   });
 
-  it('keeps events.subscribe as the only WS row and outside HTTP handlers/routes', () => {
+  it('keeps ONE mounted socket, and both WS rows outside HTTP handlers/routes', () => {
+    // TWO WS ROWS, ONE SOCKET. `containers.stream` re-declares
+    // `events.subscribe`'s `WS /v2/ws` so the container family's socket is
+    // discoverable under its own name; it carries `aliasOf`, is excluded from
+    // MOUNTED_OPERATIONS, and mounts nothing. The claim worth pinning is not
+    // "there is one WS row" — it is that nothing MOUNTS a second socket.
     const ws = OPERATIONS.filter(({ method }) => method === 'WS');
-    expect(ws.map(({ name }) => name)).toEqual(['events.subscribe']);
+    expect(ws.map(({ name }) => name)).toEqual(['events.subscribe', 'containers.stream']);
+    expect(MOUNTED_OPERATIONS.filter(({ method }) => method === 'WS').map(({ name }) => name))
+      .toEqual(['events.subscribe']);
     expect(registry.has('events.subscribe')).toBe(false);
+    expect(registry.has('containers.stream')).toBe(false);
     expect(server.router.mounted().every(({ op }) => op.method !== 'WS')).toBe(true);
     expect(server.router.match('GET', '/v2/ws')).toBeUndefined();
+    // The router is built from MOUNTED_OPERATIONS, so an alias never produces
+    // a second route sharing one method+path.
     expect(server.router.mounted().map(({ op }) => op.name).sort()).toEqual(
-      OPERATIONS.filter(({ method }) => method !== 'WS').map(({ name }) => name).sort(),
+      MOUNTED_OPERATIONS.filter(({ method }) => method !== 'WS').map(({ name }) => name).sort(),
     );
   });
 });

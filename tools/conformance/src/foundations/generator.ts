@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   CoreEntityKindSchema,
+  MOUNTED_OPERATIONS,
   OPERATIONS,
   RESERVED_OPERATIONS,
   V1_OPERATIONS,
@@ -235,6 +236,10 @@ function nounForOperation(operation: OperationName): string {
     // two maps must agree or the cross-check in
     // `packages/cli/test/discovery-operations.test.ts` reds.
     case 'chat': return 'chat';
+
+    // 177: the CLI noun is `container` (`NOUN_BY_FAMILY.containers`), singular
+    // like every other row here.
+    case 'containers': return 'container';
     default: throw new Error(`operation ${operation} has no noun/help disposition`);
   }
 }
@@ -316,7 +321,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   const { handlers, inputSchemas } = readHistoricalW1RegistrySnapshot();
 
   const names = OPERATIONS.map(({ name }) => name);
-  const bindings = OPERATIONS.map(({ method, path }) => `${method} ${path}`);
+  const bindings = MOUNTED_OPERATIONS.map(({ method, path }) => `${method} ${path}`);
   const methods = countBy(
     OPERATIONS.map(({ method }) => method),
     ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'WS'],
@@ -360,28 +365,54 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
   // (POST command) + .delete (DELETE command). MEASURED off the catalog, not
   // incremented.
-  assertEqual(names.length, 172, 'catalog total');
+  // 172 -> 197 (2026-09-03, TM8-CONTAINERS-DESIGN §4.1): the 25 `containers.*`
+  // rows. MEASURED, never carried.
+  assertEqual(names.length, 197, 'catalog total');
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
   // 164 -> 167 (141): the three account-lifecycle ops are v1.
   // 167 -> 170 (148): the three workflows rows are v1.
-  assertEqual(V1_OPERATIONS.length, 170, 'v1 total');
+  // 170 -> 195 (177): all 25 container rows are v1. MEASURED.
+  assertEqual(V1_OPERATIONS.length, 195, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
-  assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
+  // Over the MOUNTED rows, not every row. An alias re-declares an existing
+  // binding on purpose (`containers.stream` is `events.subscribe`'s socket);
+  // the invariant that matters is that nothing MOUNTS one binding twice.
+  assertEqual(new Set(bindings).size, bindings.length, 'unique mounted method/path bindings');
+  // The teeth: an alias must name a real operation and share its binding
+  // exactly, so a copy-paste duplicate cannot opt out of the check above.
+  for (const alias of OPERATIONS.filter((op) => 'aliasOf' in op)) {
+    const target = OPERATIONS.find(
+      (op) => op.name === (alias as { aliasOf: string }).aliasOf,
+    );
+    assertEqual(Boolean(target), true, `alias ${alias.name} names a real operation`);
+    assertEqual(
+      `${alias.method} ${alias.path}`,
+      `${target?.method} ${target?.path}`,
+      `alias ${alias.name} shares its target's binding`,
+    );
+  }
   // W4/132: GET 59->60, POST 75->76, DELETE 10->11; read 63->64, command 99->101.
   // 141: POST 76->79 — the three account-lifecycle ops are all POST commands.
   // 148: GET 60->61, POST 79->80, DELETE 11->12.
-  assertEqual(methods, { GET: 61, POST: 80, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 }, 'method accounting');
+  // 177: GET 61->65, POST 80->98, PATCH 11->12, PUT 7->8, WS 1->2. MEASURED.
+  // WS is 2 ROWS and still 1 MOUNT — see `router.ws` below.
+  assertEqual(methods, { GET: 65, POST: 98, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 }, 'method accounting');
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
-  assertEqual(kinds, { read: 65, command: 106, stream: 1 }, 'kind accounting');
+  // 177: read 65->69, command 106->126, stream 1->2. MEASURED.
+  assertEqual(kinds, { read: 69, command: 126, stream: 2 }, 'kind accounting');
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
   // 148: 168 -> 171, the three workflows routes.
-  assertEqual(router.http.length, 171, 'server router HTTP total');
+  // 171 -> 195 (177): 24 of the 25 container rows are HTTP; the 25th is the
+  // WS alias, which mounts nothing. MEASURED.
+  assertEqual(router.http.length, 195, 'server router HTTP total');
+  // STILL 1, and that is the whole point of `aliasOf`: `containers.stream`
+  // adds a discoverable NAME for the existing socket, not a second socket.
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the
@@ -434,7 +465,19 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
         status: operation.status === 'reserved' ? 'reserved' : 'registered',
         source: 'server-router',
       })),
-      ws: router.ws.map((operation) => ({
+      // EVERY WS ROW, INCLUDING THE ALIASES — not `router.ws`, which is the
+      // MOUNT list and is deliberately one shorter.
+      //
+      // `routes` is what a DISCOVERING CLIENT reads to learn an operation's
+      // transport, and `containers.stream` has a transport: the same
+      // `WS /v2/ws` socket, dispatched on the grant. Omitting it would leave a
+      // `status: 'v1'` catalog row that discovery can name but cannot tell you
+      // how to reach — and the evaluator's adapter asserts routes and help are
+      // one-to-one with the catalog, correctly.
+      //
+      // The mount count stays on `catalog.ws` above, from `router.ws`. Listing
+      // and mounting are different questions and the manifest answers both.
+      ws: OPERATIONS.filter((operation) => operation.method === 'WS').map((operation) => ({
         operation: operation.name as OperationName,
         method: 'WS',
         path: operation.path,

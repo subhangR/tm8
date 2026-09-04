@@ -278,6 +278,46 @@ const WORKFLOW_NET_NEW_OPERATIONS = [
 ] as const;
 
 /**
+ * Containers (177). All twenty-four HTTP rows of the family, registered
+ * UNCONDITIONALLY and net-new — none replaces anything.
+ *
+ * They register even though most are not built yet, and that is the honesty
+ * rule rather than an oversight: a `status: 'v1'` row with no handler falls
+ * through the registry to 404, which tells a caller the operation does not
+ * exist when it is in the contract and this node simply cannot serve it yet.
+ * Registered-and-501 is the correct answer; unregistered-and-404 is not.
+ *
+ * `containers.stream` is absent because it is the WS alias of
+ * `events.subscribe` — served by the upgrade handler, never by this registry.
+ */
+const CONTAINER_NET_NEW_OPERATIONS = [
+  'containers.attach',
+  'containers.attention',
+  'containers.browser.endpoint',
+  'containers.computer',
+  'containers.create',
+  'containers.destroy',
+  'containers.expose',
+  'containers.files.get',
+  'containers.files.put',
+  'containers.fork',
+  'containers.logs',
+  'containers.pause',
+  'containers.policy.set',
+  'containers.pools.set',
+  'containers.providers.list',
+  'containers.proxy',
+  'containers.resume',
+  'containers.run',
+  'containers.snapshot',
+  'containers.start',
+  'containers.stop',
+  'containers.terminal.start',
+  'containers.unexpose',
+  'containers.update',
+] as const;
+
+/**
  * Node-local project folders.
  *
  * `projects.directories.list` landed on 2026-08-02 WITHOUT joining this list,
@@ -354,6 +394,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...MEMBER_ROLES_NET_NEW_OPERATIONS,
   ...TASK_WORKFLOW_NET_NEW_OPERATIONS,
   ...WORKFLOW_NET_NEW_OPERATIONS,
+  ...CONTAINER_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -489,7 +530,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
-    expect(registry.size).toBe(152); // +3 (148): the spaces.workflows handlers
+    // 152 -> 176 (177): the 24 HTTP rows of the containers family. MEASURED.
+    expect(registry.size).toBe(176);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -502,7 +544,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + CHAT_NET_NEW_OPERATIONS.length
         + MEMBER_ROLES_NET_NEW_OPERATIONS.length
         + TASK_WORKFLOW_NET_NEW_OPERATIONS.length
-        + WORKFLOW_NET_NEW_OPERATIONS.length,
+        + WORKFLOW_NET_NEW_OPERATIONS.length
+        + CONTAINER_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -661,7 +704,10 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // their bodies (auth.claim.reissue takes no body, so it binds nothing).
     // +2 (148): .upsert binds WorkflowInputSchema, .delete binds
     // RequiredCommandContextSchema; .list is a READ and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(99);
+    // 99 -> 118 (177): nineteen container command bodies bind. The family has
+    // twenty commands; `containers.files.put` carries a tar stream, not JSON,
+    // and is enumerated in UNBOUND_COMMAND_OPERATIONS instead. MEASURED.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(118);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -679,7 +725,11 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // derived check above has something true to compare against.
     // 141: +1 — auth.claim.reissue is genuinely body-less (no input, auth.* so
     // no CommandContext), enumerated as such rather than left to hide.
-    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(10);
+    // 177: +1 — `containers.files.put` carries a tar stream, not JSON, so it
+    // is genuinely body-less in the zod sense and enumerated as such. Every
+    // other container command IS bound, including the ones whose runtime does
+    // not exist yet.
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(11);
     expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',
@@ -819,8 +869,12 @@ describe.sequential('W2.I02 real production public surface', () => {
     // all mounted and all registered.
     // +3 (148): the three spaces.workflows routes, all mounted and all
     // registered. MEASURED off /health.
-    expect(health).toMatchObject({ ok: true, operations: 171, implemented: 169 });
-    expect(harness.production.server.registry.size).toBe(169);
+    // +24 (177): the containers family, all registered, all mounted. The
+    // catalog grew by 25 and the router by 24 — the 25th is the WS alias,
+    // which adds a discoverable NAME for the existing socket, not a route.
+    // MEASURED off /health.
+    expect(health).toMatchObject({ ok: true, operations: 195, implemented: 193 });
+    expect(harness.production.server.registry.size).toBe(193);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -840,7 +894,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(169); // +3 (148): the spaces.workflows handlers
+    // 169 -> 193 (177): the 24 HTTP container rows. MEASURED.
+    expect(registered.size + residual.length).toBe(193);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

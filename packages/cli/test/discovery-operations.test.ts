@@ -63,7 +63,11 @@ import { createOutput } from '../src/output.js';
 // public, all with `space task-workflow` commands. MEASURED.
 // 166 -> 169 (141): the three account-lifecycle ops. MEASURED.
 // 169 -> 172 (148): the three spaces.workflows ops. MEASURED.
-const EXPECTED_ROWS = 172;
+// 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. Two of them —
+// containers.stream and containers.proxy — are deliberately commandless, which
+// is why the commandless subtraction below moves 25 -> 27. MEASURED on this
+// tree, not carried from the design.
+const EXPECTED_ROWS = 197;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -129,7 +133,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 172 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 197 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -168,7 +172,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('157 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('193 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
@@ -177,30 +181,40 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    expect(histogram).toEqual({ public: 168, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 193, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
-describe('the CLI command projection', () => {
-  it('the rows with no CLI command are named exactly, never counted', () => {
-    const commandless = DISCOVERY.filter((d) => d.command === null).map((d) => d.operation);
-    // Asserted as a SET rather than a count, so a row that loses its command by
-    // accident is named rather than absorbed into a number. The four
-    // `credentials.*` rows are deliberate and their reason is recorded beside
-    // each: they are settings-screen operations, and adding CLI commands would
-    // oblige four command implementations in the same change.
-    expect(commandless.sort()).toEqual([
+/**
+ * The rows that deliberately have no CLI command, named exactly.
+ *
+ * Hoisted so the depth test can DERIVE its count from this list instead of
+ * carrying a literal beside it. A rebase previously left `EXPECTED_ROWS - 24`
+ * (main's) and `EXPECTED_ROWS - 27` (this branch's) as two contradictory
+ * assertions in the same test, and both were stale against the list itself.
+ * With the count derived, that whole class of drift cannot recur.
+ */
+const COMMANDLESS_OPERATIONS = [
       'bridge.fetchBlob',
       // `chat.start` LEFT this set in Wave 2's CLI lane: it is `tm8 chat start`
       // now. It was here because chat v1 exposed the composer only, and the
       // note said the CLI lane would add the noun — this is that lane, so the
       // row is asserted by its ABSENCE from this set rather than by a comment
       // promising a future one.
+
+
+      // The two commandless container rows, each a decision recorded on its own
+      // row in operations.ts: `containers.proxy` is the reverse-proxy path a
+      // browser opens (a CLI verb would be curl with extra steps), and
+      // `containers.stream` is the surface websocket, which carries a binary
+      // protocol dispatched on a grant.
+      'containers.proxy',
+      'containers.stream',
       'credentials.delete',
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
       'credentials.status',
-      // The six execution.git* rows are deliberately commandless (see the
+      // The nine execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
       // `tm8 session git-*`, and one action must not have two names.
       'execution.gitBranch',
@@ -223,7 +237,17 @@ describe('the CLI command projection', () => {
       'projects.folderUploads.abort',
       'projects.folderUploads.complete',
       'projects.folderUploads.init',
-    ]);
+];
+
+describe('the CLI command projection', () => {
+  it('the rows with no CLI command are named exactly, never counted', () => {
+    const commandless = DISCOVERY.filter((d) => d.command === null).map((d) => d.operation);
+    // Asserted as a SET rather than a count, so a row that loses its command by
+    // accident is named rather than absorbed into a number. The four
+    // `credentials.*` rows are deliberate and their reason is recorded beside
+    // each: they are settings-screen operations, and adding CLI commands would
+    // oblige four command implementations in the same change.
+    expect(commandless.sort()).toEqual(COMMANDLESS_OPERATIONS);
   });
 
   it('ASYMMETRIC RESERVED HANDLING: search.query has a command, bridge.fetchBlob has none', () => {
@@ -242,12 +266,11 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the 24 commandless rows named exactly in the test above.
-    // 25 -> 24 (176/Wave 2 L2-cli): `chat.start` gained `tm8 chat start`.
-    // Derived from that SET, never maintained beside it — a literal here that
-    // disagreed with the set above would make one of the two tests pass for
-    // the wrong reason.
-    expect(counted).toBe(EXPECTED_ROWS - 24);
+    // Minus the commandless rows named exactly in the test above. DERIVED from
+    // that SET, never maintained beside it — a literal here that disagreed with
+    // the set would make one of the two tests pass for the wrong reason, and a
+    // rebase demonstrated it by leaving 24 and 27 asserted in the same test.
+    expect(counted).toBe(EXPECTED_ROWS - COMMANDLESS_OPERATIONS.length);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {
@@ -563,6 +586,19 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'spaces.interactionProfile.setDefault': 'SetSpaceProfileDefaultInputSchema',
   'artifacts.publish': 'ArtifactsPublishInputSchema',
   'artifacts.restore': 'ArtifactsRestoreInputSchema',
+  // Containers (§14). The four lifecycle verbs SHARE one input schema, which is
+  // why eleven operations map to eight DTOs.
+  'containers.start': 'ContainersLifecycleInputSchema',
+  'containers.stop': 'ContainersLifecycleInputSchema',
+  'containers.pause': 'ContainersLifecycleInputSchema',
+  'containers.resume': 'ContainersLifecycleInputSchema',
+  'containers.destroy': 'ContainersDestroyInputSchema',
+  'containers.update': 'ContainersUpdateInputSchema',
+  'containers.policy.set': 'ContainersPolicySetInputSchema',
+  'containers.expose': 'ContainersExposeInputSchema',
+  'containers.unexpose': 'ContainersUnexposeInputSchema',
+  'containers.snapshot': 'ContainersSnapshotInputSchema',
+  'containers.pools.set': 'ContainersPoolsSetInputSchema',
 };
 
 /**
@@ -670,7 +706,9 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       if (!flags.some((f) => f.required)) missing.push(operation);
     }
     // Every mapped guard DTO is required.
-    expect(swept).toBe(20);
+    // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
+    // rows. MEASURED on this tree.
+    expect(swept).toBe(31);
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -733,6 +771,22 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     ['handoffs.withdraw', '--expect-record-version', 'expectedRecordVersion'],
     ['spaces.interactionProfile.setDefault', '--expect-settings-revision', 'expectedSettingsRevision'],
 
+    // ── CONTAINERS (§14): eleven rows, one spelling, and four of them share a
+    // DTO. `containers.start|stop|pause|resume` all carry
+    // ContainersLifecycleInputSchema, so a transposition between them is
+    // invisible to a DTO-name check and visible only here, row by row.
+    ['containers.start', '--expect-version', 'expectedVersion'],
+    ['containers.stop', '--expect-version', 'expectedVersion'],
+    ['containers.pause', '--expect-version', 'expectedVersion'],
+    ['containers.resume', '--expect-version', 'expectedVersion'],
+    ['containers.destroy', '--expect-version', 'expectedVersion'],
+    ['containers.update', '--expect-version', 'expectedVersion'],
+    ['containers.policy.set', '--expect-version', 'expectedVersion'],
+    ['containers.expose', '--expect-version', 'expectedVersion'],
+    ['containers.unexpose', '--expect-version', 'expectedVersion'],
+    ['containers.snapshot', '--expect-version', 'expectedVersion'],
+    ['containers.pools.set', '--expect-version', 'expectedVersion'],
+
     // ── THE COLLISION PAIR — one flag, two different fields, same noun ──────
     // This adjacency is what produced a real transposition once already.
     ['spaces.menu.update', '--expect-revision', 'expectedRevision'],
@@ -776,7 +830,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       rows.map((r) => r.join(' -> ')).sort();
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
-    expect(actual.length).toBe(20);
+    expect(actual.length).toBe(31);
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

@@ -227,6 +227,21 @@ describe.sequential('147 — entities.status_category', () => {
     database.apply([ENDED_REASON_MIGRATION]);
     database.apply(['172_task_start_date.sql']);
     database.apply(CHAT_ENTITY_MIGRATIONS);
+    // 177 is needed here for the same reason 176 is: `entity-read.ts`'s shared
+    // summary SELECT — which this fixture exercises through production code —
+    // gained `left join public.containers`, and a tranche that stops before 177
+    // has no such table. It is STATIC TypeScript SQL, so nothing defers the
+    // resolution the way a plpgsql body would.
+    //
+    // ONLY THIS SUITE TAKES THE LINE. `doors-resolve-categories.pg.test.ts`
+    // calls `database.apply(migrationFiles())` — the whole directory sorted —
+    // so it already has 177, and adding it there is a SECOND apply of the same
+    // file: 177 has three bare `create table` statements and no
+    // `if not exists`, deliberately, so it fails with
+    // `relation "containers" already exists`. The check before adding an
+    // à-la-carte line anywhere is one grep: `apply(migrationFiles())` versus
+    // `apply([…])`, because both read as "this suite applies migrations".
+    database.apply(['177_container_kind.sql']);
   }, 180_000);
 
   afterAll(async () => {

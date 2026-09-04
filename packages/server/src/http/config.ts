@@ -184,6 +184,49 @@ export interface ServerConfig {
    * capabilities with no URL to spend them at.
    */
   readonly preview?: PreviewConfig;
+  /**
+   * The container feature gate (`TM8_CONTAINERS`, `on`/`off`, default OFF
+   * until the phase ships) and the node's container settings (§10.1).
+   *
+   * OFF IS AN HONEST ANSWER, NOT A HIDDEN FEATURE. With the gate off every
+   * container RUNTIME operation answers `501 not_implemented` — never 404,
+   * never a silent success. Graph-only reads keep working, because a
+   * container that already exists is still an entity and a node that has
+   * stopped serving runtimes has not stopped being able to describe them.
+   *
+   * THE BIRTH VERB IS NOT HIDDEN, AND NOTHING HERE HIDES IT. This docblock
+   * claimed it was; that was false when written. The gate has exactly ONE
+   * production reader — the 501 site in `handlers/w2/containers.ts` — and it
+   * structurally cannot reach an advertisement path: `capabilitiesOf(row)`
+   * takes a row, `entity-read.ts` never imports `ServerConfig`, and the kind
+   * registry receives no config. So `containers.create` is still advertised
+   * with the gate off; calling it answers 501.
+   *
+   * Whether to implement the hiding (thread config to an advertisement path),
+   * let the client hide it from something already served, or drop the claim
+   * from P0's criterion is an open design call, NOT an oversight to patch
+   * here. It is the second thing this signature has silently swallowed — see
+   * `canControl` in `entity-read.ts`, where the same shape absorbed the
+   * actor term.
+   */
+  readonly containers?: ContainersConfig;
+}
+
+export interface ContainersConfig {
+  /** `TM8_CONTAINERS=on`. Default false. */
+  readonly enabled: boolean;
+  /** `TM8_CONTAINER_PROVIDERS`, comma list IN PREFERENCE ORDER. */
+  readonly providers: readonly string[];
+  /** `TM8_CONTAINER_CAP` — live containers per node. Default 4. */
+  readonly cap: number;
+  /** `TM8_CONTAINER_EXEC_CAP` — exec terminals per node. Default 8. */
+  readonly execCap: number;
+  /** `TM8_CONTAINER_DATA_DIR`, default `<dataDir>/containers`. */
+  readonly dataDir: string;
+  /** `TM8_CONTAINER_IMAGE_REGISTRY`. */
+  readonly imageRegistry: string;
+  /** `TM8_CONTAINER_KEEP_FAILED=1` keeps a failed runtime for debugging. */
+  readonly keepFailed: boolean;
 }
 
 /** The artifact-preview route's resolved identity (design §9.2/§9.3). */
@@ -285,6 +328,46 @@ export function resolveClipboardDir(env: NodeJS.ProcessEnv, dataDir: string): st
     );
   }
   return dir;
+}
+
+/**
+ * The container block's per-node settings (§10.1).
+ *
+ * `TM8_CONTAINERS` is `on`/`off` rather than a boolean-ish 0/1 because it is
+ * the gate an operator reads in a runbook, and because "off" must be the
+ * DEFAULT until the phase ships — a node that has never been configured for
+ * containers must not start accepting them after an upgrade.
+ */
+export function resolveContainersConfig(
+  env: NodeJS.ProcessEnv,
+  dataDir: string,
+): ContainersConfig {
+  const gate = env.TM8_CONTAINERS?.trim().toLowerCase();
+  if (gate !== undefined && gate !== 'on' && gate !== 'off') {
+    throw new ConfigError(`TM8_CONTAINERS must be "on" or "off", got ${JSON.stringify(gate)}`);
+  }
+  const configuredDir = env.TM8_CONTAINER_DATA_DIR?.trim();
+  const containerDir = configuredDir
+    ? resolve(expandHome(configuredDir))
+    : join(dataDir, 'containers');
+  if (!isAbsolute(containerDir)) {
+    throw new ConfigError(
+      `TM8_CONTAINER_DATA_DIR must resolve to an absolute path, got ${JSON.stringify(configuredDir)}`,
+    );
+  }
+  const providers = (env.TM8_CONTAINER_PROVIDERS ?? 'docker,gvisor,android-emulator')
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+  return {
+    enabled: gate === 'on',
+    providers,
+    cap: envPositiveInt(env.TM8_CONTAINER_CAP, 'TM8_CONTAINER_CAP', 4),
+    execCap: envPositiveInt(env.TM8_CONTAINER_EXEC_CAP, 'TM8_CONTAINER_EXEC_CAP', 8),
+    dataDir: containerDir,
+    imageRegistry: env.TM8_CONTAINER_IMAGE_REGISTRY?.trim() || 'ghcr.io/subhangr/tm8',
+    keepFailed: envBoolean(env.TM8_CONTAINER_KEEP_FAILED, 'TM8_CONTAINER_KEEP_FAILED', false),
+  };
 }
 
 function envPositiveInt(raw: string | undefined, name: string, fallback: number): number {
@@ -435,6 +518,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 
   const dataDir = resolveServerDataDir(env);
   const clipboardDir = resolveClipboardDir(env, dataDir);
+  const containers = resolveContainersConfig(env, dataDir);
   const clipboardMaxBytes = envPositiveInt(
     env.TM8_CLIPBOARD_MAX_BYTES,
     'TM8_CLIPBOARD_MAX_BYTES',
@@ -464,6 +548,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
+    containers,
     nodeMode,
     ...(publicOrigin ? { publicOrigin } : {}),
     // `multi` implies the kill switch. The explicit env var still wins when it

@@ -63,6 +63,21 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'print-token',         // auth login — print instead of storing per-server
   'show',                // auth claim --show — reprint the on-box claim token
   'ensure-working-dir',  // project create — create one allowed missing child
+  // Containers (§14). Every one of these is a BARE flag, and every one of them
+  // has to be listed here or it silently eats the next token: `tm8 container
+  // create shell --no-start --title x` would take `--title` as the VALUE of
+  // `--no-start` and the title would vanish. The class sweep in
+  // `kernel-global-collision.test.ts` is what catches an omission here, and it
+  // caught exactly this set before they were listed.
+  'no-start',            // container create — provision without starting
+  'ephemeral',           // container create|update|fork — the lifecycle pair...
+  'persistent',          // ...and its opposite; passing both is refused
+  'snapshot-on-stop',    // container create|update|fork — lifecycle.snapshotOnStop
+  'keep-snapshot',       // container destroy — keep the disk image
+  'keep',                // container computer|screenshot — store as an artifact revision
+  'no-screenshot',       // container computer — suppress the returned image
+  'follow',              // container logs — stream rather than page
+  'make-template',       // container snapshot — mark the snapshot as a pool base
 ]);
 
 /**
