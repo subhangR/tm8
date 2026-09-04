@@ -402,7 +402,25 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // fifth bucket and a space that names its own statuses is filed correctly
     // without touching the registry.
     const FOUR = ['to_do', 'in_progress', 'done', 'cancelled'];
+    /*
+     * THE FIVE FACT KINDS ARE EXEMPT, and the exemption is the ruling, not a
+     * hole in it. `152_universal_status.sql` seeds commit, message, file,
+     * memory and artifact to `done` so a fact about the past cannot block a
+     * `depends_on` forever. That `done` is a RESOLUTION PREDICATE, not a
+     * lifecycle position — a memory is a recorded observation, never an
+     * intention, and it was never `to_do`. Handing them the four-stage row
+     * asked a question the kind has no answer to, and because the row opens on
+     * `tabs[0]` it also made every one of them invisible on arrival.
+     *
+     * Listed literally rather than derived so that ADDING a kind here is a
+     * deliberate edit someone must justify against migration 152's seed table.
+     */
+    const FACT_KINDS = ['commit', 'message', 'file', 'memory', 'artifact'];
     for (const row of allKinds()) {
+      if (FACT_KINDS.includes(row.kind)) {
+        expect(row.list.categories, `${row.kind} is a fact kind: no lifecycle row`).toBeUndefined();
+        continue;
+      }
       expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(FOUR);
       expect(row.list.categories?.map((t) => t.label)).toEqual([
         'To Do',
@@ -410,6 +428,10 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
         'Done',
         'Cancelled',
       ]);
+    }
+    // The exemption must not silently swallow a kind that never opted out.
+    for (const kind of FACT_KINDS) {
+      expect(getKind(kind).list.categories, `${kind} must declare categories: null`).toBeUndefined();
     }
     expect(getKind(CUSTOM_KIND_FALLBACK).list.categories?.map((t) => t.id)).toEqual(FOUR);
     expect(collectionKinds().length).toBeGreaterThan(0);
@@ -437,7 +459,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // in-progress row unreachable from any tab. As a chip it narrows whichever
     // category tab is open, which is a question the tab row could not ask.
     for (const row of allKinds()) {
-      expect(row.list.categories?.some((t) => (t.id as string) === 'archived')).toBe(false);
+      // `?? []` on purpose: a fact kind has no tab row at all, which satisfies
+      // "archived is not a tab" more completely than any assertion could.
+      expect((row.list.categories ?? []).some((t) => (t.id as string) === 'archived')).toBe(false);
       // Every tab EXCLUDES archived rows, so the chip is the only control
       // naming `deleted` and cannot contradict a tab.
       for (const tab of row.list.categories ?? []) expect(tab.filter.deleted).toBe('exclude');
@@ -454,9 +478,14 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   it('PHASE 7 — cancelled has its OWN tab; it no longer hides inside Done', () => {
     // RULED (sub-doc 7 §3.4). Done used to carry `['done','cancelled']`, which
     // told a user that abandoned work and finished work are one outcome.
-    for (const row of allKinds()) {
+    // Only kinds that HAVE a lifecycle row: the five fact kinds carry none,
+    // and that exemption is asserted by the four-tabs test above rather than
+    // being re-derived (or silently tolerated by `?.`) here.
+    const tabbed = allKinds().filter((row) => row.list.categories !== undefined);
+    expect(tabbed.length, 'no kind has tabs — this test would pass vacuously').toBeGreaterThan(0);
+    for (const row of tabbed) {
       const done = row.list.categories?.find((t) => t.id === 'done');
-      expect(done?.filter.category).toEqual(['done']);
+      expect(done?.filter.category, `${row.kind}`).toEqual(['done']);
       const cancelled = row.list.categories?.find((t) => t.id === 'cancelled');
       expect(cancelled?.label).toBe('Cancelled');
       expect(cancelled?.filter.category).toEqual(['cancelled']);

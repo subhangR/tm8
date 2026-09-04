@@ -451,14 +451,19 @@ const COLLECTIONS_BLOCK: ContentBlockRef = {
 };
 
 /** The shape every kind gets before its own divergence is layered on. */
-function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): ListConfig {
+function baseList(
+  overrides: Partial<Omit<ListConfig, 'categories'>> &
+    Pick<ListConfig, 'tile'> & {
+      /**
+       * `null` means THIS KIND HAS NO WORKFLOW TO PROJECT — see the fact-kind
+       * ruling below. Omitted still means "the ruled four".
+       */
+      categories?: readonly StatusCategoryTab[] | null;
+    },
+): ListConfig {
   return {
     quickCreate: true,
     sort: DEFAULT_SORT,
-    // Universal by DEFAULT (D41): a kind opts into a richer partition, never
-    // out of having tabs at all. A row that forgot them would silently lose
-    // its tab row, so absence is not an available state.
-    categories: CATEGORY_TABS,
     // Universal for the same reason: `contains` accepts every dst kind, so
     // every list can be lensed by a collection and every row added to one.
     membership: COLLECTION_MEMBERSHIP,
@@ -471,6 +476,31 @@ function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): Li
        it by declaring its own chips. Last in the row on purpose: it is an
        envelope disposition, not a property of the work. */
     filters: [...(overrides.filters ?? [assigneeFilter, attentionFilter]), archivedFilter],
+    /* APPENDED AFTER THE OVERRIDES for the same reason `filters` is, and
+       carrying the one ruling that changed here.
+
+       D41 used to read: a kind opts INTO a richer partition, never out of
+       having tabs at all. That was right while the four buckets meant one
+       thing. Phase 5 (migration 152) gave them a second job — `is_resolved`
+       answers `status_category = 'done'` — and for the five FACT KINDS the two
+       jobs came apart. `152_universal_status.sql` seeds commit, message, file,
+       memory and artifact to `done` deliberately, because a fact about the past
+       must not block a `depends_on` forever. That `done` is a resolution
+       predicate, NOT a lifecycle position: a memory is a recorded observation,
+       not an intention, and it was never `to_do`.
+
+       So those kinds were handed a four-stage tab row for a workflow they do
+       not have — and, because the row defaults to `tabs[0]`, every one of them
+       opened on To Do and showed NOTHING. All 24 memories in the production
+       space were invisible on arrival; that is the bug this fixes, and it was a
+       filter the whole time, not a failed read.
+
+       `null` is therefore now an available state, and it means what absence
+       always should have: no workflow to project, so no row. Every consumer
+       already degrades correctly — `CategoryTabs` returns null for empty tabs,
+       and `EntityTree` falls back to the unfiltered `{deleted:'exclude'}`. */
+    categories:
+      overrides.categories === null ? undefined : (overrides.categories ?? CATEGORY_TABS),
   };
 }
 
@@ -1184,6 +1214,9 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'messageAuthor' }, { source: 'points' }] },
       sort: [BY_CREATED, BY_ACTIVITY],
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'MESSAGE' }] },
   },
@@ -1357,6 +1390,9 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'repository' }, { source: 'sha' }] },
       sort: [BY_CREATED, BY_ACTIVITY],
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
       archetype: 'generic',
@@ -1385,6 +1421,9 @@ const ROWS: readonly KindConfig[] = [
       tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'mimeType' }, { source: 'sizeBytes' }] },
       inlineEdit: { title: true },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
       archetype: 'generic',
@@ -1599,6 +1638,9 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       quickCreate: false,
       tile: { badges: [{ source: 'messages' }] },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     /*
      * PROFILE, not generic — and this is the archetype working as designed
@@ -1911,6 +1953,9 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       quickCreate: false,
       tile: { badges: [] },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
       /*
