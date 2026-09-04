@@ -110,7 +110,10 @@ describe('four-mode identity', () => {
       }
     }
     // Every advertised usage names a frozen-grammar command path.
-    const grammar = ['help', 'action list', 'entity context', 'entity attention', 'attention resolve-entity', 'message send', 'session spawn'];
+    // `artifact publish` joined the surface for the Tarkesh artifact bug: it is a
+    // public command in the frozen catalog, and the surface must name it because
+    // every harness ships a competing native artifact tool (see commandSurface).
+    const grammar = ['help', 'action list', 'entity context', 'entity attention', 'attention resolve-entity', 'message send', 'session spawn', 'artifact publish'];
     for (const { usage } of commandSurface(true)) {
       const path = usage.replace(/^tm8 /, '');
       expect(
