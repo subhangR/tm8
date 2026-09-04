@@ -26,7 +26,7 @@ if (content.schemaVersion !== 1) failures.push("site content schemaVersion must 
 for (const key of ["productName", "eyebrow", "heroDescription", "installCommand"]) {
   if (typeof content[key] !== "string" || !content[key].trim()) failures.push(`site content field is missing: ${key}`);
 }
-if (firebase.hosting?.public !== "website") failures.push("Firebase Hosting public directory must be website");
+if (!["website", "."].includes(firebase.hosting?.public)) failures.push("Firebase Hosting public directory must be website or . (when firebase.json sits inside website/)");
 if (firebase.hosting?.site !== "tm8-site") failures.push("Firebase Hosting site must be tm8-site");
 
 if (failures.length) {
