@@ -27,7 +27,7 @@ for (const key of ["productName", "eyebrow", "heroDescription", "installCommand"
   if (typeof content[key] !== "string" || !content[key].trim()) failures.push(`site content field is missing: ${key}`);
 }
 if (firebase.hosting?.public !== "website") failures.push("Firebase Hosting public directory must be website");
-if (firebase.hosting?.site !== "maestro-web-fleet") failures.push("Firebase Hosting site must be maestro-web-fleet");
+if (firebase.hosting?.site !== "tm8-site") failures.push("Firebase Hosting site must be tm8-site");
 
 if (failures.length) {
   console.error(failures.map((failure) => `- ${failure}`).join("\n"));
