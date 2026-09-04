@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "tm8 public site content",
+  "type": "object",
+  "required": ["schemaVersion", "productName", "eyebrow", "heroDescription", "installCommand"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "productName": { "type": "string", "minLength": 1 },
+    "eyebrow": { "type": "string", "minLength": 1 },
+    "heroDescription": { "type": "string", "minLength": 1 },
+    "installCommand": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": true
+}
