@@ -395,7 +395,7 @@ TM8_PROJECT_DIR=${TM8_ENV_PROJECT_DIR}
 
 # Serve the built UI from the server itself, so the API origin is also a working
 # app origin and no proxy is required to see something.
-TM8_UI_DIR=${TM8_ENV_CHECKOUT}/packages/tm8_ui_2.0/dist
+TM8_UI_DIR=${TM8_ENV_CHECKOUT}/packages/tm8-ui/dist
 
 TM8_LAUNCH_BOOTSTRAP=1
 TM8_SESSION_CAP=unlimited
@@ -1216,7 +1216,7 @@ if (( DO_BUILD )); then
   info "tsc -b (contract → cli) …"
   act bun run build || die "tsc -b failed — fix the type errors above and re-run"
   did "server + CLI built"
-  # `bun run build` is tsc ONLY. Prod serves TM8_UI_DIR=packages/tm8_ui_2.0/dist, so
+  # `bun run build` is tsc ONLY. Prod serves TM8_UI_DIR=packages/tm8-ui/dist, so
   # skipping this second build ships a stale UI against a new server with no
   # error anywhere — the classic silent half-deploy.
   if (( BUILD_UI )); then

@@ -1,105 +1,53 @@
 // @vitest-environment jsdom
 /**
- * The version switch says what is true about the OTHER UI.
+ * The way home from the alternate UI must always be there.
  *
- * The control's whole job is to be honest about a door it does not own: the
- * 1.0 bundle is optional and an operator may not have configured one. The two
- * failures worth guarding are the ones that look like success — offering a
- * link to a bundle that is not served, and disappearing while it finds out
- * (which would also make the account menu's rows jump under the pointer).
+ * This control's whole job is to be a door a viewer can find and trust. It is
+ * unconditional by design — `/` is where the product UI always is, and if this
+ * bundle rendered at all it was served from the same origin — so what is worth
+ * guarding is that it stays a real, plain, same-tab link. The failure it exists
+ * to prevent is a one-way switch: a viewer who reaches 2.0, finds something
+ * missing, and cannot get back without editing the address bar.
  */
-import { render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
 
-import { UiVersionSwitch } from './UiVersionSwitch';
-import { probeUi10, resetUi10Probe, UI_1_0_PATH } from './mount';
+import { UiVersionReturn } from './UiVersionReturn';
 
-const ok = () => Promise.resolve(new Response(null, { status: 200 }));
-const missing = () => Promise.resolve(new Response(null, { status: 404 }));
+describe('UiVersionReturn', () => {
+  it('links to the product UI at the root', () => {
+    render(<UiVersionReturn />);
 
-beforeEach(() => resetUi10Probe());
-afterEach(() => {
-  resetUi10Probe();
-  vi.restoreAllMocks();
-});
-
-describe('UiVersionSwitch', () => {
-  it('links to the 1.0 mount when the bundle is served', async () => {
-    render(<UiVersionSwitch fetcher={ok as unknown as typeof fetch} />);
-
-    const link = await screen.findByTestId('switch-to-ui-1-0');
-    expect(link.getAttribute('href')).toBe(UI_1_0_PATH);
+    expect(screen.getByTestId('back-to-ui-1-0').getAttribute('href')).toBe('/');
   });
 
-  it('never opens a second copy of the app beside itself', async () => {
-    render(<UiVersionSwitch fetcher={ok as unknown as typeof fetch} />);
+  it('is unconditional — it never probes and never refuses', () => {
+    // No fetcher seam and no disabled state: a probe here could only ever say
+    // yes, and a refusal would strand a viewer in the UI they are leaving.
+    render(<UiVersionReturn />);
 
+    expect(screen.getByTestId('back-to-ui-1-0')).toBeTruthy();
+    expect(screen.queryByTestId('disabled-with-reason')).toBeNull();
+  });
+
+  it('never opens a second copy of the app beside itself', () => {
     // Two live UIs over one catalog would put the same entity on screen twice
     // with independent event streams.
-    const link = await screen.findByTestId('switch-to-ui-1-0');
-    expect(link.getAttribute('target')).toBeNull();
+    render(<UiVersionReturn />);
+
+    expect(screen.getByTestId('back-to-ui-1-0').getAttribute('target')).toBeNull();
   });
 
-  it('refuses with a reason when the server serves no 1.0 bundle', async () => {
-    render(<UiVersionSwitch fetcher={missing as unknown as typeof fetch} />);
+  it('names itself for a screen reader and keeps the glyph decorative', () => {
+    render(<UiVersionReturn />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('disabled-with-reason')).toBeTruthy();
-    });
-    expect(screen.queryByTestId('switch-to-ui-1-0')).toBeNull();
-    expect(screen.getByText(/TM8_UI_1_0_DIR/)).toBeTruthy();
+    const link = screen.getByLabelText('Back to UI 1.0');
+    expect(link.querySelector('[aria-hidden]')).toBeTruthy();
   });
 
-  it('refuses rather than vanishing while the probe is in flight', () => {
-    // Deliberately never resolves: the row must already be on screen.
-    render(<UiVersionSwitch fetcher={(() => new Promise(() => {})) as unknown as typeof fetch} />);
+  it('wears the row grammar the host dresses it in', () => {
+    render(<UiVersionReturn className="auth-menu__row" />);
 
-    expect(screen.getByTestId('disabled-with-reason')).toBeTruthy();
-    expect(screen.getByLabelText('Switch to UI 1.0')).toBeTruthy();
-  });
-
-  it('treats a network failure as absent rather than throwing', async () => {
-    render(
-      <UiVersionSwitch
-        fetcher={(() => Promise.reject(new Error('offline'))) as unknown as typeof fetch}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('disabled-with-reason')).toBeTruthy();
-    });
-  });
-});
-
-describe('probeUi10', () => {
-  it('probes with GET — the static handler answers no other method', async () => {
-    // Measured: tm8-server guards static dispatch on `method === 'GET'`, so a
-    // HEAD probe 404s against a server that IS serving the bundle, and the
-    // control reports it permanently unavailable.
-    const fetcher = vi.fn(ok);
-    await probeUi10(fetcher as unknown as typeof fetch);
-
-    expect(fetcher.mock.calls[0]?.[1]).toEqual({ method: 'GET' });
-  });
-
-  it('probes index.html, not the directory', async () => {
-    // The mounted handler answers extension-less paths with its own SPA
-    // fallback, so probing `/ui-1.0/` would return 200 from the fallback even
-    // against a root holding no bundle.
-    const fetcher = vi.fn(ok);
-    await probeUi10(fetcher as unknown as typeof fetch);
-
-    expect(fetcher).toHaveBeenCalledWith(`${UI_1_0_PATH}index.html`, { method: 'GET' });
-  });
-
-  it('asks once per page load however many controls mount', async () => {
-    const fetcher = vi.fn(ok);
-    await Promise.all([
-      probeUi10(fetcher as unknown as typeof fetch),
-      probeUi10(fetcher as unknown as typeof fetch),
-      probeUi10(fetcher as unknown as typeof fetch),
-    ]);
-
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('back-to-ui-1-0').className).toContain('auth-menu__row');
   });
 });

@@ -1,12 +1,42 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+/* `pwaShell` is deliberately NOT in `plugins` — see point 3 below. The import
+   stays so re-installing it is one line if this package ever takes the root
+   back; the plugin and `src/pwa/` are otherwise complete and dormant. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { pwaShell } from './vite-plugin-pwa-shell';
 
 /**
- * tm8-ui — the new UI, built from the approved design suite (charter R1).
- * Dev port 4612 is charter-fixed (4610 = tm8-server, 4611 = old UI oracle).
+ * tm8_ui_2.0 — the Astryx redesign. THE ALTERNATE UI, served at `/ui-2.0/`.
  *
- * The proxy exists for the same reason as the old UI's: tm8-server binds
+ * It was the product UI at `/` from 2026-08-29 (PRs #526/#531) until
+ * 2026-09-03, when the owner reversed that and `packages/tm8-ui` took the root
+ * back. This package is now what `packages/tm8-ui` was in between: built and
+ * served, behind the version switch, and only when an operator sets
+ * `TM8_UI_2_0_DIR`. See `scripts/lib/ui.mjs`.
+ *
+ * Three things here exist only because of that, and each would be wrong for a
+ * bundle served at the root:
+ *
+ *  1. `base` — the mount path is baked into every asset URL at build time. It
+ *     is duplicated in `packages/server/src/http/static.ts`
+ *     (`UI_2_0_MOUNT_PATH`) and `packages/tm8-ui/src/ui-version/mount.ts`;
+ *     changing it means changing all three and rebuilding this bundle.
+ *
+ *  2. `build.outDir` is `dist-2.0`, NOT `dist`. A safety interlock, not a
+ *     preference: `TM8_UI_DIR` names the ROOT bundle, and if it is ever left
+ *     naming this package a `dist/` built with `base: '/ui-2.0/'` would serve
+ *     an index whose every asset 404s — a white screen with a 200. An absent
+ *     `dist/` fails loudly instead.
+ *
+ *  3. NO `pwaShell`. A service worker for this bundle would install with
+ *     `/ui-2.0/` scope beside the product worker's root scope; two workers
+ *     racing over one origin is not something the alternate UI needs to be
+ *     worth having. `packages/tm8-ui/src/pwa/service-worker.js` excludes this
+ *     mount for the matching reason on its side, and `src/pwa/register.ts`
+ *     here returns early because `BASE_URL !== '/'`.
+ *
+ * The proxy exists for the same reason as the product UI's: tm8-server binds
  * loopback-only with no CORS headers, so the app must stay same-origin.
  * `ws: true` is required — /v2 carries the workspace event stream and the
  * per-session PTY WebSocket. The data layer itself is bridge-owned
@@ -15,35 +45,9 @@ import { pwaShell } from './vite-plugin-pwa-shell';
 const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
 
 export default defineConfig({
-  plugins: [
-    react(),
-    /**
-     * The precache list. `critical` (the HTML, entry chunk and stylesheet) is
-     * derived from the bundle; these are the copied-from-`public/` files worth
-     * having offline on top of it.
-     *
-     * The two font faces are Hanken Grotesk 400 and 600 latin — `--pn-ui` at
-     * body weight and at the weight every heading, title and tab label uses.
-     * They are 69 kB together and they are the difference between the installed
-     * app looking like itself on a cold offline launch and falling back to
-     * system-ui. The other 19 faces (latin-ext, the serif display face, the
-     * mono) are runtime-cached: they are wanted less often and `font-display:
-     * swap` means their absence costs a repaint, not a broken screen.
-     */
-    pwaShell({
-      optional: [
-        '/manifest.webmanifest',
-        '/icons/icon-192.png',
-        '/icons/icon-512.png',
-        '/icons/icon-maskable-512.png',
-        '/icons/apple-touch-icon-180.png',
-        '/favicon.ico',
-        '/tm8-mark.png',
-        '/fonts/HankenGrotesk-400-latin.woff2',
-        '/fonts/HankenGrotesk-600-latin.woff2',
-      ],
-    }),
-  ],
+  base: '/ui-2.0/',
+  build: { outDir: 'dist-2.0' },
+  plugins: [react()],
   server: {
     port: 4612,
     strictPort: true,
@@ -51,12 +55,6 @@ export default defineConfig({
     proxy: {
       '/v2': { target, changeOrigin: false, ws: true },
       '/health': { target, changeOrigin: false },
-      /* The alternate 1.0 UI is served by tm8-server (TM8_UI_1_0_DIR), not by
-         vite — so the version switch's destination has to be proxied like the
-         API is. Without this line `/ui-1.0/` falls to vite's own SPA fallback
-         and answers with THIS app's index.html: the switch would appear to
-         work and change nothing. */
-      '/ui-1.0': { target, changeOrigin: false },
     },
   },
   test: {

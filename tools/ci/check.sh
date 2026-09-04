@@ -129,51 +129,50 @@ else
   skip "typecheck packages/ui" "UI arrives at W3/M2"
 fi
 
-# The production UI owns the launch builder. Keep it in the merge gate after
-# the contract build so additions such as execution.spawn credential provenance
-# cannot land on one side of the seam without the other.
+# BOTH UI PACKAGES ARE TYPECHECKED, and which one is the product UI swapped on
+# 2026-09-03: packages/tm8-ui holds the root and packages/tm8_ui_2.0 (the Astryx
+# redesign) is now the ALTERNATE UI at /ui-2.0/. Both stages stay exactly as
+# they were — the argument for gating either never depended on which was which.
 #
-# packages/tm8_ui_2.0 (the Astryx redesign) is the product UI; packages/tm8-ui
-# is the 1.0 snapshot, now served beside it as the ALTERNATE UI at /ui-1.0/.
+# The UI owns the launch builder. Keep it in the merge gate after the contract
+# build so additions such as execution.spawn credential provenance cannot land
+# on one side of the seam without the other.
 #
-# THE 1.0 SNAPSHOT IS GATED AGAIN (2026-09-02). The note that used to sit here
-# said gating would fail because the snapshot declares React 18 against a
-# workspace pinned to 19. THAT NOTE WAS CORRECT — an earlier cut of this change
-# claimed otherwise, on the strength of a dev box whose install hoisted a single
-# `@types/react`. Under this job's frozen lockfile the snapshot pulls @types 18
-# beside the hoisted 19 and fails on the spot, exactly as the note predicted.
-#
-# It is gateable now because the condition was FIXED, not re-read: the package
-# declares React 19 to match the runtime the root `overrides` already forced on
-# it, and the six `RefObject<T>` props React 19 widened to `RefObject<T | null>`
-# are corrected.
-#
-# What ungating it cost in the meantime was real, and is the argument for this
-# stage: while nothing checked it, the contract gained a `codebrain` MenuViewRef
-# and four of the snapshot's exhaustive `Record<MenuViewRef, …>` tables silently
-# stopped compiling. Nothing reported it, because nothing looked. A UI a viewer
-# can switch to has to be a UI something checks.
+# What ungating a served UI costs is not hypothetical, and is the argument for
+# both stages: while nothing checked the 1.0 snapshot, the contract gained a
+# `codebrain` MenuViewRef and four of its exhaustive `Record<MenuViewRef, …>`
+# tables silently stopped compiling. Nothing reported it, because nothing
+# looked. A UI a viewer can reach has to be a UI something checks — and since
+# the swap that argument runs hardest for the package below, which is the one
+# every viewer now lands on.
 if [ -f packages/tm8_ui_2.0/tsconfig.json ]; then
-  run_stage "typecheck packages/tm8_ui_2.0" ./node_modules/.bin/tsc -p packages/tm8_ui_2.0/tsconfig.json --noEmit
+  run_stage "typecheck packages/tm8_ui_2.0 (alternate, /ui-2.0/)" ./node_modules/.bin/tsc -p packages/tm8_ui_2.0/tsconfig.json --noEmit
 else
-  skip "typecheck packages/tm8_ui_2.0" "production UI is absent"
+  skip "typecheck packages/tm8_ui_2.0 (alternate, /ui-2.0/)" "the alternate UI is absent"
 fi
 
-# TYPECHECK ONLY, and the omission of its test suite is deliberate rather than
-# an oversight. MEASURED 2026-09-02 on clean origin/main, before any of this
-# lane's edits: 9 failures across 5 files (board, craft, files-explorer,
-# transcript, router-mount) — React-19 act/flush timing in a suite written
-# against React 18, unrelated to anything the version switch touches. Gating
-# them today would make this stage red on arrival, and a stage that is red on
-# arrival is a stage people learn to ignore.
+# THE PRODUCT UI SINCE 2026-09-03 — and TYPECHECK ONLY, which is now a KNOWN
+# HOLE rather than a comfortable one. Say it plainly: the package every viewer
+# lands on has ~3,800 tests that this gate does not run.
 #
-# The typecheck has no such baseline: it is clean, and it is the check that
-# would have caught the `codebrain` widening on the day it landed. Adding the
-# test suite is its own task, and it starts by fixing those 9.
+# The omission is still deliberate, and the reason has not changed. MEASURED
+# 2026-09-02 on clean origin/main: 9 failures across 5 files (board, craft,
+# files-explorer, transcript, router-mount) — React-19 act/flush timing in a
+# suite written against React 18, unrelated to anything the version switch or
+# this swap touches. Turning them on today would make this stage red on
+# arrival, and a stage that is red on arrival is a stage people learn to
+# ignore. That would buy nothing and cost the gate's credibility.
+#
+# It is a bigger hole than it was yesterday, because this package moved from
+# alternate to product. FIXING THOSE 9 AND ADDING `packages/tm8-ui` TO
+# TEST_PACKAGES BELOW IS THE FOLLOW-UP, and it should not wait long.
+#
+# The typecheck itself has no such baseline: it is clean, and it is the check
+# that would have caught the `codebrain` widening on the day it landed.
 if [ -f packages/tm8-ui/tsconfig.json ]; then
-  run_stage "typecheck packages/tm8-ui (1.0)" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
+  run_stage "typecheck packages/tm8-ui (product)" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
 else
-  skip "typecheck packages/tm8-ui (1.0)" "the 1.0 snapshot is absent"
+  skip "typecheck packages/tm8-ui (product)" "the product UI is absent"
 fi
 
 # --- 3. tests ---------------------------------------------------------------
@@ -223,8 +222,15 @@ TEST_PACKAGES=(
   # every test with a timeout loses that race eventually.
   #
   # 2026-08-29: the entry moved from packages/tm8-ui to packages/tm8_ui_2.0
-  # when the product UI moved. tm8-ui is now the frozen 1.0 snapshot (React 18,
-  # pre-Astryx) and is excluded for the same reason packages/ui is.
+  # when the product UI moved.
+  #
+  # 2026-09-03: the product UI moved BACK to packages/tm8-ui and this entry did
+  # NOT follow it, which is the one place this swap knowingly leaves the gate
+  # weaker than it found it. packages/tm8-ui's suite has 9 pre-existing
+  # failures (see the typecheck stage above); adding it here today would red
+  # the gate on arrival. So the suite that runs is now the ALTERNATE UI's — a
+  # real check, on a real bundle viewers can reach, but no longer the one they
+  # land on. Fix those 9 and add packages/tm8-ui beside this line.
   packages/tm8_ui_2.0
   tools/conformance
 )
