@@ -106,6 +106,7 @@ export const ENTITY_COLUMNS = `
   mem.display_name as member_display_name, mem.role as member_role,
   tm.name as team_member_name, tm.model as team_member_model,
   tm.agent_tool as team_member_agent_tool, tm.owner_member_id as team_member_owner_id,
+  tm.mode as team_member_mode, tm.permission_mode as team_member_permission_mode,
   tm.identity as team_member_identity, tm.avatar as team_member_avatar,
   tm.capabilities as team_member_capabilities,
   tm.command_permissions as team_member_command_permissions,
@@ -412,6 +413,8 @@ export interface EntityRow {
   team_member_name: string | null;
   team_member_model: string | null;
   team_member_agent_tool: string | null;
+  team_member_mode: string | null;
+  team_member_permission_mode: string | null;
   team_member_owner_id: string | null;
   team_member_identity: string | null;
   team_member_avatar: string | null;
@@ -575,6 +578,13 @@ export const MICROS = (expr: string): string =>
  */
 export function iso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+const TEAM_MEMBER_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher'] as const;
+type TeamMemberModeValue = (typeof TEAM_MEMBER_MODES)[number];
+/** `team_members.mode` is CHECKed to this set; anything else (or null) reads as null. */
+function teamMemberMode(value: string | null | undefined): TeamMemberModeValue | null {
+  return (TEAM_MEMBER_MODES as readonly string[]).includes(value ?? '') ? (value as TeamMemberModeValue) : null;
 }
 
 export function isoOrNull(value: Date | string | null): string | null {
@@ -1579,6 +1589,10 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // "no default of its own", so a teammate that genuinely has none must
         // say so rather than look like a row that forgot to carry the answer.
         defaultProfileId: ctx.relations.defaultProfiles.get(row.id) ?? null,
+        // ADDITIVE: the teammate's role and standing permission ceiling, so a
+        // picker can filter "coordinators only" without a per-row round trip.
+        mode: teamMemberMode(row.team_member_mode),
+        permissionMode: row.team_member_permission_mode,
       };
     case 'work_session':
       return {

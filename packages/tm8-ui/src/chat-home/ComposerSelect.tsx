@@ -28,7 +28,7 @@
  * in `emptyNote` — "no teammates exist" and "the roster has not loaded" are
  * different answers, and only the caller knows which one it is handing over.
  */
-import { useCallback, useId, useRef, useState } from 'react';
+import { Fragment, useCallback, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { EntityId } from '@tm8/contract';
 import { Avatar, useMenuAnchor } from '../kit';
@@ -38,6 +38,9 @@ import { useDismissable } from '../panels/useDismissable';
 /** `.tch-pickmenu`'s own max-height (260, chat-home.css) + its 4px offset. */
 const MENU_HEIGHT = 264;
 const MENU_WIDTH = 220;
+/** `.tch-pickmenu--tall` (440, chat-home.css) + offset; wider so captions wrap once at most. */
+const TALL_MENU_HEIGHT = 444;
+const TALL_MENU_WIDTH = 280;
 
 export interface ComposerSelectOption {
   id: string;
@@ -46,6 +49,14 @@ export interface ComposerSelectOption {
   hint?: string;
   /** Teammates only, so the trigger and the rows draw the real face. */
   actor?: { id: EntityId; avatar?: string | null };
+  /**
+   * A section heading drawn above the first row that carries it (Read /
+   * Shape / Act). Rows with the same group must be adjacent; the menu does
+   * not sort, so the caller's order is the drawn order.
+   */
+  group?: string;
+  /** Drawn, not pickable, and this is why — a codex model in the coordinator slot. */
+  disabledReason?: string;
 }
 
 export interface ComposerSelectProps {
@@ -61,6 +72,22 @@ export interface ComposerSelectProps {
   disabled?: boolean;
   /** What an EMPTY option list means, in the caller's own words. */
   emptyNote: string;
+  /** A line under the rows about the list as a whole — "no coordinator exists, showing everyone". */
+  note?: string | null;
+  /**
+   * `quiet` is the thread rail's weight: no chip border, smaller, sitting on
+   * the page instead of inside the composer box. The organising rule of the
+   * composer is drawn by this one difference, so it is a prop and not a class
+   * a caller might forget.
+   */
+  variant?: 'chip' | 'quiet';
+  /** A leading glyph on the trigger (the rail's 🔒 / ●). Decorative. */
+  glyph?: string;
+  /** Groups whose heading is drawn emphasised (the Act group). */
+  emphasisGroups?: readonly string[];
+  /** A grouped list with captions needs more than the 260px flat menu — the
+      mode menu clipped its Act group at that height (pixel check, 2026-09-05). */
+  tall?: boolean;
   testId: string;
 }
 
@@ -71,6 +98,11 @@ export function ComposerSelect({
   onChange,
   disabled = false,
   emptyNote,
+  note = null,
+  variant = 'chip',
+  glyph,
+  emphasisGroups = [],
+  tall = false,
   testId,
 }: ComposerSelectProps) {
   const [open, setOpen] = useState(false);
@@ -107,7 +139,7 @@ export function ComposerSelect({
      position is the frame's. Passing `false` keeps the hook's rule-of-hooks
      shape while leaving it inert, rather than computing a rectangle nothing
      reads. */
-  const anchor = useMenuAnchor(open && !oneSurface, boxRef, menuRef, close, MENU_HEIGHT, MENU_WIDTH);
+  const anchor = useMenuAnchor(open && !oneSurface, boxRef, menuRef, close, tall ? TALL_MENU_HEIGHT : MENU_HEIGHT, tall ? TALL_MENU_WIDTH : MENU_WIDTH);
 
   const selectedIndex = options.findIndex((option) => option.id === value);
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
@@ -115,8 +147,19 @@ export function ComposerSelect({
   const menuId = useId();
 
   const choose = (option: ComposerSelectOption): void => {
+    if (option.disabledReason) return;
     onChange(option.id);
     close();
+  };
+  /* Arrow keys step over rows that cannot be picked, in the pressed direction. */
+  const stepActive = (from: number, step: number): number => {
+    if (!options.length) return 0;
+    let next = from;
+    for (let i = 0; i < options.length; i += 1) {
+      next = (next + step + options.length) % options.length;
+      if (!options[next]?.disabledReason) return next;
+    }
+    return from;
   };
 
   /*
@@ -129,19 +172,30 @@ export function ComposerSelect({
     <p className="tch-pickmenu__note" role="status">{emptyNote}</p>
   ) : (
     <div role="listbox" id={menuId} aria-label={`${label} options`}>
-      {options.map((option, index) => (
+      {options.map((option, index) => (<Fragment key={option.id}>
+        {option.group && options[index - 1]?.group !== option.group ? (
+          <div
+            className="tch-pickmenu__group"
+            data-emphasis={emphasisGroups.includes(option.group) || undefined}
+            role="presentation"
+          >
+            {option.group}
+          </div>
+        ) : null}
         <button
-          key={option.id}
           type="button"
           role="option"
           id={`${menuId}-opt-${index}`}
           className="tch-pickmenu__opt"
           data-testid={`${testId}-${option.id}`}
           data-active={index === activeIndex || undefined}
+          data-group={option.group}
           aria-selected={option.id === value}
+          aria-disabled={option.disabledReason ? true : undefined}
+          title={option.disabledReason}
           /* Hover moves the highlight so the mouse and the arrow
              keys never disagree about which row Enter would take. */
-          onMouseEnter={() => setActive(index)}
+          onMouseEnter={() => { if (!option.disabledReason) setActive(index); }}
           onClick={() => choose(option)}
         >
           {option.actor ? (
@@ -155,7 +209,9 @@ export function ComposerSelect({
           ) : null}
           <span className="tch-pickmenu__text">
             <span className="tch-pickmenu__name">{option.label}</span>
-            {option.hint ? (
+            {option.disabledReason ? (
+              <span className="tch-pickmenu__hint tch-pickmenu__hint--why">{option.disabledReason}</span>
+            ) : option.hint ? (
               <span className="tch-pickmenu__hint">{option.hint}</span>
             ) : null}
           </span>
@@ -163,7 +219,8 @@ export function ComposerSelect({
             {option.id === value ? '✓' : ''}
           </span>
         </button>
-      ))}
+      </Fragment>))}
+      {note ? <p className="tch-pickmenu__note" role="note">{note}</p> : null}
     </div>
   );
 
@@ -181,7 +238,14 @@ export function ComposerSelect({
   const faced = Boolean(selected?.actor);
 
   return (
-    <span className={faced ? 'tch-pick tch-pick--faced' : 'tch-pick'} ref={boxRef}>
+    <span
+      className={[
+        'tch-pick',
+        faced ? 'tch-pick--faced' : '',
+        variant === 'quiet' ? 'tch-pick--quiet' : '',
+      ].filter(Boolean).join(' ')}
+      ref={boxRef}
+    >
       <button
         type="button"
         className="tch-pick__trigger"
@@ -213,8 +277,8 @@ export function ComposerSelect({
               setActive(selectedIndex >= 0 ? selectedIndex : 0);
               setOpen(true);
             } else if (options.length) {
-              const step = event.key === 'ArrowDown' ? 1 : options.length - 1;
-              setActive((current) => (current + step) % options.length);
+              const step = event.key === 'ArrowDown' ? 1 : -1;
+              setActive((current) => stepActive(current, step));
             }
             return;
           }
@@ -236,6 +300,7 @@ export function ComposerSelect({
             src={selected.actor.avatar ?? null}
           />
         ) : null}
+        {glyph ? <span className="tch-pick__glyph" aria-hidden>{glyph}</span> : null}
         <span className="tch-pick__value">{selected?.label ?? '—'}</span>
         <span className="tch-pick__caret" aria-hidden>▾</span>
       </button>
@@ -276,7 +341,7 @@ export function ComposerSelect({
         ? createPortal(
             <div
               ref={menuRef}
-              className="tch-pickmenu"
+              className={tall ? 'tch-pickmenu tch-pickmenu--tall' : 'tch-pickmenu'}
               style={anchor.style}
               data-testid={`${testId}-menu`}
             >

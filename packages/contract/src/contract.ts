@@ -263,7 +263,16 @@ export type CoreEntityState =
      default applies. It never means "not loaded yet"; that distinction is the
      whole point of projecting it onto the row rather than resolving it later. */
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
-      liveWork?: LiveWork | null; defaultProfileId?: EntityId | null }
+      liveWork?: LiveWork | null; defaultProfileId?: EntityId | null;
+      /* `mode` and `permissionMode` are ADDITIVE and OPTIONAL. They project
+         `team_members.mode` (CHECKed: worker | coordinator | coordinated-worker |
+         coordinated-coordinator | dispatcher) and `team_members.permission_mode`
+         (plain text, no CHECK) so a picker can filter teammates by role —
+         "coordinators only" for an orchestrate chat — without a per-teammate
+         round trip. `null` means the row has no value; ABSENT means an older
+         node that does not project the column, and a consumer must treat the
+         teammate as unfiltered rather than as a non-coordinator. */
+      mode?: TeamMemberMode | null; permissionMode?: string | null }
   // `ciStatus`/`mergeState` are ADDITIVE and OPTIONAL (forge observer).
   // `null` means this node has no verdict — nothing has observed the pull
   // request yet, or the observer runs unauthenticated — and a consumer renders
@@ -468,6 +477,9 @@ export type CoreEntityState =
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
+
+export type TeamMemberMode =
+  | 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | 'dispatcher';
 
 export type EntityState = CoreEntityState | CustomEntityState;
 

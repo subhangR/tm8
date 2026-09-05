@@ -93,6 +93,8 @@ describe('real chat-home seam adapter', () => {
       model: 'claude-sonnet-4-5',
       modelLabel: 'claude-sonnet-4-5',
       mode: 'ask',
+      workdirMode: 'scratch',
+      projectId: null,
     });
 
     await port.postTurn({ chatId: CHAT, body: 'Continue.', clientMutationId: 'turn-1' });

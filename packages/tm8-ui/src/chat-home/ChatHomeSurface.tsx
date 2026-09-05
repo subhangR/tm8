@@ -118,6 +118,7 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     provider: model.provider,
     agentTool: model.agentTool,
     ...(model.note ? { note: model.note } : {}),
+    ...(model.efforts ? { efforts: model.efforts } : {}),
   }));
 
   const props: ChatHomeScreenProps = {

@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
+import type { ChatMode, EntityId, LaunchModelEffort, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
-import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import { MessageAttachments } from '../files/MessageAttachments';
 import type { FileUploadTask } from '../files/upload';
-import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import {
   AttachmentChips,
   ComposerCard,
@@ -24,7 +22,28 @@ import { FleetPane } from './fleet/FleetPane';
 import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
-import { ComposerSelect } from './ComposerSelect';
+import { ComposerSelect, type ComposerSelectOption } from './ComposerSelect';
+import {
+  AddToTurnMenu,
+  CrewPanel,
+  MODE_GROUPS,
+  MODE_SPECS,
+  ModeOptionsSlot,
+  ModelEffortPicker,
+  ThreadRail,
+  coordinatorModelChoices,
+  crewBrief,
+  modeConflict,
+  modeFromSlash,
+  modeSpec,
+  nearestEffort,
+  projectBindingFromChoice,
+  rungFromPermissionMode,
+  teammateRoster,
+  type CrewSpec,
+  type ModeOptionsByMode,
+  type PermissionRung,
+} from './composer';
 import { EntityTray } from './EntityTray';
 import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
@@ -33,6 +52,7 @@ import { composeThreadColumn } from './thread-column';
 import type {
   ChatHomePort,
   ChatModelOption,
+  ChatProjectOption,
   ChatTeammateOption,
   ChatThreadDetail,
   ChatThreadSummary,
@@ -398,6 +418,18 @@ export function ChatHomeScreen({
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(models[0]?.model ?? '');
   const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? 'ask');
+  /* THE REST OF THE COMPOSER'S SHAPE. Per-turn: effort (remembered PER MODE),
+     the ⚙ options, the ＋ menu's enabled skills. Thread-scope: the project
+     binding (write-once on the server) and the permission ceiling. `null`
+     permission means "not chosen" — the rail derives the default from the
+     teammate's own `permission_mode` and says so. */
+  const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>({});
+  const [modeOptions, setModeOptions] = useState<ModeOptionsByMode>({});
+  const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
+  const [projectChoice, setProjectChoice] = useState('');
+  const [projects, setProjects] = useState<readonly ChatProjectOption[] | null>(null);
+  const [permissionChoice, setPermissionChoice] = useState<PermissionRung | null>(null);
+  const [crew, setCrew] = useState<CrewSpec>({ workers: [] });
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
   const detailRef = useRef<ChatThreadDetail | null>(null);
@@ -1060,11 +1092,21 @@ export function ChatHomeScreen({
   const shownTeammateId = activeConfig?.teammateId ?? teammateId;
   const shownModelId = activeConfig?.model ?? modelId;
   const shownMode = activeConfig?.mode ?? chatMode;
+  /* Under orchestrate the roster is COORDINATORS ONLY (ac_7); the model
+     decides, the effect below applies its preselect. */
+  const roster = useMemo(
+    () => teammateRoster(teammates, shownMode, shownTeammateId),
+    [teammates, shownMode, shownTeammateId],
+  );
+  useEffect(() => {
+    if (!pinned && roster.preselect) setTeammateId(roster.preselect);
+  }, [pinned, roster.preselect]);
   const teammateOptions = useMemo(() => {
-    const base = teammates.map((teammate) => ({
+    const base = roster.options.map((teammate) => ({
       id: teammate.id,
       label: teammate.label,
       actor: { id: teammate.id, avatar: teammate.avatar },
+      ...(teammate.mode ? { hint: teammate.mode } : {}),
     }));
     return activeConfig && !base.some((option) => option.id === activeConfig.teammateId)
       ? [{
@@ -1073,17 +1115,52 @@ export function ChatHomeScreen({
           actor: { id: activeConfig.teammateId, avatar: null },
         }, ...base]
       : base;
-  }, [teammates, activeConfig]);
-  const modelOptions = useMemo(() => {
-    const base = models.map((model) => ({
-      id: model.model,
-      label: model.label,
-      hint: model.provider,
-    }));
+  }, [roster.options, activeConfig]);
+  /* The COORDINATOR's list: codex models drawn disabled with the reason (ac_10). */
+  const modelChoices = useMemo(() => {
+    const base = coordinatorModelChoices(models);
     return activeConfig && !base.some((option) => option.id === activeConfig.model)
       ? [{ id: activeConfig.model, label: activeConfig.modelLabel }, ...base]
       : base;
   }, [models, activeConfig]);
+  /* Effort rides the model popover and is remembered per mode; a model that
+     lacks the remembered stop snaps to its nearest one. */
+  const effort = useMemo<LaunchModelEffort | null>(() => {
+    const wanted = effortByMode[shownMode] ?? modeSpec(shownMode).defaultEffort;
+    return nearestEffort(wanted, selectedModel?.efforts ?? []);
+  }, [effortByMode, shownMode, selectedModel]);
+  const modeSelectOptions = useMemo<ComposerSelectOption[]>(
+    () => MODE_SPECS.map((spec) => ({
+      id: spec.id,
+      label: spec.label,
+      hint: spec.consequence,
+      group: MODE_GROUPS.find((group) => group.id === spec.group)?.label ?? spec.group,
+    })),
+    [],
+  );
+  /* THE CEILING. Default = the teammate's own `permission_mode`, said out loud. */
+  const shownTeammate = teammates.find((teammate) => teammate.id === shownTeammateId);
+  const derivedPermission = rungFromPermissionMode(shownTeammate?.permissionMode);
+  const permission = permissionChoice ?? derivedPermission;
+  const permissionSource = permissionChoice === null && shownTeammate
+    ? `${shownTeammate.label} defaults to ${derivedPermission === 'read-only' ? 'Read-only' : derivedPermission === 'auto' ? 'Auto' : 'Ask first'}`
+    : null;
+  const conflict = modeConflict(shownMode, permission);
+  const projectBinding = projectBindingFromChoice(projectChoice);
+  const lockedProjectLabel = activeConfig
+    ? activeConfig.workdirMode === 'project' && activeConfig.projectId
+      ? projects?.find((project) => project.id === activeConfig.projectId)?.name ?? 'Project'
+      : activeConfig.workdirMode === undefined ? null : 'Scratch'
+    : null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!port.listProjects) { setProjects(null); return; }
+    port.listProjects(spaceId).then(
+      (next) => { if (!cancelled) setProjects(next); },
+      () => { if (!cancelled) setProjects(null); },
+    );
+    return () => { cancelled = true; };
+  }, [port, spaceId]);
 
   /**
    * THE COMPOSER IS THE SHARED RICH INPUT (chip placement, R4).
@@ -1255,8 +1332,14 @@ export function ChatHomeScreen({
   const hostedList = onChatsRoot ? null : (renderRootList?.(root) ?? null);
 
   const send = useCallback(async () => {
-    const body = draft.trim();
-    if (body === '' || busy || refusal || teammateId === '' || !selectedModel) return;
+    const draftBody = draft.trim();
+    if (draftBody === '' || busy || refusal || teammateId === '' || !selectedModel) return;
+    /* The crew rides the opening turn (see `crewBrief`): visible before send,
+       verbatim in the transcript. Only a NEW orchestrate chat has one. */
+    const brief = newThread && chatMode === 'orchestrate'
+      ? crewBrief(crew, { teammates, models, permission, options: modeOptions.orchestrate })
+      : '';
+    const body = brief ? `${draftBody}\n${brief}` : draftBody;
     const staged = attachmentsRef.current;
     // An upload still in flight is not a reason to drop it: Send waits rather
     // than posting a message whose file the writer is watching arrive.
@@ -1318,9 +1401,16 @@ export function ChatHomeScreen({
         // somebody else's row.
         ...(aboutId ? { aboutId } : {}),
         body,
+        /* The chat's title defaults to the opening body; with a crew brief
+           appended that would name the chat after the brief. Name it after
+           the human's own words instead. */
+        ...(brief ? { title: draftBody.slice(0, 240) } : {}),
         teammateId,
         model: selectedModel.model,
         mode: chatMode,
+        /* Write-once (167): offered in the empty state, locked after this. */
+        workdirMode: projectBinding.workdirMode,
+        ...(projectBinding.projectId ? { projectId: projectBinding.projectId } : {}),
         clientMutationId: newMutationId('chat-start'),
         ...(attachmentIds.length ? { attachmentIds } : {}),
       });
@@ -1331,7 +1421,7 @@ export function ChatHomeScreen({
       ) {
         throw new Error('The node returned a different chat configuration than the one selected.');
       }
-      setDraft((current) => (current.trim() === body ? '' : current));
+      setDraft((current) => (current.trim() === draftBody ? '' : current));
       staged.clear();
       // The select effect owns loading the new chat — a second concurrent read
       // here would race it for setDetail/setPhase. `expecting` keeps the pulse
@@ -1372,6 +1462,7 @@ export function ChatHomeScreen({
     selectedRootId,
     spaceId,
     teammateId,
+    newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -1883,9 +1974,17 @@ export function ChatHomeScreen({
                   aria-label="Message the chat agent"
                   aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
                   disabled={busy}
-                  placeholder={
-                    newThread ? 'Ask anything about this space…' : 'Reply in this thread…'
-                  }
+                  placeholder={newThread ? 'What are we doing?' : 'Type a message…'}
+                  onKeyDownCapture={(event) => {
+                    /* `/build` on an otherwise-empty input selects the mode. */
+                    if (event.key !== 'Enter' || pinned || pinnedMode !== undefined) return;
+                    const slashMode = modeFromSlash(draft);
+                    if (!slashMode) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setChatMode(slashMode);
+                    setDraft('');
+                  }}
                   rows={2}
                   {...rich.areaProps}
                 />
@@ -1903,52 +2002,42 @@ export function ChatHomeScreen({
                 />
               </>}
               foot={<>
-                {attach ? (
-                  <ChooseFilesControl
-                    label="Attach a file"
-                    title="attach a file — or drop or paste one into the message"
-                    className="tch-attach"
-                    inputClassName="tch-attach__input"
-                    onChoose={attachments.addFiles}
-                  />
-                ) : (
-                  <DisabledIconControl
-                    label="Attach a file"
-                    glyph="＋"
-                    reason={{
-                      cause: 'Uploading isn’t wired on this surface',
-                      remedy: 'this chat was mounted without an attachment port',
-                    }}
-                  />
-                )}
-                {skillOptions ? (
-                  <button
-                    type="button"
-                    className="tch-attach"
-                    aria-label="Reference a skill"
-                    title="reference a skill — the agent reads it and decides; nothing runs by itself"
-                    aria-haspopup="listbox"
-                    aria-expanded={rich.popover !== null}
-                    onClick={() => {
-                      // The button and the typed sigil must land in the SAME
-                      // state, or the picker has two behaviours and only one of
-                      // them filters.
-                      if (rich.popover) rich.popover.close();
-                      else rich.openTrigger('/');
-                    }}
-                  >
-                    <span aria-hidden>/</span>
-                  </button>
+                {/* ＋ = what this turn can DRAW ON (files, skills). The
+                    typed `/` and the menu land in the same skill list. */}
+                <AddToTurnMenu
+                  {...(attach ? { onChooseFiles: attachments.addFiles } : {})}
+                  {...(skillOptions ? { skillOptions } : {})}
+                  enabledSkills={enabledSkills}
+                  onToggleSkill={(id) =>
+                    setEnabledSkills((current) =>
+                      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id])}
+                  {...(skillOptions ? { onBrowseSkills: () => rich.openTrigger('/') } : {})}
+                />
+                {enabledSkills.length ? (
+                  <span className="tch-turnpills" data-testid="tch-turnpills">
+                    {enabledSkills.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className="tch-pill"
+                        title="enabled for this turn — click to remove"
+                        onClick={() => setEnabledSkills((current) => current.filter((entry) => entry !== id))}
+                      >
+                        /{skillOptions?.find((skill) => skill.id === id)?.display ?? id} <span aria-hidden>×</span>
+                      </button>
+                    ))}
+                  </span>
                 ) : null}
-                {/* The thread's configuration lives HERE and nowhere else. NO
-                    `auto` teammate on purpose: there is no routing pipeline that
-                    could honour it, and an option that promises routing nobody
-                    built is exactly the fabrication this surface refuses. */}
+                {/* THE PER-TURN ROW: mode (loud) · teammate (face) · model+effort
+                    (quiet) · one fixed ⚙ slot. Nothing here appears or
+                    disappears when the mode changes (ac_12). */}
                 <span className="tch-picks">
                   <ComposerSelect
                     label="Chat mode"
                     testId="tch-mode"
-                    options={MODE_OPTIONS}
+                    options={modeSelectOptions}
+                    emphasisGroups={['Act']}
+                    tall
                     value={shownMode}
                     onChange={(id) => setChatMode(id as ChatMode)}
                     disabled={pinned || pinnedMode !== undefined}
@@ -1962,15 +2051,25 @@ export function ChatHomeScreen({
                     onChange={(id) => setTeammateId(id as EntityId)}
                     disabled={pinned}
                     emptyNote="No agent teammate is available in this space."
+                    note={roster.note}
                   />
-                  <ComposerSelect
+                  <ModelEffortPicker
                     label="Chat model"
                     testId="tch-model"
-                    options={modelOptions}
+                    className="tch-pick--model"
+                    models={models}
+                    choices={modelChoices}
                     value={shownModelId}
                     onChange={setModelId}
+                    effort={effort}
+                    onEffortChange={(next) => setEffortByMode((current) => ({ ...current, [shownMode]: next }))}
                     disabled={pinned}
-                    emptyNote="No model is available from the launch catalog."
+                    disabledReason="the model is fixed when a thread starts"
+                  />
+                  <ModeOptionsSlot
+                    mode={shownMode}
+                    values={modeOptions[shownMode]}
+                    onChange={(values) => setModeOptions((current) => ({ ...current, [shownMode]: values }))}
                   />
                 </span>
                 <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
@@ -2023,6 +2122,31 @@ export function ChatHomeScreen({
                 )}
               </>}
             />
+            {/* UNDER THE COMPOSER = THIS THREAD. Quieter than the row; stays
+                in place after the first send and compacts (the project locks,
+                permissions stays live). The conflict strip sits in the gap. */}
+            <ThreadRail
+              projects={projects}
+              projectChoice={projectChoice}
+              onProjectChange={setProjectChoice}
+              projectLocked={pinned}
+              lockedProjectLabel={lockedProjectLabel}
+              permission={permission}
+              onPermissionChange={setPermissionChoice}
+              permissionSource={permissionSource}
+              conflict={conflict}
+            />
+            {newThread && shownMode === 'orchestrate' ? (
+              <CrewPanel
+                crew={crew}
+                onChange={setCrew}
+                teammates={teammates}
+                models={models}
+                permission={permission}
+                policy={modeOptions.orchestrate}
+                {...(skillOptions ? { skillIds: skillOptions.map((skill) => ({ id: skill.id, label: skill.display })) } : {})}
+              />
+            ) : null}
           </div>
         )}
       </section>
@@ -2030,27 +2154,6 @@ export function ChatHomeScreen({
   );
 }
 
-/**
- * The composer's mode drop-up.
- *
- * Every mode carries the same tool surface (`toolPermission` in @tm8/mcp); the
- * mode states how the teammate works, not what it may touch. So these hints
- * describe intent and must never promise safety — the earlier "changes
- * nothing" copy on ask/explain/plan would now be a lie, because those modes
- * can edit the thread checkout and mutate the graph like any other.
- *
- * The hints are the menu rows' second line rather than a sentence beside a chip
- * row: read on the row it describes, each one is legible; parked at the end of
- * the bar, only the selected mode's was, and it set the composer's width.
- */
-const MODE_OPTIONS: readonly { id: ChatMode; label: string; hint: string }[] = [
-  { id: 'ask', label: 'ask', hint: 'answers your question; acts only when you ask it to' },
-  { id: 'explain', label: 'explain', hint: 'walks the reasoning with inline diagrams, graphs and code' },
-  { id: 'plan', label: 'plan', hint: 'shapes work into steps and a durable plan to approve' },
-  { id: 'build', label: 'build', hint: 'does the work; edits this thread’s checkout for real' },
-  { id: 'orchestrate', label: 'orchestrate', hint: 'dispatches and steers worker sessions' },
-  { id: 'craft', label: 'craft', hint: 'sketches a blueprint row; materializes only on approval' },
-];
 
 /* -- the two waiting marks -------------------------------------------------
 
