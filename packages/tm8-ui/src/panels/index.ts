@@ -19,6 +19,8 @@ export {
 export {
   ListRootHeader,
   rootBirthAction,
+  rootBirthDispatch,
+  type BirthDispatcher,
   type ListRootChatsCell,
   type ListRootHeaderProps,
   type ListRootOption,

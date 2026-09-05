@@ -29,6 +29,52 @@ export function rootBirthAction(kind: string): ActionRef | undefined {
   return getKind(kind).list.quickStart;
 }
 
+/** A composed dispatcher: what it can perform, and the door to perform it. */
+export interface BirthDispatcher {
+  onAction: (ref: ActionRef, entityId: string) => void;
+  wiredActions: readonly ActionRef[];
+}
+
+/**
+ * THE ＋ HALF'S VERB ARM, ANSWERED ONCE FOR EVERY HOST.
+ *
+ * Returns null when the kind has no birth verb — the caller falls through to
+ * its own generic-create arm, which differs per host (where the newborn
+ * lands) and so cannot live here.
+ *
+ * IT GATES ON `wiredActions`, NOT ON THE PRESENCE OF A DISPATCHER, and that
+ * distinction is the whole reason this function exists. Both hosts used to ask
+ * whether `useSessionStart.onAction` was defined and then hand it whatever verb
+ * the registry named. That hook's dispatch is a switch — `start-terminal`,
+ * then `default: return` — so a kind whose verb it does not know passed the
+ * gate and did NOTHING on click: no navigation, no refusal, no error.
+ *
+ * `chat` is the kind that exposed it (`quickStart: 'chat-about'`, performed by
+ * `useChatAbout`), and it was only reachable once the Chats row was promoted
+ * out of the rail's "More" group. Both hosts already COMPOSED the two
+ * dispatchers for their lists; only this arm reached past the composition.
+ *
+ * Duplicated in two hosts before, with the same defect in both, which is the
+ * other half of why it is one function now.
+ */
+export function rootBirthDispatch(
+  kind: string,
+  dispatcher: BirthDispatcher,
+): { refusal: { cause: string; remedy: string } | null; perform: () => void } | null {
+  const action = rootBirthAction(kind);
+  if (!action) return null;
+  if (dispatcher.wiredActions.includes(action)) {
+    return { refusal: null, perform: () => dispatcher.onAction(action, '') };
+  }
+  return {
+    refusal: {
+      cause: `Starting ${getKind(kind).labelPlural.toLowerCase()} isn’t wired here`,
+      remedy: 'this surface was mounted without a command executor',
+    },
+    perform: () => undefined,
+  };
+}
+
 /** What a kind's ＋ half WEARS and says — a glyph, a name, and a promise. */
 interface BirthVerb {
   glyph: string;
