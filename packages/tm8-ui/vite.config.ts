@@ -29,7 +29,7 @@ const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
  *     here would make every asset 404 at the root. The mounted bundle's base
  *     lives in `tm8_ui_2.0/vite.config.ts` and is duplicated in
  *     `packages/server/src/http/static.ts` (`UI_2_0_MOUNT_PATH`) and
- *     `tm8-ui/src/ui-version/mount.ts`; changing it means changing all three
+ *     `tm8-ui/src/pwa/service-worker.js`; changing it means changing all three
  *     and rebuilding that bundle.
  *
  *  2. `build.outDir` is the default `dist`, and `TM8_UI_DIR` names it. The old

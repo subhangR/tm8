@@ -12,15 +12,16 @@ import { pwaShell } from './vite-plugin-pwa-shell';
  * It was the product UI at `/` from 2026-08-29 (PRs #526/#531) until
  * 2026-09-03, when the owner reversed that and `packages/tm8-ui` took the root
  * back. This package is now what `packages/tm8-ui` was in between: built and
- * served, behind the version switch, and only when an operator sets
- * `TM8_UI_2_0_DIR`. See `scripts/lib/ui.mjs`.
+ * served only when an operator sets `TM8_UI_2_0_DIR`, and — since the product
+ * UI's tab-bar switch was removed on 2026-09-05 — reached by typing
+ * `/ui-2.0/`. See `scripts/lib/ui.mjs`.
  *
  * Three things here exist only because of that, and each would be wrong for a
  * bundle served at the root:
  *
  *  1. `base` — the mount path is baked into every asset URL at build time. It
  *     is duplicated in `packages/server/src/http/static.ts`
- *     (`UI_2_0_MOUNT_PATH`) and `packages/tm8-ui/src/ui-version/mount.ts`;
+ *     (`UI_2_0_MOUNT_PATH`) and `packages/tm8-ui/src/pwa/service-worker.js`;
  *     changing it means changing all three and rebuilding this bundle.
  *
  *  2. `build.outDir` is `dist-2.0`, NOT `dist`. A safety interlock, not a

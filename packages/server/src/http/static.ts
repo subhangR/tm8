@@ -21,12 +21,17 @@
  *
  * A handler can also be MOUNTED under a prefix (`mountPath`), which is how a
  * second bundle is served beside the product one: `TM8_UI_2_0_DIR` puts the
- * Astryx 2.0 UI at `/ui-2.0/` on the same origin, so the version switch is a
- * navigation rather than a second process on a second port — and the session
- * cookie, which is what makes the switched-to UI usable at all, needs no
- * cross-origin story. A mounted handler claims ONLY its prefix and falls
- * through for everything else, so mounting one can never shadow the product
- * UI's routes.
+ * Astryx 2.0 UI at `/ui-2.0/` on the same origin, rather than as a second
+ * process on a second port — so the session cookie, which is what makes that
+ * bundle usable at all, needs no cross-origin story. A mounted handler claims
+ * ONLY its prefix and falls through for everything else, so mounting one can
+ * never shadow the product UI's routes.
+ *
+ * NOTHING IN THE PRODUCT UI LINKS HERE as of 2026-09-05: the tab bar's
+ * "Switch to UI 2.0" control was removed (it spent its life refusing, because
+ * no server this is deployed on sets `TM8_UI_2_0_DIR`). The mount is unchanged
+ * and still answers for an operator who configures it; `/ui-2.0/` is now
+ * reached by typing it.
  *
  * WHICH BUNDLE IS WHICH CHANGED ON 2026-09-03, and this seam did not. Until
  * then the product UI at `/` was `packages/tm8_ui_2.0` and the mount held the
@@ -62,11 +67,13 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 /**
  * Where the alternate 2.0 UI answers.
  *
- * Both UI bundles hardcode this same string (they cannot import from the
- * server package), so it is duplicated in exactly three places and each one
- * names the other two: here, `tm8-ui/src/ui-version/`, and
- * `tm8_ui_2.0/vite.config.ts`'s `base`. Changing it means changing all three
- * and rebuilding the 2.0 bundle — its asset URLs are baked at build time.
+ * The 2.0 bundle hardcodes this same string (it cannot import from the server
+ * package), so it is authored twice and each site names the other: here, and
+ * `tm8_ui_2.0/vite.config.ts`'s `base`. `tm8-ui/src/pwa/service-worker.js`
+ * writes it a third time, to exclude the mount from root scope. Changing it
+ * means changing all three and rebuilding the 2.0 bundle — its asset URLs are
+ * baked at build time. `tm8_ui_2.0/src/ui-version/mount-path-agreement.test.ts`
+ * is what keeps them agreeing.
  */
 export const UI_2_0_MOUNT_PATH = '/ui-2.0';
 
@@ -104,8 +111,8 @@ export function createStaticHandler(
    * answered for `/` would shadow the product UI entirely.
    *
    * `/ui-2.0` with no trailing slash maps to `/` rather than being refused —
-   * that is the address a person types, and refusing it would make the switch
-   * work only from a link that happened to carry the slash.
+   * that is the address a person types, and refusing it would make the mount
+   * reachable only from a link that happened to carry the slash.
    */
   function stripMount(pathname: string): string | undefined {
     if (!mountPath) return pathname;

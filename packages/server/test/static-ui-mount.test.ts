@@ -1,16 +1,17 @@
 /**
  * TWO UI BUNDLES ON ONE ORIGIN, through the pipeline.
  *
- * The version switch in the product UI is a plain navigation to `/ui-2.0/`.
+ * Reaching the alternate bundle is a plain navigation to `/ui-2.0/` — typed,
+ * since 2026-09-05 removed the product UI's tab-bar control for it.
  * Everything that makes that navigation land on the OTHER bundle rather than
  * re-rendering the product one is a property of dispatch order and prefix
  * stripping, and only a request can see it:
  *
  *  · the mounted handler is consulted BEFORE the root handler. The root
  *    handler answers extension-less paths with its own index.html, so the
- *    reverse order would serve the 1.0 shell at the 2.0 address with a 200 —
- *    a switch that silently does nothing, which is worse than a 404 because
- *    it looks like it worked;
+ *    reverse order would serve the product shell at the 2.0 address with a
+ *    200 — a navigation that silently does nothing, which is worse than a 404
+ *    because it looks like it worked;
  *  · the mount claims ONLY its prefix, so adding one cannot cost the product
  *    UI a route;
  *  · the traversal guard still compares against the real root after the
@@ -143,10 +144,11 @@ describe('the 2.0 UI mount beside the product UI', () => {
     }
   });
 
-  it('answers the probe the switch uses — GET, because HEAD reaches no handler', async () => {
-    // The dispatch is guarded on `method === 'GET'`, so a HEAD probe would 404
-    // against a server that IS serving the bundle. The control probes with GET
-    // for exactly this reason; this case pins the fact it depends on.
+  it('answers GET only — a HEAD reaches no handler at all', async () => {
+    // The dispatch is guarded on `method === 'GET'`, so HEAD 404s against a
+    // server that IS serving the bundle. This cost the removed switch control
+    // a working probe once; it is pinned here so the next thing that asks the
+    // mount whether it exists learns it from a test rather than from prod.
     expect((await fetch(`${base}/ui-2.0/index.html`)).status).toBe(200);
     expect((await fetch(`${base}/ui-2.0/index.html`, { method: 'HEAD' })).status).toBe(404);
   });
@@ -161,9 +163,8 @@ describe('with no 2.0 bundle configured', () => {
   let base: string;
 
   beforeAll(async () => {
-    // The default posture: an operator who set no TM8_UI_2_0_DIR gets no mount,
-    // and the switch control in the product UI reports itself unavailable
-    // rather than offering a door onto nothing.
+    // The default posture, and the one every deployment is actually in: an
+    // operator who set no TM8_UI_2_0_DIR gets no mount at all.
     server = createFacadeServer({
       config: TEST_CONFIG,
       registry: new HandlerRegistry(),
@@ -176,8 +177,8 @@ describe('with no 2.0 bundle configured', () => {
     await server.close();
   });
 
-  it('404s the probe the switch uses, so the control refuses honestly', async () => {
-    // index.html specifically: probing the directory would hit the product
+  it('404s the unconfigured mount instead of answering from the product UI', async () => {
+    // index.html specifically: asking for the directory would hit the product
     // UI's SPA fallback and answer 200 for a bundle that is not there.
     const res = await fetch(`${base}/ui-2.0/index.html`);
     expect(res.status).toBe(404);

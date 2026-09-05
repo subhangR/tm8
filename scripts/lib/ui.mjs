@@ -21,6 +21,12 @@
 // `/ui-2.0/`, from `dist-2.0`, on the same origin, and only when an operator
 // sets TM8_UI_2_0_DIR. Prod's TM8_UI_DIR must point at `packages/tm8-ui/dist`.
 //
+// 2026-09-05: THE VERSION SWITCH IS GONE from the product UI's tab bar. The
+// build and serve story below is UNCHANGED — the mount still exists for an
+// operator who sets TM8_UI_2_0_DIR — but nothing links to it, so `/ui-2.0/` is
+// reached by typing it. The control had no server to point at anywhere it was
+// deployed and spent its life disabled, quoting this env var at viewers.
+//
 // BOTH PACKAGES DECLARE REACT 19 and both typecheck under CI's frozen
 // lockfile; the swap did not reopen the two-React-type-identities problem that
 // kept `tm8-ui` out of the merge gate before 2026-09-02. See tools/ci/check.sh
