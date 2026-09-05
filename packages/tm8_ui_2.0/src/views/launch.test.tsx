@@ -398,6 +398,17 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     }));
   });
 
+  it.each(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])(
+    'launches Astra with %s effort', (reasoningEffort) => {
+      const onLaunch = vi.fn();
+      const teammate = { ...LAUNCH_TEAMMATES[0]!, agentTool: 'codex', model: 'gpt-6-astra' };
+      const { getByTestId, getByText } = renderSheet({ teammates: [teammate], onLaunch });
+      fireEvent.change(getByTestId('launch-reasoning-effort'), { target: { value: reasoningEffort } });
+      fireEvent.click(getByText('Launch ▸'));
+      expect(onLaunch.mock.calls[0]?.[0]).toMatchObject({ model: 'gpt-6-astra', reasoningEffort });
+    },
+  );
+
   it('keeps model, reasoning effort and permission mode ABOVE the fold sections', () => {
     // DOM order is the guarantee, as in the pinned-caption test: the three
     // controls the user reaches for most precede the directory picker, the

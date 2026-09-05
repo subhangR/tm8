@@ -124,6 +124,10 @@ describe('spaces.create default teammates', () => {
       DREAMER_SEED_NAME,
       DISPATCHER_SEED_NAME,
     ]);
+    expect(db.calls).toContainEqual({
+      fn: 'public.create_team_member',
+      args: expect.arrayContaining(['GPT 6 Astra Teammate', 'gpt-6-astra', 'codex']),
+    });
     for (const { args } of db.calls.filter(({ fn }) => fn === 'public.create_team_member')) {
       expect(args[0]).toBe(SPACE_ID);
     }

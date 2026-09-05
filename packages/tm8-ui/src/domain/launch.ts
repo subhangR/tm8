@@ -506,7 +506,7 @@ export interface LaunchConfig {
   teamMemberId: EntityId | null;
   agentToolId: string | null;
   model: string | null;
-  reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+  reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
   accessMode: 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess' | null;
   /** Independent source selection per provider. An absent key means auto. */
   credentialSources?: NonNullable<ExecutionSpawnInput['credentialSources']> | null;

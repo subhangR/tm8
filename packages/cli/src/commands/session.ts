@@ -77,7 +77,7 @@ const ACCESS_MODES = ['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess'] as co
 type AccessMode = (typeof ACCESS_MODES)[number];
 
 /** The provider-independent launch reasoning levels accepted by the contract. */
-const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 /** §4.13's closed attach-mode set. `view` observes; `drive` owns the terminal. */

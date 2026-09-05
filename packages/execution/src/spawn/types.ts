@@ -61,7 +61,7 @@ export type WorkSessionEndedKind =
  * nothing) and it is tm8's DEFAULT — see `DEFAULT_PERMISSION_MODE`.
  */
 export type PermissionMode = 'auto' | 'acceptEdits' | 'interactive' | 'readOnly' | 'bypassPermissions';
-export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 export type AccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
 
 /**
