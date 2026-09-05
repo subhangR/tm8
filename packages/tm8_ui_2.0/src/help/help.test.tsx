@@ -477,9 +477,10 @@ describe('the help route', () => {
     const tablist = view.getByRole('tablist', { name: 'Screens' });
     const tabs = [...tablist.querySelectorAll<HTMLElement>('[role="tab"]')];
     expect(tabs.map((tab) => tab.textContent)).toEqual([
-      // 'Chats' joined the spine 2026-09-03 (migration 180). Help is still the
-      // FINAL tab, which is what this case is actually about.
-      'Home', 'Chats', 'Work', 'Board', 'Craft', 'Graph', 'CodeBrain', 'Settings', 'Help',
+      // 'Chats' joined the spine 2026-09-03 (migration 180) and left again
+      // 2026-09-05 (migration 184) — its door is Home's icon rail now. Help is
+      // still the FINAL tab, which is what this case is actually about.
+      'Home', 'Work', 'Board', 'Craft', 'Graph', 'CodeBrain', 'Settings', 'Help',
     ]);
     expect(view.queryByTestId('open-help')).toBeNull();
 

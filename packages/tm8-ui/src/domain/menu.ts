@@ -99,7 +99,16 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // chat the core kind `chat`; this is the tab that lists it, and its single
 // item is a KIND ref rather than a view, so the group draws a RAIL — see the
 // group comment below.
-export const SHIPPED_DEFAULT_MENU_REVISION = 22;
+// 22 → 23 (2026-09-05, migration 184): and it LEAVES again, one day later —
+//   Home | Work | Craft | Graph | CodeBrain | Settings | Help
+// 22 was right that the chat entity LIST is a second arrangement worth a door
+// of its own, and wrong about where that door goes. Home's icon rail is where
+// a collection kind's list is addressed, and `chat` has been eligible for it
+// since 176; the rail now leads with it (`domain/home-rail.ts`) and the tab is
+// the duplicate. So this is not a reversal of 22's reasoning, it is 22's
+// reasoning applied to the right surface — and the no-kind-rows law of 17
+// holds again, with the group cap back down to seven of eight.
+export const SHIPPED_DEFAULT_MENU_REVISION = 23;
 
 /**
  * The menu half of the revision-20 tab shell. These GROUPS become top-row
@@ -158,17 +167,24 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // group railless — add a second row here and the surface grows a third
     // pane, which is the arrangement this revision exists to prevent.
     { id: 'chats', label: 'Home', items: [{ type: 'view', ref: 'dashboard' }] },
-    // CHATS (revision 22, migration 180). The one group in this default whose
-    // item is a KIND rather than a view, and that is what gives it a rail:
-    // `isRaillessGroup` answers true only for a lone childless VIEW item, so
-    // this tab renders the chat list beside the rail's own `chat` row and its
-    // `spaces.counts` number.
+    // CHATS IS RETIRED FROM THE TAB ROW (revision 23, 2026-09-05, migration
+    // 184). Revision 22 seated `{ id: 'conversations', label: 'Chats', items:
+    // [{ type: 'kind', ref: 'chat' }] }` here, one day earlier, and its
+    // reasoning was sound about the ARRANGEMENT and wrong about the ADDRESS:
+    // the chat entity list — tiles with the turn state, the lifecycle tabs,
+    // sort, in-panel search, the row-action cluster — really is a different
+    // door from Home's two-pane conversation surface, and it really did earn
+    // one. But the place Home puts a collection kind's list is its ICON RAIL,
+    // and `chat` has been eligible for that rail since migration 176 made it a
+    // collection kind. So the door moves rather than closing: `domain/
+    // home-rail.ts` now leads the Work group with `chat`, and the tab that
+    // duplicated it leaves. That restores the no-kind-rows law revision 17
+    // wrote (`menuKindRefs` is empty again) and it frees the eighth of the
+    // eight group seats `w2_normalize_menu_payload` allows.
     //
-    // THE ID IS `conversations`, NOT `chats` — that id belongs to Home above
-    // (127 minted it for the conversation surface; 134 relabelled it Home
-    // without renaming it). See `DEFAULT_MENU_GROUP_SPINE`, the one truth this
-    // default and the server seeder both answer to, for the full account.
-    { id: 'conversations', label: 'Chats', items: [{ type: 'kind', ref: 'chat' }] },
+    // Nothing is deleted: `chat` is menu-eligible, so the frozen DTO still
+    // accepts a space putting this group back through the menu editor. A rail
+    // edit, not a feature removal — the 125/126/127 posture again.
     // WORK returns (revision 19), and it is the THREE-PANEL WORKSPACE — one
     // childless `workspace` view item, so the group is railless by the same
     // shape rule as Home and Board and the surface is exactly the split

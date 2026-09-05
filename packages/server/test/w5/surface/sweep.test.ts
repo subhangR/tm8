@@ -946,7 +946,27 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // renumbered to 181-183 at this merge, because 123-180 are all taken on
     // main. Renumbering was free, which is the property the block above says
     // it is worth preserving: nothing is derived from a migration's number.
-    expect(server.appliedMigrations.length).toBe(171);
+    //
+    // 171 -> 172 (2026-09-05): ONE file, 184_menu_chats_tab_leaves.sql, and the
+    // number is MEASURED on the merged tree exactly as every row above
+    // instructs — not incremented from the branch's own side:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 171
+    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 172
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // That last line is why the two measurements differ by exactly this
+    // branch's one file: main had not moved under it. A migration landing on
+    // main before this branch does makes this line a conflict BY CONSTRUCTION,
+    // which the row above says is the good outcome — RE-MEASURE, do not add.
+    //
+    // AND THIS PIN IS WHY THE BRANCH WAS RED. The lane grepped this file for
+    // '181_'/'182_'/'183_' looking for a chain enumeration and found only the
+    // prose above, so it read the file as unaffected. The pin is a bare
+    // integer: it names no migration and no version, so it is invisible to
+    // every search phrased in terms of the thing being added. Any branch that
+    // adds a migration file touches this line, and the only reliable way to
+    // find that out before CI does is to know it is here.
+    expect(server.appliedMigrations.length).toBe(172);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

@@ -44,6 +44,22 @@ reachable like every other kind: through Home's switcher and rail.
   board/graph rows). The rail's grouping is purely visual classification over
   the same kind list the switcher shows. Rail and switcher share one state and
   one route.
+
+  *Amendment, 2026-09-05 (task 01a070c4).* R4 held when this was written
+  because a chat was `message` rows and `message` is `strategy: 'anchored'`.
+  Migration 176 made a chat an **entity** with the collection kind `chat`, so
+  it satisfies R4 as it stands — no exception is needed. It had in fact been
+  rendering in the rail ever since, under the catch-all "More" group. The
+  shipped menu briefly grew a Chats **tab** for it instead (revision 22 /
+  migration 180) and that tab is now retired (revision 23 / migration 184):
+  the tab and the rail row were one door drawn twice, and the rail is where a
+  collection kind's list is addressed. `domain/home-rail.ts` now leads the
+  Work group with `chat`.
+
+  This does **not** merge the `chats` root into the `chat` kind. §4.2's
+  `[Chats ＋]` cell still owns `CHATS_ROOT` — the two-pane conversation
+  surface — and the rail row opens the entity LIST over the same
+  conversations. Two arrangements, two doors, the R9 posture.
 - **R5 — Split-button create.** `+` creates an entity of the currently
   selected kind. The caret opens the kind list; picking a kind *switches* the
   root list, it never creates. `[Chats +]` creates a new chat.

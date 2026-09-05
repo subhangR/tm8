@@ -97,11 +97,14 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // single Board seat. Files and legacy Board are absent; Help is last.
     // CodeBrain joined in revision 21 (2026-09-01, migration 173).
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
-    // 'CodeBrain' joined the spine 2026-09-01 (migration 173) and 'Chats'
-    // 2026-09-03 (migration 180). The row is DERIVED from the shipped default,
-    // so it moves with the spine rather than being asserted independently.
+    // 'CodeBrain' joined the spine 2026-09-01 (migration 173). 'Chats' joined
+    // 2026-09-03 (migration 180) and LEFT AGAIN 2026-09-05 (migration 184):
+    // the chat entity list's door is Home's icon rail, which leads with `chat`
+    // now, and the tab duplicated that row. The row is DERIVED from the shipped
+    // default, so it moves with the spine rather than being asserted
+    // independently.
     expect(labels).toEqual([
-      'Home', 'Chats', 'Work', 'Board', 'Craft', 'Graph', 'CodeBrain', 'Settings', 'Help',
+      'Home', 'Work', 'Board', 'Craft', 'Graph', 'CodeBrain', 'Settings', 'Help',
     ]);
 
     // The rail is absent as a matter of design, so none of its furniture is

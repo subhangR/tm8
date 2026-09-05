@@ -46,7 +46,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     );
   });
 
-  it('names EXACTLY ONE kind row — `chat`, and only because of what its tab is', () => {
+  it('names NO kind rows at all — the law of revision 17, restored by 184', () => {
     // Revision 17: the Work and Channels groups retired, and with them every
     // kind row the menu carried. The kinds did not lose their door — Home's
     // root column and icon rail (domain/home-rail.ts) list every collection
@@ -54,30 +54,25 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     // caps could ever name. A kind row reappearing here would be a second
     // door beside a complete one.
     /*
-     * REVISION 22 AMENDS THIS RULE, AND THE AMENDMENT IS NARROW.
+     * REVISION 22 AMENDED THAT RULE FOR ONE DAY, AND 23 RESTORES IT.
      *
-     * 17's law was "no kind rows", on the reasoning that Home's root column
-     * lists every collection kind the registry offers, so a menu row for one
-     * of them was a second door to a list Home already owns. That reasoning is
-     * intact and it is why this stays an exact-equality assertion rather than
-     * being relaxed to a subset: a second kind row landing here is still the
-     * defect 17 named.
+     * 22 admitted `chat` on the argument that the door it opens is not the one
+     * Home owns: Home's chats root is the two-pane CONVERSATION surface, while
+     * the chat entity LIST is tiles with the turn state, the lifecycle tabs,
+     * sort, in-panel search and the row-action cluster — a different
+     * arrangement over the same rows, and the R9 two-doors posture the Board
+     * tab sets against `task`.
      *
-     * `chat` is admitted because the door it opens is NOT the one Home owns.
-     * Home's chats root is the two-pane CONVERSATION surface — a thread column
-     * and a transcript. This tab is the entity LIST: tiles with the queue's
-     * status pill, the four lifecycle tabs, sort, in-panel search and the row
-     * action cluster, opening a panel whose body is that same conversation.
-     * That is a different arrangement over the same rows, which is exactly the
-     * R9 two-doors posture the Board tab already sets against `task`.
+     * That argument is intact. What was wrong was the ADDRESS: the place this
+     * product addresses a collection kind's list is Home's ICON RAIL, `chat`
+     * has been eligible for it since migration 176, and `domain/home-rail.ts`
+     * now LEADS the Work group with it. So the tab was a duplicate of a rail
+     * row, and removing it puts 17's law back exactly as written.
      *
-     * A VIEW REF WAS NOT AVAILABLE, and that is the other half of the reason.
-     * The Board precedent is a `board` MenuViewRef, and there is no `chats`
-     * view: adding one means widening the contract's closed `MenuViewRef`
-     * union AND a `menu_view_registry` row AND its check constraint — three
-     * server-side edits to reach a screen the kind list already renders.
+     * Exact equality on the EMPTY array, not a subset check: any kind ref
+     * landing here is the defect 17 named.
      */
-    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual(['chat']);
+    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
     // Revision 19 (migration 140): a WORK group returns, and the assertion
     // above is exactly why it can. What 17 retired was a rail of ROWS — the
     // Workspace caret with its eight kinds, the three dev kinds, git — and
@@ -200,7 +195,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(22);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(23);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });
