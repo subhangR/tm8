@@ -775,7 +775,20 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
 // ---------------------------------------------------------------------------
 
 describe('the login session operations answer their contract shapes', () => {
-  it('refuses an absent binary before it mints a work_session or launches a PTY', async () => {
+  // The name of this test changed with its meaning, and the reason is worth
+  // keeping. It first asserted the refusal happened BEFORE the RPC — no db
+  // calls at all. That ordering was wrong: `start_credential_session` is where
+  // `require_human_auth_kind` and `require_space_member` live, so measuring the
+  // node first answered a caller who had not yet been authorised, handing an
+  // unauthenticated probe a 400 naming a missing binary instead of the 403 it
+  // had earned. CI found it, not review: `w5/surface/sweep` was green here
+  // (this box has the CLIs installed) and red on a runner without them, because
+  // the authorization answer had come to depend on a fact about the machine.
+  //
+  // What must hold now is narrower and correct: authorisation runs first, no
+  // PTY is ever launched for an absent binary, and the row the RPC minted is
+  // released so the member can retry once they install the CLI.
+  it('refuses an absent binary without launching a PTY, and releases the row', async () => {
     const db = new FakeDb(serviceQueries, serviceRpcs);
     const launched: unknown[] = [];
     const launcher = {
@@ -806,8 +819,13 @@ describe('the login session operations answer their contract shapes', () => {
     expect((error as CollabError).code).toBe('invalid_input');
     expect((error as Error).message).toContain("'cursor-agent'");
     expect((error as Error).message).toContain('curl https://cursor.com/install -fsS | bash');
-    expect(db.calls).toEqual([]);
+    // NOT `toEqual([])`: the RPC ran, because that is where authorisation is.
+    // What matters is that the PTY never started and the row did not stay
+    // held — a member who installs the CLI must be able to click Connect again
+    // rather than meet "a login terminal just opened elsewhere".
     expect(launched).toEqual([]);
+    expect(db.calls).toContain('rpc:start_credential_session');
+    expect(db.calls).toContain('rpc:finish_credential_session');
   });
 
   it('start returns the command it ACTUALLY launched, and takes none from the caller', async () => {

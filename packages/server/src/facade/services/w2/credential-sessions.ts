@@ -267,29 +267,6 @@ export class W2CredentialSessionsService {
       );
     }
 
-    const homePath = credentialHomeDir(this.dataDir, principal.identityId);
-    const configPath = credentialConfigDir(this.dataDir, principal.identityId, provider);
-    const binary = measureCredentialBinary({
-      provider,
-      homeDir: homePath,
-      configDir: configPath,
-      parentEnv: this.env,
-      ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
-    });
-    if (binary.status === 'unavailable') {
-      // `invalid_input` is this contract's caller-fixable precondition code;
-      // there is no `failed_precondition` member in CommandErrorCode. Refusing
-      // before reclaim/home/RPC means no prior terminal is disturbed and no
-      // doomed work_session is minted merely to print "command not found".
-      throw new CollabError('invalid_input', credentialCliInstallMessage(provider));
-    }
-    if (binary.status === 'unknown') {
-      throw new CollabError(
-        'upstream_unavailable',
-        binary.detail ?? `could not determine whether credential CLI '${binary.binary}' is installed`,
-      );
-    }
-
     await this.reclaimOwnStaleSessions(principal, provider);
 
     const { homeDir, configDir } = await ensureCredentialHome(
@@ -325,6 +302,42 @@ export class W2CredentialSessionsService {
     }
 
     try {
+      // THE BINARY CHECK IS HERE, AFTER THE RPC, AND THAT ORDERING IS THE
+      // POINT — it was written before the RPC first, and CI caught why that was
+      // wrong. `start_credential_session` is where `require_human_auth_kind`
+      // and `require_space_member` live, so measuring the node BEFORE it
+      // answered a caller who had not yet been authorised: on a machine with no
+      // agent CLIs installed, an unauthenticated probe got a 400 naming which
+      // binary is missing instead of the 403 it had earned. That is a node
+      // capability disclosed to someone with no standing to ask, and it also
+      // made `w5/surface/sweep` environment-dependent — green on a developer
+      // box with the CLIs installed, red on a runner without them. An
+      // authorization answer must never depend on a fact about the node.
+      //
+      // The cost of moving it is one work_session row minted for a login that
+      // cannot proceed, and the catch below already releases it — the same
+      // best-effort path a failed launch uses, and the reason that path exists.
+      // A doomed row that is immediately released is strictly cheaper than an
+      // authorization answer that leaks.
+      const binary = measureCredentialBinary({
+        provider,
+        homeDir,
+        configDir,
+        parentEnv: this.env,
+        ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
+      });
+      if (binary.status === 'unavailable') {
+        // `invalid_input` is this contract's caller-fixable precondition code;
+        // there is no `failed_precondition` member in CommandErrorCode.
+        throw new CollabError('invalid_input', credentialCliInstallMessage(provider));
+      }
+      if (binary.status === 'unknown') {
+        throw new CollabError(
+          'upstream_unavailable',
+          binary.detail ?? `could not determine whether credential CLI '${binary.binary}' is installed`,
+        );
+      }
+
       const launched = this.launcher.launch({
         sessionId: started.workSessionId,
         provider,
