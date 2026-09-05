@@ -28,10 +28,10 @@ export default defineConfig({
       '/v2': { target, changeOrigin: false, ws: true },
       '/health': { target, changeOrigin: false },
       /* The alternate 2.0 UI is served by tm8-server (TM8_UI_2_0_DIR), not by
-         vite — so the version switch's destination has to be proxied like the
-         API is. Without this line `/ui-2.0/` falls to vite's own SPA fallback
-         and answers with THIS app's index.html: the switch would appear to
-         work and change nothing. */
+         vite — so it has to be proxied like the API is. Without this line
+         `/ui-2.0/` falls to vite's own SPA fallback and answers with THIS
+         app's index.html: typing the mount address would appear to work and
+         land you back in this bundle. */
       '/ui-2.0': { target, changeOrigin: false },
     },
   },

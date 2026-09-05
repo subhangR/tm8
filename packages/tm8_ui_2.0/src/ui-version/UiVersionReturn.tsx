@@ -8,12 +8,18 @@
  * URL. A one-way switch is a trap, and "just edit the address bar" is not a
  * control.
  *
- * WHY IT IS UNCONDITIONAL, unlike the forward control in the product UI. That
- * one probes, because THIS bundle is optional and may not be served. This one
- * needs no probe: `/` is where the product UI always is, and if this bundle is
- * on screen at all then it was served from the same origin — so the destination
- * is reachable by construction. A probe here would be ceremony that can only
- * ever say yes.
+ * WHY IT IS UNCONDITIONAL, and why it needs no probe: `/` is where the product
+ * UI always is, and if this bundle is on screen at all then it was served from
+ * the same origin — so the destination is reachable by construction. A probe
+ * here would be ceremony that can only ever say yes.
+ *
+ * THE FORWARD CONTROL IS GONE as of 2026-09-05. `packages/tm8-ui`'s tab bar
+ * carried a "Switch to UI 2.0" link; on every server that sets no
+ * `TM8_UI_2_0_DIR` — which is all of them — it drew itself disabled with an
+ * operator's env var quoted at the viewer, and the owner asked for it out.
+ * THIS control stays, and matters more for it: `/ui-2.0/` is now reached by
+ * typing the address, and stranding whoever does that in a bundle with no way
+ * home is the trap this file exists to prevent.
  *
  * IT STAYS IN THE ACCOUNT MENU, where the forward switch used to hang. The
  * reasoning that put it there (revision 21 deliberately emptied the bar's right
@@ -22,7 +28,7 @@
  */
 import './ui-version.css';
 
-/** The product UI's address. See `tm8-ui/src/ui-version/mount.ts`. */
+/** The product UI's address — the root, where `packages/tm8-ui` is served. */
 const UI_1_0_PATH = '/';
 
 const LABEL = 'Back to UI 1.0';

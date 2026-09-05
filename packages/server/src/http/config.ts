@@ -29,9 +29,10 @@ export interface ServerConfig {
   /**
    * Directory holding the built 2.0 UI bundle, served under `/ui-2.0/`.
    *
-   * Optional and off by default: unset, there is no second mount, `/ui-2.0/`
-   * 404s like any other unknown path, and the version switch in the product UI
-   * reports itself unavailable rather than offering a door to nothing.
+   * Optional and off by default: unset, there is no second mount and
+   * `/ui-2.0/` 404s like any other unknown path. Nothing in the product UI
+   * links to it — the tab bar control that used to was removed on 2026-09-05 —
+   * so a viewer reaches the mount by typing the address.
    */
   readonly ui20Dir: string | undefined;
   /** Request body cap — over this the frame answers `payload_too_large` (413). */
