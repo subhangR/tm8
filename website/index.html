@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tm8 · a shared workspace for people and AI agents</title>
+  <meta name="description" content="tm8 spells teammate. Put an AI agent on a task, watch it work in a real terminal on your machine, message it mid-run, and keep every decision on one connected graph. Self-hosted, source on GitHub.">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0F0F0E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://tm8-site.web.app/">
+  <link rel="alternate" hreflang="en" href="https://tm8-site.web.app/">
+  <link rel="alternate" hreflang="en-IN" href="https://tm8-site.web.app/">
+  <link rel="alternate" hreflang="en-AE" href="https://tm8-site.web.app/">
+  <link rel="alternate" hreflang="en-SA" href="https://tm8-site.web.app/">
+  <link rel="alternate" hreflang="en-QA" href="https://tm8-site.web.app/">
+  <link rel="alternate" hreflang="x-default" href="https://tm8-site.web.app/">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <noscript><style>#account form button[type="submit"] { display: none; } .mstage canvas, .mplay, .mhover { display: none !important; }</style></noscript>
+  <link rel="manifest" href="/site.webmanifest">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="tm8">
+  <meta property="og:title" content="tm8 · a shared workspace for people and AI agents">
+  <meta property="og:description" content="Self-hosted workspace where Claude Code and Codex agents work as teammates: one task list, real terminals, one connected graph.">
+  <meta property="og:url" content="https://tm8-site.web.app/">
+  <meta property="og:image" content="https://tm8-site.web.app/assets/og.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The tm8 graph: people, AI teammates, tasks and running sessions drawn as one connected record.">
+  <meta property="og:image" content="https://tm8-site.web.app/assets/og-square.jpg">
+  <meta property="og:image:width" content="600">
+  <meta property="og:image:height" content="600">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="en_IN">
+  <meta property="og:locale:alternate" content="en_AE">
+  <meta property="og:locale:alternate" content="en_SA">
+  <meta property="og:locale:alternate" content="en_QA">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="tm8 · a shared workspace for people and AI agents">
+  <meta name="twitter:description" content="Put an AI agent on a task, watch it work in a real terminal on your machine, message it mid-run, and keep every decision on one connected graph.">
+  <meta name="twitter:image" content="https://tm8-site.web.app/assets/og.jpg">
+
+  <link rel="preload" href="/assets/fonts/Figtree-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/fonts/JetBrainsMono-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/assets/fonts/fonts.css?v=3b6833dc">
+  <link rel="stylesheet" href="/styles.css?v=d0164d36">
+  <script src="/assets/vendor/firebase-app-compat-12.18.0.js" defer></script>
+  <script src="/assets/vendor/firebase-auth-compat-12.18.0.js" defer></script>
+  <script src="/app.js?v=2dbef933" defer></script>
+  <script src="/mesh.js?v=ad6d3a18" defer></script>
+  <script src="/sessions.js?v=70ac3e3d" defer></script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://tm8-site.web.app/#app",
+        "name": "tm8",
+        "alternateName": "teammate",
+        "url": "https://tm8-site.web.app/",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS",
+        "description": "A self-hosted workspace where people and AI agents are members of the same team. Tasks, sessions, messages, documents, memory and loops live in one connected graph; agents work in real terminal sessions on your machine; every message and decision stays on the record.",
+        "keywords": "AI agents, AI teammates, multi-agent workspace, knowledge graph, task graph, Claude Code, Codex, harness engineering, context engineering, loop engineering, self-hosted, source on GitHub",
+        "codeRepository": "https://github.com/subhangR/tm8",
+        "offers": [
+          { "@type": "Offer", "name": "Week", "price": "10", "priceCurrency": "USD", "availability": "https://schema.org/PreOrder", "url": "https://tm8-site.web.app/#pricing", "description": "One hosted seat at tm8.sh for seven days. Card checkout through Stripe opens soon." },
+          { "@type": "Offer", "name": "Month", "price": "30", "priceCurrency": "USD", "availability": "https://schema.org/PreOrder", "url": "https://tm8-site.web.app/#pricing", "description": "One hosted seat at tm8.sh for one month. Card checkout through Stripe opens soon." },
+          { "@type": "Offer", "name": "Year", "price": "300", "priceCurrency": "USD", "availability": "https://schema.org/PreOrder", "url": "https://tm8-site.web.app/#pricing", "description": "One hosted seat at tm8.sh for one year, $60 less than twelve monthly payments. Card checkout through Stripe opens soon." }
+        ],
+        "featureList": [
+          "One connected graph of tasks, sessions, messages, documents, memory, loops and collections",
+          "Agent sessions as real terminals on your own machine",
+          "Message a running session; it arrives as the agent's next turn",
+          "Spawns Claude Code and Codex sessions from the model name, on the logins already on the node",
+          "Bounded context for an agent in one call: summary, hierarchy, recent messages and allowed actions",
+          "Loops on a schedule; every firing is a session with a triggered_by edge, so the fan is the run history",
+          "Version-guarded task completion",
+          "Coordinators, dispatch, git worktrees and per-session access modes",
+          "Memory that enters a session before the work begins",
+          "A built-in field guide of 55 interactive pages"
+        ],
+        "publisher": { "@id": "https://tm8-site.web.app/#org" }
+      },
+      { "@type": "Organization", "@id": "https://tm8-site.web.app/#org", "name": "tm8", "url": "https://tm8-site.web.app/", "logo": "https://tm8-site.web.app/assets/favicon.svg", "sameAs": ["https://github.com/subhangR/tm8"], "areaServed": ["IN", "AE", "SA", "QA", "US", "GB"], "contactPoint": { "@type": "ContactPoint", "contactType": "sales", "url": "https://tm8-site.web.app/#demo", "availableLanguage": ["en"] } },
+      { "@type": "WebSite", "@id": "https://tm8-site.web.app/#site", "url": "https://tm8-site.web.app/", "name": "tm8", "inLanguage": "en", "about": { "@id": "https://tm8-site.web.app/#app" } },
+      { "@type": "VideoObject", "@id": "https://tm8-site.web.app/#rec-worktab", "name": "Two models, one task, in the Work tab", "description": "Recorded in the tm8 Work tab on 3 September 2026: a task is created, Haiku 4.5 on Claude Code is put on it by command, GPT 5.6 on Codex joins, the two agree the terms on the task discussion and message each other, both commit, and the task is completed with the version read.", "thumbnailUrl": "https://tm8-site.web.app/assets/video/rec-worktab.jpg", "contentUrl": "https://tm8-site.web.app/assets/video/rec-worktab.mp4", "uploadDate": "2026-09-03", "duration": "PT2M4S" },
+      { "@type": "VideoObject", "@id": "https://tm8-site.web.app/#rec-cross-model", "name": "Two models, one board", "description": "Real tm8 command output: two tasks, two spawns, Haiku 4.5 on Claude Code and GPT 5.6 on Codex, one liveness call showing both.", "thumbnailUrl": "https://tm8-site.web.app/assets/video/rec-cross-model.jpg", "contentUrl": "https://tm8-site.web.app/assets/video/rec-cross-model.mp4", "uploadDate": "2026-09-02" },
+      { "@type": "VideoObject", "@id": "https://tm8-site.web.app/#rec-sibling", "name": "Session to session", "description": "Real tm8 command output: a Codex session is told its sibling session's id and replies in the thread.", "thumbnailUrl": "https://tm8-site.web.app/assets/video/rec-sibling.jpg", "contentUrl": "https://tm8-site.web.app/assets/video/rec-sibling.mp4", "uploadDate": "2026-09-02" },
+      { "@type": "VideoObject", "@id": "https://tm8-site.web.app/#rec-done-is-earned", "name": "Done is earned", "description": "Real tm8 command output: a transition to done is refused, a stale version is refused, the right version is accepted.", "thumbnailUrl": "https://tm8-site.web.app/assets/video/rec-done-is-earned.jpg", "contentUrl": "https://tm8-site.web.app/assets/video/rec-done-is-earned.mp4", "uploadDate": "2026-09-02" },
+      { "@type": "VideoObject", "@id": "https://tm8-site.web.app/#rec-four-questions", "name": "The four questions", "description": "Real tm8 command output: liveness, transcript, launch and journal on a running session.", "thumbnailUrl": "https://tm8-site.web.app/assets/video/rec-four-questions.jpg", "contentUrl": "https://tm8-site.web.app/assets/video/rec-four-questions.mp4", "uploadDate": "2026-09-02" },
+      {
+        "@type": "FAQPage",
+        "@id": "https://tm8-site.web.app/#faq",
+        "mainEntity": [
+          { "@type": "Question", "name": "What does a hosted seat include?", "acceptedAnswer": { "@type": "Answer", "text": "Hosted at tm8.sh means you use tm8 in the browser instead of installing its server and Postgres yourself. A seat includes the full tm8 platform and its current teammate roster. Claude Code and Codex are the two launch tools." } },
+          { "@type": "Question", "name": "What happens after the first 100 free seats?", "acceptedAnswer": { "@type": "Answer", "text": "The first 100 verified accounts in the launch allocation keep their hosted seat free. After the allocation fills, new accounts use the $10 weekly, $30 monthly or $300 yearly plan when Stripe checkout opens." } },
+          { "@type": "Question", "name": "Which payment methods and currencies can I use?", "acceptedAnswer": { "@type": "Answer", "text": "Prices are in US dollars. Card checkout through Stripe opens soon. Supported cards and any local-currency display are coming with Stripe." } },
+          { "@type": "Question", "name": "Can I cancel a paid seat?", "acceptedAnswer": { "@type": "Answer", "text": "The cancellation controls and when a cancellation takes effect are coming with Stripe checkout. No refund or prorating terms have been published." } },
+          { "@type": "Question", "name": "Where does my data live?", "acceptedAnswer": { "@type": "Answer", "text": "On a self-hosted install, the tm8 server and Postgres run on hardware you choose. The hosted offer runs at tm8.sh; it does not yet name a data region or promise data residency." } },
+          { "@type": "Question", "name": "What latency should I expect from India or the Gulf?", "acceptedAnswer": { "@type": "Answer", "text": "Regional network measurements have not been published yet, so we do not quote a number. The agent-message timings shown elsewhere measure when a running agent receives a turn, not network round-trip time." } },
+          { "@type": "Question", "name": "When is support available?", "acceptedAnswer": { "@type": "Answer", "text": "Demo requests are read every working day. Live-support hours have not been published." } },
+          { "@type": "Question", "name": "Which agents can tm8 run?", "acceptedAnswer": { "@type": "Answer", "text": "Claude Code and Codex. The launch manifest picks the tool from the model name: Claude models run on Claude Code, GPT models on Codex. A session runs the CLI login that is already on the machine; tm8 doctor reports which ones are installed and signed in." } },
+          { "@type": "Question", "name": "Does tm8 store my model API keys?", "acceptedAnswer": { "@type": "Answer", "text": "tm8 keeps no model key in its database. A session uses a Claude Code or Codex login available on the node." } },
+          { "@type": "Question", "name": "Can I run tm8 on my own machine?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The source is on GitHub and the installer supports Linux and macOS with Node.js 22, Bun and Postgres 16. Agent sessions still need a Claude Code or Codex login." } },
+          { "@type": "Question", "name": "What happens when two people change the same task?", "acceptedAnswer": { "@type": "Answer", "text": "The second write is refused instead of silently overwriting the first. Commands that change a task take the version you read, and completion also records who did it." } },
+          { "@type": "Question", "name": "Can an agent work without touching my checkout?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Spawn with --workdir worktree and it works on its own branch in a separate checkout. An access mode bounds what it may do without asking." } },
+          { "@type": "Question", "name": "Does self-hosting keep everything on my machine?", "acceptedAnswer": { "@type": "Answer", "text": "The tm8 server and its database stay on the hardware you choose. The claude and codex CLIs still talk to their providers as they would on your laptop." } },
+          { "@type": "Question", "name": "Where is the code?", "acceptedAnswer": { "@type": "Answer", "text": "The repository is public on GitHub at github.com/subhangR/tm8, with the install guide, the getting-started walkthrough, and the design docs." } }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  
+  <symbol id="ki-task" viewBox="0 0 16 16"><path d="M3.4 5.6a2.2 2.2 0 0 1 2.2-2.2h4.8a2.2 2.2 0 0 1 2.2 2.2v4.8a2.2 2.2 0 0 1-2.2 2.2H5.6a2.2 2.2 0 0 1-2.2-2.2z"/><path d="M6 8.1 7.4 9.5 10.1 6.6"/></symbol>
+  <symbol id="ki-work_session" viewBox="0 0 16 16"><path d="M2.4 5.2a2 2 0 0 1 2-2h7.2a2 2 0 0 1 2 2v5.6a2 2 0 0 1-2 2H4.4a2 2 0 0 1-2-2z"/><path d="M5.2 7.4 6.9 9 5.2 10.6"/><path d="M8.4 10.6h2.6"/></symbol>
+  <symbol id="ki-doc" viewBox="0 0 16 16"><path d="M9 2.6H5.2a1.4 1.4 0 0 0-1.4 1.4v8a1.4 1.4 0 0 0 1.4 1.4h5.6a1.4 1.4 0 0 0 1.4-1.4V5.6z"/><path d="M9 2.6v3h3.2"/><path d="M6 9h4"/><path d="M6 11.2h2.6"/></symbol>
+  <symbol id="ki-channel" viewBox="0 0 16 16"><path d="M6.4 3 5.2 13"/><path d="M11 3 9.8 13"/><path d="M3.6 6.4h9.2"/><path d="M3.1 9.6h9.2"/></symbol>
+  <symbol id="ki-voice_channel" viewBox="0 0 16 16"><path d="M8 2.6a1.9 1.9 0 0 1 1.9 1.9v3.2a1.9 1.9 0 0 1-3.8 0V4.5A1.9 1.9 0 0 1 8 2.6z"/><path d="M4.6 7.4a3.4 3.4 0 0 0 6.8 0"/><path d="M8 10.8v2.6"/><path d="M6 13.4h4"/></symbol>
+  <symbol id="ki-message" viewBox="0 0 16 16"><path d="M13.2 9.6a1.9 1.9 0 0 1-1.9 1.9H6.5L3.4 13.8V5.1a1.9 1.9 0 0 1 1.9-1.9h6a1.9 1.9 0 0 1 1.9 1.9z"/></symbol>
+  <symbol id="ki-member" viewBox="0 0 16 16"><path d="M8 8.3a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z"/><path d="M3.3 13.6a4.7 4.7 0 0 1 9.4 0"/></symbol>
+  <symbol id="ki-team_member" viewBox="0 0 16 16"><path d="M8 2.6v1.8"/><path d="M4.4 4.4h7.2a1.6 1.6 0 0 1 1.6 1.6v5a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6V6a1.6 1.6 0 0 1 1.6-1.6z"/><path d="M6.2 7.8v1.2"/><path d="M9.8 7.8v1.2"/></symbol>
+  <symbol id="ki-pull_request" viewBox="0 0 16 16"><path d="M4.9 5.6a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M11.1 5.6a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M4.9 13.8a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z"/><path d="M4.9 5.6v4.8"/><path d="M11.1 5.6v1.4a2.6 2.6 0 0 1-2.6 2.6H4.9"/></symbol>
+  <symbol id="ki-commit" viewBox="0 0 16 16"><path d="M8 2.2v3"/><path d="M8 10.8v3"/><path d="M8 10.7a2.7 2.7 0 1 0 0-5.4 2.7 2.7 0 0 0 0 5.4z"/></symbol>
+  <symbol id="ki-file" viewBox="0 0 16 16"><path d="M11.8 7.9 7.4 12.3a2.7 2.7 0 0 1-3.8-3.8l5.3-5.3a1.8 1.8 0 0 1 2.5 2.5l-5.3 5.3a.9.9 0 0 1-1.3-1.3l4.7-4.7"/></symbol>
+  <symbol id="ki-spell" viewBox="0 0 16 16"><path d="M3.2 12.8 9.6 6.4"/><path d="M11.8 2.4l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L8.9 5.3l2.05-.85z"/><path d="M5.6 3.4v1.7"/><path d="M4.75 4.25h1.7"/></symbol>
+  <symbol id="ki-skill" viewBox="0 0 16 16"><path d="M8 4.4c-1.3-1-2.8-1.5-4.8-1.5v8.4c2 0 3.5.5 4.8 1.5"/><path d="M8 4.4c1.3-1 2.8-1.5 4.8-1.5v8.4c-2 0-3.5.5-4.8 1.5"/><path d="M8 4.4v8.4"/></symbol>
+  <symbol id="ki-collection" viewBox="0 0 16 16"><path d="M3 3h4.2v4.2H3z"/><path d="M8.8 3H13v4.2H8.8z"/><path d="M3 8.8h4.2V13H3z"/><path d="M8.8 8.8H13V13H8.8z"/></symbol>
+  <symbol id="ki-project" viewBox="0 0 16 16"><path d="M2.6 5.2a1.4 1.4 0 0 1 1.4-1.4h2.1l1.5 1.8h4.4a1.4 1.4 0 0 1 1.4 1.4v4.6a1.4 1.4 0 0 1-1.4 1.4H4a1.4 1.4 0 0 1-1.4-1.4z"/></symbol>
+  <symbol id="ki-interaction_profile" viewBox="0 0 16 16"><path d="M2.8 5.4h10.4"/><path d="M2.8 10.6h10.4"/><path d="M6.2 7a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/><path d="M10 12.2a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/></symbol>
+  <symbol id="ki-loop" viewBox="0 0 16 16"><path d="M8 3.2a4.8 4.8 0 1 0 4.53 3.2M12.8 3.2v3.2h-3.2"/></symbol>
+  <symbol id="ki-memory" viewBox="0 0 16 16"><path d="M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z"/></symbol>
+  <symbol id="ki-graph" viewBox="0 0 16 16"><path d="M4.3 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M11.7 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M11.7 13.6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z"/><path d="M6.1 4.2h3.8"/><path d="M11.7 7.8v2.2"/></symbol>
+  <symbol id="ki-artifact" viewBox="0 0 16 16"><path d="M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z"/><path d="M2.6 5.3 8 8.2l5.4-2.9"/><path d="M8 8.2v5.4"/></symbol>
+  <symbol id="ki-worktree" viewBox="0 0 16 16"><path d="M6.2 5.8h5.6a1.4 1.4 0 0 1 1.4 1.4v5.6a1.4 1.4 0 0 1-1.4 1.4H6.2a1.4 1.4 0 0 1-1.4-1.4V7.2a1.4 1.4 0 0 1 1.4-1.4z"/><path d="M10.4 5.8V4.2a1.4 1.4 0 0 0-1.4-1.4H4.2a1.4 1.4 0 0 0-1.4 1.4V9a1.4 1.4 0 0 0 1.4 1.4h.6"/></symbol>
+  <symbol id="ki-custom" viewBox="0 0 16 16"><path d="M8 2.6 13.4 8 8 13.4 2.6 8z"/></symbol>
+
+  <symbol id="tm8-ribbon" viewBox="0 0 360 520"><polygon points="91.3,203.0 102.2,220.4 153.6,185.0 144.6,171.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="91.3,203.0 102.2,220.4 153.6,185.0 144.6,171.1" fill="#fff" fill-opacity="0.344" stroke="#fff" stroke-opacity="0.344" stroke-width="1.2" stroke-linejoin="round"/><polygon points="82.1,185.2 91.3,203.0 144.6,171.1 137.5,158.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="82.1,185.2 91.3,203.0 144.6,171.1 137.5,158.6" fill="#fff" fill-opacity="0.322" stroke="#fff" stroke-opacity="0.322" stroke-width="1.2" stroke-linejoin="round"/><polygon points="102.2,220.4 114.4,237.8 164.5,199.8 153.6,185.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="102.2,220.4 114.4,237.8 164.5,199.8 153.6,185.0" fill="#fff" fill-opacity="0.373" stroke="#fff" stroke-opacity="0.373" stroke-width="1.2" stroke-linejoin="round"/><polygon points="75.2,167.1 82.1,185.2 137.5,158.6 132.5,147.8" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="75.2,167.1 82.1,185.2 137.5,158.6 132.5,147.8" fill="#fff" fill-opacity="0.308" stroke="#fff" stroke-opacity="0.308" stroke-width="1.2" stroke-linejoin="round"/><polygon points="114.4,237.8 127.8,254.9 176.7,215.5 164.5,199.8" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="114.4,237.8 127.8,254.9 176.7,215.5 164.5,199.8" fill="#fff" fill-opacity="0.405" stroke="#fff" stroke-opacity="0.405" stroke-width="1.2" stroke-linejoin="round"/><polygon points="70.9,148.5 75.2,167.1 132.5,147.8 129.4,139.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="70.9,148.5 75.2,167.1 132.5,147.8 129.4,139.0" fill="#fff" fill-opacity="0.306" stroke="#fff" stroke-opacity="0.306" stroke-width="1.2" stroke-linejoin="round"/><polygon points="127.8,254.9 141.7,271.9 190.1,231.7 176.7,215.5" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="127.8,254.9 141.7,271.9 190.1,231.7 176.7,215.5" fill="#fff" fill-opacity="0.439" stroke="#fff" stroke-opacity="0.439" stroke-width="1.2" stroke-linejoin="round"/><polygon points="70.2,129.5 70.9,148.5 129.4,139.0 127.6,132.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="70.2,129.5 70.9,148.5 129.4,139.0 127.6,132.3" fill="#fff" fill-opacity="0.319" stroke="#fff" stroke-opacity="0.319" stroke-width="1.2" stroke-linejoin="round"/><polygon points="141.7,271.9 155.9,288.6 204.1,248.4 190.1,231.7" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="141.7,271.9 155.9,288.6 204.1,248.4 190.1,231.7" fill="#fff" fill-opacity="0.474" stroke="#fff" stroke-opacity="0.474" stroke-width="1.2" stroke-linejoin="round"/><polygon points="73.7,110.8 70.2,129.5 127.6,132.3 126.5,127.2" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="73.7,110.8 70.2,129.5 127.6,132.3 126.5,127.2" fill="#fff" fill-opacity="0.348" stroke="#fff" stroke-opacity="0.348" stroke-width="1.2" stroke-linejoin="round"/><polygon points="155.9,288.6 169.9,304.9 218.3,265.4 204.1,248.4" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="155.9,288.6 169.9,304.9 218.3,265.4 204.1,248.4" fill="#fff" fill-opacity="0.509" stroke="#fff" stroke-opacity="0.509" stroke-width="1.2" stroke-linejoin="round"/><polygon points="81.6,93.7 73.7,110.8 126.5,127.2 125.7,122.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="81.6,93.7 73.7,110.8 126.5,127.2 125.7,122.6" fill="#fff" fill-opacity="0.385" stroke="#fff" stroke-opacity="0.385" stroke-width="1.2" stroke-linejoin="round"/><polygon points="169.9,304.9 183.3,320.8 232.3,282.6 218.3,265.4" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="169.9,304.9 183.3,320.8 232.3,282.6 218.3,265.4" fill="#fff" fill-opacity="0.542" stroke="#fff" stroke-opacity="0.542" stroke-width="1.2" stroke-linejoin="round"/><polygon points="93.0,79.5 81.6,93.7 125.7,122.6 126.1,117.4" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="93.0,79.5 81.6,93.7 125.7,122.6 126.1,117.4" fill="#fff" fill-opacity="0.421" stroke="#fff" stroke-opacity="0.421" stroke-width="1.2" stroke-linejoin="round"/><polygon points="183.3,320.8 195.6,336.0 245.8,299.9 232.3,282.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="183.3,320.8 195.6,336.0 245.8,299.9 232.3,282.6" fill="#fff" fill-opacity="0.572" stroke="#fff" stroke-opacity="0.572" stroke-width="1.2" stroke-linejoin="round"/><polygon points="106.8,68.5 93.0,79.5 126.1,117.4 128.4,111.2" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="106.8,68.5 93.0,79.5 126.1,117.4 128.4,111.2" fill="#fff" fill-opacity="0.448" stroke="#fff" stroke-opacity="0.448" stroke-width="1.2" stroke-linejoin="round"/><polygon points="195.6,336.0 206.6,350.3 258.3,317.3 245.8,299.9" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="195.6,336.0 206.6,350.3 258.3,317.3 245.8,299.9" fill="#fff" fill-opacity="0.580" stroke="#fff" stroke-opacity="0.580" stroke-width="1.2" stroke-linejoin="round"/><polygon points="121.8,60.3 106.8,68.5 128.4,111.2 133.2,104.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="121.8,60.3 106.8,68.5 128.4,111.2 133.2,104.6" fill="#fff" fill-opacity="0.467" stroke="#fff" stroke-opacity="0.467" stroke-width="1.2" stroke-linejoin="round"/><polygon points="206.6,350.3 215.8,363.4 269.4,334.8 258.3,317.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="206.6,350.3 215.8,363.4 269.4,334.8 258.3,317.3" fill="#fff" fill-opacity="0.580" stroke="#fff" stroke-opacity="0.580" stroke-width="1.2" stroke-linejoin="round"/><polygon points="137.7,54.6 121.8,60.3 133.2,104.6 140.5,98.2" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="137.7,54.6 121.8,60.3 133.2,104.6 140.5,98.2" fill="#fff" fill-opacity="0.479" stroke="#fff" stroke-opacity="0.479" stroke-width="1.2" stroke-linejoin="round"/><polygon points="215.8,363.4 223.0,375.2 278.8,352.5 269.4,334.8" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="215.8,363.4 223.0,375.2 278.8,352.5 269.4,334.8" fill="#fff" fill-opacity="0.580" stroke="#fff" stroke-opacity="0.580" stroke-width="1.2" stroke-linejoin="round"/><polygon points="154.1,50.9 137.7,54.6 140.5,98.2 149.8,92.5" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="154.1,50.9 137.7,54.6 140.5,98.2 149.8,92.5" fill="#fff" fill-opacity="0.486" stroke="#fff" stroke-opacity="0.486" stroke-width="1.2" stroke-linejoin="round"/><polygon points="223.0,375.2 228.1,385.1 286.0,370.5 278.8,352.5" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="223.0,375.2 228.1,385.1 286.0,370.5 278.8,352.5" fill="#fff" fill-opacity="0.580" stroke="#fff" stroke-opacity="0.580" stroke-width="1.2" stroke-linejoin="round"/><polygon points="170.9,49.0 154.1,50.9 149.8,92.5 160.5,87.8" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="170.9,49.0 154.1,50.9 149.8,92.5 160.5,87.8" fill="#fff" fill-opacity="0.489" stroke="#fff" stroke-opacity="0.489" stroke-width="1.2" stroke-linejoin="round"/><polygon points="228.1,385.1 231.3,392.9 290.5,389.0 286.0,370.5" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="228.1,385.1 231.3,392.9 290.5,389.0 286.0,370.5" fill="#fff" fill-opacity="0.580" stroke="#fff" stroke-opacity="0.580" stroke-width="1.2" stroke-linejoin="round"/><polygon points="187.8,48.9 170.9,49.0 160.5,87.8 172.0,84.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="187.8,48.9 170.9,49.0 160.5,87.8 172.0,84.1" fill="#fff" fill-opacity="0.486" stroke="#fff" stroke-opacity="0.486" stroke-width="1.2" stroke-linejoin="round"/><polygon points="231.3,392.9 233.1,398.5 291.5,407.8 290.5,389.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="231.3,392.9 233.1,398.5 291.5,407.8 290.5,389.0" fill="#fff" fill-opacity="0.562" stroke="#fff" stroke-opacity="0.562" stroke-width="1.2" stroke-linejoin="round"/><polygon points="204.6,50.6 187.8,48.9 172.0,84.1 183.8,81.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="204.6,50.6 187.8,48.9 172.0,84.1 183.8,81.6" fill="#fff" fill-opacity="0.476" stroke="#fff" stroke-opacity="0.476" stroke-width="1.2" stroke-linejoin="round"/><polygon points="233.1,398.5 234.3,402.3 288.1,426.3 291.5,407.8" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="233.1,398.5 234.3,402.3 288.1,426.3 291.5,407.8" fill="#fff" fill-opacity="0.434" stroke="#fff" stroke-opacity="0.434" stroke-width="1.2" stroke-linejoin="round"/><polygon points="220.9,54.1 204.6,50.6 183.8,81.6 195.4,80.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="220.9,54.1 204.6,50.6 183.8,81.6 195.4,80.1" fill="#fff" fill-opacity="0.458" stroke="#fff" stroke-opacity="0.458" stroke-width="1.2" stroke-linejoin="round"/><polygon points="234.3,402.3 235.1,405.6 280.3,443.1 288.1,426.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="234.3,402.3 235.1,405.6 280.3,443.1 288.1,426.3" fill="#fff" fill-opacity="0.276" stroke="#fff" stroke-opacity="0.276" stroke-width="1.2" stroke-linejoin="round"/><polygon points="236.2,59.6 220.9,54.1 195.4,80.1 206.3,79.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="236.2,59.6 220.9,54.1 195.4,80.1 206.3,79.6" fill="#fff" fill-opacity="0.428" stroke="#fff" stroke-opacity="0.428" stroke-width="1.2" stroke-linejoin="round"/><polygon points="235.1,405.6 234.8,409.5 268.8,457.0 280.3,443.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="235.1,405.6 234.8,409.5 268.8,457.0 280.3,443.1" fill="#fff" fill-opacity="0.160" stroke="#fff" stroke-opacity="0.160" stroke-width="1.2" stroke-linejoin="round"/><polygon points="250.1,67.3 236.2,59.6 206.3,79.6 216.3,79.8" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="250.1,67.3 236.2,59.6 206.3,79.6 216.3,79.8" fill="#fff" fill-opacity="0.381" stroke="#fff" stroke-opacity="0.381" stroke-width="1.2" stroke-linejoin="round"/><polygon points="234.8,409.5 232.5,414.2 254.8,467.4 268.8,457.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="234.8,409.5 232.5,414.2 254.8,467.4 268.8,457.0" fill="#fff" fill-opacity="0.086" stroke="#fff" stroke-opacity="0.086" stroke-width="1.2" stroke-linejoin="round"/><polygon points="261.9,77.1 250.1,67.3 216.3,79.8 225.3,80.8" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="261.9,77.1 250.1,67.3 216.3,79.8 225.3,80.8" fill="#fff" fill-opacity="0.312" stroke="#fff" stroke-opacity="0.312" stroke-width="1.2" stroke-linejoin="round"/><polygon points="232.5,414.2 227.6,419.2 239.5,474.9 254.8,467.4" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="232.5,414.2 227.6,419.2 239.5,474.9 254.8,467.4" fill="#fff" fill-opacity="0.034" stroke="#fff" stroke-opacity="0.034" stroke-width="1.2" stroke-linejoin="round"/><polygon points="270.7,88.9 261.9,77.1 225.3,80.8 233.5,82.5" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="270.7,88.9 261.9,77.1 225.3,80.8 233.5,82.5" fill="#fff" fill-opacity="0.219" stroke="#fff" stroke-opacity="0.219" stroke-width="1.2" stroke-linejoin="round"/><polygon points="227.6,419.2 220.2,424.0 223.3,479.7 239.5,474.9" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="227.6,419.2 220.2,424.0 223.3,479.7 239.5,474.9" fill="#000" fill-opacity="0.015" stroke="#000" stroke-opacity="0.015" stroke-width="1.2" stroke-linejoin="round"/><polygon points="275.8,102.1 270.7,88.9 233.5,82.5 241.0,85.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="275.8,102.1 270.7,88.9 233.5,82.5 241.0,85.6" fill="#fff" fill-opacity="0.107" stroke="#fff" stroke-opacity="0.107" stroke-width="1.2" stroke-linejoin="round"/><polygon points="220.2,424.0 210.8,428.1 206.5,482.4 223.3,479.7" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="220.2,424.0 210.8,428.1 206.5,482.4 223.3,479.7" fill="#000" fill-opacity="0.073" stroke="#000" stroke-opacity="0.073" stroke-width="1.2" stroke-linejoin="round"/><polygon points="277.2,115.5 275.8,102.1 241.0,85.6 247.6,91.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="277.2,115.5 275.8,102.1 241.0,85.6 247.6,91.1" fill="#000" fill-opacity="0.015" stroke="#000" stroke-opacity="0.015" stroke-width="1.2" stroke-linejoin="round"/><polygon points="210.8,428.1 199.9,431.2 189.3,483.2 206.5,482.4" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="210.8,428.1 199.9,431.2 189.3,483.2 206.5,482.4" fill="#000" fill-opacity="0.133" stroke="#000" stroke-opacity="0.133" stroke-width="1.2" stroke-linejoin="round"/><polygon points="275.4,128.5 277.2,115.5 247.6,91.1 252.3,99.5" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="275.4,128.5 277.2,115.5 247.6,91.1 252.3,99.5" fill="#000" fill-opacity="0.160" stroke="#000" stroke-opacity="0.160" stroke-width="1.2" stroke-linejoin="round"/><polygon points="199.9,431.2 188.1,433.2 172.0,482.0 189.3,483.2" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="199.9,431.2 188.1,433.2 172.0,482.0 189.3,483.2" fill="#000" fill-opacity="0.195" stroke="#000" stroke-opacity="0.195" stroke-width="1.2" stroke-linejoin="round"/><polygon points="271.4,141.0 275.4,128.5 252.3,99.5 254.2,110.7" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="271.4,141.0 275.4,128.5 252.3,99.5 254.2,110.7" fill="#000" fill-opacity="0.125" stroke="#000" stroke-opacity="0.125" stroke-width="1.2" stroke-linejoin="round"/><polygon points="188.1,433.2 176.1,434.0 154.8,479.0 172.0,482.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="188.1,433.2 176.1,434.0 154.8,479.0 172.0,482.0" fill="#000" fill-opacity="0.261" stroke="#000" stroke-opacity="0.261" stroke-width="1.2" stroke-linejoin="round"/><polygon points="265.5,153.6 271.4,141.0 254.2,110.7 252.9,124.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="265.5,153.6 271.4,141.0 254.2,110.7 252.9,124.1" fill="#000" fill-opacity="0.034" stroke="#000" stroke-opacity="0.034" stroke-width="1.2" stroke-linejoin="round"/><polygon points="176.1,434.0 164.3,433.7 138.2,474.0 154.8,479.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="176.1,434.0 164.3,433.7 138.2,474.0 154.8,479.0" fill="#000" fill-opacity="0.328" stroke="#000" stroke-opacity="0.328" stroke-width="1.2" stroke-linejoin="round"/><polygon points="257.7,166.6 265.5,153.6 252.9,124.1 248.6,139.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="257.7,166.6 265.5,153.6 252.9,124.1 248.6,139.1" fill="#fff" fill-opacity="0.024" stroke="#fff" stroke-opacity="0.024" stroke-width="1.2" stroke-linejoin="round"/><polygon points="164.3,433.7 153.1,432.5 122.5,467.0 138.2,474.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="164.3,433.7 153.1,432.5 122.5,467.0 138.2,474.0" fill="#000" fill-opacity="0.398" stroke="#000" stroke-opacity="0.398" stroke-width="1.2" stroke-linejoin="round"/><polygon points="248.1,180.2 257.7,166.6 248.6,139.1 241.5,155.2" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="248.1,180.2 257.7,166.6 248.6,139.1 241.5,155.2" fill="#fff" fill-opacity="0.061" stroke="#fff" stroke-opacity="0.061" stroke-width="1.2" stroke-linejoin="round"/><polygon points="153.1,432.5 143.0,430.5 108.4,457.7 122.5,467.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="153.1,432.5 143.0,430.5 108.4,457.7 122.5,467.0" fill="#000" fill-opacity="0.468" stroke="#000" stroke-opacity="0.468" stroke-width="1.2" stroke-linejoin="round"/><polygon points="236.8,194.4 248.1,180.2 241.5,155.2 232.1,172.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="236.8,194.4 248.1,180.2 241.5,155.2 232.1,172.3" fill="#fff" fill-opacity="0.088" stroke="#fff" stroke-opacity="0.088" stroke-width="1.2" stroke-linejoin="round"/><polygon points="143.0,430.5 133.8,427.9 96.5,446.3 108.4,457.7" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="143.0,430.5 133.8,427.9 96.5,446.3 108.4,457.7" fill="#000" fill-opacity="0.535" stroke="#000" stroke-opacity="0.535" stroke-width="1.2" stroke-linejoin="round"/><polygon points="224.0,209.2 236.8,194.4 232.1,172.3 220.9,190.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="224.0,209.2 236.8,194.4 232.1,172.3 220.9,190.1" fill="#fff" fill-opacity="0.108" stroke="#fff" stroke-opacity="0.108" stroke-width="1.2" stroke-linejoin="round"/><polygon points="133.8,427.9 125.5,424.5 87.6,432.8 96.5,446.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="133.8,427.9 125.5,424.5 87.6,432.8 96.5,446.3" fill="#000" fill-opacity="0.569" stroke="#000" stroke-opacity="0.569" stroke-width="1.2" stroke-linejoin="round"/><polygon points="210.1,224.4 224.0,209.2 220.9,190.1 208.1,208.5" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="210.1,224.4 224.0,209.2 220.9,190.1 208.1,208.5" fill="#fff" fill-opacity="0.123" stroke="#fff" stroke-opacity="0.123" stroke-width="1.2" stroke-linejoin="round"/><polygon points="125.5,424.5 117.9,419.7 82.5,418.1 87.6,432.8" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="125.5,424.5 117.9,419.7 82.5,418.1 87.6,432.8" fill="#000" fill-opacity="0.542" stroke="#000" stroke-opacity="0.542" stroke-width="1.2" stroke-linejoin="round"/><polygon points="195.3,240.0 210.1,224.4 208.1,208.5 194.3,227.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="195.3,240.0 210.1,224.4 208.1,208.5 194.3,227.3" fill="#fff" fill-opacity="0.135" stroke="#fff" stroke-opacity="0.135" stroke-width="1.2" stroke-linejoin="round"/><polygon points="117.9,419.7 111.2,412.4 81.3,403.2 82.5,418.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="117.9,419.7 111.2,412.4 81.3,403.2 82.5,418.1" fill="#000" fill-opacity="0.404" stroke="#000" stroke-opacity="0.404" stroke-width="1.2" stroke-linejoin="round"/><polygon points="180.0,255.8 195.3,240.0 194.3,227.3 180.0,246.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="180.0,255.8 195.3,240.0 194.3,227.3 180.0,246.3" fill="#fff" fill-opacity="0.144" stroke="#fff" stroke-opacity="0.144" stroke-width="1.2" stroke-linejoin="round"/><polygon points="111.2,412.4 106.5,402.2 83.2,389.0 81.3,403.2" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="111.2,412.4 106.5,402.2 83.2,389.0 81.3,403.2" fill="#000" fill-opacity="0.201" stroke="#000" stroke-opacity="0.201" stroke-width="1.2" stroke-linejoin="round"/><polygon points="165.7,265.5 180.0,246.3 180.0,255.8 164.7,271.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="165.7,265.5 180.0,246.3 180.0,255.8 164.7,271.6" fill="#fff" fill-opacity="0.143" stroke="#fff" stroke-opacity="0.143" stroke-width="1.2" stroke-linejoin="round"/><polygon points="106.5,402.2 104.7,389.3 87.4,375.3 83.2,389.0" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="106.5,402.2 104.7,389.3 87.4,375.3 83.2,389.0" fill="#000" fill-opacity="0.021" stroke="#000" stroke-opacity="0.021" stroke-width="1.2" stroke-linejoin="round"/><polygon points="151.8,284.7 165.7,265.5 164.7,271.6 149.8,287.4" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="151.8,284.7 165.7,265.5 164.7,271.6 149.8,287.4" fill="#fff" fill-opacity="0.147" stroke="#fff" stroke-opacity="0.147" stroke-width="1.2" stroke-linejoin="round"/><polygon points="104.7,389.3 106.1,374.3 93.6,361.6 87.4,375.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="104.7,389.3 106.1,374.3 93.6,361.6 87.4,375.3" fill="#fff" fill-opacity="0.071" stroke="#fff" stroke-opacity="0.071" stroke-width="1.2" stroke-linejoin="round"/><polygon points="138.9,303.7 151.8,284.7 149.8,287.4 135.7,303.1" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="138.9,303.7 151.8,284.7 149.8,287.4 135.7,303.1" fill="#fff" fill-opacity="0.150" stroke="#fff" stroke-opacity="0.150" stroke-width="1.2" stroke-linejoin="round"/><polygon points="106.1,374.3 110.6,357.9 101.6,347.7 93.6,361.6" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="106.1,374.3 110.6,357.9 101.6,347.7 93.6,361.6" fill="#fff" fill-opacity="0.118" stroke="#fff" stroke-opacity="0.118" stroke-width="1.2" stroke-linejoin="round"/><polygon points="127.4,322.3 138.9,303.7 135.7,303.1 122.8,318.4" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="127.4,322.3 138.9,303.7 135.7,303.1 122.8,318.4" fill="#fff" fill-opacity="0.151" stroke="#fff" stroke-opacity="0.151" stroke-width="1.2" stroke-linejoin="round"/><polygon points="110.6,357.9 117.9,340.5 111.4,333.3 101.6,347.7" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="110.6,357.9 117.9,340.5 111.4,333.3 101.6,347.7" fill="#fff" fill-opacity="0.140" stroke="#fff" stroke-opacity="0.140" stroke-width="1.2" stroke-linejoin="round"/><polygon points="117.9,340.5 127.4,322.3 122.8,318.4 111.4,333.3" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><polygon points="117.9,340.5 127.4,322.3 122.8,318.4 111.4,333.3" fill="#fff" fill-opacity="0.149" stroke="#fff" stroke-opacity="0.149" stroke-width="1.2" stroke-linejoin="round"/></symbol>
+  <!-- the cast: people are circles, agents are rounded squares, keepers are dashed -->
+  <symbol id="face-mara" viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" stroke-width="2.5" style="fill:var(--card);stroke:var(--info)"/><path d="M6.5 24 A17.5 17.5 0 0 1 41.5 24 L41.5 26 Q34 14 24 17 Q14 14 6.5 26 Z" style="fill:var(--info)"/><path d="M9 26 q3 -8 9 -8" stroke-width="4" fill="none" stroke-linecap="round" style="stroke:var(--info)"/><circle cx="18" cy="26" r="2" style="fill:var(--ink)"/><circle cx="30" cy="26" r="2" style="fill:var(--ink)"/><path d="M18 33 q6 5 12 0" stroke-width="2" fill="none" stroke-linecap="round" style="stroke:var(--ink)"/></symbol>
+  <symbol id="face-theo" viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" stroke-width="2.5" style="fill:var(--card);stroke:var(--info)"/><path d="M8 22 A16 16 0 0 1 40 22 L40 21 Q32 12 24 15 Q16 12 8 21 Z" style="fill:var(--info)"/><circle cx="17.5" cy="26" r="5" fill="none" stroke-width="1.8" style="stroke:var(--ink)"/><circle cx="30.5" cy="26" r="5" fill="none" stroke-width="1.8" style="stroke:var(--ink)"/><path d="M22.5 26 h3" stroke-width="1.8" style="stroke:var(--ink)"/><circle cx="17.5" cy="26" r="1.8" style="fill:var(--ink)"/><circle cx="30.5" cy="26" r="1.8" style="fill:var(--ink)"/><path d="M19 34 q5 3 10 0" stroke-width="2" fill="none" stroke-linecap="round" style="stroke:var(--ink)"/></symbol>
+  <symbol id="face-juniper" viewBox="0 0 48 48"><path d="M24 9 V4" stroke-width="2.5" stroke-linecap="round" style="stroke:var(--mate)"/><circle cx="24" cy="3.5" r="2.5" style="fill:var(--mate)"/><rect x="5" y="9" width="38" height="35" rx="10" stroke-width="2.5" style="fill:var(--card);stroke:var(--mate)"/><rect x="14" y="21" width="6" height="6" rx="1.5" style="fill:var(--mate)"/><rect x="28" y="21" width="6" height="6" rx="1.5" style="fill:var(--mate)"/><path d="M17 34 h14" stroke-width="2" stroke-linecap="round" style="stroke:var(--ink)"/></symbol>
+  <symbol id="face-callisto" viewBox="0 0 48 48"><path d="M24 9 V4" stroke-width="2.5" stroke-linecap="round" style="stroke:var(--mate)"/><circle cx="24" cy="3.5" r="2.5" style="fill:var(--mate)"/><rect x="5" y="9" width="38" height="35" rx="10" stroke-width="2.5" style="fill:var(--card);stroke:var(--mate)"/><rect x="14" y="21" width="6" height="6" rx="1.5" style="fill:var(--mate)"/><rect x="28" y="21" width="6" height="6" rx="1.5" style="fill:var(--mate)"/><path d="M17 33 q7 4 14 0" stroke-width="2" fill="none" stroke-linecap="round" style="stroke:var(--ink)"/></symbol>
+  <symbol id="face-dispatcher" viewBox="0 0 48 48"><path d="M24 9 V4" stroke-width="2.5" stroke-linecap="round" style="stroke:var(--mate)"/><circle cx="24" cy="3.5" r="2.5" style="fill:var(--mate)"/><rect x="5" y="9" width="38" height="35" rx="10" stroke-width="2.5" stroke-dasharray="5 3" style="fill:var(--card);stroke:var(--mate)"/><path d="M14 24 h20 M28 19 l6 5 -6 5" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--mate)"/><path d="M19 35 h10" stroke-width="2" stroke-linecap="round" style="stroke:var(--ink)"/></symbol>
+  <symbol id="face-dreamer" viewBox="0 0 48 48"><path d="M24 9 V4" stroke-width="2.5" stroke-linecap="round" style="stroke:var(--mate)"/><circle cx="24" cy="3.5" r="2.5" style="fill:var(--mate)"/><rect x="5" y="9" width="38" height="35" rx="10" stroke-width="2.5" stroke-dasharray="5 3" style="fill:var(--card);stroke:var(--mate)"/><path d="M13 24 q4 -4 8 0 M27 24 q4 -4 8 0" stroke-width="2.2" fill="none" stroke-linecap="round" style="stroke:var(--mate)"/><path d="M19 35 q5 3 10 0" stroke-width="2" fill="none" stroke-linecap="round" style="stroke:var(--ink)"/></symbol>
+  <symbol id="face-model" viewBox="0 0 48 48"><path d="M24 9 V4" stroke-width="2.5" stroke-linecap="round" style="stroke:var(--mate)"/><circle cx="24" cy="3.5" r="2.5" style="fill:var(--mate)"/><rect x="5" y="9" width="38" height="35" rx="10" stroke-width="2.5" style="fill:var(--card);stroke:var(--mate)"/><rect x="14" y="21" width="6" height="6" rx="1.5" style="fill:var(--mate)"/><rect x="28" y="21" width="6" height="6" rx="1.5" style="fill:var(--mate)"/><path d="M17 34 h14" stroke-width="2" stroke-linecap="round" style="stroke:var(--ink)"/></symbol>
+</svg>
+
+<header class="mast">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="tm8 home"><span aria-hidden="true">tm</span><svg aria-hidden="true"><use href="#tm8-ribbon"/></svg></a>
+    <nav class="nav" aria-label="Site">
+      <a href="#what">Product</a>
+      <a href="#graph">The graph</a>
+      <a href="#real">Watch</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#install">Install</a>
+      <a href="#journey">Setup</a>
+      <a href="https://github.com/subhangR/tm8/blob/main/docs/GETTING-STARTED.md">Docs</a>
+    </nav>
+    <div class="nav-r">
+      <a class="plain" href="https://github.com/subhangR/tm8">GitHub</a>
+      <a class="btn" href="#account" data-show-signin>Sign in</a>
+      <a class="btn primary" href="#signup">Claim a free seat</a>
+    </div>
+    <details class="menu">
+      <summary>Menu</summary>
+      <div class="sheet">
+        <a href="#what">Product</a>
+        <a href="#runs">Watch</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#signup">Claim a free seat</a>
+        <a href="#account" data-show-signin>Sign in</a>
+        <a href="#install">Install tm8</a>
+        <a href="#journey">Setup, step by step</a>
+        <a href="https://github.com/subhangR/tm8/blob/main/docs/GETTING-STARTED.md">Docs</a>
+        <a href="https://github.com/subhangR/tm8">GitHub</a>
+      </div>
+    </details>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ============ the mesh ============ -->
+<section class="section mesh" id="top">
+  <div class="mstage" id="graph">
+    <div class="mtext">
+      <h1><span class="k-member">People</span>, <span class="k-mate">AI teammates</span>, <span class="k-task">tasks</span> and <span class="k-run">running sessions</span> are one live graph.</h1>
+      <p class="sub">Put an AI teammate on a task and watch it work in a real terminal. Everything it does joins the same graph as your team's people, tasks and sessions, drawn here as tm8 stores it. <span class="mhover">Hover or tap anything to see what it is; the arrow keys move between the named nodes.</span></p>
+      <div class="actions">
+        <a class="btn primary" href="#signup">Claim a free seat</a>
+        <a class="btn" href="#story" data-watch>See it work</a>
+      </div>
+      <p class="runs-with">The first 100 sign-ups keep their launch seat free. Runs Claude Code and Codex, on Linux or macOS.</p>
+      <p class="mcap" data-mesh-cap>One server. Yours, or hosted at tm8.sh.</p>
+    </div>
+    <div class="mfade" aria-hidden="true"></div>
+    <noscript><picture><source srcset="/assets/graph-still-dark.webp" media="(prefers-color-scheme: dark)"><img class="mstill" src="/assets/graph-still.webp" alt="The finished tm8 graph: about two hundred and forty nodes joined by their edges." width="1440" height="749" decoding="async"></picture></noscript>
+    <canvas data-mesh role="img" aria-keyshortcuts="ArrowLeft ArrowRight Escape" aria-label="The tm8 graph assembling itself: one server, then Spaces, then people and AI teammates joining them, projects with repositories, dozens of tasks assigned to members, sessions lighting up as they run, messages travelling into sessions as their next turn, pull requests and commits recorded on their tasks, docs, memory, loops on a schedule and collections gathering tasks, until it is one dense connected mesh that keeps growing."></canvas>
+    <div class="mtip" data-mesh-tip hidden aria-hidden="true"><b data-mesh-tip-kind></b><span data-mesh-tip-title></span></div>
+    <p class="vh" data-mesh-live aria-live="polite"></p>
+    <button class="mplay" type="button" data-mesh-play aria-pressed="false" aria-label="Pause or play the graph animation">Pause</button>
+  </div>
+  <div class="wrap">
+    <ul class="mkey" aria-label="What the colours mean">
+      <li><i class="i-member"></i>person</li>
+      <li><i class="i-mate"></i>AI teammate</li>
+      <li><i class="i-task"></i>task</li>
+      <li><i class="i-run"></i>session, running</li>
+      <li><i class="i-mem"></i>memory</li>
+      <li><i class="i-doc"></i>doc or file</li>
+      <li><i class="i-rest"></i>Space, project, message, pull request, commit, loop, collection</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ real screens ============ -->
+<section class="section real" id="real">
+  <div class="wrap">
+    <div class="head center">
+      <h2>Two <span class="k-mate">models</span>, one task, on the record</h2>
+      <p class="sub">Recorded in the product on this server. Haiku 4.5 on Claude Code and GPT 5.6 on Codex join one task, agree the terms on its discussion, message each other, commit, and close it with the version they read. Cropped, not retouched.</p>
+    </div>
+    <figure class="worktab">
+      <div class="vframe"><img src="/assets/video/rec-worktab.webp" alt="" loading="lazy" decoding="async" width="2560" height="1600"><button class="playbtn" type="button" data-vid="/assets/video/rec-worktab.mp4" aria-label="Play: two models, one task, in the Work tab"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></button></div>
+      <figcaption>The Work tab, 3 September 2026, two minutes. A task is created; <span class="k-mate">Haiku 4.5</span> is put on it by command and its run goes live; <span class="k-mate">GPT 5.6</span> joins on Codex; the two agree the three terms on the task's discussion and message each other's sessions; both commit on their own branches.</figcaption>
+    </figure>
+    <div class="proof">
+      <figure class="fig shot work-shot">
+        <div class="bar" aria-hidden="true"><span></span><span></span><span></span><b>tm8.sh · Work</b></div>
+        <picture>
+          <source media="(max-width: 720px)" srcset="/assets/real/hero-work-m.webp">
+          <img src="/assets/real/hero-work.webp" width="2880" height="1560" alt="The Work screen in tm8: the task list on the left, and on the right the open task with its state, priority, assignee, description and acceptance criteria." loading="lazy" decoding="async">
+        </picture>
+      </figure>
+      <ol class="callouts" aria-label="What the Work screen shows">
+        <li><b>1</b><span>The task list, with state, priority and who has it.</span></li>
+        <li><b>2</b><span>The open <span class="k-task">task</span>: description, acceptance, its runs and its git.</span></li>
+        <li><b>3</b><span><b class="k-run">Run</b> puts a teammate on it. The session is a real process on this machine.</span></li>
+      </ol>
+    </div>
+    <div class="s2s">
+      <div class="s2s-head">
+        <h3>Session to <span class="k-mate">session</span>, across models</h3>
+        <p>The Sessions panel from the Work tab, drawn as it is, with one real exchange from 3 September 2026 moving along it.</p>
+      </div>
+      <div class="sess" data-sess>
+        <div class="sess-bar"><b>Sessions</b><span class="chips"><span>To Do 0</span><span class="on">In Progress 3</span><span>Done 703</span></span></div>
+        <svg class="wire" data-sess-wire aria-hidden="true" focusable="false"><path d="M0 0" fill="none"/><circle r="5" cx="-20" cy="-20"/></svg>
+        <ul class="tree" aria-label="The session tree: Fable 5.1 on Claude Code at the top, with a GPT 5.6 session on Codex and an Opus 5 session beneath it">
+          <li class="node" data-n="fable">
+            <div class="row"><span class="badge">F</span><b>TM8 Website</b><code>claude-fable-5-1</code><i class="live" aria-hidden="true"></i><small>claude-code</small></div>
+            <div class="bubble" data-b="to-fable"><span class="from">reply · from GPT 5.6 Teammate · <em>delivered</em></span><span class="body">Understood. I'll own the exact FAQPage mirror and the three Offer descriptions in the same PR, and touch no other JSON-LD objects.</span></div>
+            <ul>
+              <li class="node" data-n="codex">
+                <div class="row"><span class="badge">C</span><b>TM8 Website</b><code>gpt-5.6-sol</code><i class="live" aria-hidden="true"></i><small>codex</small></div>
+                <div class="bubble" data-b="to-codex"><span class="from">message · from Fable 5.1 Teammate · <em>delivered as the next turn</em></span><span class="body">Include the exact FAQPage mirror in your PR: you own the visible FAQ, so the structured data for it should change in the same commit, or they drift.</span></div>
+              </li>
+              <li class="node" data-n="opus">
+                <div class="row"><span class="badge">O</span><b>TM8 Website</b><code>claude-opus-5[1m]</code><i class="live" aria-hidden="true"></i><small>claude-code</small></div>
+              </li>
+            </ul>
+          </li>
+          <li class="node" data-n="dreamer">
+            <div class="row"><span class="badge keeper">D</span><b>Dreamer daily sweep</b><code>claude-opus-5</code><small>loop</small></div>
+          </li>
+        </ul>
+        <p class="cap" data-sess-cap>Three sessions on one task on tm8.sh: Fable 5.1 and Opus 5 on Claude Code, GPT 5.6 on Codex. One tree, one record.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ the story ============ -->
+<section class="section story" id="story">
+  <div class="wrap">
+    <div class="head center">
+      <h2>The <span class="k-task">task</span> is the first instruction.</h2>
+      <p class="sub">Drawn from the product. Mara puts Juniper on a task, Theo writes to it mid-run, the pull request links itself, and the task is completed with the version she read.</p>
+    </div>
+    <div class="frame-wrap">
+      <div class="frame ws" data-scene role="img" aria-label="A tm8 task. Mara puts Juniper, an agent, on it; Juniper's terminal streams; Theo's message reaches the terminal as its next turn; Juniper links a pull request; Mara completes the task.">
+        <div class="topbar" aria-hidden="true">
+          <span class="space"><span class="sq">N</span>Northlake</span>
+          <span class="crumb">Work · Fix login redirect loop</span>
+          <span class="here"><svg class="face sm"><use href="#face-mara"/></svg><svg class="face sm"><use href="#face-theo"/></svg><svg class="face sm"><use href="#face-juniper"/></svg></span>
+        </div>
+        <section class="task" aria-hidden="true">
+          <div class="task-head">
+            <h3>Fix login redirect loop</h3>
+            <div class="meta">
+              <span data-task-pill class="pill">Open</span>
+              <span class="v" data-task-ver>v1</span>
+              <span class="who" data-assignee></span>
+              <span class="pr green fr" data-fr="pr"><svg><use href="#ki-pull_request"/></svg>#212 · CI green</span>
+            </div>
+            <div class="acts"><span class="btn" data-spawn>Run ▸</span><span class="btn" data-complete>Complete</span></div>
+          </div>
+          <div class="thread">
+            <div class="msg human">
+              <svg class="face md"><use href="#face-mara"/></svg>
+              <div><div class="by"><b>Mara Voss</b><span class="t">09:41</span></div><p class="body">Fix the login redirect loop. It lands on / instead of /home after SSO.</p></div>
+            </div>
+            <div class="sys fr" data-fr="session"><span class="k">session</span> Juniper · claude-code · running</div>
+            <div class="sys fr" data-fr="doc"><span class="k">doc</span> Auth notes · attached</div>
+            <div class="msg human fr" data-fr="theo">
+              <svg class="face md"><use href="#face-theo"/></svg>
+              <div><div class="by"><b>Theo Iwu</b><span class="t">09:47</span></div><p class="body">Keep the guard idempotent.</p></div>
+            </div>
+            <div class="msg agent fr" data-fr="reply">
+              <svg class="face md"><use href="#face-juniper"/></svg>
+              <div><div class="by"><b>Juniper</b><span class="agent-tag">agent</span><span class="t">09:52</span></div><p class="body">Redirect fixed, guard added. Linked PR #212.</p></div>
+            </div>
+            <div class="sys fr" data-fr="done"><span class="k">done</span> completed by Mara Voss · v4</div>
+          </div>
+          <div class="composer"><span class="typed"></span><span class="caret"></span><span class="ph">Message this task…</span></div>
+        </section>
+        <aside class="term" aria-hidden="true">
+          <div class="strip"><span class="idle">no session</span></div>
+          <div class="canvas"><span class="l on empty">no session on this task yet</span></div>
+        </aside>
+        <div class="subs" data-subs aria-hidden="true"></div>
+      </div>
+      <div class="scene-bar">
+        <p class="cap" data-scene-cap aria-live="polite"></p>
+        <button class="btn sm" type="button" data-scene-replay>Replay</button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ explainers ============ -->
+<section class="section" id="what">
+  <div class="wrap">
+    <div class="head center"><h2>What a <span class="k-mate">teammate</span> can do</h2></div>
+    <div class="tiles">
+
+      <div class="tile wide t1" style="--tint: var(--brand-soft)">
+        <div class="stage" aria-hidden="true">
+          <div class="bigcard">
+            <div class="t">Fix login redirect loop</div>
+            <div class="row">
+              <span class="pillstack"><span class="pill p-open">Open</span><span class="pill run p-work">Working</span></span>
+              <span class="pillstack"><span class="v1">v1</span><span class="v2" style="color:var(--brand-2)">v2</span></span>
+              <span class="slot"><span class="agent chip"><svg class="face sm"><use href="#face-juniper"/></svg>Juniper <small>claude-code</small></span></span>
+              <span class="livewrap"><i></i></span>
+            </div>
+            <div class="row"><span class="btn sm press">Run ▸</span><span class="btn sm press2">Launch ▸</span></div>
+          </div>
+        </div>
+        <div class="txt"><h3>Give a <span class="k-task">task</span> to a <span class="k-mate">teammate</span></h3><p>Run, then Launch: a real agent process starts on your machine, in your project, with the task as its first instruction.</p></div>
+      </div>
+
+      <div class="tile t3" style="--tint: var(--run-soft)">
+        <div class="stage" aria-hidden="true">
+          <div class="two">
+            <div style="display:grid;gap:12px">
+              <div class="bubble b1"><svg class="face"><use href="#face-theo"/></svg><div class="body">Keep the guard idempotent.</div></div>
+              <span class="tag gray lbl">→ delivered as the next turn</span>
+              <div class="bubble b2"><svg class="face"><use href="#face-juniper"/></svg><div class="body">Reworked. A second callback is a no-op.</div></div>
+            </div>
+            <div class="term">
+              <div class="strip"><b>Juniper</b><span>claude-code</span><span class="live"></span></div>
+              <div class="canvas"><span class="ln ln1"><span class="p">message</span> from Theo Iwu</span><span class="ln ln2"><span class="in">Keep the guard idempotent.</span></span><span class="ln ln3"><span class="in">Understood. Reworking the guard.</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="txt"><h3>Say something <span class="k-run">mid-run</span></h3><p>It lands in the terminal as the next turn: about a second when the agent is idle, up to a minute when it is busy. When the agent replies, the reply is on the same thread.</p></div>
+      </div>
+
+<div class="tile t8" style="--tint: var(--mate-soft)">
+  <div class="stage" aria-hidden="true">
+    <svg viewBox="0 0 480 300">
+      <g transform="translate(150,14)"><g class="n n1 live"><rect width="180" height="46" rx="10"/><text x="14" y="21">Coordinator</text><text class="k" x="14" y="37">claude-code · splits work</text></g></g>
+      <path class="e e1" d="M200,60 V100 H90 V126" pathLength="1"/><path class="e e2" d="M280,60 V100 H390 V126" pathLength="1"/>
+      <rect class="wt w1" x="14" y="126" width="180" height="92" rx="10"/><text class="wtl l1" x="24" y="144">worktree · lane-a</text>
+      <rect class="wt w2" x="286" y="126" width="180" height="92" rx="10"/><text class="wtl l2" x="296" y="144">worktree · lane-b</text>
+      <g transform="translate(26,156)"><g class="n n2 live"><rect width="156" height="46" rx="10"/><text x="12" y="21">Haiku 4.5</text><text class="k" x="12" y="37">claude-code · worker</text></g></g>
+      <g transform="translate(298,156)"><g class="n n3 live"><rect width="156" height="46" rx="10"/><text x="12" y="21">GPT 5.6</text><text class="k" x="12" y="37">codex · worker</text></g></g>
+      <path class="e e3" d="M90,218 V250 H240 V270" pathLength="1"/><path class="e e4" d="M390,218 V250 H240" pathLength="1"/>
+      <g transform="translate(150,262)"><g class="n n4"><rect width="180" height="34" rx="10"/><text x="14" y="22">one report, on the task</text></g></g>
+    </svg>
+  </div>
+  <div class="txt"><h3>A <span class="k-mate">coordinator</span>, <span class="k-mate">workers</span> in worktrees</h3><p>A session can spawn workers, each on its own branch in its own worktree, and gather their reports on the task.</p></div>
+</div>
+
+      <div class="tile wide t4" style="--tint: var(--brand-soft)">
+        <div class="stage" aria-hidden="true">
+          <div class="bigcard">
+            <div class="t">Fix login redirect loop</div>
+            <div class="row">
+              <span class="pillstack"><span class="pill review p-rev">In review</span><span class="pill done p-done">Done</span></span>
+              <span class="pillstack"><span class="v3" style="color:var(--brand-2)">v3</span><span class="v4" style="color:var(--brand-2)">v4</span></span>
+              <span class="by"><svg class="face xs"><use href="#face-mara"/></svg> completed by Mara Voss</span>
+            </div>
+            <span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span>
+            <div class="attempts">
+              <div class="attempt a1"><code>task transition … done</code><span class="tag red r1">refused · done is not a transition</span></div>
+              <div class="attempt a2"><code>task complete --expect-version 2</code><span class="tag red r2">refused · the task changed since you read it</span></div>
+              <div class="attempt a3"><code>task complete --expect-version 3 --by mara</code><span class="tag green">accepted</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="txt"><h3><span class="k-run">Done</span> is earned</h3><p>Only task complete writes done, with the version you read and who finished. A stale write is refused, never overwritten.</p></div>
+      </div>
+
+    </div>
+    <p class="also-l">Also in the box</p>
+    <ul class="caps" aria-label="Also in the box">
+      <li><svg class="ki k-mate" aria-hidden="true" focusable="false"><use href="#ki-message"/></svg><div><b>Claude Code and Codex, talking through the graph</b><span>message either session by its id; the reply stays on the record</span></div></li>
+      <li><svg class="ki k-mate" aria-hidden="true" focusable="false"><use href="#ki-member"/></svg><div><b>Let the Dispatcher choose</b><span>it reads the roster and the memory graph, spawns the right teammate, writes why</span></div></li>
+      <li><svg class="ki k-task" aria-hidden="true" focusable="false"><use href="#ki-graph"/></svg><div><b>One record, every view</b><span>tree, board and graph draw the same record</span></div></li>
+      <li><svg class="ki k-member" aria-hidden="true" focusable="false"><use href="#ki-channel"/></svg><div><b>Your phone gets in</b><span>sign in over HTTPS with the password you set</span></div></li>
+      <li><svg class="ki k-mate" aria-hidden="true" focusable="false"><use href="#ki-memory"/></svg><div><b>Memory</b><span>rides into the session before the work begins</span></div></li>
+      <li><svg class="ki k-task" aria-hidden="true" focusable="false"><use href="#ki-loop"/></svg><div><b>Loops</b><span>a schedule that spawns; the run history is edges</span></div></li>
+      <li><svg class="ki k-mate" aria-hidden="true" focusable="false"><use href="#ki-artifact"/></svg><div><b>Artifacts</b><span>pages agents build, sandboxed</span></div></li>
+      <li><svg class="ki k-task" aria-hidden="true" focusable="false"><use href="#ki-custom"/></svg><div><b>Custom kinds</b><span>new entity types at runtime</span></div></li>
+      <li><svg class="ki k-run" aria-hidden="true" focusable="false"><use href="#ki-commit"/></svg><div><b>Resume</b><span>a session comes back with its conversation</span></div></li>
+      <li><svg class="ki k-run" aria-hidden="true" focusable="false"><use href="#ki-worktree"/></svg><div><b>Git per session</b><span>checkpoint, merge, roll back</span></div></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ real runs ============ -->
+<section class="dark" id="runs">
+  <div class="wrap">
+    <div class="head">
+      <h2>Recorded from this node</h2>
+      <p class="sub">Commands run on this node on 2 September 2026, output captured word for word; long outputs are cut to their first 16 lines here, replayed at typing speed.</p>
+    </div>
+    <div class="recs">
+      <div class="rec"><div class="vframe"><img src="/assets/video/rec-cross-model.jpg" alt="" loading="lazy" decoding="async" width="2560" height="1600"><button class="playbtn" type="button" data-vid="/assets/video/rec-cross-model.mp4" aria-label="Play: Two models, one board"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></button></div><div class="txt"><small>REAL CLI · CROSS-MODEL</small><h3>Two models, one board</h3><p>Two tasks, two spawns: Haiku 4.5 on Claude Code, GPT 5.6 on Codex. One liveness call shows both.</p></div></div>
+      <div class="rec"><div class="vframe"><img src="/assets/video/rec-sibling.jpg" alt="" loading="lazy" decoding="async" width="2560" height="1600"><button class="playbtn" type="button" data-vid="/assets/video/rec-sibling.mp4" aria-label="Play: Session to session"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></button></div><div class="txt"><small>REAL CLI · SIBLING</small><h3>Session to session</h3><p>The Codex session is told its sibling's id. Its reply lands in the thread, on the record.</p></div></div>
+      <div class="rec"><div class="vframe"><img src="/assets/video/rec-done-is-earned.jpg" alt="" loading="lazy" decoding="async" width="2560" height="1600"><button class="playbtn" type="button" data-vid="/assets/video/rec-done-is-earned.mp4" aria-label="Play: Done is earned"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></button></div><div class="txt"><small>REAL CLI · DONE-IS-EARNED</small><h3>Done is earned</h3><p>A transition to done is refused; a stale version is refused; the right one is accepted.</p></div></div>
+      <div class="rec"><div class="vframe"><img src="/assets/video/rec-four-questions.jpg" alt="" loading="lazy" decoding="async" width="2560" height="1600"><button class="playbtn" type="button" data-vid="/assets/video/rec-four-questions.mp4" aria-label="Play: The four questions"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></button></div><div class="txt"><small>REAL CLI · FOUR-QUESTIONS</small><h3>The four questions</h3><p>Is it alive, what has it said, what was it told, which tm8 commands has it run.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ models ============ -->
+<section class="section" id="models">
+  <div class="wrap">
+    <div class="head center">
+      <h2>Claude Code and Codex are the launch tools</h2>
+      <p class="sub">A new Space starts with eleven model teammates. Dispatcher can route work; Dreamer sweeps memory every day. Sessions use a Claude Code or Codex login on the node.</p>
+    </div>
+    <div class="model-groups" aria-label="The eleven model teammates a new Space starts with">
+      <div class="model-group">
+        <div class="model-tool"><i aria-hidden="true"></i><div><h3>Claude Code</h3><p>Eight Claude model choices</p></div></div>
+        <ul class="model-list"><li>Opus 5</li><li>Opus 5 (1M)</li><li>Fable 5</li><li>Fable 5 (1M)</li><li>Fable 5.1</li><li>Fable 5.1 (1M)</li><li>Sonnet 5</li><li>Haiku 4.5</li></ul>
+      </div>
+      <div class="model-group">
+        <div class="model-tool"><i aria-hidden="true"></i><div><h3>Codex</h3><p>Three OpenAI model choices</p></div></div>
+        <ul class="model-list"><li>GPT 5.6</li><li>GPT 5.6 Terra</li><li>GPT 5.6 Luna</li></ul>
+      </div>
+    </div>
+    <div class="keepers" aria-label="Built-in teammates">
+      <div class="keeper"><svg class="face" aria-hidden="true" focusable="false"><use href="#face-dispatcher"/></svg><span><b>Dispatcher</b> routes work from the roster and memory graph.</span></div>
+      <div class="keeper"><svg class="face" aria-hidden="true" focusable="false"><use href="#face-dreamer"/></svg><span><b>Dreamer</b> runs the daily memory sweep.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ install ============ -->
+<section class="section" id="install" style="background:var(--bg-2)">
+  <div class="wrap two">
+    <div class="copy">
+      <h2>Run tm8 on your own machine</h2>
+      <p class="sub">The install gives you the tm8 server, browser UI and Postgres-backed graph. The source is on GitHub.</p>
+      <ol class="steps">
+        <li><b>1</b><span>Start on Linux or macOS with Node.js 22, Bun and Postgres 16. Run the script; it builds tm8 and starts the node.</span></li>
+        <li><b>2</b><span>Open <code>http://127.0.0.1:4611</code> and use the setup link printed by the server to claim the node. A phone or another laptop signs in over HTTPS through a tailnet address or reverse proxy you run.</span></li>
+        <li><b>3</b><span>Create a Space, link a project to your repository and start a session on a task. <a href="#journey">Follow the six-step path below.</a></span></li>
+      </ol>
+    </div>
+    <div class="termcard">
+      <div class="strip"><b>your shell</b><span>bash · zsh</span><button class="copy" type="button" data-copy="install-cmd">Copy</button></div>
+      <div class="body"><span class="p">$ </span><code id="install-cmd">git clone https://github.com/subhangR/tm8.git &amp;&amp; cd tm8 &amp;&amp; ./install.sh</code>
+<span class="d">…</span>
+<span class="d">[11/11] Verify</span>
+<span class="d">starting tm8 — server on 4610, UI on 4611 (Ctrl-C stops both)</span>
+      <span class="ok">✓</span> tm8 is up and healthy on 4610
+      <span class="ok">✓</span> open http://127.0.0.1:4611</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ the setup journey ============ -->
+<section class="section journey" id="journey">
+  <div class="wrap">
+    <div class="head center">
+      <h2>Six steps from install to pull request</h2>
+      <p class="sub">Claim the node, make a Space, link your repository, create a task, start a session and bring the pull request back to the task.</p>
+    </div>
+
+    <div class="jtile">
+     <div class="jplay">
+      <div class="jrail" aria-hidden="true">
+        <span class="jnode n1"><i class="jdot"></i><b>you</b></span>
+        <svg class="jwire w1" viewBox="0 0 64 10" preserveAspectRatio="none"><path d="M1,5 H63" pathLength="1"/></svg>
+        <span class="jnode n2"><i class="jdot"></i><b>Space</b></span>
+        <svg class="jwire w2" viewBox="0 0 64 10" preserveAspectRatio="none"><path d="M1,5 H63" pathLength="1"/></svg>
+        <span class="jnode n3"><i class="jdot"></i><b>project</b><small>your repo</small></span>
+        <svg class="jwire w3" viewBox="0 0 64 10" preserveAspectRatio="none"><path d="M1,5 H63" pathLength="1"/></svg>
+        <span class="jnode n4"><i class="jdot"></i><b>task</b></span>
+        <svg class="jwire w4" viewBox="0 0 64 10" preserveAspectRatio="none"><path d="M1,5 H63" pathLength="1"/><circle class="jpkt" r="3.2" cy="5"/></svg>
+        <span class="jnode n5"><i class="jdot live"></i><b>session</b><small>worktree</small></span>
+        <svg class="jwire w5" viewBox="0 0 64 10" preserveAspectRatio="none"><path d="M1,5 H63" pathLength="1"/><circle class="jpkt back" r="3.2" cy="5"/></svg>
+        <span class="jnode n6"><i class="jdot"></i><b>pull request</b><small>back on the task</small></span>
+      </div>
+
+      <ol class="jsteps">
+        <li class="jstep s1">
+          <span class="jn">1</span>
+          <div class="jbody">
+            <h3>Claim the node</h3>
+            <div class="jcmd"><span class="p">$</span><code>tm8 auth claim --token &lt;tm8c_…&gt; \
+  --username you \
+  --password '&lt;password&gt;'</code></div>
+            <p>Use the setup link printed by the server to set your name and password. After the claim, loopback access needs no sign-in; a phone or another laptop signs in over HTTPS.</p>
+          </div>
+        </li>
+
+        <li class="jstep s2">
+          <span class="jn">2</span>
+          <div class="jbody">
+            <h3>Make a Space</h3>
+            <div class="jcmd"><span class="p">$</span><code>tm8 space create "Northlake"</code></div>
+            <p>A Space starts with you as owner, a <code>general</code> channel, eleven model teammates, Dispatcher and Dreamer.</p>
+          </div>
+        </li>
+
+        <li class="jstep s3">
+          <span class="jn">3</span>
+          <div class="jbody">
+            <h3>Point a project at your repository</h3>
+            <div class="jcmd"><span class="p">$</span><code>tm8 project create "app" \
+  --working-dir ~/code/app \
+  --trust trusted \
+  --repo-url https://github.com/you/app</code></div>
+            <div class="jcmd"><span class="p">$</span><code>tm8 project link &lt;project-id&gt; \
+  --space &lt;space-id&gt;</code></div>
+            <p>A project records the folder an agent may use and the repository it belongs to. It belongs to the node, so the same project can be linked to more than one Space.</p>
+            <p class="jnote">In the browser, attach a project while creating a Space. Linking one to an existing Space uses the CLI today.</p>
+          </div>
+        </li>
+
+        <li class="jstep s4">
+          <span class="jn">4</span>
+          <div class="jbody">
+            <h3>Raise the work as tasks</h3>
+            <div class="jcmd"><span class="p">$</span><code>tm8 entity create task \
+  "Fix the login redirect" \
+  --space &lt;space-id&gt;</code></div>
+            <p>Tasks use the same entity command as every other kind. The <code>task</code> commands handle what follows: transition, complete, gate and link-pr.</p>
+          </div>
+        </li>
+
+        <li class="jstep s5">
+          <span class="jn">5</span>
+          <div class="jbody">
+            <h3>Start a teammate in that project</h3>
+            <div class="jcmd"><span class="p">$</span><code>tm8 session spawn --space &lt;space-id&gt; \
+  --teammate &lt;id&gt; --task &lt;task-id&gt; \
+  --launch-project &lt;project-id&gt; \
+  --workdir worktree</code></div>
+            <p>A real agent process starts in the project with the task as its first instruction. <code>--workdir worktree</code> gives the session a separate checkout and branch. The teammate supplies the default model; <code>--model</code> can change it for this session.</p>
+          </div>
+        </li>
+
+        <li class="jstep s6">
+          <span class="jn">6</span>
+          <div class="jbody">
+            <h3>Link the pull request to the task</h3>
+            <div class="jcmd"><span class="p">$</span><code>tm8 task link-pr &lt;task-id&gt; &lt;pr-url&gt;</code></div>
+            <div class="jcmd"><span class="p">$</span><code>tm8 task gate &lt;task-id&gt; pr_merged \
+  --expect-version &lt;n&gt;</code></div>
+            <p>The first command records the pull request on the task. The second adds a rule: the task refuses completion while its linked pull request is unmerged.</p>
+          </div>
+        </li>
+      </ol>
+     </div>
+    </div>
+
+    <p class="jfoot">These commands match the CLI catalogue and the
+      <a href="https://github.com/subhangR/tm8/blob/main/docs/GETTING-STARTED.md">Getting started</a> guide, which also shows what each one returns.</p>
+  </div>
+</section>
+
+<!-- ============ pricing ============ -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="head center">
+      <h2>One hosted seat, three billing periods</h2>
+      <p class="sub">Hosted at tm8.sh means the tm8 server and Postgres are run for you. You sign in through the browser; there is no server install to manage.</p>
+    </div>
+    <div class="seatbox">
+      <strong>Every hosted seat includes</strong>
+      <ul>
+        <li>Full browser access to the tm8 platform at tm8.sh</li>
+        <li>Tasks, the graph, durable discussions and streamed agent sessions</li>
+        <li>Eleven model teammates, Dispatcher and Dreamer; launches use Claude Code or Codex</li>
+      </ul>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <div class="pname">Week</div>
+        <div class="price"><b>$10</b><span>per week</span></div>
+        <p>Seven days of the hosted seat described above.</p>
+        <a class="btn" href="#signup">Create an account</a>
+        <small>Card checkout through Stripe opens soon</small>
+      </div>
+      <div class="plan featured">
+        <div class="pname">Month</div>
+        <div class="price"><b>$30</b><span>per month</span></div>
+        <p>One month of the same hosted seat.</p>
+        <a class="btn primary" href="#signup">Create an account</a>
+        <small>Card checkout through Stripe opens soon</small>
+      </div>
+      <div class="plan">
+        <div class="pname">Year</div>
+        <div class="price"><s>$360</s><b>$300</b><span>per year</span></div>
+        <p>$60 less than twelve monthly payments.</p>
+        <a class="btn" href="#signup">Create an account</a>
+        <small>Card checkout through Stripe opens soon</small>
+      </div>
+    </div>
+    <p class="pnote"><strong>Launch allocation:</strong> the first 100 verified accounts keep a free hosted seat. After it fills, new accounts use one of the paid plans above when Stripe checkout opens. Prices are in US dollars.</p>
+  </div>
+</section>
+
+<!-- ============ questions ============ -->
+<section class="section" id="faq">
+  <div class="wrap">
+    <div class="head center">
+      <h2>Questions before you choose</h2>
+      <p class="sub">Hosted seats, payment, data and the option to run your own node.</p>
+    </div>
+    <div class="faq">
+      <details><summary>What does a hosted seat include?</summary><div class="a"><p>Hosted at tm8.sh means you use tm8 in the browser instead of installing its server and Postgres yourself. A seat includes the full tm8 platform and its current teammate roster. Claude Code and Codex are the two launch tools.</p></div></details>
+      <details><summary>What happens after the first 100 free seats?</summary><div class="a"><p>The first 100 verified accounts in the launch allocation keep their hosted seat free. After the allocation fills, new accounts use the $10 weekly, $30 monthly or $300 yearly plan when Stripe checkout opens.</p></div></details>
+      <details><summary>Which payment methods and currencies can I use?</summary><div class="a"><p>Prices are in US dollars. Card checkout through Stripe opens soon. Supported cards and any local-currency display are coming with Stripe.</p></div></details>
+      <details><summary>Can I cancel a paid seat?</summary><div class="a"><p>The cancellation controls and when a cancellation takes effect are coming with Stripe checkout. No refund or prorating terms have been published.</p></div></details>
+      <details><summary>Where does my data live?</summary><div class="a"><p>On a self-hosted install, the tm8 server and Postgres run on hardware you choose. The hosted offer runs at tm8.sh; it does not yet name a data region or promise data residency.</p></div></details>
+      <details><summary>What latency should I expect from India or the Gulf?</summary><div class="a"><p>Regional network measurements have not been published yet, so we do not quote a number. The agent-message timings shown elsewhere measure when a running agent receives a turn, not network round-trip time.</p></div></details>
+      <details><summary>When is support available?</summary><div class="a"><p>Demo requests are read every working day. Live-support hours have not been published.</p></div></details>
+      <details><summary>Which agents can tm8 run?</summary><div class="a"><p>Claude Code and Codex. The launch manifest picks the tool from the model name: Claude models run on Claude Code, GPT models on Codex. A session runs the CLI login that is already on the machine; <code>tm8 doctor</code> reports which ones are installed and signed in.</p></div></details>
+      <details><summary>Does tm8 store my model API keys?</summary><div class="a"><p>tm8 keeps no model key in its database. A session uses a Claude Code or Codex login available on the node.</p></div></details>
+      <details><summary>Can I run tm8 on my own machine?</summary><div class="a"><p>Yes. The source is on GitHub and the installer supports Linux and macOS with Node.js 22, Bun and Postgres 16. Agent sessions still need a Claude Code or Codex login.</p></div></details>
+      <details><summary>What happens when two people change the same task?</summary><div class="a"><p>The second write is refused instead of silently overwriting the first. Commands that change a task take the version you read, and completion also records who did it.</p></div></details>
+      <details><summary>Can an agent work without touching my checkout?</summary><div class="a"><p>Yes. Spawn with <code>--workdir worktree</code> and it works on its own branch in a separate checkout. An access mode bounds what it may do without asking.</p></div></details>
+      <details><summary>Does self-hosting keep everything on my machine?</summary><div class="a"><p>The tm8 server and its database stay on the hardware you choose. The <code>claude</code> and <code>codex</code> CLIs still talk to their providers as they would on your laptop.</p></div></details>
+      <details><summary>Where is the code?</summary><div class="a"><p>The repository is public on GitHub at <a href="https://github.com/subhangR/tm8">github.com/subhangR/tm8</a>, with the install guide, the getting-started walkthrough, and the design docs.</p></div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ sign up ============ -->
+<section class="section" id="signup" style="background:var(--bg-2)">
+  <div class="wrap two">
+    <div class="copy">
+      <h2>Create your hosted account</h2>
+      <p class="sub">Verified accounts join the launch list. The first 100 keep a free hosted seat; later accounts use a paid plan when Stripe checkout opens. Demo requests are read every working day.</p>
+      <ol class="steps">
+        <li><b>1</b><span>Create an account with an email address you can open now.</span></li>
+        <li><b>2</b><span>Open the verification link, return here and tap “I’ve verified my email.”</span></li>
+        <li><b>3</b><span>Your launch-list place is recorded. Request a walkthrough from the verified account panel.</span></li>
+      </ol>
+    </div>
+    <div class="formcard" id="account" data-auth data-firebase='{"apiKey":"AIzaSyCnH1XXcLRVMPCvtjBGotCh_86hOJ2AV2E","authDomain":"lvlup-ff6fa.firebaseapp.com","projectId":"lvlup-ff6fa","appId":"1:504506746594:web:c853db2f5633257e5f80bb"}' data-signups="https://tm8-site-inquiries.asia-southeast1.firebasedatabase.app/signups" data-inbox="https://tm8-site-inquiries.asia-southeast1.firebasedatabase.app/inquiries.json" data-mail="manzilshaik95@gmail.com">
+      <div data-panel="create">
+        <h3>Create your account</h3>
+        <form data-create-form method="post" action="#account" novalidate>
+          <label for="create-email"><span>Email</span><input id="create-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" enterkeyhint="next" placeholder="name@example.com" required maxlength="254" aria-describedby="create-email-help" aria-errormessage="create-status"><small class="fieldhelp" id="create-email-help">Use an address you can open now.</small></label>
+          <label for="create-password"><span>Password</span><input id="create-password" name="password" type="password" autocomplete="new-password" enterkeyhint="go" required minlength="8" maxlength="200" aria-describedby="create-password-help" aria-errormessage="create-status"><small class="fieldhelp" id="create-password-help">At least 8 characters.</small></label>
+          <div class="fact"><button class="btn primary" type="submit">Create account</button><p class="fstat" id="create-status" data-astat aria-live="polite" aria-atomic="true"></p></div>
+        </form>
+        <p class="alt">Already have an account? <a href="#account" data-show="signin">Sign in</a></p>
+      </div>
+      <div data-panel="signin" hidden>
+        <h3>Sign in</h3>
+        <form data-signin-form method="post" action="#account" novalidate>
+          <label for="signin-email"><span>Email</span><input id="signin-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" enterkeyhint="next" placeholder="name@example.com" required maxlength="254" aria-errormessage="signin-status"></label>
+          <label for="signin-password"><span>Password</span><input id="signin-password" name="password" type="password" autocomplete="current-password" enterkeyhint="go" required maxlength="200" aria-errormessage="signin-status"></label>
+          <div class="fact"><button class="btn primary" type="submit">Sign in</button><p class="fstat" id="signin-status" data-sstat aria-live="polite" aria-atomic="true"></p></div>
+        </form>
+        <p class="alt">New here? <a href="#account" data-show="create">Create an account</a> · <a href="#account" data-reset>Forgot the password?</a></p>
+      </div>
+      <div data-panel="verify" hidden>
+        <h3>Check your inbox</h3>
+        <p>We sent a verification link to <b data-email></b>. Open it, then come back here.</p>
+        <div class="fact"><button class="btn primary" type="button" data-verified>I’ve verified my email</button><button class="btn" type="button" data-resend>Resend the link</button></div>
+        <p class="fstat" data-vstat aria-live="polite" aria-atomic="true"></p>
+        <p class="alt"><a href="#account" data-signout>Use a different email</a></p>
+      </div>
+      <div data-panel="seat-pending" hidden>
+        <article class="receipt" aria-live="polite" aria-busy="true">
+          <p class="receipt-state pending">Verified account</p>
+          <h3>Recording your seat…</h3>
+          <p>We are attaching <strong data-email></strong> to the hosted launch list.</p>
+        </article>
+      </div>
+      <div data-panel="seat" hidden>
+        <article class="receipt" aria-labelledby="seat-title">
+          <p class="receipt-state">Seat recorded</p>
+          <h3 id="seat-title">Your seat is recorded</h3>
+          <p class="receipt-address">Filed under <strong data-email></strong></p>
+          <div class="receipt-next">
+            <h4>What happens next</h4>
+            <ol class="receipt-steps">
+              <li><span class="receipt-num">1</span><span><strong>Your verified address stays with this launch-list record.</strong></span></li>
+              <li><span class="receipt-num">2</span><span><strong>Keep an eye on this inbox for hosted-access updates.</strong> The list does not assign a numbered rank or publish an access date.</span></li>
+              <li><span class="receipt-num">3</span><span><strong>You can see tm8 before then.</strong> Request a 30-minute walkthrough with your task as the example.</span></li>
+            </ol>
+          </div>
+          <div class="fact receipt-actions"><a class="btn primary" href="#demo-request" data-show="demo">Request a walkthrough</a><a class="btn" href="#account" data-signout>Sign out</a></div>
+        </article>
+      </div>
+      <div data-panel="seat-error" hidden>
+        <article class="receipt" aria-labelledby="seat-error-title">
+          <p class="receipt-state error">Seat not recorded</p>
+          <h3 id="seat-error-title">We could not record your seat</h3>
+          <p>Your account is verified as <strong data-email></strong>. Check your connection and try again. If it still fails, sign out, sign in, and retry.</p>
+          <div class="fact receipt-actions"><button class="btn primary" type="button" data-seat-retry>Try again</button><a class="btn" href="#account" data-signout>Sign out</a></div>
+        </article>
+      </div>
+      <div data-panel="demo" hidden>
+        <h3 id="demo-request">Request a walkthrough</h3>
+        <p>Filed under <strong data-email></strong>. Tell us the first task you would hand over.</p>
+        <form data-demo-form method="post" action="#account" novalidate aria-labelledby="demo-request">
+          <div class="frow">
+            <label><span>Your name</span><input name="name" type="text" autocomplete="name" enterkeyhint="next" required minlength="2" maxlength="100"></label>
+            <label><span>Company or team <em>optional</em></span><input name="company" type="text" autocomplete="organization" enterkeyhint="next" maxlength="120"></label>
+          </div>
+          <label><span>The task you would hand over first</span><textarea name="message" rows="4" required minlength="20" maxlength="4000" enterkeyhint="done" placeholder="For example: fix the flaky login test, then open the PR." aria-describedby="demo-message-help"></textarea><small class="fieldhelp" id="demo-message-help">At least 20 characters.</small></label>
+          <label class="hp" aria-hidden="true"><span>Website</span><input name="website" type="text" tabindex="-1" autocomplete="off"></label>
+          <label class="check"><input name="consent" type="checkbox" value="yes" required><span>You may email me about this request.</span></label>
+          <div class="fact"><button class="btn primary" type="submit">Send walkthrough request</button><p class="fstat" id="fstat" data-fstat aria-live="polite" aria-atomic="true"></p></div>
+        </form>
+        <p class="alt"><a href="#account" data-show="seat">Back to your seat</a> · <a href="#account" data-signout>Sign out</a></p>
+      </div>
+      <div data-panel="demo-done" hidden>
+        <article class="receipt" data-demo-confirmation tabindex="-1" aria-labelledby="demo-confirmation-title">
+          <p class="receipt-state">Request recorded</p>
+          <h3 id="demo-confirmation-title">Your walkthrough request is in</h3>
+          <div class="receipt-refbox">
+            <span class="receipt-ref-label">Reference</span>
+            <strong class="receipt-ref" data-demo-ref>TM8</strong>
+          </div>
+          <p class="receipt-address">Filed under <strong data-email></strong></p>
+          <div class="receipt-next">
+            <h4>What happens next</h4>
+            <ol class="receipt-steps">
+              <li><span class="receipt-num">1</span><span><strong>We read your task.</strong> A person reads every request, and requests are checked every working day.</span></li>
+              <li><span class="receipt-num">2</span><span><strong>We reply within 1 to 2 working days.</strong> We work in IST and Gulf hours and send two time slots.</span></li>
+              <li><span class="receipt-num">3</span><span><strong>We meet for 30 minutes on a real tm8 server.</strong> Your task is the example.</span></li>
+            </ol>
+          </div>
+          <p class="receipt-mail">A confirmation email is on its way to <strong data-email></strong>.</p>
+          <div class="fact receipt-actions"><a class="btn primary" href="#demo-request" data-demo-again>Request another</a><a class="btn" href="#account" data-signout>Sign out</a></div>
+        </article>
+      </div>
+      <noscript><p class="fstat">Creating an account needs JavaScript. Email <a href="mailto:manzilshaik95@gmail.com?subject=tm8%20seat">manzilshaik95@gmail.com</a> instead.</p></noscript>
+    </div>
+  </div>
+</section>
+
+<!-- ============ closing band ============ -->
+<section class="band" id="start">
+  <div class="wrap">
+    <h2>Hosted for you, or run on your own machine</h2>
+    <div class="start-actions">
+      <a class="giant" href="#signup">Create a hosted account <span class="arr">→</span></a>
+      <a class="giant secondary" href="#install">Install from GitHub <span class="arr">→</span></a>
+    </div>
+    <p class="after">The 100-seat launch allocation is free. Later seats use a paid plan when Stripe checkout opens. Read <a href="https://github.com/subhangR/tm8/blob/main/docs/GETTING-STARTED.md">Getting started</a> before you install.</p>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="grid">
+      <div>
+        <svg class="bigmark" viewBox="0 0 360 520" aria-hidden="true"><use href="#tm8-ribbon"/></svg>
+        <p class="q">tm8 spells teammate. A workspace where you and a set of AI agents are members of the same team, working on the same things.</p>
+      </div>
+      <div>
+        <h3>Product</h3>
+        <ul><li><a href="#pricing">Hosted plans</a></li><li><a href="#signup">Create an account</a></li><li><a href="#models">Launch models</a></li><li><a href="#faq">Questions and answers</a></li></ul>
+      </div>
+      <div>
+        <h3>Learn and install</h3>
+        <ul><li><a href="https://github.com/subhangR/tm8">Source on GitHub</a></li><li><a href="https://github.com/subhangR/tm8/blob/main/docs/ops/INSTALL.md">Install guide</a></li><li><a href="https://github.com/subhangR/tm8/blob/main/docs/GETTING-STARTED.md">Getting started</a></li><li><a href="https://github.com/subhangR/tm8/tree/main/docs">Design docs</a></li><li><a href="https://github.com/subhangR/tm8/tree/main/docs/api-and-cli">API and CLI</a></li><li><a href="/llms.txt">llms.txt</a></li></ul>
+        <p class="guide">The field guide is inside tm8 under Help.</p>
+      </div>
+    </div>
+    <div class="base"><span>© 2026 tm8</span><span>Source on GitHub · Product guide inside tm8</span></div>
+  </div>
+</footer>
+</body>
+</html>
