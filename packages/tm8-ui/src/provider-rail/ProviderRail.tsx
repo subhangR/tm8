@@ -2,6 +2,19 @@
  * The compact credential density: the settings card table supplies every
  * provider mark/name and the credentials port supplies every state/action.
  * This directory deliberately owns no provider-specific presentation facts.
+ *
+ * ⚠ CURRENTLY MOUNTED NOWHERE (2026-09-05). Home was this component's only
+ * host, and the credential sections were removed from Home when the guided
+ * setup dialog replaced them — `settings-credentials/mounted.test.tsx` now
+ * asserts Home does NOT render it.
+ *
+ * IT IS KEPT RATHER THAN DELETED, and this note exists so that is a decision
+ * on the record rather than an oversight. It landed in #586 days ago, it is
+ * the only compact density of the credential vocabulary, and it still shares
+ * the one port and the one presentation table — so it is a working component
+ * without a host, not dead weight to be rediscovered. Its author should decide
+ * whether a host is coming; if none is, delete the directory, its stylesheet
+ * and its test together rather than leaving this note to age.
  */
 import { useCallback, useEffect, useState } from 'react';
 import type {

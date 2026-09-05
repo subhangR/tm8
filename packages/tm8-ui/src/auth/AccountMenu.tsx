@@ -25,6 +25,20 @@ export interface AccountMenuProps {
   actor: ActorSummary;
   /** Open the full T3-3 screen. Omitted ⇒ the row is not offered. */
   onOpenAccountScreen?: () => void;
+  /**
+   * Re-open the guided credential setup flow. Omitted ⇒ the row is not
+   * offered, the same rule every other optional row here follows: a menu item
+   * that opens nothing is the enabled-inert defect this component avoids.
+   */
+  onOpenAgentTools?: () => void;
+  /**
+   * The one-line reason the tools still need attention, from `setupNudgeOf`.
+   * Absent ⇒ nothing to say, and the row carries no nudge. This component does
+   * NOT derive it: the gate that decides what "set up" means lives in
+   * `settings-credentials/setup-gate`, and a second opinion here would be free
+   * to disagree with the dialog the row opens.
+   */
+  agentToolsNudge?: string | null;
   /** Controlled by the workspace so changing Appearance updates the same
       state that stamps the root theme immediately. */
   theme?: Theme;
@@ -34,6 +48,8 @@ export interface AccountMenuProps {
 export function AccountMenu({
   actor,
   onOpenAccountScreen,
+  onOpenAgentTools,
+  agentToolsNudge,
   theme: controlledTheme,
   onThemeChange,
 }: AccountMenuProps) {
@@ -141,6 +157,36 @@ export function AccountMenu({
                 ))}
               </span>
             </div>
+
+            {onOpenAgentTools ? (
+              <button
+                type="button"
+                className="auth-menu__row auth-menu__row--live auth-menu__row--stacked"
+                onClick={() => {
+                  close();
+                  onOpenAgentTools();
+                }}
+                data-testid="account-menu-agent-tools"
+              >
+                <span className="auth-menu__signout">
+                  <span className="auth-menu__glyph" aria-hidden>
+                    ✳
+                  </span>
+                  Agent tools
+                </span>
+                {/* The nudge is the gate's sentence, not this menu's. When
+                    there is nothing to fix it is absent entirely rather than
+                    replaced with a reassuring line nobody asked for. */}
+                {agentToolsNudge ? (
+                  <span
+                    className="auth-menu__signout-note auth-menu__note--warn"
+                    data-testid="account-menu-agent-tools-nudge"
+                  >
+                    {agentToolsNudge}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
 
             {onOpenAccountScreen ? (
               <button

@@ -25,6 +25,24 @@ export interface CredentialsSectionProps {
   heading?: string;
   /** Same-origin route prefix for the node that owns the login session. */
   serverBaseUrl?: string;
+  /**
+   * Called whenever this section has re-read the credential status — i.e.
+   * after every connect, disconnect and harvest, since each is followed by a
+   * reload.
+   *
+   * IT EXISTS BECAUSE THIS SECTION IS NOT THE ONLY THING SHOWING THAT STATE.
+   * The account menu carries a setup nudge derived from the same status, and
+   * it was previously refreshed only by the setup dialog — so connecting
+   * GitHub HERE left the menu still saying GitHub was not connected until a
+   * reload. One derivation with two readers needs the second reader told.
+   *
+   * IT HANDS OVER THE VALUE IT JUST READ, and that is not a convenience.
+   * `credentials.status` is human-only and SHELLS OUT on the node — `claude
+   * auth status`, `gh auth status`, one per provider. A callback that only
+   * said "something changed" would make every read here cost two of those.
+   * The reader derives from this value and issues no second call.
+   */
+  onStatusRead?: (status: CredentialsStatusView) => void;
 }
 
 interface ObservedStatus {
@@ -98,6 +116,7 @@ export function CredentialsSection({
   port,
   heading = 'Agent credentials',
   serverBaseUrl,
+  onStatusRead,
 }: CredentialsSectionProps) {
   const [observed, setObserved] = useState<ObservedStatus | null>(null);
 
@@ -108,12 +127,15 @@ export function CredentialsSection({
     async load() {
       const value = await port.load();
       setObserved({ source: port, value });
+      // Every write in the block below reloads, so this one hook covers
+      // connect, disconnect and harvest without three separate wrappers.
+      onStatusRead?.(value);
       return value;
     },
     disconnect: (provider) => port.disconnect(provider),
     startLogin: (provider) => port.startLogin(provider),
     finishLogin: (workSessionId) => port.finishLogin(workSessionId),
-  }), [port]);
+  }), [port, onStatusRead]);
 
   const status = observed?.source === port ? observed.value : null;
 

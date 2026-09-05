@@ -1260,6 +1260,10 @@
   color: var(--pn-ink-4);
   padding-left: 24px;
 }
+/* The setup nudge reads as something to DO, not as the quiet aside the
+   sign-out note is. Colour is not doing the work alone: the row only exists
+   with a sentence in it, and the sentence names what is missing. */
+.cv2-root .auth-menu__note--warn { color: var(--pn-wait); }
 /* L419: the "phase 2" pill — the ONE refusal the oracle itself draws */
 .cv2-root .auth-menu__pill {
   font-family: var(--pn-mono);
