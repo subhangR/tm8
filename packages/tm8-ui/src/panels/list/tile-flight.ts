@@ -67,6 +67,12 @@ const DURATION_MIN_MS = 560;
 /**
  * The ceiling is below `useMessagePulses`' 2200ms TTL on purpose: an arrival
  * that stops existing mid-flight would delete the glyph in open air.
+ *
+ * THIS CLAMP IS ONLY HALF THE GUARANTEE, and saying so is the point — it holds
+ * only for a flight that STARTS at arrival. A flight born late (the viewer
+ * opens a subtree a pulse was already sitting in) can still be cut, so the
+ * other half lives in `TileFlightLayer`, which refuses to launch one at all.
+ * Neither half is sufficient alone. (PR #591 review, GPT 5.6 Sol.)
  */
 const DURATION_MAX_MS = 1_450;
 

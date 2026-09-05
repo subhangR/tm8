@@ -20,6 +20,19 @@
  * all and the endpoint glow already on the standing-in row is the whole
  * report. Inventing a takeoff point off the edge of the list would animate a
  * sender the viewer cannot see, which says less than the glow does.
+ *
+ * AND IT LAUNCHES ONLY AT ARRIVAL, NEVER ON A LATER GESTURE. An arrival into a
+ * closed subtree has no two ends, so it does not fly; if the viewer then OPENS
+ * that subtree while the pulse is still retained, both ends resolve and a
+ * flight would be born — for an event up to two seconds old, triggered by a
+ * gesture that has nothing to do with it. Worse, it would be born LATE: the
+ * duration clamp in `tile-flight.ts` guarantees a flight outlives its pulse
+ * only when it STARTS at arrival, so a late launch can have its glyph deleted
+ * in open air between two tiles. This layer therefore remembers which pulses
+ * it has already watched go by, and refuses to start one that was live on an
+ * earlier render without being flyable then. The endpoint glow still reports
+ * the arrival, which is what it was doing while the subtree was shut.
+ * (Found in review by GPT 5.6 Sol on PR #591.)
  */
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 
@@ -56,6 +69,7 @@ const FLIGHT_ART: Record<SessionPulseKind, readonly string[]> = {
 };
 
 const EMPTY_PATHS: ReadonlyMap<string, FlightPath> = new Map();
+const EMPTY_KEYS: ReadonlySet<string> = new Set();
 
 /**
  * The tile a row flies from or to.
@@ -106,9 +120,26 @@ function anchorPoint(host: HTMLElement, hostRect: DOMRect, rowId: string): Fligh
   };
 }
 
-export function TileFlightLayer({ flights }: { flights: readonly ResolvedFlight[] }) {
+export function TileFlightLayer({
+  flights,
+  /**
+   * EVERY live pulse key, flyable or not — which is the whole point. A pulse
+   * that arrives into a closed subtree never reaches `flights`, so `flights`
+   * alone cannot tell "this just arrived" from "this has been sitting there
+   * unflyable and the viewer just opened its subtree". This is what makes the
+   * difference observable.
+   */
+  activeKeys,
+}: {
+  flights: readonly ResolvedFlight[];
+  activeKeys: ReadonlySet<string>;
+}) {
   const layerRef = useRef<HTMLDivElement | null>(null);
   const [paths, setPaths] = useState<ReadonlyMap<string, FlightPath>>(EMPTY_PATHS);
+  /** Pulse keys that were live on the previous render, flyable or not. */
+  const watched = useRef<ReadonlySet<string>>(EMPTY_KEYS);
+  /** Pulse keys that were actually in the air on the previous render. */
+  const airborne = useRef<ReadonlySet<string>>(EMPTY_KEYS);
 
   /**
    * LAYOUT effect, not a plain one: the measurement has to happen in the same
@@ -118,20 +149,37 @@ export function TileFlightLayer({ flights }: { flights: readonly ResolvedFlight[
   useLayoutEffect(() => {
     const layer = layerRef.current;
     const host = layer?.parentElement ?? null;
+    // The bookkeeping runs even with nothing to draw: a pulse sitting in a
+    // closed subtree is exactly the case that must be REMEMBERED, and it
+    // reaches here with an empty `flights`.
+    const seenBefore = watched.current;
+    const flyingBefore = airborne.current;
+    watched.current = new Set(activeKeys);
+
     if (layer === null || host === null || flights.length === 0) {
+      airborne.current = EMPTY_KEYS;
       setPaths((held) => (held.size === 0 ? held : EMPTY_PATHS));
       return;
     }
     const hostRect = host.getBoundingClientRect();
     const next = new Map<string, FlightPath>();
+    const nowFlying = new Set<string>();
     for (const flight of flights) {
+      // A LATE LAUNCH, REFUSED. The pulse was live on an earlier render and was
+      // not in the air then, so it only became flyable because the tree
+      // changed shape under it — an expand, not an arrival. Already airborne is
+      // the opposite case and must pass: a collapse that merely re-aims a live
+      // flight has to keep re-measuring it, not kill it.
+      if (seenBefore.has(flight.key) && !flyingBefore.has(flight.key)) continue;
       const from = anchorPoint(host, hostRect, flight.fromRowId);
       const to = anchorPoint(host, hostRect, flight.toRowId);
       if (from === null || to === null) continue;
       next.set(flight.key, flightPath(from, to));
+      nowFlying.add(flight.key);
     }
+    airborne.current = nowFlying.size === 0 ? EMPTY_KEYS : nowFlying;
     setPaths(next.size === 0 ? EMPTY_PATHS : next);
-  }, [flights]);
+  }, [flights, activeKeys]);
 
   return (
     <div

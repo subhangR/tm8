@@ -139,7 +139,7 @@ describe('a message flying across the session tiles', () => {
     const { container } = renderTree([message('m1', leaf.id, 'not-here')]);
     // The sender still glows — the arrival happened, and half of it is on screen.
     expect(container.querySelector('[data-pulse-row="from"]')).toBeTruthy();
-    expect(container.querySelector('.lp__flights')).toBeNull();
+    expect(flightsIn(container)).toHaveLength(0);
   });
 
   /**
@@ -158,7 +158,74 @@ describe('a message flying across the session tiles', () => {
     // leaf -> mid, with leaf collapsed away: both ends resolve to `mid`.
     rerender(panel([message('m1', leaf.id, mid.id)]));
     expect(container.querySelector('[data-pulse-row]')).toBeTruthy();
-    expect(container.querySelector('.lp__flights')).toBeNull();
+    expect(flightsIn(container)).toHaveLength(0);
+  });
+
+  /**
+   * THE LATE LAUNCH, REFUSED (found in review by GPT 5.6 Sol, PR #591).
+   *
+   * An arrival into a closed subtree has no two visible ends, so it does not
+   * fly. If the viewer then OPENS that subtree while the 2200ms pulse is still
+   * retained, both ends resolve and a flight would be born — for an event up
+   * to two seconds old, triggered by a gesture that has nothing to do with it.
+   * It would also be born LATE, and `tile-flight.ts`'s duration clamp only
+   * guarantees a flight outlives its pulse when it starts AT arrival, so the
+   * glyph could be deleted in open air between two tiles.
+   */
+  it('does not replay an old arrival when its subtree is expanded later', () => {
+    const { container, rerender } = renderTree([]);
+    const rowOf = (id: string) => container.querySelector(`[data-session-node="${id}"]`);
+
+    const midArrow = rowOf(mid.id)?.closest('.lp__branch')?.querySelector('.pn-st__arrow');
+    fireEvent.click(midArrow as Element);
+    expect(rowOf(leaf.id), 'leaf is hidden behind mid').toBeNull();
+
+    // Arrives while shut: both ends absorb onto `mid`, so nothing flies.
+    rerender(panel([message('m1', leaf.id, mid.id)]));
+    expect(flightsIn(container)).toHaveLength(0);
+
+    // The viewer opens the subtree while that same pulse is still retained.
+    fireEvent.click(
+      rowOf(mid.id)?.closest('.lp__branch')?.querySelector('.pn-st__arrow') as Element,
+    );
+    expect(rowOf(leaf.id), 'leaf is visible again').toBeTruthy();
+
+    // Both ends now resolve to distinct rows — and it still must not fly.
+    expect(flightsIn(container)).toHaveLength(0);
+    // The arrival is still reported, by the treatment that was carrying it all
+    // along. Refusing the flight must not cost the report.
+    expect(container.querySelector('[data-pulse-row]')).toBeTruthy();
+  });
+
+  /**
+   * The other half of the rule, and the one an over-broad refusal breaks: a
+   * flight ALREADY IN THE AIR when the tree changes shape must keep flying and
+   * be re-measured, not killed. A refusal written as "have I seen this key
+   * before" alone would delete every live flight the moment anything collapsed.
+   */
+  it('keeps a live flight airborne when a collapse merely re-aims it', () => {
+    const { container, rerender } = renderTree([message('m1', leaf.id, aunt.id)]);
+    expect(flightsIn(container)[0]?.getAttribute('data-flight-from')).toBe(leaf.id);
+
+    const rowOf = (id: string) => container.querySelector(`[data-session-node="${id}"]`);
+    // Collapse `mid`, hiding the SENDER mid-flight. Both ends are still
+    // distinct rows, so the flight survives with a new takeoff point.
+    fireEvent.click(
+      rowOf(mid.id)?.closest('.lp__branch')?.querySelector('.pn-st__arrow') as Element,
+    );
+    rerender(panel([message('m1', leaf.id, aunt.id)]));
+
+    const still = flightsIn(container);
+    expect(still).toHaveLength(1);
+    expect(still[0].getAttribute('data-flight-from')).toBe(mid.id);
+  });
+
+  /** The refusal must be narrow: an arrival into an OPEN tree still flies. */
+  it('still flies an arrival that lands while both ends are already visible', () => {
+    const { container, rerender } = renderTree([]);
+    expect(flightsIn(container)).toHaveLength(0);
+    rerender(panel([message('m1', leaf.id, aunt.id)]));
+    expect(flightsIn(container)).toHaveLength(1);
   });
 
   /** A collapsed endpoint re-aims at its stand-in rather than dropping. */

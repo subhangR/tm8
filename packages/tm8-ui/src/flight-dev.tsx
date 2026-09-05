@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/tokens.css';
 import './styles/app.css';
@@ -99,7 +99,37 @@ if (Number.isFinite(freeze) && params.has('freeze')) {
 
 let sequence = 0;
 
+/**
+ * OPEN THE TREE ON ARRIVAL AT THE HARNESS.
+ *
+ * The panel ships collapsed, so a fresh profile lands on ONE root row — and a
+ * message between two rows inside it correctly produces NO glyph, because both
+ * ends absorb onto that root (the same-row guard). A reviewer opening this page
+ * cold therefore sees nothing and reasonably concludes the feature is broken;
+ * that happened, on this PR. The harness must not hand anyone that false zero.
+ */
+function useOpenTree() {
+  useEffect(() => {
+    let passes = 0;
+    const open = () => {
+      const shut = document.querySelectorAll<HTMLButtonElement>(
+        '.pn-st__arrow:not(.pn-st__arrow--empty):not(.pn-st__arrow--expanded)',
+      );
+      shut.forEach((button) => button.click());
+      // Each pass reveals one more level, so this walks the depth rather than
+      // guessing it. It stops when a pass opens nothing.
+      if (shut.length > 0 && passes < 12) {
+        passes += 1;
+        window.setTimeout(open, 60);
+      }
+    };
+    const timer = window.setTimeout(open, 120);
+    return () => window.clearTimeout(timer);
+  }, []);
+}
+
 function FlightDev() {
+  useOpenTree();
   const [pulses, setPulses] = useState<readonly MessagePulse[]>([]);
   const [from, setFrom] = useState(chain[chain.length - 1].id);
   const [to, setTo] = useState(chain[0].id);
