@@ -1111,8 +1111,29 @@ export const fixtureSummaries: EntitySummary[] = [
 // details — one representative EntityDetail per core kind (+ custom)
 // ---------------------------------------------------------------------------
 
-function edge(id: string, type: string, source: EntitySummary, target: EntitySummary, createdBy: ActorSummary, extra: { resolved?: boolean; hard?: boolean } = {}) {
-  return { id, type, source, target, props: {}, createdBy, createdAt: T.older, updatedAt: T.morning, ...extra };
+/**
+ * EDGES DO NOT ALL HAPPEN AT ONCE, and the fixture used to say they did:
+ * every edge carried `createdAt: T.older, updatedAt: T.morning`, identically.
+ *
+ * That was invisible while the Connections tab discarded both fields. Now that
+ * the tab orders by time and stamps each row, one shared instant would make
+ * every fixture row read as the same moment — and, worse, would make every
+ * relation report "linked, then updated", because `createdAt !== updatedAt`
+ * uniformly. A fixture that cannot tell two moments apart cannot demonstrate a
+ * surface whose subject is when things happened.
+ *
+ * So each edge gets its OWN instant, derived from its id: a stable, spread
+ * sequence walking back from `T.recent`. Deterministic (no clock, no random),
+ * distinct per edge, and `updatedAt === createdAt` unless a caller says
+ * otherwise — an edge that was never re-written must not claim it was.
+ */
+let edgeSeq = 0;
+function edge(id: string, type: string, source: EntitySummary, target: EntitySummary, createdBy: ActorSummary, extra: { resolved?: boolean; hard?: boolean; createdAt?: string; updatedAt?: string } = {}) {
+  // 11 minutes apart, newest first — far enough to read as distinct times,
+  // close enough that the whole set stays inside one plausible afternoon.
+  const at = new Date(Date.parse(T.recent) - edgeSeq * 11 * 60_000).toISOString();
+  edgeSeq += 1;
+  return { id, type, source, target, props: {}, createdBy, createdAt: at, updatedAt: at, ...extra };
 }
 
 function detail(base: EntitySummary, rest: Pick<EntityDetail, 'content'> & Partial<Pick<EntityDetail, 'hierarchy' | 'connections' | 'capabilities'>>): EntityDetail {

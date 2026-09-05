@@ -973,6 +973,43 @@
   color: var(--pn-block);
   border-color: var(--pn-block);
 }
+/* WHEN the link was made, pushed to the row's trailing edge so the stamps form
+   a column and the list can be read down as the descending sequence it is
+   sorted into. `margin-left:auto` inside a wrapping row keeps it last on the
+   line it lands on rather than forcing the relations to wrap around it. */
+.cv2-root .pn-peers__when {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+/* The day a run of links belongs to, said ONCE over that run — the same
+   divider grammar the channel feed uses, at this surface's smaller scale. It is
+   a list item so the `<ul>` stays valid, and it is not a row: no marker, no
+   hairline, just the label in the quietest ink the ramp has. */
+.cv2-root .pn-peers__day {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 1px;
+}
+.cv2-root .pn-peers__day:first-child { padding-top: 0; }
+.cv2-root .pn-peers__day-label {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+/* The rule that carries the eye across to the stamps under it. */
+.cv2-root .pn-peers__day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--pn-x-hairline-soft);
+}
 
 .cv2-root .pn-foot {
   flex: none;
