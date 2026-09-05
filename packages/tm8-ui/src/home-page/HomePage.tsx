@@ -1,23 +1,24 @@
 /**
  * HomePage — the merged single home (user ruling, task 01a0027d, 2026-08-14).
  *
- * ONE canvas, four altitudes:
+ * ONE canvas, three altitudes:
  *
  *   1. NEEDS YOU, only when it has rows — triage outranks everything, and an
  *      inbox-zero space stays quiet.
- *   2. AGENT SIGN-INS — the same detailed credential block Settings hosts,
- *      here as a first-class management section rather than a link away.
- *   3. A compact provider strip immediately above the merged chat/list
- *      surface, so it remains directly above that surface's Sessions content.
- *   4. The CHAT remains the full-bleed hero, with main's root list, resizer,
+ *   2. AGENT SIGN-INS as ONE LINE, right-aligned above the conversation. This
+ *      was previously two stacked sections — the full card grid and a compact
+ *      chip strip beneath it — drawn from this same port and measured at
+ *      >=425 CSS px before the chat began. The detail now opens on demand.
+ *   3. The CHAT remains the full-bleed hero, with main's root list, resizer,
  *      focus mode and beside-it detail column left intact.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
  *   - `useHomeData` / `composeMyWork` (src/home) — the NEEDS YOU composition
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
- *   - `CredentialsProviderBlock` and `ProviderRail` — one credential port and
- *     one provider/verdict vocabulary at two deliberate densities.
+ *   - `CredentialsCorner`, which opens `CredentialsProviderBlock` — the same
+ *     component Settings mounts, through the same port adapter. Home still
+ *     forks no credential markup and grows no second vocabulary.
  */
 import { useMemo, type ReactNode } from 'react';
 import type { Seam } from '../data/seam';
@@ -29,11 +30,8 @@ import {
   type HomeScreenData,
   type HomeSection,
 } from '../home';
-import {
-  CredentialsProviderBlock,
-  credentialsPortFromSeam,
-} from '../settings-credentials';
-import { ProviderRail } from '../provider-rail';
+import { credentialsPortFromSeam } from '../settings-credentials';
+import { CredentialsCorner } from '../credentials-corner';
 import './home-page.css';
 
 /** Home's existing narrow read port plus the human-only credential operations. */
@@ -170,23 +168,13 @@ export function HomePage(props: HomePageProps) {
           <p className="hp-note" role="status">{needsYou.emptyNote}</p>
         ) : null}
 
-        <section className="hp-credentials" aria-label="Agent sign-ins" data-testid="home-credentials">
-          <div className="hp-rail__head">
-            <span className="hp-rail__label kit-eyebrow">Agent sign-ins</span>
-          </div>
-          <CredentialsProviderBlock port={credentialsPort} />
-        </section>
-
-        <section
-          className="hp-provider-signins hp-rail"
-          aria-label="Quick provider sign-ins"
-          data-testid="home-provider-rail"
-        >
-          <div className="hp-rail__head">
-            <span className="hp-rail__label kit-eyebrow">Sign in to agents</span>
-          </div>
-          <ProviderRail port={credentialsPort} />
-        </section>
+        {/* One line, right-aligned, above the conversation. It replaces BOTH
+            of the stacked credential sections that used to sit here — see the
+            header note in CredentialsCorner.tsx for why it states a sentence
+            rather than shrinking the marks. */}
+        <div className="hp-signins" data-testid="home-credentials">
+          <CredentialsCorner port={credentialsPort} />
+        </div>
 
         <section className="hp-chat hp-chat--full" aria-label="Chat">
           {props.chat}
