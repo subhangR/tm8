@@ -2057,6 +2057,55 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  /*
+   * -- container (migration 177) -- 177 REPAIR ONLY, for chat's reason above.
+   *
+   * R-D rules this tree experimental and tm8-ui canonical, so the machine
+   * archetype, the container seam and the lifecycle verbs all live there. What
+   * this row buys is the build: `registry.test.ts` asserts totality over
+   * `CoreEntityKindSchema` and CI runs THIS tree's vitest, so `container`
+   * without a row is a red on main — which is exactly what it has been since
+   * the contract gained the kind.
+   *
+   * ARCHETYPE `generic`, AND THE GUARANTEE THAT TRADES AWAY: tm8-ui declares
+   * `machine` with `composition: 'frame'`, so a container opened here renders a
+   * fields block rather than its screen. That is the honest shape for an
+   * alternate tree with no MachineBody — a wrong body would claim a surface
+   * this tree does not have.
+   *
+   * `quickCreate: false`: a container is born from `containers.create`, its own
+   * door, and the birth sheet that configures it lives in tm8-ui.
+   */
+  {
+    kind: 'container',
+    label: 'Container',
+    labelPlural: 'Containers',
+    // `◫` and not Design §13.1's `▣`, which is already `file`'s — see the note
+    // on tm8-ui's row. A duplicate glyph is indistinguishable in every
+    // string-only surface.
+    icon: '◫',
+    iconArt: KIND_ART.container,
+    slug: 'containers',
+    strategy: 'collection',
+    defaultMode: 'list',
+    // Board and gallery for work_session's reason: a container's status is
+    // OBSERVED (`public.set_container_status` is its single writer), so a
+    // drag-to-move column would be a control that cannot commit, and there is
+    // no image to draw.
+    hiddenModes: ['board', 'gallery'],
+    chip: { glyph: '◫', tintBy: 'none' },
+    card: { fields: ['activityAt', 'createdBy'] },
+    // NO BADGES. `containerStatus` is a `TileBadgeSource` in tm8-ui and not
+    // here, and adding the source without the renderer beside it is the exact
+    // shape `CONSUMER COVERAGE: every TileBadgeSource the registry emits has a
+    // renderer` refuses. An empty badge row is honest; a dead source is not.
+    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'CONTAINER' }],
+    },
+  },
+
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',

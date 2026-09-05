@@ -1,5 +1,7 @@
 import type {
   ActorSummary,
+  ContainerShareMode,
+  ContainerStatus,
   EntityCapabilities,
   EntityCounters,
   EntityDetail,
@@ -133,6 +135,59 @@ const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   idle: 'in_progress',
   exited: 'done',
   failed: 'done',
+  /*
+   * container (migration 177, Design §11.1) — MIRRORING THE SESSION MAPPING
+   * ABOVE, transition for transition, because the two lifecycles have the same
+   * shape: asked-for, alive, over.
+   *
+   *   requested / provisioning  → to_do        (the session's `spawning`)
+   *   running / paused / stopping / destroying → in_progress
+   *   stopped / destroyed       → done         (the session's `exited`)
+   *   failed                    → done         (already mapped, shared word)
+   *
+   * `stopped` lands under DONE for `exited`'s reason and not because the row
+   * is finished forever: both can come back (`containers.start`,
+   * `execution.resume`), and both have no live runtime until they do.
+   *
+   * `destroying` is IN PROGRESS rather than done — it is a transition with a
+   * provider call still running, and filing it under Done would show a machine
+   * as gone while it is still being torn down.
+   *
+   * THIS IS THE SHIPPED SERVER MAPPING, verbatim — no longer the UI's reading.
+   *
+   * It began as a guess and is worth recording as one, because the checking is
+   * what made it true. Asked of lane A, it walked a container through all nine
+   * statuses on a live chain and found `status_category` STUCK at `to_do`
+   * through `destroyed` — and `status_id` pinned at the generic "To Do" state
+   * with it. Both halves stuck, which is the `work_session` empty-tab defect
+   * (477 sessions, To Do 0 / In Progress 6 / Done 471) arriving a second time.
+   *
+   * The mapping below was then ruled and implemented, including both of the
+   * judgement calls: `stopped` → `done` for `exited`'s reason (both can come
+   * back, neither has a live runtime until they do), and `destroying` →
+   * `in_progress` because a provider call is still in flight.
+   *
+   * ONE THING CHANGED ON THE WAY IN, and it is why containers carry no
+   * workflow state: `category_transition_allowed('done','in_progress')` is
+   * FALSE, so with `stopped = done` the legal `stopped → running` transition
+   * would raise inside `set_container_status` and abort the door. Lane A
+   * brute-forced all 4^9 mappings — every consistent one required
+   * `stopped = in_progress`. The resolution keeps this mapping and writes
+   * `entities.status_category` DIRECTLY, clearing `status_id`:
+   * `validate_status_transition` is `before update of status_id`, so writing
+   * the category alone never fires it.
+   *
+   * So a container's `status_id` is NULL BY DESIGN. Its lifecycle is
+   * node-owned (single writer `set_container_status`) and the category is a
+   * projection for the tabs, not an authority.
+   */
+  requested: 'to_do',
+  provisioning: 'to_do',
+  paused: 'in_progress',
+  stopping: 'in_progress',
+  stopped: 'done',
+  destroying: 'in_progress',
+  destroyed: 'done',
 };
 
 /**
@@ -1090,6 +1145,137 @@ export const chatStoppedWithWork = summary({
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// container — ONE PER STATUS (migration 177, Design §11.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE SIX CAPABILITY BOOLEANS, DERIVED FROM STATUS — lane B's `capabilitiesOf`
+ * (freeze part 2/4), restated here so the fixture cannot disagree with the
+ * server about which button a status permits.
+ *
+ * A HAND-WRITTEN TABLE OF NINE ROWS WOULD BE THE WRONG SHAPE. The panel test
+ * asserts "each status shows the right primaries", and if both the fixture and
+ * the test read the same nine hand-written rows the test proves only that two
+ * copies of one table agree. Derived from the status here, asserted against
+ * the RULE in the test, the two disagree the moment either drifts.
+ */
+export function containerCapsFor(
+  status: ContainerStatus,
+  opts: { nonTerminalSurface?: boolean; live?: boolean; shareMode?: ContainerShareMode } = {},
+): EntityCapabilities {
+  /*
+   * TRANSCRIBED FROM THE IMPLEMENTATION, not from the freeze message that
+   * announced it: `capabilitiesOf`'s container arm in
+   * `packages/server/src/facade/entity-read.ts` (lane B, head `d0ef9969`).
+   *
+   * IT WAS COPIED FROM THE MESSAGE FIRST, AND FOUR MEMBERS DIVERGED — one of
+   * them permissively, which is the direction that matters:
+   *
+   *   canDelete   server hard `false`; this inherited `true` from CAPS_FULL.
+   *               `archive` gates exactly on it, so EVERY container fixture
+   *               asserted a container is archivable and no test in this
+   *               package could catch a UI that wrongly offered Archive. The
+   *               fixture was on the wrong side of the bug.
+   *   canControl  had `&& mayDrive === true`, an ACTOR term the server's
+   *               signature cannot express — `capabilitiesOf(row)` takes no
+   *               viewer. See the note at `mayDrive` below: the published
+   *               server omits the term entirely and lane B has an unpushed
+   *               fix narrowing it to `share_mode === 'space'`.
+   *   canDestroy  server ANDs `live`; this omitted it.
+   *   canEdit     server is `live`; this inherited unconditional `true`.
+   *
+   * `live` is `row.deleted_at === null` (entity-read.ts:1954), and `attachable`
+   * is `surfaces.some(k => k !== 'terminal')` — the exec PTY is reached through
+   * `containers.terminal.start`, not a surface grant, so it does not make a
+   * container attachable.
+   *
+   * A FIXTURE THAT RESTATES A SERVER RULE IS A COPY and needs the same audit as
+   * any other copy. Nothing in this package could have caught the drift: the
+   * type system cannot check a fixture against a server it does not import,
+   * so only a cross-tree diff finds it.
+   */
+  const live = opts.live !== false;
+  const attachable = opts.nonTerminalSurface === true;
+  const running = status === 'running';
+  const canAttach = running && attachable;
+  /*
+   * `canControl` — AND THE PUBLISHED AUTHORITY AND THE INTENDED ONE DISAGREE,
+   * so this encodes the stricter of the two deliberately.
+   *
+   *   published (`origin/tm8/01a0652a` @ d0ef9969):  running && attachable
+   *   lane B's stated fix, NOT YET PUSHED:           … && share_mode === 'space'
+   *
+   * I verified the published half by reading the file; the second half is
+   * lane B's word, and I could not check it because the commit is local to
+   * its tree. Recorded as unverified rather than folded in silently.
+   *
+   * ENCODING THE STRICTER ONE IS SAFE UNDER BOTH. Every container fixture here
+   * carries `shareMode: 'space'`, where the two predicates agree exactly — so
+   * this changes no fixture today. If the fix does not land and someone adds a
+   * non-`space` fixture, this is stricter than the server, which is a FALSE
+   * NEGATIVE: a hidden control someone could have used, rather than a button
+   * that 403s at `grant_surface_attach`. That is the direction this program
+   * has chosen everywhere else, so it is the one to be wrong in.
+   *
+   * `'space'` is the only value the ROW can settle: `capabilitiesOf(row)` takes
+   * no viewer identity, so `'none'` (creator) and `'explicit'` (a named list)
+   * are unanswerable from the row alone.
+   */
+  const mayDrive = (opts.shareMode ?? 'space') === 'space';
+  return {
+    ...CAPS_FULL,
+    canEdit: live,
+    canDelete: false,
+    canStart: status === 'stopped',
+    canStop: running || status === 'paused',
+    canDestroy: live && status !== 'destroying' && status !== 'destroyed',
+    canAttach,
+    canControl: canAttach && mayDrive,
+    canExec: running,
+  };
+}
+
+const CONTAINER_STATUSES: readonly ContainerStatus[] = [
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+];
+
+function containerSummary(status: ContainerStatus): EntitySummary {
+  return summary({
+    id: `ent-ctr-${status}`,
+    kind: 'container',
+    title: `build box (${status})`,
+    excerpt: 'A shell container on the launch node.',
+    createdBy: ada,
+    state: {
+      kind: 'container',
+      status,
+      profile: 'shell',
+      provider: 'fake',
+      isolation: 'container',
+      // NOT nullable: the create door refuses a null `p_node_id` (22023), so a
+      // container always has a home node.
+      nodeId: 'node-launch',
+      // P0's fake provider offers the exec PTY and nothing else. A fixture
+      // listing a `screen` here would make `canAttach` reachable on a surface
+      // no lane has built.
+      surfaces: ['terminal'],
+      ephemeral: status !== 'stopped',
+      shareMode: 'space',
+      startedAt: status === 'running' || status === 'paused' ? T.morning : null,
+      expiresAt: null,
+    },
+  });
+}
+
+/** One per status, in §11.1 order. The panel sweep renders every one. */
+export const containerFixtures: readonly EntitySummary[] =
+  CONTAINER_STATUSES.map(containerSummary);
+
+/** `running` — the one most surfaces want a representative of. */
+export const containerRunning = containerFixtures[2]!;
+
 export const fixtureSummaries: EntitySummary[] = [
   channelDesign, voiceStandup, voiceLounge,
   taskQueued, taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
@@ -1105,6 +1291,7 @@ export const fixtureSummaries: EntitySummary[] = [
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual, artifactPulseBoard,
+  ...containerFixtures,
 ];
 
 // ---------------------------------------------------------------------------
@@ -1605,4 +1792,62 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       totalSizeBytes: 4096,
     },
   }),
+
+  /*
+   * ONE CONTAINER DETAIL PER STATUS — nine of them, spread in below.
+   *
+   * Nine rather than one because the panel's whole job on this kind is to say
+   * WHAT STATE THE MACHINE IS IN and which verbs that state permits, so a
+   * single `running` fixture would leave eight of the nine renderings
+   * unexercised — including `destroyed`, where the row is soft-deleted, and
+   * `failed`, where an error string has to reach the reader.
+   *
+   * `capabilities` is DERIVED per row by `containerCapsFor`, never written out,
+   * so the fixture states lane B's rule rather than a transcription of it.
+   */
+  ...Object.fromEntries(
+    containerFixtures.map((row) => {
+      const status = (row.state as { status: ContainerStatus }).status;
+      return [row.id, detail(row, {
+        capabilities: containerCapsFor(status),
+        content: {
+          kind: 'container',
+          image: 'ghcr.io/tm8/shell:1',
+          spec: {
+            profile: 'shell',
+            image: 'ghcr.io/tm8/shell:1',
+            cpus: 2,
+            memMiB: 4096,
+            diskMiB: 20480,
+            /* READ FLAVOUR — `{ guest, ro }` and no host path (AMENDMENT 1,
+               ruling R5). A mount cannot be round-tripped: the create sheet
+               may SEND a host path, nothing ever reads one back. */
+            mounts: [{ guest: '/workspace', ro: false }],
+            env: { TM8_SPACE: 'fixture' },
+            ports: [],
+            network: { preset: 'balanced', allow: ['github.com'] },
+            surfaces: { terminal: { enabled: true } },
+            labels: { 'tm8.container': row.id, 'tm8.space': FIXTURE_SPACE_ID },
+          },
+          lifecycle: {
+            ephemeral: status !== 'stopped',
+            ttlSeconds: null,
+            idleHibernateSeconds: null,
+            graceSeconds: 600,
+            snapshotOnStop: false,
+          },
+          /* `screen` IS DELIBERATELY ABSENT on every row. `surfaceDetail` is a
+             `Partial<Record<…>>`, so a body reading `surfaceDetail.screen`
+             without a guard breaks here in jsdom rather than on a real
+             container that has no screen. */
+          surfaceDetail: { terminal: { live: status === 'running' } },
+          error: status === 'failed'
+            ? 'provider "fake" refused: no image satisfies profile shell at isolation microvm'
+            : null,
+          usage: status === 'running' ? { cpuPct: 12, memMiB: 812, diskMiB: 2048 } : null,
+          exposed: [],
+        },
+      })] as const;
+    }),
+  ),
 };

@@ -43,6 +43,9 @@ import type {
 } from './types';
 import { CUSTOM_KIND_FALLBACK, VIEWER_ACTOR } from './types';
 import { KIND_ART } from './kind-art';
+/* The container refusals live with the verbs that raise them, so the sentence
+   a button refuses with and the sentence this row declares are one string. */
+import { CONTAINER_CAPABILITY_REASONS } from './actions';
 import type { SessionLiveness } from '../data/seam';
 
 /** WLT §2.1 reserved words — never a kind slug. */
@@ -1845,6 +1848,174 @@ const ROWS: readonly KindConfig[] = [
       conversation: 'chat-thread',
       composition: 'chat',
     },
+  },
+
+  // -- container (a machine as an entity; migration 177, Design §13.1) --------
+  //
+  // THE ONLY PLACE THE KIND IS SPELLED. Everything a container looks like —
+  // the chip tint, the tile badges, the panel body, the verbs on the bar — is
+  // read from this row. `EntityDetailPanel` has NO kind switch: the body comes
+  // from `panel.archetype`, and a kind literal outside `domain/` fails the
+  // §15.2 build guard. So a change of appearance is an edit HERE, never a
+  // branch in a component.
+  {
+    kind: 'container',
+    label: 'Container',
+    labelPlural: 'Containers',
+    /*
+     * `◫`, NOT the `▣` Design §13.1 names. That glyph is already `file`'s
+     * (registry.ts:1376), and while the artwork test only guards the DRAWN
+     * mark, shipping a duplicate text glyph would re-open the exact defect the
+     * icon set was rebuilt to close — two kinds indistinguishable in every
+     * string-only surface. `◫` is a divided box, which is what KIND_ART.container
+     * draws, so the fallback and the artwork say the same thing.
+     */
+    icon: '◫',
+    iconArt: KIND_ART.container,
+    slug: 'containers',
+    strategy: 'collection',
+    defaultMode: 'list',
+    // Board is hidden for work_session's reason, and it applies twice over
+    // here: server grouping guards on `state.kind === 'task'`, and a
+    // container's status is OBSERVED (the single writer is
+    // `public.set_container_status`), so a drag-to-move board column would be
+    // a control that cannot commit. Gallery has no image to draw.
+    hiddenModes: ['board', 'gallery'],
+    /*
+     * ALL NINE STATUSES ARE KEYED. A value absent from this map renders the
+     * neutral `idle` tone — silently, and NO vitest can see it, because jsdom
+     * loads no stylesheets. The map is therefore asserted AS DATA in
+     * `registry.test.ts` rather than by reading a rendered colour.
+     */
+    chip: {
+      glyph: '◫',
+      tintBy: 'containerStatus',
+      tones: {
+        requested: 'wait',
+        provisioning: 'wait',
+        running: 'run',
+        paused: 'info',
+        stopping: 'wait',
+        stopped: 'idle',
+        destroying: 'wait',
+        destroyed: 'idle',
+        failed: 'block',
+      },
+    },
+    card: { fields: ['containerStatus', 'profile', 'provider', 'activityAt'] },
+    list: baseList({
+      // Same reading as work_session's: a container's category is OBSERVED,
+      // and the question this list opens on is "what is running".
+      defaultCategory: 'in_progress',
+      // Nesting is real (a dind/microvm container may parent children), so the
+      // tree is the honest arrangement rather than a flat list.
+      tree: { by: 'hierarchy', guideLines: true },
+      tile: {
+        anatomy: 'session-tree',
+        badges: [
+          { source: 'containerStatus' },
+          { source: 'profile' },
+          { source: 'provider' },
+          { source: 'isolation' },
+          { source: 'createdBy' },
+          { source: 'shareMode' },
+        ],
+        /*
+         * NO `pulse` IN P0, and its absence is deliberate rather than
+         * forgotten. Design §13.1 asks for `{ signal: 'surface-activity',
+         * gate: 'live' }`, but `PulseBinding.signal` is the closed value
+         * `'terminal-activity'` and NOTHING emits a surface signal until the
+         * surfaces exist (P1/P2). Declaring a pulse now would bind a tile
+         * animation to a pool no producer writes to — dead data that reads as
+         * a working feature, which is the failure `HANDLED_SOURCES` exists to
+         * make loud one field over. The surface lane adds the signal and this
+         * binding together.
+         */
+      },
+      liveCount: { filter: NOT_DELETED, label: (n) => `● ${n} running` },
+      /*
+       * NOT `quickCreate`. The birth verb is `containers.create`, NEVER
+       * `entities.create`: `container` joins `CreatableEntityKind`'s exclusion
+       * and the node refuses a generic create with "owned by the container
+       * lifecycle", exactly as it does for `work_session`. The placeholder flow
+       * `quickCreate: true` mounts would therefore be a Create control that
+       * always refuses, and a refused control is not a control (the ruling
+       * already made for work_session's row).
+       */
+      quickCreate: false,
+      quickStart: 'new-container',
+      filters: [attentionFilter],
+      sort: DEFAULT_SORT,
+      inlineEdit: { title: true },
+    }),
+    panel: {
+      /*
+       * A NEW ARCHETYPE (§13.2), and explicitly not a special case of
+       * `terminal` — see the `'machine'` member's own note in `types.ts` for
+       * why folding it in would put a kind branch inside `WorkSessionContent`.
+       */
+      archetype: 'machine',
+      /*
+       * `frame`: the body is a VIEWPORT onto a machine and the panel exists to
+       * show it, so no attachment strip and no footer are stapled underneath.
+       *
+       * READ `MachineBody`'s stylesheet before adding a floored region here.
+       * The artifact panel — the other `frame` kind — shipped a section with
+       * `min-height: 0` above a child holding a 420px floor, and on a short
+       * panel THE FRAME PAINTED STRAIGHT OVER THE BLOCK BELOW IT. MachineBody
+       * carries no px floor for exactly that reason.
+       */
+      composition: 'frame',
+      primaries: [
+        'container-start',
+        'container-stop',
+        'container-destroy',
+        'container-terminal',
+        'container-screen',
+      ],
+      statusPill: {
+        source: 'containerStatus',
+        // The chip's map, restated: the pill and the chip must never disagree
+        // about what `failed` looks like. `registry.test.ts` asserts they are
+        // equal rather than trusting two hand-kept copies.
+        tones: {
+          requested: 'wait',
+          provisioning: 'wait',
+          running: 'run',
+          paused: 'info',
+          stopping: 'wait',
+          stopped: 'idle',
+          destroying: 'wait',
+          destroyed: 'idle',
+          failed: 'block',
+        },
+      },
+      /*
+       * L6 wording for the capabilities the SERVER turns off. Server truth
+       * decides ON/OFF; these only supply the honest sentence.
+       */
+      capabilityReasons: CONTAINER_CAPABILITY_REASONS,
+      z4: { immersive: true },
+    },
+    palette: { createLabel: 'New container', primaryAction: 'new-container' },
+    /*
+     * NO `editFields`, DELIBERATELY — and §15.1 is what forced the decision
+     * rather than taste: a kind that declares fields must also offer `edit` in
+     * `panel.primaries`, or the fields are unreachable and `registry.test.ts`
+     * says so by name.
+     *
+     * Adding `edit` would have bought nothing and cost a slot. The only member
+     * a dialog could offer is the TITLE, which `inlineEdit: { title: true }`
+     * above already reaches in one gesture — so the dialog would be a second
+     * door to a member that has one. The other three things
+     * `containers.update` patches (lifecycle, shareMode, labels) cannot go in
+     * a dialog at all: they are version-guarded commands carrying
+     * `expectedVersion`, and the edit dialog sends a bare `entities.patch`.
+     *
+     * The bar is already at six with the derived `run`. A seventh control that
+     * opens onto one field the panel edits in place is the kind of accumulation
+     * that pushed the panel tabs off their own row once before.
+     */
   },
 
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --

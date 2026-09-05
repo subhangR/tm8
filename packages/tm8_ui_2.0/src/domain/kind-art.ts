@@ -195,6 +195,18 @@ export const KIND_ART = {
   ],
 
   /**
+   * A shipping box with a parting line and two rivets — a machine you can open,
+   * not a document. Copied VERBATIM from tm8-ui's set so the two trees draw the
+   * same container; `NO TWO KINDS SHARE A MARK` guards it against `file`'s box.
+   */
+  container: [
+    'M3.8 2.8h8.4a1.4 1.4 0 0 1 1.4 1.4v7.6a1.4 1.4 0 0 1-1.4 1.4H3.8a1.4 1.4 0 0 1-1.4-1.4V4.2a1.4 1.4 0 0 1 1.4-1.4z',
+    'M2.4 8h11.2',
+    'M5.4 6.1a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
+    'M5.4 11.3a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
+  ],
+
+  /**
    * The custom-kind fallback. A plain diamond ON PURPOSE: it is the one mark
    * that must say "this kind has no artwork of its own", so it stays the
    * neutral shape the old set used for exactly that job.
