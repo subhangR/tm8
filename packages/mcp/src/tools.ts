@@ -47,8 +47,16 @@ export interface McpToolDefinition {
   };
 }
 
+/**
+ * An MCP content block. Text is the ordinary case; `image` exists for the one
+ * thing text cannot carry — a screenshot a model is meant to LOOK at.
+ */
+export type McpContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string };
+
 export interface McpToolResult {
-  content: Array<{ type: 'text'; text: string }>;
+  content: McpContentBlock[];
   structuredContent: Record<string, unknown>;
   isError?: boolean;
 }
@@ -165,6 +173,56 @@ const ACT_GUIDES = [
   }),
 ] as const satisfies readonly OperationGuide[];
 
+/**
+ * Containers (TM8-CONTAINERS-DESIGN §14.1). Guide rows, not direct tools,
+ * because these are called once per decision rather than in a loop — a
+ * template is the right shape for "start this machine", and a typed result is
+ * the right shape only for the three the agent calls repeatedly.
+ *
+ * `containers.run` appears BOTH here and as the direct tool `container_run`,
+ * and §14.1 asks for both deliberately: the guide is how a model discovers the
+ * operation exists at all, the direct tool is how it calls it in a loop and
+ * gets `exitCode` as a number rather than a blob to re-parse. The summary here
+ * says so, rather than leaving a model to find out by trying both.
+ *
+ * Fifteen of the twenty-five containers.* operations answer an honest 501 in
+ * P0. That is deliberately NOT narrated in these summaries: what a node can
+ * actually serve is measured at call time and reported by the error, and a
+ * summary that said "not yet" would be a roadmap that rots.
+ */
+const CONTAINER_GUIDES = [
+  guide('containers.create', 'Create a machine an agent can run in or drive, and start it. The birth verb — entities.create refuses the container kind.', {
+    body: { spaceId: '<space-id>', profile: 'shell', title: '<title>', clientMutationId: '<optional-id>' },
+  }),
+  guide('containers.start', 'Start a stopped machine, under a version guard.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1 },
+  }),
+  guide('containers.stop', 'Stop a running or paused machine, keeping its record.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1 },
+  }),
+  guide('containers.destroy', 'Destroy a machine and its runtime object, under a version guard.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1, force: false },
+  }),
+  guide('containers.run', 'Run one command inside a machine. Prefer the container_run tool when looping: it returns a typed exitCode, stdout and stderr.', {
+    params: { containerId: '<container-id>' }, body: { argv: ['<command>', '<arg>'], cwd: '<optional-path>' },
+  }),
+  guide('containers.policy.set', 'Set a machine\'s egress preset and allowlist, under a version guard.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1, network: { preset: 'locked', allow: ['<hostname>'] } },
+  }),
+  guide('containers.expose', 'Publish a machine\'s port through the node\'s reverse proxy.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1, port: 8080, share: 'space' },
+  }),
+  guide('containers.snapshot', 'Capture a machine\'s disk as a reusable image.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1, name: '<name>' },
+  }),
+  guide('containers.fork', 'Create a new machine from this one\'s snapshot. No version guard — a fork reads the source.', {
+    params: { containerId: '<container-id>' }, body: { title: '<title>' },
+  }),
+  guide('containers.attention', 'Ask a human to take over the machine — a login, a captcha, a payment. Use this instead of automating past the moment.', {
+    params: { containerId: '<container-id>' }, body: { reason: 'login', detail: '<what is needed>', points: 50 },
+  }),
+] as const satisfies readonly OperationGuide[];
+
 /* `mode: 'coordinated-worker'` is the TEMPLATE value, and that is the whole
    point of this guide (176/Wave 2).
 
@@ -243,7 +301,7 @@ const MESSAGE_GUIDES = [
 
 const GROUPS = {
   tm8_read: READ_GUIDES,
-  tm8_act: ACT_GUIDES,
+  tm8_act: [...ACT_GUIDES, ...CONTAINER_GUIDES],
   tm8_delegate: DELEGATE_GUIDES,
   tm8_messages: MESSAGE_GUIDES,
 } as const;
@@ -251,6 +309,7 @@ const GROUPS = {
 export const MCP_MAPPED_OPERATIONS: readonly OperationName[] = [
   ...READ_GUIDES.map((item) => item.operation),
   ...ACT_GUIDES.map((item) => item.operation),
+  ...CONTAINER_GUIDES.map((item) => item.operation),
   ...DELEGATE_GUIDES.map((item) => item.operation),
   ...MESSAGE_GUIDES.map((item) => item.operation),
 ];
@@ -552,6 +611,18 @@ const REQUIRES_MUTATION_ID = new Set<OperationName>([
   'execution.spawn',
   'execution.dispatch',
   'execution.resume',
+  // Containers: every one of these is a ledgered command, and a replayed
+  // create must return the FIRST machine rather than provision a second.
+  'containers.create',
+  'containers.start',
+  'containers.stop',
+  'containers.destroy',
+  'containers.run',
+  'containers.policy.set',
+  'containers.expose',
+  'containers.snapshot',
+  'containers.fork',
+  'containers.attention',
 ]);
 
 function invokeOptions(args: Record<string, unknown>, operation: OperationName): CatalogInvokeOptions {
@@ -611,10 +682,32 @@ function queryRecord(raw: unknown): Record<string, QueryValue> | undefined {
   return result;
 }
 
+/**
+ * A direct tool may return an `imageContent` envelope. `success` lifts it into
+ * a real MCP image block and REMOVES it from `structuredContent`.
+ *
+ * The removal is the point, not tidiness: a screenshot is on the order of a
+ * megabyte of base64, and leaving it in the structured half would ship it
+ * TWICE to a model that can read it in neither place as text. The dimensions
+ * and the scale stay behind in `screenshot`, because those are what the model
+ * needs to convert its next click's coordinates — the image block alone does
+ * not carry them.
+ */
 function success(value: Record<string, unknown>): McpToolResult {
+  const { imageContent, ...rest } = value as { imageContent?: unknown } & Record<string, unknown>;
+  const image = imageContent as { mimeType?: unknown; data?: unknown } | undefined;
+  if (image && typeof image.data === 'string' && typeof image.mimeType === 'string') {
+    return {
+      content: [
+        { type: 'text', text: JSON.stringify(rest) },
+        { type: 'image', data: image.data, mimeType: image.mimeType },
+      ],
+      structuredContent: rest,
+    };
+  }
   return {
-    content: [{ type: 'text', text: JSON.stringify(value) }],
-    structuredContent: value,
+    content: [{ type: 'text', text: JSON.stringify(rest) }],
+    structuredContent: rest,
   };
 }
 

@@ -87,6 +87,17 @@ const annotations = (readOnlyHint: boolean, destructiveHint = false, openWorldHi
   readOnlyHint, destructiveHint, idempotentHint: readOnlyHint, openWorldHint,
 });
 
+/**
+ * §7.2's action vocabulary, deliberately the intersection of Anthropic's
+ * computer-use tool, Playwright and adb. Declared as an `enum` on the tool
+ * schema so a model is told the closed set rather than discovering it by
+ * rejection.
+ */
+const COMPUTER_ACTIONS = [
+  'screenshot', 'click', 'double_click', 'right_click', 'move',
+  'drag', 'type', 'key', 'scroll', 'wait', 'goto', 'text',
+] as const;
+
 export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   { name: 'repo_read_file', description: 'Read a UTF-8 file from the thread project checkout.', inputSchema: objectSchema({ path: stringProp('Project-relative path.'), offset: integerProp('First 1-based line.', 1, 1_000_000), limit: integerProp('Maximum lines.', 1, 5000) }, ['path']), annotations: annotations(true) },
   { name: 'repo_glob', description: 'List project-relative files matching a glob.', inputSchema: objectSchema({ pattern: stringProp('Glob such as packages/**/*.ts.'), limit: integerProp('Maximum paths.', 1, 2000) }, ['pattern']), annotations: annotations(true) },
@@ -213,7 +224,94 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   { name: 'git_status', description: 'Read git status for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.') }), annotations: annotations(true) },
   { name: 'git_diff', description: 'Read a capped diff for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.'), maxBytes: integerProp('Maximum diff bytes.', 1024, 500_000) }), annotations: annotations(true) },
   { name: 'git_pr', description: 'Read pull-request links connected to a worker session or derive a compare URL for the chat branch.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.') }), annotations: annotations(true, false, true) },
+  {
+    name: 'container_computer',
+    description: 'Perform one computer action (click, type, key, scroll, goto, …) in a container and return a screenshot as an image.',
+    inputSchema: objectSchema({
+      containerId: stringProp('Container entity id.'),
+      action: { type: 'string', enum: [...COMPUTER_ACTIONS], description: 'One action from the shared computer-use / Playwright / adb vocabulary.' },
+      // Coordinates are bare `z.number()` in schemas.ts — unbounded and
+      // float-permitting. Declaring a min/max here would advertise a
+      // constraint the server does not have.
+      x: { type: 'number', description: 'Target X in SCREENSHOT pixels at the last reported scale.' },
+      y: { type: 'number', description: 'Target Y in SCREENSHOT pixels at the last reported scale.' },
+      to: objectSchema({ x: { type: 'number', description: 'Destination X.' }, y: { type: 'number', description: 'Destination Y.' } }, ['x', 'y']),
+      text: { ...stringProp('Text to type.'), maxLength: 65536 },
+      keys: { ...stringProp('Key chord, e.g. "ctrl+l".'), maxLength: 256 },
+      dx: { type: 'number', description: 'Horizontal scroll delta.' },
+      dy: { type: 'number', description: 'Vertical scroll delta.' },
+      ms: integerProp('Milliseconds to wait.', 0, 60_000),
+      url: { ...stringProp('URL for the browser-only goto action.'), maxLength: 4096 },
+      screenshot: { type: 'boolean', description: 'Return a screenshot. Default true.' },
+      keep: { type: 'boolean', description: 'Also store the screenshot as an artifact revision on the container.' },
+      scale: { type: 'number', minimum: 0.25, maximum: 1, description: 'Screenshot scale. Default is node-chosen so the long edge is at most 1568 px.' },
+    }, ['containerId', 'action']),
+    annotations: annotations(false, true),
+  },
+  {
+    name: 'container_run',
+    description: 'Run one command inside a container and return its typed exit code, stdout and stderr.',
+    inputSchema: objectSchema({
+      containerId: stringProp('Container entity id.'),
+      argv: { type: 'array', minItems: 1, maxItems: 256, items: { type: 'string' }, description: 'Command and arguments. Not a shell string — no quoting or globbing is applied.' },
+      cwd: { ...stringProp('Working directory inside the container.'), maxLength: 4096 },
+      timeoutMs: integerProp('Provider budget in milliseconds.', 1000, 600_000),
+    }, ['containerId', 'argv']),
+    annotations: annotations(false, true),
+  },
+  {
+    name: 'container_screenshot',
+    description: 'Capture a container\'s screen and return it as an image.',
+    inputSchema: objectSchema({
+      containerId: stringProp('Container entity id.'),
+      scale: { type: 'number', minimum: 0.25, maximum: 1, description: 'Screenshot scale.' },
+      keep: { type: 'boolean', description: 'Also store the screenshot as an artifact revision on the container.' },
+    }, ['containerId']),
+    annotations: annotations(true),
+  },
 ] as const;
+
+
+/**
+ * A string bounded the way zod bounds one: `.max(n)` counts UTF-16 code units
+ * (`String.length`), NOT bytes. `boundedString` above is a BYTE cap for payload
+ * limits, and using it here would refuse multibyte input the server accepts —
+ * a false refusal that would look like a server bug from the caller's side.
+ *
+ * Every bound applied through this helper is restated from
+ * `packages/contract/src/schemas.ts`, the schemas themselves. Design §4.2's
+ * table is a summary: it lists the numeric ranges and omits the string
+ * lengths, and copying it is how the CLI noun shipped 1 of 16 string bounds.
+ */
+function schemaString(raw: unknown, field: string, min: number, max: number): string {
+  const value = requiredString(raw, field, min === 0);
+  if (value.length < min) throw new DirectToolError('invalid_input', `${field} must be at least ${min} characters`);
+  if (value.length > max) {
+    // The LENGTH, never the value.
+    throw new DirectToolError('invalid_input', `${field} must be at most ${max} characters, got ${value.length}`);
+  }
+  return value;
+}
+
+function optionalSchemaString(raw: unknown, field: string, min: number, max: number): string | undefined {
+  return raw === undefined ? undefined : schemaString(raw, field, min, max);
+}
+
+/**
+ * A finite number, with NO invented range. `ContainersComputerInput`'s
+ * `x`/`y`/`dx`/`dy` are bare `z.number()` — unbounded, and float-permitting.
+ * The first version of this file refused non-integers and anything past
+ * 100_000, which are refusals the SERVER does not make: a legal call rejected
+ * by the client is as wrong as an illegal one let through, and harder to
+ * diagnose because the server never sees it.
+ */
+function finiteNumber(raw: unknown, field: string): number | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    throw new DirectToolError('invalid_input', `${field} must be a finite number`);
+  }
+  return raw;
+}
 
 export interface DirectToolContext {
   transport: CatalogTransport;
@@ -270,7 +368,126 @@ export async function callDirectTool(
     case 'git_status': return gitStatus(args, context);
     case 'git_diff': return gitDiff(args, context);
     case 'git_pr': return gitPr(args, context);
+    case 'container_run': return containerRun(args, context);
+    case 'container_computer': return containerComputer(args, context);
+    case 'container_screenshot': return containerComputer({ ...args, action: 'screenshot' }, context, 'container_screenshot');
   }
+}
+
+/**
+ * `container_run` — a typed one-shot exec.
+ *
+ * `argv` is an ARRAY and never a shell string: a model that could pass
+ * `"sh -c ..."` as one token would be writing shell, and the quoting rules of
+ * whichever shell the image happens to ship become part of this tool's
+ * contract. The array goes to the provider as-is.
+ */
+async function containerRun(args: Record<string, unknown>, context: DirectToolContext) {
+  const containerId = requiredString(args.containerId, 'containerId');
+  await confinedEntity(context, containerId, 'container');
+  // schemas.ts: argv is `z.array(z.string()).min(1).max(256)` — 256, not 128.
+  // The old 128 was a false refusal: a legal 200-element argv never reached the node.
+  const argv = boundedArray(args.argv, 'argv', 1, 256).map((v, i) => requiredString(v, `argv[${i}]`));
+  const body: Record<string, unknown> = { clientMutationId: randomUUID(), argv };
+  const cwd = optionalSchemaString(args.cwd, 'cwd', 1, 4096);
+  if (cwd !== undefined) body.cwd = cwd;
+  const timeoutMs = integer(args.timeoutMs, 'timeoutMs', 1000, 600_000);
+  if (timeoutMs !== undefined) body.timeoutMs = timeoutMs;
+  const data = await context.transport.invoke('containers.run', {
+    params: { containerId }, body,
+  }) as Record<string, unknown>;
+  // TYPED, not a blob: the whole reason this is a direct tool is that an agent
+  // in a loop needs `exitCode` as a number it can branch on.
+  return result('container_run', {
+    containerId,
+    exitCode: data.exitCode ?? null,
+    stdout: data.stdout ?? '',
+    stderr: data.stderr ?? '',
+    truncated: data.truncated === true,
+    timedOut: data.timedOut === true,
+    durationMs: data.durationMs ?? null,
+  });
+}
+
+/**
+ * `container_computer` and its `container_screenshot` sugar.
+ *
+ * The screenshot comes back as an `imageContent` envelope, which the router
+ * lifts into a real MCP image block and REMOVES from the structured result —
+ * a megabyte of base64 duplicated in both halves would be paid for twice by
+ * every model that reads it, and read by none of them as text.
+ */
+async function containerComputer(
+  args: Record<string, unknown>,
+  context: DirectToolContext,
+  toolName: 'container_computer' | 'container_screenshot' = 'container_computer',
+) {
+  const containerId = requiredString(args.containerId, 'containerId');
+  await confinedEntity(context, containerId, 'container');
+  const action = requiredString(args.action, 'action');
+  if (!(COMPUTER_ACTIONS as readonly string[]).includes(action)) {
+    throw new DirectToolError('invalid_input', `action must be one of ${COMPUTER_ACTIONS.join(', ')}`);
+  }
+  const body: Record<string, unknown> = { clientMutationId: randomUUID(), action };
+  const x = finiteNumber(args.x, 'x');
+  if (x !== undefined) body.x = x;
+  const y = finiteNumber(args.y, 'y');
+  if (y !== undefined) body.y = y;
+  if (args.to !== undefined) {
+    const to = requiredObject(args.to, 'to');
+    const tx = finiteNumber(to.x, 'to.x');
+    const ty = finiteNumber(to.y, 'to.y');
+    if (tx === undefined || ty === undefined) {
+      throw new DirectToolError('invalid_input', 'to requires both x and y');
+    }
+    body.to = { x: tx, y: ty };
+  }
+  const text = optionalSchemaString(args.text, 'text', 0, 65536);
+  if (text !== undefined) body.text = text;
+  const keys = optionalSchemaString(args.keys, 'keys', 0, 256);
+  if (keys !== undefined) body.keys = keys;
+  const dx = finiteNumber(args.dx, 'dx');
+  if (dx !== undefined) body.dx = dx;
+  const dy = finiteNumber(args.dy, 'dy');
+  if (dy !== undefined) body.dy = dy;
+  // schemas.ts: ms is `.min(0).max(60000)` — 60 s, not the 600 s I had. The
+  // old bound let a value through that the server refuses.
+  const ms = integer(args.ms, 'ms', 0, 60_000);
+  if (ms !== undefined) body.ms = ms;
+  const url = optionalSchemaString(args.url, 'url', 1, 4096);
+  if (url !== undefined) body.url = url;
+  const screenshot = boolean(args.screenshot, 'screenshot');
+  if (screenshot !== undefined) body.screenshot = screenshot;
+  const keep = boolean(args.keep, 'keep');
+  if (keep !== undefined) body.keep = keep;
+  if (args.scale !== undefined) {
+    const scale = args.scale;
+    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale < 0.25 || scale > 1) {
+      throw new DirectToolError('invalid_input', 'scale must be a number from 0.25 to 1');
+    }
+    body.scale = scale;
+  }
+
+  const data = await context.transport.invoke('containers.computer', {
+    params: { containerId }, body,
+  }) as Record<string, unknown>;
+
+  const shot = data.screenshot as { mime?: unknown; base64?: unknown; w?: unknown; h?: unknown; scale?: unknown } | undefined;
+  const payload: Record<string, unknown> = {
+    containerId,
+    action,
+    ok: data.ok === true,
+    ...(data.text === undefined ? {} : { text: data.text }),
+    ...(data.artifactRevision === undefined ? {} : { artifactRevision: data.artifactRevision }),
+  };
+  if (shot && typeof shot.base64 === 'string' && typeof shot.mime === 'string') {
+    // The DIMENSIONS and the scale stay in the structured half, because they are
+    // what a model needs to convert its NEXT click's coordinates — the image
+    // block alone does not carry them.
+    payload.screenshot = { w: shot.w ?? null, h: shot.h ?? null, scale: shot.scale ?? null, mime: shot.mime };
+    payload.imageContent = { mimeType: shot.mime, data: shot.base64 };
+  }
+  return result(toolName, payload);
 }
 
 async function repoReadFile(args: Record<string, unknown>, context: DirectToolContext) {
