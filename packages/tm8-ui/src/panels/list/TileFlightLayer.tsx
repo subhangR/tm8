@@ -15,11 +15,14 @@
  * remaining half second is a better outcome than a scroll handler that runs on
  * every wheel event of a list nobody is sending messages in.
  *
- * A FLIGHT NEEDS TWO ENDS. When either end is not on screen — another space,
- * another page, a collapsed subtree that absorbed it — this draws nothing at
- * all and the endpoint glow already on the standing-in row is the whole
- * report. Inventing a takeoff point off the edge of the list would animate a
- * sender the viewer cannot see, which says less than the glow does.
+ * A FLIGHT NEEDS TWO ENDS ON TWO DIFFERENT ROWS. A collapsed subtree does not
+ * by itself suppress anything: the route absorbs that endpoint onto its
+ * nearest visible ancestor and the glyph flies to the STAND-IN, which is the
+ * honest reading of "it went in there". Only two cases draw nothing — an end
+ * with no stand-in at all (another space, another list page), and both ends
+ * absorbing onto the SAME row, where a glyph orbiting one tile would say less
+ * than that row's own endpoint glow already does. Inventing a takeoff point
+ * off the edge of the list would animate a sender the viewer cannot see.
  *
  * AND IT NEVER STARTS A FLIGHT THAT CANNOT FINISH. A pulse is evicted on a
  * fixed timer from its arrival (`PULSE_TTL_MS`), so a glyph launched late is
@@ -42,6 +45,18 @@
  * ALREADY AIRBORNE IS EXEMPT. Once a glyph is in the air its remaining budget
  * shrinks every frame, and re-checking would abort a perfectly good flight the
  * instant the tree re-aimed it. A flight is judged once, at launch.
+ *
+ * AIRBORNE MEANS STILL FLYING, NOT MERELY LAUNCHED — a distinction that cost a
+ * bug (PR #591 review). "Was in the air last render" holds until the pulse is
+ * EVICTED, but the animation ends after its own duration, so a key that had
+ * already landed still counted as exempt. Re-aiming such a key writes a longer
+ * `--lp-flight-duration` onto the same element, and Chromium RESURRECTS the
+ * finished animation: the glyph pops back into view near the destination and
+ * flies again. So each launch records when it happened and how long it runs,
+ * and a key past that point is never re-measured or relaunched in this mount.
+ * A re-aim of a live flight updates the duration it will actually end on,
+ * because changing `animation-duration` mid-run re-times the whole animation
+ * rather than extending it from now.
  */
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 
@@ -88,8 +103,14 @@ const FLIGHT_ART: Record<SessionPulseKind, readonly string[]> = {
   [SESSION_PULSE_KIND.completion]: ['M13.2 4.4v7.2', 'M11.9 8H3.4', 'M6.8 4.6 3.4 8l3.4 3.4'],
 };
 
+/** One launched glyph: when it started, and the duration it will finish on. */
+interface Launched {
+  at: number;
+  durationMs: number;
+}
+
 const EMPTY_PATHS: ReadonlyMap<string, FlightPath> = new Map();
-const EMPTY_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_LAUNCHED: ReadonlyMap<string, Launched> = new Map();
 
 /**
  * The tile a row flies from or to.
@@ -148,11 +169,12 @@ export function TileFlightLayer({
   const layerRef = useRef<HTMLDivElement | null>(null);
   const [paths, setPaths] = useState<ReadonlyMap<string, FlightPath>>(EMPTY_PATHS);
   /**
-   * Keys in the air on the previous render. Survives nothing but this mount,
-   * which is all it has to: it exists only to keep a live flight from being
-   * re-judged mid-air, and a remount ends that flight anyway.
+   * What each launched key is doing: when it started, and the duration it will
+   * finish on. Survives nothing but this mount, which is all it has to — it
+   * exists only to keep a live flight from being re-judged mid-air, and a
+   * remount ends that flight anyway.
    */
-  const airborne = useRef<ReadonlySet<string>>(EMPTY_KEYS);
+  const airborne = useRef<ReadonlyMap<string, Launched>>(EMPTY_LAUNCHED);
 
   /**
    * LAYOUT effect, not a plain one: the measurement has to happen in the same
@@ -162,32 +184,60 @@ export function TileFlightLayer({
   useLayoutEffect(() => {
     const layer = layerRef.current;
     const host = layer?.parentElement ?? null;
-    const flyingBefore = airborne.current;
+    const now = Date.now();
+    /**
+     * Launch records carried forward, minus any older than the retention
+     * window — past that the pulse itself is gone and the key can never come
+     * back, so the map stays bounded without needing the current key set.
+     *
+     * CARRIED, NOT CLEARED, and the difference is a defect: dropping a landed
+     * flight from `paths` also dropped its record, so the very next render saw
+     * an unknown key with pulse budget left and launched it all over again.
+     * Landed has to STAY landed for as long as the pulse exists.
+     */
+    const remembered = new Map<string, Launched>();
+    for (const [key, entry] of airborne.current) {
+      if (now - entry.at < PULSE_TTL_MS) remembered.set(key, entry);
+    }
 
     if (layer === null || host === null || flights.length === 0) {
-      airborne.current = EMPTY_KEYS;
+      airborne.current = remembered.size === 0 ? EMPTY_LAUNCHED : remembered;
       setPaths((held) => (held.size === 0 ? held : EMPTY_PATHS));
       return;
     }
     const hostRect = host.getBoundingClientRect();
-    const now = Date.now();
     const next = new Map<string, FlightPath>();
-    const nowFlying = new Set<string>();
+    const nowFlying = new Map<string, Launched>(remembered);
     for (const flight of flights) {
       const from = anchorPoint(host, hostRect, flight.fromRowId);
       const to = anchorPoint(host, hostRect, flight.toRowId);
       if (from === null || to === null) continue;
       const path = flightPath(from, to);
-      // A LAUNCH THAT CANNOT LAND, REFUSED. Judged once: a flight already in
-      // the air keeps its place, because its budget shrinks every frame and
-      // re-checking would abort it the instant the tree re-aimed it.
-      const spent = flight.at === undefined ? 0 : Math.max(0, now - flight.at);
-      if (!flyingBefore.has(flight.key) && spent + path.durationMs > PULSE_TTL_MS) continue;
+      const launched = remembered.get(flight.key);
+      if (launched === undefined) {
+        // A LAUNCH THAT CANNOT LAND, REFUSED — see `at` on the pulse.
+        const spent = flight.at === undefined ? 0 : Math.max(0, now - flight.at);
+        if (spent + path.durationMs > PULSE_TTL_MS) continue;
+        next.set(flight.key, path);
+        nowFlying.set(flight.key, { at: now, durationMs: path.durationMs });
+        continue;
+      }
+      // ALREADY LANDED: dropped, never re-aimed, and its record KEPT so it
+      // cannot be relaunched later. Writing a longer duration onto its element
+      // would restart the finished animation and fly the glyph a second time.
+      // Unmounting it is invisible — it faded to nothing at the end of its
+      // own animation.
+      if (now - launched.at >= launched.durationMs) continue;
+      // STILL FLYING: re-aimed and re-measured, keeping its original start.
+      // The duration is the NEW one because changing `animation-duration`
+      // mid-run re-times the animation rather than extending it from now.
       next.set(flight.key, path);
-      nowFlying.add(flight.key);
+      nowFlying.set(flight.key, { at: launched.at, durationMs: path.durationMs });
     }
-    airborne.current = nowFlying.size === 0 ? EMPTY_KEYS : nowFlying;
+    airborne.current = nowFlying.size === 0 ? EMPTY_LAUNCHED : nowFlying;
     setPaths(next.size === 0 ? EMPTY_PATHS : next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `flights` alone;
+    // the launch bookkeeping is a ref precisely so it cannot retrigger this.
   }, [flights]);
 
   return (

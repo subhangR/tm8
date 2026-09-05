@@ -3,11 +3,14 @@ import type { DurableWorkspaceEvent, EntitySummary, WorkSessionStatus } from '@t
 
 import {
   advanceSessionEventState,
+  appendBoundedPulse,
   createSessionEventState,
   deriveSessionTransition,
+  pulseFromEvent,
   routeMessagePulse,
   routePulsePath,
   type PulseTreeIndex,
+  type SessionPulse,
 } from './message-pulse';
 
 function session(
@@ -117,19 +120,36 @@ describe('deriveSessionTransition', () => {
    * that is merely PRESENT — zero, or a parsed event time on another clock —
    * would refuse every flight or none.
    *
-   * BOTH TRANSITION PATHS, because they are separate literals and stamping one
-   * proves nothing about the other. The third path — an authored message via
-   * `pulseFromEvent` — is a third literal again, and its stamp is covered by
-   * the flight layer's own age tests rather than duplicated here.
+   * ALL THREE PATHS, because they are three separate literals and stamping one
+   * proves nothing about the others.
+   *
+   * An earlier version of this comment claimed the authored-message path was
+   * covered by the flight layer's own age tests. It was not — those hand-build
+   * their pulses and never call `pulseFromEvent` — and review demonstrated it
+   * by deleting that literal and watching all 35 tests stay green. Authored
+   * messages are the PRIMARY flight path, so that was the one stamp with no
+   * coverage at all. (PR #591 review, GPT 5.6 Sol.)
    */
   it('stamps every pulse kind with a current-clock arrival time', () => {
     const before = Date.now();
+    const authored = {
+      type: 'message.created',
+      spaceId: 'space-1',
+      seq: 12,
+      occurredAt: '2026-09-04T12:00:00.000Z',
+      schemaVersion: 1,
+      anchorId: 'receiver',
+      sourceWorkSessionId: 'sender',
+      message: { id: 'message-12' },
+    } as unknown as DurableWorkspaceEvent;
+
     const pulses = [
       deriveSessionTransition(upsert(session('child', 'spawning', 'parent'), 10), createSessionEventState()),
       deriveSessionTransition(
         upsert(session('child', 'exited', 'parent'), 11),
         createSessionEventState([session('child', 'running', 'parent')]),
       ),
+      pulseFromEvent(authored, createSessionEventState()),
     ];
     const after = Date.now();
     for (const pulse of pulses) {
@@ -241,5 +261,37 @@ describe('routeMessagePulse', () => {
       toRowId: null,
       absorbed: false,
     });
+  });
+});
+
+/**
+ * THE STAMP AND THE EVICTION TIMER MUST REFRESH TOGETHER.
+ *
+ * A key is deliberately stable across CORROBORATING events — an entity upsert
+ * and the activity that confirms it are one semantic arrival — and
+ * `useMessagePulses` clears and restarts that key's eviction timeout every
+ * time one lands. The retained pulse must therefore be the NEW one, carrying
+ * the NEW `at`. If this kept the first, the stamp would age while the timer
+ * kept resetting under it, and the flight layer would refuse flights that
+ * genuinely had budget: an arrival could go unanimated purely because it was
+ * corroborated twice.
+ *
+ * Not a hypothetical invariant — it is the one thing outside the layer that
+ * the age rule depends on, and nothing asserted it.
+ */
+describe('appendBoundedPulse', () => {
+  const at = (key: string, stamp: number): SessionPulse =>
+    ({ key, kind: 'message', fromId: 'a', toId: 'b', at: stamp });
+
+  it('keeps the newest stamp when a corroborating event reuses a key', () => {
+    const retained = appendBoundedPulse([at('m1', 1_000)], at('m1', 1_800), 12);
+    expect(retained).toHaveLength(1);
+    expect(retained[0].at).toBe(1_800);
+  });
+
+  it('drops the oldest when the cap is reached, never the newest', () => {
+    const full = [at('a', 1), at('b', 2), at('c', 3)];
+    const retained = appendBoundedPulse(full, at('d', 4), 3);
+    expect(retained.map((item) => item.key)).toEqual(['b', 'c', 'd']);
   });
 });

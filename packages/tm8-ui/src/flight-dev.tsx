@@ -62,10 +62,13 @@ const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
  * arc cannot be evidence for the long arc, and it was being cited as exactly
  * that.
  *
- * So the rows are explicit: a SPINE deep enough to force the 1450ms ceiling,
- * with sibling pairs hung off it for the short-hop case. One template is
- * cloned so the tile keeps a realistic shape; everything the tree depends on
- * — id, title, parent, status — is stated rather than inherited.
+ * So the rows are explicit: a SPINE six deep, with siblings hung off it for
+ * the short-hop case. That default spans roughly 320px — enough to lift the
+ * duration clearly off its 560ms floor (~680-720ms in practice), and NOT
+ * enough to reach the 1450ms ceiling, which needs about 970px. `?rows=30` is
+ * what forces the ceiling; see the SHAPE comment below. One template is cloned
+ * so the tile keeps a realistic shape; everything the tree depends on — id,
+ * title, parent, status — is stated rather than inherited.
  */
 const template = fixtureSummaries.find((row) => row.state.kind === 'work_session');
 if (template === undefined) throw new Error('flight-dev: no work_session fixture to clone');
@@ -158,21 +161,36 @@ let sequence = 0;
  */
 function useOpenTree() {
   useEffect(() => {
-    let passes = 0;
+    let cancelled = false;
+    let timer = 0;
+    /**
+     * A pass reveals exactly one more level, so the walk needs as many passes
+     * as the tree is DEEP — derived from the shape rather than guessed.
+     *
+     * It was a fixed 12, which silently half-opened the one tree that matters:
+     * `?rows=30` builds a 29-deep spine, so the walk stopped at 14 rows and
+     * the "ceiling" control topped out at 959ms instead of 1450ms — unable to
+     * exercise the single claim it was added to support (PR #591 review).
+     * The slack covers a slow first paint, and the loop still stops early the
+     * moment a pass opens nothing.
+     */
+    let remaining = SHAPE.length + 2;
     const open = () => {
+      if (cancelled) return;
       const shut = document.querySelectorAll<HTMLButtonElement>(
         '.pn-st__arrow:not(.pn-st__arrow--empty):not(.pn-st__arrow--expanded)',
       );
       shut.forEach((button) => button.click());
-      // Each pass reveals one more level, so this walks the depth rather than
-      // guessing it. It stops when a pass opens nothing.
-      if (shut.length > 0 && passes < 12) {
-        passes += 1;
-        window.setTimeout(open, 60);
-      }
+      remaining -= 1;
+      if (shut.length > 0 && remaining > 0) timer = window.setTimeout(open, 60);
     };
-    const timer = window.setTimeout(open, 120);
-    return () => window.clearTimeout(timer);
+    timer = window.setTimeout(open, 120);
+    // `cancelled` is what actually stops the chain: clearing `timer` alone
+    // only cancels whichever pass happens to be pending.
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 }
 

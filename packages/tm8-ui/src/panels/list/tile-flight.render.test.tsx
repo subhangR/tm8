@@ -303,15 +303,57 @@ describe('a message flying across the session tiles', () => {
    * "time passed" without dragging fake timers through React's scheduler.
    */
   it('keeps a live flight airborne after its remaining budget runs out', () => {
-    // 1500ms spent + a 560ms trip = 2060ms, inside the 2200ms eviction.
-    const view = render(panel([aged('m1', leaf.id, aunt.id, 1_500)]));
+    // THE MARGINS ARE WIDE ON PURPOSE. `aged` stamps against a real clock, and
+    // the age is re-read when the layout effect runs — so a slow render under
+    // load ADDS to the spend. An earlier version used 1500ms, leaving 140ms of
+    // slack against the 2060ms it needed, and passed alone while failing in
+    // the full suite. Neither number here is near its boundary.
+    //   launch: 1000 spent + 560 trip = 1560, versus a 2200 budget
+    const view = render(panel([aged('m1', leaf.id, aunt.id, 1_000)]));
     expandTree(view.container);
     expect(flightsIn(view.container), 'launches with budget to spare').toHaveLength(1);
 
-    // 400ms later the same flight could no longer be STARTED (1900 + 560 =
-    // 2460). It is already in the air, so it must not be taken away.
-    view.rerender(panel([aged('m1', leaf.id, aunt.id, 1_900)]));
+    // A second later the same flight could no longer be STARTED (2000 + 560 =
+    // 2560). It is already in the air, so it must not be taken away.
+    view.rerender(panel([aged('m1', leaf.id, aunt.id, 2_000)]));
     expect(flightsIn(view.container), 'and is not withdrawn mid-air').toHaveLength(1);
+  });
+
+  /**
+   * A LANDED FLIGHT IS NOT AIRBORNE, and conflating them resurrects it.
+   *
+   * "In the air last render" holds until the PULSE is evicted, but the CSS
+   * animation ends after its own duration. Re-aiming a key past that point
+   * writes a longer `--lp-flight-duration` onto the same element, and Chromium
+   * restarts the finished animation — the glyph pops back into view near the
+   * destination and flies a second time, for an arrival that already landed.
+   * Observed in a browser during review (PR #591, GPT 5.6 Sol).
+   *
+   * The clock is driven through `Date.now`, which is the only clock the launch
+   * bookkeeping reads. Waiting out a real 560ms here would make the test both
+   * slow and load-sensitive, which is how the airborne test flaked once already.
+   */
+  it('does not relaunch a flight that has already landed', () => {
+    const t0 = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(t0);
+    const pulse: MessagePulse = { key: 'm1', kind: 'message', fromId: leaf.id, toId: aunt.id, at: t0 };
+
+    const view = render(panel([pulse]));
+    expandTree(view.container);
+    expect(flightsIn(view.container), 'launches').toHaveLength(1);
+
+    // Well past the longest possible trip, so the animation has certainly
+    // finished — while the pulse is still inside its 2200ms retention.
+    clock.mockReturnValue(t0 + 1_600);
+
+    // A re-aim arrives: collapse the sender's subtree, which rebuilds `flights`.
+    const rowOf = (id: string) => view.container.querySelector(`[data-session-node="${id}"]`);
+    fireEvent.click(
+      rowOf(mid.id)?.closest('.lp__branch')?.querySelector('.pn-st__arrow') as Element,
+    );
+    view.rerender(panel([pulse]));
+
+    expect(flightsIn(view.container), 'and is not flown a second time').toHaveLength(0);
   });
 
   /** Narrowness: a pulse with budget left still flies on a fresh mount. */
