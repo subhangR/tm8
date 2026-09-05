@@ -91,6 +91,10 @@ describe('deriveSessionTransition', () => {
       fromId: 'parent',
       toId: 'child',
       evidence: 'entity',
+      // Stamped on the same clock as the retention timer; the tile-flight
+      // layer refuses to start a glyph that cannot land before eviction, and
+      // this is the only field that survives a list unmount to tell it so.
+      at: expect.any(Number),
     });
   });
 
@@ -102,7 +106,37 @@ describe('deriveSessionTransition', () => {
       fromId: 'child',
       toId: 'parent',
       outcome: 'exited',
+      at: expect.any(Number),
     });
+  });
+
+  /**
+   * `expect.any(Number)` above proves the field exists, not that it means
+   * anything. Presentation decides whether a flight can finish before the
+   * pulse is evicted by subtracting this from the current time, so a stamp
+   * that is merely PRESENT — zero, or a parsed event time on another clock —
+   * would refuse every flight or none.
+   *
+   * BOTH TRANSITION PATHS, because they are separate literals and stamping one
+   * proves nothing about the other. The third path — an authored message via
+   * `pulseFromEvent` — is a third literal again, and its stamp is covered by
+   * the flight layer's own age tests rather than duplicated here.
+   */
+  it('stamps every pulse kind with a current-clock arrival time', () => {
+    const before = Date.now();
+    const pulses = [
+      deriveSessionTransition(upsert(session('child', 'spawning', 'parent'), 10), createSessionEventState()),
+      deriveSessionTransition(
+        upsert(session('child', 'exited', 'parent'), 11),
+        createSessionEventState([session('child', 'running', 'parent')]),
+      ),
+    ];
+    const after = Date.now();
+    for (const pulse of pulses) {
+      expect(pulse).not.toBeNull();
+      expect(pulse?.at).toBeGreaterThanOrEqual(before);
+      expect(pulse?.at).toBeLessThanOrEqual(after);
+    }
   });
 
   it('returns null for an unrelated upsert', () => {

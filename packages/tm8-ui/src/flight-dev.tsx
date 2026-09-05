@@ -31,7 +31,11 @@ import { FIXTURE_SPACE_ID, fixtureSummaries } from './fixtures';
  *   4. do all three kinds stay distinguishable at 13px, on both grounds,
  *      while several are in the air at once?
  *
- * Usage: /flight-dev.html   (add ?theme=dark for the dark ground)
+ * Usage: /flight-dev.html
+ *   ?theme=dark   the dark ground
+ *   ?freeze=0.5   park every flight at 50% of its trip and hold it there
+ *   ?ttl=600000   keep pulses alive while you look at a frozen frame
+ *   ?rows=30      a deep spine, long enough to reach the 1450ms duration cap
  */
 if (new URLSearchParams(location.search).get('theme') === 'dark') {
   document.documentElement.setAttribute('data-theme', 'dark');
@@ -45,25 +49,69 @@ const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
  * and the case a flight has to survive: the arc between two rows six levels
  * apart is the longest one the panel can produce.
  */
-const sessions = fixtureSummaries.filter((row) => row.state.kind === 'work_session');
 /**
- * Every row is forced `running` because the panel opens on In Progress, and a
- * harness that silently drops five of its eight rows into another band would
- * be measuring an arc across a tree it is not showing.
+ * THE TREE IS BUILT HERE, NOT SLICED OUT OF THE FIXTURES — and the previous
+ * version's failure is the reason (PR #591 review, GPT 5.6 Sol).
  *
- * The shape alternates: each row's parent is one or two levels up, which gives
- * both the deep spine (a long flight) and sibling pairs (a short hop) in one
- * tree, rather than a ladder that only ever exercises one arc length.
+ * It used to take `fixtureSummaries.slice(0, 8)` and derive parents with an
+ * index formula. Both halves lied. The slice yielded fewer rows than it asked
+ * for, the panel's In Progress band then dropped more, and the formula topped
+ * out around depth three — so this file's own comment promised "two rows six
+ * levels apart" while the browser showed five rows and every sampled flight
+ * sat on the 560ms duration FLOOR. A harness that cannot construct the long
+ * arc cannot be evidence for the long arc, and it was being cited as exactly
+ * that.
+ *
+ * So the rows are explicit: a SPINE deep enough to force the 1450ms ceiling,
+ * with sibling pairs hung off it for the short-hop case. One template is
+ * cloned so the tile keeps a realistic shape; everything the tree depends on
+ * — id, title, parent, status — is stated rather than inherited.
  */
-const chain: readonly EntitySummary[] = sessions.slice(0, 8).map((row, index) => ({
-  ...row,
-  parentId: index === 0 ? null : sessions[index - 1 - (index % 2 === 0 ? 1 : 0)].id,
-  state: { ...row.state, status: 'running' } as EntitySummary['state'],
+const template = fixtureSummaries.find((row) => row.state.kind === 'work_session');
+if (template === undefined) throw new Error('flight-dev: no work_session fixture to clone');
+
+/**
+ * parent index, or null for the root: a spine six deep with three siblings
+ * hung off it, which is the default shape.
+ *
+ * `?rows=N` extends the SPINE to N rows. Ten rows span roughly 320px, enough
+ * to lift the duration off its 560ms floor but not to reach the 1450ms
+ * ceiling, which needs about 970px of separation — around thirty rows. The
+ * ceiling is pinned by unit test either way; this exists so the ceiling can
+ * also be SEEN, rather than being claimed on the strength of a tree that
+ * cannot produce it.
+ */
+const params = new URLSearchParams(location.search);
+
+const requestedRows = Math.min(60, Math.max(0, Number(params.get('rows') ?? '') || 0));
+const SHAPE: readonly (number | null)[] = requestedRows > 0
+  ? Array.from({ length: requestedRows }, (_, index) => (index === 0 ? null : index - 1))
+  : [
+      null, // 0  root
+      0,    // 1  spine 1
+      1,    // 2  spine 2
+      2,    // 3  spine 3
+      3,    // 4  spine 4
+      4,    // 5  spine 5
+      5,    // 6  spine 6  <- the far end of the long flight
+      1,    // 7  sibling high on the spine
+      3,    // 8  sibling mid
+      5,    // 9  sibling low  <- short hop against #6
+    ];
+
+const chain: readonly EntitySummary[] = SHAPE.map((parent, index) => ({
+  ...template,
+  id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}` as EntitySummary['id'],
+  title: parent === null ? 'root · spine 0' : `${parent === index - 1 ? 'spine' : 'sibling'} · row ${index}`,
+  parentId: parent === null
+    ? null
+    : (`00000000-0000-4000-8000-${String(parent).padStart(12, '0')}` as EntitySummary['id']),
+  // The panel opens on In Progress; anything else is silently dropped from
+  // the band, which is how the old version lost half its rows without saying so.
+  state: { ...template.state, status: 'running' } as EntitySummary['state'],
 }));
 
 const rowsFor = (_filter: QueryFilter): readonly EntitySummary[] => chain;
-
-const params = new URLSearchParams(location.search);
 
 /**
  * Matches `useMessagePulses`' real TTL, so the harness ages pulses out as the

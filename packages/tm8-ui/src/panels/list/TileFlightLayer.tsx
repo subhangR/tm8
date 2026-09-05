@@ -21,18 +21,27 @@
  * report. Inventing a takeoff point off the edge of the list would animate a
  * sender the viewer cannot see, which says less than the glow does.
  *
- * AND IT LAUNCHES ONLY AT ARRIVAL, NEVER ON A LATER GESTURE. An arrival into a
- * closed subtree has no two ends, so it does not fly; if the viewer then OPENS
- * that subtree while the pulse is still retained, both ends resolve and a
- * flight would be born — for an event up to two seconds old, triggered by a
- * gesture that has nothing to do with it. Worse, it would be born LATE: the
- * duration clamp in `tile-flight.ts` guarantees a flight outlives its pulse
- * only when it STARTS at arrival, so a late launch can have its glyph deleted
- * in open air between two tiles. This layer therefore remembers which pulses
- * it has already watched go by, and refuses to start one that was live on an
- * earlier render without being flyable then. The endpoint glow still reports
- * the arrival, which is what it was doing while the subtree was shut.
- * (Found in review by GPT 5.6 Sol on PR #591.)
+ * AND IT NEVER STARTS A FLIGHT THAT CANNOT FINISH. A pulse is evicted on a
+ * fixed timer from its arrival (`PULSE_TTL_MS`), so a glyph launched late is
+ * deleted in open air between two tiles. `tile-flight.ts`'s duration clamp
+ * only prevents that for a flight that starts AT arrival, and several things
+ * start one later: the viewer opens a subtree the pulse was sitting in, rows
+ * arrive after the pulse did, or this list is navigated away from and back
+ * while the pulse is still retained. So the decision is made on the pulse's
+ * OWN AGE — `at`, stamped by the deriving hook on the same clock as the
+ * eviction timer — and not on anything this component can observe.
+ *
+ * THAT DISTINCTION IS THE WHOLE FIX, and the first attempt got it wrong. It
+ * inferred age from this layer's own render history, which is correct within
+ * one mount and worthless across an unmount: `useMessagePulses` lives above
+ * the route surfaces and keeps retaining, so a remounted layer saw a
+ * two-second-old pulse with empty refs and read it as brand new. Component
+ * -local history cannot prove event age. (Both the defect and its remedy found
+ * in review by GPT 5.6 Sol on PR #591.)
+ *
+ * ALREADY AIRBORNE IS EXEMPT. Once a glyph is in the air its remaining budget
+ * shrinks every frame, and re-checking would abort a perfectly good flight the
+ * instant the tree re-aimed it. A flight is judged once, at launch.
  */
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 
@@ -40,6 +49,7 @@ import { VectorIcon } from '../../kit/VectorIcon';
 import { KIND_ART } from '../../domain/kind-art';
 import { SESSION_PULSE_KIND, type SessionPulseKind } from '../../session-graph/pulse-vocabulary';
 import { flightPath, flightVariables, type FlightPath, type FlightPoint } from './tile-flight';
+import { PULSE_TTL_MS } from './useMessagePulses';
 
 /** One arrival with both ends standing on a row this tree is drawing. */
 export interface ResolvedFlight {
@@ -48,17 +58,27 @@ export interface ResolvedFlight {
   outcome?: 'exited' | 'failed';
   fromRowId: string;
   toRowId: string;
+  /** When the arrival was derived. Absent means "assume fresh" — see `at`. */
+  at?: number;
 }
 
 /**
  * What flies, per kind — matched to the SVG graph's markers so the two
  * surfaces stay one vocabulary (`session-graph.css`: filled, open, barred).
  *
- * The message glyph is the HOUSE speech bubble, reused verbatim from
- * `KIND_ART.message`. Not an envelope, and the reason is written where the
- * artwork lives: "a tm8 message is a line in a conversation; an envelope
- * promises mail, which is a different product." The object in flight is the
- * same mark the message entity wears when it lands.
+ * The message glyph is the HOUSE speech bubble — the same PATH DATA as
+ * `KIND_ART.message`, reused verbatim. Not an envelope, and the reason is
+ * written where that artwork lives: "a tm8 message is a line in a
+ * conversation; an envelope promises mail, which is a different product."
+ *
+ * SAME GEOMETRY, DIFFERENT INK, and the difference is deliberate rather than
+ * an oversight (raised in review of PR #591). Kind art is authored stroked and
+ * `kind-art.ts` says it must stay that way, because a filled mark reads as
+ * "selected" beside stroked ones in a badge row. This is not a badge row: a
+ * 13px outline crossing tiles of every state — selected, live, hovered — turns
+ * to mud, and the SVG graph's own message marker is filled for the same reason
+ * (`session-graph.css`, `.sg-pulse-arrow--message`). So the flight fills, and
+ * the claim it makes is that this is the same SHAPE, not the same rendering.
  */
 const FLIGHT_ART: Record<SessionPulseKind, readonly string[]> = {
   [SESSION_PULSE_KIND.message]: KIND_ART.message,
@@ -122,23 +142,16 @@ function anchorPoint(host: HTMLElement, hostRect: DOMRect, rowId: string): Fligh
 
 export function TileFlightLayer({
   flights,
-  /**
-   * EVERY live pulse key, flyable or not — which is the whole point. A pulse
-   * that arrives into a closed subtree never reaches `flights`, so `flights`
-   * alone cannot tell "this just arrived" from "this has been sitting there
-   * unflyable and the viewer just opened its subtree". This is what makes the
-   * difference observable.
-   */
-  activeKeys,
 }: {
   flights: readonly ResolvedFlight[];
-  activeKeys: ReadonlySet<string>;
 }) {
   const layerRef = useRef<HTMLDivElement | null>(null);
   const [paths, setPaths] = useState<ReadonlyMap<string, FlightPath>>(EMPTY_PATHS);
-  /** Pulse keys that were live on the previous render, flyable or not. */
-  const watched = useRef<ReadonlySet<string>>(EMPTY_KEYS);
-  /** Pulse keys that were actually in the air on the previous render. */
+  /**
+   * Keys in the air on the previous render. Survives nothing but this mount,
+   * which is all it has to: it exists only to keep a live flight from being
+   * re-judged mid-air, and a remount ends that flight anyway.
+   */
   const airborne = useRef<ReadonlySet<string>>(EMPTY_KEYS);
 
   /**
@@ -149,12 +162,7 @@ export function TileFlightLayer({
   useLayoutEffect(() => {
     const layer = layerRef.current;
     const host = layer?.parentElement ?? null;
-    // The bookkeeping runs even with nothing to draw: a pulse sitting in a
-    // closed subtree is exactly the case that must be REMEMBERED, and it
-    // reaches here with an empty `flights`.
-    const seenBefore = watched.current;
     const flyingBefore = airborne.current;
-    watched.current = new Set(activeKeys);
 
     if (layer === null || host === null || flights.length === 0) {
       airborne.current = EMPTY_KEYS;
@@ -162,24 +170,25 @@ export function TileFlightLayer({
       return;
     }
     const hostRect = host.getBoundingClientRect();
+    const now = Date.now();
     const next = new Map<string, FlightPath>();
     const nowFlying = new Set<string>();
     for (const flight of flights) {
-      // A LATE LAUNCH, REFUSED. The pulse was live on an earlier render and was
-      // not in the air then, so it only became flyable because the tree
-      // changed shape under it — an expand, not an arrival. Already airborne is
-      // the opposite case and must pass: a collapse that merely re-aims a live
-      // flight has to keep re-measuring it, not kill it.
-      if (seenBefore.has(flight.key) && !flyingBefore.has(flight.key)) continue;
       const from = anchorPoint(host, hostRect, flight.fromRowId);
       const to = anchorPoint(host, hostRect, flight.toRowId);
       if (from === null || to === null) continue;
-      next.set(flight.key, flightPath(from, to));
+      const path = flightPath(from, to);
+      // A LAUNCH THAT CANNOT LAND, REFUSED. Judged once: a flight already in
+      // the air keeps its place, because its budget shrinks every frame and
+      // re-checking would abort it the instant the tree re-aimed it.
+      const spent = flight.at === undefined ? 0 : Math.max(0, now - flight.at);
+      if (!flyingBefore.has(flight.key) && spent + path.durationMs > PULSE_TTL_MS) continue;
+      next.set(flight.key, path);
       nowFlying.add(flight.key);
     }
     airborne.current = nowFlying.size === 0 ? EMPTY_KEYS : nowFlying;
     setPaths(next.size === 0 ? EMPTY_PATHS : next);
-  }, [flights, activeKeys]);
+  }, [flights]);
 
   return (
     <div
