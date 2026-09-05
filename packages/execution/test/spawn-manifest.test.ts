@@ -48,6 +48,12 @@ function context(overrides: Partial<SpawnContext['teamMember']> = {}): SpawnCont
 const base: SpawnRequest = { spaceId: 'space-1', teamMemberId: 'tm-1' };
 
 describe('resolveLaunchConfig', () => {
+  it.each(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const)(
+    'preserves Astra effort %s during launch resolution', (reasoningEffort) => {
+      expect(resolveLaunchConfig({ ...base, reasoningEffort }, context({ model: 'gpt-6-astra' }), {}))
+        .toMatchObject({ model: 'gpt-6-astra', agentTool: 'codex', reasoningEffort });
+    },
+  );
   it('prefers the request over the persona, and the persona over the default', () => {
     expect(resolveLaunchConfig({ ...base, model: 'haiku' }, context(), {}).model).toBe('haiku');
     expect(resolveLaunchConfig(base, context(), {}).model).toBe('opus');
@@ -523,6 +529,14 @@ describe('buildAgentCommand', () => {
     // or a reconnecting client replays a redrawn alternate screen as garbage.
     expect(accept).toContain('--no-alt-screen');
   });
+
+  it.each(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const)(
+    'passes Astra effort %s to Codex', (reasoningEffort) => {
+      const command = buildAgentCommand({ ...launch, agentTool: 'codex', model: 'gpt-6-astra', reasoningEffort }, {});
+      expect(command).toContain("--model 'gpt-6-astra'");
+      expect(command).toContain(`-c 'model_reasoning_effort="${reasoningEffort}"'`);
+    },
+  );
 
   it('builds the exact Codex argv for every posture before shell joining', () => {
     const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5.6-sol' };

@@ -4019,7 +4019,7 @@ export type SpawnWorkdir =
 /** Provider-neutral launch controls. The execution layer maps these to each
  * agent CLI's native flags; keeping them typed here prevents a UI choice from
  * being displayed but silently discarded at the facade boundary. */
-export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 /**
  * `auto` is the posture a session gets when the request names none — the agent
  * runs what it judges safe and escalates the rest. It is listed here so a caller

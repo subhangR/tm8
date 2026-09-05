@@ -499,7 +499,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 data-testid="launch-reasoning-effort"
                 onChange={(event) => setReasoningEffort(event.target.value as NonNullable<LaunchConfig['reasoningEffort']>)}
               >
-                {['low', 'medium', 'high', 'xhigh', 'max'].map((effort) => (
+                {['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map((effort) => (
                   <option key={effort} value={effort}>{effort}</option>
                 ))}
               </select>

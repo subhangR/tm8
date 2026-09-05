@@ -372,6 +372,10 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       mode: 'worker',
     };
     expect(ExecutionSpawnInputSchema.safeParse(ok).success).toBe(true);
+    for (const reasoningEffort of ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']) {
+      expect(ExecutionSpawnInputSchema.safeParse({ ...ok, model: 'gpt-6-astra', reasoningEffort }).success).toBe(true);
+    }
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, reasoningEffort: 'extreme' }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({
       ...ok, parentSessionId: '55555555-5555-4555-8555-555555555555',
     }).success).toBe(true);

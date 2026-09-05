@@ -2732,7 +2732,7 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']).optional(),
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
-  reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
   accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']).optional(),
   credentialSources: CredentialSourcesSchema.optional(),
   // Deprecated compatibility carrier. Provider-specific keys above win.

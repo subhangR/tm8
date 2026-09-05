@@ -251,7 +251,7 @@ export function resolveCommandNetworkPolicy(
 
 function asReasoningEffort(value: string | null | undefined): ReasoningEffort | null {
   if (!value) return null;
-  return ['low', 'medium', 'high', 'xhigh', 'max'].includes(value)
+  return ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value)
     ? (value as ReasoningEffort)
     : null;
 }

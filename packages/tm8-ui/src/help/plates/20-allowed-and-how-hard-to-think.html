@@ -473,13 +473,14 @@ footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); fon
           <p class="dial__value">high</p>
         </div>
         <label class="visually-hidden" for="reasoning-range">Reasoning effort. Use arrow keys to choose a value.</label>
-        <input id="reasoning-range" type="range" min="0" max="4" step="1" value="2" aria-labelledby="reasoning-heading">
+        <input id="reasoning-range" type="range" min="0" max="5" step="1" value="2" aria-labelledby="reasoning-heading">
         <div class="dial-options" role="group" aria-label="Choose reasoning effort">
           <button class="dial-option" type="button" data-value="0" aria-pressed="false">low</button>
           <button class="dial-option" type="button" data-value="1" aria-pressed="false">medium</button>
           <button class="dial-option" type="button" data-value="2" aria-pressed="true">high</button>
           <button class="dial-option" type="button" data-value="3" aria-pressed="false">xhigh</button>
           <button class="dial-option" type="button" data-value="4" aria-pressed="false">max</button>
+          <button class="dial-option" type="button" data-value="5" aria-pressed="false">ultra</button>
         </div>
       </div>
     </div>
@@ -1376,9 +1377,9 @@ ok · message 01a09f5e-91c2-7d40-b02a-6c1e8d3f7a55 anchored_to task</pre>
 
   var values = {
     access: ['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess'],
-    reasoning: ['low', 'medium', 'high', 'xhigh', 'max']
+    reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
   };
-  var angles = [-70, -35, 0, 35, 70];
+  var angles = { access: [-70, -35, 0, 35, 70], reasoning: [-70, -42, -14, 14, 42, 70] };
   var selected = { access: 2, reasoning: 2 };
   var currentFrame = 0;
   var parentCommand = document.getElementById('parent-command');
@@ -1395,7 +1396,7 @@ ok · message 01a09f5e-91c2-7d40-b02a-6c1e8d3f7a55 anchored_to task</pre>
     selected[key] = i;
     var value = values[key][i];
     dial.querySelector('.dial__value').textContent = value;
-    dial.querySelector('.dial__needle').style.transform = 'rotate(' + angles[i] + 'deg)';
+    dial.querySelector('.dial__needle').style.transform = 'rotate(' + angles[key][i] + 'deg)';
     range.setAttribute('aria-valuetext', value);
     dial.querySelectorAll('.dial-option').forEach(function (button) {
       button.setAttribute('aria-pressed', String(Number(button.getAttribute('data-value')) === i));

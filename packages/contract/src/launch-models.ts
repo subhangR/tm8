@@ -64,6 +64,14 @@ export const LAUNCH_MODEL_CATALOG = [
     seedName: 'Fable 5.1 1M Teammate',
   },
   {
+    model: 'gpt-6-astra',
+    label: 'OpenAI GPT 6 Astra',
+    provider: 'openai',
+    agentTool: 'codex',
+    note: 'GPT-6 Astra via Codex CLI — low, medium, high, xhigh, max and ultra effort',
+    seedName: 'GPT 6 Astra Teammate',
+  },
+  {
     model: 'gpt-5.6-sol',
     label: 'OpenAI GPT 5.6',
     provider: 'openai',

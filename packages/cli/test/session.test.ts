@@ -253,7 +253,7 @@ describe('execution.prompt has no command and never renders syntax', () => {
 describe('session spawn', () => {
   it('advertises --reasoning-effort with the complete closed set', () => {
     expect(discoveryFor('execution.spawn').syntax).toContain(
-      '[--reasoning-effort low|medium|high|xhigh|max]',
+      '[--reasoning-effort low|medium|high|xhigh|max|ultra]',
     );
   });
 
@@ -313,12 +313,12 @@ describe('session spawn', () => {
     expect(body().accessMode).toBe('fullAccess');
   });
 
-  it('carries an explicit --reasoning-effort', async () => {
+  it.each(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])('carries --reasoning-effort %s', async (effort) => {
     const r = await drive([
-      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--reasoning-effort', 'xhigh',
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--reasoning-effort', effort,
     ]);
     expect(r.code).toBe(0);
-    expect(body().reasoningEffort).toBe('xhigh');
+    expect(body().reasoningEffort).toBe(effort);
   });
 
   it('refuses a reasoning effort outside the closed set', async () => {
@@ -326,7 +326,7 @@ describe('session spawn', () => {
       'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--reasoning-effort', 'extreme',
     ]);
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('low|medium|high|xhigh|max');
+    expect(r.stderr).toContain('low|medium|high|xhigh|max|ultra');
     expect(seen).toEqual([]);
   });
 
