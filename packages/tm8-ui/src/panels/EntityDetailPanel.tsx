@@ -676,6 +676,30 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   /** The refusal as ONE sentence. Three copies of this expression drifted the
       moment any one of them was reworded, so there is one. */
   const saveRefusal = refusalSentence(save);
+  /**
+   * DOES THIS PANEL OFFER A SAVE AT ALL?
+   *
+   * The registry's `inlineEdit` says what a kind WANTS to be editable; the
+   * seam's `capabilities.canEdit` says what the server will actually accept,
+   * and the two can disagree. `chat` is the case that exposed it: its list
+   * declares `inlineEdit: { title: true }`, and the server's `capabilitiesOf`
+   * (facade/entity-read.ts) has a hardcoded `editable` kind set that does not
+   * contain `chat` — so every chat panel drew an enabled Save beside "You
+   * cannot edit this — the server refuses edits here", permanently.
+   *
+   * THE DISTINCTION THAT MATTERS is between a refusal that could change and
+   * one that cannot. A missing command executor is a WIRING fact: D28 says
+   * show the control, disabled, carrying its reason, because the surface could
+   * be mounted with one. `canEdit === false` is a fact about the KIND — no
+   * viewer, no mount and no permission makes it true — so a control for it is
+   * not honesty, it is a promise the product can never keep.
+   *
+   * Hence the server's answer gates the control's EXISTENCE while `save`'s own
+   * `unavailable` keeps gating its enabled-ness. `titleEditable` above already
+   * consulted `save.unavailable`; this is the same question asked one level
+   * up, and the two lines below are the only ones that never asked it.
+   */
+  const editsPossible = detail?.capabilities.canEdit !== false;
 
   /**
    * PERMISSION-LOST SHORT-CIRCUITS EVERYTHING, and it must come first.
@@ -878,7 +902,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            permit it. The visual treatment stays plain by user direction; the
            actual click/keyboard editor is still mounted only when writable. */
         titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
-        titleLockReason={config.list.inlineEdit?.title ? saveRefusal : undefined}
+        titleLockReason={editsPossible && config.list.inlineEdit?.title ? saveRefusal : undefined}
         autoFocusTitle={props.justCreated}
         supplemental={
           (props.linkedPullRequests?.length ?? 0) > 0 ? (
@@ -935,7 +959,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            */
           oneSurface ? (
             <>
-              {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
+              {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
                 <SaveControls save={save} />
               ) : null}
               <TransferControl detail={detail} />
@@ -1065,7 +1089,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 ) : null
               }
             />
-            {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
+            {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
               <SaveControls save={save} />
             ) : null}
             {/* Cross-server transfer (user ruling 2026-08-18: panel, not tile).

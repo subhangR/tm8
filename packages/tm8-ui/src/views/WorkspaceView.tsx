@@ -20,7 +20,7 @@ import {
   EntityListPanel,
   ListRootHeader,
   NewContainerSheet,
-  rootBirthAction,
+  rootBirthDispatch,
   type DetailReasons,
 } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
@@ -706,30 +706,19 @@ export function WorkspaceView(props: WorkspaceViewProps) {
      * different things.
      *
      * Two arms, and the registry decides which (never a kind literal, §15.2):
-     *   - `rootBirthAction` ⇒ the kind is STARTED. Sessions are the case: the
-     *     birth is `start-terminal`, dispatched through `useSessionStart`,
-     *     which owns the space and the project a terminal needs.
+     *   - `rootBirthDispatch` ⇒ the kind is STARTED (or otherwise born by a
+     *     VERB). Sessions are the case: `start-terminal`, dispatched through
+     *     `useSessionStart`, which owns the space and project a terminal
+     *     needs. Chats are the other: `chat-about`, through `useChatAbout`.
+     *     It routes on the COMPOSED `wiredActions`, so a verb no dispatcher
+     *     performs refuses out loud instead of clicking into nothing.
      *   - otherwise ⇒ the generic create, with the TARGET kind's own
      *     placeholder. `flow` is the vehicle (its commands, its `onCreated`),
      *     not the subject — its bound kind is only the default.
      */
     const birthFor = (kind: string): { refusal: { cause: string; remedy: string } | null; perform: () => void } => {
-      const action = rootBirthAction(kind);
-      if (action) {
-        const dispatch = sessionStart.onAction;
-        /* The SAME gate the retired header button used: `onAction` is present
-           exactly when a terminal can be started, so a surface without a
-           command seam refuses out loud instead of throwing on click. */
-        return dispatch
-          ? { refusal: null, perform: () => dispatch(action, '') }
-          : {
-              refusal: {
-                cause: `Starting ${getKind(kind).labelPlural.toLowerCase()} isn’t wired here`,
-                remedy: 'this surface was mounted without a command executor',
-              },
-              perform: () => undefined,
-            };
-      }
+      const verb = rootBirthDispatch(kind, listActions);
+      if (verb) return verb;
       const target = getKind(kind);
       return {
         refusal: flow.unavailableFor(target.kind) ?? refusalFor(target),
