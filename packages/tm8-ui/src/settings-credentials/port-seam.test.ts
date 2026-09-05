@@ -26,10 +26,29 @@ function port() {
 describe('the credentials port against a real seam', () => {
   it('returns the merged view AND its completeness report', async () => {
     const status = await port().load();
-    // All three providers, always — the contract says the array is never
+    // All six providers, always — the contract says the array is never
     // partial, so a screen may index it without guarding.
-    expect(status.providers.map((p) => p.provider).sort()).toEqual(['anthropic', 'github', 'openai']);
+    expect(status.providers.map((p) => p.provider)).toEqual([
+      'anthropic',
+      'openai',
+      'github',
+      'gemini',
+      'hermes',
+      'cursor',
+    ]);
+    expect(status.providers.find((provider) => provider.provider === 'cursor')).toMatchObject({
+      connected: true,
+      login: null,
+      status: 'active',
+    });
     expect(status.gitCredentialStore).toBe('absent');
+  });
+
+  it('carries the node measurement that makes Hermes unavailable, not disconnected', async () => {
+    const status = await port().load();
+    const hermes = status.providers.find((provider) => provider.provider === 'hermes');
+    expect(hermes?.connected).toBe(false);
+    expect(hermes?.status).toBe('unavailable');
   });
 
   it('carries anthropic’s permanently-null login through unchanged', async () => {

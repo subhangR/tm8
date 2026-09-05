@@ -254,15 +254,26 @@ describe('resolveLaunchConfig', () => {
     expect(resolveLaunchConfig(base, context(), {}).credentialSources).toEqual({
       anthropic: null,
       openai: null,
+      gemini: null,
+      hermes: null,
+      cursor: null,
       github: null,
     });
 
     expect(resolveLaunchConfig({
       ...base,
-      credentialSources: { anthropic: 'node', github: 'member' },
+      credentialSources: {
+        anthropic: 'node',
+        github: 'member',
+        gemini: 'member',
+        cursor: 'node',
+      },
     }, context(), {}).credentialSources).toEqual({
       anthropic: 'node',
       openai: null,
+      gemini: 'member',
+      hermes: null,
+      cursor: 'node',
       github: 'member',
     });
 
@@ -274,6 +285,9 @@ describe('resolveLaunchConfig', () => {
     }, context(), {}).credentialSources).toEqual({
       anthropic: 'node',
       openai: 'node',
+      gemini: 'node',
+      hermes: 'node',
+      cursor: 'node',
       github: 'member',
     });
 
@@ -287,6 +301,9 @@ describe('resolveLaunchConfig', () => {
     }).credentialSources).toEqual({
       anthropic: 'member',
       openai: 'member',
+      gemini: 'member',
+      hermes: 'member',
+      cursor: 'member',
       github: 'node',
     });
   });

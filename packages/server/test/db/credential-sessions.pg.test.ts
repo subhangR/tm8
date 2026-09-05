@@ -230,6 +230,61 @@ describe('083 — the migration applies and its objects exist', () => {
   });
 });
 
+describe('125 — credential RPC guards follow the admitted provider sets', () => {
+  it.each(['gemini', 'cursor'] as const)(
+    'lets a human start a %s login session instead of rejecting it with 22023',
+    async (provider) => {
+      const started = await asApp(fixture.aliceIdentity, async (client) => {
+        const result = (
+          await client.query<{
+            result: { workSessionId: string; spaceId: string; provider: string };
+          }>(
+            `select public.start_credential_session(
+               $1, $2, p_session_cap => 10
+             ) as result`,
+            [fixture.space, provider],
+          )
+        ).rows[0]!.result;
+        await client.query(`select public.finish_credential_session($1)`, [result.workSessionId]);
+        return result;
+      });
+
+      expect(started).toMatchObject({ spaceId: fixture.space, provider });
+      expect(started.workSessionId).toBeTruthy();
+    },
+  );
+
+  it.each(['gemini', 'cursor'] as const)(
+    'lets the file-shaped %s provider write its metadata row',
+    async (provider) => {
+      const stored = await asApp(fixture.aliceIdentity, async (client) => {
+        const result = (
+          await client.query<{ result: { connected: boolean; provider: string } }>(
+            `select public.set_account_agent_credential($1, null, 'oauth') as result`,
+            [provider],
+          )
+        ).rows[0]!.result;
+        await client.query(`select public.delete_account_agent_credential($1)`, [provider]);
+        return result;
+      });
+
+      expect(stored).toMatchObject({ connected: true, provider });
+    },
+  );
+
+  it('keeps string-shaped GitHub out of account_agent_credentials', async () => {
+    await expectRefusal(
+      () =>
+        asApp(fixture.aliceIdentity, (client) =>
+          client.query(
+            `select public.set_account_agent_credential('github', null, 'oauth')`,
+          ),
+        ),
+      '22023',
+    );
+  });
+});
+
 describe('083 — isolation between two distinct principals', () => {
   it("never returns Alice's credential row to Bob, and vice versa", async () => {
     await asApp(fixture.aliceIdentity, async (client) => {

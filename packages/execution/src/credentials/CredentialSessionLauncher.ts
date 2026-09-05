@@ -19,7 +19,7 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  * args field and no flags field — the absence is the control, because a field
  * that does not exist cannot be forwarded by a later refactor.
  *
- * Each entry is a measured decision, not a plausible guess:
+ * The first three entries are measured decisions, not plausible guesses:
  *
  *  anthropic — `claude auth login`, AMENDING R4 (which ruled `claude
  *    setup-token` for its narrower scope: `user:inference` only, vs the six
@@ -60,11 +60,48 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  *    `--skip-ssh-key` because tm8 has no business generating a key pair on the
  *    member's behalf, and `--git-protocol https` because that is the protocol
  *    the credential this login produces can actually serve.
+ *
+ *  gemini — bare `gemini`, MEASURED on this node (2026-09-04,
+ *    @google/gemini-cli 0.58.0). There is no `gemini auth` or `gemini login`
+ *    subcommand to reach for: `gemini --help` lists only `mcp`, `extensions`,
+ *    `skills`, `hooks`, `gemma` and the default query command, and the auth
+ *    chooser (Login with Google / API key) runs on interactive start. So the
+ *    bare binary IS the login verb here rather than a stand-in for one.
+ *
+ *    Its isolation was measured too, and it is weaker than the three above:
+ *    `GEMINI_DIR` appears throughout the shipped bundle but it is the CONSTANT
+ *    `".gemini"`, not a variable read from the environment — resolution is
+ *    `homedir() + '/.gemini'`. `HOME=$(mktemp -d) gemini -p hi` wrote `.gemini`
+ *    into that temporary HOME and nowhere else, so the per-identity HOME every
+ *    login terminal already gets IS the whole isolation mechanism for this
+ *    vendor. That is a real guarantee, but it is one rung lower than a
+ *    vendor-documented config-dir override, and `CREDENTIAL_CONFIG_DIR_VAR`
+ *    records it as `null` rather than inventing a variable the CLI never reads.
+ *
+ *  hermes — `hermes login` is DECLARED, NOT MEASURED. No `hermes` binary exists
+ *    on this node, so no login flow was observed and this entry is the argv to
+ *    use once an operator installs one. Migration 083's admission rule is
+ *    satisfied not by this string but by the server: the probe reports
+ *    `unavailable`, and login-session start refuses — naming the binary —
+ *    before it mints a work session or starts a PTY. Nothing here retroactively
+ *    claims a measurement, and the entry must not be reworded as though it did
+ *    until someone has actually watched the flow.
+ *
+ *  cursor — `cursor-agent login` is MEASURED on this node (2026-09-04,
+ *    cursor-agent 2026.09.02-c22c1a3): the binary is present, the login verb
+ *    was observed, and its HOME-scoped storage was located at
+ *    `.cursor/cli-config.json`. This is evidence, unlike Hermes's declaration
+ *    above. `cursor-agent logout` also exists, but tm8 Disconnect revokes the
+ *    stored credential plus its sessions; invoking a vendor logout is a
+ *    separate decision and is deliberately not wired here.
  */
 export const CREDENTIAL_LOGIN_COMMANDS = {
   anthropic: 'claude auth login',
   openai: 'codex login --device-auth',
   github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
+  gemini: 'gemini',
+  hermes: 'hermes login',
+  cursor: 'cursor-agent login',
 } as const satisfies Record<CredentialProvider, string>;
 
 /**

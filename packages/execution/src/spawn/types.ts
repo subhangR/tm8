@@ -14,6 +14,7 @@
 //      capture trigger and the F1/F2 guards; keeping SQL out of this package
 //      makes that mistake impossible to make here.
 
+import type { CredentialProviderName } from '@tm8/contract';
 import type { CoordinatorKind } from '@tm8/prompt';
 
 export type { CoordinatorKind };
@@ -188,7 +189,8 @@ export interface LoadSpawnContextInput {
  * credential a session may use is not a client-expressible decision.
  */
 export type CredentialSource = 'member' | 'node';
-export type CredentialProvider = 'anthropic' | 'openai' | 'github';
+/** The contract's complete provider set; an alias cannot drift during rollout. */
+export type CredentialProvider = CredentialProviderName;
 export type CredentialSources = Partial<Record<CredentialProvider, CredentialSource>>;
 export type ResolvedCredentialSources = Record<CredentialProvider, CredentialSource | null>;
 export type StoredCredentialSources = Partial<Record<CredentialProvider, CredentialSource | null>>;

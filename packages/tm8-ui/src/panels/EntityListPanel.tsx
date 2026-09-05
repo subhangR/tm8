@@ -84,9 +84,13 @@ import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-req
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
 import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
+import {
+  routeMessagePulse,
+  type PulseSegment,
+  type SessionPulseKind,
+} from './list/message-pulse';
 import { relatedOfKind } from './list/related';
 import { RelatedGroup } from './list/RelatedGroup';
-import { routeMessagePulse, type PulseSegment } from './list/message-pulse';
 import type { MessagePulse } from './list/useMessagePulses';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 import { newLaunchMutationId } from '../domain/launch';
@@ -185,7 +189,8 @@ export interface EntityListPanelProps {
   /** Pool activity signal, per session. Gated on the verdict. */
   activity?: Readonly<Record<string, boolean>>;
   /**
-   * Live message arrivals (sender → anchor), for `list.tree.messagePulse`.
+   * Live delegation, completion and message arrivals, for
+   * `list.tree.messagePulse` (the historical registry name).
    * Injected like every other signal: the panel never taps the seam itself.
    */
   messagePulses?: readonly MessagePulse[];
@@ -2671,7 +2676,8 @@ function TreeRows({
   const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
 
   /**
-   * Live message traffic, resolved against THIS tree's current shape. Recomputed
+   * Live session traffic — delegation, completion and messages — resolved
+   * against THIS tree's current shape. Recomputed
    * when the tree or the disclosure state changes, because a route is only true
    * for the arrangement that was on screen when it was drawn — collapsing a
    * subtree mid-flight must re-aim the pulse at the ancestor now standing in
@@ -2695,11 +2701,12 @@ function TreeRows({
         role={config.list.tree ? 'treeitem' : 'listitem'}
         aria-expanded={config.list.tree && hasChildren ? !isCollapsed : undefined}
         aria-selected={config.list.tree ? props.selectedId === node.row.id : undefined}
-        /* Presentation only. The pulse is decoration over a message that is
-           already announced on its own anchor, so it carries no ARIA and no
-           live region — narrating every inter-session message here would be
-           noise on a tree the user is trying to read. */
-        data-pulse-row={endpoint}
+        /* Presentation only. The underlying event is already represented by
+           the rows it changes; narrating the same transition from a decorative
+           wire would duplicate announcements. */
+        data-pulse-row={endpoint?.role}
+        data-pulse-kind={endpoint?.kind}
+        data-pulse-outcome={endpoint?.outcome}
       >
         <Tile
           row={node.row}
@@ -2717,7 +2724,13 @@ function TreeRows({
             role="group"
             data-testid="list-tile-children"
             data-pulse={wire?.direction}
-            style={wire ? ({ '--lp-pulse-delay': `${wire.order * 90}ms` } as React.CSSProperties) : undefined}
+            data-pulse-kind={wire?.kind}
+            data-pulse-outcome={wire?.outcome}
+            style={wire ? ({
+              '--lp-pulse-delay': wire.order === 0
+                ? '0ms'
+                : `calc(var(--pn-dur-fast) * ${wire.order})`,
+            } as React.CSSProperties) : undefined}
           >
             {node.children.map(renderNode)}
           </div>
@@ -2803,9 +2816,18 @@ function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): T
 
 interface ResolvedPulses {
   /** Wire owner → how its hairline sweeps, and where in the flight it does so. */
-  segments: ReadonlyMap<string, { direction: PulseSegment['direction']; order: number }>;
+  segments: ReadonlyMap<string, {
+    direction: PulseSegment['direction'];
+    order: number;
+    kind: SessionPulseKind;
+    outcome?: 'exited' | 'failed';
+  }>;
   /** Row → its part in a pulse, for the endpoint glow. */
-  endpoints: ReadonlyMap<string, 'from' | 'to'>;
+  endpoints: ReadonlyMap<string, {
+    role: 'from' | 'to';
+    kind: SessionPulseKind;
+    outcome?: 'exited' | 'failed';
+  }>;
 }
 
 const NO_PULSES: ResolvedPulses = { segments: new Map(), endpoints: new Map() };
@@ -2818,9 +2840,9 @@ const NO_PULSES: ResolvedPulses = { segments: new Map(), endpoints: new Map() };
  * not ask for `messagePulse` resolves to nothing, so this cannot animate a tree
  * that never opted in. Same shape as `tile.pulse` — data decides, not the kind.
  *
- * When several messages are in flight at once their routes are merged, and a
- * wire carrying more than one keeps the EARLIEST position in flight, so a long
- * route already under way is not restarted by a short one that crosses it.
+ * When several arrivals are in flight at once their routes are merged. A
+ * contested wire keeps the newest pulse, so its colour AND its physical form
+ * agree instead of combining two kinds into a fourth visual vocabulary.
  */
 function resolvePulses(
   rows: readonly EntitySummary[],
@@ -2865,20 +2887,37 @@ function resolvePulses(
     },
   };
 
-  const segments = new Map<string, { direction: PulseSegment['direction']; order: number }>();
-  const endpoints = new Map<string, 'from' | 'to'>();
+  const segments = new Map<string, {
+    direction: PulseSegment['direction'];
+    order: number;
+    kind: SessionPulseKind;
+    outcome?: 'exited' | 'failed';
+  }>();
+  const endpoints = new Map<string, {
+    role: 'from' | 'to';
+    kind: SessionPulseKind;
+    outcome?: 'exited' | 'failed';
+  }>();
   for (const item of pulses) {
     const route = routeMessagePulse(item.fromId, item.toId, index);
     route.segments.forEach((segment, order) => {
-      const existing = segments.get(segment.ownerId);
-      if (existing === undefined || order < existing.order) {
-        segments.set(segment.ownerId, { direction: segment.direction, order });
-      }
+      segments.set(segment.ownerId, {
+        direction: segment.direction,
+        order,
+        kind: item.kind,
+        ...(item.kind === 'completion' ? { outcome: item.outcome } : {}),
+      });
     });
     // Arrival wins a contested row: a session that both sends and receives in
     // the same window is more interesting as a destination.
-    if (route.fromRowId !== null && !endpoints.has(route.fromRowId)) endpoints.set(route.fromRowId, 'from');
-    if (route.toRowId !== null) endpoints.set(route.toRowId, 'to');
+    const endpoint = {
+      kind: item.kind,
+      ...(item.kind === 'completion' ? { outcome: item.outcome } : {}),
+    };
+    if (route.fromRowId !== null && !endpoints.has(route.fromRowId)) {
+      endpoints.set(route.fromRowId, { role: 'from', ...endpoint });
+    }
+    if (route.toRowId !== null) endpoints.set(route.toRowId, { role: 'to', ...endpoint });
   }
   return { segments, endpoints };
 }

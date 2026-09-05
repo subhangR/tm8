@@ -559,7 +559,12 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
     // The choice is durable: a resume or a child spawn reads it back from here.
     expect(graph.manifests[0]?.manifest.launch.credentialSource).toBe('node');
     expect(graph.manifests[0]?.manifest.launch.credentialSources).toEqual({
-      anthropic: 'node', openai: 'node', github: 'node',
+      anthropic: 'node',
+      openai: 'node',
+      gemini: 'node',
+      hermes: 'node',
+      cursor: 'node',
+      github: 'node',
     });
   }, 30000);
 
@@ -583,7 +588,12 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
     expect(result.envVarNames).toContain('CLAUDE_CONFIG_DIR');
     expect(graph.manifests[0]?.manifest.launch.credentialSource).toBe('member');
     expect(graph.manifests[0]?.manifest.launch.credentialSources).toEqual({
-      anthropic: 'member', openai: 'member', github: 'member',
+      anthropic: 'member',
+      openai: 'member',
+      gemini: 'member',
+      hermes: 'member',
+      cursor: 'member',
+      github: 'member',
     });
   }, 30000);
 
@@ -616,7 +626,12 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
     await service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });
     expect(graph.manifests[0]?.manifest.launch.credentialSource).toBeNull();
     expect(graph.manifests[0]?.manifest.launch.credentialSources).toEqual({
-      anthropic: null, openai: null, github: null,
+      anthropic: null,
+      openai: null,
+      gemini: null,
+      hermes: null,
+      cursor: null,
+      github: null,
     });
   }, 30000);
 });

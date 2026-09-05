@@ -171,6 +171,9 @@ describe('server spawn integration with a stub PTY', () => {
     expect(result.manifest.launch.credentialSources).toEqual({
       anthropic: null,
       openai: 'node',
+      gemini: null,
+      hermes: null,
+      cursor: null,
       github: 'member',
     });
     expect(spawnIfAbsent).toHaveBeenCalledOnce();

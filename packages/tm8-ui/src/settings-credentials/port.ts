@@ -14,6 +14,7 @@
  * corrected later.
  */
 import type {
+  CredentialConnectionView,
   CredentialProviderName,
   CredentialsDeleteResult,
   CredentialsLoginSessionFinishResult,
@@ -22,6 +23,7 @@ import type {
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
+import { presentationOf } from './provider-presentation';
 
 /** The narrow surface the credentials components consume. */
 export interface CredentialsPort {
@@ -35,7 +37,10 @@ export interface CredentialsPort {
   finishLogin(workSessionId: string): Promise<CredentialsLoginSessionFinishResult>;
 }
 
-export function credentialsPortFromSeam(seam: Seam, spaceId: SpaceId): CredentialsPort {
+export function credentialsPortFromSeam(
+  seam: Pick<Seam, 'credentials'>,
+  spaceId: SpaceId,
+): CredentialsPort {
   return {
     load: () => seam.credentials.status(),
     disconnect: (provider) => seam.credentials.disconnect(provider),
@@ -48,56 +53,61 @@ export function credentialsPortFromSeam(seam: Seam, spaceId: SpaceId): Credentia
 }
 
 // ---------------------------------------------------------------------------
-// The honest-degradation vocabulary — THREE states, never two
+// The honest-degradation vocabulary — FOUR states, never two
 // ---------------------------------------------------------------------------
 
 /**
  * What this screen is allowed to SAY about one provider.
  *
- * `unknown` exists because collapsing it into `disconnected` is the single
- * most likely defect on this surface and the one that looks completely fine:
- * a user told "Not connected" will go and connect something that may already
- * be connected. It is a separate word so a test can require the difference.
+ * `unavailable` and `unknown` are different successful claims about what was
+ * measured. Unavailable means the binary is absent; unknown means no answer
+ * about connection state was established. Collapsing either into disconnected
+ * invites a user to start a flow that will fail or repeat one they already did.
  */
 export type ConnectionVerdict =
   /** Connected, and there is a vendor-side account name to show. */
   | 'connected-named'
-  /** Connected, and there NEVER will be a name. Not pending, not missing. */
+  /** Connected, and the probe supplied no name. Complete, not pending. */
   | 'connected-unnamed'
   /** Measured false — this member genuinely has not connected this provider. */
   | 'disconnected'
-  /** NOT MEASURED. The store this answer would come from does not exist here. */
+  /** Measured absence — this provider's CLI binary is not installed here. */
+  | 'unavailable'
+  /** NOT MEASURED. A probe/store could not establish a connection answer. */
   | 'unknown';
 
 /**
  * The verdict for one provider entry, given the store's own completeness.
  *
- * ORDER MATTERS. `unknown` is tested FIRST, because the shape of the bug this
- * prevents is a `connected: false` that was never measured: when
- * `gitCredentialStore` is `absent`, the github entry's `connected` is false
- * for want of a table to read, not because anyone looked. Reading `connected`
- * before checking the store is how "Not connected" gets printed under a fact
- * nobody established.
+ * ORDER MATTERS. A positive answer stays trusted. After that, an absent binary
+ * is the most specific measured result, a stale probe (or absent legacy GitHub
+ * store) is unknown, and only the remainder is a measured disconnection.
  *
  * A CONNECTED ANSWER IS STILL TRUSTED under an absent store: the value can only
  * have come from somewhere real, and downgrading a positive to `unknown` would
  * invent a doubt the data does not support.
  */
 export function verdictOf(
-  entry: { provider: CredentialProviderName; connected: boolean; login: string | null },
+  entry: Pick<CredentialConnectionView, 'provider' | 'connected' | 'login' | 'status'>,
   gitCredentialStore: 'present' | 'absent',
 ): ConnectionVerdict {
-  if (entry.provider === 'github' && gitCredentialStore === 'absent' && !entry.connected) {
+  if (entry.connected) {
+    // NULL is a complete answer: legacy Anthropic rows have it forever, and
+    // Cursor's measured status proves authentication without naming an account.
+    // Neither positive result is missing data that the renderer should await.
+    return entry.login === null ? 'connected-unnamed' : 'connected-named';
+  }
+  if (entry.status === 'unavailable') return 'unavailable';
+  if (entry.status === 'stale') return 'unknown';
+
+  // The rolling-upgrade completeness field predates per-provider measurement.
+  // Its one provider-specific fact lives in the presentation table, so this
+  // port still contains no second switch/list that can drift from the UI.
+  const presentation = presentationOf(entry.provider);
+  if (presentation.needsGitCredentialStore && gitCredentialStore === 'absent') {
     return 'unknown';
   }
-  if (!entry.connected) return 'disconnected';
-  // Connected with no login is a legal shape: rows minted under the original
-  // R4 verb (`claude setup-token`, `user:inference` only) never learned a
-  // name. Post-amendment `claude auth login` grants `user:profile`, so new
-  // anthropic rows carry an email — but this verdict stays, so the screen can
-  // omit the field for old rows instead of drawing an empty one, a spinner,
-  // or "unknown user".
-  return entry.login === null ? 'connected-unnamed' : 'connected-named';
+  return 'disconnected';
 }
 
 /**

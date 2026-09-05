@@ -190,6 +190,25 @@ export interface Placement {
   radii: readonly number[];
 }
 
+/**
+ * Move a centre point to the rectangular node boundary in `toward`'s
+ * direction. Links used to end underneath each node; that was harmless for a
+ * bare line but hides an SVG marker completely. Trimming exposes arrowheads
+ * without consulting a clock or perturbing a single node position.
+ */
+function boxBoundary(
+  centre: { x: number; y: number },
+  toward: { x: number; y: number },
+): { x: number; y: number } {
+  const dx = toward.x - centre.x;
+  const dy = toward.y - centre.y;
+  if (dx === 0 && dy === 0) return centre;
+  const tx = dx === 0 ? Number.POSITIVE_INFINITY : (NODE_W / 2) / Math.abs(dx);
+  const ty = dy === 0 ? Number.POSITIVE_INFINITY : (NODE_H / 2) / Math.abs(dy);
+  const scale = Math.min(tx, ty);
+  return { x: centre.x + dx * scale, y: centre.y + dy * scale };
+}
+
 export function layoutSessionGraph(graph: SessionGraph): Placement {
   const byId = new Map(graph.cells.map((cell) => [cell.id, cell]));
   const children = new Map<string, string[]>();
@@ -297,14 +316,20 @@ export function layoutSessionGraph(graph: SessionGraph): Placement {
     const dx = mx - centre.x;
     const dy = my - centre.y;
     const len = Math.hypot(dx, dy) || 1;
+    const control = {
+      x: mx + (dx / len) * 14,
+      y: my + (dy / len) * 14,
+    };
+    const start = boxBoundary(from, control);
+    const end = boxBoundary(to, control);
     links.push({
       link,
-      x1: from.x,
-      y1: from.y,
-      x2: to.x,
-      y2: to.y,
-      cx: mx + (dx / len) * 14,
-      cy: my + (dy / len) * 14,
+      x1: start.x,
+      y1: start.y,
+      x2: end.x,
+      y2: end.y,
+      cx: control.x,
+      cy: control.y,
     });
   }
 

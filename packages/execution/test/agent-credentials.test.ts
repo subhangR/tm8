@@ -20,11 +20,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AGENT_CREDENTIAL_CONFIG_DIR_VAR,
+  AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS,
   AGENT_TOOL_CREDENTIAL_PROVIDER,
   agentCredentialEnv,
   agentCredentialProviderFor,
   agentCredentialXdgConfigHome,
   type AgentCredentialHome,
+  type AgentCredentialProvider,
 } from '../src/spawn/agent-credentials.js';
 import { CREDENTIAL_CONFIG_DIR_VAR, composeCredentialEnv } from '../src/credentials/credential-env.js';
 import { composeEnv, composeManifest } from '../src/spawn/manifest.js';
@@ -187,32 +189,85 @@ describe('the exact key set a composed agent environment carries', () => {
 
     expect(Object.keys(env).sort()).toEqual([...BASE_KEYS, 'CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME'].sort());
   });
+
+  it.each(['gemini', 'hermes', 'cursor'] as const)(
+    'replaces only HOME and adds XDG_CONFIG_HOME for a spawned %s environment',
+    (provider) => {
+      const env = composeEnv(
+        manifestFor(provider),
+        '/tmp/m.json',
+        'http://x',
+        POLLUTED_PARENT,
+        undefined,
+        undefined,
+        { provider, homeDir: HOME_DIR, configDir: `${HOME_DIR}/${provider}` },
+      );
+
+      expect(Object.keys(env).sort()).toEqual([...BASE_KEYS, 'XDG_CONFIG_HOME'].sort());
+      expect(env.HOME).toBe(HOME_DIR);
+      expect(env.XDG_CONFIG_HOME).toBe(`${HOME_DIR}/.config`);
+    },
+  );
 });
 
-describe('the config-dir variable is chosen by agent tool', () => {
-  it('gives the anthropic tool CLAUDE_CONFIG_DIR and nothing else', () => {
-    expect(agentCredentialEnv(aliceHome)).toEqual({
+describe('the exact credential fragment is chosen by agent tool', () => {
+  it('pins the complete config-directory override table', () => {
+    expect(AGENT_CREDENTIAL_CONFIG_DIR_VAR).toEqual({
+      anthropic: 'CLAUDE_CONFIG_DIR',
+      openai: 'CODEX_HOME',
+      gemini: null,
+      hermes: null,
+      cursor: null,
+    });
+  });
+
+  it('keeps the anthropic key set and values byte-for-byte unchanged', () => {
+    const env = agentCredentialEnv(aliceHome);
+    expect(Object.keys(env).sort()).toEqual(['CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME']);
+    expect(env).toEqual({
       CLAUDE_CONFIG_DIR: `${HOME_DIR}/anthropic`,
       XDG_CONFIG_HOME: `${HOME_DIR}/.config`,
     });
   });
 
-  it('gives the openai tool CODEX_HOME and nothing else', () => {
-    expect(
-      agentCredentialEnv({
-        provider: 'openai',
-        homeDir: HOME_DIR,
-        configDir: `${HOME_DIR}/openai`,
-      }),
-    ).toEqual({
+  it('keeps the openai key set and values byte-for-byte unchanged', () => {
+    const env = agentCredentialEnv({
+      provider: 'openai',
+      homeDir: HOME_DIR,
+      configDir: `${HOME_DIR}/openai`,
+    });
+    expect(Object.keys(env).sort()).toEqual(['CODEX_HOME', 'XDG_CONFIG_HOME']);
+    expect(env).toEqual({
       CODEX_HOME: `${HOME_DIR}/openai`,
       XDG_CONFIG_HOME: `${HOME_DIR}/.config`,
     });
   });
 
-  it('resolves each shipped agent tool to its provider, and everything else to none', () => {
-    expect(agentCredentialProviderFor('claude-code')).toBe('anthropic');
-    expect(agentCredentialProviderFor('codex')).toBe('openai');
+  it.each(['gemini', 'hermes', 'cursor'] as const)(
+    'redirects HOME for HOME-scoped %s and emits no invented config variable',
+    (provider) => {
+      expect(agentCredentialEnv({
+        provider,
+        homeDir: HOME_DIR,
+        configDir: `${HOME_DIR}/${provider}`,
+      })).toEqual({
+        HOME: HOME_DIR,
+        XDG_CONFIG_HOME: `${HOME_DIR}/.config`,
+      });
+    },
+  );
+
+  it('resolves every mapped agent tool to its provider, and everything else to none', () => {
+    expect(AGENT_TOOL_CREDENTIAL_PROVIDER).toEqual({
+      'claude-code': 'anthropic',
+      codex: 'openai',
+      gemini: 'gemini',
+      hermes: 'hermes',
+      cursor: 'cursor',
+    });
+    for (const [agentTool, provider] of Object.entries(AGENT_TOOL_CREDENTIAL_PROVIDER)) {
+      expect(agentCredentialProviderFor(agentTool)).toBe(provider);
+    }
     // `echo-agent` is the built-in smoke agent and authenticates against
     // nothing; an unknown tool must not be guessed at.
     expect(agentCredentialProviderFor('echo-agent')).toBeNull();
@@ -246,7 +301,19 @@ describe('finding C8 — a session never carries two credentials for one provide
     ANTHROPIC_API_KEY: 'sk-ant-node-key',
     OPENAI_API_KEY: 'sk-openai-node-key',
     GEMINI_API_KEY: 'gemini-node-key',
+    GOOGLE_API_KEY: 'google-node-key',
+    CURSOR_API_KEY: 'cursor-node-key',
   };
+
+  it('pins the complete provider-scoped suppression table', () => {
+    expect(AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS).toEqual({
+      anthropic: ['ANTHROPIC_API_KEY'],
+      openai: ['OPENAI_API_KEY'],
+      gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+      hermes: [],
+      cursor: ['CURSOR_API_KEY'],
+    });
+  });
 
   it('drops the node ANTHROPIC_API_KEY when the member has connected anthropic', () => {
     const env = composeEnv(
@@ -263,7 +330,8 @@ describe('finding C8 — a session never carries two credentials for one provide
     // Scoped to the CONNECTED provider only. The member connected anthropic,
     // not openai, so the node's openai key is untouched.
     expect(env.OPENAI_API_KEY).toBe('sk-openai-node-key');
-    // No admitted gemini provider (ruling 6) — suppression must not generalise.
+    // Gemini is admitted, but suppression remains scoped to the provider whose
+    // member credential this particular session received.
     expect(env.GEMINI_API_KEY).toBe('gemini-node-key');
   });
 
@@ -282,6 +350,23 @@ describe('finding C8 — a session never carries two credentials for one provide
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-node-key');
   });
 
+  it('drops both node key spellings when the member credential is Gemini', () => {
+    const env = composeEnv(
+      manifestFor('gemini'),
+      '/tmp/m.json',
+      'http://x',
+      NODE_KEYS,
+      undefined,
+      undefined,
+      { provider: 'gemini', homeDir: HOME_DIR, configDir: `${HOME_DIR}/gemini` },
+    );
+
+    expect(env.HOME).toBe(HOME_DIR);
+    expect(env).not.toHaveProperty('GEMINI_API_KEY');
+    expect(env).not.toHaveProperty('GOOGLE_API_KEY');
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-node-key');
+  });
+
   it('leaves an UNCONNECTED member on exactly today behaviour', () => {
     // The regression half of the ruling. A node that deliberately runs on an
     // API key must be unaffected for every member who has not connected.
@@ -290,6 +375,7 @@ describe('finding C8 — a session never carries two credentials for one provide
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-node-key');
     expect(env.OPENAI_API_KEY).toBe('sk-openai-node-key');
     expect(env.GEMINI_API_KEY).toBe('gemini-node-key');
+    expect(env.GOOGLE_API_KEY).toBe('google-node-key');
   });
 });
 
@@ -303,7 +389,9 @@ describe('drift guard — the agent table and the login-terminal table are one c
    * bodies drifting apart (`can_act_as`, 002 -> 075).
    */
   it('maps every shared provider to the same variable name', () => {
-    for (const provider of ['anthropic', 'openai'] as const) {
+    for (const provider of Object.keys(
+      AGENT_CREDENTIAL_CONFIG_DIR_VAR,
+    ) as AgentCredentialProvider[]) {
       expect(AGENT_CREDENTIAL_CONFIG_DIR_VAR[provider]).toBe(CREDENTIAL_CONFIG_DIR_VAR[provider]);
     }
   });

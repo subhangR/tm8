@@ -1,5 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type {
+  CredentialConnectionView,
+  CredentialProviderName,
+  CredentialsLoginSessionFinishResult,
+  CredentialsLoginSessionStartResult,
+  CredentialsStatusView,
+} from '@tm8/contract';
 import type { RealFacade } from '../RealFacade';
+import { TmClient } from '../TmClient';
 import { disabledBecause } from './Unavailable';
 import { agentsQuery, docsQuery, isDrawing } from './queries';
 import { AgentsTab } from './tabs/AgentsTab';
@@ -20,7 +28,37 @@ export interface ResourcePanelProps {
   spaceId: string;
   openSessionId: string | null;
   onOpenSession: (sessionId: string | null) => void;
+  /** Injectable because packages/ui owns a transport seam, not tm8-ui's seam. */
+  credentialsPort?: ResourceCredentialsPort;
 }
+
+/** The smallest credential surface this panel needs from its own HTTP seam. */
+export interface ResourceCredentialsPort {
+  load(): Promise<CredentialsStatusView>;
+  startLogin(
+    spaceId: string,
+    provider: CredentialProviderName,
+  ): Promise<CredentialsLoginSessionStartResult>;
+  finishLogin(workSessionId: string): Promise<CredentialsLoginSessionFinishResult>;
+}
+
+function resourceCredentialsPortFromClient(client: TmClient): ResourceCredentialsPort {
+  return {
+    load: () => client.get<CredentialsStatusView>('/v2/identity/credentials'),
+    startLogin: (spaceId, provider) =>
+      client.post<CredentialsLoginSessionStartResult>(
+        '/v2/identity/credentials/login-sessions',
+        { spaceId, provider },
+      ),
+    finishLogin: (workSessionId) =>
+      client.post<CredentialsLoginSessionFinishResult>(
+        `/v2/identity/credentials/login-sessions/${workSessionId}/finish`,
+        {},
+      ),
+  };
+}
+
+const DEFAULT_CREDENTIALS_PORT = resourceCredentialsPortFromClient(new TmClient());
 
 const FILTERS: Array<{ id: ResourceTab; label: string; icon: PanelIconName }> = [
   { id: 'terminals', label: 'Terminals', icon: 'terminal' },
@@ -29,21 +67,96 @@ const FILTERS: Array<{ id: ResourceTab; label: string; icon: PanelIconName }> = 
   { id: 'drawings', label: 'Drawings', icon: 'pen' },
 ];
 
-const QUICK_TOOLS = ['claude', 'codex', 'hermes', 'gemini'] as const;
+const QUICK_TOOLS = ['claude', 'codex', 'hermes', 'gemini', 'cursor'] as const;
 
-function QuickMark({ tool }: { tool: typeof QUICK_TOOLS[number] }) {
+type QuickTool = typeof QUICK_TOOLS[number];
+type QuickConnectionState = 'connected' | 'disconnected' | 'unavailable' | 'unknown';
+
+/**
+ * packages/ui cannot import tm8-ui's presentation table. This is the narrow
+ * launch-tool bridge it owns: GitHub is intentionally absent because it is a
+ * source-control credential, not an agent executable that this row can launch.
+ */
+const QUICK_PROVIDER: Record<QuickTool, {
+  provider: CredentialProviderName;
+  name: string;
+  binary: string;
+}> = {
+  claude: { provider: 'anthropic', name: 'Claude', binary: 'claude' },
+  codex: { provider: 'openai', name: 'Codex', binary: 'codex' },
+  hermes: { provider: 'hermes', name: 'Hermes', binary: 'hermes' },
+  gemini: { provider: 'gemini', name: 'Gemini', binary: 'gemini' },
+  cursor: { provider: 'cursor', name: 'Cursor', binary: 'cursor-agent' },
+};
+
+const QUICK_STATE_MARK: Record<QuickConnectionState, string> = {
+  connected: '✓',
+  disconnected: '○',
+  unavailable: '×',
+  unknown: '?',
+};
+
+function QuickMark({ tool }: { tool: QuickTool }) {
   return <AgentLogo tool={tool} />;
 }
 
-export function ResourcePanel({ facade, spaceId, openSessionId, onOpenSession }: ResourcePanelProps) {
+function quickConnectionState(entry: CredentialConnectionView | undefined): QuickConnectionState {
+  if (!entry) return 'unknown';
+  if (entry.connected) return 'connected';
+  if (entry.status === 'unavailable') return 'unavailable';
+  if (entry.status === 'stale') return 'unknown';
+  return 'disconnected';
+}
+
+interface PendingQuickLogin {
+  provider: CredentialProviderName;
+  name: string;
+  workSessionId: string;
+}
+
+export function ResourcePanel({
+  facade,
+  spaceId,
+  openSessionId,
+  onOpenSession,
+  credentialsPort = DEFAULT_CREDENTIALS_PORT,
+}: ResourcePanelProps) {
   const [mode, setMode] = useState<PanelMode>('sessions');
   const [tab, setTab] = useState<ResourceTab>('agents');
   const [lifecycle, setLifecycle] = useState<SessionLifecycleFilter>('open');
   const [liveOnly, setLiveOnly] = useState(false);
+  const [credentialStatus, setCredentialStatus] = useState<CredentialsStatusView | null>(null);
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+  const [credentialBusy, setCredentialBusy] = useState<CredentialProviderName | null>(null);
+  const [pendingLogin, setPendingLogin] = useState<PendingQuickLogin | null>(null);
 
   const { sessions, live, finished, error, reload } = useSessions(facade, spaceId);
   const agents = usePolledCollection(facade, agentsQuery(spaceId), LIST_POLL_MS);
   const documents = usePolledCollection(facade, docsQuery(spaceId), LIST_POLL_MS);
+
+  const reloadCredentials = useCallback(() => credentialsPort.load().then(
+    (next) => {
+      setCredentialStatus(next);
+      setCredentialError(null);
+    },
+    (error: unknown) => setCredentialError(String((error as Error)?.message ?? error)),
+  ), [credentialsPort]);
+
+  useEffect(() => {
+    let live = true;
+    void credentialsPort.load().then(
+      (next) => {
+        if (live) {
+          setCredentialStatus(next);
+          setCredentialError(null);
+        }
+      },
+      (error: unknown) => {
+        if (live) setCredentialError(String((error as Error)?.message ?? error));
+      },
+    );
+    return () => { live = false; };
+  }, [credentialsPort]);
 
   const counts = useMemo(() => {
     const rows = sessions ?? [];
@@ -69,6 +182,44 @@ export function ResourcePanel({ facade, spaceId, openSessionId, onOpenSession }:
   const sessionCount = sessions?.length ?? 0;
   const quickDisabled = disabledBecause('spawnSession', 'Choose a task and agent before starting a session');
   const collapseDisabled = disabledBecause('workspace.collapseResourcePanel', 'This workspace uses a resize handle instead of collapsing the panel');
+
+  const credentialEntry = (tool: QuickTool) => credentialStatus?.providers.find(
+    (entry) => entry.provider === QUICK_PROVIDER[tool].provider,
+  );
+
+  const startQuickLogin = async (tool: QuickTool) => {
+    const presentation = QUICK_PROVIDER[tool];
+    setCredentialBusy(presentation.provider);
+    setCredentialError(null);
+    try {
+      const started = await credentialsPort.startLogin(spaceId, presentation.provider);
+      setPendingLogin({
+        provider: presentation.provider,
+        name: presentation.name,
+        workSessionId: started.workSessionId,
+      });
+      onOpenSession(started.workSessionId);
+    } catch (error) {
+      setCredentialError(String((error as Error)?.message ?? error));
+    } finally {
+      setCredentialBusy(null);
+    }
+  };
+
+  const finishQuickLogin = async () => {
+    if (!pendingLogin) return;
+    setCredentialBusy(pendingLogin.provider);
+    setCredentialError(null);
+    try {
+      await credentialsPort.finishLogin(pendingLogin.workSessionId);
+      setPendingLogin(null);
+      await reloadCredentials();
+    } catch (error) {
+      setCredentialError(String((error as Error)?.message ?? error));
+    } finally {
+      setCredentialBusy(null);
+    }
+  };
 
   return (
     <aside className="ws-res pn-panel" data-testid="resource-panel" aria-label="Sessions and resources">
@@ -124,11 +275,90 @@ export function ResourcePanel({ facade, spaceId, openSessionId, onOpenSession }:
         <button type="button" className="pn-qchip pn-qchip--icon" aria-label="New terminal" {...quickDisabled}>
           <PanelIcon name="terminal" />
         </button>
-        {QUICK_TOOLS.map((tool) => (
-          <button key={tool} type="button" className="pn-qchip pn-qchip--icon" aria-label={`Start ${tool}`} {...quickDisabled}>
-            <QuickMark tool={tool} />
-          </button>
-        ))}
+        {QUICK_TOOLS.map((tool) => {
+          const presentation = QUICK_PROVIDER[tool];
+          const entry = credentialEntry(tool);
+          const state = quickConnectionState(entry);
+          const label = `${presentation.name} — ${state}`;
+          const mark = (
+            <>
+              <QuickMark tool={tool} />
+              <span
+                className={`pn-qchip__state pn-qchip__state--${state}`}
+                data-state-mark={QUICK_STATE_MARK[state]}
+                aria-hidden="true"
+              >
+                {QUICK_STATE_MARK[state]}
+              </span>
+            </>
+          );
+
+          if (state === 'unavailable' || !entry) {
+            return (
+              <span
+                key={tool}
+                className="pn-qchip pn-qchip--icon"
+                role="img"
+                aria-label={label}
+                aria-disabled="true"
+                title={state === 'unavailable'
+                  ? `${presentation.binary} is not installed on this node`
+                  : 'Credential state has not been measured yet'}
+                data-testid={`quick-provider-${presentation.provider}`}
+                data-provider-state={state}
+              >
+                {mark}
+              </span>
+            );
+          }
+
+          if (state === 'connected') {
+            return (
+              <button
+                key={tool}
+                type="button"
+                className="pn-qchip pn-qchip--icon"
+                aria-label={label}
+                data-testid={`quick-provider-${presentation.provider}`}
+                data-provider-state={state}
+                {...quickDisabled}
+              >
+                {mark}
+              </button>
+            );
+          }
+
+          return (
+            <button
+              key={tool}
+              type="button"
+              className="pn-qchip pn-qchip--icon"
+              aria-label={label}
+              title={`Sign in to ${presentation.name}`}
+              data-testid={`quick-provider-${presentation.provider}`}
+              data-provider-state={state}
+              disabled={credentialBusy !== null || pendingLogin !== null}
+              onClick={() => void startQuickLogin(tool)}
+            >
+              {mark}
+            </button>
+          );
+        })}
+        {pendingLogin ? (
+          <div className="pn-quick__notice" role="status">
+            <span>{`Complete ${pendingLogin.name} sign-in in the open session.`}</span>
+            <button
+              type="button"
+              onClick={() => void finishQuickLogin()}
+              disabled={credentialBusy !== null}
+            >
+              I've finished
+            </button>
+          </div>
+        ) : null}
+        {credentialError ? (
+          <span className="pn-quick__error" role="alert">{credentialError}</span>
+        ) : null}
       </div>
 
       <div className="pn-filters" role="tablist" aria-label="Session and resource types">

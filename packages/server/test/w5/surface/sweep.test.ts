@@ -927,7 +927,26 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // live-computed form for a reason that still holds — it would pass on any
     // chain length and could no longer notice a chain that silently shrank,
     // which is the one thing this assertion exists to catch.
-    expect(server.appliedMigrations.length).toBe(166);
+    //
+    // 166 -> 171 (2026-09-04): THREE files, all from this one branch, and the
+    // number was MEASURED on the merged tree rather than added to either side —
+    // which is the whole instruction of every row above, and the row directly
+    // above is the one that says a Wave-2 style landing makes this line a
+    // conflict BY CONSTRUCTION and that the conflict is the good outcome.
+    // This is that conflict, and this is the re-measurement:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '.sql$' -> 168
+    //   git ls-files db/migrations | grep -c '.sql$'                           -> 171
+    //   duplicate prefixes                                                     -> 0
+    // The branch side of this conflict said 116 and main's said 166; NEITHER is
+    // the answer, exactly as this block has now recorded six times.
+    //
+    // The three files are 181_gemini_hermes_credentials.sql,
+    // 182_cursor_credentials.sql and 183_credential_provider_rpc_guards.sql.
+    // They were AUTHORED as 123/124/125 against a stale local base and
+    // renumbered to 181-183 at this merge, because 123-180 are all taken on
+    // main. Renumbering was free, which is the property the block above says
+    // it is worth preserving: nothing is derived from a migration's number.
+    expect(server.appliedMigrations.length).toBe(171);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

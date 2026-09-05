@@ -1,33 +1,26 @@
 /**
  * HomePage — the merged single home (user ruling, task 01a0027d, 2026-08-14).
  *
- * ONE canvas, three altitudes:
+ * ONE canvas, four altitudes:
  *
- *   1. The CHAT is the hero — the existing chat-home surface, mounted solo
- *      (its thread sidebar hidden by this module's stylesheet; full thread
- *      management stays on the Messages screen).
- *   2. NEEDS YOU directly beneath, only when it has rows — triage outranks
- *      everything, and an inbox-zero space shows rails only.
- *   3. Glance RAILS for the daily collections (domain's `HOME_RAIL_KINDS`),
- *      a teammate presence row, and the escape hatch to the full workspace.
+ *   1. NEEDS YOU, only when it has rows — triage outranks everything, and an
+ *      inbox-zero space stays quiet.
+ *   2. AGENT SIGN-INS — the same detailed credential block Settings hosts,
+ *      here as a first-class management section rather than a link away.
+ *   3. A compact provider strip immediately above the merged chat/list
+ *      surface, so it remains directly above that surface's Sessions content.
+ *   4. The CHAT remains the full-bleed hero, with main's root list, resizer,
+ *      focus mode and beside-it detail column left intact.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
  *   - `useHomeData` / `composeMyWork` (src/home) — the NEEDS YOU composition
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
- *   - `homeRowOf` — the one summary→row projection, so a rail card's status
- *     word and dot obey the same verdict-outranks-record law as every other
- *     surface.
- *
- * Rails are GLANCEABLE, not exhaustive: the top rows by `activityAt`,
- * sideways-scrolling, with the rail header opening the full collection. Depth
- * lives in Workspace; this page is peripheral vision around the conversation.
- *
- * §15.2: no kind literal appears in this directory — the rail and presence
- * kinds come from `domain/home-page.ts`, presence state is read structurally
- * (`'liveWork' in state`), and every glyph resolves through the registry.
+ *   - `CredentialsProviderBlock` and `ProviderRail` — one credential port and
+ *     one provider/verdict vocabulary at two deliberate densities.
  */
 import { useMemo, type ReactNode } from 'react';
+import type { Seam } from '../data/seam';
 import { KindIcon } from '../domain';
 import {
   composeMyWork,
@@ -36,10 +29,20 @@ import {
   type HomeScreenData,
   type HomeSection,
 } from '../home';
+import {
+  CredentialsProviderBlock,
+  credentialsPortFromSeam,
+} from '../settings-credentials';
+import { ProviderRail } from '../provider-rail';
 import './home-page.css';
 
+/** Home's existing narrow read port plus the human-only credential operations. */
+export type HomePageData = Omit<HomeScreenData, 'seam'> & {
+  seam: HomeScreenData['seam'] & Pick<Seam, 'credentials'>;
+};
+
 export interface HomePageProps {
-  data: HomeScreenData;
+  data: HomePageData;
   /** The chat surface — the host mounts it (seam wiring is its business). */
   chat: ReactNode;
   /**
@@ -122,9 +125,17 @@ export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
 
-  /* The full T5-1 composition, reused for its NEEDS YOU section alone — the
-     other sections' facts render as rails below, where the whole space (not
-     just "mine") is the design. */
+  // Home is the host at this boundary. It hands the shared component the same
+  // narrow port as Settings, with spaceId bound inside that adapter — never in
+  // the component and never by routing around the human-only seam operations.
+  const credentialsPort = useMemo(
+    () => credentialsPortFromSeam(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
+
+  /* The full T5-1 composition is reused for NEEDS YOU alone. Main's merged
+     chat/list surface owns the collection inventory; Home does not recreate
+     the glance rails that moved to Work. */
   const needsYou = useMemo(() => {
     const work = composeMyWork({
       sessionPool: home.sessionPool,
@@ -153,16 +164,34 @@ export function HomePage(props: HomePageProps) {
     >
       {props.rail ?? null}
       <div className="hp-page">
-      {needsYou && needsYou.rows.length > 0 ? (
-        <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
-      ) : needsYou && (home.viewerError || home.notificationsError) ? (
-        <p className="hp-note" role="status">{needsYou.emptyNote}</p>
-      ) : null}
+        {needsYou && needsYou.rows.length > 0 ? (
+          <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
+        ) : needsYou && (home.viewerError || home.notificationsError) ? (
+          <p className="hp-note" role="status">{needsYou.emptyNote}</p>
+        ) : null}
 
-      <section className="hp-chat hp-chat--full" aria-label="Chat">
-        {props.chat}
-        {props.listRail ?? null}
-      </section>
+        <section className="hp-credentials" aria-label="Agent sign-ins" data-testid="home-credentials">
+          <div className="hp-rail__head">
+            <span className="hp-rail__label kit-eyebrow">Agent sign-ins</span>
+          </div>
+          <CredentialsProviderBlock port={credentialsPort} />
+        </section>
+
+        <section
+          className="hp-provider-signins hp-rail"
+          aria-label="Quick provider sign-ins"
+          data-testid="home-provider-rail"
+        >
+          <div className="hp-rail__head">
+            <span className="hp-rail__label kit-eyebrow">Sign in to agents</span>
+          </div>
+          <ProviderRail port={credentialsPort} />
+        </section>
+
+        <section className="hp-chat hp-chat--full" aria-label="Chat">
+          {props.chat}
+          {props.listRail ?? null}
+        </section>
       </div>
 
       {props.aside ?? null}

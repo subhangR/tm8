@@ -55,10 +55,17 @@ import type { CredentialProvider, CredentialSessionLauncher, Logger } from '@tm8
 import { CREDENTIAL_LOGIN_COMMANDS, CREDENTIAL_PROVIDERS } from '@tm8/execution';
 
 import type { Db, DbClaims } from '../../../db/types.js';
-import { ensureCredentialHome } from '../../../credentials/agent-credential-home.js';
+import {
+  credentialConfigDir,
+  credentialHomeDir,
+  ensureCredentialHome,
+} from '../../../credentials/agent-credential-home.js';
 import {
   captureGitHubToken,
+  credentialCliInstallMessage,
+  measureCredentialBinary,
   runCredentialProbe,
+  type CredentialBinaryResolver,
   type CommandRunner,
   type ProbeResult,
 } from './credential-probe.js';
@@ -121,7 +128,7 @@ export interface FinishedCredentialSession {
   workSessionId: string;
   provider: CredentialProvider;
   probe: ProbeResult;
-  /** True when the metadata row was written. False for a stale probe. */
+  /** True when the metadata row was written. False for any non-positive probe. */
   stored: boolean;
   terminated: boolean;
 }
@@ -156,10 +163,13 @@ export interface W2CredentialSessionsServiceOptions {
   launcher: CredentialSessionLauncher;
   /** Node data root; the credential home hangs off it. */
   dataDir: string;
+  /** The server environment used for both the cap and login-terminal PATH. */
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
   sweepIntervalMs?: number;
   probeRunner?: CommandRunner;
+  /** Test seam for binary presence; production resolves executables on PATH. */
+  binaryResolver?: CredentialBinaryResolver;
   /** Injected clock, so TTL behaviour is testable without waiting. */
   now?: () => number;
   /**
@@ -186,6 +196,7 @@ export class W2CredentialSessionsService {
   private readonly logger: Logger | undefined;
   private readonly sweepIntervalMs: number;
   private readonly probeRunner: CommandRunner | undefined;
+  private readonly binaryResolver: CredentialBinaryResolver | undefined;
   private readonly now: () => number;
   private readonly storeGitCredential:
     | W2CredentialSessionsServiceOptions['storeGitCredential']
@@ -203,6 +214,7 @@ export class W2CredentialSessionsService {
     this.logger = options.logger;
     this.sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
     this.probeRunner = options.probeRunner;
+    this.binaryResolver = options.binaryResolver;
     this.now = options.now ?? (() => Date.now());
     this.storeGitCredential = options.storeGitCredential;
   }
@@ -218,16 +230,18 @@ export class W2CredentialSessionsService {
    *
    *  1. VALIDATE the provider against the fixed list, before anything touches
    *     the filesystem — the provider names a directory.
-   *  2. RECLAIM this member's own stale rows, before the RPC, because the
+   *  2. MEASURE BINARY PRESENCE in the PATH the login terminal will actually
+   *     receive. A measured absence refuses here, before any row or PTY exists.
+   *  3. RECLAIM this member's own stale rows, before the RPC, because the
    *     one-live-per-pair index would otherwise refuse a member who is blocked
    *     only by their own crash-orphan.
-   *  3. ENSURE THE HOME, before the RPC, so that a permissions failure refuses
+   *  4. ENSURE THE HOME, before the RPC, so that a permissions failure refuses
    *     the request instead of leaving a `credential_sessions` row pointing at
    *     a terminal that never started.
-   *  4. THE RPC, which derives the account itself, meters the cap, clamps the
+   *  5. THE RPC, which derives the account itself, meters the cap, clamps the
    *     TTL and mints the work session with `session_kind='credential'`,
    *     `share_mode='none'` and NO `node_id`.
-   *  5. THE PTY last, because it is the only irreversible step.
+   *  6. THE PTY last, because it is the only irreversible step.
    *
    * D2 IS ENFORCED IN SQL AND NOT RE-DERIVED HERE. `start_credential_session`
    * builds its envelope with `internal.current_member_id(p_space_id)` — the
@@ -288,6 +302,42 @@ export class W2CredentialSessionsService {
     }
 
     try {
+      // THE BINARY CHECK IS HERE, AFTER THE RPC, AND THAT ORDERING IS THE
+      // POINT — it was written before the RPC first, and CI caught why that was
+      // wrong. `start_credential_session` is where `require_human_auth_kind`
+      // and `require_space_member` live, so measuring the node BEFORE it
+      // answered a caller who had not yet been authorised: on a machine with no
+      // agent CLIs installed, an unauthenticated probe got a 400 naming which
+      // binary is missing instead of the 403 it had earned. That is a node
+      // capability disclosed to someone with no standing to ask, and it also
+      // made `w5/surface/sweep` environment-dependent — green on a developer
+      // box with the CLIs installed, red on a runner without them. An
+      // authorization answer must never depend on a fact about the node.
+      //
+      // The cost of moving it is one work_session row minted for a login that
+      // cannot proceed, and the catch below already releases it — the same
+      // best-effort path a failed launch uses, and the reason that path exists.
+      // A doomed row that is immediately released is strictly cheaper than an
+      // authorization answer that leaks.
+      const binary = measureCredentialBinary({
+        provider,
+        homeDir,
+        configDir,
+        parentEnv: this.env,
+        ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
+      });
+      if (binary.status === 'unavailable') {
+        // `invalid_input` is this contract's caller-fixable precondition code;
+        // there is no `failed_precondition` member in CommandErrorCode.
+        throw new CollabError('invalid_input', credentialCliInstallMessage(provider));
+      }
+      if (binary.status === 'unknown') {
+        throw new CollabError(
+          'upstream_unavailable',
+          binary.detail ?? `could not determine whether credential CLI '${binary.binary}' is installed`,
+        );
+      }
+
       const launched = this.launcher.launch({
         sessionId: started.workSessionId,
         provider,
@@ -336,8 +386,9 @@ export class W2CredentialSessionsService {
    * captured — identical, at the process level, to one who completed the flow.
    * The probe runs in the SAME environment the terminal ran in, because the
    * credential's location is a property of that environment
-   * (`CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `GH_CONFIG_DIR`) and a probe run
-   * anywhere else would read the NODE's credential and cheerfully confirm it.
+   * (a vendor override for three providers, isolated HOME for Gemini/Hermes)
+   * and a probe run anywhere else would read the NODE's credential and
+   * cheerfully confirm it.
    */
   async finish(
     input: { workSessionId: string },
@@ -362,6 +413,7 @@ export class W2CredentialSessionsService {
       env: entry.env,
       cwd: entry.homeDir,
       ...(this.probeRunner ? { run: this.probeRunner } : {}),
+      ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
     });
 
     const stored = await this.persistProbe(principal, probe, entry);
@@ -391,8 +443,8 @@ export class W2CredentialSessionsService {
     if (probe.provider === 'github') {
       // The storage split by SHAPE — see `storeGitCredential`'s doc. A GitHub
       // token is string-shaped and belongs in 093's encrypted table, not
-      // in `account_agent_credentials`, whose CHECK admits only the two
-      // file-shaped providers (R6).
+      // in `account_agent_credentials`, whose CHECK admits the four
+      // file-shaped providers (R6, widened by 123).
       if (!this.storeGitCredential || !probe.login) return false;
       const token = await captureGitHubToken({
         env: entry.env,

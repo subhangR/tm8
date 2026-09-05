@@ -664,6 +664,52 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         kind: 'graph', graphType: state.graphType,
         nodes: [], edges: [], layout: {}, source: null,
       };
+    // voice_channel and chat are CLOSED and carry nothing but their kind, so
+    // they cannot fall through to the open variant below — that arm's type is
+    // `{ [key: string]: unknown; kind: file|spell|skill|pull_request|commit }`
+    // and a bare `{ kind: 'chat' }` does not satisfy it.
+    // voice_channel and chat are CLOSED variants carrying nothing but their
+    // kind, so they cannot fall through to the open arm below: that one is
+    // `{ [key: string]: unknown; kind: file|spell|skill|pull_request|commit }`
+    // and a bare `{ kind: 'chat' }` does not satisfy it.
+    case 'voice_channel':
+      return { kind: 'voice_channel' };
+    case 'chat':
+      return { kind: 'chat' };
+    // container is closed AND wide — seven required fields, none of which the
+    // open arm supplies. Written out in full rather than cast, because the two
+    // empty values here are MEANINGFUL: `surfaceDetail` is Partial and the
+    // contract says a container with no `adb` surface OMITS the key rather than
+    // carrying a fake one, and `usage` is null exactly when no runtime sample
+    // exists. A fixture that invented either would model a read the node never
+    // produces.
+    case 'container':
+      return {
+        kind: 'container',
+        image: 'ghcr.io/tm8/fixture-shell:latest',
+        spec: {
+          profile: 'shell',
+          cpus: 2,
+          memMiB: 2048,
+          mounts: [],
+          env: {},
+          ports: [],
+          network: { preset: 'balanced', allow: [] },
+          surfaces: {},
+          labels: {},
+        },
+        lifecycle: {
+          ephemeral: true,
+          ttlSeconds: null,
+          idleHibernateSeconds: null,
+          graceSeconds: 300,
+          snapshotOnStop: false,
+        },
+        surfaceDetail: {},
+        error: null,
+        usage: null,
+        exposed: [],
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };

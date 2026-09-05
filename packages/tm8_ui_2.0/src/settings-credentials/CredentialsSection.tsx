@@ -121,6 +121,9 @@ const PROVIDER_LABEL: Record<CredentialProviderName, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   github: 'GitHub',
+  gemini: 'Google',
+  hermes: 'Nous',
+  cursor: 'Cursor',
 };
 
 /** What each provider's credential is actually FOR — the reason to connect it. */
@@ -128,6 +131,9 @@ const PROVIDER_PURPOSE: Record<CredentialProviderName, string> = {
   anthropic: 'Model access for agents you launch.',
   openai: 'Model access for agents you launch.',
   github: 'Cloning, pushing and opening pull requests as you.',
+  gemini: 'Model access for agents you launch.',
+  hermes: 'Model access for agents you launch.',
+  cursor: 'Model access for agents you launch.',
 };
 
 export function CredentialsSection({

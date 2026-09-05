@@ -37,9 +37,11 @@ import type {
 } from './types.js';
 import { SpawnError } from './types.js';
 import {
+  AGENT_CREDENTIAL_CONFIG_DIR_VAR,
   AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS,
   agentCredentialEnv,
   type AgentCredentialHome,
+  type AgentCredentialProvider,
 } from './agent-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
 
@@ -358,11 +360,7 @@ export function resolveLaunchConfig(
   // deprecated global carrier; inherited provider keys then outrank an older
   // manifest's global value. Every read is narrowed because inherited posture
   // comes from stored JSON written by arbitrary older builds.
-  const credentialSources: ResolvedCredentialSources = {
-    anthropic: resolveCredentialSource('anthropic', request, inherited),
-    openai: resolveCredentialSource('openai', request, inherited),
-    github: resolveCredentialSource('github', request, inherited),
-  };
+  const credentialSources = resolveCredentialSources(request, inherited);
   const commonSources = new Set(Object.values(credentialSources));
   const credentialSource = commonSources.size === 1
     ? ([...commonSources][0] ?? null)
@@ -378,6 +376,26 @@ export function resolveLaunchConfig(
     credentialSource,
     credentialSources,
   };
+}
+
+function resolveCredentialSources(
+  request: SpawnRequest,
+  inherited: SessionLaunchPosture | null | undefined,
+): ResolvedCredentialSources {
+  // The exhaustive FILE-provider table is the runtime provider source here;
+  // GitHub is the one string-shaped exception. This avoids another hand-kept
+  // list at the manifest seam: a seventh file provider added to the table is
+  // automatically recorded, inherited and included in common-source collapse.
+  const agentProviders = Object.keys(
+    AGENT_CREDENTIAL_CONFIG_DIR_VAR,
+  ) as AgentCredentialProvider[];
+  return Object.fromEntries([
+    ...agentProviders.map((provider) => [
+      provider,
+      resolveCredentialSource(provider, request, inherited),
+    ] as const),
+    ['github', resolveCredentialSource('github', request, inherited)] as const,
+  ]) as ResolvedCredentialSources;
 }
 
 function resolveCredentialSource(

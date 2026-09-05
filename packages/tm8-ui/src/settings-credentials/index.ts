@@ -1,11 +1,20 @@
 /**
- * `settings-credentials/` — the per-member agent credentials section.
+ * `settings-credentials/` — the per-member agent credentials surface.
  *
- * Built in its own module and injected into `SettingsShell` through its
- * `sections` slot, which is the seam that lets two lanes meet without editing
- * each other's files.
+ * `CredentialsProviderBlock` is the one implementation mounted by both Home
+ * and the Settings wrapper. The port remains the only seam adapter either host
+ * hands to it.
  */
 export { CredentialsSection, type CredentialsSectionProps } from './CredentialsSection';
+export {
+  CredentialsProviderBlock,
+  type CredentialsProviderBlockProps,
+} from './CredentialsProviderBlock';
+export {
+  CREDENTIAL_PROVIDER_PRESENTATIONS,
+  presentationOf,
+  type CredentialProviderPresentation,
+} from './provider-presentation';
 export {
   credentialsPortFromSeam,
   disconnectVerdictOf,

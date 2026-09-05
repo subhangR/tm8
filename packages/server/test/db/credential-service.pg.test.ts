@@ -44,9 +44,13 @@ import {
 import {
   assertNoGitHubTokenEnv,
   captureGitHubToken,
-  runCredentialProbe,
+  CREDENTIAL_PROBE_COMMANDS,
+  measureCredentialBinary,
+  runCredentialProbe as runCredentialProbeImpl,
+  type CredentialBinaryResolver,
   type CommandOutcome,
   type CommandRunner,
+  type RunCredentialProbeInput,
 } from '../../src/facade/services/w2/credential-probe.js';
 import {
   resolveCredentialSessionCap,
@@ -154,6 +158,13 @@ function fakePty(): FakePty {
 
 function outcome(partial: Partial<CommandOutcome>): CommandOutcome {
   return { exitCode: 0, stdout: '', stderr: '', ...partial };
+}
+
+/** Vendor commands are faked in this suite, so binary presence is faked separately. */
+const BINARY_PRESENT: CredentialBinaryResolver = ({ binary }) => `/test/bin/${binary}`;
+
+function runCredentialProbe(input: RunCredentialProbeInput) {
+  return runCredentialProbeImpl({ ...input, resolveBinary: BINARY_PRESENT });
 }
 
 async function seed(): Promise<Fixture> {
@@ -349,6 +360,18 @@ describe('AC7 — the credential home, and the 0755 repair case', () => {
     expect(alice.configDir).not.toBe(bob.configDir);
   });
 
+  it.each(['gemini', 'hermes', 'cursor'] as const)(
+    'creates the new %s identity and provider directories at 0700 too',
+    async (provider) => {
+      const identity = `identity-${provider}`;
+      const { homeDir, configDir } = await ensureCredentialHome(dataDir, identity, provider);
+      expect(homeDir).toBe(credentialHomeDir(dataDir, identity));
+      expect(configDir).toBe(credentialConfigDir(dataDir, identity, provider));
+      expect(await mode(homeDir)).toBe('700');
+      expect(await mode(configDir)).toBe('700');
+    },
+  );
+
   it('refuses an identity id that would escape the credentials root', async () => {
     for (const hostile of ['../../etc', 'a/b', '..', '']) {
       await expect(ensureCredentialHome(dataDir, hostile, 'anthropic')).rejects.toThrow();
@@ -361,6 +384,155 @@ describe('AC7 — the credential home, and the 0755 repair case', () => {
 // ===========================================================================
 
 describe('AC6 — success is never inferred from a clean exit', () => {
+  it('uses the login terminal PATH after withAgentBinDirs adds the server home bin dir', async () => {
+    const serverHome = join(dataDir, 'binary-server-home');
+    const binDir = join(serverHome, '.local', 'bin');
+    await mkdir(binDir, { recursive: true });
+
+    let measuredPath = '';
+    const measurement = measureCredentialBinary({
+      provider: 'gemini',
+      homeDir: join(dataDir, 'credentials', 'binary-identity'),
+      configDir: join(dataDir, 'credentials', 'binary-identity', 'gemini'),
+      parentEnv: { HOME: serverHome, PATH: '/usr/bin:/bin' },
+      resolveBinary: ({ binary, path }) => {
+        expect(binary).toBe('gemini');
+        measuredPath = path;
+        return join(binDir, binary);
+      },
+    });
+
+    expect(measuredPath.split(':')).toContain(binDir);
+    expect(measurement.status).toBe('available');
+  });
+
+  it('reports a measured absent binary as unavailable without running a guessed probe', async () => {
+    const run = vi.fn<CommandRunner>(async () =>
+      outcome({ stdout: JSON.stringify({ loggedIn: true }) }),
+    );
+    const probe = await runCredentialProbeImpl({
+      provider: 'hermes',
+      env: { HOME: '/identity-home', PATH: '/definitely-empty' },
+      cwd: '/identity-home',
+      run,
+      resolveBinary: () => null,
+    });
+
+    expect(probe.connected).toBe(false);
+    expect(probe.status).toBe('unavailable');
+    expect(probe.detail).toContain("'hermes'");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('confirms Gemini only from its measured OAuth file and never invents a status verb', async () => {
+    const { homeDir } = await ensureCredentialHome(dataDir, 'probe-gemini', 'gemini');
+    const geminiDir = join(homeDir, '.gemini');
+    await mkdir(geminiDir, { recursive: true });
+    await writeFile(join(geminiDir, 'oauth_creds.json'), '{}', { mode: 0o600 });
+    const run = vi.fn<CommandRunner>(async () => outcome({}));
+
+    const probe = await runCredentialProbe({
+      provider: 'gemini',
+      env: { HOME: homeDir, PATH: '/test/bin' },
+      cwd: homeDir,
+      run,
+    });
+
+    expect(probe).toMatchObject({ provider: 'gemini', connected: true, status: 'active' });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('keeps a present Hermes binary unknown until its credential file shape is measured', async () => {
+    const run = vi.fn<CommandRunner>(async () => outcome({}));
+    const probe = await runCredentialProbe({
+      provider: 'hermes',
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+      run,
+    });
+
+    expect(probe.connected).toBe(false);
+    expect(probe.status).toBe('stale');
+    expect(probe.detail).toMatch(/neither a status verb nor a credential-file location/i);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('uses Cursor Agent\'s measured status verb and treats isAuthenticated=false as disconnected', async () => {
+    const run = vi.fn<CommandRunner>(async () =>
+      outcome({
+        stdout: JSON.stringify({
+          status: 'unauthenticated',
+          isAuthenticated: false,
+          hasAccessToken: false,
+          hasRefreshToken: false,
+          message: 'Not logged in',
+        }),
+      }),
+    );
+    const probe = await runCredentialProbe({
+      provider: 'cursor',
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+      run,
+    });
+
+    expect(CREDENTIAL_PROBE_COMMANDS.cursor).toEqual([
+      'cursor-agent',
+      'status',
+      '--format',
+      'json',
+    ]);
+    expect(run).toHaveBeenCalledWith(CREDENTIAL_PROBE_COMMANDS.cursor, {
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+    });
+    expect(probe).toMatchObject({
+      provider: 'cursor',
+      connected: false,
+      status: 'active',
+      login: null,
+      authMethod: null,
+    });
+  });
+
+  it('accepts only Cursor\'s observed isAuthenticated field for a signed-in answer', async () => {
+    const run: CommandRunner = async () =>
+      outcome({ stdout: JSON.stringify({ isAuthenticated: true }) });
+    const probe = await runCredentialProbe({
+      provider: 'cursor',
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+      run,
+    });
+
+    expect(probe).toEqual({
+      provider: 'cursor',
+      connected: true,
+      status: 'active',
+      login: null,
+      authMethod: null,
+      detail: null,
+    });
+  });
+
+  it.each([
+    ['not JSON', 'not-json'],
+    ['a missing field', JSON.stringify({ status: 'authenticated' })],
+    ['a non-boolean field', JSON.stringify({ isAuthenticated: 'true' })],
+    ['a non-object payload', 'null'],
+  ])('keeps Cursor stale for %s rather than inventing an answer', async (_case, stdout) => {
+    const run: CommandRunner = async () => outcome({ stdout });
+    const probe = await runCredentialProbe({
+      provider: 'cursor',
+      env: { HOME: '/identity-home', PATH: '/test/bin' },
+      cwd: '/identity-home',
+      run,
+    });
+
+    expect(probe.connected).toBe(false);
+    expect(probe.status).toBe('stale');
+  });
+
   it('records anthropic as NOT connected when loggedIn is false, despite exit 0', async () => {
     // `claude auth status` exits 0 either way. Reading the exit code instead of
     // the field marks every abandoned login as connected.
@@ -563,6 +735,7 @@ function serviceFor(
   pty: PtyHostService,
   options: {
     run?: CommandRunner;
+    resolveBinary?: CredentialBinaryResolver;
     now?: () => number;
     storeGitCredential?: (input: {
       claims: DbClaims;
@@ -572,14 +745,20 @@ function serviceFor(
     }) => Promise<void>;
   } = {},
 ): W2CredentialSessionsService {
+  const parentEnv = {
+    PATH: '/usr/bin:/bin',
+    HOME: '/home/tm8',
+    GH_TOKEN: 'ghp_machine_LEAKED',
+  };
   return new W2CredentialSessionsService({
     db,
     launcher: new CredentialSessionLauncher({
       pty,
-      env: { PATH: '/usr/bin:/bin', HOME: '/home/tm8', GH_TOKEN: 'ghp_machine_LEAKED' },
+      env: parentEnv,
     }),
     dataDir,
-    env: {},
+    env: parentEnv,
+    binaryResolver: options.resolveBinary ?? BINARY_PRESENT,
     ...(options.run ? { probeRunner: options.run } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.storeGitCredential ? { storeGitCredential: options.storeGitCredential } : {}),
@@ -791,6 +970,7 @@ describe('AC4 / AC8 — start, the cap, the TTL and the one-per-pair rule', () =
       // The cap is ITS OWN env var and its own count — disjoint from the agent
       // cap, so a full node of agents can never block a login.
       env: { TM8_CREDENTIAL_SESSION_CAP: '1' },
+      binaryResolver: BINARY_PRESENT,
     });
     const alice = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
     const bob = { claims: humanClaims(fixture.bobIdentity), identityId: 'pr2-bob' };

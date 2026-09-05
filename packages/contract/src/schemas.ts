@@ -1730,9 +1730,9 @@ export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z
 // ledger is enabled.
 // ---------------------------------------------------------------------------
 
-/** All three login-terminal providers. Wider than what 083 will STORE (R6). */
+/** All six declared login-terminal providers; credential storage remains shape-specific. */
 export const CredentialProviderNameSchema: z.ZodType<CredentialProviderName> =
-  z.enum(['anthropic', 'openai', 'github']);
+  z.enum(['anthropic', 'openai', 'github', 'gemini', 'hermes', 'cursor']);
 
 /** Mirrors 083's `account_agent_credentials.status` CHECK exactly. */
 const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);
@@ -1745,7 +1745,11 @@ export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView>
   // would render two different cards for one permanent fact.
   login: z.string().nullable(),
   authMethod: z.string().nullable(),
-  status: CredentialStatusSchema.nullable(),
+  // Wider than CredentialStatusSchema on purpose: `unavailable` is a node
+  // measurement that never reaches the credential row's CHECK. Omitting it
+  // here would make every status response for an uninstalled CLI fail
+  // validation at the wire boundary rather than render honestly.
+  status: z.union([CredentialStatusSchema, z.literal('unavailable')]).nullable(),
   connectedAt: z.string().nullable(),
   lastVerifiedAt: z.string().nullable(),
 }).strict();

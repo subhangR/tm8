@@ -19,6 +19,7 @@
  */
 
 import {
+  CREDENTIAL_PROVIDERS,
   NODE_BOOT_ID,
   SpawnError,
   SpawnService,
@@ -837,23 +838,25 @@ export class DbGraphPort implements GraphPort {
       access_mode: string | null;
       permission_mode: string | null;
       credential_source: string | null;
-      anthropic_credential_source: string | null;
-      openai_credential_source: string | null;
-      github_credential_source: string | null;
+      credential_sources: unknown;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
               sm.manifest #>> '{launch,permissionMode}'   as permission_mode,
               sm.manifest #>> '{launch,credentialSource}' as credential_source,
-              sm.manifest #>> '{launch,credentialSources,anthropic}' as anthropic_credential_source,
-              sm.manifest #>> '{launch,credentialSources,openai}'    as openai_credential_source,
-              sm.manifest #>> '{launch,credentialSources,github}'    as github_credential_source
+              sm.manifest #>  '{launch,credentialSources}' as credential_sources
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
     );
     const row = rows[0];
     if (!row) return null;
+    const storedCredentialSources =
+      typeof row.credential_sources === 'object' &&
+      row.credential_sources !== null &&
+      !Array.isArray(row.credential_sources)
+        ? (row.credential_sources as Record<string, unknown>)
+        : {};
     // The strings are VALIDATED downstream (resolveLaunchConfig), not here: a
     // manifest is a stored JSON document and an unrecognised posture in one must
     // fall through to the ordinary precedence chain, not launch on a value
@@ -862,11 +865,14 @@ export class DbGraphPort implements GraphPort {
       accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
       permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
       credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
-      credentialSources: {
-        anthropic: row.anthropic_credential_source,
-        openai: row.openai_credential_source,
-        github: row.github_credential_source,
-      } as SessionLaunchPosture['credentialSources'],
+      // The login-terminal table's canonical provider order is the runtime key
+      // set too; reading the JSON object once avoids another SQL-side list.
+      credentialSources: Object.fromEntries(
+        CREDENTIAL_PROVIDERS.map((provider) => [
+          provider,
+          storedCredentialSources[provider] ?? null,
+        ]),
+      ) as SessionLaunchPosture['credentialSources'],
     };
   }
 

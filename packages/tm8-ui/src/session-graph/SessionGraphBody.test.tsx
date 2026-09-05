@@ -5,9 +5,9 @@
  * makes it safe to leave mounted: an exited session is read once and never
  * polled.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { EdgeView, EntityId, EntitySummary, Page } from '@tm8/contract';
+import type { DurableWorkspaceEvent, EdgeView, EntityId, EntitySummary, Page } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { SessionGraphBody } from './SessionGraphBody';
 
@@ -29,7 +29,17 @@ function entity(id: string, kind = 'doc', title = id): EntitySummary {
     deletedAt: null,
     createdBy: { kind: 'member', id: 'm1', displayName: 'M' },
     counters: {},
-    state: {},
+    state: kind === 'work_session'
+      ? {
+          kind: 'work_session',
+          status: 'running',
+          agentTool: 'codex',
+          model: 'gpt-5',
+          shareMode: 'space',
+          startedAt: '2026-08-09T00:00:00.000Z',
+          exitedAt: null,
+        }
+      : {},
     badges: {},
   } as unknown as EntitySummary;
 }
@@ -54,12 +64,16 @@ function page(items: EdgeView[]): Page<EdgeView> {
   return { items, nextCursor: null } as Page<EdgeView>;
 }
 
-function seamWith(connections: Seam['connections']): Seam {
-  return { connections } as unknown as Seam;
+function seamWith(
+  connections: Seam['connections'],
+  onEvent: Seam['onEvent'] = () => () => undefined,
+): Seam {
+  return { connections, onEvent } as unknown as Seam;
 }
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('SessionGraphBody', () => {
@@ -79,7 +93,9 @@ describe('SessionGraphBody', () => {
     const headline = await screen.findByTestId('session-graph-headline');
     expect(headline.textContent).toContain('Working on');
     expect(headline.textContent).toContain('Wrote');
-    expect(screen.getByTestId('session-graph-canvas')).toBeTruthy();
+    const canvas = screen.getByTestId('session-graph-canvas');
+    expect(canvas.querySelector('.sg-link[data-direction="out"]')?.getAttribute('marker-end')).toContain('#sg-');
+    expect(canvas.querySelector('.sg-link[data-direction="in"]')?.getAttribute('marker-start')).toContain('#sg-');
   });
 
   it('names a failed neighbour read as MISSING, never as an empty branch', async () => {
@@ -120,6 +136,85 @@ describe('SessionGraphBody', () => {
     render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live />);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(read.mock.calls.length).toBeGreaterThan(afterExited * 2);
+  });
+
+  it('refreshes on a derived delegation and keeps a static arrow for reduced motion', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    }) as unknown as MediaQueryList);
+
+    const listeners = new Set<(event: DurableWorkspaceEvent) => void>();
+    const off = vi.fn();
+    const onEvent: Seam['onEvent'] = (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+        off();
+      };
+    };
+
+    const child = {
+      ...entity('session-child', 'work_session', 'Worker'),
+      parentId: FOCUS,
+      state: {
+        kind: 'work_session',
+        status: 'spawning',
+        agentTool: 'codex',
+        model: 'gpt-5',
+        shareMode: 'space',
+        startedAt: null,
+        exitedAt: null,
+      },
+    } as EntitySummary;
+    let focusEdges: EdgeView[] = [];
+    const read = vi.fn(async (id: EntityId) =>
+      id === FOCUS ? page(focusEdges) : page([]),
+    );
+    const view = render(
+      <SessionGraphBody
+        seam={seamWith(read, onEvent)}
+        focusId={FOCUS}
+        focus={focus}
+        live={false}
+      />,
+    );
+    await screen.findByTestId('session-graph-canvas');
+    const initialFocusReads = read.mock.calls.filter(([id]) => id === FOCUS).length;
+
+    focusEdges = [edge(child, 'dispatched_by', focus)];
+    const delegationEvent = {
+      type: 'entity.upsert',
+      spaceId: 'space-1',
+      seq: 41,
+      occurredAt: '2026-09-04T12:00:00.000Z',
+      schemaVersion: 1,
+      entity: child,
+    } satisfies DurableWorkspaceEvent;
+    act(() => {
+      for (const listener of listeners) listener(delegationEvent);
+    });
+
+    const pulse = await waitFor(() => {
+      const found = view.container.querySelector(
+        '.sg-link--pulse[data-pulse-kind="delegation"]',
+      );
+      if (!found) throw new Error('delegation pulse not drawn yet');
+      return found;
+    });
+    expect(pulse.getAttribute('data-pulse-motion')).toBe('static');
+    expect(pulse.getAttribute('marker-end')).toContain('pulse-delegation');
+    expect(read.mock.calls.filter(([id]) => id === FOCUS).length).toBeGreaterThan(initialFocusReads);
+
+    view.unmount();
+    expect(listeners.size).toBe(0);
+    expect(off).toHaveBeenCalledTimes(1);
   });
 
   /**

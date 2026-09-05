@@ -664,6 +664,48 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         kind: 'graph', graphType: state.graphType,
         nodes: [], edges: [], layout: {}, source: null,
       };
+    // voice_channel and chat are CLOSED variants carrying nothing but their
+    // kind, so they cannot fall through to the open arm below: that one is
+    // `{ [key: string]: unknown; kind: file|spell|skill|pull_request|commit }`
+    // and a bare `{ kind: 'chat' }` does not satisfy it.
+    case 'voice_channel':
+      return { kind: 'voice_channel' };
+    case 'chat':
+      return { kind: 'chat' };
+    // container is closed AND wide — seven required fields, none of which the
+    // open arm supplies. Written out in full rather than cast, because the two
+    // empty values here are MEANINGFUL: `surfaceDetail` is Partial and the
+    // contract says a container with no `adb` surface OMITS the key rather than
+    // carrying a fake one, and `usage` is null exactly when no runtime sample
+    // exists. A fixture that invented either would model a read the node never
+    // produces.
+    case 'container':
+      return {
+        kind: 'container',
+        image: 'ghcr.io/tm8/fixture-shell:latest',
+        spec: {
+          profile: 'shell',
+          cpus: 2,
+          memMiB: 2048,
+          mounts: [],
+          env: {},
+          ports: [],
+          network: { preset: 'balanced', allow: [] },
+          surfaces: {},
+          labels: {},
+        },
+        lifecycle: {
+          ephemeral: true,
+          ttlSeconds: null,
+          idleHibernateSeconds: null,
+          graceSeconds: 300,
+          snapshotOnStop: false,
+        },
+        surfaceDetail: {},
+        error: null,
+        usage: null,
+        exposed: [],
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
@@ -1044,9 +1086,9 @@ export function createFixtureSeam(): FixtureSeam {
   const nextId = (kind: string): string => `fx-${kind.replace(/^c:/, 'c-')}-${++idN}`;
 
   /**
-   * The three providers, drawn so that ALL THREE honest-degradation states are
-   * on screen at once and a screen cannot pass by collapsing two of them.
-   * Mutable, because `disconnect` writes to it.
+   * All six declared providers, drawn so that every honest-degradation state
+   * is on screen and a surface cannot pass by collapsing two of them. Mutable,
+   * because `disconnect` writes to it.
    */
   const credentialsState: CredentialsStatusView = {
     providers: [
@@ -1079,6 +1121,37 @@ export function createFixtureSeam(): FixtureSeam {
         status: null,
         connectedAt: null,
         lastVerifiedAt: null,
+      },
+      // Binary present, but no connection result could be established.
+      {
+        provider: 'gemini',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: 'stale',
+        connectedAt: null,
+        lastVerifiedAt: null,
+      },
+      // A successful node-level measurement: this binary is absent.
+      {
+        provider: 'hermes',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: 'unavailable',
+        connectedAt: null,
+        lastVerifiedAt: null,
+      },
+      // Cursor has a real status verb: this is a positive probe, not a guess
+      // from the presence of files or the login terminal's exit code.
+      {
+        provider: 'cursor',
+        connected: true,
+        login: null,
+        authMethod: null,
+        status: 'active',
+        connectedAt: FIXTURE_NOW,
+        lastVerifiedAt: FIXTURE_NOW,
       },
     ],
     // 'absent' is the fixture's default deliberately: it is the state of the
@@ -4311,12 +4384,15 @@ export function createFixtureSeam(): FixtureSeam {
      *    line and is reachable from no local git object, so the github entry's
      *    `connected` is UNKNOWN here, not measured false. A fixture reporting
      *    'present' would let a screen that renders "Not connected" look right.
-     *  - anthropic is connected with `login: null` — the shape of a row minted
-     *    under the original R4 verb (`claude setup-token`, no `user:profile`).
-     *    Post-amendment logins carry an email, but the null-login shape stays
-     *    legal and a screen must keep rendering it without "Connected as null".
-     *  - openai is genuinely not connected: the one true negative, so a screen
-     *    that draws all three the same way has something to be wrong about.
+     *  - anthropic is connected with `login: null` forever by migration 083's
+     *    design. A screen must render the granted inference access, never
+     *    invent a missing account name or print "Connected as null".
+     *  - openai is genuinely not connected: the one true negative.
+     *  - gemini could not establish a connection answer (`stale` -> unknown).
+     *  - hermes is measured unavailable, because its binary is absent. It must
+     *    never acquire a Connect button that can only fail.
+     *  - cursor's real status verb positively reports a connection. Its probe
+     *    supplies no account name, so the connected-null shape remains honest.
      */
     credentials: {
       async status() {
@@ -4325,7 +4401,9 @@ export function createFixtureSeam(): FixtureSeam {
 
       async disconnect(provider) {
         const entry = credentialsState.providers.find((p) => p.provider === provider);
-        if (entry) {
+        // Revoking stored material cannot install a missing CLI. Preserve the
+        // node-level measurement just as the real catalog re-applies it.
+        if (entry && (entry.status as string | null) !== 'unavailable') {
           entry.connected = false;
           entry.login = null;
           entry.authMethod = null;
@@ -4350,6 +4428,10 @@ export function createFixtureSeam(): FixtureSeam {
       },
 
       async startLogin(spaceId, provider) {
+        const entry = credentialsState.providers.find((candidate) => candidate.provider === provider);
+        if (entry?.status === 'unavailable') {
+          throw new Error(`${provider} is not installed on this node; install ${provider} to connect`);
+        }
         return {
           workSessionId: sessionCredentialLogin.id,
           spaceId,
