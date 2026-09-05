@@ -71,6 +71,7 @@ export interface MaestroTaskTileProps {
 export function MaestroTaskTile(props: MaestroTaskTileProps) {
   const {
     rootRef,
+    id,
     title,
     depth,
     selected,
@@ -108,6 +109,13 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         .filter(Boolean)
         .join(' ')}
       data-testid="list-tile"
+      /* The flight layer's anchor, on all three anatomies (PR #591 review).
+         No control-card kind opts into `tree.messagePulse` today, so this is
+         dead weight right now — and that is exactly why it is here: without
+         it, enabling the flight for such a kind resolves routes normally and
+         then silently drops EVERY measurement, which reads as "the animation
+         does not work" rather than as a missing attribute. */
+      data-flight-anchor={id}
       data-depth={depth}
       data-tree="true"
       data-children={childCount || undefined}

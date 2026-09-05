@@ -61,7 +61,7 @@ export interface MessagePulseOptions {
  * per-segment stagger of the longest realistic path; the CSS decides the actual
  * motion, and this only decides when the entry stops existing.
  */
-const PULSE_TTL_MS = 2_200;
+export const PULSE_TTL_MS = 2_200;
 
 /** Hard ceiling: bursts drop their oldest visual, never queue without bound. */
 export const MAX_CONCURRENT_PULSES = 12;

@@ -2746,15 +2746,8 @@ function TreeRows({
       {/* LAST, and out of flow. The layer measures against this container, so
           it must be a child of it; rendering it after the rows keeps it above
           them without a stacking context that would trap the row menus.
-
-          MOUNTED FOR ANY LIVE PULSE, not only for a drawable one. The layer
-          refuses to launch a flight that only became flyable because the tree
-          changed shape, and it can only know that if it was watching while the
-          pulse sat in a closed subtree producing nothing. An empty layer draws
-          nothing and takes no pointer events. */}
-      {pulse.activeKeys.size > 0 ? (
-        <TileFlightLayer flights={pulse.flights} activeKeys={pulse.activeKeys} />
-      ) : null}
+ */}
+      {pulse.flights.length > 0 ? <TileFlightLayer flights={pulse.flights} /> : null}
     </div>
   );
 }
@@ -2849,21 +2842,13 @@ interface ResolvedPulses {
    * tell (see `tile-flight.ts`). One arrival, two complementary readings.
    */
   flights: readonly ResolvedFlight[];
-  /**
-   * EVERY live pulse key, including the ones that produced no flight. The
-   * layer needs the unflyable ones to tell an arrival from an expand — see
-   * the late-launch refusal in `TileFlightLayer`.
-   */
-  activeKeys: ReadonlySet<string>;
 }
 
 const NO_FLIGHTS: readonly ResolvedFlight[] = Object.freeze([]);
-const NO_KEYS: ReadonlySet<string> = new Set();
 const NO_PULSES: ResolvedPulses = {
   segments: new Map(),
   endpoints: new Map(),
   flights: NO_FLIGHTS,
-  activeKeys: NO_KEYS,
 };
 
 /**
@@ -2966,6 +2951,7 @@ function resolvePulses(
         key: item.key,
         kind: item.kind,
         ...(item.kind === 'completion' ? { outcome: item.outcome } : {}),
+        ...(item.at === undefined ? {} : { at: item.at }),
         fromRowId: route.fromRowId,
         toRowId: route.toRowId,
       });
@@ -2975,7 +2961,6 @@ function resolvePulses(
     segments,
     endpoints,
     flights: flights.length === 0 ? NO_FLIGHTS : flights,
-    activeKeys: new Set(pulses.map((item) => item.key)),
   };
 }
 

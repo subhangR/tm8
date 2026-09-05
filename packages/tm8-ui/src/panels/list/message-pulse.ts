@@ -41,6 +41,28 @@ interface PulseBase {
   kind: SessionPulseKind;
   fromId: string;
   toId: string;
+  /**
+   * When this arrival was derived, on the same clock as its retention timer.
+   *
+   * WHY THE PULSE CARRIES ITS OWN AGE, and why nothing downstream can work it
+   * out instead (PR #591 review, GPT 5.6 Sol). Presentation needs to know
+   * whether an arrival is fresh or has been sitting in the retained tail —
+   * the tile-flight layer refuses to start a glyph that cannot finish before
+   * eviction, or it gets deleted in open air between two tiles. The layer
+   * first inferred that from its OWN render history, which is wrong the
+   * moment the list unmounts: `useMessagePulses` lives above the route
+   * surfaces (`views/useGateData.ts`) and keeps retaining, so navigating away
+   * from a sessions list and back within the window handed the remounted
+   * layer a two-second-old pulse that looked brand new. Component-local
+   * history cannot prove event age across an unmount; only the owner of the
+   * event can, and this is it.
+   *
+   * OPTIONAL, and absent means "assume fresh". Every production pulse sets it
+   * — `useMessagePulses` starts the eviction timer in the same tick — so the
+   * only callers without it are tests and fixtures constructing a pulse by
+   * hand, for which "fresh" is the right and previously-only behaviour.
+   */
+  at?: number;
 }
 
 /** A child session was born: responsibility moves parent -> child. */
@@ -146,7 +168,14 @@ function delegation(
 ): Delegation | null {
   const key = delegationKey(childId);
   if (childId === parentId || prior.seenTransitions.has(key)) return null;
-  return { key, kind: SESSION_PULSE_KIND.delegation, fromId: parentId, toId: childId, evidence };
+  return {
+    key,
+    kind: SESSION_PULSE_KIND.delegation,
+    fromId: parentId,
+    toId: childId,
+    evidence,
+    at: Date.now(),
+  };
 }
 
 /**
@@ -188,6 +217,7 @@ export function deriveSessionTransition(
         fromId: current.id,
         toId: parentId,
         outcome: after,
+        at: Date.now(),
       };
     }
     return null;
@@ -261,7 +291,13 @@ export function pulseFromEvent(
   const fromId = event.sourceWorkSessionId;
   const toId = event.anchorId;
   if (typeof fromId !== 'string' || fromId === '' || fromId === toId) return null;
-  return { key: event.message.id, kind: SESSION_PULSE_KIND.message, fromId, toId };
+  return {
+    key: event.message.id,
+    kind: SESSION_PULSE_KIND.message,
+    fromId,
+    toId,
+    at: Date.now(),
+  };
 }
 
 /** Pure oldest-first cap used by every surface that retains live pulses. */

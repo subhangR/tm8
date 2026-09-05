@@ -27,8 +27,15 @@
  *
  * THE EASING IS IN THE SAMPLING. Points are taken at eased `t`, so the CSS
  * animation runs `linear` and the polyline's own corners never fight a timing
- * function. Ease applied on top of a piecewise path is what makes cheap arc
- * animations stutter at their joints.
+ * function. Ease applied ON TOP of a piecewise path is what makes cheap arc
+ * animations stutter at their joints — two curves compounding.
+ *
+ * That removes the compounding, not every discontinuity, and claiming
+ * otherwise would misdescribe the technique (raised in review of PR #591):
+ * seven sampled stops still give piecewise-constant velocity, so speed and
+ * heading both change a little at each joint. At these distances and durations
+ * the steps are small enough that no seam was visible in a browser, which is
+ * the bar this has to clear — not "mathematically smooth".
  *
  * PURE. No DOM, no clock, no React — two points in, a description out, which
  * is what lets the arc be tested where `getBoundingClientRect` returns zeros.

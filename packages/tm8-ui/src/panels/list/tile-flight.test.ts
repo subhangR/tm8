@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { FLIGHT_SAMPLES, flightPath, flightVariables } from './tile-flight';
+import { LAUNCH_WINDOW_MS } from './TileFlightLayer';
+import { PULSE_TTL_MS } from './useMessagePulses';
 
 /** Tiles are full-width rows, so a real flight is close to vertical. */
 const DOWNWARD = { from: { x: 0, y: 0 }, to: { x: 0, y: 100 } };
@@ -80,5 +82,27 @@ describe('tile flight geometry', () => {
       expect(vars[`--lp-flight-${index}y`]).toMatch(/px$/);
     }
     expect(vars['--lp-flight-duration']).toBe('560ms');
+  });
+
+  /**
+   * THE NO-TRUNCATION GUARANTEE, AS ARITHMETIC.
+   *
+   * A glyph deleted in open air between two tiles was the defect that drove
+   * three rounds of this design. It is now impossible by construction rather
+   * than by a runtime check: a flight may only launch inside
+   * `LAUNCH_WINDOW_MS` of its arrival, so the latest it can still be flying is
+   * that window plus the longest trip — and that has to fit inside the pulse's
+   * retention.
+   *
+   * The runtime check was REMOVED because this made it unreachable, and an
+   * unreachable branch is a liability: no mutation can red it, so nothing
+   * proves it still works. This assertion is what replaced it. Widen the
+   * window, or raise the duration ceiling, and this fails — which is the
+   * warning that the runtime check has to come back.
+   */
+  it('cannot produce a flight that outlives its pulse', () => {
+    const longest = flightPath({ x: 0, y: 0 }, { x: 0, y: 100_000 }).durationMs;
+    expect(longest).toBe(1_450);
+    expect(LAUNCH_WINDOW_MS + longest).toBeLessThanOrEqual(PULSE_TTL_MS);
   });
 });

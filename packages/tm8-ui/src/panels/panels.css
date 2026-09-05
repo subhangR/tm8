@@ -1948,7 +1948,8 @@
    purpose, because the ease is already baked into where those stops sit and a
    timing function on top would stutter at each joint. The inner span carries
    ENTRANCE — fade, scale, and the glow that trails it — on its own curve. One
-   property per element keeps both on the compositor.
+   property per element is what MAKES compositing possible; `will-change` below
+   is a hint and not a promise, and no engine owes us the fast path.
 
    COLOUR IS NEVER ALONE. The three kinds carry the same hues as the wire
    beneath them, and also three different glyphs (bubble, chevron, barred

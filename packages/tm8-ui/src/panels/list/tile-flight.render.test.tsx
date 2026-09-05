@@ -9,7 +9,7 @@
  * created for the right arrivals, refused for the wrong ones, aimed at the
  * rows the route resolved, and never at the cost of the wire sweep beneath it.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import type { EntitySummary } from '@tm8/contract';
 
@@ -51,7 +51,42 @@ function message(key: string, fromId: string, toId: string): MessagePulse {
   return { key, kind: 'message', fromId, toId };
 }
 
+/**
+ * The same arrival, but derived `ageMs` ago — the shape `useMessagePulses`
+ * actually produces, which is what the launch decision is made on.
+ */
+function aged(key: string, fromId: string, toId: string, ageMs: number): MessagePulse {
+  return { key, kind: 'message', fromId, toId, at: Date.now() - ageMs };
+}
+
 const flightsIn = (container: HTMLElement) => [...container.querySelectorAll('.lp__flight')];
+
+/**
+ * GIVE jsdom A LAYOUT, for the one test that is about geometry.
+ *
+ * jsdom answers every `getBoundingClientRect` with zeros, which is why the
+ * trajectory assertion below could pass while measuring nothing: seven stops
+ * of `0px` still end in `px`. This stubs a real arrangement so the emitted
+ * path can be checked against the tile centres it is supposed to come from —
+ * the difference between "the code ran" and "the code is right".
+ */
+function stubLayout(rects: Readonly<Record<string, readonly [number, number, number, number]>>) {
+  return vi
+    .spyOn(Element.prototype, 'getBoundingClientRect')
+    .mockImplementation(function boundingRect(this: Element): DOMRect {
+      const key = this.classList.contains('lp__tree')
+        ? 'host'
+        : this.getAttribute('data-session-node') ?? this.getAttribute('data-flight-anchor') ?? '';
+      const [x, y, width, height] = rects[key] ?? [0, 0, 0, 0];
+      return {
+        x, y, width, height,
+        top: y, left: x, right: x + width, bottom: y + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+}
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('a message flying across the session tiles', () => {
   it('draws no layer at all when nothing is in flight', () => {
@@ -81,6 +116,38 @@ describe('a message flying across the session tiles', () => {
       expect(style.getPropertyValue(`--lp-flight-${index}y`)).toMatch(/px$/);
     }
     expect(style.getPropertyValue('--lp-flight-duration')).toMatch(/ms$/);
+  });
+
+  /**
+   * THE TEST ABOVE PASSES ON ALL ZEROS, which is exactly what it did until
+   * review caught it (PR #591, GPT 5.6 Sol): jsdom hands back a zero rect for
+   * everything, so seven stops of `0px` satisfy every `/px$/` in it while the
+   * measurement is provably doing nothing. This one gives jsdom a real
+   * arrangement and checks the endpoints against the tile centres they must
+   * come from — the only test that connects tile SELECTION to emitted PATH.
+   */
+  it('measures the real tile anchors, not the container origin', () => {
+    stubLayout({
+      host: [0, 0, 600, 400],
+      // Deeply indented sender low in the list; shallower recipient near the top.
+      [leaf.id]: [40, 300, 560, 30],
+      [aunt.id]: [20, 100, 580, 30],
+    });
+    const { container } = renderTree([message('m1', leaf.id, aunt.id)]);
+    const style = (flightsIn(container)[0] as HTMLElement).style;
+
+    // Anchor = leading edge inset by 26 (capped at half the tile), vertical middle.
+    expect(style.getPropertyValue('--lp-flight-0x')).toBe('66px');
+    expect(style.getPropertyValue('--lp-flight-0y')).toBe('315px');
+    expect(style.getPropertyValue('--lp-flight-6x')).toBe('46px');
+    expect(style.getPropertyValue('--lp-flight-6y')).toBe('115px');
+
+    // And the middle is genuinely bowed off the chord, not a straight lerp.
+    const apexX = Number.parseFloat(style.getPropertyValue('--lp-flight-3x'));
+    expect(apexX).toBeGreaterThan(Math.max(66, 46));
+
+    // Distance ~201px, so the duration is scaled rather than sitting on the floor.
+    expect(style.getPropertyValue('--lp-flight-duration')).toBe('601ms');
   });
 
   /**
@@ -181,7 +248,7 @@ describe('a message flying across the session tiles', () => {
     expect(rowOf(leaf.id), 'leaf is hidden behind mid').toBeNull();
 
     // Arrives while shut: both ends absorb onto `mid`, so nothing flies.
-    rerender(panel([message('m1', leaf.id, mid.id)]));
+    rerender(panel([aged('m1', leaf.id, mid.id, 1_900)]));
     expect(flightsIn(container)).toHaveLength(0);
 
     // The viewer opens the subtree while that same pulse is still retained.
@@ -190,11 +257,156 @@ describe('a message flying across the session tiles', () => {
     );
     expect(rowOf(leaf.id), 'leaf is visible again').toBeTruthy();
 
-    // Both ends now resolve to distinct rows — and it still must not fly.
+    // Both ends now resolve to distinct rows — and it still must not fly,
+    // because 1900ms spent plus a 560ms trip overruns the 2200ms eviction.
     expect(flightsIn(container)).toHaveLength(0);
     // The arrival is still reported, by the treatment that was carrying it all
     // along. Refusing the flight must not cost the report.
     expect(container.querySelector('[data-pulse-row]')).toBeTruthy();
+  });
+
+  /**
+   * THE REMOUNT CASE, and the reason the rule reads the PULSE's age rather
+   * than this component's render history (PR #591 review, GPT 5.6 Sol).
+   *
+   * `useMessagePulses` lives above the route surfaces and keeps retaining
+   * while a list unmounts. Navigate away from a sessions list after a pulse
+   * and back inside the retention window, and the layer mounts fresh — with
+   * no history at all — holding a nearly-expired pulse. History-based logic
+   * reads that as a brand-new arrival and starts a flight that is deleted in
+   * open air. Age survives the unmount; render history does not.
+   */
+  it('refuses a retained pulse handed to a freshly mounted list', () => {
+    const old = aged('m1', leaf.id, aunt.id, 1_900);
+
+    // First mount sees it and (correctly) refuses it.
+    const first = render(panel([old]));
+    expandTree(first.container);
+    expect(flightsIn(first.container)).toHaveLength(0);
+    first.unmount();
+
+    // The list is navigated away from and back; the parent still holds the
+    // pulse, so the new panel mounts with it already present.
+    const second = render(panel([old]));
+    expandTree(second.container);
+    expect(flightsIn(second.container)).toHaveLength(0);
+  });
+
+  /**
+   * THE EXEMPTION, EXERCISED. A flight's remaining budget shrinks every frame,
+   * so re-judging it would abort a perfectly good glyph the instant anything
+   * re-rendered the tree late in the pulse's life. It is judged ONCE, at
+   * launch.
+   *
+   * The clock is advanced by handing the same pulse key a staler `at` on the
+   * second render — the component reads nothing else, so this is exactly
+   * "time passed" without dragging fake timers through React's scheduler.
+   */
+  it('keeps a live flight airborne once it is too old to be started', () => {
+    // The clock is driven through `Date.now` — the only clock the rule reads —
+    // rather than by stamping against a real one. An earlier version aged the
+    // pulse instead and sat 140ms from its boundary, passing alone and failing
+    // in the full suite when a loaded render ate the slack.
+    const t0 = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(t0);
+    const pulse: MessagePulse = { key: 'm1', kind: 'message', fromId: leaf.id, toId: aunt.id, at: t0 };
+
+    const view = render(panel([pulse]));
+    expandTree(view.container);
+    expect(flightsIn(view.container), 'launches on arrival').toHaveLength(1);
+
+    // 450ms on: past the 400ms launch window, so this could no longer be
+    // STARTED — but still inside its own 560ms trip, so it is still flying and
+    // must not be taken away.
+    clock.mockReturnValue(t0 + 450);
+    view.rerender(panel([pulse]));
+    expect(flightsIn(view.container), 'and is not withdrawn mid-air').toHaveLength(1);
+  });
+
+  /**
+   * THE LEDGER'S OWN UNMOUNT — the third door onto the same replay, and the
+   * one that killed a launch ledger (PR #594 review, GPT 5.6 Sol).
+   *
+   * The panel unmounts this layer whenever `flights` goes empty, and the
+   * same-row guard makes that happen routinely: collapse far enough and both
+   * ends absorb onto one row. Anything the layer had remembered dies there. So
+   * the refusal cannot depend on remembering — it has to be answerable by a
+   * layer that mounts knowing nothing, which is what the age window is.
+   *
+   * The reviewer's browser trace: land a flight, collapse to a single row so
+   * the layer unmounts, reopen inside the retention window, and a NEW glyph
+   * takes off from the original sender at currentTime 33ms — a full replay.
+   */
+  it('does not replay after the layer itself unmounts and remounts', () => {
+    const t0 = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(t0);
+    const pulse: MessagePulse = { key: 'm1', kind: 'message', fromId: leaf.id, toId: aunt.id, at: t0 };
+
+    const view = render(panel([pulse]));
+    expandTree(view.container);
+    expect(flightsIn(view.container), 'launches on arrival').toHaveLength(1);
+
+    const rowOf = (id: string) => view.container.querySelector(`[data-session-node="${id}"]`);
+    const rootArrow = () =>
+      rowOf(root.id)?.closest('.lp__branch')?.querySelector('.pn-st__arrow') as Element;
+
+    // Land it, then collapse the ROOT: every endpoint absorbs onto that one
+    // row, `flights` empties, and the panel unmounts the layer outright.
+    clock.mockReturnValue(t0 + 800);
+    fireEvent.click(rootArrow());
+    view.rerender(panel([pulse]));
+    expect(view.container.querySelector('.lp__flights'), 'layer is gone').toBeNull();
+
+    // Reopen while the pulse is still retained. A fresh layer, no memory, and
+    // ~800ms spent still leaves budget — only the age window refuses this.
+    fireEvent.click(rootArrow());
+    view.rerender(panel([pulse]));
+    expect(rowOf(leaf.id), 'the tree really did reopen').toBeTruthy();
+    expect(flightsIn(view.container), 'and nothing flies a second time').toHaveLength(0);
+  });
+
+  /**
+   * A LANDED FLIGHT IS NOT AIRBORNE, and conflating them resurrects it.
+   *
+   * "In the air last render" holds until the PULSE is evicted, but the CSS
+   * animation ends after its own duration. Re-aiming a key past that point
+   * writes a longer `--lp-flight-duration` onto the same element, and Chromium
+   * restarts the finished animation — the glyph pops back into view near the
+   * destination and flies a second time, for an arrival that already landed.
+   * Observed in a browser during review (PR #591, GPT 5.6 Sol).
+   *
+   * The clock is driven through `Date.now`, which is the only clock the launch
+   * bookkeeping reads. Waiting out a real 560ms here would make the test both
+   * slow and load-sensitive, which is how the airborne test flaked once already.
+   */
+  it('does not relaunch a flight that has already landed', () => {
+    const t0 = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(t0);
+    const pulse: MessagePulse = { key: 'm1', kind: 'message', fromId: leaf.id, toId: aunt.id, at: t0 };
+
+    const view = render(panel([pulse]));
+    expandTree(view.container);
+    expect(flightsIn(view.container), 'launches').toHaveLength(1);
+
+    // Well past the longest possible trip, so the animation has certainly
+    // finished — while the pulse is still inside its 2200ms retention.
+    clock.mockReturnValue(t0 + 1_600);
+
+    // A re-aim arrives: collapse the sender's subtree, which rebuilds `flights`.
+    const rowOf = (id: string) => view.container.querySelector(`[data-session-node="${id}"]`);
+    fireEvent.click(
+      rowOf(mid.id)?.closest('.lp__branch')?.querySelector('.pn-st__arrow') as Element,
+    );
+    view.rerender(panel([pulse]));
+
+    expect(flightsIn(view.container), 'and is not flown a second time').toHaveLength(0);
+  });
+
+  /** Narrowness: a pulse with budget left still flies on a fresh mount. */
+  it('still flies a retained pulse that has time to land', () => {
+    const view = render(panel([aged('m1', leaf.id, aunt.id, 300)]));
+    expandTree(view.container);
+    expect(flightsIn(view.container)).toHaveLength(1);
   });
 
   /**
