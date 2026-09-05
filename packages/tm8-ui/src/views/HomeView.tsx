@@ -62,7 +62,7 @@ import {
   slugOfKind,
 } from '../domain';
 import type { CockpitStage, NavView } from '../routes/types';
-import { rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
+import { rootBirthDispatch, type ListRootOption } from '../panels/ListRootHeader';
 import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
 import { inTreeOf } from './home-tree';
@@ -385,11 +385,25 @@ export function HomeView(props: HomeViewProps) {
   const chatAbout = useChatAbout({
     open: (aboutId) => navStore.getState().navigate(chatAboutTarget(aboutId)),
   });
-  const listActions = composeListActions([
-    { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
-    { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
-    { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
-  ]);
+  /* MEMOISED because `birthFor` below depends on it: `composeListActions`
+     builds a fresh object every call, and an always-changing dependency turns
+     that `useCallback` into a no-op. */
+  const listActions = useMemo(
+    () =>
+      composeListActions([
+        { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+        { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+        { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+      ]),
+    [
+      sessionStart.onAction,
+      sessionStart.wiredActions,
+      chatAbout.onAction,
+      chatAbout.wiredActions,
+      newContainer.onAction,
+      newContainer.wiredActions,
+    ],
+  );
   const rowLifecycle = useRowLifecycle({
     data,
     viewerMemberId: props.viewerMemberId,
@@ -475,31 +489,13 @@ export function HomeView(props: HomeViewProps) {
    */
   const birthFor = useCallback(
     (kind: string): { refusal: { cause: string; remedy: string } | null; perform: () => void } => {
-      const action = rootBirthAction(kind);
-      if (action) {
-        /*
-         * `listActions`, NOT `sessionStart` — and this was a live defect the
-         * moment `container` declared `quickStart: 'new-container'`.
-         *
-         * `rootBirthAction(kind)` returns the kind's `list.quickStart`, so for
-         * a container this dispatches `'new-container'`. `sessionStart.onAction`
-         * is a switch that handles ONLY `start-terminal` and returns on its
-         * `default:` — so the header's ＋ would have been drawn ENABLED (the
-         * dispatcher exists) and done nothing at all. That is the exact
-         * enabled-inert shape `define()`'s throwing runner and `wiredActions`
-         * exist to prevent, arriving through the one path that bypasses both.
-         */
-        const dispatch = listActions.onAction;
-        return dispatch
-          ? { refusal: null, perform: () => dispatch(action, '') }
-          : {
-              refusal: {
-                cause: `Starting ${getKind(kind).labelPlural.toLowerCase()} isn’t wired here`,
-                remedy: 'this surface was mounted without a command executor',
-              },
-              perform: () => undefined,
-            };
-      }
+      /* Both `chat` (`chat-about`) and `container` (`new-container`) reach
+         this arm, and neither is performed by `useSessionStart`. See
+         `rootBirthDispatch` for why the gate is `wiredActions` and not the
+         presence of a dispatcher — `composeListActions` always returns an
+         `onAction`, so a presence check can never refuse. */
+      const verb = rootBirthDispatch(kind, listActions);
+      if (verb) return verb;
       const target = getKind(kind);
       return {
         refusal:
@@ -517,7 +513,7 @@ export function HomeView(props: HomeViewProps) {
           }),
       };
     },
-    [newEntity, listActions.onAction],
+    [newEntity, listActions],
   );
   const cellBirth = birthFor(cellConfig.kind);
 

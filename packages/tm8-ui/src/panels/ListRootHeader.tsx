@@ -29,6 +29,62 @@ export function rootBirthAction(kind: string): ActionRef | undefined {
   return getKind(kind).list.quickStart;
 }
 
+/** A composed dispatcher: what it can perform, and the door to perform it. */
+export interface BirthDispatcher {
+  onAction: (ref: ActionRef, entityId: string) => void;
+  wiredActions: readonly ActionRef[];
+}
+
+/**
+ * THE ＋ HALF'S VERB ARM, ANSWERED ONCE FOR EVERY HOST.
+ *
+ * Returns null when the kind has no birth verb — the caller falls through to
+ * its own generic-create arm, which differs per host (where the newborn
+ * lands) and so cannot live here.
+ *
+ * IT GATES ON `wiredActions`, NOT ON THE PRESENCE OF A DISPATCHER, and that
+ * distinction is the whole reason this function exists. Both hosts used to ask
+ * whether `useSessionStart.onAction` was defined and then hand it whatever verb
+ * the registry named. That hook's dispatch is a switch — `start-terminal`,
+ * then `default: return` — so a kind whose verb it does not know passed the
+ * gate and did NOTHING on click: no navigation, no refusal, no error.
+ *
+ * `chat` is the kind that exposed it (`quickStart: 'chat-about'`, performed by
+ * `useChatAbout`), and it was only reachable once the Chats row was promoted
+ * out of the rail's "More" group. `container` (`new-container`,
+ * `useNewContainerSheet`) reached the same arm from another lane within a day.
+ * Both hosts already COMPOSED their dispatchers for their lists; only this arm
+ * reached past the composition.
+ *
+ * AND `onAction != null` IS NOT THE FIX. Routing through the composed
+ * dispatcher while still gating on its presence looks right and is worse:
+ * `composeListActions` ALWAYS returns an `onAction` (it closes over the live
+ * parts and finds among them), so that check is a constant `true` and the
+ * refusal branch becomes unreachable — every unperformable verb draws an
+ * enabled control, including the ones that used to refuse honestly. Only
+ * `wiredActions` answers the question.
+ *
+ * Duplicated in two hosts before, with the same defect in both, which is the
+ * other half of why it is one function now.
+ */
+export function rootBirthDispatch(
+  kind: string,
+  dispatcher: BirthDispatcher,
+): { refusal: { cause: string; remedy: string } | null; perform: () => void } | null {
+  const action = rootBirthAction(kind);
+  if (!action) return null;
+  if (dispatcher.wiredActions.includes(action)) {
+    return { refusal: null, perform: () => dispatcher.onAction(action, '') };
+  }
+  return {
+    refusal: {
+      cause: `Starting ${getKind(kind).labelPlural.toLowerCase()} isn’t wired here`,
+      remedy: 'this surface was mounted without a command executor',
+    },
+    perform: () => undefined,
+  };
+}
+
 /** What a kind's ＋ half WEARS and says — a glyph, a name, and a promise. */
 interface BirthVerb {
   glyph: string;
