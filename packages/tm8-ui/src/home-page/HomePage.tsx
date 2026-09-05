@@ -1,26 +1,35 @@
 /**
  * HomePage — the merged single home (user ruling, task 01a0027d, 2026-08-14).
  *
- * ONE canvas, four altitudes:
+ * ONE canvas, two altitudes:
  *
  *   1. NEEDS YOU, only when it has rows — triage outranks everything, and an
  *      inbox-zero space stays quiet.
- *   2. AGENT SIGN-INS — the same detailed credential block Settings hosts,
- *      here as a first-class management section rather than a link away.
- *   3. A compact provider strip immediately above the merged chat/list
- *      surface, so it remains directly above that surface's Sessions content.
- *   4. The CHAT remains the full-bleed hero, with main's root list, resizer,
+ *   2. The CHAT remains the full-bleed hero, with main's root list, resizer,
  *      focus mode and beside-it detail column left intact.
+ *
+ * WHAT IS NO LONGER HERE, AND WHY (Subhang, 2026-09-05). This page used to
+ * stack two credential sections between the two altitudes above — the full
+ * `CredentialsProviderBlock` and the compact `ProviderRail`. Both are gone.
+ *
+ * They were wrong in two independent ways. STRUCTURALLY: a card grid is a flex
+ * item with `min-height: auto`, so it could not shrink; on any ordinary window
+ * the two sections plus the chat exceeded `.hp-page`, and with no `overflow` on
+ * the column the grid painted straight over the conversation underneath.
+ * EDITORIALLY: they were shown to every member on every visit, finished or not,
+ * which is a permanent region of the screen spent on a task that has an end.
+ *
+ * Credentials now live in exactly two places: `CredentialsSetupDialog` (the
+ * guided flow, opened for a member who has not finished) and Settings → Agent
+ * credentials (the management surface). Home is the rail, the list and the
+ * view — nothing stacked on top of them.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
  *   - `useHomeData` / `composeMyWork` (src/home) — the NEEDS YOU composition
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
- *   - `CredentialsProviderBlock` and `ProviderRail` — one credential port and
- *     one provider/verdict vocabulary at two deliberate densities.
  */
 import { useMemo, type ReactNode } from 'react';
-import type { Seam } from '../data/seam';
 import { KindIcon } from '../domain';
 import {
   composeMyWork,
@@ -29,17 +38,17 @@ import {
   type HomeScreenData,
   type HomeSection,
 } from '../home';
-import {
-  CredentialsProviderBlock,
-  credentialsPortFromSeam,
-} from '../settings-credentials';
-import { ProviderRail } from '../provider-rail';
 import './home-page.css';
 
-/** Home's existing narrow read port plus the human-only credential operations. */
-export type HomePageData = Omit<HomeScreenData, 'seam'> & {
-  seam: HomeScreenData['seam'] & Pick<Seam, 'credentials'>;
-};
+/**
+ * Home's narrow read port, and nothing more.
+ *
+ * It used to widen `seam` with `Pick<Seam, 'credentials'>` for the two
+ * credential sections this page hosted. Those are gone, so the widening goes
+ * with them: a page that cannot reach the human-only credential operations
+ * cannot grow a surface that quietly starts calling them again.
+ */
+export type HomePageData = HomeScreenData;
 
 export interface HomePageProps {
   data: HomePageData;
@@ -125,14 +134,6 @@ export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
 
-  // Home is the host at this boundary. It hands the shared component the same
-  // narrow port as Settings, with spaceId bound inside that adapter — never in
-  // the component and never by routing around the human-only seam operations.
-  const credentialsPort = useMemo(
-    () => credentialsPortFromSeam(data.seam, data.spaceId),
-    [data.seam, data.spaceId],
-  );
-
   /* The full T5-1 composition is reused for NEEDS YOU alone. Main's merged
      chat/list surface owns the collection inventory; Home does not recreate
      the glance rails that moved to Work. */
@@ -169,24 +170,6 @@ export function HomePage(props: HomePageProps) {
         ) : needsYou && (home.viewerError || home.notificationsError) ? (
           <p className="hp-note" role="status">{needsYou.emptyNote}</p>
         ) : null}
-
-        <section className="hp-credentials" aria-label="Agent sign-ins" data-testid="home-credentials">
-          <div className="hp-rail__head">
-            <span className="hp-rail__label kit-eyebrow">Agent sign-ins</span>
-          </div>
-          <CredentialsProviderBlock port={credentialsPort} />
-        </section>
-
-        <section
-          className="hp-provider-signins hp-rail"
-          aria-label="Quick provider sign-ins"
-          data-testid="home-provider-rail"
-        >
-          <div className="hp-rail__head">
-            <span className="hp-rail__label kit-eyebrow">Sign in to agents</span>
-          </div>
-          <ProviderRail port={credentialsPort} />
-        </section>
 
         <section className="hp-chat hp-chat--full" aria-label="Chat">
           {props.chat}

@@ -116,55 +116,35 @@ describe('the home chat canvas', () => {
     expect(within(getByTestId('home-page')).getByTestId('chat-slot')).toBeTruthy();
   });
 
-  it('mounts the compact provider rail above Sessions and keeps the detailed shared block', async () => {
-    const { findByTestId, getByTestId } = renderPage({});
-    const section = await findByTestId('home-credentials');
-    expect(within(section).getByTestId('credentials-provider-block')).toBeTruthy();
-    await within(section).findByTestId('credential-card-cursor');
-    expect(within(section).getAllByTestId(/^credential-card-/)).toHaveLength(6);
-    for (const name of ['Claude Code', 'Codex', 'GitHub', 'Gemini', 'Hermes', 'Cursor']) {
-      expect(within(section).getByText(name)).toBeTruthy();
-    }
-    const compact = await findByTestId('home-provider-rail');
-    await within(compact).findByLabelText('Claude Code — connected');
+  /* THE REMOVAL, ASSERTED (Subhang, 2026-09-05). Home used to stack the full
+     credential block and the compact provider rail above the chat. Both are
+     gone: the flow they belonged to is `CredentialsSetupDialog`, and the
+     management surface is Settings.
 
-    const expectedStates = {
-      anthropic: ['connected', '✓'],
-      openai: ['disconnected', '○'],
-      hermes: ['unavailable', '×'],
-      gemini: ['unknown', '?'],
-    } as const;
-    for (const [provider, [state, mark]] of Object.entries(expectedStates)) {
-      expect(
-        within(section).getByTestId(`credential-card-${provider}`).getAttribute(
-          'data-credential-state',
-        ),
-      ).toBe(state);
-      const chip = within(compact).getByTestId(`provider-rail-chip-${provider}`);
-      expect(chip.getAttribute('data-provider-state')).toBe(state);
-      expect(chip.querySelector('.provider-rail__badge')?.textContent).toBe(mark);
+     This test names the four testids the old sections carried rather than
+     just checking a count, because a count is satisfied by a section that
+     moved somewhere else on this page. It also asserts the chat is the FIRST
+     thing under the page column, which is the structural half of the fix —
+     the overlap happened because two unshrinkable siblings sat above it. */
+  it('renders NO credential surface, and seats the chat directly in the page column', () => {
+    const { getByTestId, queryByTestId } = renderPage({});
+
+    for (const testid of [
+      'home-credentials',
+      'home-provider-rail',
+      'credentials-provider-block',
+      'provider-rail',
+    ]) {
+      expect(queryByTestId(testid), `${testid} still mounts on Home`).toBeNull();
     }
 
-    expect(within(section).getByTestId('credential-verdict-cursor').textContent).toBe(
-      'Connected — inference access',
-    );
-    // Home receives the same unavailable semantics as Settings: no action that
-    // the server has already measured will fail.
-    expect(within(section).queryByTestId('credential-connect-hermes')).toBeNull();
-    expect(within(section).getByTestId('credential-install-hermes').textContent).toContain(
-      'Install hermes',
-    );
-
-    expect(within(compact).getAllByTestId(/^provider-rail-chip-/)).toHaveLength(6);
-    expect(within(compact).getByLabelText('Hermes — unavailable').tagName).toBe('SPAN');
-
-    // Main moved Sessions into the merged chat/list surface. The compact rail
-    // therefore precedes that surface directly instead of restoring the old
-    // `hp-rail-sessions` glance rail.
     const sessions = getByTestId('sessions-content');
     const chatSurface = sessions.closest('.hp-chat');
     expect(chatSurface).toBeTruthy();
-    expect(compact.nextElementSibling).toBe(chatSurface);
+    const page = chatSurface!.parentElement;
+    expect(page?.classList.contains('hp-page')).toBe(true);
+    // A quiet space has no NEEDS YOU strip, so the chat is the only child.
+    expect(page!.children).toHaveLength(1);
   });
 
   it('a quiet space renders NO needs-you strip', () => {

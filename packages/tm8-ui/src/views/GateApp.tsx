@@ -87,6 +87,14 @@ import { InboxView } from './InboxView';
 import { MessagesView } from './MessagesView';
 import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
+import {
+  CredentialsSetupDialog,
+  credentialSetupState,
+  readSetupDismissed,
+  setupNudgeOf,
+  shouldOfferSetup,
+  writeSetupDismissed,
+} from '../settings-credentials';
 import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
 import {
   NewSpaceProjectDialog,
@@ -353,6 +361,14 @@ export function GateApp(props: GateAppProps = {}) {
   const [homeFocus, setHomeFocus] = usePanelFlag('home-focus', false);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  /* `null` = the credential status has not been read yet, so the flow has not
+     decided anything. It is deliberately three-valued: `false` is "read, and
+     this member is finished", and only that closes the question. */
+  const [setupOpen, setSetupOpen] = useState<boolean | null>(null);
+  /* The account-menu row's sentence. Null = nothing to say (finished, or
+     never read). It is refreshed when the flow closes so a member who has
+     just connected everything does not keep being told they have not. */
+  const [setupNudge, setSetupNudge] = useState<string | null>(null);
   const [promptsOpen, setPromptsOpen] = useState(false);
   /**
    * WHICH SCREEN IS SHOWING — now DERIVED from `navStore`, not held here.
@@ -1477,6 +1493,49 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
 
+  /* SHOULD THE FLOW OPEN ITSELF? Read once per (account, space), never on a
+     timer and never again after the member has answered.
+
+     THREE THINGS MUST BE TRUE BEFORE ANYONE IS INTERRUPTED, and each refusal
+     below prevents a different way of being wrong. There must be an account
+     (an unauthenticated shell has nobody to set up); the member must not have
+     already said Later; and the node's own answer must be READABLE — a status
+     that measured nothing is our instrumentation failing, not a member who
+     skipped a step, and `shouldOfferSetup` refuses it for us.
+
+     The read is fire-and-forget and its failure is SILENT here on purpose: if
+     `credentials.status` refuses, the member simply is not interrupted, and
+     the same refusal is stated in full the moment they open the flow from the
+     account menu. A boot-blocking error card for a convenience would be the
+     louder of two wrong answers. */
+  useEffect(() => {
+    if (setupOpen !== null) return;
+    if (!credentialsPort || !authAccount) return;
+    let live = true;
+    void credentialsPort.load().then(
+      (status) => {
+        if (!live) return;
+        const dismissed = readSetupDismissed(nodeKey, authAccount.handle);
+        setSetupOpen(shouldOfferSetup(status, dismissed));
+        setSetupNudge(setupNudgeOf(credentialSetupState(status)));
+      },
+      () => { if (live) setSetupOpen(false); },
+    );
+    return () => { live = false; };
+  }, [credentialsPort, authAccount, nodeKey, setupOpen]);
+
+  /* Re-read after the flow closes, so the menu row stops nagging the moment
+     the member is actually finished. Read-only: it never re-opens the dialog
+     — the member has just answered that question, and answering it for them
+     again would be the loop this flow is built to avoid. */
+  const refreshSetupNudge = useCallback(() => {
+    if (!credentialsPort) return;
+    void credentialsPort.load().then(
+      (status) => setSetupNudge(setupNudgeOf(credentialSetupState(status))),
+      () => undefined,
+    );
+  }, [credentialsPort]);
+
   // The branch-topology section for the shell's externally-owned `projects`
   // slot (seam Amendment 5). The spaceId is closed over HERE so the section's
   // port stays two reads and nothing else — the same host-wires-the-seam rule
@@ -1863,7 +1922,13 @@ export function GateApp(props: GateAppProps = {}) {
           uiSwitchSlot={import.meta.env.BASE_URL === '/' ? <UiVersionSwitch /> : undefined}
           accountSlot={
             authAccount && data.viewerActor ? (
-              <AccountMenu actor={data.viewerActor} theme={theme} onThemeChange={setTheme} />
+              <AccountMenu
+                actor={data.viewerActor}
+                theme={theme}
+                onThemeChange={setTheme}
+                agentToolsNudge={setupNudge}
+                {...(credentialsPort ? { onOpenAgentTools: () => setSetupOpen(true) } : {})}
+              />
             ) : undefined
           }
         />
@@ -2584,6 +2649,28 @@ export function GateApp(props: GateAppProps = {}) {
             await props.onAddServer(input);
           }}
         />
+        {credentialsPort ? (
+          <CredentialsSetupDialog
+            open={setupOpen === true}
+            port={credentialsPort}
+            serverBaseUrl={activeServer.routeBaseUrl}
+            /* DISMISS and CLOSE are different answers and are recorded
+               differently. Later is a standing preference — it is written down,
+               so a reload does not ask again. Close is "I am done with this
+               window", which is what Done and Escape mean, and it records
+               nothing: a member who finished is finished on the measurement,
+               and a member who closed without finishing gets asked next boot. */
+            onDismiss={() => {
+              if (authAccount) writeSetupDismissed(nodeKey, authAccount.handle);
+              setSetupOpen(false);
+              refreshSetupNudge();
+            }}
+            onClose={() => {
+              setSetupOpen(false);
+              refreshSetupNudge();
+            }}
+          />
+        ) : null}
         {projectOnboardingPort ? (
           <NewSpaceProjectDialog
             key={activeServer.id}

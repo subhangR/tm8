@@ -16,6 +16,23 @@ export {
   type CredentialProviderPresentation,
 } from './provider-presentation';
 export {
+  CredentialsSetupDialog,
+  type CredentialsSetupDialogProps,
+} from './CredentialsSetupDialog';
+export {
+  clearSetupDismissal,
+  readSetupDismissed,
+  writeSetupDismissed,
+} from './setup-dismissal';
+export {
+  credentialSetupState,
+  setupNudgeOf,
+  shouldOfferSetup,
+  GIT_PROVIDER,
+  type CredentialSetupState,
+  type ProviderStanding,
+} from './setup-gate';
+export {
   credentialsPortFromSeam,
   disconnectVerdictOf,
   verdictOf,
