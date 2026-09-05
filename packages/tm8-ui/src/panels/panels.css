@@ -1752,6 +1752,11 @@
    rules, a little air between targets, and rounded interaction states. The
    resting surface stays quiet; hover and selection provide the shape. */
 .cv2-root .lp__tree {
+  /* The containing block for `.lp__flights`. Safe to add: every tile anatomy
+     that parks something absolutely (`pn-st__actions`, `lp__rowactions`,
+     `lp__assignmenu`) sits inside a tile that is ALREADY `position: relative`,
+     so nothing was resolving against an ancestor above this one. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1926,6 +1931,120 @@
 @keyframes lp-pulse-row-completion {
   0%, 100% { outline: 1px dashed transparent; outline-offset: -2px; }
   40%, 72% { outline: 1px dashed var(--lp-pulse-color); outline-offset: -2px; }
+}
+
+/* --- the flight ------------------------------------------------------------
+   A DISCRETE OBJECT CROSSING THE TILES. The sweep above is honest and nearly
+   invisible: a 1px overlay on a 1px hairline, in a column of 29px rows. So the
+   arrival also sends something that MOVES — a small glyph that leaves the
+   sender's tile, arcs over the rows between, and lands on the recipient's.
+
+   OUT OF FLOW, ALWAYS. The layer is `inset: 0` over the tree and takes no
+   pointer events, so a message arriving in a background subtree cannot move,
+   resize or block a single row of the list the viewer is reading.
+
+   TWO TRACKS, TWO ELEMENTS. The outer span carries POSITION and nothing else,
+   stepping through the seven stops `tile-flight.ts` sampled — `linear`, on
+   purpose, because the ease is already baked into where those stops sit and a
+   timing function on top would stutter at each joint. The inner span carries
+   ENTRANCE — fade, scale, and the glow that trails it — on its own curve. One
+   property per element keeps both on the compositor.
+
+   COLOUR IS NEVER ALONE. The three kinds carry the same hues as the wire
+   beneath them, and also three different glyphs (bubble, chevron, barred
+   return arrow) drawn by `TileFlightLayer`. */
+.cv2-root .lp__flights {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.cv2-root .lp__flight {
+  --lp-flight-color: var(--pn-brand);
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Half the 18px carrier, so the sampled point is the glyph's CENTRE rather
+     than its top-left corner — otherwise every flight lands low and right. */
+  margin: -9px 0 0 -9px;
+  display: block;
+  width: 18px;
+  height: 18px;
+  will-change: transform;
+  animation: lp-flight-travel var(--lp-flight-duration, 900ms) linear both;
+}
+
+.cv2-root .lp__flight[data-flight-kind='message'] { --lp-flight-color: var(--pn-brand); }
+.cv2-root .lp__flight[data-flight-kind='delegation'] { --lp-flight-color: var(--pn-run); }
+.cv2-root .lp__flight[data-flight-kind='completion'] { --lp-flight-color: var(--pn-wait); }
+.cv2-root .lp__flight[data-flight-outcome='failed'] { --lp-flight-color: var(--pn-block); }
+
+.cv2-root .lp__flight__glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lp-flight-color);
+  border-radius: 999px;
+  /* Its own backing. The glyph crosses tiles of every state — selected, live,
+     hovered — and a bare mark would sink into the one it happens to be over. */
+  background: var(--pn-card);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--lp-flight-color) 55%, transparent),
+    0 0 10px 2px color-mix(in srgb, var(--lp-flight-color) 30%, transparent),
+    0 1px 3px rgb(0 0 0 / 0.22);
+  animation: lp-flight-glyph var(--lp-flight-duration, 900ms) var(--pn-ease-out) both;
+}
+
+.cv2-root .lp__flight__glyph .kit-vicon { display: block; }
+
+/* The wake. A soft disc left a beat behind the glyph, which is what reads as
+   speed — the mark alone reads as a badge being dragged.
+   BEHIND, and `z-index` is what puts it there: a positioned pseudo-element
+   paints ABOVE its host's non-positioned content by default, which laid the
+   halo over the mark and tinted the glyph its own glow colour. */
+.cv2-root .lp__flight__glyph::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -3px;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--lp-flight-color) 34%, transparent) 0%,
+    transparent 70%
+  );
+  animation: lp-flight-wake var(--lp-flight-duration, 900ms) var(--pn-ease-out) both;
+}
+
+@keyframes lp-flight-travel {
+  0%      { transform: translate3d(var(--lp-flight-0x, 0px), var(--lp-flight-0y, 0px), 0); }
+  16.667% { transform: translate3d(var(--lp-flight-1x, 0px), var(--lp-flight-1y, 0px), 0); }
+  33.333% { transform: translate3d(var(--lp-flight-2x, 0px), var(--lp-flight-2y, 0px), 0); }
+  50%     { transform: translate3d(var(--lp-flight-3x, 0px), var(--lp-flight-3y, 0px), 0); }
+  66.667% { transform: translate3d(var(--lp-flight-4x, 0px), var(--lp-flight-4y, 0px), 0); }
+  83.333% { transform: translate3d(var(--lp-flight-5x, 0px), var(--lp-flight-5y, 0px), 0); }
+  100%    { transform: translate3d(var(--lp-flight-6x, 0px), var(--lp-flight-6y, 0px), 0); }
+}
+
+/* Launch, cruise, land. The overshoot at 14% is the takeoff; the settle at the
+   end is the glyph being absorbed by the row, which is already glowing to
+   receive it (`lp-pulse-row-message`). */
+@keyframes lp-flight-glyph {
+  0%   { opacity: 0; transform: scale(0.4); }
+  14%  { opacity: 1; transform: scale(1.12); }
+  26%  { opacity: 1; transform: scale(1); }
+  82%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.52); }
+}
+
+@keyframes lp-flight-wake {
+  0%, 100% { opacity: 0; transform: scale(0.6); }
+  22%      { opacity: 1; transform: scale(1.9); }
+  78%      { opacity: 0.85; transform: scale(1.7); }
 }
 
 /* Maestro SessionListItem anatomy. The live-dot markup and ping animation are
@@ -2550,6 +2669,11 @@
     background-position: 0 50%;
   }
   .cv2-root .lp__children[data-pulse]::before { animation: none; opacity: 1; }
+  /* The ONLY treatment removed outright rather than frozen. A flight is motion
+     with nothing left once the motion is gone — a glyph parked mid-list would
+     read as a control. The wire above and the endpoint glow below both keep
+     their static forms, so the arrival is still fully reported. */
+  .cv2-root .lp__flights { display: none; }
   .cv2-root .lp__branch[data-pulse-row] > .pn-st,
   .cv2-root .lp__branch[data-pulse-row] > .lp__tile {
     animation: none;

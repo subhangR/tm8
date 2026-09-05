@@ -92,6 +92,7 @@ import {
 import { relatedOfKind } from './list/related';
 import { RelatedGroup } from './list/RelatedGroup';
 import type { MessagePulse } from './list/useMessagePulses';
+import { TileFlightLayer, type ResolvedFlight } from './list/TileFlightLayer';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 import { newLaunchMutationId } from '../domain/launch';
 
@@ -2742,6 +2743,18 @@ function TreeRows({
   return (
     <div className={treeClass(config)} role={config.list.tree ? 'tree' : 'list'}>
       {roots.map(renderNode)}
+      {/* LAST, and out of flow. The layer measures against this container, so
+          it must be a child of it; rendering it after the rows keeps it above
+          them without a stacking context that would trap the row menus.
+
+          MOUNTED FOR ANY LIVE PULSE, not only for a drawable one. The layer
+          refuses to launch a flight that only became flyable because the tree
+          changed shape, and it can only know that if it was watching while the
+          pulse sat in a closed subtree producing nothing. An empty layer draws
+          nothing and takes no pointer events. */}
+      {pulse.activeKeys.size > 0 ? (
+        <TileFlightLayer flights={pulse.flights} activeKeys={pulse.activeKeys} />
+      ) : null}
     </div>
   );
 }
@@ -2828,9 +2841,30 @@ interface ResolvedPulses {
     kind: SessionPulseKind;
     outcome?: 'exited' | 'failed';
   }>;
+  /**
+   * Arrivals with BOTH ends on a drawn row, for the glyph that flies between
+   * them. A pulse appears here in addition to — never instead of — its wire
+   * segments: the sweep is what survives `prefers-reduced-motion`, and it is
+   * also the only half that tells the routing story the flight arc declines to
+   * tell (see `tile-flight.ts`). One arrival, two complementary readings.
+   */
+  flights: readonly ResolvedFlight[];
+  /**
+   * EVERY live pulse key, including the ones that produced no flight. The
+   * layer needs the unflyable ones to tell an arrival from an expand — see
+   * the late-launch refusal in `TileFlightLayer`.
+   */
+  activeKeys: ReadonlySet<string>;
 }
 
-const NO_PULSES: ResolvedPulses = { segments: new Map(), endpoints: new Map() };
+const NO_FLIGHTS: readonly ResolvedFlight[] = Object.freeze([]);
+const NO_KEYS: ReadonlySet<string> = new Set();
+const NO_PULSES: ResolvedPulses = {
+  segments: new Map(),
+  endpoints: new Map(),
+  flights: NO_FLIGHTS,
+  activeKeys: NO_KEYS,
+};
 
 /**
  * Turns live arrivals into per-node presentation, against the tree as it is
@@ -2898,6 +2932,7 @@ function resolvePulses(
     kind: SessionPulseKind;
     outcome?: 'exited' | 'failed';
   }>();
+  const flights: ResolvedFlight[] = [];
   for (const item of pulses) {
     const route = routeMessagePulse(item.fromId, item.toId, index);
     route.segments.forEach((segment, order) => {
@@ -2918,8 +2953,30 @@ function resolvePulses(
       endpoints.set(route.fromRowId, { role: 'from', ...endpoint });
     }
     if (route.toRowId !== null) endpoints.set(route.toRowId, { role: 'to', ...endpoint });
+    // A flight needs a takeoff AND a landing, and they must be different
+    // rows. Same row means one collapsed subtree absorbed both ends: the
+    // traffic was internal to something the viewer has closed, and the row's
+    // own glow already says "in there" better than a glyph orbiting one tile.
+    if (
+      route.fromRowId !== null
+      && route.toRowId !== null
+      && route.fromRowId !== route.toRowId
+    ) {
+      flights.push({
+        key: item.key,
+        kind: item.kind,
+        ...(item.kind === 'completion' ? { outcome: item.outcome } : {}),
+        fromRowId: route.fromRowId,
+        toRowId: route.toRowId,
+      });
+    }
   }
-  return { segments, endpoints };
+  return {
+    segments,
+    endpoints,
+    flights: flights.length === 0 ? NO_FLIGHTS : flights,
+    activeKeys: new Set(pulses.map((item) => item.key)),
+  };
 }
 
 
@@ -3421,6 +3478,10 @@ export function Tile({
         .filter(Boolean)
         .join(' ')}
       data-testid="list-tile"
+      /* The session anatomy publishes `data-session-node`; this is the same
+         identity on the default one, so `TileFlightLayer` can find either
+         tile without a ref registry threaded through every row. */
+      data-flight-anchor={row.id}
       data-depth={depth}
       data-tree={config.list.tree ? 'true' : undefined}
       data-children={childCount > 0 ? childCount : undefined}
