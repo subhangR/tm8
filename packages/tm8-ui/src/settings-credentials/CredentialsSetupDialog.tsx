@@ -201,8 +201,29 @@ export function CredentialsSetupDialog({
     }
   }
 
+  /* CLOSING AND DISMISSING ARE DIFFERENT ANSWERS, and until review both of the
+     button-shaped exits meant DISMISS. "Later"/"Finish later" write the
+     permanent per-account record; the non-dismissing close was Escape alone.
+     So a member who opened "Agent tools" from the account menu just to look,
+     and clicked the only obvious way out, silently turned the flow off for
+     good. The × and the backdrop are that missing exit — they CLOSE.
+
+     Neither is offered while a login terminal is live, for the reason Escape
+     is not: a stray backdrop click must not abandon a half-finished OAuth flow
+     that is still running on the node. */
+  const closable = stage.kind !== 'connecting';
+
   return (
-    <div className="cset-scrim" data-testid="credentials-setup-dialog">
+    <div
+      className="cset-scrim"
+      data-testid="credentials-setup-dialog"
+      onMouseDown={(event) => {
+        if (!closable) return;
+        // The TARGET test matters: without it a drag that starts inside the
+        // card and releases on the backdrop would close the dialog.
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
         className="cset-card"
         role="dialog"
@@ -211,6 +232,18 @@ export function CredentialsSetupDialog({
         tabIndex={-1}
         ref={cardRef}
       >
+        {closable ? (
+          <button
+            type="button"
+            className="cset-close"
+            aria-label="Close"
+            title="Close — this does not turn the setup off"
+            onClick={onClose}
+            data-testid="cset-x"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        ) : null}
         {stage.kind === 'intro' ? (
           <IntroPane
             headingId={headingId}
@@ -641,9 +674,14 @@ function ProviderList({
 
 /**
  * One provider row. The four verdicts keep their four different sentences —
- * an unavailable binary and an unmeasured probe are not "not connected", and
- * offering a Connect button on either would start a flow that cannot finish or
- * repeat one already done.
+ * an unavailable binary and an unmeasured probe are not "not connected".
+ *
+ * THE TWO NEGATIVE VERDICTS GET DIFFERENT TREATMENT, deliberately. An absent
+ * binary has NO action: a login for a program that is not installed cannot
+ * finish, so the row is inert. An UNMEASURED provider does get one, labelled
+ * "Sign in anyway" — the member may well already be signed in, and the honest
+ * offer is a login they can choose to repeat, not a button withheld on a doubt
+ * this node was unable to resolve.
  */
 function ProviderRow({
   standing,

@@ -158,6 +158,53 @@ describe('when the flow may interrupt someone', () => {
   });
 });
 
+/**
+ * THE FOURTH REFUSAL (review finding, 2026-09-05). A provider whose binary is
+ * absent renders an inert row with no Connect button — so an account whose ONLY
+ * missing half is `unavailable` is a flow that cannot be finished. Before this,
+ * such a member was handed the modal on every boot with no way out but the
+ * permanent dismissal.
+ */
+describe('a flow that cannot be finished is not offered', () => {
+  it('does not auto-open when the only missing half has no binary', () => {
+    const noGh = status([
+      connected('anthropic'),
+      connection('github', { status: 'unavailable' }),
+    ]);
+    expect(credentialSetupState(noGh).complete).toBe(false);
+    expect(shouldOfferSetup(noGh, false)).toBe(false);
+  });
+
+  it('does not auto-open when no agent tool is installed at all', () => {
+    const bare = status([
+      connection('anthropic', { status: 'unavailable' }),
+      connection('openai', { status: 'unavailable' }),
+      connected('github', 'octocat'),
+    ]);
+    expect(shouldOfferSetup(bare, false)).toBe(false);
+  });
+
+  /* THE BOUNDARY, and it is the half of this rule that must not over-refuse:
+     ONE installable agent among several absent ones is still an actionable
+     gap, and the flow must still offer itself. */
+  it('DOES auto-open when at least one missing half can be acted on', () => {
+    const oneUsable = status([
+      connection('anthropic', { status: 'unavailable' }),
+      connection('openai'),
+      connected('github', 'octocat'),
+    ]);
+    expect(shouldOfferSetup(oneUsable, false)).toBe(true);
+  });
+
+  it('DOES auto-open when GitHub is absent but an agent tool is connectable', () => {
+    const gitGone = status([
+      connection('openai'),
+      connection('github', { status: 'unavailable' }),
+    ]);
+    expect(shouldOfferSetup(gitGone, false)).toBe(true);
+  });
+});
+
 describe('the account-menu nudge names what is actually missing', () => {
   it('says nothing at all when finished', () => {
     const done = credentialSetupState(
@@ -182,5 +229,41 @@ describe('the account-menu nudge names what is actually missing', () => {
       status([connection('anthropic'), connected('github', 'octocat')]),
     );
     expect(setupNudgeOf(state)).toBe('no agent tool connected yet');
+  });
+
+  /* An absent binary must not read as something the member forgot to do — the
+     nudge is the only place they are told about it now that the flow no longer
+     opens itself for it, so it has to name the cause rather than the symptom. */
+  it('says INSTALLED, not connected, when the binary is what is missing', () => {
+    const noAgent = credentialSetupState(
+      status([
+        connection('anthropic', { status: 'unavailable' }),
+        connected('github', 'octocat'),
+      ]),
+    );
+    expect(setupNudgeOf(noAgent)).toBe('no agent tool is installed on this node');
+
+    const noGh = credentialSetupState(
+      status([connected('anthropic'), connection('github', { status: 'unavailable' })]),
+    );
+    expect(setupNudgeOf(noGh)).toContain('not installed');
+  });
+
+  /* THE MIRROR OF THE OVER-REFUSAL BOUNDARY, and it matters for the same
+     reason. "Nothing is installed" sends a member to a shell. If ONE agent is
+     installed and merely disconnected, they have a button to press, and the
+     nudge must say so even when three others are absent — otherwise the
+     sentence sends them away from the thing that would work. */
+  it('does NOT say "not installed" when one agent is installed but disconnected', () => {
+    const mixed = credentialSetupState(
+      status([
+        connection('anthropic', { status: 'unavailable' }),
+        connection('hermes', { status: 'unavailable' }),
+        connection('openai'),
+        connected('github', 'octocat'),
+      ]),
+    );
+    expect(mixed.hasAgent).toBe(false);
+    expect(setupNudgeOf(mixed)).toBe('no agent tool connected yet');
   });
 });

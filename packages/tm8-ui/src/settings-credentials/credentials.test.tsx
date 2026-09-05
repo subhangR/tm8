@@ -12,7 +12,7 @@
  * inside a happy-path render.
  */
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   CredentialsDeleteResult,
   CredentialsStatusView,
@@ -441,5 +441,45 @@ describe('the section is honest about what it could not read', () => {
     await waitFor(() => expect(screen.getByTestId('terminal-host')).toBeTruthy());
     expect(screen.getByTestId('terminal-host-placeholder').textContent).toContain('disabled in this build');
     expect(panel).toBeTruthy();
+  });
+});
+
+/**
+ * ONE DERIVATION, TWO READERS (review finding, 2026-09-05).
+ *
+ * The account menu carries a setup nudge computed from the same status this
+ * section reads. It was refreshed only by the setup DIALOG, so connecting a
+ * provider HERE left the menu asserting the opposite until a reload — and
+ * `GateApp` is keyed on the server id, so nothing else cleared it.
+ */
+describe('Settings tells the other reader when the status changed', () => {
+  // CONNECTED on purpose: the block hides Disconnect on a measured
+  // disconnection, so a disconnected fixture has no write to trigger.
+  const status = {
+    providers: [connection({ provider: 'github', connected: true, login: 'octocat' })],
+    gitCredentialStore: 'present' as const,
+  };
+
+  it('reports every read, including the one after a write', async () => {
+    const onStatusRead = vi.fn();
+    render(<CredentialsSection port={portWith(status)} onStatusRead={onStatusRead} />);
+
+    // The initial read.
+    await waitFor(() => expect(onStatusRead).toHaveBeenCalledTimes(1));
+    /* IT HANDS OVER THE VALUE. `credentials.status` shells out on the node
+       once per provider, so a callback that only signalled "changed" would
+       make the other reader pay for a second one on every write. */
+    expect(onStatusRead.mock.calls[0]![0]).toEqual(status);
+
+    // A disconnect reloads, and that reload must be reported too — every
+    // write in this section is followed by one, which is why the hook sits on
+    // the read rather than on three separate write wrappers.
+    fireEvent.click(await screen.findByTestId('credential-disconnect-github'));
+    await waitFor(() => expect(onStatusRead).toHaveBeenCalledTimes(2));
+  });
+
+  it('is optional — a host that passes none still renders', async () => {
+    render(<CredentialsSection port={portWith(status)} />);
+    expect(await screen.findByTestId('credential-card-github')).toBeTruthy();
   });
 });

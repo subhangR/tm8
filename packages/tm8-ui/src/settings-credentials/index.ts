@@ -20,7 +20,6 @@ export {
   type CredentialsSetupDialogProps,
 } from './CredentialsSetupDialog';
 export {
-  clearSetupDismissal,
   readSetupDismissed,
   writeSetupDismissed,
 } from './setup-dismissal';

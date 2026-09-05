@@ -244,6 +244,57 @@ describe('the connecting step demotes the terminal without unmounting it', () =>
   });
 });
 
+/**
+ * CLOSING IS NOT DISMISSING (review finding, 2026-09-05). Both button-shaped
+ * exits used to mean DISMISS — the permanent per-account write — so a member
+ * who opened the flow from the account menu just to look and clicked the
+ * obvious way out silently turned it off for good.
+ */
+describe('there is a way out that does not turn the flow off', () => {
+  it('the × closes without dismissing', async () => {
+    const onDismiss = vi.fn();
+    const onClose = vi.fn();
+    mount(portWith(NOTHING_CONNECTED), { onDismiss, onClose });
+    fireEvent.click(await screen.findByTestId('cset-x'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('the backdrop closes without dismissing', async () => {
+    const onDismiss = vi.fn();
+    const onClose = vi.fn();
+    mount(portWith(NOTHING_CONNECTED), { onDismiss, onClose });
+    fireEvent.mouseDown(await screen.findByTestId('credentials-setup-dialog'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  /* A drag that STARTS on the card and releases on the backdrop is not a
+     backdrop click, and must not close the dialog — the target test in the
+     handler is what makes that true. */
+  it('a mousedown inside the card does not close it', async () => {
+    const onClose = vi.fn();
+    mount(portWith(NOTHING_CONNECTED), { onClose });
+    const card = (await screen.findByTestId('cset-later')).closest('.cset-card')!;
+    fireEvent.mouseDown(card);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  /* Neither exit is offered while a login is live, for the same reason Escape
+     is not: a stray click must not abandon a running OAuth flow. */
+  it('offers neither × nor backdrop-close while a login terminal is live', async () => {
+    const onClose = vi.fn();
+    mount(portWith(NOTHING_CONNECTED), { onClose });
+    fireEvent.click(await screen.findByTestId('cset-start'));
+    fireEvent.click(await screen.findByTestId('cset-connect-anthropic'));
+    await screen.findByTestId('cset-instruction');
+
+    expect(screen.queryByTestId('cset-x')).toBeNull();
+    fireEvent.mouseDown(screen.getByTestId('credentials-setup-dialog'));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
 describe('what the flow does with the answer', () => {
   it('re-reads the status after a login instead of flipping the row locally', async () => {
     const after = {

@@ -85,11 +85,12 @@ import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
 import { MessagesView } from './MessagesView';
-import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
 import {
+  CredentialsSection,
   CredentialsSetupDialog,
   credentialSetupState,
+  credentialsPortFromSeam,
   readSetupDismissed,
   setupNudgeOf,
   shouldOfferSetup,
@@ -1493,8 +1494,10 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
 
-  /* SHOULD THE FLOW OPEN ITSELF? Read once per (account, space), never on a
-     timer and never again after the member has answered.
+  /* SHOULD THE FLOW OPEN ITSELF? Read ONCE PER `GateApp` MOUNT — which is
+     keyed on `activeServer.id`, so a server switch re-asks and a SPACE switch
+     deliberately does not. Never on a timer, and never again after the member
+     has answered.
 
      THREE THINGS MUST BE TRUE BEFORE ANYONE IS INTERRUPTED, and each refusal
      below prevents a different way of being wrong. There must be an account
@@ -2392,6 +2395,19 @@ export function GateApp(props: GateAppProps = {}) {
                               <CredentialsSection
                                 port={credentialsPort}
                                 serverBaseUrl={activeServer.routeBaseUrl}
+                                /* Settings is the OTHER reader of the same
+                                   derivation. Without this, connecting GitHub
+                                   here left the account-menu nudge still
+                                   saying it was not connected until a reload.
+
+                                   DERIVED FROM THE VALUE IT HANDS OVER, never
+                                   re-read: `credentials.status` shells out on
+                                   the node once per provider, and a refresh
+                                   that called it again would double the cost
+                                   of every write on this screen. */
+                                onStatusRead={(status) =>
+                                  setSetupNudge(setupNudgeOf(credentialSetupState(status)))
+                                }
                               />
                             ),
                           }

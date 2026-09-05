@@ -56,13 +56,13 @@ export function writeSetupDismissed(nodeKey: string, accountHandle: string): voi
   }
 }
 
-/** Sign-out's half: the next member on this machine starts undismissed. */
-export function clearSetupDismissal(nodeKey: string, accountHandle: string): void {
-  const store = storage();
-  if (!store) return;
-  try {
-    store.removeItem(keyFor(nodeKey, accountHandle));
-  } catch {
-    /* nothing to do; the key is keyed by account anyway */
-  }
-}
+/*
+ * THERE IS DELIBERATELY NO `clearSetupDismissal`. An earlier draft exported one
+ * as "sign-out's half", by analogy with `last-place.ts`, which really does need
+ * one. This module does not, and the difference is the key: `last-place` is
+ * keyed by NODE alone, so one person's record is the next person's inheritance
+ * and sign-out has to erase it. This key carries the ACCOUNT HANDLE, so the
+ * next member to sign in on this machine reads a different key and starts
+ * undismissed already. A clear function would have been dead code whose
+ * existence implied the bug it was named after was still possible.
+ */

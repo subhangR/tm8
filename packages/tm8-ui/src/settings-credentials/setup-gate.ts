@@ -103,11 +103,42 @@ export function credentialSetupState(
 }
 
 /**
+ * Is there a missing half the member can actually ACT ON from this flow?
+ *
+ * A provider whose binary is absent renders an inert row with NO Connect
+ * button — correctly, since starting a login for a binary that is not there
+ * would fail. But that makes an incomplete account whose ONLY missing half is
+ * `unavailable` a dead end: every row inert, `Done` refused, and nothing on
+ * the screen that can change it.
+ */
+function hasActionableGap(state: CredentialSetupState): boolean {
+  const agentGap = !state.hasAgent && state.agents.some((a) => !a.unavailable);
+  const gitGap = !state.hasGit && state.git !== null && !state.git.unavailable;
+  return agentGap || gitGap;
+}
+
+/**
  * Should the setup flow open itself for this status?
  *
- * Three refusals, and each one prevents a different way of being obnoxious:
- * a complete account is not interrupted, an account whose state we could not
- * read is not blamed for it, and a member who said Later is believed.
+ * FOUR refusals, and each prevents a different way of being obnoxious: a
+ * complete account is not interrupted, an account whose state we could not
+ * read is not blamed for it, a member who said Later is believed, and — the
+ * fourth, added 2026-09-05 after review — a member is not handed a flow they
+ * cannot finish.
+ *
+ * THE FOURTH IS THE `unavailable` TWIN OF THE `unknown` RULE ABOVE. This module
+ * already refuses to auto-open on an unreadable status because that is asking a
+ * member to fix OUR instrumentation. Auto-opening on a node where the only
+ * missing half has no binary is the same mistake wearing different clothes: it
+ * asks them to fix a missing INSTALL, every boot, through a button this dialog
+ * deliberately does not render. Their only exits were Escape (asked again next
+ * boot, forever) or "Finish later" — which writes the permanent dismissal, so
+ * the escape hatch and the deliberate choice were the same gesture.
+ *
+ * NOTHING IS HIDDEN BY THIS. The account-menu row still opens the flow on
+ * demand, and {@link setupNudgeOf} still names the missing half — a member who
+ * wants to know is told, and a member who installs the binary is offered the
+ * flow on the next boot. Only the unprompted interruption stops.
  */
 export function shouldOfferSetup(
   status: CredentialsStatusView,
@@ -116,7 +147,8 @@ export function shouldOfferSetup(
   if (dismissed) return false;
   const state = credentialSetupState(status);
   if (state.unreadable) return false;
-  return !state.complete;
+  if (state.complete) return false;
+  return hasActionableGap(state);
 }
 
 /**
@@ -126,7 +158,14 @@ export function shouldOfferSetup(
 export function setupNudgeOf(state: CredentialSetupState): string | null {
   if (state.unreadable) return null;
   if (state.complete) return null;
+  /* An absent binary is a different sentence from an unconnected account, and
+     it must not read as something the member forgot to do. It is the one gap
+     this node cannot close from the dialog, so the nudge names the cause. */
+  if (!state.hasAgent && state.agents.length > 0 && state.agents.every((a) => a.unavailable)) {
+    return 'no agent tool is installed on this node';
+  }
   if (!state.hasAgent && !state.hasGit) return 'no agent tools connected yet';
   if (!state.hasAgent) return 'no agent tool connected yet';
+  if (state.git?.unavailable) return 'the GitHub CLI is not installed on this node';
   return 'GitHub not connected — agents cannot push or open PRs';
 }
