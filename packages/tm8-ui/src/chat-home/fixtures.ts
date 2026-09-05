@@ -384,7 +384,7 @@ export function createChatHomeFixturePort(
                subject to the chat's own id, which made every bare Home chat a
                chat about itself — invisible while nothing drew the relation. */
             aboutId: input.aboutId ?? null,
-            title: input.body,
+            title: input.title ?? input.body,
             preview: input.body,
             updatedAt: new Date().toISOString(),
             replyCount: 1,

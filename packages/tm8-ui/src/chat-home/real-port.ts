@@ -1,12 +1,4 @@
-import type {
-  ChatMode,
-  EntityId,
-  EntitySummary,
-  MessageBatchResult,
-  MessageView,
-  SpaceId,
-  CommandResult,
-} from '@tm8/contract';
+import type { ChatMode, ChatWorkdirMode, CommandResult, EntityId, EntitySummary, MessageBatchResult, MessageView, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import {
   CHAT_HOME_FIXTURE_THREAD,
@@ -39,6 +31,8 @@ interface ChatListItem {
   teammateId: EntityId;
   model: string;
   mode: ChatMode;
+  workdirMode: ChatWorkdirMode;
+  projectId: EntityId | null;
   createdAt: string;
   lastTurnAt: string | null;
   title: string | null;
@@ -64,6 +58,8 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
     teammateId: state.teammateId,
     model: state.model,
     mode: state.mode,
+    workdirMode: state.workdirMode,
+    projectId: state.projectId,
     createdAt: summary.createdAt,
     lastTurnAt: state.lastTurnAt,
     title: summary.title,
@@ -127,11 +123,28 @@ export function createChatHomePortFromSeam(
       sort: 'activityAt_desc',
       limit: 100,
     });
-    return result.page.items.map((item) => ({
-      id: item.id,
-      label: item.title,
-      avatar: null,
-    }));
+    return result.page.items.map((item) => {
+      const state = item.state?.kind === 'team_member' ? item.state : null;
+      return {
+        id: item.id,
+        label: item.title,
+        avatar: null,
+        // ADDITIVE (ac_11): absent on a node that does not project them, and
+        // absent is passed through as absent so no filter pretends to know.
+        ...(state && 'mode' in state ? { mode: state.mode ?? null } : {}),
+        ...(state && 'permissionMode' in state ? { permissionMode: state.permissionMode ?? null } : {}),
+      };
+    });
+  };
+
+  const listProjects: NonNullable<ChatHomePort['listProjects']> = async (spaceId) => {
+    const result = await seam.query({
+      spaceId,
+      kinds: ['project'],
+      sort: 'activityAt_desc',
+      limit: 100,
+    });
+    return result.page.items.map((item) => ({ id: item.id, name: item.title }));
   };
 
   /**
@@ -238,6 +251,8 @@ export function createChatHomePortFromSeam(
         model: item.model,
         modelLabel: item.model,
         mode: item.mode,
+        workdirMode: item.workdirMode,
+        projectId: item.projectId,
       },
       state: item.state,
     }));
@@ -251,6 +266,7 @@ export function createChatHomePortFromSeam(
     listThreads,
     chatIdsAbout,
     listTeammates,
+    listProjects,
     async readThread(chatId) {
       const item = await resolveItem(chatId);
       // FLAT (176 §1.3). Every message of a chat is anchored ON the chat with
@@ -313,6 +329,8 @@ export function createChatHomePortFromSeam(
             model: item.model,
             modelLabel: item.model,
             mode: item.mode,
+            workdirMode: item.workdirMode,
+            projectId: item.projectId,
           },
           state: item.state,
         },
@@ -328,13 +346,12 @@ export function createChatHomePortFromSeam(
           teammateId: input.teammateId,
           model: input.model,
           mode: input.mode,
-          // Held at today's behaviour ON PURPOSE: the project picker is the
-          // follow-up UI change, and sending anything else from here would pick
-          // a directory on the human's behalf through a control they cannot yet
-          // see. Every chat, scratch included, gets the full tool set in
-          // whatever directory it is bound to.
-          workdirMode: 'scratch',
+          // The rail's project control (write-once, empty state only). A
+          // composer that offers none still sends `scratch` explicitly.
+          workdirMode: input.workdirMode ?? 'scratch',
+          ...(input.workdirMode === 'project' && input.projectId ? { projectId: input.projectId } : {}),
           body: input.body,
+          ...(input.title ? { title: input.title } : {}),
           ...(input.aboutId ? { aboutId: input.aboutId } : {}),
           /* Omitted rather than sent empty: the server validates the array when
              it is present, and an empty one is a claim about files nobody

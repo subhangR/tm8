@@ -141,6 +141,7 @@ const PRIORITIES =['low', 'medium', 'high', 'urgent'] as const;
 const DOC_FORMATS = ['markdown', 'mermaid', 'excalidraw'] as const;
 const MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
 const WS_STATUSES = ['spawning', 'running', 'idle', 'exited', 'failed'] as const;
+const TEAM_MEMBER_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher'] as const;
 const WS_SHARE_MODES = ['none', 'space', 'explicit'] as const;
 const IP_STATUSES = ['draft', 'active', 'retired'] as const;
 const WT_STATUSES = ['active', 'merged', 'abandoned', 'deleted'] as const;
@@ -242,6 +243,8 @@ interface SummaryRow {
   tm_owner_member_id: string | null;
   tm_model: string | null;
   tm_agent_tool: string | null;
+  tm_mode: string | null;
+  tm_permission_mode: string | null;
   tm_default_profile_id: string | null;
   tm_avatar: string | null;
   ws_title: string | null;
@@ -385,6 +388,8 @@ select
   tm.owner_member_id as tm_owner_member_id,
   tm.model           as tm_model,
   tm.agent_tool      as tm_agent_tool,
+  tm.mode            as tm_mode,
+  tm.permission_mode as tm_permission_mode,
   dtp.dst_id         as tm_default_profile_id,
   tm.avatar          as tm_avatar,
   ws.title           as ws_title,
@@ -1181,6 +1186,10 @@ export class PgEntityProjector implements EntityProjector {
           // `null`, never omitted — same contract as the facade assembler:
           // absence MEANS "no default of its own", so it must be stated.
           defaultProfileId: r.tm_default_profile_id,
+          mode: (TEAM_MEMBER_MODES as readonly string[]).includes(r.tm_mode ?? '')
+            ? (r.tm_mode as (typeof TEAM_MEMBER_MODES)[number])
+            : null,
+          permissionMode: r.tm_permission_mode,
         };
       case 'work_session':
         return {

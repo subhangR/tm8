@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ActorSummary, ChatMode, EntityId, FileAttachment, SpaceId } from '@tm8/contract';
+import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, FileAttachment, LaunchModelEffort, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -52,12 +52,33 @@ export interface ChatModelOption {
   provider: string;
   agentTool: string;
   note?: string;
+  /**
+   * Reasoning-effort stops the model accepts, ascending. ABSENT means the
+   * catalog entry predates effort capability data (a browser-added model, an
+   * older node) and the effort dial renders disabled with that reason; EMPTY
+   * means the model has one fixed level. Never invented client-side.
+   */
+  efforts?: readonly LaunchModelEffort[];
 }
 
 export interface ChatTeammateOption {
   id: EntityId;
   label: string;
   avatar?: string | null;
+  /**
+   * `team_members.mode`, projected by the node (ac_11). ABSENT ⇒ the node
+   * does not project it and no filter may pretend to know; `null` ⇒ the row
+   * has no role. Only `coordinator` / `coordinated-coordinator` are
+   * coordinators.
+   */
+  mode?: TeamMemberMode | null;
+  /** `team_members.permission_mode` — free text; the rail derives its default rung from it. */
+  permissionMode?: string | null;
+}
+
+export interface ChatProjectOption {
+  id: EntityId;
+  name: string;
 }
 
 export interface ChatThreadConfig {
@@ -66,6 +87,9 @@ export interface ChatThreadConfig {
   model: string;
   modelLabel: string;
   mode: ChatMode;
+  /** The write-once directory binding. Absent on a port that predates 167. */
+  workdirMode?: ChatWorkdirMode;
+  projectId?: EntityId | null;
 }
 
 export interface ChatThreadSummary {
@@ -238,6 +262,14 @@ export interface ChatCreateInput {
   teammateId: EntityId;
   model: string;
   mode: ChatMode;
+  /**
+   * Where the thread's changes land. Write-once on the server (167), which is
+   * why the composer offers it only in the empty state. Absent ⇒ `scratch`.
+   */
+  workdirMode?: ChatWorkdirMode;
+  projectId?: EntityId | null;
+  /** Overrides the server's default title (the opening body, trimmed). */
+  title?: string | null;
   clientMutationId: string;
   /**
    * Files staged on the composer, already uploaded — this carries their entity
@@ -290,6 +322,12 @@ export interface ChatHomePort {
   chatIdsAbout(aboutId: EntityId): Promise<readonly EntityId[]>;
   readThread(chatId: EntityId): Promise<ChatThreadDetail>;
   listTeammates(spaceId: SpaceId | string): Promise<readonly ChatTeammateOption[]>;
+  /**
+   * Projects this space can bind a chat to. OPTIONAL: a port without one
+   * renders the project control disabled with that reason rather than an
+   * empty menu that implies the space has no projects.
+   */
+  listProjects?(spaceId: SpaceId | string): Promise<readonly ChatProjectOption[]>;
   /**
    * `chat.start`. A non-null reason keeps the visible new-chat composer honest
    * while an older node has no start operation.

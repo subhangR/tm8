@@ -131,9 +131,12 @@ describe('a pasted file rides the chat prompt', () => {
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
     await waitFor(() => expect(view.getByLabelText('Message the chat agent')).toBeTruthy());
 
+    /* Attach lives in the ＋ menu now ("add to this turn"); the row is drawn
+       disabled WITH the reason, never dropped. */
+    fireEvent.click(view.getByRole('button', { name: 'Add to this turn' }));
     const control = view.getByRole('button', { name: 'Attach a file' });
     expect(control.getAttribute('aria-disabled')).toBe('true');
-    expect(view.container.textContent).toContain('this chat was mounted without an attachment port');
+    expect(document.body.textContent).toContain('this chat was mounted without an attachment port');
 
     fireEvent.paste(view.getByLabelText('Message the chat agent'), clipboard([pdf()]));
     expect(view.queryByText('report.pdf')).toBeNull();

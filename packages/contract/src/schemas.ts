@@ -351,6 +351,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // ABSENT/`null` means the teammate has no default profile of its own, NOT
     // "not loaded yet" — the space default applies. See `contract.ts`.
     defaultProfileId: EntityIdSchema.nullable().optional(),
+    // ADDITIVE/OPTIONAL: `team_members.mode` (CHECKed enum) and
+    // `team_members.permission_mode` (free text). Absent = older node.
+    mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']).nullable().optional(),
+    permissionMode: z.string().nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('pull_request'),

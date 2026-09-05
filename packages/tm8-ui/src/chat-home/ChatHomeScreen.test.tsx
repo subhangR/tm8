@@ -159,7 +159,13 @@ describe('Chat Home', () => {
     fireEvent.keyDown(view.getByLabelText('Chat teammate'), { key: 'Escape' });
 
     fireEvent.click(view.getByLabelText('Chat model'));
-    fireEvent.click(view.getByTestId('tch-model-gpt-5.6-sol'));
+    /* The coordinator runs claude-code only: the codex row is DRAWN, disabled,
+       with the reason — never silently omitted (ac_10). Clicking it does nothing. */
+    const codexRow = view.getByTestId('tch-model-gpt-5.6-sol');
+    expect(codexRow.getAttribute('aria-disabled')).toBe('true');
+    expect(codexRow.textContent).toContain('Claude Code only');
+    fireEvent.click(codexRow);
+    fireEvent.click(view.getByTestId('tch-model-claude-sonnet-4-5'));
     fireEvent.click(view.getByLabelText('Chat mode'));
     fireEvent.click(view.getByTestId('tch-mode-build'));
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
@@ -177,7 +183,7 @@ describe('Chat Home', () => {
     expect(controls.roots[0]).toMatchObject({
       spaceId: SPACE_ID,
       body: 'Audit the release blockers.',
-      model: 'gpt-5.6-sol',
+      model: 'claude-sonnet-4-5',
       mode: 'build',
       clientMutationId: 'chat-start:test',
     });
