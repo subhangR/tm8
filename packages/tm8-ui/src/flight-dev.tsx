@@ -212,12 +212,22 @@ function FlightDev() {
     );
   }, []);
 
+  /**
+   * `at` IS STAMPED HERE BECAUSE THE REAL HOOK STAMPS IT.
+   *
+   * Without it every harness pulse reads as age zero, so the launch window can
+   * never refuse anything and the harness silently cannot reproduce the one
+   * behaviour it is most needed for — a replay after the layer unmounts. A
+   * browser check run against an unstamped pulse proves nothing about the rule
+   * it is aiming at, which is exactly the trap this harness exists to avoid.
+   */
   const send = (kind: MessagePulse['kind']) => {
     sequence += 1;
     const key = `dev-${sequence}`;
-    if (kind === 'delegation') fire({ key, kind, fromId: from, toId: to, evidence: 'entity' });
-    else if (kind === 'completion') fire({ key, kind, fromId: from, toId: to, outcome: 'exited' });
-    else fire({ key, kind: 'message', fromId: from, toId: to });
+    const at = Date.now();
+    if (kind === 'delegation') fire({ key, kind, fromId: from, toId: to, evidence: 'entity', at });
+    else if (kind === 'completion') fire({ key, kind, fromId: from, toId: to, outcome: 'exited', at });
+    else fire({ key, kind: 'message', fromId: from, toId: to, at });
   };
 
   const burst = () => {
@@ -231,6 +241,7 @@ function FlightDev() {
         kind: 'message',
         fromId: ids[(index * 3 + 1) % ids.length],
         toId: ids[(index * 2) % ids.length],
+        at: Date.now(),
       });
     }
   };

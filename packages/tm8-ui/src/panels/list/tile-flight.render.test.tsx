@@ -302,21 +302,67 @@ describe('a message flying across the session tiles', () => {
    * second render — the component reads nothing else, so this is exactly
    * "time passed" without dragging fake timers through React's scheduler.
    */
-  it('keeps a live flight airborne after its remaining budget runs out', () => {
-    // THE MARGINS ARE WIDE ON PURPOSE. `aged` stamps against a real clock, and
-    // the age is re-read when the layout effect runs — so a slow render under
-    // load ADDS to the spend. An earlier version used 1500ms, leaving 140ms of
-    // slack against the 2060ms it needed, and passed alone while failing in
-    // the full suite. Neither number here is near its boundary.
-    //   launch: 1000 spent + 560 trip = 1560, versus a 2200 budget
-    const view = render(panel([aged('m1', leaf.id, aunt.id, 1_000)]));
-    expandTree(view.container);
-    expect(flightsIn(view.container), 'launches with budget to spare').toHaveLength(1);
+  it('keeps a live flight airborne once it is too old to be started', () => {
+    // The clock is driven through `Date.now` — the only clock the rule reads —
+    // rather than by stamping against a real one. An earlier version aged the
+    // pulse instead and sat 140ms from its boundary, passing alone and failing
+    // in the full suite when a loaded render ate the slack.
+    const t0 = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(t0);
+    const pulse: MessagePulse = { key: 'm1', kind: 'message', fromId: leaf.id, toId: aunt.id, at: t0 };
 
-    // A second later the same flight could no longer be STARTED (2000 + 560 =
-    // 2560). It is already in the air, so it must not be taken away.
-    view.rerender(panel([aged('m1', leaf.id, aunt.id, 2_000)]));
+    const view = render(panel([pulse]));
+    expandTree(view.container);
+    expect(flightsIn(view.container), 'launches on arrival').toHaveLength(1);
+
+    // 450ms on: past the 400ms launch window, so this could no longer be
+    // STARTED — but still inside its own 560ms trip, so it is still flying and
+    // must not be taken away.
+    clock.mockReturnValue(t0 + 450);
+    view.rerender(panel([pulse]));
     expect(flightsIn(view.container), 'and is not withdrawn mid-air').toHaveLength(1);
+  });
+
+  /**
+   * THE LEDGER'S OWN UNMOUNT — the third door onto the same replay, and the
+   * one that killed a launch ledger (PR #594 review, GPT 5.6 Sol).
+   *
+   * The panel unmounts this layer whenever `flights` goes empty, and the
+   * same-row guard makes that happen routinely: collapse far enough and both
+   * ends absorb onto one row. Anything the layer had remembered dies there. So
+   * the refusal cannot depend on remembering — it has to be answerable by a
+   * layer that mounts knowing nothing, which is what the age window is.
+   *
+   * The reviewer's browser trace: land a flight, collapse to a single row so
+   * the layer unmounts, reopen inside the retention window, and a NEW glyph
+   * takes off from the original sender at currentTime 33ms — a full replay.
+   */
+  it('does not replay after the layer itself unmounts and remounts', () => {
+    const t0 = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(t0);
+    const pulse: MessagePulse = { key: 'm1', kind: 'message', fromId: leaf.id, toId: aunt.id, at: t0 };
+
+    const view = render(panel([pulse]));
+    expandTree(view.container);
+    expect(flightsIn(view.container), 'launches on arrival').toHaveLength(1);
+
+    const rowOf = (id: string) => view.container.querySelector(`[data-session-node="${id}"]`);
+    const rootArrow = () =>
+      rowOf(root.id)?.closest('.lp__branch')?.querySelector('.pn-st__arrow') as Element;
+
+    // Land it, then collapse the ROOT: every endpoint absorbs onto that one
+    // row, `flights` empties, and the panel unmounts the layer outright.
+    clock.mockReturnValue(t0 + 800);
+    fireEvent.click(rootArrow());
+    view.rerender(panel([pulse]));
+    expect(view.container.querySelector('.lp__flights'), 'layer is gone').toBeNull();
+
+    // Reopen while the pulse is still retained. A fresh layer, no memory, and
+    // ~800ms spent still leaves budget — only the age window refuses this.
+    fireEvent.click(rootArrow());
+    view.rerender(panel([pulse]));
+    expect(rowOf(leaf.id), 'the tree really did reopen').toBeTruthy();
+    expect(flightsIn(view.container), 'and nothing flies a second time').toHaveLength(0);
   });
 
   /**

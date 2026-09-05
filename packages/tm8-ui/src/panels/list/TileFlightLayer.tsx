@@ -34,17 +34,23 @@
  * OWN AGE — `at`, stamped by the deriving hook on the same clock as the
  * eviction timer — and not on anything this component can observe.
  *
- * THAT DISTINCTION IS THE WHOLE FIX, and the first attempt got it wrong. It
- * inferred age from this layer's own render history, which is correct within
- * one mount and worthless across an unmount: `useMessagePulses` lives above
- * the route surfaces and keeps retaining, so a remounted layer saw a
- * two-second-old pulse with empty refs and read it as brand new. Component
- * -local history cannot prove event age. (Both the defect and its remedy found
- * in review by GPT 5.6 Sol on PR #591.)
+ * THE TEST IS STATELESS, AND THAT IS THE POINT. Three attempts failed here,
+ * each by keeping the answer in a component and each broken by a different
+ * unmount: render history in this layer (a route change remounts it), then a
+ * launch ledger in this layer (the panel unmounts it whenever `flights` goes
+ * empty, which the same-row guard does routinely). A ledger one level higher
+ * would have had its own unmount. NOTHING MOUNTED CAN HOLD THIS FACT — so the
+ * rule reads only the pulse's own age against the current clock, and a layer
+ * that mounts knowing nothing reaches the same verdict as one that watched the
+ * whole thing. (Three passes of review by GPT 5.6 Sol, PRs #591 and #594.)
  *
  * ALREADY AIRBORNE IS EXEMPT. Once a glyph is in the air its remaining budget
  * shrinks every frame, and re-checking would abort a perfectly good flight the
  * instant the tree re-aimed it. A flight is judged once, at launch.
+ *
+ * That exemption is the ONE thing that may live in a ref, because its lifetime
+ * is exactly the DOM element's: an unmount destroys the animation too, so
+ * forgetting it is not a hole but the correct answer.
  *
  * AIRBORNE MEANS STILL FLYING, NOT MERELY LAUNCHED — a distinction that cost a
  * bug (PR #591 review). "Was in the air last render" holds until the pulse is
@@ -65,6 +71,23 @@ import { KIND_ART } from '../../domain/kind-art';
 import { SESSION_PULSE_KIND, type SessionPulseKind } from '../../session-graph/pulse-vocabulary';
 import { flightPath, flightVariables, type FlightPath, type FlightPoint } from './tile-flight';
 import { PULSE_TTL_MS } from './useMessagePulses';
+
+/**
+ * How soon after an arrival a glyph may still take off.
+ *
+ * A FLIGHT ANNOUNCES AN ARRIVAL, so it has to be roughly simultaneous with
+ * one. Far more than a frame or two later it is not an announcement, it is a
+ * re-enactment triggered by whatever the viewer happened to do — opening a
+ * subtree, changing a filter, navigating back to the list. Every such replay
+ * this feature has shipped came from some component being unable to remember
+ * that a pulse had already been dealt with; a window makes remembering
+ * unnecessary, because the pulse's own age answers it.
+ *
+ * Generous against real latency (a fresh arrival is normally under ~100ms even
+ * with a query round trip and a slow frame) and far under the 2200ms
+ * retention, which is where the stale replays lived.
+ */
+export const LAUNCH_WINDOW_MS = 400;
 
 /** One arrival with both ends standing on a row this tree is drawing. */
 export interface ResolvedFlight {
@@ -215,9 +238,20 @@ export function TileFlightLayer({
       const path = flightPath(from, to);
       const launched = remembered.get(flight.key);
       if (launched === undefined) {
-        // A LAUNCH THAT CANNOT LAND, REFUSED — see `at` on the pulse.
         const spent = flight.at === undefined ? 0 : Math.max(0, now - flight.at);
-        if (spent + path.durationMs > PULSE_TTL_MS) continue;
+        // TOO LATE TO BE AN ANNOUNCEMENT — a replay, whatever this component
+        // does or does not remember. This is the clause that survives every
+        // unmount, because it asks the event and not the tree.
+        //
+        // IT ALSO SUBSUMES THE NO-TRUNCATION RULE, which used to be a second
+        // check here. Once a launch must happen inside the window, the worst
+        // case is `LAUNCH_WINDOW_MS + DURATION_MAX_MS`, and that is under
+        // `PULSE_TTL_MS` by arithmetic — so a glyph can no longer be deleted
+        // in open air, and the runtime check for it became unreachable. A
+        // branch no test can red is a liability, so it is gone and the
+        // arithmetic is pinned instead (`tile-flight.test.ts`). Widen either
+        // constant past that budget and the test says so.
+        if (spent > LAUNCH_WINDOW_MS) continue;
         next.set(flight.key, path);
         nowFlying.set(flight.key, { at: now, durationMs: path.durationMs });
         continue;
