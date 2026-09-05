@@ -25,9 +25,21 @@ import { collectionKinds } from './registry';
 import type { KindConfig } from './types';
 
 /**
- * The one non-kind root: the chat thread list. Not a registry kind —
- * messages are `strategy: 'anchored'` — so it is a named sentinel beside the
- * kind names, and the rail never draws it (the [Chats +] header cell owns it).
+ * The one non-kind root: the chat thread LIST — the two-pane conversation
+ * surface, a thread column beside a transcript. Not a registry kind (it is
+ * composed from `message` rows, which are `strategy: 'anchored'`), so it is a
+ * named sentinel beside the kind names, and the rail still never draws it:
+ * the `[Chats ＋]` header cell owns this root.
+ *
+ * IT IS NOT THE `chat` KIND ROW BELOW, and the two are deliberately both
+ * reachable. Migration 176 made a chat an ENTITY, so `chat` is an ordinary
+ * collection kind with an ordinary list — tiles carrying the turn state, the
+ * lifecycle tabs, sort, in-panel search, the row-action cluster. That is a
+ * different ARRANGEMENT over the same conversations, which is the same
+ * two-doors posture the Board tab has always taken toward `task` (design R9),
+ * and it is the reasoning revision 22 of the shipped menu wrote down for the
+ * Chats TAB. This lane keeps the reasoning and moves the door: the tab is
+ * gone from the top row and the arrangement is a rail row.
  */
 export const CHATS_ROOT = 'chats';
 
@@ -63,7 +75,14 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
   {
     id: 'work',
     label: 'Work',
-    kinds: ['task', 'work_session', 'doc', 'project', 'pull_request', 'worktree', 'commit'],
+    // `chat` LEADS (2026-09-05): the Chats tab left the top row and its door
+    // is this row. It leads rather than sitting wherever the registry happens
+    // to order it because a conversation is where work in this space starts —
+    // a chat is what spawns the `work_session` two rows down — and because the
+    // door it replaces led the tab row too. Before this it was in no group at
+    // all, so it rendered under "More": a real row, but filed as an
+    // afterthought beside custom kinds.
+    kinds: ['chat', 'task', 'work_session', 'doc', 'project', 'pull_request', 'worktree', 'commit'],
   },
   {
     id: 'library',

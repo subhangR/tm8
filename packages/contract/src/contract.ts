@@ -2787,24 +2787,32 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // their routes, their chords and their menu-editor eligibility — the same
   // rail-edit posture as 125/126/127.
   { serverId: 'chats', clientId: 'chats' },
-  // 2026-09-03 (chat as an entity, migration 180): CHATS becomes a tab of its
+  // 2026-09-03 (chat as an entity, migration 180): CHATS became a tab of its
   // own, seated after Home —
   //   chats(Home) | conversations(Chats) | work | craft | graph | codebrain | settings | help
-  // Migration 176 gave a chat the core kind `chat`; this is the tab that
-  // lists it. The group's single item is a KIND ref, not a view, so it needs
-  // no `menu_view_registry` row and it draws a rail (tm8-ui's
-  // `isRaillessGroup` keys on a lone childless VIEW).
+  // Migration 176 gave a chat the core kind `chat`; that tab listed it, and it
+  // was the only group in this spine whose single item was a KIND ref rather
+  // than a view, so it drew a rail.
   //
-  // THE ID IS `conversations` BECAUSE `chats` IS HOME. Ids are wire-stable and
-  // the group above has held `chats` since 127 — 134 relabelled it Home
-  // without renaming it. `chat` was rejected as a neighbour of `chats`: two
-  // ids one letter apart, one of them labelled Home, is a payload a reader
-  // gets wrong. The LABEL is what a viewer sees, and it is "Chats".
+  // 2026-09-05 (migration 184): AND IT LEAVES AGAIN, one day later —
+  //   chats(Home) | work | craft | graph | codebrain | settings | help
+  // 180 was right that the chat entity LIST (tiles with the turn state, the
+  // lifecycle tabs, sort, in-panel search, the row-action cluster) is a second
+  // arrangement over the same conversations and earns a door of its own — the
+  // R9 posture the Board tab takes toward `task`. It was wrong about the
+  // ADDRESS. The place a collection kind's list is addressed in this product
+  // is Home's ICON RAIL (tm8-ui `domain/home-rail.ts`), which has been
+  // eligible to carry `chat` since 176 and now leads with it. So the door
+  // moved and the tab was the duplicate: the no-kind-rows law of revision 17
+  // holds again, and the eighth of the eight group seats
+  // `internal.w2_normalize_menu_payload` allows (071:61 — `> 8` raises 22023)
+  // is free once more.
   //
-  // THIS IS THE EIGHTH GROUP, AND THE DB CAP IS EIGHT
-  // (`internal.w2_normalize_menu_payload`, 071:61 — `> 8` raises 22023). A
-  // ninth shipped tab needs that limit raised first.
-  { serverId: 'conversations', clientId: 'conversations' },
+  // The row is REMOVED rather than commented out because this spine is the one
+  // truth both parity tests read: a stale entry here is a group both the
+  // seeder and the client default would be forced to carry. `chat` stays
+  // menu-eligible, so a space can put the group back through the menu editor —
+  // a rail edit, not a feature removal (125/126/127).
   // 2026-08-16 LATER STILL (user ruling, migration 140): a WORK tab returns
   // beside Home —
   //   chats(Home) | work | board | craft | graph | files | settings

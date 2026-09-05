@@ -143,18 +143,20 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
        ) t`,
     );
     /*
-     * ONE KIND REF SINCE 180: `chat` — and the exact equality is what keeps
-     * 134's rule intact rather than relaxed. What 134 retired was a RAIL OF
-     * KIND ROWS, every one a second door to a list Home's root column already
-     * owned. The Chats tab is not that: Home's chats root is the two-pane
-     * CONVERSATION surface, and this tab is the entity LIST — tiles, the four
-     * lifecycle tabs, sort, the row action cluster — over the same rows. The
-     * same two-doors posture the Board tab takes toward `task`.
+     * ZERO KIND REFS AGAIN (184, 2026-09-05). 180 admitted exactly one —
+     * `chat` — on the argument that the chat entity LIST is a second
+     * ARRANGEMENT over the rows Home's chats root shows as a conversation,
+     * and so earns a door of its own the way Board does beside `task`. That
+     * argument survives; only its ADDRESS was wrong. The place this product
+     * addresses a collection kind's list is Home's ICON RAIL, `chat` has been
+     * eligible for that rail since 176, and tm8-ui `domain/home-rail.ts` now
+     * LEADS with it — so the tab was a duplicate of the rail row, and 134's
+     * rule reads exactly as it did before 180.
      *
-     * A SECOND ref appearing here is still the defect 134 named, which is why
-     * this stays `toEqual` rather than becoming a subset check.
+     * ANY ref appearing here is the defect 134 named, which is why this is
+     * `toEqual` on the empty array and not a subset check.
      */
-    expect(kinds[0]?.refs).toEqual(['chat']);
+    expect(kinds[0]?.refs).toEqual([]);
   });
 
   it('serves Work, Craft, Graph, Settings and Help as single-view menu groups (164 posture)', async () => {
@@ -196,7 +198,11 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
      *     (`TM8_DATABASE_URL`); without one the whole file skips, which is how
      *     it survived. Fixed in passing, and named so the next reader does not
      *     read it as part of the chat wave.
-     *   · `conversations` — 2026-09-03, migration 180: the Chats tab.
+     *   · `conversations` — 2026-09-03, migration 180: the Chats tab. IT HAS
+     *     SINCE LEFT AGAIN (184, 2026-09-05): the chat list's door moved into
+     *     Home's icon rail, where a collection kind's list is addressed, and
+     *     the tab was the duplicate. So this literal reads as it did before
+     *     180 apart from `codebrain`.
      *
      * The first test in this block pins the same list against
      * `DEFAULT_MENU_GROUP_SPINE`, so it moves on its own. This literal is
@@ -207,8 +213,12 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
      * its list is a different claim about a different position.)
      */
     expect(rows[0]?.ids).toEqual([
-      'chats', 'conversations', 'work', 'craft', 'graph', 'codebrain', 'settings', 'help',
+      'chats', 'work', 'craft', 'graph', 'codebrain', 'settings', 'help',
     ]);
+    // Named explicitly rather than left to the equality above: 180's group is
+    // the one this file is about, and a seeder that quietly kept it should red
+    // on a line that says its name.
+    expect(rows[0]?.ids).not.toContain('conversations');
     expect(rows[0]?.ids).not.toContain('board');
     expect(rows[0]?.ids).not.toContain('files');
   });
@@ -1013,5 +1023,107 @@ describeDb('102 backfill — upgrades the verbatim default, never a customized m
     );
     expect(rows[0]?.revision).toBe(5);
     expect(rows[0]?.payload).toEqual(customPayloadBefore);
+  });
+});
+
+describeDb('184 upgrade — the Chats tab leaves untouched defaults; customized menus do not move', () => {
+  let db: W1ScratchDatabase;
+  const DEFAULT_SPACE = '00000000-0000-4000-8000-000000000184';
+  const CUSTOM_SPACE = '00000000-0000-4000-8000-000000000185';
+  let customPayloadBefore: unknown;
+
+  beforeAll(async () => {
+    db = await createW1ScratchDatabase('menu-chats-tab-leaves');
+    const files = migrationFiles();
+    const migration = files.find((file) => file === '184_menu_chats_tab_leaves.sql');
+    if (!migration) throw new Error('184_menu_chats_tab_leaves.sql is missing from the chain');
+    const index = files.indexOf(migration);
+    // POSITION-PINNED: the chain stops one file short, so the seeder in play
+    // while these rows are written is 180's — the payload this migration is
+    // the removal of. Applying the whole chain first would seed 184's own
+    // output and the upgrade below would move nothing while still passing.
+    db.apply(files.slice(0, index));
+
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name)
+         values ('chats-tab-leaves-default', 'Chats tab default'),
+                ('chats-tab-leaves-custom', 'Chats tab custom')`,
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Untouched chats-tab default', 'chats-tab-leaves-default'),
+                ($2, 'Customized chats-tab menu', 'chats-tab-leaves-custom')`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+      // The customized row keeps the Chats tab AND renames a label. That is
+      // the case the byte guard exists for: a space that deliberately kept the
+      // tab is a space whose menu this migration must not touch.
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 22, internal.w1_default_menu_payload()),
+                ($2, 1, 91,
+                 jsonb_set(internal.w1_default_menu_payload(),
+                           '{groups,1,label}', '"Conversations"'))`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+    });
+
+    // The seeded rows must actually CARRY the group, or the removal below
+    // would be asserted over a set that never held it — a comparison over an
+    // empty set reports success.
+    const before = await db.query<{ has_tab: boolean }>(
+      `select bool_and(payload @> '{"groups":[{"id":"conversations"}]}') as has_tab
+         from public.space_menu_configs where space_id = any($1)`,
+      [[DEFAULT_SPACE, CUSTOM_SPACE]],
+    );
+    expect(before[0]?.has_tab).toBe(true);
+
+    customPayloadBefore = (await db.query<{ payload: unknown }>(
+      `select payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    ))[0]?.payload;
+    db.apply([migration]);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.destroy();
+  }, 30_000);
+
+  it('the verbatim-default row loses the Chats tab and exactly one revision', async () => {
+    const rows = await db.query<{ revision: number; ids: string[]; payload: unknown }>(
+      `select revision,
+              (select array_agg(g->>'id' order by ord)
+                 from jsonb_array_elements(payload->'groups') with ordinality t(g, ord)) as ids,
+              payload
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(23);
+    expect(rows[0]?.ids).toEqual(['chats', 'work', 'craft', 'graph', 'codebrain', 'settings', 'help']);
+    expect(rows[0]?.ids).not.toContain('conversations');
+    // And it is the CURRENT seeder output, not merely something without that
+    // group — the two claims are different and only this one catches a
+    // migration that dropped the tab while diverging elsewhere.
+    const seeded = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+    expect(rows[0]?.payload).toEqual(seeded);
+  });
+
+  it('the customized row keeps its Chats tab — payload byte-identical, revision unmoved', async () => {
+    const rows = await db.query<{ revision: number; payload: unknown }>(
+      `select revision, payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(91);
+    expect(rows[0]?.payload).toEqual(customPayloadBefore);
+    const kept = await db.query<{ has_tab: boolean }>(
+      `select payload @> '{"groups":[{"id":"conversations"}]}' as has_tab
+         from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(kept[0]?.has_tab).toBe(true);
   });
 });
