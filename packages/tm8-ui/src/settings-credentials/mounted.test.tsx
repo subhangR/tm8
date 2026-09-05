@@ -160,12 +160,25 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
     );
     const home = readFileSync(join(process.cwd(), 'src/home-page/HomePage.tsx'), 'utf8');
 
+    // Home now reaches the block through the corner control rather than
+    // mounting it in the page flow. The claim this test defends is unchanged —
+    // ONE implementation, not a Home-side fork — so the chain is followed one
+    // hop rather than the assertion being relaxed.
+    const corner = readFileSync(
+      join(process.cwd(), 'src/credentials-corner/CredentialsCorner.tsx'),
+      'utf8',
+    );
     expect(settings).toMatch(/<CredentialsProviderBlock\b/);
-    expect(home).toMatch(/<CredentialsProviderBlock\b/);
+    expect(home).toMatch(/<CredentialsCorner\b/);
+    expect(corner).toMatch(/<CredentialsProviderBlock\b/);
+    // Neither host re-implements a provider card of its own.
+    expect(home).not.toMatch(/<article\b[^>]*cred-card/);
+    expect(corner).not.toMatch(/<article\b[^>]*cred-card/);
     // The home host still binds spaceId at the same port adapter; it does not
     // call credentials operations directly or grow a second adapter.
     expect(home).toContain('credentialsPortFromSeam(data.seam, data.spaceId)');
     expect(home).not.toMatch(/data\.seam\.credentials\.(status|disconnect|startLogin|finishLogin)/);
+    expect(corner).not.toMatch(/data\.seam\.credentials\./);
   });
 });
 
