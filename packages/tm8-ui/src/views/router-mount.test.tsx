@@ -261,6 +261,12 @@ describe('R15 — a cold entry steps UP, and up is a replace', () => {
     const target = createMemoryTarget(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('entity-view'));
+    /* SETTLE BEFORE THE FIRST POP, as the case above does. `entity-view` is on
+       screen a beat before the router has finished seeding the stack from the
+       address, and a pop that lands in that gap is a no-op — after which the
+       `open` below re-opens nothing and this reads one replace where it means
+       to read two pushes. */
+    await settle();
     await act(async () => {
       screenStackStore.getState().pop(screenKeyOf.kind('task'));
     });

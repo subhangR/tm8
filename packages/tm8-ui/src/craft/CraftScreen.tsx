@@ -283,6 +283,28 @@ export function CraftScreen({
    * are no-ops when nothing changed, so this cannot cycle with the publish
    * effect that calls it.
    */
+  /**
+   * THE PICKER ASKS, AND RECORDS ITS OWN ANSWER.
+   *
+   * `activeThreadId` is what the pane header names, and its only other writer
+   * is `adoptSelection` — the chat screen's publish. That publish deliberately
+   * SUPPRESSES the echo of a selection the host itself pushed down
+   * (`ChatHomeScreen`'s publish effect: "the host already knows"), so a
+   * request made here is never published back. Setting only the request left
+   * the header captioned with whatever was open BEFORE it — ＋ after a send
+   * kept the created thread's title above an empty composer, and picking a
+   * different conversation named the previous one until something else moved.
+   *
+   * The host does already know, so it records the answer itself. In solo mode
+   * `routeThreadId` is authoritative and the adoption is a render-phase
+   * adjustment, so this is not optimism: it is the same conversation the very
+   * next commit shows.
+   */
+  const requestThread = useCallback((id: EntityId | null) => {
+    setRequestedThreadId(id);
+    setActiveThreadId(id);
+  }, []);
+
   const adoptSelection = useCallback((id: EntityId | null) => {
     setActiveThreadId(id);
     /* `undefined` is left alone. It means "nothing asked yet", and the mount
@@ -490,8 +512,8 @@ export function CraftScreen({
             threads={threads}
             aboutSelected={aboutSelected}
             selectedId={activeThreadId}
-            onSelect={(id) => setRequestedThreadId(id)}
-            onNewChat={() => setRequestedThreadId(null)}
+            onSelect={requestThread}
+            onNewChat={() => requestThread(null)}
           />
           <div className="crf-chat__body">
             <ChatHomeSurface
