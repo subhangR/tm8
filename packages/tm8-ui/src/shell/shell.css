@@ -26,7 +26,7 @@
   height: 24px;
   flex: none;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, max-content) minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   padding: 0 8px;
@@ -204,10 +204,19 @@
   border-radius: var(--pn-r-pill);
 }
 .cv2-root .shell-tabbar .shell-switcher__names {
-  flex: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   flex-direction: row;
   align-items: baseline;
   gap: 6px;
+}
+.cv2-root .shell-tabbar .shell-switcher__space,
+.cv2-root .shell-tabbar .shell-switcher__server-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cv2-root .shell-tabbar .shell-switcher__space { font-size: 11.5px; }
 .cv2-root .shell-tabbar .shell-switcher__server-line { font-size: 9.5px; }
@@ -273,6 +282,32 @@
   .cv2-root .shell-tabbar .shell-switcher__server-line { display: none; }
   .cv2-root .shell-tabbar .shell-switcher__trigger { max-width: 170px; }
   .cv2-root .shell-tabbar__tabs .shell-tabbar__tab { padding-inline: 8px; }
+}
+@media (max-width: 880px) {
+  .cv2-root .shell-tabbar__mark,
+  .cv2-root .shell-tabbar__palette { display: none; }
+  .cv2-root .shell-tabbar .shell-switcher__trigger { max-width: 140px; }
+}
+@media (max-width: 720px) {
+  .cv2-root .shell-tabbar .shell-switcher__names,
+  .cv2-root .shell-tabbar .shell-switcher__caret { display: none; }
+  .cv2-root .shell-tabbar .shell-switcher__trigger {
+    width: 24px;
+    padding-inline: 4px;
+  }
+}
+@media (max-width: 640px) {
+  .cv2-root .shell-tabbar__bell,
+  .cv2-root .shell-tabbar .auth-accountmenu__name,
+  .cv2-root .shell-tabbar .auth-accountmenu__caret { display: none; }
+  .cv2-root .shell-tabbar__tabs { gap: 0; padding-inline: 1px; }
+  .cv2-root .shell-tabbar__tabs .shell-tabbar__tab {
+    padding-inline: 3px;
+    font-size: var(--pn-fs-tick);
+  }
+}
+@media (max-width: 520px) {
+  .cv2-root .shell-tabbar__side--start > * { display: none; }
 }
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */

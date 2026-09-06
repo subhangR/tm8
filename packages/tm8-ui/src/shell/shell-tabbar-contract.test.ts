@@ -8,7 +8,7 @@ const component = readFileSync(new URL('./SpaceTabBar.tsx', import.meta.url), 'u
 describe('P0 shell bar contract', () => {
   it('centres tabs with balanced gutters instead of pinning them left', () => {
     expect(css).toMatch(
-      /\.shell-tabbar\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+max-content\s+minmax\(0,\s*1fr\)/,
+      /\.shell-tabbar\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*max-content\)\s+minmax\(0,\s*1fr\)/,
     );
     expect(css).toMatch(/\.shell-tabbar__side--end\s*\{[^}]*justify-content:\s*flex-end/);
     expect(css).toMatch(/\.shell-tabbar__tabs\s*\{[^}]*justify-self:\s*center/);
@@ -17,6 +17,7 @@ describe('P0 shell bar contract', () => {
   it('keeps every persistent control on one line without clipping popovers', () => {
     expect(css).toMatch(/\.shell-tabbar__side\s*\{[^}]*white-space:\s*nowrap/);
     expect(css).toMatch(/\.shell-tabbar__palette\s*\{[^}]*white-space:\s*nowrap/);
+    expect(css).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*\.shell-tabbar__tabs \.shell-tabbar__tab/);
     expect(css).not.toMatch(/\.shell-tabbar\s*\{[^}]*overflow:\s*hidden/);
   });
 
