@@ -283,12 +283,12 @@
   .cv2-root .shell-tabbar .shell-switcher__trigger { max-width: 170px; }
   .cv2-root .shell-tabbar__tabs .shell-tabbar__tab { padding-inline: 8px; }
 }
-@media (max-width: 880px) {
+@media (max-width: 940px) {
   .cv2-root .shell-tabbar__mark,
   .cv2-root .shell-tabbar__palette { display: none; }
   .cv2-root .shell-tabbar .shell-switcher__trigger { max-width: 140px; }
 }
-@media (max-width: 720px) {
+@media (max-width: 820px) {
   .cv2-root .shell-tabbar .shell-switcher__names,
   .cv2-root .shell-tabbar .shell-switcher__caret { display: none; }
   .cv2-root .shell-tabbar .shell-switcher__trigger {
@@ -296,10 +296,12 @@
     padding-inline: 4px;
   }
 }
-@media (max-width: 640px) {
-  .cv2-root .shell-tabbar__bell,
+@media (max-width: 760px) {
+  .cv2-root .shell-tabbar .shell-tabbar__bell,
   .cv2-root .shell-tabbar .auth-accountmenu__name,
   .cv2-root .shell-tabbar .auth-accountmenu__caret { display: none; }
+}
+@media (max-width: 640px) {
   .cv2-root .shell-tabbar__tabs { gap: 0; padding-inline: 1px; }
   .cv2-root .shell-tabbar__tabs .shell-tabbar__tab {
     padding-inline: 3px;

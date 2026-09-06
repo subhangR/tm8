@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '');
 const css = strip(readFileSync(new URL('./shell.css', import.meta.url), 'utf8'));
 const component = readFileSync(new URL('./SpaceTabBar.tsx', import.meta.url), 'utf8');
+const geometrySpec = readFileSync(new URL('../../e2e/shell-tabbar.spec.ts', import.meta.url), 'utf8');
 
 describe('P0 shell bar contract', () => {
   it('centres tabs with balanced gutters instead of pinning them left', () => {
@@ -19,6 +20,18 @@ describe('P0 shell bar contract', () => {
     expect(css).toMatch(/\.shell-tabbar__palette\s*\{[^}]*white-space:\s*nowrap/);
     expect(css).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*\.shell-tabbar__tabs \.shell-tabbar__tab/);
     expect(css).not.toMatch(/\.shell-tabbar\s*\{[^}]*overflow:\s*hidden/);
+  });
+
+  it('samples every responsive boundary on both sides', () => {
+    const cssBoundaries = [...css.matchAll(/@media\s*\(max-width:\s*(\d+)px\)/g)]
+      .map((match) => Number(match[1]));
+    const declaredBoundaries = geometrySpec
+      .match(/const responsiveBoundaries = \[([^\]]+)\]/)?.[1]
+      ?.split(',')
+      .map((value) => Number(value.trim()));
+
+    expect(declaredBoundaries).toEqual(cssBoundaries);
+    expect(geometrySpec).toContain('flatMap((width) => [width + 1, width, width - 1])');
   });
 
   it('has no redundant More, brand glyph, prompt, or copy-link control', () => {

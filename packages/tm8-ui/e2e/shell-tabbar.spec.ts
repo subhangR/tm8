@@ -1,14 +1,19 @@
 import { expect, test } from '@playwright/test';
 
-const viewports = [
-  { width: 1440, height: 900 },
-  { width: 1280, height: 800 },
-  { width: 1024, height: 768 },
-  { width: 390, height: 844 },
-];
+const reviewWidths = [1440, 1280, 1024, 390];
+const responsiveBoundaries = [1180, 940, 820, 760, 640, 520];
+const midBandWidths = [1060, 880, 790, 700, 580, 455];
+const viewports = [...new Set([
+  ...reviewWidths,
+  ...responsiveBoundaries.flatMap((width) => [width + 1, width, width - 1]),
+  ...midBandWidths,
+])]
+  .sort((first, second) => second - first)
+  .map((width) => ({ width, height: width <= 520 ? 844 : 800 }));
 
-for (const viewport of viewports) {
-  test(`keeps every visible shell control inside the centred bar at ${viewport.width}px`, async ({ page }) => {
+test('keeps every visible shell control inside the centred bar across the responsive matrix', async ({ page }) => {
+  for (const viewport of viewports) {
+    await test.step(`${viewport.width}px`, async () => {
     await page.setViewportSize(viewport);
     await page.goto('/e2e/shell-tabbar-harness.html');
     await expect(page.getByTestId('harness-ready')).toBeVisible();
@@ -85,7 +90,7 @@ for (const viewport of viewports) {
       });
 
       return {
-        cssHeight: getComputedStyle(bar).height,
+        cssHeight: (bar as HTMLElement).clientHeight,
         outside,
         intersections,
         visibleOutside,
@@ -95,12 +100,13 @@ for (const viewport of viewports) {
       };
     });
 
-    expect(result.cssHeight).toBe('36px');
+    expect(result.cssHeight).toBe(36);
     expect(result.outside).toEqual([]);
     expect(result.intersections).toEqual([]);
     expect(result.visibleOutside).toEqual([]);
     expect(result.descendantsOutsideLeaf).toEqual([]);
     expect(result.tallRightControls).toEqual([]);
-    expect(result.captions).toBe(0);
-  });
-}
+      expect(result.captions).toBe(0);
+    });
+  }
+});
