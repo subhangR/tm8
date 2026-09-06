@@ -20,7 +20,7 @@
  * 2026-09-03 it is the product UI at `/` with `pwaShell` installed, so
  * `BASE_URL` is `/` and the guard passes — but it is what makes a MOUNTED
  * build of this package register nothing, and that is a correctness property
- * rather than an optimisation. `packages/tm8_ui_2.0` carries the same guard for
+ * rather than an optimisation. The since-deleted second UI package carried the same guard for
  * the case that is live today: the line below asks for `/sw.js` at root scope,
  * and a mounted bundle would successfully register the ROOT bundle's worker
  * over the whole origin. It would then answer offline navigations from a

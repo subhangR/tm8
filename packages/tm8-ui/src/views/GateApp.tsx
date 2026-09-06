@@ -37,7 +37,6 @@ import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../rou
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
-import { UiVersionSwitch } from '../ui-version';
 import { useShellKind } from '../mobile';
 import { MobileShell } from './MobileShell';
 import { isUnbuiltViewRef } from './view-ref-screens';
@@ -1913,16 +1912,6 @@ export function GateApp(props: GateAppProps = {}) {
               />
             ) : undefined
           }
-          /* THE DOOR TO THE ALTERNATE 2.0 UI, and only when this bundle is
-             actually serving the root. `BASE_URL` is `/` in the product build,
-             in dev and in tests, and would be a mount path in any build served
-             under one — so the control appears exactly where it means
-             something. Offering it from a mounted build would be a link out of
-             the alternate UI into itself.
-
-             It refuses with its own reason when the server serves no 2.0
-             bundle, so it needs no further gate here. */
-          uiSwitchSlot={import.meta.env.BASE_URL === '/' ? <UiVersionSwitch /> : undefined}
           accountSlot={
             authAccount && data.viewerActor ? (
               <AccountMenu

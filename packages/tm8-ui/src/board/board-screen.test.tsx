@@ -173,6 +173,11 @@ describe('the pivots', () => {
     const view = await mountBoard();
     fireEvent.click(view.getByTestId('bd-pivot-priority'));
     await waitFor(() => expect(columnKeys(view)).toEqual(['urgent', 'high', 'medium', 'low']));
+    /* THE COLUMNS ARRIVE BEFORE THE CARDS DO. A pivot is a fresh cache key,
+       so the new columns render with skeletons in them while the read is in
+       flight; asserting a card the moment the headers agree reads the
+       skeleton. `mountBoard` waits on the same signal for the same reason. */
+    await waitFor(() => expect(view.queryAllByTestId('bd-skeleton')).toHaveLength(0));
     expect(column(view, 'medium').getByText(GUIDE)).toBeTruthy();
 
     /* The write path is DIFFERENT here — a content patch that needs the

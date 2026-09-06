@@ -117,6 +117,28 @@ const turn = (text: string) => ({
   truncated: false,
 });
 
+/**
+ * `findBy*` for a fake-timer case.
+ *
+ * `vi.advanceTimersByTimeAsync(0)` yields ONE macrotask. A mount that resolves
+ * the first read and then renders from an effect takes more than one, so a
+ * single advance followed by a synchronous `getBy*` is a race — one this file
+ * lost on every run for the cases below while passing for the neighbours whose
+ * seam happened to settle a tick sooner. Driving the clock until the query
+ * answers is the wait a real-timer case gets from `findBy`, without leaving
+ * fake time.
+ */
+async function tickUntil<T>(query: () => T, steps = 50): Promise<T> {
+  for (let i = 0; i < steps; i += 1) {
+    try {
+      return query();
+    } catch {
+      await vi.advanceTimersByTimeAsync(0);
+    }
+  }
+  return query();
+}
+
 describe('the Transcript surface', () => {
   beforeEach(() => {
     upload.mockReset();
@@ -286,14 +308,12 @@ describe('the Transcript surface', () => {
         });
         const seam = { transcript, commands: { prompt: vi.fn() } } as never;
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await vi.advanceTimersByTimeAsync(0);
-        fireEvent.click(screen.getByTestId('transcript-load-older'));
+        fireEvent.click(await tickUntil(() => screen.getByTestId('transcript-load-older')));
         await vi.advanceTimersByTimeAsync(5_000);
         release!();
-        await vi.advanceTimersByTimeAsync(0);
 
         // The window landed rather than being discarded...
-        expect(screen.getByText('the middle turn')).toBeTruthy();
+        expect(await tickUntil(() => screen.getByText('the middle turn'))).toBeTruthy();
         // ...and the reader has a control again rather than a frozen spinner.
         expect(screen.getByTestId('transcript-load-older')).toBeTruthy();
       } finally {
@@ -352,22 +372,20 @@ describe('the Transcript surface', () => {
           opts?.before === undefined ? Promise.resolve(tail) : Promise.resolve(stuck));
         const seam = { transcript, commands: { prompt: vi.fn() } } as never;
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await vi.advanceTimersByTimeAsync(0);
 
-        fireEvent.click(screen.getByTestId('transcript-load-older'));
-        await vi.advanceTimersByTimeAsync(0);
-        expect(screen.getByTestId('transcript-stalled')).toBeTruthy();
+        fireEvent.click(await tickUntil(() => screen.getByTestId('transcript-load-older')));
+        expect(await tickUntil(() => screen.getByTestId('transcript-stalled'))).toBeTruthy();
 
         // The poll never paused — no window was ever held — so the tail moves.
         tail = moved;
         await vi.advanceTimersByTimeAsync(5_000);
 
-        // The poll's render and the lift it triggers are separate rounds.
-        await vi.advanceTimersByTimeAsync(0);
+        // The poll's render and the lift it triggers are separate rounds, so
+        // the control coming back is the signal the lift has happened.
+        expect(await tickUntil(() => screen.getByTestId('transcript-load-older'))).toBeTruthy();
 
         // A different cursor is on offer, so the refusal no longer applies.
         expect(screen.queryByTestId('transcript-stalled')).toBeNull();
-        expect(screen.getByTestId('transcript-load-older')).toBeTruthy();
       } finally {
         vi.useRealTimers();
       }

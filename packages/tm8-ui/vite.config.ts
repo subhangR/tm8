@@ -3,11 +3,12 @@ import react from '@vitejs/plugin-react';
 import { pwaShell } from './vite-plugin-pwa-shell';
 
 /**
- * tm8-ui — the new UI, built from the approved design suite (charter R1).
- * Dev port 4612 is charter-fixed (4610 = tm8-server, 4611 = old UI oracle).
+ * tm8-ui — the UI, built from the approved design suite (charter R1).
+ * Dev port 4612 is charter-fixed (4610 = tm8-server, 4611 = the old UI oracle,
+ * a package deleted on 2026-09-06).
  *
- * The proxy exists for the same reason as the old UI's: tm8-server binds
- * loopback-only with no CORS headers, so the app must stay same-origin.
+ * The proxy exists because tm8-server binds loopback-only with no CORS
+ * headers, so the app must stay same-origin.
  * `ws: true` is required — /v2 carries the workspace event stream and the
  * per-session PTY WebSocket. The data layer itself is bridge-owned
  * (src/data/); this is only transport plumbing.
@@ -15,22 +16,17 @@ import { pwaShell } from './vite-plugin-pwa-shell';
 const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
 
 /**
- * THIS PACKAGE IS THE PRODUCT UI, served at `/`. It was the frozen 1.0 snapshot
- * between 2026-08-29 and 2026-09-03; on 2026-09-03 the owner reversed that and
- * the pair swapped roles. `packages/tm8_ui_2.0` is now the ALTERNATE UI behind
- * the version switch, at `/ui-2.0/`; see `scripts/lib/ui.mjs`, the pointer every
- * launcher, doctor and deploy path reads.
+ * THIS PACKAGE IS THE UI, served at `/`, and since 2026-09-06 the only one:
+ * `packages/ui` and `packages/tm8_ui_2.0` were deleted, neither being served,
+ * started or shipped. See `scripts/lib/ui.mjs`, the pointer every launcher,
+ * doctor and deploy path reads.
  *
- * Three things follow from being the ROOT bundle, and each was the opposite
- * while this package was the mounted one:
+ * Two things follow from being the ROOT bundle, and both were the opposite
+ * during the weeks this package was served under a mount prefix instead:
  *
  *  1. NO `base`. Vite's default `/` is correct and must stay implicit-correct:
- *     the mount path is baked into every asset URL at build time, so a `base`
- *     here would make every asset 404 at the root. The mounted bundle's base
- *     lives in `tm8_ui_2.0/vite.config.ts` and is duplicated in
- *     `packages/server/src/http/static.ts` (`UI_2_0_MOUNT_PATH`) and
- *     `tm8-ui/src/ui-version/mount.ts`; changing it means changing all three
- *     and rebuilding that bundle.
+ *     a mount path is baked into every asset URL at build time, so a `base`
+ *     here would make every asset 404 at the root.
  *
  *  2. `build.outDir` is the default `dist`, and `TM8_UI_DIR` names it. The old
  *     `dist-1.0` override was a production interlock against a stale
@@ -38,12 +34,9 @@ const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
  *     `deploy/utho/deploy.sh` removes the legacy `dist` symlink before building,
  *     so emitting `dist` here no longer risks repointing production.
  *
- *  3. `pwaShell` IS INSTALLED. A service worker belongs to whichever bundle
- *     holds the root scope, and that is this one; `src/pwa/register.ts` guards
- *     on `BASE_URL === '/'` so a mounted build of this package would still
- *     register nothing. `tm8_ui_2.0` drops the plugin for the matching reason
- *     on its side — two workers racing over one origin is not something the
- *     alternate UI needs to be worth having.
+ * `pwaShell` IS INSTALLED. A service worker belongs to whichever bundle holds
+ * the root scope, and that is this one; `src/pwa/register.ts` still guards on
+ * `BASE_URL === '/'` so a mounted build of this package would register nothing.
  */
 export default defineConfig({
   plugins: [
@@ -82,12 +75,6 @@ export default defineConfig({
     proxy: {
       '/v2': { target, changeOrigin: false, ws: true },
       '/health': { target, changeOrigin: false },
-      /* The alternate 2.0 UI is served by tm8-server (TM8_UI_2_0_DIR), not by
-         vite — so the version switch's destination has to be proxied like the
-         API is. Without this line `/ui-2.0/` falls to vite's own SPA fallback
-         and answers with THIS app's index.html: the switch would appear to
-         work and change nothing. */
-      '/ui-2.0': { target, changeOrigin: false },
     },
   },
   test: {

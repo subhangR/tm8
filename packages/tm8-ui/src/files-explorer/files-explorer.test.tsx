@@ -147,16 +147,24 @@ describe('roots, breadcrumbs, modes', () => {
 
   it('gallery mode draws image tiles from the port href and no <img> for non-images', async () => {
     render(<FilesExplorerScreen port={stubPort()} />);
+    // WAIT FOR THE LISTING FIRST. The mode buttons are in the very first
+    // render, so clicking one the moment it appears switches the mode of an
+    // EMPTY explorer — and every assertion below is about what the entries
+    // draw. Awaiting an entry is what makes this a test of gallery mode
+    // rather than a race the loaded parallel run loses.
+    await screen.findByText('b.png');
     fireEvent.click(await screen.findByRole('button', { name: 'gallery' }));
+    await waitFor(() => expect(document.querySelectorAll('img.fx-thumb')).toHaveLength(1));
     const imgs = document.querySelectorAll('img.fx-thumb');
-    expect(imgs).toHaveLength(1);
     expect((imgs[0] as HTMLImageElement).src).toContain('/v2/files/e:b.png/download');
   });
 
   it('tree mode renders a real tree role', async () => {
     render(<FilesExplorerScreen port={stubPort()} />);
+    // The listing first — see the gallery case above.
+    await screen.findByText('b.png');
     fireEvent.click(await screen.findByRole('button', { name: 'tree' }));
-    expect(screen.getByRole('tree', { name: 'Folder tree' })).toBeTruthy();
+    expect(await screen.findByRole('tree', { name: 'Folder tree' })).toBeTruthy();
     expect(screen.getAllByRole('treeitem')).toHaveLength(2);
   });
 });
@@ -286,6 +294,11 @@ describe('conflict preflight dialog', () => {
       },
     });
     render(<FilesExplorerScreen port={port} />);
+    // THE COLLISION IS WITH THE LISTING, so the listing has to be there. The
+    // file input is in the first render and resolves immediately; picking
+    // `a.txt` against an explorer that has not listed anything yet collides
+    // with nothing, and both files upload with no dialog.
+    await screen.findByText('a.txt');
     const input = (await screen.findByTestId('fx-file-input')) as HTMLInputElement;
     Object.defineProperty(input, 'files', { value: [new File(['1'], 'a.txt'), new File(['2'], 'new.txt')] });
     fireEvent.change(input);
