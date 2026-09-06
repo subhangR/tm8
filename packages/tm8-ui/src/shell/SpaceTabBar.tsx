@@ -114,18 +114,6 @@ export interface SpaceTabBarProps {
    * keep working.
    */
   shareSlot?: ReactNode;
-  /**
-   * THE DOOR TO THE ALTERNATE 2.0 UI, when this bundle is serving the root.
-   *
-   * A slot and not a rendered control, for the same reason as `shareSlot`: the
-   * bar has no business knowing this package has a sibling. Left undefined the
-   * bar is unchanged, which is every existing shell test and this bundle
-   * rendered anywhere the switch is not in play.
-   *
-   * It sits FIRST in the right-hand cluster, before the palette hint: a door a
-   * viewer is looking for should not be the control they find last.
-   */
-  uiSwitchSlot?: ReactNode;
 }
 
 export function SpaceTabBar(props: SpaceTabBarProps) {
@@ -171,9 +159,6 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
       ) : null}
 
       <div className="shell-tabbar__spacer" />
-
-      {/* The exit to the product UI, ahead of everything else on the right. */}
-      {props.uiSwitchSlot ?? null}
 
       {props.onOpenPrompts ? (
         <button
