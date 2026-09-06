@@ -82,6 +82,7 @@ export function PanelHeader({
   titlePlaceholder,
   autoFocusTitle,
   supplemental,
+  trailing,
 }: {
   detail: EntityDetail;
   config: KindConfig;
@@ -118,6 +119,25 @@ export function PanelHeader({
   autoFocusTitle?: boolean;
   /** Optional facts directly beneath the identity row. */
   supplemental?: ReactNode;
+  /**
+   * THE RIGHT END OF THE IDENTITY ROW — user ruling 2026-08-29, for the
+   * work-session surface tabs on a phone ("just make them icons and put it on
+   * the tab bar above to the right end").
+   *
+   * Deliberately narrow in what it invites. The docblock on
+   * `PanelWindowControls` states the standing rule — panel-level controls live
+   * beside the TABS, not beside the title, so a long title keeps the row — and
+   * that rule is unchanged for every kind that has a tab row to put them in.
+   * This slot exists for the shell that has NONE: `TabStrip` draws nothing at
+   * all on `oneSurface`, so "the row above" and "the identity row" are the same
+   * row there, and a control with nowhere else to go is not the same thing as a
+   * control taking a shortcut.
+   *
+   * It is `flex: none` and the title stays `flex: 1 1 auto` with
+   * `overflow-wrap: anywhere`, so a long title wraps into more lines rather
+   * than pushing this off the edge.
+   */
+  trailing?: ReactNode;
 }) {
   const editable = (titleEditable ?? false) && onCommitTitle !== undefined && !detail.deletedAt;
   return (
@@ -154,6 +174,7 @@ export function PanelHeader({
         )}
 
         <StatusPillFor detail={detail} config={config} liveness={liveness} />
+        {trailing ? <div className="pn-head__trailing">{trailing}</div> : null}
       </div>
       {supplemental ? <div className="pn-head__supplemental">{supplemental}</div> : null}
     </div>

@@ -166,18 +166,24 @@ describe('WorkSessionContent on a phone', () => {
   });
 
   /**
-   * DEF-029's mechanism, pinned. The control is not under-sized in `panels.css`
-   * — `.pn-surface-switch__tab` has declared `min-height: 44px` all along. The
-   * `--bar` modifier strips it to 22px so five chips can ride a fixed 30px row.
-   * So the fix is DECLINING THE SLOT, and this is the assertion that the fix is
-   * still in place: with the modifier absent the base floor is simply in force.
+   * USER RULING 2026-08-29 — "the terminal and transcript tab is taking too
+   * much height, just make them icons and put it on the tab bar above to the
+   * right end."
    *
-   * A layout assertion cannot be made here — jsdom has no boxes — so this pins
-   * the CAUSE and the build service grades the effect. Named that way on
-   * purpose: "the modifier is absent" and "the chip measures 44px" are two
-   * claims and only one of them lives in this file.
+   * WHAT THIS TEST USED TO PIN, AND WHY IT NO LONGER DOES. It read "declines
+   * the panel bar slot, so the chips keep their own 44px floor" and asserted
+   * `phone-row` — DEF-029's fix, which bought the 44px floor by spending a
+   * ~56px band of its own above the terminal. The ruling above outranks that
+   * trade on the axis it gave away: the band cost more than the floor was
+   * worth on an 844px screen.
+   *
+   * The slot the phone is handed is NOT `.pn-panelbar` — `TabStrip` draws no
+   * bar on this shell at all. It is the identity row's trailing slot, a row the
+   * panel already pays for. So this pins the new mechanism in the same shape
+   * the old one was pinned: the CAUSE lives here (portalled, marks not words),
+   * and the build service still grades the effect in pixels.
    */
-  it('declines the panel bar slot, so the chips keep their own 44px floor', () => {
+  it('rides the head row as marks when a slot is offered', () => {
     const slot = document.createElement('div');
     document.body.append(slot);
 
@@ -192,15 +198,51 @@ describe('WorkSessionContent on a phone', () => {
     );
 
     const tablist = screen.getByTestId('work-session-surface-switch');
-    /* The ROW carries the styling and the arrangement stamp; the inner element
-       carries the tablist role, so the refusal marker can sit in the row
-       without becoming a non-tab child of a tablist. */
     const row = tablist.closest('.pn-surface-switch');
     expect(row).not.toBeNull();
+    /* The desktop's bar modifier is still not what happens here — the head row
+       arrangement has its own stamp and its own rules. */
     expect(row?.className).not.toContain('pn-surface-switch--bar');
+    expect((row as HTMLElement).dataset.arrangement).toBe('phone-head');
+    /* Portalled INTO the slot: that is what "on the row above" means. */
+    expect(slot.contains(tablist)).toBe(true);
+    /* Icons, not words — but the word is still the accessible name, so a
+       screen reader and `getByRole('tab', { name })` hear it unchanged. */
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((t) => t.getAttribute('aria-label'))).toEqual(['Transcript', 'Terminal']);
+    expect(tabs.every((t) => t.textContent === '')).toBe(true);
+    expect(tabs.every((t) => t.className.includes('pn-surface-switch__tab--mark'))).toBe(true);
+    /* The refusal is still PRESENT and still carries its reason — the three
+       names moved from its face to its accessible name, not off the screen. */
+    const marker = screen.getByTestId('work-session-surface-refused-marker');
+    expect(marker.dataset.form).toBe('mark');
+    expect(
+      marker.querySelector('[data-testid="disabled-with-reason"]')?.getAttribute('aria-label'),
+    ).toBe('Git · Debug · Graph — not on a phone');
+  });
+
+  /**
+   * THE SLOT-LESS PHONE STILL GETS ITS OWN ROW, with words and the 44px floor.
+   * That is what the standalone tests render and what any host that draws no
+   * head would get, so DEF-029's arrangement is retained rather than deleted —
+   * the ruling moved the hosted case, not every case.
+   */
+  it('keeps the words-in-its-own-row arrangement when no slot is offered', () => {
+    phone(
+      <WorkSessionContent
+        sessionId={SESSION}
+        profile={null}
+        terminal={<div>native terminal</div>}
+        transcript={<div>agent transcript</div>}
+      />,
+    );
+
+    const row = screen.getByTestId('work-session-surface-switch').closest('.pn-surface-switch');
     expect((row as HTMLElement).dataset.arrangement).toBe('phone-row');
-    /* Not portalled: it is a sibling of the surfaces, not a child of the bar. */
-    expect(slot.contains(tablist)).toBe(false);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+      'Transcript',
+      'Terminal',
+    ]);
   });
 
   /**

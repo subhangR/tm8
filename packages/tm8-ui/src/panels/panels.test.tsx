@@ -21,6 +21,7 @@ import {
   ada,
   noor,
 } from '../fixtures';
+import { MobileSurfaceProvider } from '../mobile';
 import { EntityDetailPanel, EntityListPanel, SharedContextSection, ShareDropTarget } from './index';
 import { HANDLED_SOURCES } from './list/tile-badges';
 import { expandTree } from '../kit/tree-disclosure.testkit';
@@ -246,6 +247,43 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     // labelled arrangement that caused the crowding.
     expect(tabEls.every((t) => t.querySelector('svg.kit-vicon') !== null)).toBe(true);
     expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '']);
+  });
+
+  /**
+   * USER RULING 2026-08-29 — "the terminal and transcript tab is taking too
+   * much height, just make them icons and put it on the tab bar above to the
+   * right end."
+   *
+   * THE PHONE'S "ROW ABOVE" IS THE IDENTITY ROW, and that is the fact this test
+   * exists to pin. `TabStrip` draws no panel bar at all on `oneSurface`, so the
+   * ruling's "tab bar above" can only be `.pn-head__row` — and a test that
+   * merely asserted the switch renders would pass on the 56px band the ruling
+   * removed. Containment in `.pn-head__row`, same reason the desktop case
+   * asserts containment in `.pn-panelbar`: WHERE is the whole ruling.
+   */
+  it('mounts the phone surface switch at the right end of the identity row', () => {
+    const detail = fixtureDetails[sessionStale.id]!;
+    const { container, getByTestId } = render(
+      <MobileSurfaceProvider sheetHost={null}>
+        <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />
+      </MobileSurfaceProvider>,
+    );
+
+    const headRow = container.querySelector('.pn-head__row');
+    const surfaceSwitch = getByTestId('work-session-surface-switch');
+    expect(headRow).not.toBeNull();
+    expect(headRow!.contains(surfaceSwitch)).toBe(true);
+    /* Last child of the row — "to the right end", after the title and the
+       status pill, which is where the trailing cluster is placed. */
+    expect(headRow!.lastElementChild?.className).toBe('pn-head__trailing');
+    /* No second band below it: the row the ruling removed is gone, not moved. */
+    expect(container.querySelector('[data-arrangement="phone-row"]')).toBeNull();
+    /* Marks with their words intact as accessible names — the phone offers two
+       surfaces (see WorkSessionContent.phone.test.tsx for why three are
+       refused rather than squashed). */
+    const tabEls = [...surfaceSwitch.querySelectorAll('[role="tab"]')];
+    expect(tabEls.map((t) => t.getAttribute('aria-label'))).toEqual(['Transcript', 'Terminal']);
+    expect(tabEls.every((t) => t.querySelector('svg.kit-vicon') !== null)).toBe(true);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {

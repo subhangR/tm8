@@ -80,6 +80,77 @@
   min-width: 0;
 }
 
+/* ==========================================================================
+   THE HEAD-ROW ARRANGEMENT — user ruling 2026-08-29
+   ==========================================================================
+
+   "The terminal and transcript tab is taking too much height, just make them
+   icons and put it on the tab bar above to the right end."
+
+   WHAT THIS REPLACES, AND WHAT IT COSTS. Everything above this block describes
+   the row the switch used to own on a phone: ~56px of band (52px floor + its
+   hairline) spent to buy the chips a 44px thumb floor. This arrangement gives
+   the band back and spends the floor instead — 36px square marks riding
+   `.pn-head__row`, a row the panel was already drawing.
+
+   36 IS UNDER 44 AND IS NOT PRETENDING OTHERWISE. It is stated here so a tap
+   census reads a decision rather than a regression: R2's floor was traded, by
+   the ruling, for the height it was costing on an 844px screen. 36 is the
+   largest square the identity row can seat beside a wrapping title and a status
+   pill at 390px; it is 14px better than the 22px the desktop `--bar` modifier
+   takes, which is the trade this program had already accepted for a pointer.
+
+   NOT SCOPED TO `[data-shell='mobile']` ALONE. `[data-arrangement='phone-head']`
+   is set by `WorkSessionContent` only when `oneSurface` is true AND a slot was
+   handed to it, so neither the desktop bar nor the slot-less phone row can pick
+   these rules up. */
+.cv2-root[data-shell='mobile'] .pn-surface-switch[data-arrangement='phone-head'] {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* The row's furniture belongs to the row. Inside the head row these would
+     paint a second toolbar over the first — the same subtraction the desktop's
+     `--bar` modifier makes, for the same reason. */
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+  background: none;
+}
+.cv2-root[data-shell='mobile']
+  .pn-surface-switch[data-arrangement='phone-head']
+  .pn-surface-switch__tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+/* The marks. `min-width` has to be named explicitly: the base rule's 76px
+   would otherwise beat `--mark`'s 22px `inline-size` and give back the width
+   this arrangement exists to save. */
+.cv2-root[data-shell='mobile']
+  .pn-surface-switch[data-arrangement='phone-head']
+  .pn-surface-switch__tab {
+  inline-size: 36px;
+  min-inline-size: 36px;
+  block-size: 36px;
+  min-block-size: 36px;
+  padding: 0;
+}
+/* The refusal, shrunk to a mark — see the TSX for why the three names move from
+   the control's face to its accessible name and its disclosure. Sized to the
+   marks beside it so the cluster reads as one row of three, and quiet in ink-4
+   so the two things you CAN press keep the eye. */
+.cv2-root[data-shell='mobile'] .pn-surface-switch__refused[data-form='mark'] {
+  margin-inline-start: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 22px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--pn-ink-4);
+}
+
 /* --- The refusal marker --------------------------------------------------
    Git · Debug · Graph, stated rather than merely absent.
 
