@@ -28,8 +28,9 @@
  * panel's existing disabled-with-reason path covers a host that has neither.
  */
 import { useCallback, useMemo } from 'react';
-import type { ExecutionSpawnInput } from '@tm8/contract';
+import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { newLaunchMutationId, type ProfileResolution } from '../domain';
+import { entityPatchInput } from '../authoring';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
 
@@ -98,6 +99,30 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     [sourceProjects],
   );
 
+  /**
+   * The launch popup's title edit, persisted onto the SUBJECT through the same
+   * `patchEntity` the inline editors use. The expected version comes from the
+   * hydrated detail when the viewer has one and otherwise from a fresh read —
+   * a rename against a version nobody looked up would turn the optimistic
+   * check into a guess.
+   */
+  const onRenameEntity = useCallback(
+    async (entityId: string, title: string) => {
+      const commands = data.seam.commands;
+      if (!commands) throw new Error('This node cannot edit entities, so the new title was not saved.');
+      const version = data.detailOf(entityId)?.version
+        ?? (await data.seam.entity(entityId as never).catch(() => undefined))?.version;
+      if (version == null) {
+        throw new Error('The task could not be read back to rename it — the launch was stopped so the title edit is not silently lost.');
+      }
+      await commands.patchEntity(entityId as EntityId, entityPatchInput({ title }, version));
+      /* The row's summary re-reads through the normal detail path, so the list
+         shows the new name without waiting for the next event. */
+      data.refetchDetail(entityId);
+    },
+    [data],
+  );
+
   return useMemo(
     () => ({
       spaceId: data.spaceId ?? '',
@@ -105,10 +130,11 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       projects,
       profileFor,
       mutationId: () => newLaunchMutationId(),
+      onRenameEntity,
       ...(capacity ? { capacity } : {}),
       ...(onSpawn ? { onSpawn } : {}),
       ...(onFullOptions ? { onFullOptions } : {}),
     }),
-    [data.spaceId, teammates, projects, profileFor, capacity, onSpawn, onFullOptions],
+    [data.spaceId, teammates, projects, profileFor, onRenameEntity, capacity, onSpawn, onFullOptions],
   );
 }

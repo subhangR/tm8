@@ -20,7 +20,14 @@
 .nsx-root {
   position: relative;
   display: flex;
+  /* CLAIM THE SHELL ROW. `.shell-body` is a flex row and sizes children to
+     content; every other screen fills it because its content is wide. This
+     screen is one card, so without an explicit grow it rendered ~440px wide,
+     pinned left, with the footer wrapped — measured live, 2026-09-07. Inert
+     under the harness's block wrapper. */
+  flex: 1 1 auto;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   height: 100%;
   overflow: hidden;
@@ -55,7 +62,7 @@
 }
 
 .nsx-greeting {
-  width: min(760px, calc(100% - 32px));
+  width: min(820px, calc(100% - 32px));
   margin: 0 auto var(--pn-space-2);
   color: var(--pn-ink);
   font: 600 20px/1.3 var(--pn-ui);
@@ -70,9 +77,16 @@
 
 /* -------------------------------------------------------------- the composer */
 
+/*
+ * THE CARD is the "Launch Session Composer" canvas: header (workdir picker,
+ * overflow menu, title) · prompt · footer (model, effort, permission,
+ * teammate, Launch). Every colour resolves through a token (§14), so the
+ * canvas's near-neutral palette lands on paper-and-ink here and inverts with
+ * the theme for free.
+ */
 .nsx-composer-wrap {
   flex: none;
-  width: min(760px, calc(100% - 32px));
+  width: min(820px, calc(100% - 32px));
   margin: 0 auto;
   /* Query container so the foot degrades by the COMPOSER's width, not the
      viewport's. Same reasoning as `.tch-composer-wrap`. */
@@ -81,138 +95,395 @@
 
 .nsx-composer {
   box-sizing: border-box;
+  position: relative;
   /* VISIBLE, not hidden: the skill popover pins above the field from
-     `.ri-host`, and `hidden` clips an absolutely positioned descendant. */
+     `.ri-host`, and every config menu is an absolutely positioned descendant
+     of its trigger — `hidden` would clip them all. */
   overflow: visible;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-md);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
   background: var(--pn-card);
-  box-shadow: var(--pn-sh-md);
+  box-shadow: var(--pn-sh-pop);
   transition: border-color 140ms ease, box-shadow 220ms ease;
 }
 
-.nsx-composer:focus-within {
-  border-color: var(--pn-brand);
-  box-shadow: var(--pn-sh-md);
-}
+.nsx-composer:focus-within { border-color: var(--pn-line-2); }
 
 .nsx-composer[data-busy] { border-color: color-mix(in srgb, var(--pn-brand) 45%, var(--pn-line-2)); }
+
+/* ---------------- the header band: workdir · overflow · title ------------- */
+
+.nsx-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 4px;
+}
+
+/* The positioning context every menu pins to. */
+.nsx-anchor { position: relative; }
+
+.nsx-head__workdir {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  padding: 4px 6px;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+  font: inherit;
+}
+
+.nsx-head__workdir:hover { background: var(--pn-hover); }
+
+.nsx-head__badge {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  display: grid;
+  place-items: center;
+  font: 600 var(--pn-fs-label)/1 var(--pn-ui);
+}
+
+.nsx-head__name { color: var(--pn-ink); font: 600 var(--pn-fs-title)/1.2 var(--pn-ui); }
+
+.nsx-head__caret { color: var(--pn-ink-3); font-size: 8px; }
+
+/* The working copy, beside the directory it applies to: worktree ⇄ branch. */
+.nsx-head__copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 5px 8px;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: 500 var(--pn-fs-label)/1.2 var(--pn-ui);
+}
+
+.nsx-head__copy:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.nsx-head__copy[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
+.nsx-head__copy[aria-disabled='true']:hover { background: none; color: var(--pn-ink-3); }
+
+.nsx-head__dots {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: 600 var(--pn-fs-h3)/1 var(--pn-ui);
+  letter-spacing: 0.08em;
+}
+
+.nsx-head__dots:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+
+/* The title, typed or derived: the value is the override, the placeholder is
+   the name the prompt's first sentence would produce. Right-aligned per the
+   canvas so it reads as the card's running head, not another field. */
+.nsx-head__title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--pn-ink);
+  font: 500 var(--pn-fs-title)/1.3 var(--pn-ui);
+  text-align: right;
+  padding: 4px 6px;
+}
+
+.nsx-head__title::placeholder { color: var(--pn-ink-4); }
+
+/* --------------------------------- the prompt ----------------------------- */
 
 .nsx-composer textarea {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  min-height: 76px;
+  min-height: 120px;
   resize: none;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--pn-ink);
-  font: 13px/1.45 var(--pn-ui);
-  padding: 12px 13px 4px;
+  font: var(--pn-fs-title)/1.5 var(--pn-ui);
+  padding: 8px 20px 4px;
+  /* A wrapping textarea never needs a horizontal bar, and macOS overlay
+     scrollbars were flashing one across the card (user report 2026-09-07). */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .nsx-composer textarea::placeholder { color: var(--pn-ink-4); }
 
-.nsx-composer .ri-attachments { padding: 9px 11px 0; }
+.nsx-composer .ri-attachments { padding: 4px 12px 0; }
 
-/* The live title. Monospace because it is a VALUE the system derived, not
-   prose the user wrote — the same signal the resolved line uses. */
-.nsx-title-preview {
-  display: flex;
-  gap: 7px;
-  align-items: baseline;
-  margin: 0;
-  padding: 2px 13px 0;
-  overflow: hidden;
-}
-
-.nsx-title-preview__label {
-  flex: none;
-  color: var(--pn-ink-4);
-  font: 9px/1.6 var(--pn-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.nsx-title-preview__value {
-  overflow: hidden;
-  color: var(--pn-ink-2);
-  font: 11px/1.6 var(--pn-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* ---------------- the footer band: the per-launch knobs ------------------- */
 
 .nsx-composer__foot {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 8px 12px 12px;
+}
+
+.nsx-foot__spacer { flex: 1; }
+
+.nsx-tool {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 7px 10px;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font: 500 var(--pn-fs-sm)/1.2 var(--pn-ui);
+}
+
+.nsx-tool:hover { background: var(--pn-hover); }
+.nsx-tool[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
+.nsx-tool[aria-disabled='true']:hover { background: none; }
+
+.nsx-tool__glyph { font-size: var(--pn-fs-title); line-height: 1; }
+.nsx-tool__icon { display: block; }
+
+/* The "always ask" glyph: a ? in a ring, drawn with currentColor. */
+.nsx-tool__ask {
+  box-sizing: border-box;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font: 700 var(--pn-fs-tick)/1 var(--pn-ui);
+}
+
+/* The teammate glyph: a head over shoulders, all border, all currentColor. */
+.nsx-tool__person {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  width: 13px;
+}
+
+.nsx-tool__person-head {
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.nsx-tool__person-body {
+  box-sizing: border-box;
+  width: 12px;
+  height: 5px;
+  border: 1.5px solid currentColor;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  margin-top: 1px;
+}
+
+/* The effort dial: one bar per stop the model takes, heights set inline
+   (geometry, not colour), fill by data-on. */
+.nsx-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 12px;
+}
+
+.nsx-bars__bar { width: 2.5px; border-radius: 1px; background: var(--pn-line-2); }
+.nsx-bars__bar[data-on] { background: var(--pn-ink-2); }
+
+/* The commit. Ink on paper rather than the brass pair: the canvas draws the
+   launch as the card's single maximum-contrast act, and ink/paper inverts
+   correctly in both themes without a literal colour. */
+.nsx-launch {
+  display: flex;
+  flex: none;
+  align-items: center;
   gap: 8px;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  font: 600 var(--pn-fs-body)/1.2 var(--pn-ui);
+  padding: 9px 16px;
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 120ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.nsx-launch:active:not([aria-disabled='true']) { transform: scale(0.97); }
+
+.nsx-launch[aria-disabled='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink-4);
+  cursor: not-allowed;
+}
+
+.nsx-launch__key { font-size: var(--pn-fs-title); line-height: 1; }
+
+/* ---------------- the menus: anchored inside the card's subtree ------------ */
+
+.nsx-menu {
+  position: absolute;
+  z-index: 40;
+  box-sizing: border-box;
+  min-width: 320px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 6px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+}
+
+.nsx-menu--down { top: calc(100% + 6px); left: 0; }
+.nsx-menu--up { bottom: calc(100% + 8px); left: 0; }
+.nsx-menu--model { min-width: 240px; }
+
+.nsx-menu__head {
+  padding: 8px 10px 4px;
+  color: var(--pn-ink-3);
+  font: 600 var(--pn-fs-fine)/1.4 var(--pn-ui);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+
+.nsx-menu__empty {
+  padding: 8px 10px;
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-sm)/1.4 var(--pn-ui);
+}
+
+.nsx-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+}
+
+.nsx-menu__item:hover { background: var(--pn-hover); }
+.nsx-menu__item[aria-disabled='true'] { cursor: not-allowed; opacity: 0.55; }
+.nsx-menu__item[aria-disabled='true']:hover { background: none; }
+
+.nsx-menu__lead {
+  flex: none;
+  width: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--pn-ink-2);
+}
+
+.nsx-menu__body { display: block; flex: 1; min-width: 0; }
+
+.nsx-menu__name { display: block; color: var(--pn-ink); font: 600 var(--pn-fs-body)/1.35 var(--pn-ui); }
+.nsx-menu__name--plain { font-weight: 400; }
+
+.nsx-menu__sub {
+  display: block;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-label)/1.35 var(--pn-ui);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A path is a VALUE — the same mono signal the old title preview used. */
+.nsx-menu__sub--mono { font-family: var(--pn-mono); font-size: var(--pn-fs-micro); }
+
+.nsx-menu__check { flex: none; width: 16px; color: var(--pn-ink); font: var(--pn-fs-sm)/1 var(--pn-ui); }
+
+/* The Auto row's badge: deliberately toneless where real personas get their
+   identity-coloured Avatar — auto is a rule, not a person. */
+.nsx-menu__auto {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--pn-active);
+  color: var(--pn-ink-2);
+  display: grid;
+  place-items: center;
+  font: 600 var(--pn-fs-fine)/1 var(--pn-mono);
+}
+
+/* The ··· rows: label left, current value + ▸ right, submenu beneath. */
+.nsx-menu__row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 34px;
-  padding: 4px 7px 7px 11px;
-}
-
-.nsx-workdir { display: flex; gap: 4px; }
-
-.nsx-chip {
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
-  background: transparent;
-  color: var(--pn-ink-4);
-  font: 11px var(--pn-ui);
-  padding: 3px 9px;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
   cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
-}
-
-.nsx-chip:hover:not(:disabled) { color: var(--pn-ink); }
-
-.nsx-chip--active {
-  border-color: var(--pn-brand);
-  background: color-mix(in srgb, var(--pn-brand) 12%, transparent);
+  padding: 9px 10px;
+  border-radius: var(--pn-r-sm);
   color: var(--pn-ink);
+  font: var(--pn-fs-body)/1.3 var(--pn-ui);
 }
 
-/* A disabled chip must LOOK disabled: `.set-chip` shipped without this once
-   and a dead control read as merely unselected. */
-.nsx-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.nsx-menu__row:hover { background: var(--pn-hover); }
+.nsx-menu__row[aria-disabled='true'] { cursor: not-allowed; opacity: 0.55; }
+.nsx-menu__row[aria-disabled='true']:hover { background: none; }
 
-.nsx-send {
-  flex: none;
-  border: 1px solid transparent;
-  border-radius: var(--pn-r-sm);
-  /* Exactly `.tch-send`'s pair: the card colour ON the deeper brand, which is
-     how this package draws a primary button in both themes. A literal white
-     would also trip §14's package-wide ban on raw hex in stylesheets. */
-  background: var(--pn-brand-2);
-  color: var(--pn-card);
-  font: 600 12px var(--pn-ui);
-  padding: 6px 14px;
-  cursor: pointer;
-  transition: opacity 120ms ease, transform 120ms ease;
-}
+.nsx-menu__val { color: var(--pn-ink-3); font-size: var(--pn-fs-label); white-space: nowrap; }
 
-.nsx-send:active:not([aria-disabled='true']) { transform: scale(0.97); }
-.nsx-send[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
-
-.nsx-resolved {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin: 7px 2px 0;
-  color: var(--pn-ink-4);
-  font: 10px/1.5 var(--pn-mono);
-}
-
-.nsx-resolved__arrow { color: var(--pn-brand); }
-.nsx-resolved__dot { opacity: 0.5; }
+.nsx-menu__subsec { padding: 2px 0 6px 8px; }
 
 .nsx-refusal {
   margin: 6px 2px 0;
   color: var(--pn-wait);
   font: 10px/1.5 var(--pn-ui);
 }
+
+/* ------------------- the popup host: the card as a modal tile -------------- */
+
+/*
+ * The Run flow's home for the card. Fixed and centred so it escapes whatever
+ * tile or panel opened it; the scrim is the outside — clicking it dismisses,
+ * and Escape follows the composer's own layering (menu first, then this).
+ */
+.nsx-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 24px;
+}
+
+.nsx-popup__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--pn-scrim);
+}
+
+.nsx-popup__frame { position: relative; width: min(820px, 100%); }
+
+.nsx-popup .nsx-composer-wrap { width: 100%; }
 
 /* ------------------------------------------------------- the terminal layer */
 

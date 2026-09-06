@@ -6,5 +6,11 @@
  * `rich-input`/`files`: mounting the screen from anywhere styles it.
  */
 export { NewSessionScreen, type NewSessionScreenProps, type NewSessionPhase } from './NewSessionScreen';
-export { NewSessionComposer, type NewSessionComposerProps } from './NewSessionComposer';
+export { NewSessionComposer, type NewSessionComposerProps, type ComposerWorkdir } from './NewSessionComposer';
+export {
+  LaunchComposerPopup,
+  type LaunchComposerPopupProps,
+  type PopupTeammate,
+} from './LaunchComposerPopup';
+export { useLaunchComposerState, type LaunchComposerState } from './useLaunchComposerState';
 export { TITLE_MAX, canDeriveTitle, deriveTitle, promptBody } from './prompt-title';

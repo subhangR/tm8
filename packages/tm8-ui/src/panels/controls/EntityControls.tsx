@@ -1792,11 +1792,11 @@ export function RowAction({
    */
   onRun?: (ref: ActionRef, entityId: string) => void;
   /**
-   * Opens the FULL launch sheet for a `flow: 'launch'` verb. When wired, Run
-   * goes STRAIGHT to the sheet — no inline expand in between (user ruling:
-   * the two-step tile expand made the important configuration a second click
-   * away). The inline quick config remains the fallback for hosts that mount
-   * no sheet (kind screens), so Run never silently does nothing.
+   * Opens the FULL launch sheet for a `flow: 'launch'` verb. Since the flow
+   * became the composer POPUP (2026-09-07) this is the fallback, not the
+   * outranking path: Run opens the popup wherever a flow host exists, and the
+   * sheet is reached through the popup's `full options ▸` — or directly, on a
+   * host that mounts no flow, so Run never silently does nothing.
    */
   onOpenLaunch?: (entityId: string) => void;
   /**
@@ -1835,12 +1835,16 @@ export function RowAction({
    * the config states for itself whether it can commit. Asking the resolved
    * def for `flow` keeps this free of both kind and action-id literals.
    *
-   * The sheet OUTRANKS the inline expand: where the host mounted the full
-   * launch sheet, one click on Run opens it directly and the tile never
-   * expands. The inline quick config only serves hosts without a sheet.
+   * THE FLOW OUTRANKS THE SHEET NOW (owner's ask 2026-09-07: "when we hit
+   * button — we pop up this screen"). The flow IS the canvas composer as a
+   * modal popup — the full per-launch configuration one click away, which is
+   * what the earlier straight-to-the-sheet ruling was buying when the flow was
+   * a two-step tile expand. The sheet stays reachable as the popup's
+   * `full options ▸` escape, and remains the DIRECT target only for hosts
+   * with no flow mount.
    */
-  const opensSheet = def.flow === 'launch' && onOpenLaunch != null;
-  const opensFlow = def.flow === 'launch' && !opensSheet && onFlow != null;
+  const opensFlow = def.flow === 'launch' && onFlow != null;
+  const opensSheet = def.flow === 'launch' && !opensFlow && onOpenLaunch != null;
 
   /**
    * A `wide` control refuses in the WIDE vocabulary too.

@@ -533,9 +533,13 @@ export function actionWiring(
   },
 ): ActionWiring {
   const def = resolveAction(ref);
+  /* THE FLOW OUTRANKS THE SHEET (owner's ask 2026-09-07): the launch flow is
+     the canvas composer popping up in place — the full config one click away.
+     The sheet is the popup's own `full options ▸` escape, and the direct
+     target only where no flow can mount. */
+  const opensFlow = def.flow != null && (hosts.canExpandFlow ?? false);
   const opensSheet =
-    def.flow === 'launch' && hosts.onOpenLaunch != null && hosts.launchSubjectId != null;
-  const opensFlow = def.flow != null && !opensSheet && (hosts.canExpandFlow ?? false);
+    def.flow === 'launch' && !opensFlow && hosts.onOpenLaunch != null && hosts.launchSubjectId != null;
   return { wired, opensSheet, opensFlow };
 }
 

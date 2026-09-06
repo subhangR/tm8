@@ -66,14 +66,17 @@ describe('the Run verb opens a flow instead of dispatching', () => {
     expect(resolveAction('run').flow).toBe('launch');
   });
 
-  it('goes STRAIGHT to the full sheet when the host mounted one (user ruling 2026-08-09)', () => {
-    // Where the five-section sheet exists, Run is ONE click to the full
-    // configuration — the tile no longer expands an inline config in between.
-    // The inline expand below remains the fallback for hosts without a sheet.
+  it('pops the composer even where the host mounted a sheet (owner ruling 2026-09-07)', () => {
+    // SUPERSEDES the 2026-08-09 straight-to-the-sheet ruling, and keeps its
+    // intent: that ruling bought "the full configuration one click away" when
+    // the inline flow was a thin two-step tile expand. The flow IS the full
+    // configuration now — the canvas composer as a modal popup — so Run opens
+    // it directly; the sheet stays the direct target only for hosts that
+    // mount no flow.
     const onFullOptions = vi.fn();
     const onAction = vi.fn();
     const rows = taskRows();
-    const { getAllByTestId, queryByTestId } = render(
+    const { getAllByTestId, getByTestId } = render(
       <EntityListPanel
         kind="task"
         rowsFor={() => rows}
@@ -85,10 +88,8 @@ describe('the Run verb opens a flow instead of dispatching', () => {
     );
     const run = getAllByTestId('list-tile')[0].querySelector('[aria-label="Run"]') as Element;
     fireEvent.click(run);
-    // Called with a REAL row id — the panel may order tiles its own way.
-    expect(onFullOptions).toHaveBeenCalledTimes(1);
-    expect(rows.map((r) => r.id)).toContain(onFullOptions.mock.calls[0]?.[0]);
-    expect(queryByTestId('launch-quick-config')).toBeNull();
+    expect(getByTestId('launch-quick-config')).toBeTruthy();
+    expect(onFullOptions).not.toHaveBeenCalled();
     expect(onAction).not.toHaveBeenCalled();
   });
 

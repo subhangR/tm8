@@ -65,6 +65,8 @@ import './launch-sheet-mobile.css';
 import {
   accessModeLabel,
   agentTool,
+  AGENT_CREDENTIAL_PROVIDER,
+  CREDENTIAL_PROVIDER_LABEL,
   describeAccessMode,
   LAUNCH_MODES,
   nextAccessMode,
@@ -133,26 +135,9 @@ const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] a
  * a list that fits on screen whole is only friction. */
 const TEAMMATE_SEARCH_FROM = 5;
 type CredentialChoice = '' | 'member' | 'node';
-// The FILE-shaped providers an agent tool can consume. `github` is excluded
-// because its credential injects universally rather than being chosen per tool.
-const AGENT_CREDENTIAL_PROVIDER: Readonly<Partial<Record<string, CredentialProviderName>>> = {
-  'claude-code': 'anthropic',
-  codex: 'openai',
-  gemini: 'gemini',
-  hermes: 'hermes',
-  cursor: 'cursor',
-};
-
-// Vendor names, not product names: this sheet is choosing WHOSE credential to
-// inject. The home and settings tiles name the product the member recognises.
-const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  github: 'GitHub',
-  gemini: 'Google',
-  hermes: 'Nous',
-  cursor: 'Cursor',
-};
+// The tool→provider map and the vendor labels live in `domain/launch` now —
+// the New Session composer is their second consumer, and two private copies
+// of a vocabulary is the copy-drift class (D34).
 
 export function LaunchSheet(props: LaunchSheetProps) {
   const { teammates, projects, profiles, memories } = props;
