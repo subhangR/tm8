@@ -1881,7 +1881,6 @@ export function GateApp(props: GateAppProps = {}) {
           onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
-          onOpenPrompts={() => setPromptsOpen(true)}
           // D1: theme's one home is the account menu. No tab-bar toggle.
           onOpenAccount={toggleTheme}
           // T3-3, user-ordered 2026-07-29: the real account menu — signed-in
@@ -1889,35 +1888,23 @@ export function GateApp(props: GateAppProps = {}) {
           // ACCOUNT. Undefined otherwise, so a GateApp rendered without an
           // AuthGate (every existing test) keeps the avatar fallback and its
           // behaviour is unchanged.
-          /* COPY LINK — the affordance that makes the routing usable by a
-             person. The app has been addressable since the router mounted and
-             offered its address to nobody; this is where a viewer gets it.
-
-             It names WHAT IS ON SCREEN: the active target, plus the entity open
-             on that screen if there is one, so a link to a task you are reading
-             reopens that task rather than the list it came from. `openOnScreen`
-             already existed for the reverse direction (drill in, address
-             updates) and is the same fact read the other way.
-
-             Rendered only with a Space, because a link with no Space addresses
-             nothing — `copyLinkUrl` would return null and the control would be
-             a button that cannot perform, which is the shape this codebase
-             refuses everywhere else. */
-          shareSlot={
-            data.spaceId ? (
-              <CopyLinkControl
-                spaceId={data.spaceId}
-                target={activeTarget ?? WORKSPACE_TARGET}
-                openEntity={openOnScreen}
-              />
-            ) : undefined
-          }
           accountSlot={
             authAccount && data.viewerActor ? (
               <AccountMenu
                 actor={data.viewerActor}
                 theme={theme}
                 onThemeChange={setTheme}
+                onOpenPrompts={() => setPromptsOpen(true)}
+                copyLinkSlot={
+                  data.spaceId ? (
+                    <CopyLinkControl
+                      spaceId={data.spaceId}
+                      target={activeTarget ?? WORKSPACE_TARGET}
+                      openEntity={openOnScreen}
+                      label="Copy workspace link"
+                    />
+                  ) : undefined
+                }
                 agentToolsNudge={setupNudge}
                 {...(credentialsPort ? { onOpenAgentTools: () => setSetupOpen(true) } : {})}
               />

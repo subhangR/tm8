@@ -10,7 +10,8 @@
  * about the frame moves.
  */
 import type { IncomingMessage } from 'node:http';
-import { resolve as pathResolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join, resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
@@ -605,6 +606,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const artifactPreviewRoute = config.preview?.sameOrigin && db && blobStore && owner
     ? createArtifactPreviewHandler({ preview: config.preview, db, blobStore, owner })
     : undefined;
+
+  for (const [label, directory] of [
+    ['product UI', config.uiDir],
+    ['operator-only 2.0 UI', config.ui20Dir],
+  ] as const) {
+    if (directory && !existsSync(join(directory, 'index.html'))) {
+      console.warn(`  WARNING: ${label} directory has no index.html: ${directory}`);
+    }
+  }
 
   const server = createFacadeServer({
     ...(artifactPreviewRoute ? { artifactPreviewRoute } : {}),

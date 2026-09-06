@@ -1225,6 +1225,19 @@
 .cv2-root .auth-menu__row--live:hover {
   background: var(--pn-hover);
 }
+.cv2-root .auth-menu__slot > .copy-link__button {
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .auth-menu__slot > .copy-link__button:hover { background: var(--pn-hover); }
+.cv2-root .auth-menu__slot > .copy-link--manual { padding: 8px 12px; }
 .cv2-root .auth-menu__row--stacked {
   flex-direction: column;
   align-items: flex-start;

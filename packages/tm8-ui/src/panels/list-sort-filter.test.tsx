@@ -52,7 +52,7 @@ describe('the sort chip reaches the seam', () => {
     const { getByTestId, getAllByRole } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} />,
     );
-    fireEvent.click(getByTestId('sort-trigger'));
+    fireEvent.click(getByTestId('filter-trigger'));
     const labels = getAllByRole('menuitemradio').map((b) => b.textContent?.replace('✓', ''));
     /* DERIVED FROM THE REGISTRY, not a literal list — the defect this test is
        named for was the menu offering TWO of the sorts a kind declares, so the
@@ -82,7 +82,7 @@ describe('the sort chip reaches the seam', () => {
     // see the next test.
     expect(new Set(seam.sorts())).toEqual(new Set([undefined, 'activityAt_desc']));
 
-    fireEvent.click(getByTestId('sort-trigger'));
+    fireEvent.click(getByTestId('filter-trigger'));
     fireEvent.click(getByRole('menuitemradio', { name: /Priority/ }));
 
     // After: a REAL query went out under the chosen sort. This is the whole
@@ -99,7 +99,7 @@ describe('the sort chip reaches the seam', () => {
     const { getByTestId, getByRole } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} />,
     );
-    fireEvent.click(getByTestId('sort-trigger'));
+    fireEvent.click(getByTestId('filter-trigger'));
     fireEvent.click(getByRole('menuitemradio', { name: /Due date/ }));
 
     // Three tier counts per render, and none of them may carry a sort: they
@@ -109,14 +109,15 @@ describe('the sort chip reaches the seam', () => {
     expect(counting.length).toBeGreaterThan(0);
   });
 
-  it('the chip shows the CHOSEN sort, so the control and the data agree', () => {
+  it('the unified menu marks the CHOSEN sort, so the control and the data agree', () => {
     const seam = recorder();
     const { getByTestId, getByRole } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} />,
     );
-    fireEvent.click(getByTestId('sort-trigger'));
+    fireEvent.click(getByTestId('filter-trigger'));
     fireEvent.click(getByRole('menuitemradio', { name: /Manual order/ }));
-    expect(getByTestId('sort-trigger').textContent).toContain('Manual order');
+    fireEvent.click(getByTestId('filter-trigger'));
+    expect(getByRole('menuitemradio', { name: /Manual order/ }).getAttribute('aria-checked')).toBe('true');
   });
 });
 
@@ -306,7 +307,7 @@ describe('paging asks for the next page of THIS question', () => {
         ctx={ctx}
       />,
     );
-    fireEvent.click(getByTestId('sort-trigger'));
+    fireEvent.click(getByTestId('filter-trigger'));
     fireEvent.click(getByRole('menuitemradio', { name: /Priority/ }));
     fireEvent.click(getByRole('button', { name: 'Load more' }));
 

@@ -269,6 +269,8 @@ for pkg in "${TEST_PACKAGES[@]}"; do
   fi
 done
 
+run_stage "deploy UI env repair" bash deploy/utho/repair-ui-env.test.sh
+
 # --- 4. migrations ----------------------------------------------------------
 if [ "$FAST" -eq 1 ]; then
   skip "migrations" "--fast/--no-migrations"

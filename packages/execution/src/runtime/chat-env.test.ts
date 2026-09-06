@@ -33,7 +33,7 @@ const PRODUCTION_LIKE_ENV: NodeJS.ProcessEnv = {
   TM8_DELIVERY_DATABASE_URL: 'postgresql://tm8:hunter2@127.0.0.1:5442/tm8_delivery',
   TM8_DATA_DIR: '/home/tm8/prod-data',
   TM8_PROJECT_DIR: '/home/tm8/prod-workspace',
-  TM8_UI_DIR: '/opt/tm8/prod/packages/tm8-ui/dist',
+  TM8_UI_DIR: '/opt/tm8/prod/packages/tm8-ui/redesign-1.0',
   TM8_PORT: '17777',
   TM8_ENV: 'prod',
   TM8_SESSION_CAP: '30',

@@ -6,7 +6,7 @@
 # rotates the result into $TM8_PROD_DIR. Nothing here reloads on a source edit —
 # that is staging's job (8888/8887, deploy/staging/env.sh).
 #
-#   prod UI      http://127.0.0.1:7777   (vite preview over packages/tm8-ui/dist)
+#   prod UI      http://127.0.0.1:7777   (vite preview over packages/tm8-ui/redesign-1.0)
 #   prod server  http://127.0.0.1:7778   (node packages/server/dist/index.js)
 #   prod DB      tm8_stable @ 5442
 #   prod data    ~/.local/share/tm8/data
@@ -76,7 +76,7 @@ export TM8_IDEMPOTENCY_ENABLED=0
 export TM8_PREVIEW_FRAME_ANCESTORS="http://127.0.0.1:${TM8_UI_PORT} http://localhost:${TM8_UI_PORT}"
 
 # Serve the same bundle 7777 serves, so :7778 is a same-origin fallback.
-export TM8_UI_DIR="$TM8_PROD_ROOT/packages/tm8-ui/dist"
+export TM8_UI_DIR="$TM8_PROD_ROOT/packages/tm8-ui/redesign-1.0"
 
 # THE ALTERNATE 2.0 UI, mounted at /ui-2.0/ on the same origin (see
 # packages/server/src/http/static.ts). Same origin is the point: both UIs then

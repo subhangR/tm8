@@ -552,17 +552,29 @@ describe('SpaceTabBar (T0-1, D1 — revision 11: the product bar)', () => {
     expect(document.activeElement).toBe(bell);
   });
 
-  it('opens the prompt catalog from the bar when the host wires it', () => {
-    const onOpenPrompts = vi.fn();
-    const { getByTestId } = renderBar({ onOpenPrompts });
-    fireEvent.click(getByTestId('open-prompts'));
-    expect(onOpenPrompts).toHaveBeenCalled();
+  it('centres the surface tabs between dedicated start and end clusters', () => {
+    const { container, getByRole } = renderBar({
+      tabs: [
+        { id: 'home', label: 'Home' },
+        { id: 'work', label: 'Work' },
+      ],
+      activeTabId: 'work',
+    });
+    expect(container.querySelector('.shell-tabbar__side--start')).not.toBeNull();
+    expect(container.querySelector('.shell-tabbar__side--end')).not.toBeNull();
+    expect(getByRole('tablist', { name: 'Screens' })).not.toBeNull();
+    expect(getByRole('tab', { name: 'Work' }).getAttribute('aria-selected')).toBe('true');
   });
 
-  it('omits the prompts control entirely when no host handles it', () => {
-    // Same rule the accountSlot follows: a bar rendered without a host shows no
-    // control at all, rather than one that does nothing when clicked.
-    expect(renderBar().queryByTestId('open-prompts')).toBeNull();
+  it('uses the quiet wordmark and keeps secondary actions out of the bar', () => {
+    const { container, queryByText, queryByTestId } = renderBar();
+    const mark = container.querySelector('.shell-tabbar__mark');
+    expect(mark?.textContent).toBe('tm8');
+    expect(mark?.querySelector('svg')).toBeNull();
+    expect(queryByText('More')).toBeNull();
+    expect(queryByTestId('open-prompts')).toBeNull();
+    expect(container.querySelector('.copy-link__button')).toBeNull();
+    expect(container.querySelector('.hon-caption')).toBeNull();
   });
 });
 

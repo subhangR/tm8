@@ -19,7 +19,7 @@
 #   checkout   | /opt/tm8/staging  detached HEAD| /opt/tm8/prod  detached HEAD
 #   server     | 127.0.0.1:8887                 | 127.0.0.1:17777
 #   nginx      | :8888                          | :7777
-#   UI         | vite DEV on 18888 — NO BUILD   | built dist — SEPARATE vite build
+#   UI         | vite DEV on 18888 — NO BUILD   | built redesign-1.0 — SEPARATE vite build
 #   database   | tm8_staging @ 5443             | tm8_prod @ 5442
 #   units      | tm8-staging, tm8-staging-ui    | tm8-prod
 #
@@ -29,7 +29,7 @@
 # THE FIVE THINGS THAT MAKE THE OBVIOUS RECIPE WRONG
 #
 #  1. STAGING HAS NO UI BUILD; PROD'S IS SEPARATE. `bun run build` is `tsc -b`
-#     only. Prod serves TM8_UI_DIR=packages/tm8-ui/dist (plus the alternate 2.0
+#     only. Prod serves TM8_UI_DIR=packages/tm8-ui/redesign-1.0 (plus the alternate 2.0
 #     bundle at packages/tm8_ui_2.0/dist-2.0), so prod needs a second,
 #     explicit `vite build` — skip it and you ship a stale UI against a new server
 #     with no error anywhere. Staging runs vite DEV against source, so the
@@ -319,7 +319,7 @@ rok "server + CLI built"
 
 if [[ "$BUILD_UI" == 1 ]]; then
   # Prod only. `bun run build` above is tsc -b and does NOT touch the UI; prod
-  # serves packages/tm8-ui/dist, so skipping this ships a stale UI, silently.
+  # serves packages/tm8-ui/redesign-1.0, so skipping this ships a stale UI, silently.
   #
   # TWO BUNDLES SINCE 2026-09-03. packages/tm8-ui is the product UI at `/`;
   # packages/tm8_ui_2.0 is the alternate at `/ui-2.0/`, from `dist-2.0`.
@@ -330,47 +330,33 @@ if [[ "$BUILD_UI" == 1 ]]; then
   # zero-restart swap. Either one makes a vite build write THROUGH it into the
   # other package. Remove them before building; idempotent, and a no-op on a box
   # that never had one.
-  for stale in "$DIR/packages/tm8-ui/dist" "$DIR/packages/tm8_ui_2.0/dist"; do
+  for stale in "$DIR/packages/tm8-ui/redesign-1.0" "$DIR/packages/tm8-ui/dist" "$DIR/packages/tm8_ui_2.0/dist"; do
     if [[ -L "$stale" ]]; then
       rm -f "$stale"
       rok "removed stale symlink $stale -> (gone)"
     fi
   done
 
-  say "building the product UI bundle (separate vite build — prod serves dist)"
+  say "building the product UI bundle (separate vite build — prod serves redesign-1.0)"
   runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8-ui' && umask 022 && bun run build >/dev/null" \
     || rdie "vite build failed — nothing has been stopped"
-  [[ -f "$DIR/packages/tm8-ui/dist/index.html" ]] || rdie "vite build reported success but dist/index.html is missing"
+  [[ -f "$DIR/packages/tm8-ui/redesign-1.0/index.html" ]] || rdie "vite build reported success but redesign-1.0/index.html is missing"
   rok "product UI bundle built"
 
-  # NOT `rdie` ON FAILURE, unlike the product UI: this bundle is optional. A
-  # deploy that cannot build the alternate UI must still ship the product one —
-  # failing the whole rollout over a rollback affordance would make the
-  # affordance more dangerous than the thing it exists to protect against.
   say "building the alternate 2.0 UI bundle (/ui-2.0/, from dist-2.0)"
-  if runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8_ui_2.0' && umask 022 && bun run build >/dev/null" \
-     && [[ -f "$DIR/packages/tm8_ui_2.0/dist-2.0/index.html" ]]; then
-    rok "alternate UI bundle built"
-  else
-    say "! 2.0 UI build failed — shipping without it; the version switch will report it unavailable"
-  fi
+  runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8_ui_2.0' && umask 022 && bun run build >/dev/null" \
+    || rdie "alternate 2.0 UI build failed — the operator URL would be broken"
+  [[ -f "$DIR/packages/tm8_ui_2.0/dist-2.0/index.html" ]] \
+    || rdie "vite build reported success but dist-2.0/index.html is missing"
+  rok "alternate UI bundle built"
 
-  # /etc/tm8/prod.env is 0600 root:root, so the checkout update alone cannot move
-  # these pointers — and a stale TM8_UI_DIR serves the WRONG UI with every other
-  # check green. Fix them here, where we are root anyway. Both edits are
-  # idempotent: no-ops once the env file already points right.
-  if grep -q "packages/tm8_ui_2.0/dist" "$ENVFILE"; then
-    sed -i 's|packages/tm8_ui_2.0/dist|packages/tm8-ui/dist|' "$ENVFILE"
-    rok "TM8_UI_DIR moved to packages/tm8-ui/dist in $ENVFILE"
-  fi
-  # The mount is opt-in and this box has never had the variable. Without it
-  # /ui-2.0/ 404s and the switch refuses with its reason — correct, but not what
-  # the swap asked for, so seed it rather than leaving it to be noticed.
-  if ! grep -q '^TM8_UI_2_0_DIR=' "$ENVFILE"; then
-    sed -i '/^TM8_UI_1_0_DIR=/d' "$ENVFILE"
-    printf 'TM8_UI_2_0_DIR=%s/packages/tm8_ui_2.0/dist-2.0\n' "$DIR" >> "$ENVFILE"
-    rok "TM8_UI_2_0_DIR seeded in $ENVFILE (the /ui-2.0/ mount)"
-  fi
+  # /etc/tm8/prod.env is 0600 root:root, so the checkout update alone cannot
+  # move these pointers. Run the checked-in, regression-tested rewrite from
+  # the deployed ref; its keys are anchored so one UI variable cannot corrupt
+  # another.
+  bash "$DIR/deploy/utho/repair-ui-env.sh" "$ENVFILE" "$DIR" \
+    || rdie "could not repair the product and operator UI pointers"
+  rok "UI pointers repaired: product redesign-1.0, operator /ui-2.0/ dist-2.0"
 else
   say "staging runs vite DEV against source — no UI build (the checkout already updated it)"
 fi
@@ -414,6 +400,18 @@ for u in $UNITS; do
   [[ "$a" == active ]] || rdie "$u is $a after deploy"
 done
 rok "units active: $UNITS"
+if [[ "$BUILD_UI" == 1 ]]; then
+  main_pid="$(systemctl show -p MainPID --value "${UNITS%% *}")"
+  tr '\0' '\n' < "/proc/$main_pid/environ" | grep -Fx "TM8_UI_DIR=$DIR/packages/tm8-ui/redesign-1.0" >/dev/null \
+    || rdie "running server does not carry the redesign-1.0 TM8_UI_DIR"
+  tr '\0' '\n' < "/proc/$main_pid/environ" | grep -Fx "TM8_UI_2_0_DIR=$DIR/packages/tm8_ui_2.0/dist-2.0" >/dev/null \
+    || rdie "running server does not carry the corrected TM8_UI_2_0_DIR"
+  [[ "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/")" == 200 ]] \
+    || rdie "product UI index did not answer 200"
+  [[ "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/ui-2.0/index.html")" == 200 ]] \
+    || rdie "operator-only /ui-2.0/index.html did not answer 200"
+  rok "UI paths verified: / and /ui-2.0/index.html"
+fi
 # Prove the checkout is what we asked for, rather than trusting the steps above.
 got="$(git -c safe.directory="$DIR" -C "$DIR" rev-parse HEAD)"
 [[ "$got" == "$SHA" ]] || rdie "checkout is $got, expected $SHA"

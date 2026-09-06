@@ -98,14 +98,7 @@ import { newLaunchMutationId } from '../domain/launch';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
-/**
- * The four narrowing controls, named once.
- *
- * A UNION AND NOT FOUR BOOLEANS: one popover at a time is the rule the filter
- * bar has always enforced, and four independent flags would let the sort menu
- * and a filter picker sit open over each other. On the phone each of these is a
- * bottom sheet, where two at once is not a cosmetic problem but two scrims.
- */
+/** One narrowing surface at a time; phone shortcuts still open its sections. */
 export type ListPicker = 'filters' | 'people' | 'sets' | 'sort';
 
 /**
@@ -1472,10 +1465,18 @@ function CategoryTabs({
           role="tab"
           aria-selected={tab.id === activeTabId}
           className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
+          data-category={tab.id}
           onClick={() => onTab(tab.id)}
           {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
         >
-          {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
+          {oneSurface ? (
+            <CategoryGlyph category={tab.id} />
+          ) : (
+            <>
+              <span className="lp__tab-label">{tab.label}</span>
+              <span className="lp__tab-count">{tabLabel(tab)}</span>
+            </>
+          )}
         </button>
       ))}
     </div>
@@ -1490,7 +1491,6 @@ function FilterRow({
   onToggleOption,
   sortKey,
   onSort,
-  compact,
   people,
   selectedPeople,
   onTogglePerson,
@@ -1501,7 +1501,7 @@ function FilterRow({
   onLens,
 }: {
   config: KindConfig;
-  /** Which of the four is open. Held by the panel — see `ListPicker`. */
+  /** Which narrowing surface is open. Held by the panel — see `ListPicker`. */
   picker: ListPicker | null;
   onPicker: (picker: ListPicker | null) => void;
   selected: Readonly<Record<string, readonly string[]>>;
@@ -1550,11 +1550,146 @@ function FilterRow({
     }),
   );
 
+  const filterOptions = config.list.filters.map((spec) => (
+    <div key={spec.id} className="lp__filtersection">
+      <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
+      {spec.options.map((option) => {
+        const on = (selected[spec.id] ?? []).includes(option.id);
+        const blocked = needsViewer(option.filter) && !viewerActorId;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={on}
+            disabled={blocked}
+            title={
+              blocked
+                ? 'Not available: this workspace has not resolved who you are, so “me” has no id to match.'
+                : undefined
+            }
+            className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+            onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
+          >
+            {option.label}
+            {on ? <span className="lp__filtercheck">✓</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  ));
+
+  const peopleOptions = people.length > 1 ? (
+    <div className="lp__filtersection">
+      <div className="lp__filtergroup">PEOPLE</div>
+      <button
+        type="button"
+        role="menuitemcheckbox"
+        aria-checked={selectedPeople.length === 0}
+        className={selectedPeople.length === 0 ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+        onClick={() => selectedPeople.forEach(onTogglePerson)}
+      >
+        Anyone
+        {selectedPeople.length === 0 ? <span className="lp__filtercheck">✓</span> : null}
+      </button>
+      {people.map((person) => {
+        const on = selectedPeople.includes(person.id);
+        return (
+          <button
+            key={person.id}
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={on}
+            aria-label={person.displayName}
+            className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+            onClick={() => onTogglePerson(person.id)}
+          >
+            <Avatar
+              actorId={person.id}
+              provenance={person.isAgent ? 'agent' : 'human'}
+              label={person.displayName}
+              size={20}
+              src={person.avatar ?? null}
+            />
+            <span>{person.displayName}</span>
+            {on ? <span className="lp__filtercheck">✓</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
+  const membershipOptions = membership && membershipSets !== undefined ? (
+    <div className="lp__filtersection">
+      <div className="lp__filtergroup">{membership.label.toUpperCase()}</div>
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={!lensSet}
+        className={!lensSet ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+        onClick={() => onLens(null)}
+      >
+        {`All ${membership.label.toLowerCase()}`}
+        {!lensSet ? <span className="lp__filtercheck">✓</span> : null}
+      </button>
+      {membershipSets.length === 0 ? (
+        <p className="lp__filterempty" data-testid="collection-lens-empty">
+          {`No ${membership.label.toLowerCase()} yet — create one from its own list. This menu offers the most recent page once any exist.`}
+        </p>
+      ) : (
+        membershipSets.map((set) => {
+          const on = lensSet?.id === set.id;
+          return (
+            <button
+              key={set.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={on}
+              className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+              data-testid="collection-lens-option"
+              onClick={() => onLens(on ? null : set.id)}
+            >
+              <KindIcon kind={set.kind} />
+              {set.title}
+              {on ? <span className="lp__filtercheck">✓</span> : null}
+            </button>
+          );
+        })
+      )}
+    </div>
+  ) : null;
+
+  const sortOptions = current ? (
+    <div className="lp__filtersection">
+      <div className="lp__filtergroup">SORT BY</div>
+      {sort.map((spec) => (
+        <button
+          key={spec.key}
+          type="button"
+          role="menuitemradio"
+          aria-checked={spec.key === current.key}
+          className={spec.key === current.key ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+          onClick={() => {
+            onSort(spec.key);
+            setPicker(null);
+          }}
+        >
+          {spec.label}
+          {spec.key === current.key ? <span className="lp__filtercheck">✓</span> : null}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  const activeCount = active.length + selectedPeople.length + (lensSet ? 1 : 0);
+  const hasNarrowing =
+    config.list.filters.length > 0 || people.length > 1 || membershipOptions !== null || current != null;
+
   /**
    * ONE BODY, TWO CONTAINERS — a hanging popover on a desktop, a bottom sheet
    * on a phone.
    *
-   * The four option lists are the same lists either way; what differs is the
+   * The option lists are the same lists either way; what differs is the
    * surface they arrive on. Writing them twice is how the phone's copy of the
    * collection lens ends up a release behind the desktop's, which is the
    * failure `MobileSheet`'s own header comment describes for the aux column.
@@ -1591,250 +1726,35 @@ function FilterRow({
 
   return (
     <div className="lp__filterbar" ref={barRef}>
-    <div className="lp__filters">
-      {/* Filter chips and the picker trigger. The lifecycle TABS are a
-          separate row above (CategoryTabs): tabs are a lifecycle TIER and filters
-          narrow WITHIN it, so they coexist — T0-1 draws both. They were an
-          either/or here only while work_session was the one kind with tabs,
-          and making tabs universal exposed that shortcut by deleting the
-          filter chips from every kind at once. */}
-      {active.map(({ spec, option }) => (
-        <button
-          key={`${spec.id}:${option.id}`}
-          type="button"
-          className="lp__chip lp__chip--active"
-          onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
-          title={`Clear filter: ${option.label}`}
-        >
-          {`${option.label} ✕`}
-        </button>
-      ))}
-      {selectedPeople.flatMap((actorId) => {
-        const person = people.find((candidate) => candidate.id === actorId);
-        return person ? [(
-          <button
-            key={`person:${person.id}`}
-            type="button"
-            className="lp__chip lp__chip--active lp__chip--person"
-            onClick={() => onTogglePerson(person.id)}
-            title={`Clear people filter: ${person.displayName}`}
-          >
-            <Avatar
-              actorId={person.id}
-              provenance={person.isAgent ? 'agent' : 'human'}
-              label={person.displayName}
-              size={15}
-              src={person.avatar ?? null}
-            />
-            <span>{`${person.displayName} ✕`}</span>
-          </button>
-        )] : [];
-      })}
-      {config.list.filters.length > 0 ? (
-        <button
-          type="button"
-          className="lp__chip"
-          onClick={() => setPicker(picker === 'filters' ? null : 'filters')}
-          aria-expanded={picker === 'filters'}
-          aria-haspopup="menu"
-          data-testid="filter-trigger"
-        >
-          filter ▾
-        </button>
-      ) : null}
-      {people.length > 1 ? (
-        <button
-          type="button"
-          className={selectedPeople.length > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
-          onClick={() => setPicker(picker === 'people' ? null : 'people')}
-          aria-expanded={picker === 'people'}
-          aria-haspopup="menu"
-          data-testid="people-filter-trigger"
-        >
-          {selectedPeople.length > 0 ? `people · ${selectedPeople.length}` : 'people ▾'}
-        </button>
-      ) : null}
-      {/* The collection lens trigger. Rendered exactly when the registry
-          declares the lens AND the host wired a sets source — an unwired
-          source is the panel's ordinary "this host has no X" absence, the
-          same rule the people chip and `boardFor` follow. The active lens
-          renders as its own dismissable chip like every other active filter. */}
-      {membership && membershipSets !== undefined ? (
-        lensSet ? (
+      <div className="lp__filters">
+        {hasNarrowing ? (
           <button
             type="button"
-            className="lp__chip lp__chip--active"
-            onClick={() => onLens(null)}
-            title={`Clear ${membership.label.toLowerCase()} lens: ${lensSet.title}`}
-            data-testid="collection-lens-chip"
-          >
-            {`${lensSet.title} ✕`}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="lp__chip"
-            onClick={() => setPicker(picker === 'sets' ? null : 'sets')}
-            aria-expanded={picker === 'sets'}
+            className={activeCount > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
+            onClick={() => setPicker(picker === 'filters' ? null : 'filters')}
+            aria-expanded={picker === 'filters'}
             aria-haspopup="menu"
-            data-testid="collection-lens-trigger"
+            aria-label={activeCount > 0 ? `Filters, ${activeCount} active` : 'Filters'}
+            data-testid="filter-trigger"
           >
-            {`${membership.label.toLowerCase()} ▾`}
+            <span aria-hidden>≡</span>
+            <span>Filters</span>
+            {activeCount > 0 ? <span className="lp__chip-count">{activeCount}</span> : null}
+            <span className="lp__chip-caret" aria-hidden>▾</span>
           </button>
-        )
-      ) : null}
-
-      <span className="lp__spacer" />
-
-      {/* A MENU, NOT A CYCLE. The chip used to advance to the next entry on
-          each click, which is a fine affordance for two options and unusable
-          for six: choosing `priority` from a list of six meant clicking
-          through up to five orders the user did not want, each one a real
-          query. It also never showed what the alternatives WERE. */}
-      {current ? (
-        <button
-          type="button"
-          className="lp__chip"
-          onClick={() => setPicker(picker === 'sort' ? null : 'sort')}
-          aria-expanded={picker === 'sort'}
-          aria-haspopup="menu"
-          title={`Sorted by ${current.label}`}
-          data-testid="sort-trigger"
-        >
-          {/* At the floor the sort chip collapses to its glyph — T0-3 frame 4
-              draws exactly `↓`. The chip never disappears. */}
-          {compact ? '↓' : `↓ ${current.label}`}
-        </button>
-      ) : null}
-
-    </div>
-      {narrowing('sort', 'Sort', 'sort-menu', 'lp__filtermenu lp__filtermenu--sort', (
+        ) : null}
+      </div>
+      {narrowing('filters', 'Filters', 'filter-menu', 'lp__filtermenu', (
         <>
-          <div className="lp__filtergroup">SORT BY</div>
-          {sort.map((spec) => (
-            <button
-              key={spec.key}
-              type="button"
-              role="menuitemradio"
-              aria-checked={spec.key === current?.key}
-              className={
-                spec.key === current?.key ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'
-              }
-              onClick={() => {
-                onSort(spec.key);
-                setPicker(null);
-              }}
-            >
-              {spec.label}
-              {spec.key === current?.key ? <span className="lp__filtercheck">✓</span> : null}
-            </button>
-          ))}
+          {filterOptions}
+          {peopleOptions}
+          {membershipOptions}
+          {sortOptions}
         </>
       ))}
-      {/* Rendered OUTSIDE the clipping row, inside the positioned bar: the row
-          keeps `overflow: hidden` as its floor guard, and the picker is still
-          free to overflow it. No hardcoded offset — `top: 100%` of the bar
-          works whether or not this kind renders a header-actions row. */}
-      {narrowing('filters', 'Filter', 'filter-menu', 'lp__filtermenu', (
-        <>
-          {config.list.filters.map((spec) => (
-            <div key={spec.id}>
-              <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
-              {spec.options.map((option) => {
-                const on = (selected[spec.id] ?? []).includes(option.id);
-                // OFFERED AND REFUSED, never offered and inert. An option
-                // naming the viewer with no viewer resolved would query
-                // nobody and answer "you have nothing", which is a claim
-                // about the data made out of ignorance about the identity.
-                const blocked = needsViewer(option.filter) && !viewerActorId;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={on}
-                    disabled={blocked}
-                    title={
-                      blocked
-                        ? 'Not available: this workspace has not resolved who you are, so “me” has no id to match.'
-                        : undefined
-                    }
-                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                    onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
-                  >
-                    {option.label}
-                    {on ? <span className="lp__filtercheck">✓</span> : null}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </>
-      ))}
-      {membership ? narrowing('sets', membership.label, 'collection-lens-menu', 'lp__filtermenu', (
-        <>
-          <div className="lp__filtergroup">{membership.label.toUpperCase()}</div>
-          {(membershipSets ?? []).length === 0 ? (
-            /* An empty page is a real answer, said in its own words — never a
-               bare menu that reads as "the space has none" when the truth may
-               be "none exist YET". The sets source is a bounded recency page,
-               so this is also where that bound is stated. */
-            <p className="lp__filterempty" data-testid="collection-lens-empty">
-              {`No ${membership.label.toLowerCase()} yet — create one from its own list. This menu offers the most recent page once any exist.`}
-            </p>
-          ) : (
-            (membershipSets ?? []).map((set) => {
-              const on = lensSet?.id === set.id;
-              return (
-                <button
-                  key={set.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={on}
-                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                  data-testid="collection-lens-option"
-                  onClick={() => {
-                    onLens(on ? null : set.id);
-                    setPicker(null);
-                  }}
-                >
-                  <KindIcon kind={set.kind} />
-                  {set.title}
-                  {on ? <span className="lp__filtercheck">✓</span> : null}
-                </button>
-              );
-            })
-          )}
-        </>
-      )) : null}
-      {narrowing('people', 'People', 'people-filter-menu', 'lp__filtermenu', (
-        <>
-          <div className="lp__filtergroup">PEOPLE</div>
-          {people.map((person) => {
-            const on = selectedPeople.includes(person.id);
-            return (
-              <button
-                key={person.id}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={on}
-                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                onClick={() => onTogglePerson(person.id)}
-              >
-                <Avatar
-                  actorId={person.id}
-                  provenance={person.isAgent ? 'agent' : 'human'}
-                  label={person.displayName}
-                  size={20}
-                  src={person.avatar ?? null}
-                />
-                <span>{person.displayName}</span>
-                {on ? <span className="lp__filtercheck">✓</span> : null}
-              </button>
-            );
-          })}
-        </>
-      ))}
+      {narrowing('sort', 'Sort', 'sort-menu', 'lp__filtermenu', sortOptions)}
+      {membership ? narrowing('sets', membership.label, 'collection-lens-menu', 'lp__filtermenu', membershipOptions) : null}
+      {narrowing('people', 'People', 'people-filter-menu', 'lp__filtermenu', peopleOptions)}
     </div>
   );
 }

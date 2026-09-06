@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 /**
- * Serving config for the PROD build — dist/ on 7777, tm8-server on 7778.
+ * Serving config for the PROD build — redesign-1.0/ on 7777, tm8-server on 7778.
  *
  * Not `vite dev`: this serves the built bundle from dist/ and nothing else.
  * The proxy is the same same-origin plumbing vite.config.ts documents —
@@ -20,6 +20,9 @@ const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:7778';
 const port = Number(process.env.TM8_UI_PORT ?? 7777);
 
 export default defineConfig({
+  build: {
+    outDir: 'redesign-1.0',
+  },
   preview: {
     port,
     strictPort: true,

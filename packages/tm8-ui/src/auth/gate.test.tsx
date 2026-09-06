@@ -1163,4 +1163,27 @@ describe('the workspace account menu — name + logout, in the app', () => {
     expect(text).toMatch(/server account|owner of this server/i);
     expect(text).not.toMatch(/local account/i);
   });
+
+  it('hosts workspace copy and prompt actions inside Account, not global chrome', async () => {
+    const onOpenPrompts = vi.fn();
+    function AppWithSecondaryActions() {
+      return (
+        <div data-testid="the-app">
+          <AccountMenu
+            actor={DISPLAY_ACTOR}
+            onOpenPrompts={onOpenPrompts}
+            copyLinkSlot={<button type="button">Copy workspace link</button>}
+          />
+        </div>
+      );
+    }
+    render(<AuthGate><AppWithSecondaryActions /></AuthGate>);
+    await createAccountThroughTheUI('amber', PASSWORD);
+    fireEvent.click(screen.getByTestId('account-menu-trigger'));
+
+    const menu = screen.getByTestId('auth-account-menu');
+    expect(within(menu).getByRole('button', { name: 'Copy workspace link' })).toBeTruthy();
+    fireEvent.click(within(menu).getByRole('button', { name: 'Prompt library' }));
+    expect(onOpenPrompts).toHaveBeenCalledOnce();
+  });
 });

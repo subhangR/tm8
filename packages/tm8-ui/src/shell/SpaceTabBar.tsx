@@ -1,7 +1,6 @@
 /**
  * SpaceTabBar — the top row: product mark, the server⋄space switcher slot,
- * the top-level TABS, palette hint, the inbox bell, copy-link
- * slot, account avatar.
+ * the top-level tabs, palette hint, inbox bell and account menu.
  *
  * REVISION 20 (Help/top-tab ruling, 2026-08-20): the shipped row is exactly
  * Home | Work | Board | Craft | Graph | Settings | Help. Board is the client-
@@ -54,7 +53,6 @@
  * canvas would be restoring a retired control.
  */
 import type { ReactNode } from 'react';
-import { BrandMark } from '../kit';
 
 /** One top-level tab — a menu GROUP, mapped by the host. */
 export interface ShellTab {
@@ -86,15 +84,9 @@ export interface SpaceTabBarProps {
   onGoHome?(): void;
   /** Opens the Inbox screen — the bell. Absent, the bell renders disabled. */
   onOpenInbox?(): void;
-  /** Account menu — theme's home per D1. */
+  /** Account menu — theme and secondary workspace actions live here. */
   onOpenAccount?(): void;
   onOpenPalette?(): void;
-  /**
-   * Opens the prompt catalog — every system prompt tm8 sends an agent.
-   * Optional like the rest of the bar's callbacks, so a bar rendered without a
-   * host (every existing shell test) simply does not show the control.
-   */
-  onOpenPrompts?(): void;
   /** Monogram for the account avatar. */
   accountInitial?: string;
   /**
@@ -105,38 +97,31 @@ export interface SpaceTabBarProps {
    * existing shell test, and the app before anyone signs in — is unchanged.
    */
   accountSlot?: ReactNode;
-  /**
-   * COPY LINK for whatever is currently on screen.
-   *
-   * A slot, not a rendered control: the bar has no business knowing how a link
-   * is built or what a clipboard refusal looks like. Left undefined the bar is
-   * unchanged, so every existing shell test and a bar rendered with no host
-   * keep working.
-   */
-  shareSlot?: ReactNode;
 }
 
 export function SpaceTabBar(props: SpaceTabBarProps) {
   return (
     <header className="shell-tabbar" data-testid="space-tab-bar">
-      {props.onGoHome ? (
-        <button
-          type="button"
-          className="shell-tabbar__mark shell-tabbar__mark--door"
-          data-testid="go-home"
-          aria-label="tm8 — back to conversations"
-          title="Back to conversations"
-          onClick={props.onGoHome}
-        >
-          <BrandMark />
-        </button>
-      ) : (
-        <div className="shell-tabbar__mark" aria-label="tm8">
-          <BrandMark />
-        </div>
-      )}
+      <div className="shell-tabbar__side shell-tabbar__side--start">
+        {props.onGoHome ? (
+          <button
+            type="button"
+            className="shell-tabbar__mark shell-tabbar__mark--door"
+            data-testid="go-home"
+            aria-label="tm8 — back to conversations"
+            title="Back to conversations"
+            onClick={props.onGoHome}
+          >
+            tm8
+          </button>
+        ) : (
+          <div className="shell-tabbar__mark" aria-label="tm8">
+            tm8
+          </div>
+        )}
 
-      {props.switcherSlot ?? null}
+        {props.switcherSlot ?? null}
+      </div>
 
       {props.tabs && props.tabs.length > 0 ? (
         <nav className="shell-tabbar__tabs" role="tablist" aria-label="Screens">
@@ -158,59 +143,43 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
         </nav>
       ) : null}
 
-      <div className="shell-tabbar__spacer" />
-
-      {props.onOpenPrompts ? (
+      <div className="shell-tabbar__side shell-tabbar__side--end">
         <button
           type="button"
-          className="shell-tabbar__prompts"
-          onClick={props.onOpenPrompts}
-          data-testid="open-prompts"
-          title="System prompts — everything tm8 says to an agent"
+          className="shell-tabbar__palette"
+          onClick={props.onOpenPalette}
+          aria-label="Open command palette"
+          title="Open command palette (/)"
         >
-          prompts
+          <span className="shell-tabbar__palette-glyph" aria-hidden>⌕</span>
+          <span className="shell-tabbar__palette-label">Search</span>
+          <kbd>/</kbd>
         </button>
-      ) : null}
 
-      <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
-        / palette · ⌘K
-      </button>
-
-      {/* RETIRED 2026-08-20: Help now owns the final tab in the shipped menu.
-          Keep no duplicate `?` door in chrome. The view, route and palette
-          eligibility remain; only this dedicated control is gone. */}
-
-      {/* The bell keeps the D28 posture when no host wired it: focusable,
-          aria-disabled, with the reason on it — never hidden. */}
-      <button
-        type="button"
-        className="shell-tabbar__bell"
-        data-testid="open-inbox"
-        aria-disabled={props.onOpenInbox ? undefined : 'true'}
-        aria-label="Inbox"
-        title={props.onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'}
-        onClick={props.onOpenInbox ?? ((event) => event.preventDefault())}
-      >
-        <span aria-hidden="true">◹</span>
-      </button>
-
-      {props.shareSlot ?? null}
-
-      {/* D1: no ◐ toggle here. Theme lives in the account menu. THAT MENU NOW
-          EXISTS and arrives through `accountSlot` — the fallback below is only
-          for a bar rendered WITHOUT one, and while that is the case the label
-          keeps saying the true thing: this button toggles the theme. */}
-      {props.accountSlot ?? (
         <button
           type="button"
-          className="shell-tabbar__avatar"
-          onClick={props.onOpenAccount}
-          aria-label="Toggle theme"
-          title="Toggle theme"
+          className="shell-tabbar__bell"
+          data-testid="open-inbox"
+          aria-disabled={props.onOpenInbox ? undefined : 'true'}
+          aria-label="Inbox"
+          title={props.onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'}
+          onClick={props.onOpenInbox ?? ((event) => event.preventDefault())}
         >
-          {props.accountInitial ?? '·'}
+          <span aria-hidden="true">◹</span>
         </button>
-      )}
+
+        {props.accountSlot ?? (
+          <button
+            type="button"
+            className="shell-tabbar__avatar"
+            onClick={props.onOpenAccount}
+            aria-label="Toggle theme"
+            title="Toggle theme"
+          >
+            {props.accountInitial ?? '·'}
+          </button>
+        )}
+      </div>
     </header>
   );
 }

@@ -988,10 +988,13 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
     );
     const chips = container.querySelectorAll('.lp__filters .lp__chip');
-    // Nothing selected: exactly the trigger + the sort chip.
-    expect(chips).toHaveLength(2);
+    // Filters, people, collections, archive and sort share one bounded door.
+    expect(chips).toHaveLength(1);
     expect(chips.length).toBeLessThan(optionCount);
-    expect(getByTestId('filter-trigger').textContent).toBe('filter ▾');
+    expect(getByTestId('filter-trigger').getAttribute('aria-label')).toBe('Filters');
+    expect(container.querySelector('[data-testid="sort-trigger"]')).toBeNull();
+    expect(container.querySelector('[data-testid="people-filter-trigger"]')).toBeNull();
+    expect(container.querySelector('[data-testid="collection-lens-trigger"]')).toBeNull();
   });
 
   it('people filtering is membership-conditional and uses createdByIds', () => {
@@ -1004,9 +1007,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
     // Authorship in the result page is deliberately irrelevant: a one-member
-    // space keeps the exact two-chip row it had before this feature.
+    // space keeps the one unified filter control without a People section.
     expect(solo.queryByTestId('people-filter-trigger')).toBeNull();
-    expect(solo.container.querySelectorAll('.lp__filters .lp__chip')).toHaveLength(2);
+    expect(solo.container.querySelectorAll('.lp__filters .lp__chip')).toHaveLength(1);
     solo.unmount();
 
     const seen: QueryFilter[] = [];
@@ -1022,12 +1025,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         ctx={ctx}
       />,
     );
-    fireEvent.click(multi.getByTestId('people-filter-trigger'));
-    const menu = multi.getByTestId('people-filter-menu');
-    const options = within(menu).getAllByRole('menuitemcheckbox');
-    expect(options).toHaveLength(2);
+    fireEvent.click(multi.getByTestId('filter-trigger'));
+    const menu = multi.getByTestId('filter-menu');
     expect(menu.querySelectorAll('.kit-avatar')).toHaveLength(2);
-    fireEvent.click(options[0]!);
+    fireEvent.click(within(menu).getByRole('menuitemcheckbox', { name: ada.displayName }));
     expect(seen.some((filter) =>
       Array.isArray(filter.createdByIds) && filter.createdByIds.includes(ada.id),
     )).toBe(true);
@@ -1039,7 +1040,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityListPanel kind="task" rowsFor={capturing} members={[ada]} ctx={ctx} />,
     );
     expect(multi.queryByTestId('people-filter-trigger')).toBeNull();
-    expect(multi.container.querySelector('.lp__chip--person')).toBeNull();
+    expect(multi.getByTestId('filter-trigger').getAttribute('aria-label')).toBe('Filters');
     // The first transition render necessarily observes the old state before
     // the membership effect clears it. A subsequent render must carry none.
     seen.length = 0;
@@ -1061,19 +1062,18 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(options).toHaveLength(optionCount);
   });
 
-  it('selecting adds ONE active chip carrying its clear affordance; clearing removes it', () => {
+  it('selecting updates the unified count; selecting again clears it', () => {
     const { container, getByTestId, getByRole } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
     );
     fireEvent.click(getByTestId('filter-trigger'));
     fireEvent.click(getByRole('menuitemcheckbox', { name: /Blocked/ }));
 
-    const active = container.querySelectorAll('.lp__chip--active');
-    expect(active).toHaveLength(1);
-    // The word survives with its clear glyph — never truncated to fit.
-    expect(active[0]!.textContent).toBe('Blocked ✕');
+    expect(getByTestId('filter-trigger').getAttribute('aria-label')).toBe('Filters, 1 active');
+    expect(container.querySelectorAll('.lp__chip--active')).toHaveLength(1);
 
-    fireEvent.click(active[0]!);
+    fireEvent.click(getByRole('menuitemcheckbox', { name: /Blocked/ }));
+    expect(getByTestId('filter-trigger').getAttribute('aria-label')).toBe('Filters');
     expect(container.querySelectorAll('.lp__chip--active')).toHaveLength(0);
   });
 
@@ -1104,12 +1104,13 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(union, `no query carried the unioned filter; saw ${JSON.stringify(seen)}`).toBeTruthy();
   });
 
-  it('at the floor the sort chip collapses to its glyph and never disappears', () => {
-    const { container } = render(
+  it('at the floor the unified Filters control stays singular and visible', () => {
+    const { container, getByTestId } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} compact />,
     );
     const chips = [...container.querySelectorAll('.lp__filters .lp__chip')];
-    expect(chips.map((c) => c.textContent)).toContain('↓');
+    expect(chips).toHaveLength(1);
+    expect(getByTestId('filter-trigger').getAttribute('aria-label')).toBe('Filters');
   });
 
   it('both popovers dismiss on Escape and on an outside click', () => {

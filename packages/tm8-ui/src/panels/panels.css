@@ -1611,34 +1611,31 @@
 }
 .cv2-root .lp__quick:hover { background: var(--pn-hover); }
 
-/*
- * `overflow: hidden` is kept deliberately: it is the floor guard that stops a
- * long chip from pushing the row wider than the panel. It is NOT the thing
- * that bounds the chip COUNT — the row is bounded by construction now (active
- * selections + one trigger), because relying on clipping to hide surplus
- * content is what turned ten chips into a silently truncated row.
- */
 .cv2-root .lp__filters {
   flex: none;
-  height: 32px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 0 10px;
+  padding: 5px 10px;
   border-bottom: 1px solid var(--pn-line);
-  overflow: hidden;
+  overflow: visible;
 }
-.cv2-root .lp--compact .lp__filters { height: 28px; gap: 4px; padding: 0 8px; }
+.cv2-root .lp--compact .lp__filters { min-height: 34px; padding: 4px 8px; }
 .cv2-root .lp__chip {
   flex: none;
   appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
-  background: var(--pn-card);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  background: transparent;
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: 2px 8px;
+  border-radius: var(--pn-r-sm);
+  padding: 4px 8px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1651,12 +1648,22 @@
 .cv2-root .lp__chip:hover { background: var(--pn-hover); }
 .cv2-root .lp__chip--active {
   font-weight: 600;
-  color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
-  border-color: rgba(var(--pn-brand-rgb), 0.5);
+  color: var(--pn-info);
+  background: var(--pn-info-soft);
+  border-color: color-mix(in srgb, var(--pn-info) 35%, var(--pn-line));
 }
-.cv2-root[data-theme='dark'] .lp__chip--active,
-[data-theme='dark'] .cv2-root .lp__chip--active { color: var(--pn-brand); }
+.cv2-root .lp__chip-count {
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-info);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+}
+.cv2-root .lp__chip-caret { color: var(--pn-ink-4); font-size: 9px; }
 
 /* Category tabs are a segmented control, not chips: they are SHELVES a row
    moves between by living, not filters a viewer toggles.
@@ -2111,8 +2118,12 @@
 /* Tile count badges (108): glyph+count for docs/memories/messages, beside the
    PR chips in the badge sub-row. Zero/absent counts render no badge at all. */
 .cv2-root .pn-st__counts { display: inline-flex; align-items: center; gap: var(--pn-space-2); flex: 0 0 auto; }
-.cv2-root .pn-st__count { display: inline-flex; align-items: center; gap: 3px; color: var(--pn-ink-3); font-family: var(--pn-mono); font-size: 10px; line-height: 1; }
-.cv2-root .pn-st__count--human { color: var(--pn-brand-2); background: var(--pn-brand-soft); border: 1px solid rgba(var(--pn-brand-rgb), 0.35); border-radius: 999px; padding: 3px 6px; }
+.cv2-root .pn-st__count { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; color: var(--pn-ink-3); background: var(--pn-idle-soft); border-radius: 999px; font-family: var(--pn-mono); font-size: 10px; line-height: 1; }
+.cv2-root .pn-st__count[data-count-kind='doc'] { color: var(--pn-info); background: var(--pn-info-soft); }
+.cv2-root .pn-st__count[data-count-kind='memory'] { color: var(--pn-pr-merged); background: var(--pn-pr-merged-soft); }
+.cv2-root .pn-st__count[data-count-kind='human-message'] { color: var(--pn-brand-2); background: var(--pn-brand-soft); }
+.cv2-root .pn-st__count[data-count-kind='agent-message'] { color: var(--pn-run); background: var(--pn-run-soft); }
+.cv2-root .pn-st__count--human { color: var(--pn-brand-2); background: var(--pn-brand-soft); }
 .cv2-root .pn-st__count svg { flex: 0 0 auto; }
 .cv2-root .pn-st__statusglyph { width: 16px; height: 16px; flex: 0 0 auto; }
 .cv2-root .pn-st__actions {
@@ -2705,14 +2716,19 @@
   top: 100%;
   left: 8px;
   z-index: 20;
-  width: 176px;
-  max-height: 240px;
+  width: min(280px, calc(100% - 16px));
+  max-height: min(480px, 68vh);
   overflow: auto;
   padding: 4px;
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: 8px;
   box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .lp__filtersection + .lp__filtersection {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--pn-line);
 }
 /* The sort menu hangs off the RIGHT end of the bar, under its own chip —
    inheriting `left: 8px` would drop it under the filter trigger at the far
@@ -2864,11 +2880,54 @@
    the filter chips below narrow within it. T0-1 draws both. */
 .cv2-root .lp__tierrow {
   flex: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 10px 6px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--pn-line);
+  background: color-mix(in srgb, var(--pn-card) 48%, transparent);
 }
+.cv2-root .lp__tierrow .lp__tab {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 6px 2px 5px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--pn-ui);
+}
+.cv2-root .lp__tierrow .lp__tab:hover { background: var(--pn-hover); }
+.cv2-root .lp__tierrow .lp__tab--active {
+  background: transparent;
+  border-bottom-color: var(--pn-brand);
+}
+.cv2-root .lp__tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-size: 9px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .lp__tab--active .lp__tab-label { color: var(--pn-ink); font-weight: 700; }
+.cv2-root .lp__tab-count {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--pn-idle);
+}
+.cv2-root .lp__tab[data-category='to_do'] .lp__tab-count { color: var(--pn-wait); }
+.cv2-root .lp__tab[data-category='in_progress'] .lp__tab-count { color: var(--pn-info); }
+.cv2-root .lp__tab[data-category='done'] .lp__tab-count { color: var(--pn-run); }
+.cv2-root .lp__tab[data-category='cancelled'] .lp__tab-count { color: var(--pn-block); }
 /* ---------------------------------------------------------------------------
    The inline launch flow (D44)
    ---------------------------------------------------------------------------

@@ -32,11 +32,9 @@ const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
  *     `tm8-ui/src/pwa/service-worker.js`; changing it means changing all three
  *     and rebuilding that bundle.
  *
- *  2. `build.outDir` is the default `dist`, and `TM8_UI_DIR` names it. The old
- *     `dist-1.0` override was a production interlock against a stale
- *     root-owned `/etc/tm8/prod.env`; that pointer has since been rewritten and
- *     `deploy/utho/deploy.sh` removes the legacy `dist` symlink before building,
- *     so emitting `dist` here no longer risks repointing production.
+ *  2. `build.outDir` is `redesign-1.0`, and `TM8_UI_DIR` names it. The previous
+ *     `dist` remains untouched during a build so production has a byte-for-byte
+ *     rollback target while the redesigned shell is verified.
  *
  *  3. `pwaShell` IS INSTALLED. A service worker belongs to whichever bundle
  *     holds the root scope, and that is this one; `src/pwa/register.ts` guards
@@ -46,6 +44,9 @@ const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
  *     alternate UI needs to be worth having.
  */
 export default defineConfig({
+  build: {
+    outDir: 'redesign-1.0',
+  },
   plugins: [
     react(),
     /**

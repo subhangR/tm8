@@ -17,9 +17,13 @@
 // the version switch — at `/ui-1.0/`, from `dist-1.0`.
 //
 // 2026-09-03: THE OWNER REVERSED IT. `packages/tm8-ui` is the product UI at `/`
-// again, from `dist`, and `packages/tm8_ui_2.0` is the alternate — at
+// again, and `packages/tm8_ui_2.0` is the alternate — at
 // `/ui-2.0/`, from `dist-2.0`, on the same origin, and only when an operator
-// sets TM8_UI_2_0_DIR. Prod's TM8_UI_DIR must point at `packages/tm8-ui/dist`.
+// sets TM8_UI_2_0_DIR.
+//
+// 2026-09-05: the P0 shell redesign emits to `redesign-1.0`. The previous
+// `dist` directory is deliberately not overwritten, so it remains available
+// as the immediate rollback bundle.
 //
 // 2026-09-05: THE VERSION SWITCH IS GONE from the product UI's tab bar. The
 // build and serve story below is UNCHANGED — the mount still exists for an
@@ -94,7 +98,7 @@ export function uiDevStatus() {
 
 /** Path to the production UI bundle tm8-server serves as TM8_UI_DIR. */
 export function uiBundleDir() {
-  return join(UI_DIR, "dist");
+  return join(UI_DIR, "redesign-1.0");
 }
 
 export function uiBundleExists() {

@@ -205,7 +205,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
     <div className="tch-rootbar">
       <div className="tch-roots" role="tablist" aria-label={props.rootsLabel}>
         {chats ? (
-          <div className={`tch-rootcell${chats.active ? ' tch-rootcell--active' : ''}`}>
+          <div className={`tch-rootcell tch-rootcell--chats${chats.active ? ' tch-rootcell--active' : ''}`}>
             <button
               type="button"
               role="tab"
@@ -223,6 +223,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
               onClick={chats.onCreate}
             >
               <span aria-hidden>＋</span>
+              <span className="tch-rootcell__plus-label">New chat</span>
             </button>
           </div>
         ) : null}
@@ -361,6 +362,7 @@ function RowBirth({
       onClick={refusal ? (event) => event.preventDefault() : onBirth}
     >
       <span aria-hidden>{birth.glyph}</span>
+      <span className="tch-rootopt__birth-label">New</span>
     </button>
   );
 }

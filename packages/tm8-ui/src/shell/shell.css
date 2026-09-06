@@ -25,7 +25,8 @@
 .cv2-root .shell-tabbar {
   height: 24px;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   padding: 0 8px;
@@ -33,6 +34,8 @@
   border-bottom: 1px solid var(--pn-line);
 }
 .cv2-root .shell-tabbar__mark {
+  display: inline-flex;
+  align-items: center;
   font-family: var(--pn-mono);
   font-size: 11.5px;
   font-weight: 600;
@@ -137,25 +140,44 @@
   border: 0;
   padding: 0 4px;
 }
-.cv2-root .shell-tabbar__spacer {
-  flex: 1;
-}
 /* R1/R2 (2026-08-15): the top ROW hosts the identity block and the tabs.
    The tabs are the menu's groups — a segmented control, active tab raised. */
 .cv2-root .shell-tabbar {
   height: 36px;
   gap: 8px;
 }
+.cv2-root .shell-tabbar > * {
+  min-width: 0;
+  max-height: 100%;
+}
+.cv2-root .shell-tabbar__side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.cv2-root .shell-tabbar__side--start { justify-self: stretch; }
+.cv2-root .shell-tabbar__side--end {
+  justify-self: stretch;
+  justify-content: flex-end;
+}
 .cv2-root .shell-tabbar__tabs {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: 4px;
+  justify-self: center;
+  max-width: 100%;
   padding: 2px;
   background: var(--pn-hover);
   border-radius: var(--pn-r-pill);
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
 }
+.cv2-root .shell-tabbar__tabs::-webkit-scrollbar { display: none; }
 .cv2-root .shell-tabbar__tabs .shell-tabbar__tab {
+  flex: none;
   padding: 2px 10px;
   border: 1px solid transparent;
   border-radius: var(--pn-r-pill);
@@ -168,9 +190,12 @@
 /* The identity block, re-hosted (R1): the same SpaceSwitcher, drawn as a
    compact pill — space and server on one line, popover dropping below. */
 .cv2-root .shell-tabbar .shell-switcher {
+  flex: 0 1 auto;
+  min-width: 0;
   padding: 0;
 }
 .cv2-root .shell-tabbar .shell-switcher__trigger {
+  max-width: 220px;
   width: auto;
   height: 24px;
   padding: 0 8px;
@@ -197,14 +222,27 @@
   left: 0;
 }
 .cv2-root .shell-tabbar__palette {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
   font-family: var(--pn-mono);
   font-size: 9.5px;
   color: var(--pn-ink-3);
   border: 1px solid var(--pn-line);
   border-radius: 6px;
-  padding: 1px 6px;
+  padding: 0 7px;
   background: var(--pn-card);
   cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .shell-tabbar__palette kbd {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-4);
+  font: inherit;
 }
 .cv2-root .shell-tabbar__avatar {
   width: 18px;
@@ -229,6 +267,12 @@
   width: 18px;
   height: 18px;
   font-size: 9px;
+}
+@media (max-width: 1180px) {
+  .cv2-root .shell-tabbar__palette-label,
+  .cv2-root .shell-tabbar .shell-switcher__server-line { display: none; }
+  .cv2-root .shell-tabbar .shell-switcher__trigger { max-width: 170px; }
+  .cv2-root .shell-tabbar__tabs .shell-tabbar__tab { padding-inline: 8px; }
 }
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */

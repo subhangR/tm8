@@ -233,6 +233,12 @@ verify_prod() {
   [[ "$direct"  == *'"db"'*'"ok"'* ]] && ok "$TM8_PORT/health db:ok"              || { warn "$TM8_PORT/health: ${direct:-no answer}"; fail=1; }
   [[ "$proxied" == *'"db"'*'"ok"'* ]] && ok "$TM8_UI_PORT/health db:ok (proxied)" || { warn "$TM8_UI_PORT/health: ${proxied:-no answer}"; fail=1; }
 
+  local root_code alt_code
+  root_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$TM8_PORT/" 2>/dev/null || true)"
+  alt_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$TM8_PORT/ui-2.0/index.html" 2>/dev/null || true)"
+  [[ "$root_code" == 200 ]] && ok "$TM8_PORT/ product UI:200" || { warn "$TM8_PORT/ product UI:$root_code"; fail=1; }
+  [[ "$alt_code" == 200 ]] && ok "$TM8_PORT/ui-2.0/index.html:200" || { warn "$TM8_PORT/ui-2.0/index.html:$alt_code"; fail=1; }
+
   local ops
   ops="$(printf '%s' "$direct" | sed -n 's/.*"operations":\([0-9]*\).*/\1/p' || true)"
   if [[ -n "$ops" ]]; then dim "operations advertised: $ops"; fi
@@ -432,13 +438,12 @@ chmod +x packages/cli/dist/index.js
 ln -sf index.js packages/cli/dist/tm8
 ok "tsc -b"
 
-# A stale `packages/tm8-ui/dist` SYMLINK (it used to point at ../tm8_ui_2.0/dist,
-# bridging a root-owned /etc/tm8/prod.env that named the old path) would make the
-# product build below write THROUGH it into the alternate package. Remove it
-# first; idempotent, and a no-op on a tree that never had one.
-if [[ -L packages/tm8-ui/dist ]]; then
-  rm -f packages/tm8-ui/dist
-  warn "removed the legacy packages/tm8-ui/dist symlink"
+# A stale product-output SYMLINK would make the build below write THROUGH it
+# into another package. Remove it first; idempotent, and a no-op on a tree that
+# never had one.
+if [[ -L packages/tm8-ui/redesign-1.0 ]]; then
+  rm -f packages/tm8-ui/redesign-1.0
+  warn "removed a stale packages/tm8-ui/redesign-1.0 symlink"
 fi
 
 info "ui (vite build — this is a SEPARATE build; \`bun run build\` is tsc only) …"
@@ -447,25 +452,20 @@ info "ui (vite build — this is a SEPARATE build; \`bun run build\` is tsc only
 ok "vite build"
 
 # The ALTERNATE 2.0 UI, served at /ui-2.0/ for the version switch. It emits to
-# `dist-2.0`, NEVER `dist`: the product pointer TM8_UI_DIR names
-# packages/tm8-ui/dist, and a bundle built with `base: '/ui-2.0/'` sitting in a
+# `dist-2.0`, NEVER `redesign-1.0`: the product pointer TM8_UI_DIR names
+# packages/tm8-ui/redesign-1.0, and a bundle built with `base: '/ui-2.0/'` sitting in a
 # directory the root pointer might name would white-screen the site rather than
 # fail loudly. See packages/tm8_ui_2.0/vite.config.ts.
 #
-# NOT `die` ON FAILURE, unlike the product UI: this bundle is optional. A deploy
-# that cannot build the alternate UI must still ship the product one — failing
-# the whole rollout over a rollback affordance would make the affordance more
-# dangerous than the thing it exists to protect against.
 info "ui 2.0 (the alternate UI at /ui-2.0/) …"
-if (cd packages/tm8_ui_2.0 && node_modules/.bin/vite build); then
-  ok "vite build (2.0)"
-else
-  warn "2.0 UI build failed — shipping without it; the version switch will report it unavailable"
-fi
+(cd packages/tm8_ui_2.0 && node_modules/.bin/vite build) \
+  || die "2.0 UI build failed — the operator-only /ui-2.0/ address would break"
+ok "vite build (2.0)"
 
 [[ -f "$NEXT/packages/server/dist/index.js"    ]] || die "build produced no packages/server/dist/index.js"
-[[ -f "$NEXT/packages/tm8-ui/dist/index.html"  ]] || die "build produced no packages/tm8-ui/dist/index.html"
-ok "artifacts present: server/dist/index.js, tm8-ui/dist/index.html"
+[[ -f "$NEXT/packages/tm8-ui/redesign-1.0/index.html"  ]] || die "build produced no packages/tm8-ui/redesign-1.0/index.html"
+[[ -f "$NEXT/packages/tm8_ui_2.0/dist-2.0/index.html"  ]] || die "build produced no packages/tm8_ui_2.0/dist-2.0/index.html"
+ok "artifacts present: server/dist/index.js, tm8-ui/redesign-1.0/index.html, tm8_ui_2.0/dist-2.0/index.html"
 
 if (( BUILD_ONLY )); then
   elapsed=$(( $(date +%s) - started_at ))

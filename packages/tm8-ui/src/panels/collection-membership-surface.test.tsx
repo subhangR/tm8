@@ -76,25 +76,27 @@ describe('the collection lens on the list surface', () => {
     expect(getKind('collection').list.membership).toBeDefined();
   });
 
-  it('does not render the trigger when the host wired no sets source', () => {
+  it('does not add a Collections section when the host wired no sets source', () => {
     const seam = recorder(tasks, []);
     const { queryByTestId } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} />,
     );
     // Same rule as boardFor: an unwired source is this host's honest absence.
-    expect(queryByTestId('collection-lens-trigger')).toBeNull();
+    fireEvent.click(queryByTestId('filter-trigger')!);
+    expect(queryByTestId('collection-lens-option')).toBeNull();
+    expect(queryByTestId('collection-lens-empty')).toBeNull();
   });
 
   it('picking a set issues REAL queries carrying the edge clause, and clearing retires it', () => {
     const seam = recorder(tasks, [tasks[0]!.id]);
-    const { getByTestId, getAllByTestId } = render(
+    const { getByTestId, getAllByTestId, getByRole } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} membershipSets={sets} />,
     );
 
     // Before the pick, nothing asked the members question.
     expect(seam.asks.some((ask) => carriesLens(ask.filter, collectionInbox.id))).toBe(false);
 
-    fireEvent.click(getByTestId('collection-lens-trigger'));
+    fireEvent.click(getByTestId('filter-trigger'));
     const option = getAllByTestId('collection-lens-option')
       .find((node) => node.textContent?.includes(collectionInbox.title));
     expect(option).toBeDefined();
@@ -103,11 +105,11 @@ describe('the collection lens on the list surface', () => {
     // The lens reached the seam: at least one band query narrows by the edge.
     expect(seam.asks.some((ask) => carriesLens(ask.filter, collectionInbox.id))).toBe(true);
 
-    // The active lens is a dismissable chip; clearing it stops the narrowing.
-    const chip = getByTestId('collection-lens-chip');
-    expect(chip.textContent).toContain(collectionInbox.title);
+    // The active lens is counted on the unified trigger; clearing happens in
+    // the same menu rather than creating another chip in the row.
+    expect(getByTestId('filter-trigger').getAttribute('aria-label')).toBe('Filters, 1 active');
     seam.asks.length = 0;
-    fireEvent.click(chip);
+    fireEvent.click(getByRole('menuitemradio', { name: /^All collections$/i }));
     expect(seam.asks.some((ask) => carriesLens(ask.filter, collectionInbox.id))).toBe(false);
   });
 
@@ -118,7 +120,7 @@ describe('the collection lens on the list surface', () => {
     const { getByTestId, getAllByTestId } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} membershipSets={sets} />,
     );
-    fireEvent.click(getByTestId('collection-lens-trigger'));
+    fireEvent.click(getByTestId('filter-trigger'));
     fireEvent.click(
       getAllByTestId('collection-lens-option')
         .find((node) => node.textContent?.includes(collectionInbox.title))!,
@@ -133,7 +135,7 @@ describe('the collection lens on the list surface', () => {
     const { getByTestId } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} membershipSets={[]} />,
     );
-    fireEvent.click(getByTestId('collection-lens-trigger'));
+    fireEvent.click(getByTestId('filter-trigger'));
     expect(getByTestId('collection-lens-empty').textContent).toMatch(/most recent page/i);
   });
 });

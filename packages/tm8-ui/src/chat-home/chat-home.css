@@ -145,7 +145,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--pn-paper);
+  background: var(--pn-surface);
 }
 
 .tch-conversation__head { padding-inline: var(--pn-space-4); }
@@ -168,6 +168,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: var(--pn-space-6) max(var(--pn-space-4), calc((100% - 760px) / 2));
 }
 
@@ -209,7 +210,11 @@
   font-size: var(--pn-fs-sm);
 }
 
-.tch-turn { margin-bottom: var(--pn-space-6); }
+.tch-turn {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto var(--pn-space-5);
+}
 
 .tch-turn__byline {
   display: flex;
@@ -217,7 +222,7 @@
   justify-content: flex-start;
   align-items: center;
   gap: 6px;
-  margin-bottom: var(--pn-space-2);
+  margin-bottom: 6px;
   color: var(--pn-ink-3);
   font-size: var(--pn-fs-fine);
 }
@@ -293,13 +298,14 @@
    stylesheets import in. Found by the transcript lane (D-VIS-1): a plain
    `.tch-user-body` lost that war and typed messages came out serif. */
 .cv2-root .md-root.tch-user-body {
-  max-width: 80%;
+  max-width: min(78%, 680px);
   width: fit-content;
   margin-left: 26px;
-  padding: 8px 11px;
-  border: 1px solid var(--pn-line);
+  padding: 10px 13px;
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-md);
   background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-sm);
@@ -315,7 +321,7 @@
    It takes the bubble's own 26px avatar gutter and its own sidedness, so a
    file you sent lands under your bubble on your side rather than drifting to
    the opposite margin. */
-.tch-turn__attachments { margin: 6px 0 0 26px; max-width: 80%; }
+.tch-turn__attachments { margin: 6px 0 0 26px; max-width: min(78%, 680px); }
 .cv2-root .tch-turn[data-self='true'] .tch-turn__attachments {
   margin-left: auto;
   justify-content: flex-end;
@@ -325,6 +331,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
+  max-width: 720px;
   margin-left: 26px;
 }
 
@@ -690,12 +697,25 @@ button.tch-entity-chip:hover {
   font-size: var(--pn-fs-micro);
 }
 
+.tch-turn-error,
+.tch-load-error {
+  padding: var(--pn-space-3);
+  border: 1px solid color-mix(in srgb, var(--pn-block) 28%, var(--pn-line));
+  border-radius: var(--pn-r-md);
+  background: var(--pn-block-soft);
+}
+
 .tch-load-error { flex-direction: column; margin: auto; }
-.tch-submit-error { margin: 0 4px 5px; }
+.tch-submit-error {
+  margin: 0 0 var(--pn-space-2);
+  padding: 6px 9px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-block-soft);
+}
 
 .tch-composer-wrap {
   flex: none;
-  width: min(760px, calc(100% - 32px));
+  width: min(800px, calc(100% - 32px));
   margin: 0 auto var(--pn-space-3);
   /* A query container, so the foot degrades by the COMPOSER's width, not the
      viewport's — the pane beside a 380px column and an open aside is far

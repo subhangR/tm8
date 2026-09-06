@@ -13,7 +13,7 @@
  * verb remain the LOCAL login account. Keeping those two identities explicit
  * avoids borrowing server authority for a browser-local credential.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ActorSummary } from '@tm8/contract';
 import { Avatar } from '../kit';
 import { useTheme, type Theme } from '../theme/useTheme';
@@ -31,6 +31,9 @@ export interface AccountMenuProps {
    * that opens nothing is the enabled-inert defect this component avoids.
    */
   onOpenAgentTools?: () => void;
+  /** Secondary workspace actions removed from the global bar. */
+  onOpenPrompts?: () => void;
+  copyLinkSlot?: ReactNode;
   /**
    * The one-line reason the tools still need attention, from `setupNudgeOf`.
    * Absent ⇒ nothing to say, and the row carries no nudge. This component does
@@ -49,6 +52,8 @@ export function AccountMenu({
   actor,
   onOpenAccountScreen,
   onOpenAgentTools,
+  onOpenPrompts,
+  copyLinkSlot,
   agentToolsNudge,
   theme: controlledTheme,
   onThemeChange,
@@ -157,6 +162,29 @@ export function AccountMenu({
                 ))}
               </span>
             </div>
+
+            {copyLinkSlot ? (
+              <div className="auth-menu__slot" data-testid="account-menu-copy-link">
+                {copyLinkSlot}
+              </div>
+            ) : null}
+
+            {onOpenPrompts ? (
+              <button
+                type="button"
+                className="auth-menu__row auth-menu__row--live"
+                onClick={() => {
+                  close();
+                  onOpenPrompts();
+                }}
+                data-testid="account-menu-prompts"
+              >
+                <span className="auth-menu__glyph" aria-hidden>
+                  ✦
+                </span>
+                Prompt library
+              </button>
+            ) : null}
 
             {onOpenAgentTools ? (
               <button
