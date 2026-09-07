@@ -191,9 +191,11 @@
 }
 
 /* ---------------------------------------------------------------------------
-   AttentionRequests — one entity's full escalation record, mounted as a
-   `pn-section` inside a detail body (and on the Activity tab for the terminal
-   and chat archetypes, which own their own height).
+   AttentionRequests — one entity's full escalation record, rendered INSIDE the
+   dock's sheet. It used to be a `pn-section` in the detail body, with a second
+   mount on the Connections tab for the archetypes that own their own height;
+   the dock replaced both (2026-09-07), so the row styles below now only ever
+   paint on an expanded sheet.
 
    Every colour resolves through a token (§14). `box-sizing: border-box` is set
    explicitly on each padded box: this package has NO border-box reset
@@ -207,9 +209,189 @@
    not need doing", and it should not draw the eye like a resolved one.
    --------------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------------
+   THE DOCK — the pinned bar and the sheet it discloses.
+
+   PLACEMENT IS THE PANEL'S, NOT THIS FILE'S: the dock is a flex child of
+   `.pn-panel`, between the scroll host and the footer, so "pinned" is just
+   "outside the scroller" and costs no listener, no sticky and no measurement.
+
+   THE SHEET IS ABSOLUTE against the dock (`bottom: 100%`), which is what makes
+   it lift OVER the body instead of shortening it. Two things bound it: its own
+   `max-height`, and the panel's `overflow: hidden` as the last-resort clip. The
+   max-height is deliberately the tighter of the two so the clip never fires —
+   a sheet cut off at the top has rows nobody can scroll to, because the scroll
+   is inside the sheet and the cut is outside it.
+   --------------------------------------------------------------------------- */
+
+.cv2-root .att-dock {
+  box-sizing: border-box;
+  position: relative;
+  flex: none;
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-panel-bg, var(--pn-surface));
+}
+
+.cv2-root .att-dock__bar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  /* Deliberately shorter than a row of content: this is a strip of chrome, and
+     the complaint that produced it was about vertical spend. */
+  padding: 5px var(--pn-space-3);
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .att-dock__bar:hover {
+  background: var(--pn-hover);
+}
+
+.cv2-root .att-dock__bar:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* The glyph keeps its SILHOUETTE across every tone and changes only colour, so
+   settling the last pending row does not resize the bar it sits in. */
+.cv2-root .att-dock__glyph {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+}
+
+.cv2-root .att-dock__bar[data-tone='wait'] .att-dock__glyph {
+  color: var(--pn-wait);
+}
+
+.cv2-root .att-dock__bar[data-tone='error'] .att-dock__glyph {
+  color: var(--pn-block);
+}
+
+/* The counts never shrink and never wrap — they are the one thing the bar
+   promises, so the reason gives up its pixels first. */
+.cv2-root .att-dock__counts {
+  flex: none;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--pn-track-label);
+  white-space: nowrap;
+}
+
+.cv2-root .att-dock__bar[data-tone='wait'] .att-dock__counts {
+  color: var(--pn-wait);
+  font-weight: 600;
+}
+
+.cv2-root .att-dock__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .att-dock__chevron {
+  flex: none;
+  /* `margin-left: auto` rather than a spacer, so the chevron pins right whether
+     or not a lead reason claimed the middle. */
+  margin-left: auto;
+  padding-left: var(--pn-space-2);
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+}
+
+/* The action's NAME, for a reader who cannot see which way the chevron points.
+   Not `display: none` — that would take it out of the accessibility tree too,
+   which is the one place it is for. */
+.cv2-root .att-dock__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.cv2-root .att-dock__sheet {
+  box-sizing: border-box;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  z-index: 3;
+  max-height: min(60vh, 460px);
+  overflow-y: auto;
+  border-top: 1px solid var(--pn-line);
+  /* OPAQUE, because content passes UNDER it. Reads the panel's own paper
+     variable for the same reason the sticky tab row does: two panel modifiers
+     repaint the surface, and a hard-coded background would keep the default
+     while the panel under it changed (panels.css). */
+  background: var(--pn-panel-bg, var(--pn-surface));
+  /* THE SHADOW POINTS UP, and none of the `--pn-sh-*` tokens can say that —
+     every one of them is a DOWNWARD cast (tokens.css:110-112), because
+     everything else in this product that floats is dropped onto the page from
+     above. This sheet is lifted off the bottom edge, so a downward shadow
+     lands underneath it where the bar already is and the top edge — the only
+     edge that has content behind it — separates on a hairline alone. Measured:
+     it did not read. `--pn-line-2` is the token; the offset is the geometry,
+     which is this element's own and not a system value. The precedent for
+     spelling a lifted edge this way is `launch-sheet-mobile.css:261`. */
+  box-shadow: 0 -1px 0 var(--pn-line-2), 0 -10px 24px -8px var(--pn-shadow-cast, rgba(40, 34, 24, 0.22));
+}
+
+/* The cast is the one colour here that is not a semantic token, so it is
+   DECLARED as one — once per theme, next to the rule that uses it, rather than
+   inlined twice at different opacities. */
+.cv2-root {
+  --pn-shadow-cast: rgba(40, 34, 24, 0.22);
+}
+.cv2-root[data-theme='dark'] {
+  --pn-shadow-cast: rgba(0, 0, 0, 0.55);
+}
+
+.cv2-root .att-dock__sheet-inner {
+  box-sizing: border-box;
+  padding: var(--pn-space-3);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cv2-root .att-dock__sheet {
+    animation: att-dock-rise var(--pn-dur-fast) var(--pn-ease-standard);
+  }
+}
+
+@keyframes att-dock-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .cv2-root .att-req__list {
   list-style: none;
-  margin: var(--pn-space-2) 0 0;
+  /* No top margin: the eyebrow it used to clear is gone, and the sheet's own
+     padding is now the only gap above the first row. */
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;

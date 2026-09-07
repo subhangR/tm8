@@ -24,6 +24,7 @@ import {
 } from '../authoring';
 import {
   ActionBar,
+  PanelBarTitle,
   PanelFooter,
   PanelHeader,
   PanelWindowControls,
@@ -348,15 +349,19 @@ export interface EntityDetailPanelProps {
    * flag any kind at all and a per-kind prop would be a restriction the backend
    * does not have.
    *
-   * IT MOUNTS IN TWO PLACES, which is the one thing here that is not uniform.
-   * Most archetypes take it inline in the Content body. The terminal archetype
-   * and `composition:'chat'` cannot — a live PTY owns its full height and a
-   * chat body ends at its composer, the same two structural exclusions the
-   * attachment strip carries — so for those it rides the CONNECTIONS tab
-   * instead (user ruling 2026-08-16; it rode the Activity tab until that tab
-   * was removed on 2026-08-19). Excluding them outright was the alternative
-   * and was rejected: work sessions are among the most-escalated entities in a
-   * space, and their history would have been CLI-only.
+   * IT MOUNTS IN EXACTLY ONE PLACE, and that is new. Until 2026-09-07 it had
+   * two: inline in the Content body for most archetypes, and on the CONNECTIONS
+   * tab for the terminal archetype and any declared `composition` — a live PTY
+   * owns its full height, a chat body ends at its composer, and neither could
+   * spare four cards of history (user ruling 2026-08-16; it rode the Activity
+   * tab until that tab was removed on 2026-08-19). Collapsing the section into
+   * a one-line dock removed the constraint that forced the split, so the panel
+   * now renders this below the scroll host as chrome, for every kind and on
+   * every tab. The complementary-condition pair — and the test whose whole job
+   * was proving no kind drew it twice — went with it.
+   *
+   * A TOMBSTONE is the only entity that does not get it: there is nothing left
+   * to escalate about a deleted one.
    *
    * Absent ⇒ nothing renders. The section is invisible on any entity with no
    * history anyway, so an unwired host leaves no dangling affordance to explain.
@@ -602,6 +607,64 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   }, [framed, panelEl]);
 
   /**
+   * THE CHROME SCROLLS AWAY — user ruling 2026-08-21. This is the only state
+   * the ruling needs in JS; everything else about it is layout, and lives in
+   * `panels.css` under `.pn-panel--scrollaway`.
+   *
+   * WHAT MOVED: the scroll boundary. It used to be `.pn-body`, which is why the
+   * title, the tab row and the controls band were immovable — they were
+   * OUTSIDE the thing that scrolls. They are now inside it (`.pn-scroll`), and
+   * the tab row is `position: sticky`, so the header leaves and the tabs stay.
+   * No listener does any of that; the browser does.
+   *
+   * WHAT THE LISTENER IS FOR, and it is one boolean: whether the header has
+   * actually left, so `PanelBarTitle` can say the title in the row that
+   * remains. `scrollTop >= headEl.offsetHeight` is the same moment the bar
+   * begins to stick, because the header is the only thing above it.
+   *
+   * THIS CANNOT OSCILLATE, and that is worth saying because the obvious
+   * alternative can. Collapsing the header by taking its HEIGHT (a negative
+   * margin driven by scroll) grows the body's viewport as it goes, which at the
+   * bottom of a short document forces `scrollTop` down, which uncollapses the
+   * header, which shrinks the viewport again — a real feedback loop. Nothing
+   * here changes any height: the bar is 30px whether or not it carries a title,
+   * and the flag only decides what is painted inside it.
+   *
+   * ABOVE EVERY EARLY RETURN, because hooks are.
+   */
+  const scrollEl = useRef<HTMLDivElement | null>(null);
+  const headEl = useRef<HTMLDivElement | null>(null);
+  const [chromeGone, setChromeGone] = useState(false);
+  const onChromeScroll = () => {
+    const el = scrollEl.current;
+    const head = headEl.current;
+    if (!el || !head) return;
+    /* The floor of 1 is what keeps a kind with NO header block — none ships one
+       today, but a zero-height lead would otherwise read as permanently gone
+       and paint a title into an un-scrolled bar. */
+    setChromeGone(el.scrollTop >= Math.max(head.offsetHeight, 1));
+  };
+  /*
+   * A TAB CHANGE IS A NEW DOCUMENT, so it starts at the top.
+   *
+   * Before this ruling each tab body WAS its own scroller, so switching tabs
+   * gave you a fresh one at zero for free. One shared scroller does not: read
+   * 4000px into a long doc, press Connections, and you would land 4000px into a
+   * list of eight edges — or, more often, at its end, since the browser clamps.
+   * Restoring the old behaviour explicitly is the smaller change; per-tab
+   * scroll memory is a feature nobody asked for and would have to survive the
+   * body remounting anyway.
+   *
+   * The entity id is in the deps for the same reason: a panel that re-targets
+   * (the stack promotes a different row into it) is also a new document.
+   */
+  useEffect(() => {
+    const el = scrollEl.current;
+    if (el) el.scrollTop = 0;
+    setChromeGone(false);
+  }, [tab, detail?.id]);
+
+  /**
    * D44 — which flow verb's config is expanded on the action bar, if any.
    *
    * ABOVE EVERY EARLY RETURN for the same reason `surfaceSlot` is: hooks do.
@@ -749,6 +812,39 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const controlsRideBar = isTerminal || config.panel.composition === 'frame';
 
   /**
+   * WHICH PANELS LET THEIR CHROME SCROLL AWAY — user ruling 2026-08-21,
+   * "document-like bodies only".
+   *
+   * `bodyOwnsBottom` is REUSED rather than re-derived, and the reuse is the
+   * argument: the bodies that cannot give their bottom edge to a strip are
+   * exactly the bodies that cannot give their height to a document scroll. A
+   * live PTY sizes its grid from a definite box; a chat ends at a composer that
+   * has to stay at the bottom; a `composition: 'frame'` viewport exists to fill
+   * the panel. Put any of the three inside a scroller that sizes to content and
+   * they collapse to nothing or grow without bound. Same three kinds, same
+   * structural reason, one predicate — a fourth composition arriving is
+   * excluded by default, which is the right way round.
+   *
+   * DISCUSSION IS EXCLUDED ON EVERY KIND, and that is the same rule applied to
+   * a TAB rather than to an archetype: `discussionSurface` is a host-composed
+   * conversation with its own composer and its own paging, so a doc's
+   * Discussion tab is a chat body even though the doc is not a chat kind.
+   * Connections is a plain list and takes the scroll happily.
+   *
+   * NOT ON A PHONE, and this is scope rather than a technical limit. The
+   * mechanism is shell-agnostic and the phone is where reclaimed chrome is
+   * worth the most — but that shell has already had two rulings about what its
+   * panel bar draws (2026-08-20 removed the tab row from it outright), the
+   * screenshots behind this task are desktop, and widening a desktop ruling
+   * onto a surface with its own settled arrangement is a decision for whoever
+   * owns it. Filed, not smuggled in.
+   */
+  const chromeScrolls = !oneSurface && !bodyOwnsBottom;
+  /** The wrapper is rendered for every scroll-away-capable kind so the DOM does
+      not restructure under a tab change; only this decides whether it scrolls. */
+  const chromeScrollsNow = chromeScrolls && tab !== 'discussion';
+
+  /**
    * WHAT THE MERGE CONFIRM WOULD NAME — `repo#n`, or null when this row does
    * not read as a pull request at all.
    *
@@ -846,7 +942,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
        * putting both on this element opens exactly the same token scope with
        * one fewer node and no relationship for a sibling's CSS to lose.
        */
-      className={`${alwaysDark ? 'cv2-root ' : ''}pn-panel pn-panel--${host}${isTombstone ? ' pn-panel--tombstone' : ''}`}
+      className={`${alwaysDark ? 'cv2-root ' : ''}pn-panel pn-panel--${host}${isTombstone ? ' pn-panel--tombstone' : ''}${chromeScrollsNow ? ' pn-panel--scrollaway' : ''}`}
       data-theme={alwaysDark ? 'dark' : undefined}
       data-always-dark={alwaysDark ? 'true' : undefined}
       /* Measured by `barHasRoom` above — a frame body's controls only ride the
@@ -868,326 +964,388 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
          moving between three pinned columns needs them named. */
       aria-label={`${config.label}: ${detail.title}`}
     >
-      <PanelHeader
-        detail={detail}
-        config={config}
-        breadcrumb={breadcrumb}
-        liveness={props.liveness}
-        /* THE TITLE is editable only where registry data and the seam both
-           permit it. The visual treatment stays plain by user direction; the
-           actual click/keyboard editor is still mounted only when writable. */
-        titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
-        titleLockReason={config.list.inlineEdit?.title ? saveRefusal : undefined}
-        autoFocusTitle={props.justCreated}
-        supplemental={
-          (props.linkedPullRequests?.length ?? 0) > 0 ? (
-            <LinkedPullRequestChips
-              pullRequests={props.linkedPullRequests ?? []}
-              placement="detail"
-            />
-          ) : undefined
+      <PanelScrollHost
+        on={chromeScrolls}
+        scrollRef={scrollEl}
+        leadRef={headEl}
+        onScroll={onChromeScroll}
+        lead={
+          <>
+          <PanelHeader
+            detail={detail}
+            config={config}
+            breadcrumb={breadcrumb}
+            liveness={props.liveness}
+            /* THE TITLE is editable only where registry data and the seam both
+               permit it. The visual treatment stays plain by user direction; the
+               actual click/keyboard editor is still mounted only when writable. */
+            titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
+            titleLockReason={config.list.inlineEdit?.title ? saveRefusal : undefined}
+            autoFocusTitle={props.justCreated}
+            supplemental={
+              (props.linkedPullRequests?.length ?? 0) > 0 ? (
+                <LinkedPullRequestChips
+                  pullRequests={props.linkedPullRequests ?? []}
+                  placement="detail"
+                />
+              ) : undefined
+            }
+            onCommitTitle={(title) => void save.commitNow({ title })}
+          />
+
+          {stalePin ? (
+            <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
+          ) : null}
+          </>
         }
-        onCommitTitle={(title) => void save.commitNow({ title })}
-      />
-
-      {stalePin ? (
-        <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
-      ) : null}
-
-      <TabStrip
-        active={tab}
-        contentLabel={config.label}
-        counts={{
-          discussion: props.messages?.length,
-          connections: countConnections(detail, props.connections),
-        }}
-        end={
-          /*
-           * THE PHONE'S END CLUSTER IS THE SAVE AFFORDANCE AND TRANSFER, and
-           * everything else in it has moved into the floating action menu —
-           * user ruling 2026-08-20. `TabStrip` renders no strip at all on this
-           * shell (see its `oneSurface` branch), so what is passed here is the
-           * whole of the region.
-           *
-           * SAVECONTROLS STAY INLINE, DELIBERATELY. A pending unsaved title
-           * edit hidden inside a closed menu is a data-loss shape, not a layout
-           * choice: the user cannot see that there is something to save, and
-           * the two verbs that answer it are two taps away behind a control
-           * that gives no sign it is holding them.
-           *
-           * TRANSFER STAYS INLINE TOO, and it is the ONE verb that could not
-           * follow the others. `TransferControl` renders NOTHING unless a
-           * remote server is registered and the kind is transferable — its
-           * docblock argues at length that this is the deliberate exception to
-           * disabled-with-reason, because on a single-server node "transfer to
-           * another server" is not a deferred feature but a concept that does
-           * not apply. A menu row obeys the opposite rule: present, dimmed,
-           * carrying its reason. Moving it would either overrule that decision
-           * or force this file to re-implement an async, kind-aware gate that
-           * `src/transfer` owns (§15.2). It self-gates to null, so where it
-           * does not apply the row collapses with it.
-           *
-           * BOTH ARMS OMIT THE SURFACE SLOT. `WorkSessionContent` declines the
-           * slot on a phone anyway (`ridesPanelBar`), so passing one here has
-           * had no effect on this shell since `099c3a03`; not passing it is the
-           * same fact said in the direction that cannot rot.
-           */
-          oneSurface ? (
+      >
+        <TabStrip
+          active={tab}
+          contentLabel={config.label}
+          /* THE TITLE, SAID AGAIN, once the header it lives in has scrolled off.
+             Mounted only where the header can actually leave — a panel whose
+             chrome never moves would carry a title that is permanently
+             collapsed, which is a node and a rule paid for to draw nothing. */
+          leading={
+            chromeScrolls ? (
+              <PanelBarTitle detail={detail} config={config} collapsed={chromeGone} />
+            ) : null
+          }
+          counts={{
+            discussion: props.messages?.length,
+            connections: countConnections(detail, props.connections),
+          }}
+          end={
+            /*
+             * THE PHONE'S END CLUSTER IS THE SAVE AFFORDANCE AND TRANSFER, and
+             * everything else in it has moved into the floating action menu —
+             * user ruling 2026-08-20. `TabStrip` renders no strip at all on this
+             * shell (see its `oneSurface` branch), so what is passed here is the
+             * whole of the region.
+             *
+             * SAVECONTROLS STAY INLINE, DELIBERATELY. A pending unsaved title
+             * edit hidden inside a closed menu is a data-loss shape, not a layout
+             * choice: the user cannot see that there is something to save, and
+             * the two verbs that answer it are two taps away behind a control
+             * that gives no sign it is holding them.
+             *
+             * TRANSFER STAYS INLINE TOO, and it is the ONE verb that could not
+             * follow the others. `TransferControl` renders NOTHING unless a
+             * remote server is registered and the kind is transferable — its
+             * docblock argues at length that this is the deliberate exception to
+             * disabled-with-reason, because on a single-server node "transfer to
+             * another server" is not a deferred feature but a concept that does
+             * not apply. A menu row obeys the opposite rule: present, dimmed,
+             * carrying its reason. Moving it would either overrule that decision
+             * or force this file to re-implement an async, kind-aware gate that
+             * `src/transfer` owns (§15.2). It self-gates to null, so where it
+             * does not apply the row collapses with it.
+             *
+             * BOTH ARMS OMIT THE SURFACE SLOT. `WorkSessionContent` declines the
+             * slot on a phone anyway (`ridesPanelBar`), so passing one here has
+             * had no effect on this shell since `099c3a03`; not passing it is the
+             * same fact said in the direction that cannot rot.
+             */
+            oneSurface ? (
+              <>
+                {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
+                  <SaveControls save={save} />
+                ) : null}
+                <TransferControl detail={detail} />
+              </>
+            ) : (
             <>
+              {controlsRideBar ? (
+                <div
+                  className="pn-panelbar__surface"
+                  ref={setSurfaceSlot}
+                  data-testid="panel-surface-slot"
+                />
+              ) : null}
+              <ActionBar
+                barRef={actionBarRef}
+                config={config}
+                /* The terminal archetype is the only bar that ALSO carries the
+                   five surface chips, so it is the only one whose primaries have
+                   to give up their words. Registry data, never a kind literal. */
+                markPrimaries={isTerminal}
+                /* Filled from the detail — see `panelActionContext`, which is
+                   also what the phone's action menu asks, so the bar and the menu
+                   cannot form different opinions about the same verb. */
+                ctx={panelActionContext(detail, ctx, props.liveness)}
+                onAction={props.onAction}
+                wiredActions={props.wiredActions}
+                openFlow={flowRef}
+                /* Only when the host actually has launch sources. Without them
+                   the expand would render an empty teammate select over an
+                   un-committable Launch — a config that cannot configure is a
+                   worse answer than the honest "not wired here" refusal. */
+                /* Wired when the host can serve AT LEAST ONE flow. Without any,
+                   the expand would open an empty card — and a config that cannot
+                   configure is a worse answer than the honest "not wired here"
+                   refusal. Which surface opens is decided below, by the verb. */
+                onFlow={props.launch || mergePr ? setFlowRef : undefined}
+                /*
+                 * DEF-004 — RUN OPENS THE FULL SHEET WHERE THE HOST MOUNTS ONE.
+                 *
+                 * The list row has had this precedence since D44 ("the sheet
+                 * OUTRANKS the inline expand"); the detail panel did not, so the
+                 * SAME VERB on the SAME ENTITY behaved differently depending on
+                 * which surface you pressed it from.
+                 *
+                 * It matters most on a phone, and that is why it arrives now. The
+                 * inline expand is `.pn-actions__flow` — absolute, 300px wide,
+                 * anchored to a 30px bar — and CONTRACT.md §4 rules that anchored
+                 * popovers "do not survive the trip to a 390px header". The full
+                 * sheet now HAS a phone arrangement; the quick config does not.
+                 * On a phone the detail panel is also the surface where Run is
+                 * reliably reachable at all: the list row's cluster is
+                 * hover-revealed.
+                 *
+                 * Spread, never defaulted: absent leaves the expand exactly as it
+                 * was for every host without a sheet.
+                 *
+                 * GATED ON `oneSurface`, AND THAT IS A SCOPE DECISION RATHER THAN
+                 * A TECHNICAL ONE — stated because the unconditional version is
+                 * arguably the better product and I am deliberately not shipping
+                 * it here. Applying this precedence everywhere would make the
+                 * desktop detail panel agree with the desktop LIST ROW, which has
+                 * had the rule since D44; today they disagree, and that
+                 * inconsistency is real. But it is a DESKTOP behaviour change, in
+                 * a shell that is in daily use, with no row behind it, no
+                 * evidence, and nobody having asked — in a program scoped to
+                 * coarse-pointer phones. Widening it is a separate decision for
+                 * whoever owns the desktop; it is filed as an observation, not
+                 * smuggled in under a phone fix.
+                 */
+                {...(oneSurface && props.launch?.onFullOptions
+                  ? { onOpenLaunch: props.launch.onFullOptions, launchSubjectId: detail.id }
+                  : {})}
+                flowSurface={
+                  flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
+                    <MergePullRequestFlow
+                      key={flowRef}
+                      pr={mergeSubject}
+                      headSha={mergePr.headShaFor?.(detail.id) ?? null}
+                      githubLogin={mergePr.githubLogin ?? null}
+                      onMerge={(input) => mergePr.onMerge(detail.id, input)}
+                      onDismiss={() => setFlowRef(null)}
+                      boundsRef={actionBarRef}
+                    />
+                  ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
+                    <LaunchQuickConfig
+                      subject={detail}
+                      /* The mode is the VERB's, read off the registry — so
+                         Coordinate commits a coordinator and not Run's worker,
+                         and no component here has to name either verb. */
+                      /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
+                         `mode` and `verbLabel` are props, but the config is STATE
+                         seeded once. Without this key, pressing Coordinate then
+                         Run reused the instance: the heading re-rendered to "Run
+                         configuration" over a config still holding
+                         mode:'coordinator', and Launch spawned a coordinator
+                         under a button labelled Run. The dismissal cannot save it
+                         either — the other verb's button is inside the same
+                         `actionBarRef` bounds as the card. Remounting also clears
+                         the refusal, pending and access-mode state, all of which
+                         are equally stale across a verb switch. */
+                      key={flowRef}
+                      verbLabel={resolveAction(flowRef).label}
+                      {...(resolveAction(flowRef).launchMode
+                        ? { mode: resolveAction(flowRef).launchMode }
+                        : {})}
+                      spaceId={props.launch.spaceId || ctx.spaceId}
+                      teammates={props.launch.teammates}
+                      projects={props.launch.projects}
+                      loadFor={props.launch.loadFor}
+                      capacity={props.launch.capacity}
+                      profileFor={props.launch.profileFor}
+                      onSpawn={props.launch.onSpawn}
+                      onFullOptions={
+                        props.launch.onFullOptions
+                          ? () => {
+                              props.launch?.onFullOptions?.(detail.id);
+                              setFlowRef(null);
+                            }
+                          : undefined
+                      }
+                      onDismiss={() => setFlowRef(null)}
+                      boundsRef={actionBarRef}
+                      newClientMutationId={() =>
+                        props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
+                      }
+                    />
+                  ) : null
+                }
+              />
               {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
                 <SaveControls save={save} />
               ) : null}
+              {/* Cross-server transfer (user ruling 2026-08-18: panel, not tile).
+                  Self-gating: renders nothing unless a remote server connection
+                  is registered, so the single-server case never sees it. Kind
+                  awareness lives in src/transfer, not here (§15.2). */}
               <TransferControl detail={detail} />
-            </>
-          ) : (
-          <>
-            {controlsRideBar ? (
-              <div
-                className="pn-panelbar__surface"
-                ref={setSurfaceSlot}
-                data-testid="panel-surface-slot"
+              <PanelWindowControls
+                onPromote={props.onPromote}
+                onClose={onClose}
+                /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
+                   desktop. The control itself refuses this on a phone, where ✕
+                   is already gone — see `promoteHidden`. */
+                promoteHidden={isTerminal}
               />
-            ) : null}
-            <ActionBar
-              barRef={actionBarRef}
-              config={config}
-              /* The terminal archetype is the only bar that ALSO carries the
-                 five surface chips, so it is the only one whose primaries have
-                 to give up their words. Registry data, never a kind literal. */
-              markPrimaries={isTerminal}
-              /* Filled from the detail — see `panelActionContext`, which is
-                 also what the phone's action menu asks, so the bar and the menu
-                 cannot form different opinions about the same verb. */
-              ctx={panelActionContext(detail, ctx, props.liveness)}
-              onAction={props.onAction}
-              wiredActions={props.wiredActions}
-              openFlow={flowRef}
-              /* Only when the host actually has launch sources. Without them
-                 the expand would render an empty teammate select over an
-                 un-committable Launch — a config that cannot configure is a
-                 worse answer than the honest "not wired here" refusal. */
-              /* Wired when the host can serve AT LEAST ONE flow. Without any,
-                 the expand would open an empty card — and a config that cannot
-                 configure is a worse answer than the honest "not wired here"
-                 refusal. Which surface opens is decided below, by the verb. */
-              onFlow={props.launch || mergePr ? setFlowRef : undefined}
-              /*
-               * DEF-004 — RUN OPENS THE FULL SHEET WHERE THE HOST MOUNTS ONE.
-               *
-               * The list row has had this precedence since D44 ("the sheet
-               * OUTRANKS the inline expand"); the detail panel did not, so the
-               * SAME VERB on the SAME ENTITY behaved differently depending on
-               * which surface you pressed it from.
-               *
-               * It matters most on a phone, and that is why it arrives now. The
-               * inline expand is `.pn-actions__flow` — absolute, 300px wide,
-               * anchored to a 30px bar — and CONTRACT.md §4 rules that anchored
-               * popovers "do not survive the trip to a 390px header". The full
-               * sheet now HAS a phone arrangement; the quick config does not.
-               * On a phone the detail panel is also the surface where Run is
-               * reliably reachable at all: the list row's cluster is
-               * hover-revealed.
-               *
-               * Spread, never defaulted: absent leaves the expand exactly as it
-               * was for every host without a sheet.
-               *
-               * GATED ON `oneSurface`, AND THAT IS A SCOPE DECISION RATHER THAN
-               * A TECHNICAL ONE — stated because the unconditional version is
-               * arguably the better product and I am deliberately not shipping
-               * it here. Applying this precedence everywhere would make the
-               * desktop detail panel agree with the desktop LIST ROW, which has
-               * had the rule since D44; today they disagree, and that
-               * inconsistency is real. But it is a DESKTOP behaviour change, in
-               * a shell that is in daily use, with no row behind it, no
-               * evidence, and nobody having asked — in a program scoped to
-               * coarse-pointer phones. Widening it is a separate decision for
-               * whoever owns the desktop; it is filed as an observation, not
-               * smuggled in under a phone fix.
-               */
-              {...(oneSurface && props.launch?.onFullOptions
-                ? { onOpenLaunch: props.launch.onFullOptions, launchSubjectId: detail.id }
-                : {})}
-              flowSurface={
-                flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
-                  <MergePullRequestFlow
-                    key={flowRef}
-                    pr={mergeSubject}
-                    headSha={mergePr.headShaFor?.(detail.id) ?? null}
-                    githubLogin={mergePr.githubLogin ?? null}
-                    onMerge={(input) => mergePr.onMerge(detail.id, input)}
-                    onDismiss={() => setFlowRef(null)}
-                    boundsRef={actionBarRef}
-                  />
-                ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
-                  <LaunchQuickConfig
-                    subject={detail}
-                    /* The mode is the VERB's, read off the registry — so
-                       Coordinate commits a coordinator and not Run's worker,
-                       and no component here has to name either verb. */
-                    /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
-                       `mode` and `verbLabel` are props, but the config is STATE
-                       seeded once. Without this key, pressing Coordinate then
-                       Run reused the instance: the heading re-rendered to "Run
-                       configuration" over a config still holding
-                       mode:'coordinator', and Launch spawned a coordinator
-                       under a button labelled Run. The dismissal cannot save it
-                       either — the other verb's button is inside the same
-                       `actionBarRef` bounds as the card. Remounting also clears
-                       the refusal, pending and access-mode state, all of which
-                       are equally stale across a verb switch. */
-                    key={flowRef}
-                    verbLabel={resolveAction(flowRef).label}
-                    {...(resolveAction(flowRef).launchMode
-                      ? { mode: resolveAction(flowRef).launchMode }
-                      : {})}
-                    spaceId={props.launch.spaceId || ctx.spaceId}
-                    teammates={props.launch.teammates}
-                    projects={props.launch.projects}
-                    loadFor={props.launch.loadFor}
-                    capacity={props.launch.capacity}
-                    profileFor={props.launch.profileFor}
-                    onSpawn={props.launch.onSpawn}
-                    onFullOptions={
-                      props.launch.onFullOptions
-                        ? () => {
-                            props.launch?.onFullOptions?.(detail.id);
-                            setFlowRef(null);
-                          }
-                        : undefined
-                    }
-                    onDismiss={() => setFlowRef(null)}
-                    boundsRef={actionBarRef}
-                    newClientMutationId={() =>
-                      props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
-                    }
-                  />
-                ) : null
-              }
-            />
-            {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
-              <SaveControls save={save} />
-            ) : null}
-            {/* Cross-server transfer (user ruling 2026-08-18: panel, not tile).
-                Self-gating: renders nothing unless a remote server connection
-                is registered, so the single-server case never sees it. Kind
-                awareness lives in src/transfer, not here (§15.2). */}
-            <TransferControl detail={detail} />
-            <PanelWindowControls
-              onPromote={props.onPromote}
-              onClose={onClose}
-              /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
-                 desktop. The control itself refuses this on a phone, where ✕
-                 is already gone — see `promoteHidden`. */
-              promoteHidden={isTerminal}
-            />
-          </>
-          )
-        }
-        onSelect={selectTab}
-      />
+            </>
+            )
+          }
+          onSelect={selectTab}
+        />
 
-      {/* The band is gated on the strip alone: a kind with no controls (a doc
-          declares none) would otherwise draw an empty padded row with a
-          hairline under the tabs. No archetype gate — see `strip` above. */}
-      {strip ? (
-        <div className="pn-controls" data-testid="panel-controls">
-          {/* The BAND is full-bleed; its contents ride the reading measure. */}
-          <div className="pn-controls__measure">{strip}</div>
-        </div>
-      ) : null}
+        {/* The band is gated on the strip alone: a kind with no controls (a doc
+            declares none) would otherwise draw an empty padded row with a
+            hairline under the tabs. No archetype gate — see `strip` above. */}
+        {strip ? (
+          <div className="pn-controls" data-testid="panel-controls">
+            {/* The BAND is full-bleed; its contents ride the reading measure. */}
+            <div className="pn-controls__measure">{strip}</div>
+          </div>
+        ) : null}
 
-      {/* The error boundary wraps the BODY only: header, tabs and footer stay
-          live so close, expand and Esc keep working through a failed render.
-          TWO layers, honestly distinct: the `error` PROP is the caller
-          reporting a data failure; CatchBoundary is the REAL
-          componentDidCatch for a body that throws while rendering — until
-          it existed, "never white-screens" was a comment, not a mechanism
-          (Surface Audit). */}
-      {error ? (
-        <ErrorBody errorText={error} onRetry={props.onRetry} />
-      ) : loading ? (
-        <LoadingBody />
-      ) : (
-        <CatchBoundary label={`${config.label.toLowerCase()} body`}>
-          {/* THE CONFLICT AND REFUSAL CARDS RIDE IN THE BODY, never the
-              header — a card carrying a cause, an aftermath and two real
-              moves cannot live in a 30px row. `AuthoringHost` renders nothing
-              at all while the save is clean, so this costs the body no height
-              in the ordinary case. */}
-          <AuthoringHost save={save}>
-            {/*
-              ATTACHMENTS RIDE IN THE CONTENT BODY — not in a fifth tab. D3
-              fixes the panel at four tabs for every kind (user ruling
-              2026-08-01), and the content body is the one region allowed to
-              vary. The element is BUILT here rather than inside each
-              archetype arm so it is genuinely kind-agnostic: one construction
-              serves task, doc, work_session and every custom kind, and no
-              future archetype can forget to include it.
+        {/* The error boundary wraps the BODY only: header, tabs and footer stay
+            live so close, expand and Esc keep working through a failed render.
+            TWO layers, honestly distinct: the `error` PROP is the caller
+            reporting a data failure; CatchBoundary is the REAL
+            componentDidCatch for a body that throws while rendering — until
+            it existed, "never white-screens" was a comment, not a mechanism
+            (Surface Audit). */}
+        {error ? (
+          <ErrorBody errorText={error} onRetry={props.onRetry} />
+        ) : loading ? (
+          <LoadingBody />
+        ) : (
+          <CatchBoundary label={`${config.label.toLowerCase()} body`}>
+            {/* THE CONFLICT AND REFUSAL CARDS RIDE IN THE BODY, never the
+                header — a card carrying a cause, an aftermath and two real
+                moves cannot live in a 30px row. `AuthoringHost` renders nothing
+                at all while the save is clean, so this costs the body no height
+                in the ordinary case. */}
+            <AuthoringHost save={save}>
+              {/*
+                ATTACHMENTS RIDE IN THE CONTENT BODY — not in a fifth tab. D3
+                fixes the panel at four tabs for every kind (user ruling
+                2026-08-01), and the content body is the one region allowed to
+                vary. The element is BUILT here rather than inside each
+                archetype arm so it is genuinely kind-agnostic: one construction
+                serves task, doc, work_session and every custom kind, and no
+                future archetype can forget to include it.
 
-              THREE EXCLUSIONS, all structural, none a kind check, and two of
-              them now ride ONE predicate (`bodyOwnsBottom`, above): a tombstone
-              shows only its tombstone, and every other exclusion is the same
-              question — does anything belong between this body and the panel's
-              bottom edge? The terminal archetype answers no (a live PTY canvas
-              with a strip stapled under it is not a design, it is a leak), and
-              so does any declared `composition`: 'chat' ends at its composer,
-              where the ＋ already owns attach, and 'frame' is a viewport the
-              panel exists to fill.
+                THREE EXCLUSIONS, all structural, none a kind check, and two of
+                them now ride ONE predicate (`bodyOwnsBottom`, above): a tombstone
+                shows only its tombstone, and every other exclusion is the same
+                question — does anything belong between this body and the panel's
+                bottom edge? The terminal archetype answers no (a live PTY canvas
+                with a strip stapled under it is not a design, it is a leak), and
+                so does any declared `composition`: 'chat' ends at its composer,
+                where the ＋ already owns attach, and 'frame' is a viewport the
+                panel exists to fill.
 
-              PLACEMENT is the body's (2026-08-16 addendum): the subtree
-              archetype consumes the slot inside its description block; every
-              other archetype keeps today's placement, after the body. One
-              structural boolean, beside the three exclusions above.
-            */}
-            {(() => {
-              const attachmentSlot =
-                tab === 'content' && !isTombstone && !bodyOwnsBottom ? (
-                  <AttachmentStrip
-                    anchorId={detail.id}
-                    files={attachedFiles(detail)}
-                    downloadHref={props.attachments?.downloadHref}
-                    startUpload={props.attachments?.startUpload}
-                    projectFolder={props.attachments?.projectFolder}
-                    onUploaded={props.onAttachmentUploaded}
-                    onDetach={props.attachments?.detach}
-                    /* A detach and an upload change the SAME thing — the
-                       anchor's `attached_to` edges — so they share one
-                       refetch, and a host cannot wire adding without also
-                       wiring removing. */
-                    onDetached={props.onAttachmentUploaded}
-                  />
-                ) : null;
-              const bodyConsumesSlot = config.panel.archetype === 'subtree';
-              /* ATTENTION HISTORY rides on the SAME three exclusions as the
-                 strip — and unlike the strip, the two archetypes it excludes do
-                 not LOSE the section: `PanelBody`'s connections arm mounts it
-                 for them instead. Ordered above the strip because an escalation
-                 someone may still be waiting on outranks a file list. It never
-                 goes into the subtree body's slot: that slot is the description
-                 block's, and a scored queue is not a description. */
-              const attentionSlot =
-                tab === 'content' && !isTombstone && !bodyOwnsBottom
-                  ? props.attentionSection
-                  : null;
-              return (
-                <>
-                  <PanelBody
-                    {...props}
-                    detail={detail}
-                    tab={tab}
-                    save={save}
-                    surfaceSlot={surfaceSlot}
-                    barSlot={barHasRoom ? surfaceSlot : null}
-                    attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
-                  />
-                  {attentionSlot}
-                  {bodyConsumesSlot ? null : attachmentSlot}
-                </>
-              );
-            })()}
-          </AuthoringHost>
-        </CatchBoundary>
-      )}
+                PLACEMENT is the body's (2026-08-16 addendum): the subtree
+                archetype consumes the slot inside its description block; every
+                other archetype keeps today's placement, after the body. One
+                structural boolean, beside the three exclusions above.
+              */}
+              {(() => {
+                const attachmentSlot =
+                  tab === 'content' && !isTombstone && !bodyOwnsBottom ? (
+                    <AttachmentStrip
+                      anchorId={detail.id}
+                      files={attachedFiles(detail)}
+                      downloadHref={props.attachments?.downloadHref}
+                      startUpload={props.attachments?.startUpload}
+                      projectFolder={props.attachments?.projectFolder}
+                      onUploaded={props.onAttachmentUploaded}
+                      onDetach={props.attachments?.detach}
+                      /* A detach and an upload change the SAME thing — the
+                         anchor's `attached_to` edges — so they share one
+                         refetch, and a host cannot wire adding without also
+                         wiring removing. */
+                      onDetached={props.onAttachmentUploaded}
+                    />
+                  ) : null;
+                const bodyConsumesSlot = config.panel.archetype === 'subtree';
+                /* ATTENTION HISTORY IS NO LONGER HERE. It was a section in this
+                   body for every archetype that could take one, with a second
+                   mount on the Connections tab for the ones that could not —
+                   two homes, one invariant, and a test whose whole job was
+                   proving no kind got both. The dock retired the pair: it is
+                   panel chrome now, rendered once below the scroll host, so it
+                   is on screen at every scroll offset, on every tab, for every
+                   kind. See the mount below `PanelScrollHost`. */
+                return (
+                  <>
+                    <PanelBody
+                      {...props}
+                      detail={detail}
+                      tab={tab}
+                      save={save}
+                      surfaceSlot={surfaceSlot}
+                      barSlot={barHasRoom ? surfaceSlot : null}
+                      attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
+                    />
+                    {bodyConsumesSlot ? null : attachmentSlot}
+                  </>
+                );
+              })()}
+            </AuthoringHost>
+          </CatchBoundary>
+        )}
+      </PanelScrollHost>
+
+      {/* THE ATTENTION DOCK — one pinned line, OUTSIDE the scroller.
+          
+          USER RULING 2026-09-07 ("taking up too much space at the bottom"):
+          the escalation record folds behind a bar, and the bar lives here.
+
+          WHY HERE AND NOT IN A BODY, which is where it spent its whole life
+          until now. Two reasons, and the second is the one that mattered:
+
+          1. PINNED IS FREE FROM THIS POSITION. Below `PanelScrollHost` means
+             outside the scroller, so the bar is on screen at any scroll offset
+             with no `position: sticky`, no listener and no measurement.
+          2. IT KILLED THE SECOND MOUNT. The section had two homes — this
+             panel's content body, and the Connections tab for terminal and
+             `composition` bodies that own their own height and could not spare
+             four cards. One line they can spare. So the exile is gone, the
+             complementary-condition pair that enforced it is gone, and the
+             thing renders in exactly one place for every kind in the product.
+
+          ON EVERY TAB, deliberately. An escalation is a fact about the
+          ENTITY's standing, not about whichever view of it you happen to have
+          open, and the badge that announces it is not tab-scoped either.
+
+          A TOMBSTONE IS THE ONE EXCLUSION, on the same reasoning as the
+          strip and the controls above: there is nothing left to escalate about
+          a deleted entity, and offering Resolve on one would be offering a
+          write the server will refuse.
+
+          IT DOES COST THE TERMINAL A LINE, and that is deliberate rather than
+          an oversight of the 2026-07-31 ruling ("terminal all the way, till the
+          component bottom") that sends the FOOTER away just below. The two are
+          not the same trade. The footer is unconditional chrome carrying a
+          reading — presence · author · version — that a live PTY does not want
+          at any price. This dock renders ONLY when the entity has escalation
+          history, which almost no session does, and when it does render it is
+          reporting something somebody is waiting on. A session with a pending
+          escalation is exactly the case where 28px of terminal is the cheaper
+          thing to give up; a session with none still gets its full height. If
+          that reads as a conflict later, this is the note that says it was
+          weighed (user ruling 2026-09-07: one bar everywhere, work sessions
+          named explicitly as the reason).
+
+          UNWIRED HOSTS RENDER NOTHING — `attentionSectionFor` returns
+          undefined without a seam, and the component itself returns null for
+          an entity with no history, which is the overwhelming majority. No
+          empty strip appears on every entity in the app. */}
+      {isTombstone ? null : props.attentionSection}
 
       {/* USER RULING 2026-07-31 — "terminal all the way, till the component
           bottom." The footer is the last strip between the canvas and the
@@ -1208,6 +1366,85 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     </section>
   );
 
+}
+
+/**
+ * THE SCROLL BOUNDARY, and the whole of what this component is for.
+ *
+ * Before the 2026-08-21 ruling the panel was a flex column of five immovable
+ * regions with `.pn-body` — one of the five — owning `overflow: auto`. Nothing
+ * above the body could scroll, because scrolling happened INSIDE it. Moving
+ * the boundary up one level is the entire mechanism: header, tab row and
+ * controls band come inside the scroller, the tab row is made
+ * `position: sticky`, and the browser does the rest with no listener, no
+ * measurement and no animation frame.
+ *
+ * WHY THE WRAPPER IS RENDERED EVEN WHEN IT IS OFF (`on` false only ever
+ * happens for a kind that cannot scroll at all — see `chromeScrolls`; a tab
+ * that cannot is handled by the panel's CLASS, not by this prop). A tab change
+ * would otherwise re-parent the header and the tab row, which unmounts and
+ * remounts both: an in-progress inline title edit would be thrown away, and
+ * focus would land back on the document. So the DOM shape is fixed for the
+ * whole life of a scroll-away panel and `.pn-panel--scrollaway` alone decides
+ * whether it scrolls. Off, the stylesheet makes it a pass-through flex column
+ * — the exact box the panel used to be — so the kinds that opt out are
+ * byte-identical to what they rendered before.
+ *
+ * THE LEAD IS A SEPARATE NODE because it is the thing being MEASURED. The
+ * collapsed-title flag flips when `scrollTop` passes the lead's own height,
+ * and a wrapper is how that height is readable without querying the tree by
+ * test id on every scroll event.
+ */
+function PanelScrollHost({
+  on,
+  scrollRef,
+  leadRef,
+  onScroll,
+  lead,
+  children,
+}: {
+  on: boolean;
+  /* MUTABLE refs attached through CALLBACK refs below, not `RefObject`s handed
+     to `ref=`. The two are interchangeable at runtime and are NOT in the type
+     system: `useRef<T>(null)` produces `RefObject<T | null>` under React 19's
+     types and `RefObject<T>` under React 18's, and only one of those is
+     assignable to `ref`. A callback ref is the shape both versions agree on. */
+  scrollRef: React.MutableRefObject<HTMLDivElement | null>;
+  leadRef: React.MutableRefObject<HTMLDivElement | null>;
+  onScroll: () => void;
+  /** Everything ABOVE the sticky tab row: the identity header and its banners. */
+  lead: ReactNode;
+  children: ReactNode;
+}) {
+  if (!on) {
+    return (
+      <>
+        {lead}
+        {children}
+      </>
+    );
+  }
+  return (
+    <div
+      className="pn-scroll"
+      data-testid="panel-scroll"
+      ref={(el) => {
+        scrollRef.current = el;
+      }}
+      onScroll={onScroll}
+    >
+      <div
+        className="pn-scroll__lead"
+        data-testid="panel-scroll-lead"
+        ref={(el) => {
+          leadRef.current = el;
+        }}
+      >
+        {lead}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -1261,38 +1498,18 @@ function PanelBody(
     );
   }
   if (tab === 'connections') {
-    /**
-     * THE ATTENTION SECTION'S OVERFLOW HOME, for the bodies that cannot take
-     * it inline — terminal (a live PTY owning its full height) and any declared
-     * `composition` (a chat that ends at its composer, an artifact frame that
-     * fills the panel). Those are excluded from the content-body mount for the
-     * same structural reasons the attachment strip excludes them, and a work
-     * session is one of the most-escalated things in a space, so dropping the
-     * section for them would have made session attention history reachable only
-     * from the CLI (user ruling 2026-08-16).
-     *
-     * IT MOVED HERE FROM THE ACTIVITY TAB when that tab was removed
-     * (2026-08-19). Connections is where it belongs of the two remaining: an
-     * escalation is a fact ABOUT this entity's standing, like its edges, where
-     * Discussion is a conversation with its own composer and paging and would
-     * have had to grow a slot to take it.
-     *
-     * The CONDITION IS THE EXACT COMPLEMENT of the content-body one, so the
-     * section renders in exactly one place per kind and can never appear twice
-     * — `panels.test.tsx` asserts both halves of that.
-     *
-     * Deliberately ABOVE the tab: it is the shorter, more actionable half, and
-     * the peer list has no natural end to append below.
-     */
-    const overflow =
-      config.panel.archetype === 'terminal' || config.panel.composition != null;
+    /* The attention section used to have its OVERFLOW HOME here, for the bodies
+       that could not take it inline — terminal (a live PTY owning its full
+       height) and any declared `composition`. That exile is over: the dock is
+       one pinned line of panel chrome, which a body owning its own height can
+       afford, so those kinds now carry it in the same place as everything else
+       (`EntityDetailPanel`, below the scroll host). This tab is back to being
+       only about edges. */
     return (
-      <>
-        {overflow ? props.attentionSection : null}
-        <ConnectionsTab
-          detail={detail}
-          connections={props.connections}
-          onOpenEntity={onOpenEntity}
+      <ConnectionsTab
+        detail={detail}
+        connections={props.connections}
+        onOpenEntity={onOpenEntity}
           /* The SAME surface the session's Graph chip renders, offered here for
              every kind — see the tab's docblock. (The old comment here claimed
              "sessions never reach this arm"; they do, and always did — this
@@ -1300,9 +1517,8 @@ function PanelBody(
              passes `graphSurface` unconditionally. So a session has two
              entrances to one canvas. Left as-is: it is pre-existing and closing
              it is a ruling about the session chip row, not about tab order.) */
-          graph={props.graphSurface}
-        />
-      </>
+        graph={props.graphSurface}
+      />
     );
   }
 
