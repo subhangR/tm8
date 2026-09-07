@@ -12,10 +12,36 @@
  * face and display name are the active space actor; the handle and sign-out
  * verb remain the LOCAL login account. Keeping those two identities explicit
  * avoids borrowing server authority for a browser-local credential.
+ *
+ * THE UTILITY GROUP (task 01a07a56, and the owner's earlier request of
+ * 2026-08-31: "palatte inbox copy link and Tarakesh profile section can you
+ * move inbox copy link to profile"). Inbox, the prompt catalog and Copy link
+ * used to be three separate controls in the top bar. They are per-viewer
+ * UTILITIES — what wants you, what tm8 says to an agent, and where you are —
+ * rather than navigation, so the bar now ends at `/ palette · ⌘K` plus this
+ * menu, and all three verbs live in the group directly under the identity head.
+ *
+ * THAT GROUP TAKES THREE INPUTS AND NOT ONE, and the split is deliberate:
+ *
+ *   · `onOpenInbox` — the menu OWNS this row, because it has to keep the D28
+ *     posture the bell had: with no handler it is still drawn, still focusable,
+ *     still named, and still carries the reason it cannot act. A host-supplied
+ *     row could never be in that state — a host that renders one HAS a handler
+ *     by definition — so hosting it would have quietly deleted the refusal this
+ *     move is supposed to preserve.
+ *   · `onOpenPrompts` — also menu-owned, but WITHOUT that posture, because the
+ *     bar's prompts control never had it either: it rendered only when a host
+ *     wired it. Moving a control must not silently promote it to a promise it
+ *     was not making before.
+ *   · `utilityRows` — for rows the menu CANNOT build. `CopyLinkControl` owns a
+ *     URL codec, a clipboard refusal ladder and a manual-copy fallback, none of
+ *     which an auth component has any business knowing.
  */
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActorSummary } from '@tm8/contract';
-import { Avatar } from '../kit';
+import { Avatar, VectorIcon } from '../kit';
+import { VIEW_ART } from '../domain/kind-art';
 import { useTheme, type Theme } from '../theme/useTheme';
 import { useAuthActions } from './gate-context';
 import { ACCOUNT_MENU } from './specimen';
@@ -43,6 +69,24 @@ export interface AccountMenuProps {
       state that stamps the root theme immediately. */
   theme?: Theme;
   onThemeChange?: (theme: Theme) => void;
+  /**
+   * Opens the Inbox screen. Absent, the row still renders — announced,
+   * reachable and refused with its reason, exactly as the retired bell did.
+   */
+  onOpenInbox?: () => void;
+  /**
+   * Opens the prompt catalog — every system prompt tm8 sends an agent. Absent
+   * ⇒ no row, which is what the bar's control did, and is the rule every other
+   * optional row here follows.
+   */
+  onOpenPrompts?: () => void;
+  /**
+   * HOSTED UTILITY ROWS — elements the host hangs in the utility group beside
+   * Inbox. Today that is `CopyLinkControl`. The host dresses them in this
+   * menu's own `auth-menu__row` grammar so a hosted row and a menu-owned row
+   * sit on one grid; this component adds no chrome of its own around them.
+   */
+  utilityRows?: ReactNode;
 }
 
 export function AccountMenu({
@@ -52,6 +96,9 @@ export function AccountMenu({
   agentToolsNudge,
   theme: controlledTheme,
   onThemeChange,
+  onOpenInbox,
+  onOpenPrompts,
+  utilityRows,
 }: AccountMenuProps) {
   const actions = useAuthActions();
   const localTheme = useTheme();
@@ -133,6 +180,61 @@ export function AccountMenu({
                 @{account.handle} · {account.isOwner ? 'owner of this server' : 'server account'}
               </span>
             </div>
+          </div>
+
+          {/* THE UTILITY GROUP — Inbox, System prompts, and the hosted rows,
+              above Appearance. It is separated by the same --pn-line rule the
+              other groups use (D-law 4: the line BOUNDS a group inside one
+              component). */}
+          <div className="auth-menu__group auth-menu__group--utility">
+            {/* INBOX, moved here from the top bar. The bell's D28 posture
+                travels with it: never hidden, focusable, announced, and
+                carrying the reason when no host wired the verb. */}
+            <button
+              type="button"
+              className={`auth-menu__row${onOpenInbox ? ' auth-menu__row--live' : ''}`}
+              data-testid="open-inbox"
+              aria-disabled={onOpenInbox ? undefined : 'true'}
+              aria-label="Inbox"
+              title={onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'}
+              onClick={
+                onOpenInbox
+                  ? () => {
+                      close();
+                      onOpenInbox();
+                    }
+                  : (event) => event.preventDefault()
+              }
+            >
+              {/* The INBOX VIEW'S OWN MARK, carried over unchanged from the
+                  bell: the door and the room keep one drawing, and it is
+                  geometry rather than a codepoint the product's subset fonts
+                  do not ship. */}
+              <span className="auth-menu__glyph auth-menu__glyph--art" aria-hidden>
+                <VectorIcon paths={VIEW_ART.inbox} size={15} />
+              </span>
+              Inbox
+            </button>
+
+            {onOpenPrompts ? (
+              <button
+                type="button"
+                className="auth-menu__row auth-menu__row--live"
+                data-testid="open-prompts"
+                title="System prompts — everything tm8 says to an agent"
+                onClick={() => {
+                  close();
+                  onOpenPrompts();
+                }}
+              >
+                <span className="auth-menu__glyph" aria-hidden>
+                  ✎
+                </span>
+                System prompts
+              </button>
+            ) : null}
+
+            {utilityRows ?? null}
           </div>
 
           <div className="auth-menu__group">
