@@ -1491,7 +1491,21 @@ function CategoryTabs({
           onClick={() => onTab(tab.id)}
           {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
         >
-          {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
+          {oneSurface ? (
+            <CategoryGlyph category={tab.id} />
+          ) : (
+            <>
+              {/* THE COUNT IS A SECOND VOICE, NOT THE SAME ONE. At the label's
+                  size and weight `To Do 227` reads as one blob rather than a
+                  name with a quantity; at --pn-fs-fine in --pn-ink-4 it recedes
+                  without being lost, and tabular figures stop the row reflowing
+                  as the numbers tick. The word is the part allowed to shorten
+                  (see .lp__tab-word in panels.css) — a count that truncates is
+                  a wrong number, which is worse than a shortened one. */}
+              <span className="lp__tab-word">{tab.label}</span>
+              <span className="lp__tab-count">{tabLabel(tab)}</span>
+            </>
+          )}
         </button>
       ))}
     </div>
@@ -1565,6 +1579,11 @@ function FilterRow({
       return option ? [{ spec, option }] : [];
     }),
   );
+  /* THE CHIP COUNTS THE NARROWINGS, so an active filter states how many
+     without spawning one dismissable chip per selection — which is what let
+     this row grow past its container. It is the same array the chips below
+     are built from, so the badge cannot disagree with them. */
+  const activeFilterCount = active.length;
 
   /**
    * ONE BODY, TWO CONTAINERS — a hanging popover on a desktop, a bottom sheet
@@ -1655,7 +1674,12 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="filter-trigger"
         >
-          filter ▾
+          Filter
+          {activeFilterCount > 0 ? (
+            <span className="lp__chip-count">{activeFilterCount}</span>
+          ) : (
+            <span className="lp__chip-caret" aria-hidden>▾</span>
+          )}
         </button>
       ) : null}
       {people.length > 1 ? (
@@ -1667,7 +1691,12 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="people-filter-trigger"
         >
-          {selectedPeople.length > 0 ? `people · ${selectedPeople.length}` : 'people ▾'}
+          People
+          {selectedPeople.length > 0 ? (
+            <span className="lp__chip-count">{selectedPeople.length}</span>
+          ) : (
+            <span className="lp__chip-caret" aria-hidden>▾</span>
+          )}
         </button>
       ) : null}
       {/* The collection lens trigger. Rendered exactly when the registry
@@ -1695,7 +1724,8 @@ function FilterRow({
             aria-haspopup="menu"
             data-testid="collection-lens-trigger"
           >
-            {`${membership.label.toLowerCase()} ▾`}
+            {membership.label}
+            <span className="lp__chip-caret" aria-hidden>▾</span>
           </button>
         )
       ) : null}
@@ -1751,8 +1781,10 @@ function FilterRow({
           keeps `overflow: hidden` as its floor guard, and the picker is still
           free to overflow it. No hardcoded offset — `top: 100%` of the bar
           works whether or not this kind renders a header-actions row. */}
-      {narrowing('filters', 'Filter', 'filter-menu', 'lp__filtermenu', (
+      {narrowing('filters', 'Filter', 'filter-menu', 'lp__filtermenu lp__filtermenu--withfoot', (
         <>
+          {/* The options scroll; the footer below does not. */}
+          <div className="lp__filteropts">
           {config.list.filters.map((spec) => (
             <div key={spec.id}>
               <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
@@ -1778,13 +1810,51 @@ function FilterRow({
                     className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
                     onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
                   >
-                    {option.label}
-                    {on ? <span className="lp__filtercheck">✓</span> : null}
+                    {/* A REAL BOX, NOT A TRAILING TICK. These options combine,
+                        and a `✓` that appears only after the click cannot say
+                        so beforehand — the affordance has to be visible while
+                        the option is still off. Drawn, not an <input>: the
+                        button already owns `role="menuitemcheckbox"` and its
+                        `aria-checked`, so a nested input would be a second,
+                        conflicting control in the same accessible node. */}
+                    <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
+                    <span className="lp__optlabel">{option.label}</span>
                   </button>
                 );
               })}
             </div>
           ))}
+          </div>
+          {/* CLEARING WAS ONLY EVER REACHABLE BY HUNTING CHIPS. Every active
+              option spawned a dismissable chip in the bar, so undoing four
+              filters meant finding and clicking four separate targets that
+              MOVED as each one left. One verb clears the set from the surface
+              that set it. `Done` only dismisses — it commits nothing, because
+              every toggle above already applied; it exists so the menu has an
+              obvious way out that is not "click somewhere else". */}
+          <div className="lp__filterfoot">
+            <button
+              type="button"
+              className="lp__filterclear"
+              data-testid="filter-clear-all"
+              disabled={active.length === 0}
+              onClick={() => {
+                for (const { spec, option } of active) {
+                  onToggleOption(spec.id, option.id, spec.multi ?? false);
+                }
+              }}
+            >
+              Clear all
+            </button>
+            <button
+              type="button"
+              className="lp__filterdone"
+              data-testid="filter-done"
+              onClick={() => setPicker(null)}
+            >
+              Done
+            </button>
+          </div>
         </>
       ))}
       {membership ? narrowing('sets', membership.label, 'collection-lens-menu', 'lp__filtermenu', (

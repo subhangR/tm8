@@ -991,7 +991,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // Nothing selected: exactly the trigger + the sort chip.
     expect(chips).toHaveLength(2);
     expect(chips.length).toBeLessThan(optionCount);
-    expect(getByTestId('filter-trigger').textContent).toBe('filter ▾');
+    /* Sentence case, and the caret is its own muted glyph rather than an
+       ASCII character inside the label. The BOUND is what this test holds:
+       one trigger, never one chip per option. */
+    expect(getByTestId('filter-trigger').textContent).toBe('Filter▾');
   });
 
   it('people filtering is membership-conditional and uses createdByIds', () => {

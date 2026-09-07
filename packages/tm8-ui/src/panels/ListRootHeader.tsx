@@ -269,13 +269,31 @@ export function ListRootHeader(props: ListRootHeaderProps) {
                   : (event) => event.preventDefault()
               }
             >
+              {/* THE GLYPH CARRIES ITS WORD. A bare ＋ says that something can
+                  be made and never what — the one thing a user comes to this
+                  bar to do was the only control on it with no label. The
+                  accessible name is unchanged (`cellBirth.label`), so the three
+                  suites that navigate by it are unaffected; `aria-hidden` on
+                  both spans keeps the button a single named node rather than
+                  reading its glyph aloud beside its name. */}
               <span aria-hidden>{cellBirth!.glyph}</span>
+              <span className="tch-rootcell__plusword" aria-hidden>New</span>
             </button>
             {options && options.length > 0 ? (
+              /* THE SECOND HALF OF A SPLIT BUTTON. It sat flush against the
+                 create action with no divider and a 17×26 hit area — under a
+                 quarter of the touch floor — so a mis-tap on the kind cell
+                 CREATED AN ENTITY when it meant to open a menu. The divider
+                 and the wider target are in `list-root-header.css`; what is
+                 added here is what the markup lacked. The accessible name is
+                 VERBATIM — `home-roots.test.tsx` and `gate.test.tsx` both
+                 navigate by it. */
               <button
                 type="button"
                 className="tch-rootcell__caret"
                 aria-label="Choose which list to show"
+                title="Choose which list to show"
+                aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
               >

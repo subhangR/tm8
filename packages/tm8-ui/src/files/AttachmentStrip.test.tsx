@@ -307,7 +307,7 @@ describe('removing an attachment cuts the LINK, not the file', () => {
 // ---------------------------------------------------------------------------
 
 describe('the ＋ tile', () => {
-  it('is an ICON on an empty anchor — one 28px paperclip, not a dashed tile and not nothing', () => {
+  it('is a LABELLED control on an empty anchor — icon and word, not a wordless glyph', () => {
     // Owner ruling 2026-08-19, narrowing 2026-08-18. The addendum's "the ＋
     // tile IS the empty state" cost ~140px of dashed box on every entity that
     // never had a file, so it went; but what replaced it was DROP ALONE, and a
@@ -323,10 +323,15 @@ describe('the ＋ tile', () => {
       />,
     );
     const add = screen.getByTestId('attachment-add');
-    // Named for assistive tech, wordless on screen — no 'attach' label row,
-    // which is what made the tile tall.
+    /* OWNER RULING 2026-09-07, amending the 2026-08-19 narrowing. The tile
+       stays gone; what came back is the WORD. The idle form was a bare 📎:
+       70×31px, no border, no label — an accessible name only a screen reader
+       could hear, on the one control whose whole job is to say "a file can go
+       here". It now says it to people looking, in the same language its
+       populated neighbour already used. */
     expect(add.getAttribute('aria-label')).toBe('Attach a file');
-    expect(add.textContent).toBe('📎');
+    expect(add.textContent).toContain('📎');
+    expect(add.textContent).toContain('Attach');
     expect(add.className).toContain('fn-tile--clip');
     expect(add.className).not.toContain('fn-tile--plus');
     expect(screen.queryByText(/no attachments/i)).toBeNull();
@@ -377,7 +382,8 @@ describe('the ＋ tile', () => {
     );
     const add = screen.getByTestId('attachment-add');
     expect(add.className).toContain('fn-tile--plus');
-    expect(add.textContent).toContain('attach');
+    /* Sentence case in both arms now — the two states speak one language. */
+    expect(add.textContent).toContain('Attach');
   });
 
   it('comes back the moment the anchor has a file, and acts directly with one wired path', async () => {

@@ -424,7 +424,7 @@ export function AttachmentStrip({
             aria-label="Attach a file"
             aria-haspopup={startUpload && projectFolder ? 'menu' : undefined}
             aria-expanded={startUpload && projectFolder ? menuOpen : undefined}
-            title="Attach a file to this entity"
+            title="Attach a file to this entity — or drop or paste a file to insert it here"
             onClick={plusAct}
           >
             <span
@@ -433,8 +433,20 @@ export function AttachmentStrip({
             >
               {idle ? '📎' : '＋'}
             </span>
-            {idle ? null : <span className="fn-tile__name">attach</span>}
+            {/* IT CARRIES ITS WORD NOW. The idle form was a BARE 📎 and nothing
+                else: 70×31px, no border, no label — an accessible name only a
+                screen reader could hear, and a hit area under the touch floor.
+                A control whose whole job is to say "a file can go here" said it
+                to nobody looking. Both states now render glyph AND word, and
+                the long sentence that sat above the strip as its own paragraph
+                rides the `title` instead. */}
+            <span className="fn-tile__name">Attach</span>
           </button>
+          {/* The trailing note the ProseField paragraph used to carry, beside
+              the button rather than above the strip. Drawn only where drop and
+              paste actually land bytes — `startUpload` is that capability — so
+              it never promises a path this mount does not have. */}
+          {idle && startUpload ? <span className="fn-plus__note">or drop / paste</span> : null}
           {menuOpen && startUpload && projectFolder ? (
             <div className="fn-menu" role="menu" aria-label="Attach a file">
               <button type="button" className="fn-menu__item" role="menuitem" onClick={openUpload}>
