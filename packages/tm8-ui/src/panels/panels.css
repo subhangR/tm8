@@ -3862,13 +3862,20 @@
   /* this file has no border-box reset, and each of these carries padding */
   box-sizing: border-box;
 }
-/* THE FACES WERE HEIGHT-MATCHED AND NEVER GIVEN A TREATMENT. The rule above is
-   the ONLY one reaching `.pn-badge` here, and it sets height and nothing else —
+/* THE FACES WERE HEIGHT-MATCHED AND NEVER GIVEN A TREATMENT. The group above is
+   the ONLY rule reaching `.pn-badge` here, and it sets height and nothing else —
    no border, radius, padding or background — so beside two styled pills the
-   assignee and collection faces read as bare text. Extended here rather than in
-   a new rule so there is one place that owns this row's chips. (A global
-   `.pn-badge` base would also land on the tiles, on top of the full block at
-   maestro-task-tile.css:49.) */
+   assignee and collection faces read as bare text.
+
+   WHY THIS IS A SEPARATE RULE AND NOT MORE PROPERTIES ON THE GROUP ABOVE: the
+   height band is genuinely common to all five members, but this treatment is
+   not. `lp__statesel`, `lp__rowaction`, `lp__dateadd` and `pn-gate` each carry
+   their own border, radius and background already — putting a pill border in
+   the shared group would style five things to fix one, and the state select
+   would grow a second border.
+   THE HAZARD IS A *GLOBAL* `.pn-badge` BASE, not a second panel-scoped block:
+   a global rule also lands on the tiles, on top of the full block at
+   maestro-task-tile.css:49. This is panel-scoped, so it cannot. */
 .cv2-root .lp__rowdetail--chips .pn-badge {
   display: inline-flex;
   align-items: center;
