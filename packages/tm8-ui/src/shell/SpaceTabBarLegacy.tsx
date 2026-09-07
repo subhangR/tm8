@@ -130,7 +130,10 @@ export function SpaceTabBarLegacy(props: SpaceTabBarProps) {
       <div className="shell-tabbar__spacer" />
 
       {/* The exit to the product UI, ahead of everything else on the right. */}
-      {props.uiSwitchSlot ?? null}
+      {/* The UI-2.0 door used to render here. It was DELETED from the product
+         entirely (owner, 2026-09-07), so this bar cannot draw it either: this
+         file restores the previous LAYOUT, not a time machine for controls the
+         product has since removed. */}
 
       {props.onOpenPrompts ? (
         <button

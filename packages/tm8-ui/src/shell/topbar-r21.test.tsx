@@ -49,15 +49,20 @@ describe('R21 — the three-zone row', () => {
     expect(centre?.querySelector('[role="tablist"]')).not.toBeNull();
   });
 
-  /* Item 2 was "remove this entirely"; the owner then named this control as
-     part of the rollback story and it is KEPT. The overflow it was reported for
-     is fixed in `shell.css` by clamping this slot — so the slot must exist and
-     must wrap the control. */
-  it('keeps the UI-2.0 door, in a slot the stylesheet can clamp', () => {
-    const { container } = renderBar({ uiSwitchSlot: <a href="/ui-2.0/">Switch to UI 2.0</a> });
-    const slot = container.querySelector('.shell-tabbar__uiswitch');
-    expect(slot).not.toBeNull();
-    expect(slot?.querySelector('a')?.getAttribute('href')).toBe('/ui-2.0/');
+  /* THE UI-2.0 DOOR IS GONE — item 2, "remove this entirely", ruled again by
+     the owner on 2026-09-07 after seeing the overflow fixed and still wanting
+     the control out.
+
+     THIS ASSERTION REPLACES ONE THAT CLAIMED THE OPPOSITE, and it is written as
+     a DOM check rather than left to the type system on purpose: `uiSwitchSlot`
+     was removed from `SpaceTabBarProps`, so a host cannot pass it and TypeScript
+     would catch the attempt — but a regression that re-adds the prop AND the
+     render would typecheck cleanly. Only this test would fail. */
+  it('renders NO UI-2.0 door, and no slot for one', () => {
+    const { container } = renderBar({ tabs: [{ id: 'home', label: 'Home' }] });
+    expect(container.querySelector('.shell-tabbar__uiswitch')).toBeNull();
+    expect(container.querySelector('a[href^="/ui-2.0"]')).toBeNull();
+    expect(container.textContent).not.toMatch(/UI 2\.0/i);
   });
 });
 

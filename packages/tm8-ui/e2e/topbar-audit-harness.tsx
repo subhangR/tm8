@@ -20,7 +20,6 @@ import { createRoot } from 'react-dom/client';
 import type { SpaceId, SpaceSummary } from '@tm8/contract';
 import { SpaceTabBar, SpaceTabBarLegacy, SpaceSwitcher, topBarVersion } from '../src/shell';
 import type { ServerRailItem } from '../src/shell/MenuRail';
-import { UiVersionSwitch } from '../src/ui-version';
 import { CopyLinkControl } from '../src/share/CopyLinkControl';
 import { AccountMenu } from '../src/auth/AccountMenu';
 import { AuthActionsContext, type AuthActions } from '../src/auth/gate-context';
@@ -82,11 +81,6 @@ const ACTOR = {
   isAgent: false,
 } as never;
 
-/* The probe the shipped control makes. Prod answers "no 2.0 bundle here", which
-   is the state in the screenshot — the refusal whose reason sentence overflows
-   into its neighbours. */
-const absentFetcher = (async () => new Response('', { status: 404 })) as unknown as typeof fetch;
-
 /* THE SAME FORK `GateApp` MAKES, from the same module — so the round trip
    demonstrated here exercises the shipped flag and the shipped legacy bar,
    not a stand-in for them. */
@@ -118,7 +112,6 @@ function Harness({ proposed }: { proposed: boolean }) {
           {...(proposed ? {} : { onOpenPrompts: () => undefined })}
           onOpenAccount={() => undefined}
           accountInitial="A"
-          {...(proposed ? {} : { uiSwitchSlot: <UiVersionSwitch fetcher={absentFetcher} /> })}
           {...(proposed
             ? {}
             : {

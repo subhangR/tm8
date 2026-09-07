@@ -356,52 +356,6 @@
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */
 
-/* ── THE UI-2.0 DOOR, CLAMPED (R21) ────────────────────────────────────────
-   
-   ITEM 2 WAS "Top switch 2.0 UI and its content is over flow remove this
-   entirely". An earlier revision of this change deleted the control; the owner
-   then named it as part of the rollback story, so it is KEPT and the overflow
-   is fixed instead. He asked for the overflow gone, not the door.
-   
-   THE OVERFLOW IS NOT THE LINK. When the probe finds no 2.0 bundle the control
-   falls back to `DisabledAction`, which renders its reason as INLINE PROSE
-   ("this server does not serve the 2.0 UI — an operator sets TM8_UI_2_0_DIR to
-   a built 2.0 bundle"). Measured at a 768px viewport: 100.9 CSS px wide and
-   168 px TALL, inside a 40px bar — five lines painted down over the screen
-   below, at every width including 1920.
-   
-   So the slot clamps to one line and hands the sentence to the title. The
-   refusal is not silenced — it is still announced, still focusable, still
-   carries its reason to a pointer and to assistive tech. It simply stops being
-   a paragraph in a toolbar. */
-.cv2-root .shell-tabbar--r21 .shell-tabbar__uiswitch {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-height: 22px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-.cv2-root .shell-tabbar--r21 .shell-tabbar__uiswitch .hon-caption {
-  /* The reason line, folded away. `position: absolute` with a clip rect rather
-     than `display: none`, so it stays in the accessibility tree: a refusal that
-     stops saying why is a worse defect than the one being fixed. */
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.cv2-root .shell-tabbar--r21 .shell-tabbar__uiswitch .ui-version,
-.cv2-root .shell-tabbar--r21 .shell-tabbar__uiswitch .hon-disabled-group {
-  min-width: 0;
-  max-width: 168px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ══ THE LADDER ════════════════════════════════════════════════════════════
    
    CONTAINER queries on the bar's own inline size, NOT viewport media queries,
@@ -421,8 +375,9 @@
    control that opens the same list.
    
    Measured minimum intrinsic width: 1167 CSS px before this change, 915 after
-   the three utilities moved to the account menu. The rungs carry it below that
-   in four steps. */
+   the three utilities moved to the account menu — and lower again once the
+   UI-2.0 door was deleted outright (owner, 2026-09-07). The rungs carry it
+   below that in four steps. */
 
 /* 1 — the palette hint drops its prose and keeps the shortcut. Pure
        decoration: `⌘K` is the fact, "/ palette ·" is the label for it. */
@@ -450,10 +405,6 @@
   .cv2-root .shell-tabbar--r21 .shell-tabbar__tabs .shell-tabbar__tab {
     padding: 2px 7px;
   }
-  .cv2-root .shell-tabbar--r21 .shell-tabbar__uiswitch .ui-version,
-  .cv2-root .shell-tabbar--r21 .shell-tabbar__uiswitch .hon-disabled-group {
-    max-width: 104px;
-  }
 }
 
 /* 4 — the switcher shows its monogram alone. The space name is one line down
@@ -464,16 +415,6 @@
     display: none;
   }
   .cv2-root .shell-tabbar--r21 .shell-switcher__caret {
-    display: none;
-  }
-}
-
-/* 5 — the UI-2.0 door leaves the bar. It is the LAST decoration to go and the
-       first thing below identity, because it is a door to another bundle
-       rather than a way around this one, and the account menu keeps a row for
-       it. Reached at a width no laptop produces. */
-@container tabbar (max-width: 700px) {
-  .cv2-root .shell-tabbar--r21 .shell-tabbar__uiswitch {
     display: none;
   }
 }

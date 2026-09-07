@@ -17,7 +17,19 @@ build and before an adversarial review, and seven of its statements survived nei
 | 4 | fix the card by widening 280 → 320 | **`box-sizing` is the whole fix**; the widening is cosmetic. A content-box row stays 24 px wider than whatever the card is | review |
 | 5 | step 6: delete `.shell-tabbar .copy-link` | **dead work** — zero matches in this package; those selectors live only in `packages/tm8_ui_2.0` | review |
 | 6 | tabs fold to `Home ▾` under 780 | **not built.** All eight tabs fit a 698 px bar, so the fold solves a problem that does not occur | the build |
-| 7 | the UI-2.0 switch is **cut** | **kept**, with only its overflow fixed | the owner, after this doc was approved |
+| 7 | the UI-2.0 switch is **cut** | **cut** — after a reversal and a re-reversal; see below | the owner, twice |
+
+**Row 7 changed twice and both turns are kept deliberately.** The design said cut. The owner then named the
+switch as part of the rollback story, so it was kept and only its overflow fixed. He then saw the fixed
+overflow and ruled again — *"delete the Swutch to UI 2.0 in the Bar"* (2026-09-07) — so it is **removed
+entirely**: the control, the `uiSwitchSlot` prop, the clamp CSS, the ladder rung and the whole `ui-version/`
+module. **A design record that shows a decision oscillating is more useful than one that shows only where it
+landed**, because the middle position was reached honestly and the reasons for it were sound at the time.
+
+What made the reversal safe to act on: `packages/tm8_ui_2.0` keeps its own `UiVersionReturn` ("Back to UI
+1.0", mounted at that package's `GateApp.tsx:1884`), so removing the forward door strands nobody — anyone
+reaching `/ui-2.0/` by typing the URL still clicks their way back. **And the switch was never the rollback**:
+that is the profile-menu row, in-bundle, which is why deleting this control costs the backup plan nothing.
 
 **On #4, precisely, because a later auditor cannot otherwise tell:** the *prose* ranked the widening first
 and the box fix third. The *code* was never wrong — it applies both, and the box fix is the one that does
@@ -271,8 +283,9 @@ descendant selector is not inert once the element it names moves underneath it.
 
 ## 6. Two decisions for the owner
 
-**A — the UI-2.0 door. SUPERSEDED 2026-09-07:** the owner ruled that the switch stays, as part of the
-rollback story, so it is kept and only its overflow is fixed. The argument below is left standing rather
+**A — the UI-2.0 door. RESOLVED 2026-09-07, after one reversal: the switch is DELETED.** The owner first
+named it as part of the rollback story (so an intermediate revision kept it and clamped the overflow), then
+saw that and ruled again to remove it entirely. The design's original position stands. The argument below is left standing rather
 than deleted because it was *also* built on a false premise (correction #5's neighbour: `dist-2.0` exists
 and `deploy/prod/env.sh:92` exports the variable unconditionally, so "an operator may never configure it"
 was never true) — and a struck argument teaches a later reader more than a vanished one.
@@ -299,7 +312,7 @@ asked for a bigger mark, and 38 would deliver a compromise nobody asked for. Tri
 | keep | space ⋄ server switcher | left zone, ~150 px, one line | same popover, same spaces, same `+ new space` / `+ add server` |
 | keep | server name on the trigger | popover header + trigger `title` | hover, or open the popover — where it already appears |
 | keep | Home Work Board Craft Graph CodeBrain Settings Help | centre zone, all eight at every built width | same tabs, still derived from the resolved `MenuConfig` groups. The designed fold to `Home ▾` was not built — measured unnecessary |
-| **kept** | ⇄ Switch to UI 2.0 | **stays in the bar**, refusal clamped to one line with the reason on the title | the owner ruled after this doc was approved that the door is part of the rollback story. Only the overflow was the complaint, and only the overflow was fixed |
+| **cut** | ⇄ Switch to UI 2.0 | **removed entirely** — control, prop, CSS and the `ui-version/` module | the owner ruled twice: kept after the first pass, then deleted after seeing the overflow fixed. Nothing is stranded — `tm8_ui_2.0` keeps its own "Back to UI 1.0" return door, and the rollback was never this control |
 | **move** | prompts | card row "System prompts" | profile menu, and `⌘K` |
 | keep | / palette · ⌘K | right zone; `⌘K` under 1240 | unchanged, plus the shortcut it names |
 | **move** | ◹ inbox bell | card row "Inbox", D28 posture preserved | profile menu, `⌘K`, and Home's NEEDS YOU section |

@@ -29,12 +29,15 @@
  *  3. THREE UTILITIES MOVED into the account menu (Inbox, prompts, Copy link),
  *     taking the bar's minimum intrinsic width from 1167 to 915 CSS px. See
  *     `hostsUtilities` below for the state where they stay.
- *  4. THE UI-2.0 DOOR IS KEPT. An earlier revision of this change deleted it;
- *     the owner then named it as part of the rollback story. What was wrong was
- *     never that it existed — `DisabledAction` renders its reason as inline
- *     prose, 100.9 CSS px wide and 168 px TALL inside a 36 px bar, spilling
- *     down over the page at every width including 1920. `shell.css` clamps the
- *     slot; the control itself is untouched.
+ *  4. THE UI-2.0 DOOR IS GONE, control and all (owner, 2026-09-07: "delete the
+ *     Swutch to UI 2.0 in the Bar"). It was the widest object in the row —
+ *     `DisabledAction` renders its reason as inline prose, 618 CSS px at 1920
+ *     and 168 px TALL inside a 36 px bar, spilling down over the page at every
+ *     width. An intermediate revision kept it and clamped the prose; the owner
+ *     saw that and still wanted it out. `packages/tm8_ui_2.0` keeps its own
+ *     `UiVersionReturn` ("Back to UI 1.0"), so anyone who reaches `/ui-2.0/` by
+ *     typing the URL can still click their way back — the forward door is
+ *     removed, never the way out.
  *
  * REVISION 20 (Help/top-tab ruling, 2026-08-20): the shipped row is exactly
  * Home | Work | Board | Craft | Graph | Settings | Help. Board is the client-
@@ -147,18 +150,6 @@ export interface SpaceTabBarProps {
    * keep working.
    */
   shareSlot?: ReactNode;
-  /**
-   * THE DOOR TO THE ALTERNATE 2.0 UI, when this bundle is serving the root.
-   *
-   * A slot and not a rendered control, for the same reason as `shareSlot`: the
-   * bar has no business knowing this package has a sibling. Left undefined the
-   * bar is unchanged, which is every existing shell test and this bundle
-   * rendered anywhere the switch is not in play.
-   *
-   * It sits FIRST in the right-hand cluster, before the palette hint: a door a
-   * viewer is looking for should not be the control they find last.
-   */
-  uiSwitchSlot?: ReactNode;
 }
 
 export function SpaceTabBar(props: SpaceTabBarProps) {
@@ -232,18 +223,6 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
 
       {/* RIGHT ZONE. */}
       <div className="shell-tabbar__zone shell-tabbar__zone--trail">
-        {/* The door to the alternate 2.0 UI. KEPT (2026-09-07, owner ruling):
-            an earlier revision of this change deleted it, and the owner then
-            named it as part of the rollback story. What was wrong with it was
-            never that it existed — it is that `DisabledAction` renders its
-            reason as inline prose, which measured 100.9 CSS px wide and 168 px
-            TALL inside a 36px bar, spilling down over the page at every width.
-            `shell.css` now clamps this slot to one line and moves the reason to
-            the title; the control is unchanged. */}
-        {props.uiSwitchSlot ? (
-          <div className="shell-tabbar__uiswitch">{props.uiSwitchSlot}</div>
-        ) : null}
-
         {/* THE PALETTE HINT STAYS IN THE BAR while the utilities leave, and
             deliberately: it is the one control whose job is to reach the
             others. Folding three verbs into a menu is only safe while there is
