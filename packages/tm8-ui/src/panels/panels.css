@@ -2858,6 +2858,15 @@
      trade: five legible group labels are worth 2px, thirteen legible rows
      are worth 44.
 
+     DO NOT ADD THE PER-ELEMENT FIGURES UP. They do not reconcile with the
+     total and they are not meant to: measured here, the headings and rows
+     sum to 443.11px inside a menu whose real scroll height is 412px, because
+     margins collapse between them. Two readers have now done that arithmetic,
+     got a ~4px discrepancy, and gone looking for a wrong number that was not
+     there. The two figures that carry weight are the directly measured
+     totals — 449px -> 412px, and 7 -> 8 options visible. The rest is a
+     breakdown of where it came from, not an equation.
+
      The box stays 274.8px on purpose. The complaint that started this was
      the menu blanketing the list it filters, and a taller menu makes that
      worse rather than better. */
