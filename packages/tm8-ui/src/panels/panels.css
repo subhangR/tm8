@@ -2841,14 +2841,26 @@
   left: 0;
   z-index: 20;
   width: min(280px, 100%);
-  /* SAME ENVELOPE, MORE IN IT — and the numbers, because the first version of
-     this comment claimed a density win the code did not deliver.
-     Measured A/B at the same viewport, origin/main vs here: option rows
-     27.77px -> 24.41px, group headers 24.75px -> 21.08px, total content
-     449px -> 412px, and EIGHT options visible without scrolling instead of
-     seven. The box itself is unchanged at 274.8px on purpose: growing it to
-     avoid scrolling would worsen the complaint that started this — the menu
-     blanketing the list it filters — rather than fix it. */
+  /* SAME ENVELOPE, MORE IN IT — with the accounting, because the first two
+     versions of this comment both got it wrong and a number in a comment is
+     a claim like any other.
+
+     Measured A/B at one viewport, origin/main vs here:
+       option rows   27.77px -> 24.41px  x13  =  -43.7px   <- the whole saving
+       headings      24.75px -> 21.08px for the FIRST one, but the four that
+                     carry a separator occupy 26.19px each once their 3px
+                     margin is counted, so all five together went
+                     123.75px -> 125.84px  =  +2.1px
+       content       449px -> 412px, 8 of 13 options visible, not 7
+
+     So the headings did NOT get cheaper — they cost slightly more, and the
+     rows paid for them and for the net gain besides. That is a deliberate
+     trade: five legible group labels are worth 2px, thirteen legible rows
+     are worth 44.
+
+     The box stays 274.8px on purpose. The complaint that started this was
+     the menu blanketing the list it filters, and a taller menu makes that
+     worse rather than better. */
   max-height: 240px;
   overflow-y: auto;
   overflow-x: hidden;
