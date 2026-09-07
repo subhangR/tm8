@@ -272,10 +272,20 @@ export function ListRootHeader(props: ListRootHeaderProps) {
               <span aria-hidden>{cellBirth!.glyph}</span>
             </button>
             {options && options.length > 0 ? (
+              /* THE SECOND HALF OF A SPLIT BUTTON. It sat flush against the
+                 ＋ with no divider and a 17x26 hit area — under a quarter of
+                 the touch floor — so a mis-tap on the kind cell CREATED AN
+                 ENTITY when it meant to open a menu. The hairline and the
+                 wider target are in `list-root-header.css`; what is added
+                 here is what the markup lacked. The accessible name is
+                 VERBATIM — `home-roots.test.tsx` and `gate.test.tsx` both
+                 navigate by it. */
               <button
                 type="button"
                 className="tch-rootcell__caret"
                 aria-label="Choose which list to show"
+                title="Choose which list to show"
+                aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
               >

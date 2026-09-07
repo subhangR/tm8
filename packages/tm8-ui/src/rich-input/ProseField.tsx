@@ -120,7 +120,14 @@ export function ProseField({
 
   const busy = attachments.busy.length > 0 ? `uploading ${attachments.busy.join(', ')}…` : null;
   const problem = attachments.error ?? attachments.refusal;
-  const line = busy ?? (attach && writable ? hint ?? 'drop or paste a file to insert it here' : null);
+  /* A TRAILING NOTE, not a sentence. The old line ("drop or paste a file to
+     insert it here") was set at 9px — under the readability floor — and it
+     stated the whole mechanism twice over on any surface that also draws the
+     attachment control. Shortened to the fact, raised to `--pn-fs-label`
+     (rich-input.css). The words "drop or paste" stay in it: two prose-surface
+     tests assert this line is ABSENT where there is no attach port, and they
+     match on that phrase. */
+  const line = busy ?? (attach && writable ? hint ?? 'drop or paste a file here' : null);
 
   return (
     <div className="ri-field">

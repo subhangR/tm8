@@ -398,7 +398,11 @@ describe('DEF-030 — the list chrome is a BUDGET, and it is spent in three band
     // Labels and counts came off the screen, not out of the accessibility
     // tree. A row of four unlabelled rings is a row of four unnamed buttons
     // to a screen reader, which is a worse screen than the one we shrank.
-    expect(listPanel).toMatch(/oneSurface \? <CategoryGlyph category=\{tab\.id\} \/>/);
+    /* Whitespace-tolerant: the ternary wraps across lines now that the
+       desktop arm renders the label and the count as separate spans. What
+       this guards is unchanged — on one surface the tab is a MARK, and the
+       mark is `CategoryGlyph` keyed by the tab's own id. */
+    expect(listPanel).toMatch(/oneSurface \?\s*\(?\s*<CategoryGlyph category=\{tab\.id\} \/>/);
     expect(listPanel).toMatch(/'aria-label': `\$\{tab\.label\}, \$\{tabLabel\(tab\)\}`/);
   });
 

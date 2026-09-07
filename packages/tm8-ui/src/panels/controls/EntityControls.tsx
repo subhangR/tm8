@@ -583,17 +583,82 @@ export function EntityControlStrip({
   props,
   config,
   variant = 'lines',
+  collapseEmptyDates = false,
+  omitArchive = false,
+  trailing,
 }: {
   row: ControlSubject;
   props: ControlHost;
   config: KindConfig;
   /** `chips` for the control-card anatomy; see the amendment note above. */
   variant?: 'lines' | 'chips';
+  /**
+   * Collapse a WHOLLY EMPTY set of date controls to one `＋ Add dates` verb.
+   *
+   * Opt-in per host, not a variant rule, and deliberately narrow. The list's
+   * expanded strip asserts — correctly — that an empty date field is still a
+   * rendered field, so it keeps both boxes; only the detail panel, where two
+   * empty `mm/dd/yyyy` placeholders were the widest and loudest things on the
+   * screen at 125.3px each, opts in.
+   */
+  collapseEmptyDates?: boolean;
+  /**
+   * The HOST is rendering the tombstone verb somewhere better and does not
+   * want a second copy here. Set by the detail panel only, which moved it into
+   * `PanelOverflow`: as this strip's last child it took `margin-left: auto`,
+   * became the widest item in the row, and was therefore the one flex-wrap
+   * ejected onto a second line — landing a few pixels under `✕` Close.
+   *
+   * AN OPT-IN, not a variant rule: `variant="chips"` is also the list's
+   * control card, which has no overflow of its own and must keep its Archive.
+   */
+  omitArchive?: boolean;
+  /**
+   * A read-only fact the HOST wants shown on this row, rendered last.
+   *
+   * Kept as an opaque node on purpose: this strip is registry-driven and may
+   * not learn per-kind facts of its own (§15.2 — no kind literals live in
+   * `panels/`). The host knows what it wants to say; this only knows where a
+   * chip goes.
+   */
+  trailing?: ReactNode;
 }) {
   const list = config.list;
   const control = list.stateControl;
   const archived = row.deletedAt != null;
   const chips = variant === 'chips';
+
+  /*
+   * COLLAPSE ONLY A TOTAL ABSENCE, and only until the user asks otherwise.
+   * If either date carries a value the controls render as they always have —
+   * a value must never be behind a click. `datesOpen` is deliberately local
+   * and unpersisted: revealing the fields is a step in one editing gesture,
+   * not a preference worth remembering across entities.
+   */
+  const dateControls = list.dateControls ?? [];
+  const [datesOpen, setDatesOpen] = useState(false);
+  const everyDateEmpty =
+    dateControls.length > 0 &&
+    dateControls.every(
+      (date) =>
+        dateInputValue((row.state as unknown as Record<string, unknown>)[date.source]) === '',
+    );
+  /*
+   * COLLAPSE ONLY WHAT IS ACTUALLY WRITABLE — the same three gates
+   * `RowDateControl` applies, hoisted, because hiding a control also hides
+   * whichever refusal it would have rendered. An unloaded capability set
+   * (CHECKING), a `canEdit: false` refusal, or an unwired host must each still
+   * draw the real control and say why it cannot be used; a `＋ Add dates`
+   * button in front of a refusal would be an invitation this panel cannot
+   * honour. This is the rule `CollapsibleSection` states for empty sections —
+   * a fold that hid a refusal would be hiding its reason.
+   */
+  const dateCaps = props.capabilitiesOf?.(row.id);
+  const datesWritable =
+    props.onSetValue != null &&
+    (props.capabilitiesOf === undefined ||
+      (dateCaps !== undefined && dateCaps.canEdit !== false));
+  const datesCollapsed = collapseEmptyDates && everyDateEmpty && datesWritable && !datesOpen;
 
   /**
    * THE STRIP IS MOUNTED, SO THE ROW'S PERMISSIONS ARE NOW WORTH KNOWING.
@@ -671,9 +736,36 @@ export function EntityControlStrip({
       {/* Directly after the enum pickers and before the axes, so the strip
           reads status → priority → due → axes: the kind's OWN registry-declared
           fields together, then the per-space vocabulary the host hydrates. */}
-      {(list.dateControls ?? []).map((date) =>
-        line(date.label, <RowDateControl row={row} props={props} control={date} />),
-      )}
+      {/* TWO EMPTY DATE BOXES WERE THE LOUDEST THING ON THE PANEL.
+          A native `<input type="date">` renders its own `mm/dd/yyyy`
+          placeholder, and the rule that was supposed to hide it only dims it
+          to `--pn-ink-4` — dimming is not removing. So a task with no dates
+          spent 250px of the strip, across the two widest controls in it,
+          displaying a format hint twice. Measured: 125.3px each.
+
+          Collapsed, the same absence is one quiet verb. Pressing it reveals
+          the real inputs, unchanged — this hides an EMPTY state, never a
+          value, and never the controls once either date is set. */}
+      {datesCollapsed
+        ? line(
+            'Dates',
+            <button
+              type="button"
+              className="lp__dateadd"
+              data-testid="row-dates-add"
+              title={`Set ${(list.dateControls ?? []).map((d) => d.label.toLowerCase()).join(' or ')}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                setDatesOpen(true);
+              }}
+            >
+              <span aria-hidden>＋</span>
+              <span>Add dates</span>
+            </button>,
+          )
+        : (list.dateControls ?? []).map((date) =>
+            line(date.label, <RowDateControl row={row} props={props} control={date} />),
+          )}
 
       {/* One picker per axis the SPACE defines — none defined, none drawn.
           Registry presence only marks the kind whose state carries `axes`;
@@ -698,7 +790,9 @@ export function EntityControlStrip({
           )
         : null}
 
-      {line(
+      {trailing}
+
+      {omitArchive ? null : line(
         'Archive',
         /* The tombstone verb. `restore` when this row is already archived —
            the Archived tier is where a user meets these rows, and a tier that
@@ -1431,7 +1525,7 @@ export function RowMembershipControl({
 /* A real bin, not '▢'. Same reason the chevrons became SVG in
    `MaestroTaskTile`: a typographic glyph sits on its own font's baseline and
    lands at a different optical height from the chips beside it. */
-function BinIcon() {
+export function BinIcon() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden focusable="false" width="14" height="14">
       <path
@@ -1446,7 +1540,7 @@ function BinIcon() {
   );
 }
 
-function RestoreIcon() {
+export function RestoreIcon() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden focusable="false" width="14" height="14">
       <path

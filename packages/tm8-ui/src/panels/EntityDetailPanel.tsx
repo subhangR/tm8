@@ -28,6 +28,8 @@ import {
   ActionBar,
   PanelFooter,
   PanelHeader,
+  PanelIdentityItems,
+  PanelOverflow,
   PanelWindowControls,
   TabStrip,
   panelActionContext,
@@ -53,7 +55,8 @@ import {
 import { ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import {
-  EntityControlStrip, stripHasLiveControl, type ControlHost, type ControlSubject,
+  BinIcon, EntityControlStrip, RestoreIcon, RowAction, stripHasLiveControl,
+  type ControlHost, type ControlSubject,
 } from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
@@ -166,6 +169,37 @@ function controlsFor(config: KindConfig): boolean {
  * stays a SUBSET rather than growing an `EntityDetail` dependency, and so the
  * compiler checks the projection instead of a cast hiding a renamed field.
  */
+/**
+ * THE COMPLETION GATE, SAID ONLY WHEN IT SAYS SOMETHING.
+ *
+ * It used to ride the metadata grid as `Completion Gate none` on nearly every
+ * task, because the grid's generic loop prints any non-empty string and
+ * `'none'` is four characters. A gate that is not set is not a fact worth a
+ * row; a gate that IS set changes whether `complete` will be refused, so it
+ * belongs beside the status it constrains.
+ *
+ * NO KIND BRANCH: the field is read off state by name, so a kind that never
+ * carries one renders nothing and this file learns no kind literals (§15.2).
+ * The word comes from a table rather than the wire value — `pr_merged` is a
+ * machine token and this is a reading surface.
+ */
+const GATE_WORDS: Readonly<Record<string, string>> = { pr_merged: 'PR merged' };
+
+function gateChipFor(detail: EntityDetail): ReactNode {
+  const raw = (detail.state as unknown as Record<string, unknown>).completionGate;
+  if (typeof raw !== 'string' || raw === '' || raw === 'none') return null;
+  const word = GATE_WORDS[raw] ?? raw.replace(/_/g, ' ');
+  return (
+    <span
+      className="pn-gate"
+      data-testid="panel-completion-gate"
+      title={`Completion gate: ${word} — this task cannot be completed until that holds.`}
+    >
+      Gate · {word}
+    </span>
+  );
+}
+
 function subjectOf(detail: EntityDetail): ControlSubject {
   return {
     id: detail.id,
@@ -851,6 +885,16 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         props={controlHost}
         config={config}
         variant="chips"
+        /* Two empty date boxes were 250px of the strip spent rendering a
+           format hint twice; see the prop's own note. Collapses only when
+           BOTH are unset and both are actually writable. */
+        collapseEmptyDates
+        /* The gate rides the metadata line now, and only when it is set. */
+        trailing={gateChipFor(detail)}
+        /* Moved to `PanelOverflow` beside the window controls — see the prop's
+           own note. The list's control card keeps its Archive; only this host
+           opts out, because only this host has somewhere better to put it. */
+        omitArchive
       />
     ) : null;
 
@@ -900,6 +944,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         config={config}
         breadcrumb={breadcrumb}
         liveness={props.liveness}
+        /* The strip below renders this kind's state as a live select, so the
+           header's read-only pill would say the same word twice in two
+           consecutive right-aligned clusters. Suppress the record pill only —
+           `deleted` and the liveness verdict still outrank this. */
+        statusInControls={strip !== null && config.list.stateControl != null}
         /* THE TITLE is editable only where registry data and the seam both
            permit it. The visual treatment stays plain by user direction; the
            actual click/keyboard editor is still mounted only when writable. */
@@ -1094,6 +1143,33 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 is registered, so the single-server case never sees it. Kind
                 awareness lives in src/transfer, not here (§15.2). */}
             <TransferControl detail={detail} />
+            {/* THE TOMBSTONE VERB, ONE CLICK BACK. It used to ride the control
+                strip as the last chip and, being the widest item there, was
+                the one flex-wrap ejected — onto its own line, directly under
+                `✕`. A destructive verb should not be a same-size neighbour of
+                the control you press when you are done looking. The control
+                itself is unchanged: same `RowAction`, same host, same
+                `onArchive`, same refusal vocabulary. */}
+            {strip !== null ? (
+              <PanelOverflow>
+                {/* The id and the link the metadata row used to spend a
+                    measured 41.8px stating on every task. */}
+                <PanelIdentityItems entityId={detail.id} spaceId={props.ctx.spaceId} />
+                <span className="pn-overflow__rule" />
+                <RowAction
+                  ref_={detail.deletedAt != null ? 'restore' : 'archive'}
+                  row={subjectOf(detail)}
+                  props={controlHost}
+                  onRun={controlHost.onArchive}
+                  variant="wide"
+                  /* The same drawn glyph the strip used, for the same reason:
+                     the def's `▢` is a typographic character that sits on its
+                     own baseline and lands at a different optical height from
+                     everything beside it. */
+                  glyph={detail.deletedAt != null ? <RestoreIcon /> : <BinIcon />}
+                />
+              </PanelOverflow>
+            ) : null}
             <PanelWindowControls
               onPromote={props.onPromote}
               onClose={onClose}

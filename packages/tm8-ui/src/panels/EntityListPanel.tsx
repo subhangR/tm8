@@ -722,6 +722,15 @@ export function EntityListPanel(props: EntityListPanelProps) {
         inputRef={props.searchInputRef}
       />
 
+      {/* ONE CHROME BAND, NOT TWO STACKED ONES.
+          The tier row and the filter row used to be siblings with a 0.0px gap
+          between them — two bands reading as one undifferentiated slab, and
+          together they cost a whole row of vertical chrome above the list.
+          Wrapping them in a flex row lets them sit side by side when there is
+          room and fall onto two lines when there is not, which is the
+          responsive behaviour the old fixed stack could not express. The
+          bottom rule moves here, so the pair is ruled once rather than twice. */}
+      <div className="lp__chromerow">
       {/* Hidden in board mode — the columns ARE this partition. See
           `activeTab`. */}
       {mode === 'board' ? null : (
@@ -775,6 +784,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         lensSet={lensSet}
         onLens={setLensId}
       />
+      </div>
 
       {/* THE LENS SAYS WHAT IT HIDES. A kind-scoped list showing one set's
           members is NOT the set: a mixed collection holds items of every
@@ -1491,7 +1501,19 @@ function CategoryTabs({
           onClick={() => onTab(tab.id)}
           {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
         >
-          {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
+          {oneSurface ? (
+            <CategoryGlyph category={tab.id} />
+          ) : (
+            <>
+              <span className="lp__tab-word">{tab.label}</span>
+              {/* THE COUNT IS A SECOND VOICE, NOT THE SAME ONE. Setting it at
+                  the label's size and weight made `To Do 227` read as a single
+                  blob rather than a name with a quantity; at --pn-fs-fine in
+                  --pn-ink-4 it recedes without being lost, and tabular figures
+                  stop the row reflowing as counts tick. */}
+              <span className="lp__tab-count">{tabLabel(tab)}</span>
+            </>
+          )}
         </button>
       ))}
     </div>
@@ -1655,7 +1677,8 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="filter-trigger"
         >
-          filter ▾
+          Filter
+          <span className="lp__chip-caret" aria-hidden>▾</span>
         </button>
       ) : null}
       {people.length > 1 ? (
@@ -1667,7 +1690,12 @@ function FilterRow({
           aria-haspopup="menu"
           data-testid="people-filter-trigger"
         >
-          {selectedPeople.length > 0 ? `people · ${selectedPeople.length}` : 'people ▾'}
+          People
+          {selectedPeople.length > 0 ? (
+            <span className="lp__chip-count">{selectedPeople.length}</span>
+          ) : (
+            <span className="lp__chip-caret" aria-hidden>▾</span>
+          )}
         </button>
       ) : null}
       {/* The collection lens trigger. Rendered exactly when the registry
@@ -1695,7 +1723,8 @@ function FilterRow({
             aria-haspopup="menu"
             data-testid="collection-lens-trigger"
           >
-            {`${membership.label.toLowerCase()} ▾`}
+            {membership.label}
+            <span className="lp__chip-caret" aria-hidden>▾</span>
           </button>
         )
       ) : null}
@@ -1719,7 +1748,8 @@ function FilterRow({
         >
           {/* At the floor the sort chip collapses to its glyph — T0-3 frame 4
               draws exactly `↓`. The chip never disappears. */}
-          {compact ? '↓' : `↓ ${current.label}`}
+          <span aria-hidden>↓</span>
+          {compact ? null : <span className="lp__chip-word">{current.label}</span>}
         </button>
       ) : null}
 
@@ -1785,6 +1815,29 @@ function FilterRow({
               })}
             </div>
           ))}
+          {/* CLEARING WAS ONLY EVER REACHABLE BY HUNTING CHIPS. Every active
+              option rendered a dismissable chip in the bar, so undoing four
+              filters meant finding and clicking four separate targets that had
+              moved as each one left. One footer verb clears the set from the
+              same surface that set it. Rendered only when there is something
+              to clear, so it never reads as an available action that does
+              nothing. */}
+          {active.length > 0 ? (
+            <div className="lp__filterfoot">
+              <button
+                type="button"
+                className="lp__filterclear"
+                data-testid="filter-clear-all"
+                onClick={() => {
+                  for (const { spec, option } of active) {
+                    onToggleOption(spec.id, option.id, spec.multi ?? false);
+                  }
+                }}
+              >
+                Clear all
+              </button>
+            </div>
+          ) : null}
         </>
       ))}
       {membership ? narrowing('sets', membership.label, 'collection-lens-menu', 'lp__filtermenu', (

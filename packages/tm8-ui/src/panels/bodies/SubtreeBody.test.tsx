@@ -165,10 +165,25 @@ describe('the composed metadata grid', () => {
     expect(grid.textContent).toContain(parent.title);
   });
 
-  it('renders the id and the scalars the strip does not own', () => {
+  it('renders the scalars the strip does not own, and NO LONGER the id', () => {
     const { getByTestId } = renderBody();
     const grid = getByTestId('subtree-grid');
-    expect(grid.textContent).toContain(taskUuidTitle.id);
+    /*
+     * THE ID LEFT THIS GRID on 2026-09-07 — owner decision, option A of three
+     * put to him with their costs. This assertion used to be
+     * `toContain(taskUuidTitle.id)`; it is INVERTED rather than deleted,
+     * because "the id is not printed here" is now the behaviour worth holding.
+     *
+     * It was a measured 41.8px of every task spent on a 36-character token,
+     * beside a `Completion Gate` cell reading `none` on nearly every task.
+     * The id did not disappear: `Copy ID` sits in the panel's `⋯` overflow,
+     * and `panel-controls.test.tsx` holds that end of it — a capability moved
+     * is a capability that must still be tested somewhere, so it is.
+     *
+     * The REST of this test is unchanged and is the half that always
+     * mattered: scalars the control strip does not own keep their cells.
+     */
+    expect(grid.textContent).not.toContain(taskUuidTitle.id);
     /*
      * `Due` LEFT THIS GRID on 2026-08-28, and the reason is the rule the next
      * test states rather than an exception to it.

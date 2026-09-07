@@ -77,7 +77,25 @@ export function copyLinkUrl({
   openEntity = null,
   appBaseUrl = currentAppBaseUrl(),
 }: Pick<CopyLinkControlProps, 'spaceId' | 'target' | 'openEntity' | 'appBaseUrl'>): string | null {
-  const routeTarget = routeViewOf(target, openEntity);
+  return urlForRouteTarget(spaceId, routeViewOf(target, openEntity), appBaseUrl);
+}
+
+/**
+ * The one place a share URL is spelled. Split out of `copyLinkUrl` when a
+ * second caller appeared that already knows its route and has no `MenuTarget`
+ * to resolve — the panel's overflow, which shares the entity it is showing.
+ *
+ * IT EXISTS SO THERE IS STILL EXACTLY ONE FORMAT. The alternative was a second
+ * caller assembling its own address, and the first attempt at that shipped
+ * `${origin}/e/${id}` — a path route, unscoped by space, that this app does
+ * not answer on. Two spellings of "a link to this thing" is one more than can
+ * ever be kept true.
+ */
+function urlForRouteTarget(
+  spaceId: SpaceId,
+  routeTarget: ReturnType<typeof routeViewOf>,
+  appBaseUrl: string,
+): string | null {
   if (!routeTarget || !appBaseUrl) return null;
 
   const outcome = build(
@@ -88,6 +106,28 @@ export function copyLinkUrl({
     }),
   );
   return new URL(outcome.hash, appBaseUrl).toString();
+}
+
+/**
+ * A link to ONE ENTITY, space-scoped, for a caller that is already looking at
+ * it and does not know which screen it is on.
+ *
+ * `originView` is deliberately omitted rather than guessed. It is a breadcrumb
+ * hint saying which screen the reader came from, and the detail panel is
+ * mounted by five different hosts — claiming `workspace` from a panel opened on
+ * the graph would put a false trail in a link someone else follows. The route
+ * type marks it optional for exactly this case.
+ */
+export function entityLinkUrl({
+  spaceId,
+  entityId,
+  appBaseUrl = currentAppBaseUrl(),
+}: {
+  spaceId: SpaceId;
+  entityId: EntityId;
+  appBaseUrl?: string;
+}): string | null {
+  return urlForRouteTarget(spaceId, { view: 'entity', entityId, origin: null }, appBaseUrl);
 }
 
 /**
