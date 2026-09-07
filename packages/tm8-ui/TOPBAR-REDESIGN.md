@@ -2,8 +2,31 @@
 
 **Task:** 01a07a56 "TM8 - Top Bar UI issues" · **Artifact:** 01a07a80-4c2c-7e7c-9db5-2463083672f6
 **Base:** `origin/main` 4790333c · **Package:** `packages/tm8-ui` (the product UI at `/`)
-**Status:** design only. Nothing in `packages/tm8-ui/src` is modified. The only new files are
-`e2e/topbar-audit-harness.{html,tsx}` and this document.
+**Status:** BUILT — PR #600. Read the corrections block below first: this document was written before the
+build and before an adversarial review, and seven of its statements survived neither.
+
+---
+
+## CORRECTIONS, 2026-09-07 — read these before the body
+
+| # | this doc said | the truth | how it was found |
+|---|---|---|---|
+| 1 | the bar's content is **1167 px at every width** | its **minimum intrinsic** width is 1167; above a 1280 viewport `scrollWidth` reports the viewport, not the content | review, from this doc's own table |
+| 2 | the UI-2.0 refusal is **680 px** | **618 CSS px**. 680 came from `getBoundingClientRect` (*after* `zoom: 1.1`) printed beside `clientWidth` totals (*before* it) | the review reasoned it from the harness source with no browser; my own result then proved it — `cardW: 310` beside `clientWidth: 280`, one box, 1.1× apart |
+| 3 | intrinsic width **1167 → ~916** | **1167 → 915**, and the old "today" column summed to 1884, not 1167 | ~916 was a sum of max-content widths; a nowrap flex row's minimum is not that sum. Re-measured by removing the controls and reading the row |
+| 4 | fix the card by widening 280 → 320 | **`box-sizing` is the whole fix**; the widening is cosmetic. A content-box row stays 24 px wider than whatever the card is | review |
+| 5 | step 6: delete `.shell-tabbar .copy-link` | **dead work** — zero matches in this package; those selectors live only in `packages/tm8_ui_2.0` | review |
+| 6 | tabs fold to `Home ▾` under 780 | **not built.** All eight tabs fit a 698 px bar, so the fold solves a problem that does not occur | the build |
+| 7 | the UI-2.0 switch is **cut** | **kept**, with only its overflow fixed | the owner, after this doc was approved |
+
+**On #4, precisely, because a later auditor cannot otherwise tell:** the *prose* ranked the widening first
+and the box fix third. The *code* was never wrong — it applies both, and the box fix is the one that does
+the work. A document defect, not a deviation of the build from the document.
+
+**One defect the build introduced and removed**, recorded because no test could see it: the first grid
+carried `overflow: hidden` as a "backstop", which clipped the account-menu popover. The card measured
+320 px wide with all six rows present and was invisible on screen. Every test passed. A toolbar that hosts
+popovers cannot clip its own overflow; the note now lives in `shell.css` so it is not re-added.
 
 **Owner's request, verbatim (2026-09-07):**
 
@@ -60,8 +83,16 @@ is also empty, so `origin/main` and prod agree on this surface.
 | 900 | 818 | 1167 | 349 | 6 |
 | 768 | 698 | 1167 | 469 | 8 |
 
-**Read the third column.** The bar's content is **1167 px at every width**. It does not adapt badly; it has
-no adaptation mechanism, and every number below 1284 is that one fact restated.
+**Read the third column.** The bar's **minimum intrinsic width is 1167 px** — what `scrollWidth` reports
+once `clientWidth` falls below it. Above a 1280 viewport those cells report the viewport instead, because a
+`flex: 1` spacer absorbs the slack. It does not adapt badly; it has no adaptation mechanism, and every
+number below 1284 is that one fact restated.
+
+**Units, declared — the first version of this document did not declare them and was wrong because of it.**
+Every figure here is **CSS px inside the `.cv2-root` zoom scope**. The harness derives `scale` as
+`barRect.width ÷ bar.clientWidth` (= 1.100) and divides every rect by it, because `clientWidth` /
+`scrollWidth` report *unzoomed* px while `getBoundingClientRect()` reports px *after* `zoom: 1.1` — a 1.1×
+discrepancy that made the original tables incomparable with themselves.
 
 ### Five root causes
 
@@ -72,9 +103,11 @@ no adaptation mechanism, and every number below 1284 is that one fact restated.
    failing, sitting between the two machines the owner named. This is the same lever behind the nested-scope
    `1.1²` terminal bug documented in `app.css`; here it is not multiplying, it is simply unaccounted for.
 3. **The refusal is the largest object in the bar.** `UiVersionSwitch` falls back to `DisabledAction`, which
-   renders its reason sentence *inline*. Measured widths: **680 px at 1920**, 331 at 1512, 111 at 1280 — and
-   at every one of those it wraps to 3–5 lines that escape the 41 px bar and paint over the page below.
-   680 px is wider than the entire Home…Help tab group (498 px).
+   renders its reason sentence *inline*. Measured: **618 CSS px at 1920**, wider than the entire Home…Help
+   tab group; and at a 768 viewport **100.9 px wide by 168 px tall** inside a 36 px bar. The horizontal
+   number was never the real cost — it wraps to 3–5 lines that escape the bar and paint down over the page
+   at *every* width, 1920 included. (`copy-link` escapes vertically at 1920 too, a second defect nobody had
+   named.)
 4. **DOM order is the priority order, and it is backwards.** With nothing shrinkable, all overflow is
    absorbed by whatever is last. The first control off-screen at 1280 is `auth-accountmenu` — the profile
    menu item 3 wants to load with three more things.
@@ -128,32 +161,37 @@ Driven by **container queries on the bar's own inline size**, not viewport media
 | < 1240 | palette hint → `⌘K` | pure decoration; the shortcut is the fact |
 | < 1080 | profile drops the name, keeps face + caret | the face is the recognisable part; the name is inside the card |
 | < 900 | tab pills tighten to 7 px padding | padding before labels; no name is ever truncated |
-| < 780 | tabs fold into one `Home ▾` menu; switcher → monogram | same list, one popover; nothing unreachable |
-| < 560 | mark steps 16 → 14 px | last resort, still above today's 11.5 |
+| < 820 | switcher → monogram only | the space name is one line down in the popover it opens, and the trigger's `aria-label` carries server and space in full |
+| < 700 | the UI-2.0 door leaves the bar | last decoration to go, first below identity; the account menu keeps a row for it |
 | coarse pointer, < 500 vp | `MobileShell` already owns it | `mobile/shell-for.ts` untouched |
 
-**The sacrifice order is written down and is the reverse of today's**: the profile menu and the tab list are
-the *last* things to give way, not the first. Every zone gets `min-width: 0`, every text child gets
-`text-overflow: ellipsis`, and `overflow: hidden` on the bar becomes a backstop that should never fire.
+**A rung designed here and NOT built:** tabs folding to a single `Home ▾` menu under 780. Measured during
+the build, all eight tabs fit a **698 px** bar with room to spare, so the fold would have been a mechanism
+for a problem that does not occur. The shipped ladder has **five** rungs, not six.
 
-Measured on the published mockup — `scrollWidth === clientWidth`, zero clipped controls, at 1745 / 1164 /
-931 / **698**. Today's bar overflows by 469 px at 698.
+**The sacrifice order is written down and is the reverse of today's**: the profile menu and the tab list are
+the *last* things to give way, not the first. Every zone gets `min-width: 0` and every text child gets
+`text-overflow: ellipsis`. **The bar carries no `overflow: hidden`** — the draft called for one as a
+backstop, and it clipped the account-menu popover; see the corrections block.
+
+**Measured on the shipped bar**, not on a mockup: `scrollWidth === clientWidth`, zero clipped controls and
+zero vertical escapes at **1920 / 1512 / 1366 / 1280 / 1024 / 900 / 768**. Today's bar overflows by 469 px
+at 698.
 
 ### Width budget
 
-| | today | proposed | note |
-|---|---|---|---|
-| mark | 25 | 34 | bigger, item 5 |
-| space switcher | 254 | ~150 | server line moves to the popover that already prints it |
-| tabs | 498 | 498 | unchanged set, unchanged labels |
-| UI-2.0 refusal | 680 | 0 | removed |
-| prompts | 64 | 0 | → card |
-| palette | 95 | 95 | stays |
-| inbox bell | 25 | 0 | → card |
-| copy link | 95 | 0 | → card |
-| profile | 83 | 83 | stays |
-| gaps + padding | ~65 | ~56 | |
-| **intrinsic** | **1167** | **~916** | fits a **1024** viewport with the full desktop bar |
+**CORRECTED — this table used to sum max-content widths and it did not add up** (its "today" column summed
+to 1884 against a printed total of 1167, because a nowrap flex row's minimum is *not* the sum of its
+children's natural widths). It is now a **measurement**, taken the only honest way: mount the bar with the
+controls, mount it without them, and read the minimum intrinsic width both times in one unit regime.
+
+| | minimum intrinsic width | vertical escapes at 1920 |
+|---|---|---|
+| today | **1167** | `hon-disabled-group`, `copy-link` |
+| the three utilities moved out | **915** | none |
+
+**Removing them saves 252 CSS px** — not the 680 the first draft implied. 915 fits a **1024** viewport
+(budget 931) with the full desktop bar, and the ladder carries it below that.
 
 **Why the palette hint stays when everything else leaves.** It is the one control whose job is to reach the
 others. Folding prompts, inbox and copy link into a menu is only safe while there is a visible,
@@ -179,9 +217,12 @@ becomes an unusable one.
 
 Three changes, in this order:
 
-1. **Fix the clipping — prerequisite.** `width: min(280px, …)` → `min(320px, calc(100vw - 24px))`; every row
-   label gets `min-width: 0` + `text-overflow: ellipsis`; the row's box accounts for its own padding so
-   `scrollWidth` cannot exceed `clientWidth`. `overflow: hidden` stops being the only defence.
+1. **Fix the clipping — prerequisite, and `box-sizing` is the whole fix.** `.auth-menu__row` is
+   `width: 100%` with `padding: 7px 12px` and no `box-sizing` anywhere in `auth.css`, so every row's border
+   box is **24 px wider than the card**, whatever the card's width is. `box-sizing: border-box` +
+   `min-width: 0` + `max-width: 100%` is the correction; the 280 → 320 widening is **cosmetic**, and this
+   step originally led with it, which was wrong. (The code applies both and always did — a defect in the
+   prose, not a deviation of the build from the design.) `overflow: hidden` stops being the only defence.
 2. **Add the utility group** above Appearance: **Inbox**, **System prompts**, **Copy link to this space**.
 3. **Keep the D28 posture on Inbox.** Unwired, the row stays drawn, focusable, named, and carries its reason.
    The bell has that posture today; the move must not quietly delete it.
@@ -230,7 +271,13 @@ descendant selector is not inert once the element it names moves underneath it.
 
 ## 6. Two decisions for the owner
 
-**A — the UI-2.0 door.** "Remove this entirely not needed" is unambiguous about the bar, and the bar is
+**A — the UI-2.0 door. SUPERSEDED 2026-09-07:** the owner ruled that the switch stays, as part of the
+rollback story, so it is kept and only its overflow is fixed. The argument below is left standing rather
+than deleted because it was *also* built on a false premise (correction #5's neighbour: `dist-2.0` exists
+and `deploy/prod/env.sh:92` exports the variable unconditionally, so "an operator may never configure it"
+was never true) — and a struck argument teaches a later reader more than a vanished one.
+
+*(original, superseded)* **A — the UI-2.0 door.** "Remove this entirely not needed" is unambiguous about the bar, and the bar is
 where it hurts. But it is also the only way to reach `/ui-2.0/` without typing a URL, and it mediates two
 really-deployed bundles.
 *Recommendation:* delete it from the bar; add it to the profile card as a row that renders **only** when the
@@ -251,8 +298,8 @@ asked for a bigger mark, and 38 would deliver a compromise nobody asked for. Tri
 | keep | tm8 mark → conversations | left zone, 11.5 → 16 px | click the mark; `aria-label` unchanged |
 | keep | space ⋄ server switcher | left zone, ~150 px, one line | same popover, same spaces, same `+ new space` / `+ add server` |
 | keep | server name on the trigger | popover header + trigger `title` | hover, or open the popover — where it already appears |
-| keep | Home Work Board Craft Graph CodeBrain Settings Help | centre zone; one `Home ▾` menu under 780 | same tabs, still derived from the resolved `MenuConfig` groups |
-| **cut** | ⇄ Switch to UI 2.0 | removed from the bar (see decision A) | 404 on both servers today — nothing reachable is lost |
+| keep | Home Work Board Craft Graph CodeBrain Settings Help | centre zone, all eight at every built width | same tabs, still derived from the resolved `MenuConfig` groups. The designed fold to `Home ▾` was not built — measured unnecessary |
+| **kept** | ⇄ Switch to UI 2.0 | **stays in the bar**, refusal clamped to one line with the reason on the title | the owner ruled after this doc was approved that the door is part of the rollback story. Only the overflow was the complaint, and only the overflow was fixed |
 | **move** | prompts | card row "System prompts" | profile menu, and `⌘K` |
 | keep | / palette · ⌘K | right zone; `⌘K` under 1240 | unchanged, plus the shortcut it names |
 | **move** | ◹ inbox bell | card row "Inbox", D28 posture preserved | profile menu, `⌘K`, and Home's NEEDS YOU section |
@@ -275,9 +322,11 @@ owner asked for, and the palette keeps all three at one keystroke.
 | 3 | port the utility group from `tm8_ui_2.0` | `auth/AccountMenu.tsx`, `share/CopyLinkControl.tsx`, `views/GateApp.tsx`, `auth/auth.css` | the ported suites: `gate.test.tsx`, `share-a-link.test.tsx`, `CopyLinkControl.test.tsx` |
 | 4 | grid layout, centred tabs, bigger mark, one-line switcher | `shell/SpaceTabBar.tsx`, `shell/SpaceSwitcher.tsx`, `shell/shell.css` | harness: tab-group centre within 2 px of bar centre |
 | 5 | the container-query ladder | `shell/shell.css` | harness at nine widths + screenshots, both themes |
-| 6 | delete the stale `.shell-tabbar .copy-link` selectors | `shell/shell.css` | screenshot of the card |
 
-Steps 1–3 are independently shippable and deliver items 2 and 3 alone. Steps 4–6 deliver items 1, 4 and 5.
+**Step 6 was struck.** It called for deleting stale `.shell-tabbar .copy-link` selectors; there are **zero
+matches** in this package — they exist only in `packages/tm8_ui_2.0`, and the premise was read out of the
+wrong package. Steps 1–3 are independently shippable and deliver items 2 and 3 alone. Steps 4–5 deliver
+items 1, 4 and 5.
 Nothing here touches `MobileShell`, `mobile/shell-for.ts`, or the `zoom` lever.
 
 **Verification is by pixels at every step.** jsdom cannot see one defect in this document, and it will not be
