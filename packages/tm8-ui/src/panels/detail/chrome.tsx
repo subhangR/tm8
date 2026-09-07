@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
-import type { EntityDetail, EntityState } from '@tm8/contract';
+import type { EntityDetail, EntityId, EntityState, SpaceId } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
 import { KindIcon, processControlFor, resolveAction, titleNormalizerFor } from '../../domain';
@@ -14,6 +14,7 @@ import {
 } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 import { useDismissable } from '../useDismissable';
+import { entityLinkUrl } from '../../share';
 /*
  * DEF-001 — the phone arrangement of `.pn-panelbar`, which this file renders.
  *
@@ -1119,12 +1120,37 @@ function CopyItem({ value, label, testId }: { value: string; label: string; test
  * developer who needs it is one click from it, and it goes where an id is
  * actually useful — the clipboard — instead of being read off the screen.
  */
-export function PanelIdentityItems({ entityId }: { entityId: string }) {
-  const href = typeof window !== 'undefined' ? `${window.location.origin}/e/${entityId}` : `/e/${entityId}`;
+export function PanelIdentityItems({
+  entityId,
+  spaceId,
+}: {
+  entityId: EntityId;
+  /** Absent ⇒ no address can be spelled, so no link is offered. */
+  spaceId?: SpaceId;
+}) {
+  /*
+   * THE ADDRESS COMES FROM THE ROUTE CODEC, and this is a correction.
+   *
+   * The first version of this row built `${window.location.origin}/e/${id}` by
+   * hand. That is a path route and this app does not answer on one — its
+   * addresses are space-scoped hash routes (`#/s/{spaceId}/e/{entityId}`) — so
+   * every link it produced was a link to nothing, and it silently dropped the
+   * space the entity lives in. Worse, it was a SECOND spelling of an address
+   * the app already knows how to write, which is the kind of thing that can
+   * only ever drift further from the real one.
+   *
+   * `entityLinkUrl` is the same `build(normalize(...))` path `copyLinkUrl`
+   * uses; there is one format and one place it is spelled.
+   *
+   * NO SPACE, NO LINK. A host that has not wired `spaceId` gets `Copy ID`
+   * alone rather than an address that cannot resolve — a missing verb is
+   * recoverable, a link that quietly goes nowhere is not.
+   */
+  const href = spaceId ? entityLinkUrl({ spaceId, entityId }) : null;
   return (
     <>
       <CopyItem value={entityId} label="Copy ID" testId="panel-copy-id" />
-      <CopyItem value={href} label="Copy link" testId="panel-copy-link" />
+      {href ? <CopyItem value={href} label="Copy link" testId="panel-copy-link" /> : null}
     </>
   );
 }

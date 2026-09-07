@@ -1157,7 +1157,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               <PanelOverflow>
                 {/* The id and the link the metadata row used to spend a
                     measured 41.8px stating on every task. */}
-                <PanelIdentityItems entityId={detail.id} />
+                <PanelIdentityItems entityId={detail.id} spaceId={props.ctx.spaceId} />
                 <span className="pn-overflow__rule" />
                 <RowAction
                   ref_={detail.deletedAt != null ? 'restore' : 'archive'}

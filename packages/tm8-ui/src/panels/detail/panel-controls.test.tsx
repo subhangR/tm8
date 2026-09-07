@@ -464,6 +464,66 @@ describe('the id and the completion gate left the metadata row', () => {
     expect(getByTestId('panel-copy-link').textContent).toBe('Copy link');
   });
 
+  /*
+   * WHAT REACHES THE CLIPBOARD, not what the button is called.
+   *
+   * The first version of this row asserted only that a control labelled
+   * "Copy link" existed — and it did, while writing `${origin}/e/${id}`: a
+   * path route this app does not answer on, with the space silently dropped.
+   * A label test cannot see that. These read the value.
+   */
+  const clipboardSpy = () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    return writeText;
+  };
+
+  it('copies the entity id itself, not a decorated form of it', async () => {
+    const writeText = clipboardSpy();
+    const { getByTestId } = openOverflow(TASK);
+    fireEvent.click(getByTestId('panel-copy-id'));
+    expect(writeText).toHaveBeenCalledWith(TASK.id);
+  });
+
+  it('copies a SPACE-SCOPED hash route built by the route codec', async () => {
+    const writeText = clipboardSpy();
+    const { getByTestId } = openOverflow(TASK);
+    fireEvent.click(getByTestId('panel-copy-link'));
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const url = String(writeText.mock.calls[0]![0]);
+
+    /* The address the codec spells, verbatim — space first, then the entity. */
+    expect(url).toContain(`#/s/${FIXTURE_SPACE_ID}/e/${TASK.id}`);
+
+    /* THE SPACE IS THE POINT. A link that names the entity but not the space
+       it lives in cannot resolve for the person receiving it. */
+    expect(url).toContain(FIXTURE_SPACE_ID);
+
+    /* And it is a hash route, never the hand-built path form that shipped
+       first — `/e/<id>` must not appear outside the fragment. */
+    expect(new URL(url).pathname).not.toContain('/e/');
+    expect(url.indexOf('#')).toBeGreaterThan(-1);
+  });
+
+  it('offers no link at all when the host wired no space', () => {
+    /* A missing verb is recoverable; a link that quietly goes nowhere is not. */
+    const view = render(
+      <EntityDetailPanel
+        detail={TASK}
+        reasons={REASONS}
+        ctx={{} as ActionContext}
+        controls={host()}
+      />,
+    );
+    fireEvent.click(view.getByTestId('panel-overflow-trigger'));
+    expect(view.queryByTestId('panel-copy-id')).not.toBeNull();
+    expect(view.queryByTestId('panel-copy-link')).toBeNull();
+  });
+
   it('keeps the tombstone verb in that menu too, below a rule', () => {
     const { getByTestId } = openOverflow(TASK);
     const menu = getByTestId('panel-overflow-menu');
