@@ -359,13 +359,40 @@ if [[ "$BUILD_UI" == 1 ]]; then
   # these pointers — and a stale TM8_UI_DIR serves the WRONG UI with every other
   # check green. Fix them here, where we are root anyway. Both edits are
   # idempotent: no-ops once the env file already points right.
-  if grep -q "packages/tm8_ui_2.0/dist" "$ENVFILE"; then
-    sed -i 's|packages/tm8_ui_2.0/dist|packages/tm8-ui/dist|' "$ENVFILE"
+  # ANCHORED TO THE TM8_UI_DIR LINE (2026-09-07). It was not, and the
+  # unanchored form rewrote TM8_UI_2_0_DIR as collateral while aiming at
+  # TM8_UI_DIR: `.../packages/tm8_ui_2.0/dist-2.0` became
+  # `.../packages/tm8-ui/dist-2.0`, a directory that does not exist. The mount
+  # then registered nothing and /ui-2.0/ answered "no operation bound", which is
+  # why the top bar has been saying "this server does not serve the 2.0 UI" on a
+  # box that builds the bundle every deploy.
+  #
+  # The seeder below could not repair it, because it only appends when the key
+  # is ABSENT and the key was present-and-wrong. The two together were a
+  # one-way ratchet into the broken state, and the header comment above claiming
+  # idempotence is why nobody looked: it is true only AFTER the damage, because
+  # the grep then stops matching. Measured on prod 2026-09-07 via
+  # /proc/<pid>/environ.
+  #
+  # A HAND-FIX OF $ENVFILE IS NOT DURABLE WITHOUT THIS ANCHOR: restore the
+  # correct value and the next deploy's unanchored sed re-mangles it.
+  if grep -q "^TM8_UI_DIR=.*packages/tm8_ui_2.0/dist" "$ENVFILE"; then
+    sed -i '/^TM8_UI_DIR=/ s|packages/tm8_ui_2.0/dist|packages/tm8-ui/dist|' "$ENVFILE"
     rok "TM8_UI_DIR moved to packages/tm8-ui/dist in $ENVFILE"
   fi
-  # The mount is opt-in and this box has never had the variable. Without it
-  # /ui-2.0/ 404s and the switch refuses with its reason — correct, but not what
-  # the swap asked for, so seed it rather than leaving it to be noticed.
+  # Repair a TM8_UI_2_0_DIR already mangled by the unanchored form above. The
+  # seeder cannot: it appends only when the key is missing.
+  if grep -q "^TM8_UI_2_0_DIR=.*packages/tm8-ui/dist-2.0" "$ENVFILE"; then
+    sed -i '/^TM8_UI_2_0_DIR=/ s|packages/tm8-ui/dist-2.0|packages/tm8_ui_2.0/dist-2.0|' "$ENVFILE"
+    rok "TM8_UI_2_0_DIR repaired to packages/tm8_ui_2.0/dist-2.0 in $ENVFILE"
+  fi
+  # The mount is opt-in. Seed it rather than leaving it to be noticed; without
+  # it /ui-2.0/ 404s and the switch refuses with its reason — correct, but not
+  # what the swap asked for.
+  #
+  # ("this box has never had the variable" was true when written and is not now:
+  #  prod has it, and had it mangled by the sed above. Repairing a present key
+  #  is the block above's job, not this one's — this one appends only.)
   if ! grep -q '^TM8_UI_2_0_DIR=' "$ENVFILE"; then
     sed -i '/^TM8_UI_1_0_DIR=/d' "$ENVFILE"
     printf 'TM8_UI_2_0_DIR=%s/packages/tm8_ui_2.0/dist-2.0\n' "$DIR" >> "$ENVFILE"
