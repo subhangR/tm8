@@ -97,6 +97,12 @@ export interface NewSessionComposerProps {
    */
   refusal?: string | null;
   /**
+   * A previous attempt's reason, shown under the card WITHOUT withholding
+   * Launch. The popup uses this for a node/save refusal: the tile stays up
+   * to be corrected, and retrying is the point of keeping it.
+   */
+  notice?: string | null;
+  /**
    * The name the task gets if the title field stays empty — derived live from
    * the prompt's first sentence. Shown as the title input's placeholder, so
    * the user watches their sentence become the task's name and can overrule it
@@ -224,6 +230,7 @@ export function NewSessionComposer({
   promptPlaceholder = 'What do you want to work on?',
   onDismissRequest,
   refusal,
+  notice,
   derivedTitle,
   title,
   onTitleChange,
@@ -522,6 +529,16 @@ export function NewSessionComposer({
             value={title}
             maxLength={TITLE_MAX}
             disabled={busy}
+            /* Safari's AutoFill CONTACT button (a person glyph on focus): a
+               contact card has a (job) "title" field, so Safari's heuristic
+               matches this field's hints and overrides `autocomplete="off"`.
+               These attributes reduce the match; the reliable switch-off is
+               the `::-webkit-contacts-auto-fill-button` rule in the CSS
+               (user report 2026-09-07). */
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            name="tm8-hdr-input"
             aria-label="Task title — leave empty to use the first sentence of the prompt"
             /* The DERIVED name is the placeholder: the field always shows what
                the task will be called, and typing here is how you overrule it. */
@@ -537,7 +554,7 @@ export function NewSessionComposer({
             ref={area}
             value={draft}
             aria-label="Describe what this session should do"
-            aria-describedby={refusal ? 'nsx-refusal' : undefined}
+            aria-describedby={refusal || notice ? 'nsx-refusal' : undefined}
             disabled={busy}
             autoFocus={autoFocus}
             placeholder={promptPlaceholder}
@@ -747,8 +764,8 @@ export function NewSessionComposer({
         </div>
       </div>
 
-      {refusal ? (
-        <p className="nsx-refusal" id="nsx-refusal" role="alert">{refusal}</p>
+      {(refusal ?? notice) ? (
+        <p className="nsx-refusal" id="nsx-refusal" role="alert">{refusal ?? notice}</p>
       ) : null}
     </div>
   );

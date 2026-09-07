@@ -1068,9 +1068,14 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     projects={props.launch.projects}
                     capacity={props.launch.capacity}
                     onSpawn={props.launch.onSpawn}
-                    onRenameSubject={
-                      props.launch.onRenameEntity
-                        ? (nextTitle) => props.launch!.onRenameEntity!(detail.id, nextTitle)
+                    loadDescription={
+                      props.launch.descriptionOf
+                        ? () => props.launch!.descriptionOf!(detail.id)
+                        : undefined
+                    }
+                    onSaveSubject={
+                      props.launch.onUpdateEntity
+                        ? (edits) => props.launch!.onUpdateEntity!(detail.id, edits)
                         : undefined
                     }
                     onDismiss={() => setFlowRef(null)}

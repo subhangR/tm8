@@ -491,11 +491,17 @@ export interface LaunchSources {
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
   onFullOptions?: (entityId: string) => void;
   /**
-   * Persists a title edited IN the launch popup back onto the entity (the
-   * popup's title field holds the task's real name; a launch saves the edit).
-   * Absent ⇒ the edit still names the session and the entity keeps its title.
+   * The entity's current description, for the launch popup's body field —
+   * the popup EDITS the task's description, so it must open showing the real
+   * one, read fresh when the row's detail is not hydrated.
    */
-  onRenameEntity?: (entityId: string, title: string) => Promise<unknown> | void;
+  descriptionOf?: (entityId: string) => Promise<string | null>;
+  /**
+   * Persists title/description edited IN the launch popup back onto the
+   * entity, as one patch. Absent ⇒ the edits still shape the session (its
+   * title, the agent's briefing) but the entity keeps its own record.
+   */
+  onUpdateEntity?: (entityId: string, edits: { title?: string; description?: string }) => Promise<unknown> | void;
   /** Caller owns uniqueness of the optimistic-journal id. */
   mutationId: (entityId: string) => string;
 }
@@ -3430,9 +3436,14 @@ export function Tile({
               projects={props.launch?.projects ?? []}
               capacity={props.launch?.capacity}
               onSpawn={props.launch?.onSpawn}
-              onRenameSubject={
-                props.launch?.onRenameEntity
-                  ? (title) => props.launch!.onRenameEntity!(row.id, title)
+              loadDescription={
+                props.launch?.descriptionOf
+                  ? () => props.launch!.descriptionOf!(row.id)
+                  : undefined
+              }
+              onSaveSubject={
+                props.launch?.onUpdateEntity
+                  ? (edits) => props.launch!.onUpdateEntity!(row.id, edits)
                   : undefined
               }
               onDismiss={() => setFlowRef(null)}
@@ -3676,9 +3687,14 @@ export function Tile({
             projects={props.launch?.projects ?? []}
             capacity={props.launch?.capacity}
             onSpawn={props.launch?.onSpawn}
-            onRenameSubject={
-              props.launch?.onRenameEntity
-                ? (title) => props.launch!.onRenameEntity!(row.id, title)
+            loadDescription={
+              props.launch?.descriptionOf
+                ? () => props.launch!.descriptionOf!(row.id)
+                : undefined
+            }
+            onSaveSubject={
+              props.launch?.onUpdateEntity
+                ? (edits) => props.launch!.onUpdateEntity!(row.id, edits)
                 : undefined
             }
             onDismiss={() => setFlowRef(null)}

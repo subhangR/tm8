@@ -200,6 +200,22 @@
 
 .nsx-head__title::placeholder { color: var(--pn-ink-4); }
 
+/* SAFARI'S CONTACTS AUTOFILL BUTTON, removed at the source. `autocomplete=
+   "off"` is only a request, and Safari overrides it here because a contact
+   card has a (job) "title" field, so the word in this field's hints matches
+   its heuristic (user report, 2026-09-07, person-glyph in the focused field).
+   WebKit draws the button as a pseudo-element inside the input, which is the
+   one place it can be reliably switched off — `!important` because the UA
+   stylesheet owns the pseudo-element's display. */
+.nsx-head__title::-webkit-contacts-auto-fill-button,
+.nsx-head__title::-webkit-credentials-auto-fill-button {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+}
+
 /* --------------------------------- the prompt ----------------------------- */
 
 .nsx-composer textarea {
@@ -485,6 +501,19 @@
 
 .nsx-popup .nsx-composer-wrap { width: 100%; }
 
+/* A refused launch SHAKES the tile (owner ruling 2026-09-07) — felt before
+   the reason is read. Transform only: nothing reflows, nothing repaints big. */
+.nsx-popup__frame[data-shake] {
+  animation: nsx-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes nsx-shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-7px); }
+  40%, 60% { transform: translateX(7px); }
+}
+
 /* ------------------------------------------------------- the terminal layer */
 
 /*
@@ -649,4 +678,6 @@
   .nsx-veil__title,
   .nsx-veil__slow { animation: none; }
   .nsx-step[data-state='active'] .nsx-step__mark { animation: none; opacity: 1; }
+  /* The shake is decorative; the refusal text carries the fact without it. */
+  .nsx-popup__frame[data-shake] { animation: none; }
 }

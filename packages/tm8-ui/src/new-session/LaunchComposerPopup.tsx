@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ExecutionSpawnInput } from '@tm8/contract';
 
 import {
@@ -6,7 +6,6 @@ import {
   canLaunch,
   newLaunchMutationId,
   type LaunchCapacity,
-  type LaunchConfig,
   type LaunchMode,
   type LaunchProject,
   type LaunchProjectOption,
@@ -28,18 +27,20 @@ import './new-session.css';
  * the verb OPENS this; the popup carries the primary Launch that commits.
  * Two clicks to launch, never one.
  *
- * WHAT THE PROMPT MEANS HERE. This popup launches an EXISTING task — the
- * subject's own body reaches the agent as its first turn. The textarea is
- * therefore OPTIONAL EXTRA CONTEXT, carried as `promptExtra`, which arrives
- * wrapped as `<untrusted_data type="launch-context">` — material the agent
- * acts ON, not instructions it acts BY. The placeholder says "context", not
- * "instructions", for exactly that reason. `requirePrompt={false}` is the
- * canvas's own prop for this host.
+ * THE TEXTAREA IS THE TASK'S DESCRIPTION (owner's ruling 2026-09-07) — not a
+ * separate "extra context" side-channel. It opens holding the task's real
+ * body (loaded through `loadDescription`, because a list row's summary does
+ * not carry it), edits like any field, and a launch persists the edit onto
+ * the task together with a title edit in ONE patch. The agent then reads the
+ * UPDATED description as its first-turn briefing, because the save is
+ * sequenced before the spawn. This mirrors the create screen, where the same
+ * textarea BECOMES `content.description` — one field, one meaning, both hosts.
  *
- * DISMISSAL LAYERS: Escape closes an open menu first, then the popup (the
- * composer owns that ordering); the scrim click closes the popup; a REFUSED
- * launch never closes it — the node's reason renders under the card and the
- * viewer's configuration survives to be corrected.
+ * DISMISSAL: Escape closes an open menu first, then the popup (the composer
+ * owns that ordering); the scrim click closes it; and Launch closes the tile
+ * ONLY ON SUCCESS (owner's final ruling 2026-09-07) — a refusal keeps it up
+ * with the reason under the card and a shake, so a failed launch can never
+ * be pixel-identical to a successful one.
  */
 
 /** The persona rows as the panels supply them — `LaunchTeammateOption`'s shape. */
@@ -60,14 +61,18 @@ export interface LaunchComposerPopupProps {
   /** Commits the spawn. ABSENT ⇒ Launch refuses with the unwired reason (R5 #9). */
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
   /**
-   * Persists an edited title back onto the SUBJECT (owner's ask 2026-09-07:
-   * the popup's title is the task's, editable, and a launch saves the edit).
-   * Runs BEFORE the spawn — the rename is cheap and correctable, the spawn is
-   * the irreversible act, so a refused rename stops the launch rather than a
-   * failed launch leaving a half-applied pair. Absent ⇒ the edit still names
-   * the SESSION, and the task keeps its title.
+   * The subject's current description, for the body field's autofill. Absent
+   * ⇒ the field starts empty and an edit still reaches `onSaveSubject`.
    */
-  onRenameSubject?: (title: string) => void | Promise<unknown>;
+  loadDescription?: () => Promise<string | null>;
+  /**
+   * Persists edits back onto the SUBJECT — the title, the description, or
+   * both, in one patch. Runs BEFORE the spawn so the agent's first turn reads
+   * the updated task; a failed save is logged and the launch proceeds (the
+   * tile is already closed, and a silently-stopped launch would be worse).
+   * Absent ⇒ the edits still shape the SESSION, and the task keeps its record.
+   */
+  onSaveSubject?: (edits: { title?: string; description?: string }) => void | Promise<unknown>;
   onDismiss?: () => void;
   /** The session mode the OPENING VERB commits — `ActionDef.launchMode`. */
   mode?: LaunchMode;
@@ -86,7 +91,8 @@ export function LaunchComposerPopup({
   projects = [],
   capacity,
   onSpawn,
-  onRenameSubject,
+  loadDescription,
+  onSaveSubject,
   onDismiss,
   mode,
   verbLabel,
@@ -118,44 +124,98 @@ export function LaunchComposerPopup({
     [projects],
   );
 
-  const { config: baseConfig, projectOptions, bind } = useLaunchComposerState({
+  const { config, projectOptions, bind } = useLaunchComposerState({
     teammates: teammateRows,
     projects: projectRows,
     launchMode: mode,
   });
 
-  const [draft, setDraft] = useState('');
+  /* THE DESCRIPTION, autofilled. `null` means "not answered yet": the load
+     seeds it exactly once, and ONLY if the viewer has not started typing —
+     text under the cursor is never overwritten by a slow read. `seed` keeps
+     what the task actually said, so the save can tell an edit from an echo.
+
+     THE LOAD RUNS ONCE PER MOUNT, deliberately outside the dependency
+     machinery: hosts pass `loadDescription` as an inline closure whose
+     identity changes every parent render, and a dep on it cancelled the
+     in-flight read on the first re-render — the answer arrived, found
+     `alive === false`, and was discarded, so the field stayed empty (found
+     live, 2026-09-07). The ref pins the closure from the first render;
+     `alive` now means "this popup is still mounted", nothing shorter. */
+  const [draft, setDraftState] = useState<string | null>(loadDescription ? null : '');
+  const seed = useRef('');
+  const loadRef = useRef(loadDescription);
+  useEffect(() => {
+    const load = loadRef.current;
+    if (!load) return;
+    let alive = true;
+    load()
+      .then((text) => {
+        if (!alive) return;
+        seed.current = text ?? '';
+        setDraftState((current) => (current === null ? (text ?? '') : current));
+      })
+      .catch(() => {
+        if (alive) setDraftState((current) => (current === null ? '' : current));
+      });
+    return () => { alive = false; };
+    // Once per mount — see the docblock; the ref carries the closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const description = draft ?? '';
+
   /* THE TASK'S TITLE, AS A VALUE — not a placeholder (owner's ask 2026-09-07).
      The field opens holding the real name so "continue" is doing nothing and
      "rename" is ordinary editing; a launch persists an edit to the task. */
   const [title, setTitle] = useState(subject.title);
+
   const [pending, setPending] = useState(false);
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);
-
-  const config: LaunchConfig = draft.trim()
-    ? { ...baseConfig, promptExtra: draft.trim() }
-    : baseConfig;
+  /** One shake per refusal — cleared by its own animationend. */
+  const [shaking, setShaking] = useState(false);
 
   const verdict = canLaunch(config, { projects: projectOptions, capacity });
   const refusal = !onSpawn
     ? 'Launching isn’t connected on this surface yet — the configuration is real; this screen does not dispatch it.'
     : verdict.ok ? null : verdict.reason;
 
+  /*
+   * DISMISS ONLY ON SUCCESS — the owner's final ruling (2026-09-07, reversing
+   * the brief close-on-trigger experiment): a refused launch must not be
+   * pixel-identical to a successful one, so failure keeps the tile up, prints
+   * the node's reason under the card, AND SHAKES the tile so the refusal is
+   * felt even before it is read.
+   *
+   * Save first, then spawn — sequenced so the agent's first turn reads the
+   * task as edited, and a refused save stops the launch with its reason
+   * rather than launching against edits that did not land.
+   */
+  const fail = (error: unknown) => {
+    setPending(false);
+    setNodeRefusal(
+      String((error as { message?: string })?.message ?? error)
+        || 'the node refused this launch and gave no reason',
+    );
+    setShaking(true);
+  };
+
   const commit = () => {
     if (!onSpawn || pending) return;
     setNodeRefusal(null);
     setPending(true);
     const sessionTitle = title.trim() || subject.title;
-    /* RENAME FIRST, THEN SPAWN. The rename is cheap and correctable; the
-       spawn is the build's irreversible act — so a refused rename stops the
-       launch with its reason, and a refused spawn never leaves the pair
-       half-applied in the wrong order (a renamed task with no session is a
-       persisted edit, which is what the edit asked for). */
-    const renamed = onRenameSubject && sessionTitle !== subject.title
-      ? Promise.resolve(onRenameSubject(sessionTitle))
+    const edits: { title?: string; description?: string } = {
+      ...(sessionTitle !== subject.title ? { title: sessionTitle } : {}),
+      /* Only a REAL edit is saved: an untouched autofill (or a load that never
+         answered) writes nothing back. Clearing the text IS an edit — it
+         empties the task's description deliberately. */
+      ...(draft !== null && description !== seed.current ? { description } : {}),
+    };
+    const saved = onSaveSubject && Object.keys(edits).length > 0
+      ? Promise.resolve(onSaveSubject(edits))
       : Promise.resolve();
-    renamed
+    saved
       .then(() => onSpawn(
         buildSpawnInput({
           clientMutationId: newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId(),
@@ -167,16 +227,8 @@ export function LaunchComposerPopup({
           title: sessionTitle,
         }),
       ))
-      /* DISMISS ONLY ON SUCCESS — a refused launch pixel-identical to a
-         successful one is the facet collapse LaunchQuickConfig documents. */
       .then(() => onDismiss?.())
-      .catch((error: unknown) => {
-        setPending(false);
-        setNodeRefusal(
-          String((error as { message?: string })?.message ?? error)
-            || 'the node refused this launch and gave no reason',
-        );
-      });
+      .catch(fail);
   };
 
   const heading = `${verbLabel ?? 'Run'} configuration`;
@@ -189,20 +241,29 @@ export function LaunchComposerPopup({
           whole surface. The verb survives as the dialog's accessible name, the
           subject as the title field's VALUE, and dismissal as Escape and the
           scrim. */}
-      <div className="nsx-popup__frame">
+      <div
+        className="nsx-popup__frame"
+        data-shake={shaking || undefined}
+        onAnimationEnd={() => setShaking(false)}
+      >
         <NewSessionComposer
           {...bind}
-          draft={draft}
-          onDraftChange={setDraft}
+          draft={description}
+          onDraftChange={setDraftState}
           onSubmit={commit}
           busy={pending}
-          refusal={nodeRefusal ?? refusal}
+          /* A node/save refusal is a NOTICE, not a block: the tile stays up
+             so the viewer can correct and retry. Feeding it through `refusal`
+             greys Launch out and the only exit is dismiss, which drops the
+             edits that never landed. `canLaunch` / unwired still withhold. */
+          refusal={refusal}
+          notice={nodeRefusal}
           /* The subject names the session unless the viewer types their own. */
           derivedTitle={subject.title}
           title={title}
           onTitleChange={setTitle}
           requirePrompt={false}
-          promptPlaceholder="Extra context for this launch — optional…"
+          promptPlaceholder="Task description — the agent reads this as its briefing…"
           onDismissRequest={onDismiss}
           autoFocus
         />

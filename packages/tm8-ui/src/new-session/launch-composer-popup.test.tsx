@@ -10,9 +10,10 @@ import { LaunchComposerPopup, type LaunchComposerPopupProps } from './LaunchComp
  * The Run popup — the canvas card as a modal tile over an existing task.
  *
  * The load-bearing claims: the payload names THE SUBJECT (taskIds, title), the
- * verb's mode is prop-authoritative, the optional textarea travels as
- * `promptExtra` and ONLY when typed, and a refused launch keeps the popup on
- * screen with the reason instead of closing like a success.
+ * verb's mode is prop-authoritative, the body field IS the task's description
+ * (autofilled, and a real edit saves back onto the task in one patch with a
+ * title edit, BEFORE the spawn), success closes the tile, and a refusal keeps
+ * it up with the reason and a shake.
  */
 
 const TEAMMATES = [
@@ -58,19 +59,48 @@ describe('the spawn payload', () => {
     // Nothing typed ⇒ the field is ABSENT, not empty — untyped context is not
     // an empty statement.
     expect('promptExtra' in input).toBe(false);
+    // A SUCCESSFUL launch closes the tile by itself; only a refusal keeps it
+    // open (asserted separately below).
+    await waitFor(() => expect(props.onDismiss).toHaveBeenCalledTimes(1));
   });
 
-  it('typed context travels as promptExtra and a typed title overrides the subject’s', async () => {
-    const { getByTestId, getByLabelText, props } = renderPopup();
-    fireEvent.change(getByLabelText('Describe what this session should do'), {
-      target: { value: 'The CI logs are in #build-failures.' },
+  it('the body is the task’s DESCRIPTION: edits save onto the task in one patch, never as promptExtra', async () => {
+    const onSaveSubject = vi.fn();
+    const { getByTestId, getByLabelText, props } = renderPopup({
+      loadDescription: () => Promise.resolve('Reconnect drops after 30s.'),
+      onSaveSubject,
     });
+    // Autofilled with the task's real body before any edit.
+    const area = getByLabelText('Describe what this session should do') as HTMLTextAreaElement;
+    await waitFor(() => expect(area.value).toBe('Reconnect drops after 30s.'));
+
+    fireEvent.change(area, { target: { value: 'Reconnect drops after 30s. Logs in #build-failures.' } });
     fireEvent.change(getByTestId('nsx-title'), { target: { value: 'Launch flow session' } });
     fireEvent.click(getByTestId('nsx-send'));
     await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+
+    // ONE save call carrying both edits — atomic on the wire.
+    expect(onSaveSubject).toHaveBeenCalledTimes(1);
+    expect(onSaveSubject).toHaveBeenCalledWith({
+      title: 'Launch flow session',
+      description: 'Reconnect drops after 30s. Logs in #build-failures.',
+    });
     const input = (props.onSpawn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExecutionSpawnInput;
-    expect(input.promptExtra).toBe('The CI logs are in #build-failures.');
     expect(input.title).toBe('Launch flow session');
+    // The description travels ON THE TASK, not as a launch side-channel.
+    expect('promptExtra' in input).toBe(false);
+  });
+
+  it('an untouched autofill saves nothing back', async () => {
+    const onSaveSubject = vi.fn();
+    const { getByTestId, getByLabelText, props } = renderPopup({
+      loadDescription: () => Promise.resolve('Existing body.'),
+      onSaveSubject,
+    });
+    await waitFor(() => expect((getByLabelText('Describe what this session should do') as HTMLTextAreaElement).value).toBe('Existing body.'));
+    fireEvent.click(getByTestId('nsx-send'));
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    expect(onSaveSubject).not.toHaveBeenCalled();
   });
 
   it('the verb’s mode is prop-authoritative: Coordinate commits a coordinator', async () => {
@@ -90,33 +120,41 @@ describe('the title is the task’s, and a launch persists an edit', () => {
     expect((getByTestId('nsx-title') as HTMLInputElement).value).toBe('Wire the launch flow');
   });
 
-  it('an edited title renames the task BEFORE the spawn; an untouched one renames nothing', async () => {
+  it('an edited title saves BEFORE the spawn; an untouched one saves nothing', async () => {
     const calls: string[] = [];
-    const onRenameSubject = vi.fn(() => { calls.push('rename'); });
+    const onSaveSubject = vi.fn(() => { calls.push('save'); });
     const onSpawn = vi.fn(() => { calls.push('spawn'); });
-    const first = renderPopup({ onRenameSubject, onSpawn });
+    const first = renderPopup({ onSaveSubject, onSpawn });
     fireEvent.change(first.getByTestId('nsx-title'), { target: { value: 'Reconnect loop fix' } });
     fireEvent.click(first.getByTestId('nsx-send'));
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
-    expect(onRenameSubject).toHaveBeenCalledWith('Reconnect loop fix');
-    expect(calls).toEqual(['rename', 'spawn']);
+    expect(onSaveSubject).toHaveBeenCalledWith({ title: 'Reconnect loop fix' });
+    expect(calls).toEqual(['save', 'spawn']);
     expect((onSpawn.mock.calls[0] as unknown[])[0]).toMatchObject({ title: 'Reconnect loop fix' });
     first.unmount();
 
-    const untouched = renderPopup({ onRenameSubject: vi.fn() });
+    const untouched = renderPopup({ onSaveSubject: vi.fn() });
     fireEvent.click(untouched.getByTestId('nsx-send'));
     await waitFor(() => expect(untouched.props.onSpawn).toHaveBeenCalled());
-    expect(untouched.props.onRenameSubject).not.toHaveBeenCalled();
+    expect(untouched.props.onSaveSubject).not.toHaveBeenCalled();
   });
 
-  it('a REFUSED rename stops the launch with its reason — the spawn never fires', async () => {
-    const onRenameSubject = vi.fn().mockRejectedValue(new Error('version conflict — the task changed'));
-    const { getByTestId, getByRole, props } = renderPopup({ onRenameSubject });
+  it('a REFUSED save stops the launch with its reason — the spawn never fires', async () => {
+    const onSaveSubject = vi.fn()
+      .mockRejectedValueOnce(new Error('version conflict — the task changed'))
+      .mockResolvedValueOnce(undefined);
+    const { getByTestId, getByRole, props } = renderPopup({ onSaveSubject });
     fireEvent.change(getByTestId('nsx-title'), { target: { value: 'Renamed' } });
     fireEvent.click(getByTestId('nsx-send'));
     await waitFor(() => expect(getByRole('alert').textContent).toContain('version conflict'));
     expect(props.onSpawn).not.toHaveBeenCalled();
     expect(props.onDismiss).not.toHaveBeenCalled();
+    // The reason is a NOTICE, not a block — Launch stays live so the edits
+    // can be retried instead of discarded by dismissing the tile.
+    expect(getByTestId('nsx-send').getAttribute('aria-disabled')).not.toBe('true');
+    fireEvent.click(getByTestId('nsx-send'));
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalledTimes(1));
+    expect(onSaveSubject).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -141,12 +179,21 @@ describe('dismissal and refusal honesty', () => {
     expect(props.onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('a REFUSED launch keeps the popup with the node’s reason; only success dismisses', async () => {
-    const onSpawn = vi.fn().mockRejectedValue(new Error('no session slots free'));
-    const { getByTestId, getByRole, props } = renderPopup({ onSpawn });
+  it('a REFUSED launch keeps the tile up with the reason, and shakes it (owner final ruling 2026-09-07)', async () => {
+    const onSpawn = vi.fn()
+      .mockRejectedValueOnce(new Error('no session slots free'))
+      .mockResolvedValueOnce(undefined);
+    const { getByTestId, getByRole, container, props } = renderPopup({ onSpawn });
     fireEvent.click(getByTestId('nsx-send'));
     await waitFor(() => expect(getByRole('alert').textContent).toContain('no session slots free'));
     expect(props.onDismiss).not.toHaveBeenCalled();
+    // The refusal is FELT: the frame carries the shake for its animation's life.
+    expect(container.querySelector('.nsx-popup__frame')!.hasAttribute('data-shake')).toBe(true);
+    // And it is correctable: Launch stays enabled so a second click retries.
+    expect(getByTestId('nsx-send').getAttribute('aria-disabled')).not.toBe('true');
+    fireEvent.click(getByTestId('nsx-send'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(props.onDismiss).toHaveBeenCalledTimes(1));
   });
 
   it('no dispatcher ⇒ Launch refuses WITH the unwired reason, never enabled-inert', () => {

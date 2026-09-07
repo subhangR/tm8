@@ -238,6 +238,15 @@ describe('the title and the commit', () => {
     expect(refused.getByRole('alert').textContent).toContain('No session slots free.');
     fireEvent.click(refused.getByTestId('nsx-send'));
     expect(refused.props.onSubmit).not.toHaveBeenCalled();
+    refused.unmount();
+
+    // A notice prints the reason but does NOT withhold — a previous attempt's
+    // error stays readable while Launch remains the retry.
+    const noted = renderComposer({ notice: 'no session slots free' });
+    expect(noted.getByRole('alert').textContent).toContain('no session slots free');
+    expect(noted.getByTestId('nsx-send').getAttribute('aria-disabled')).not.toBe('true');
+    fireEvent.click(noted.getByTestId('nsx-send'));
+    expect(noted.props.onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('a ready prompt launches from the button and from Enter, but never mid-IME', () => {
