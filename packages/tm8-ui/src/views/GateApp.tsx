@@ -18,6 +18,9 @@ import {
   NoticeHost,
   SpaceSwitcher,
   SpaceTabBar,
+  SpaceTabBarLegacy,
+  topBarVersion,
+  setTopBarVersion,
   groupIdOfTarget,
   isRaillessGroup,
   primaryTargetOfGroup,
@@ -133,6 +136,19 @@ const LIVE_COUNT_KIND = 'work_session';
 
 /** The three-panel workspace — the handoff destination entity opens use. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
+
+/* WHICH TOP BAR THIS DEVICE GETS (R21) — read ONCE, at module scope, and that
+   is deliberate. Both bars mount at the top of the tree above the router, so
+   swapping them under a live tree would remount every screen below; the flag is
+   therefore a boot-time fact and `setTopBarVersion` reloads. Reading it here
+   rather than in a hook also keeps it out of every render.
+
+   `SpaceTabBarLegacy` is the bar as it stood at origin/main 4790333c, kept
+   verbatim for one release so that "go back" returns the bar that was there
+   rather than a reconstruction of it. See `shell/topbar-version.ts` for why the
+   UI-2.0 switch is NOT this control. */
+const LEGACY_BAR = topBarVersion() === 'legacy';
+const TopBar = LEGACY_BAR ? SpaceTabBarLegacy : SpaceTabBar;
 /**
  * The screen a viewer with no remembered place lands on (single-home ruling,
  * 2026-08-14): the merged Home page. A viewer's OWN remembered place still
@@ -1844,7 +1860,7 @@ export function GateApp(props: GateAppProps = {}) {
       data-theme={theme === 'dark' ? 'dark' : undefined}
     >
       <div className="shell-root">
-        <SpaceTabBar
+        <TopBar
           /* R1 (2026-08-15): the identity block lives in the TOP ROW now.
              Still ONE control — the single-home rule holds, only the address
              changed; the old read-only server label is not restored. The
@@ -1904,6 +1920,11 @@ export function GateApp(props: GateAppProps = {}) {
              nothing — `copyLinkUrl` would return null and the control would be
              a button that cannot perform, which is the shape this codebase
              refuses everywhere else. */
+          /* Only the LEGACY bar draws this; the current bar hosts copy-link
+             as a row in the account menu. Passing it to both is harmless —
+             `SpaceTabBar` renders `shareSlot` only when it is also hosting the
+             other utilities — but it is passed conditionally anyway, so the
+             intent is readable rather than inferred from another file. */
           shareSlot={
             data.spaceId ? (
               <CopyLinkControl
@@ -1931,6 +1952,47 @@ export function GateApp(props: GateAppProps = {}) {
                 onThemeChange={setTheme}
                 agentToolsNudge={setupNudge}
                 {...(credentialsPort ? { onOpenAgentTools: () => setSetupOpen(true) } : {})}
+                /* R21 — THE UTILITY GROUP, and it is wired ONLY for the current
+                   bar. On the legacy bar these three verbs are still in the row
+                   itself, and handing them to the menu as well would draw every
+                   one of them twice. One control, one home, in both bars. */
+                {...(LEGACY_BAR
+                  ? {}
+                  : {
+                      onOpenInbox: () => navigateTo({ type: 'view', ref: 'inbox' }),
+                      onOpenPrompts: () => setPromptsOpen(true),
+                      utilityRows: (
+                        <>
+                          {data.spaceId ? (
+                            <CopyLinkControl
+                              className="auth-menu__row auth-menu__row--live"
+                              spaceId={data.spaceId}
+                              target={activeTarget ?? WORKSPACE_TARGET}
+                              openEntity={openOnScreen}
+                            />
+                          ) : null}
+                          {/* THE ROLLBACK, and the only control that performs
+                              it. Deliberately the last row of the group and
+                              deliberately plain: it is an escape hatch for one
+                              release, not a feature. */}
+                          <button
+                            type="button"
+                            className="auth-menu__row auth-menu__row--live"
+                            data-testid="use-previous-topbar"
+                            title="Go back to the previous top bar on this device"
+                            onClick={() => {
+                              setTopBarVersion('legacy');
+                              window.location.reload();
+                            }}
+                          >
+                            <span className="auth-menu__glyph" aria-hidden>
+                              ↩
+                            </span>
+                            Use the previous top bar
+                          </button>
+                        </>
+                      ),
+                    })}
               />
             ) : undefined
           }

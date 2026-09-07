@@ -18,7 +18,7 @@
  */
 import { createRoot } from 'react-dom/client';
 import type { SpaceId, SpaceSummary } from '@tm8/contract';
-import { SpaceTabBar, SpaceSwitcher } from '../src/shell';
+import { SpaceTabBar, SpaceTabBarLegacy, SpaceSwitcher, topBarVersion } from '../src/shell';
 import type { ServerRailItem } from '../src/shell/MenuRail';
 import { UiVersionSwitch } from '../src/ui-version';
 import { CopyLinkControl } from '../src/share/CopyLinkControl';
@@ -87,11 +87,15 @@ const ACTOR = {
    into its neighbours. */
 const absentFetcher = (async () => new Response('', { status: 404 })) as unknown as typeof fetch;
 
-function Harness() {
+/* THE SAME FORK `GateApp` MAKES, from the same module — so the round trip
+   demonstrated here exercises the shipped flag and the shipped legacy bar,
+   not a stand-in for them. */
+function Harness({ proposed }: { proposed: boolean }) {
+  const Bar = topBarVersion() === 'legacy' ? SpaceTabBarLegacy : SpaceTabBar;
   return (
     <div className="cv2-root shell-scope">
       <div className="shell-root">
-        <SpaceTabBar
+        <Bar
           switcherSlot={
             <SpaceSwitcher
               servers={SERVERS}
@@ -109,18 +113,40 @@ function Harness() {
           activeTabId="home"
           onSelectTab={() => undefined}
           onGoHome={() => undefined}
-          onOpenInbox={() => undefined}
+          {...(proposed ? {} : { onOpenInbox: () => undefined })}
           onOpenPalette={() => undefined}
-          onOpenPrompts={() => undefined}
+          {...(proposed ? {} : { onOpenPrompts: () => undefined })}
           onOpenAccount={() => undefined}
           accountInitial="A"
-          uiSwitchSlot={<UiVersionSwitch fetcher={absentFetcher} />}
-          shareSlot={
-            <CopyLinkControl spaceId={ACTIVE_SPACE} target={{ type: 'view', ref: 'workspace' }} />
-          }
+          {...(proposed ? {} : { uiSwitchSlot: <UiVersionSwitch fetcher={absentFetcher} /> })}
+          {...(proposed
+            ? {}
+            : {
+                shareSlot: (
+                  <CopyLinkControl spaceId={ACTIVE_SPACE} target={{ type: 'view', ref: 'workspace' }} />
+                ),
+              })}
           accountSlot={
             <AuthActionsContext.Provider value={AUTH}>
-              <AccountMenu actor={ACTOR} theme="light" onThemeChange={() => undefined} />
+              {/* Wired exactly as `GateApp` wires it, so the card measured here
+                  is the card that ships — including the three rows the bar
+                  handed over. A harness that mounted a barer menu would report
+                  a width nobody sees. */}
+              <AccountMenu
+                actor={ACTOR}
+                theme="light"
+                onThemeChange={() => undefined}
+                onOpenInbox={() => undefined}
+                onOpenPrompts={() => undefined}
+                onOpenAgentTools={() => undefined}
+                utilityRows={
+                  <CopyLinkControl
+                    className="auth-menu__row auth-menu__row--live"
+                    spaceId={ACTIVE_SPACE}
+                    target={{ type: 'view', ref: 'workspace' }}
+                  />
+                }
+              />
             </AuthActionsContext.Provider>
           }
         />
@@ -129,7 +155,15 @@ function Harness() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<Harness />);
+/* VARIANT — `?variant=proposed` drops the four controls the redesign moves out
+   of the bar, so the SAME harness measures the before and the after in one
+   regime. Removing them by not mounting them, rather than by arithmetic on
+   max-content widths, is the whole point: a flex row's minimum intrinsic width
+   is not the sum of its children's natural widths, and the first version of
+   this document made exactly that mistake. */
+const VARIANT = new URLSearchParams(window.location.search).get('variant') ?? 'today';
+
+createRoot(document.getElementById('root')!).render(<Harness proposed={VARIANT === 'proposed'} />);
 
 declare global {
   interface Window {
@@ -137,37 +171,61 @@ declare global {
   }
 }
 
-/* THE MEASUREMENT. `scrollWidth > clientWidth` on the header is the overflow
-   itself; `worstRightEdge` beyond the header's right edge names WHICH control
-   is off-screen, which a single boolean cannot. Reported in CSS px INSIDE the
-   zoom scope — the numbers a `getBoundingClientRect` in the app would give. */
+/* THE MEASUREMENT — ONE REGIME, ONE UNIT, AND IT SAYS SO.
+ *
+ * The first version of this harness mixed two APIs and the numbers it produced
+ * were 1.1x apart without saying which was which: `clientWidth`/`scrollWidth`
+ * report UNZOOMED CSS px, while `getBoundingClientRect()` reports px AFTER
+ * `.cv2-root`'s `zoom: 1.1`. The same account-menu box came back as 310 by one
+ * and 280 by the other, and a width budget built from both was not comparable
+ * with itself.
+ *
+ * So: `scale` is DERIVED here rather than read from the stylesheet — the ratio
+ * of the bar's own rect to its own clientWidth — and every rect is divided by
+ * it. Everything reported below is CSS px inside the zoom scope. `scale` is in
+ * the output so a reader can check the conversion rather than trust it.
+ *
+ * `minIntrinsic` is the number that actually matters and the one the earlier
+ * budget table got wrong by summing max-content widths: a nowrap flex row's
+ * minimum is not the sum of its children's natural widths. It is read at a
+ * width narrow enough that every child is already at its minimum, which is
+ * what `scrollWidth` reports once `clientWidth` is below it.
+ */
 window.__topbarAudit = () => {
   const bar = document.querySelector('.shell-tabbar') as HTMLElement | null;
   if (!bar) return { error: 'no bar' };
   const barRect = bar.getBoundingClientRect();
+  const scale = barRect.width / bar.clientWidth;
+  const css = (n: number) => Math.round((n / scale) * 10) / 10;
   const kids = Array.from(bar.children).map((el) => {
     const r = (el as HTMLElement).getBoundingClientRect();
     return {
       cls: (el as HTMLElement).className || el.tagName.toLowerCase(),
       text: ((el as HTMLElement).innerText || '').slice(0, 40).replace(/\s+/g, ' '),
-      left: Math.round(r.left),
-      right: Math.round(r.right),
-      width: Math.round(r.width),
+      widthCss: css(r.width),
+      leftCss: css(r.left - barRect.left),
+      rightCss: css(r.right - barRect.left),
+      /* Vertical escape: the refusal's reason sentence wraps out of the bar at
+         every width, which no horizontal number reports. */
+      heightCss: css(r.height),
+      overflowsBar: r.height > barRect.height + 0.5,
       clipped: r.right > barRect.right + 0.5,
     };
   });
   return {
-    viewport: { w: window.innerWidth, h: window.innerHeight },
-    zoom: getComputedStyle(document.querySelector('.cv2-root')!).zoom,
+    unit: 'CSS px inside the .cv2-root zoom scope',
+    scale: Math.round(scale * 1000) / 1000,
+    variant: VARIANT,
+    viewport: { w: window.innerWidth },
     bar: {
       clientWidth: bar.clientWidth,
       scrollWidth: bar.scrollWidth,
+      minIntrinsic: bar.scrollWidth > bar.clientWidth ? bar.scrollWidth : null,
       overflowPx: bar.scrollWidth - bar.clientWidth,
-      height: Math.round(barRect.height),
-      right: Math.round(barRect.right),
+      heightCss: css(barRect.height),
     },
     clippedCount: kids.filter((k) => k.clipped).length,
-    worstRightEdge: Math.max(...kids.map((k) => k.right)),
+    verticalEscapes: kids.filter((k) => k.overflowsBar).map((k) => k.cls),
     children: kids,
   };
 };
