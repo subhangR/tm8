@@ -54,6 +54,15 @@ export {
   type ServerRailItem,
 } from './MenuRail';
 export { SpaceTabBar, type ShellTab, type SpaceTabBarProps } from './SpaceTabBar';
+/* The previous bar, kept verbatim as the in-app rollback for one release. It
+   takes `SpaceTabBarProps` — one prop definition, so the two cannot drift. */
+export { SpaceTabBarLegacy } from './SpaceTabBarLegacy';
+export {
+  topBarVersion,
+  setTopBarVersion,
+  TOPBAR_VERSION_KEY,
+  type TopBarVersion,
+} from './topbar-version';
 export {
   SpaceSwitcher,
   SWITCHER_ADD_SERVER_REASON,
