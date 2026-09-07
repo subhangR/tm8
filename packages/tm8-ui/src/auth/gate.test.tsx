@@ -1163,4 +1163,177 @@ describe('the workspace account menu — name + logout, in the app', () => {
     expect(text).toMatch(/server account|owner of this server/i);
     expect(text).not.toMatch(/local account/i);
   });
+
+  /**
+   * THE UTILITY GROUP — Inbox, System prompts and Copy link, moved here from
+   * the top bar (task 01a07a56; the owner asked for this once before, on
+   * 2026-08-31, and it was built into `packages/tm8_ui_2.0` while that package
+   * was the product UI).
+   *
+   * WHY THESE ASSERTIONS EXIST AND WHY HERE. `shell/topbar-r21.test.tsx`
+   * proves the bar HANDS THESE OVER when there is an account menu. Nothing
+   * proved the menu PICKS THEM UP, so the whole feature could have been
+   * deleted with every test in the change still green — in the majority state,
+   * a signed-in viewer with an account. That is the exact mirror of the bar's
+   * own no-account gap, and it is the commoner case.
+   *
+   * Four of these five are ported from
+   * `packages/tm8_ui_2.0/src/auth/gate.test.tsx`, where they have been passing
+   * since 2026-08-31. The prompts row is new here: the 2.0 bar dropped that
+   * control without rehoming it, and this package's does not.
+   */
+  describe('the account menu\u2019s utility group', () => {
+    const openMenu = async () => {
+      await createAccountThroughTheUI('amber', PASSWORD);
+      fireEvent.click(screen.getByTestId('account-menu-trigger'));
+      return screen.getByTestId('auth-account-menu');
+    };
+
+    it('the inbox row opens Inbox when a host wires it, and closes the menu', async () => {
+      const onOpenInbox = vi.fn();
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} onOpenInbox={onOpenInbox} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const row = within(menu).getByTestId('open-inbox');
+      expect(row.getAttribute('aria-disabled')).toBeNull();
+      fireEvent.click(row);
+      expect(onOpenInbox).toHaveBeenCalledOnce();
+      /* A navigation verb closes the popover behind it — leaving it open over
+         the screen it just navigated to is the defect its neighbours (Account
+         & access tokens, Sign out) already avoid. */
+      expect(screen.queryByTestId('auth-account-menu')).toBeNull();
+    });
+
+    it('the inbox row keeps the D28 posture without a host: announced, reachable, refused', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const row = within(menu).getByTestId('open-inbox') as HTMLButtonElement;
+      expect(row.getAttribute('aria-disabled')).toBe('true'); // announced
+      expect(row.disabled).toBe(false); // inverted guard against the native attr
+      expect(row.getAttribute('title')).toMatch(/unavailable/i); // says why
+      row.focus(); // reachable
+      expect(document.activeElement).toBe(row);
+      // NAMED, and reachable by that name from inside the menu.
+      expect(within(menu).getByRole('button', { name: 'Inbox' })).toBe(row);
+    });
+
+    /* PROMPTS IS NOT INBOX, DELIBERATELY. The bar's prompts control rendered
+       only when a host wired it — it never carried the bell's refusal posture —
+       and moving a control must not silently promote it to a promise it was
+       not making. So: present and live when wired, absent when not. */
+    it('the prompts row opens the catalog when a host wires it, and closes the menu', async () => {
+      const onOpenPrompts = vi.fn();
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} onOpenPrompts={onOpenPrompts} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+      fireEvent.click(within(menu).getByTestId('open-prompts'));
+      expect(onOpenPrompts).toHaveBeenCalledOnce();
+      expect(screen.queryByTestId('auth-account-menu')).toBeNull();
+    });
+
+    /* A SEPARATE CASE, and it has to be: `openMenu` creates the account through
+       the UI, and the create form is only offered once — calling it twice in
+       one test finds a sign-in form and fails on a field that is not there.
+       (Measured: that is exactly how the first draft of this pair failed.) */
+    it('and is ABSENT when no host wires it — the move did not promote it to a promise', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+      expect(within(menu).queryByTestId('open-prompts')).toBeNull();
+      // Inbox, by contrast, is drawn here — the two rows differ on purpose.
+      expect(within(menu).getByTestId('open-inbox')).toBeTruthy();
+    });
+
+    it('hosts the utility rows a host hands it, above Appearance', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu
+              actor={DISPLAY_ACTOR}
+              utilityRows={<button type="button">Copy link</button>}
+            />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const hosted = within(menu).getByRole('button', { name: 'Copy link' });
+      const inbox = within(menu).getByTestId('open-inbox');
+      // Same group as Inbox — one utility cluster, not two.
+      expect(hosted.closest('.auth-menu__group')).toBe(inbox.closest('.auth-menu__group'));
+      // ...and that group precedes the appearance group.
+      const appearance = within(menu).getByRole('group', { name: 'appearance' });
+      expect(
+        hosted.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    /* THE PORT IS A MERGE, NOT A COPY, AND THIS IS THE ASSERTION THAT SAYS SO.
+       `packages/tm8_ui_2.0`'s AccountMenu — the source of the four assertions
+       above — has NO Agent tools row. A file copy would have deleted this
+       package's, silently, and every other test here would still have passed.
+       So: Agent tools survives, and it stays where it was, BELOW the new
+       utility group rather than absorbed into it. */
+    it('the new group does not displace or absorb Agent tools', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu
+              actor={DISPLAY_ACTOR}
+              onOpenAgentTools={() => undefined}
+              utilityRows={<button type="button">Copy link</button>}
+            />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+
+      const agentTools = within(menu).getByTestId('account-menu-agent-tools');
+      const inbox = within(menu).getByTestId('open-inbox');
+      // A different group from the utilities...
+      expect(agentTools.closest('.auth-menu__group')).not.toBe(
+        inbox.closest('.auth-menu__group'),
+      );
+      // ...and after them, so the move added a cluster rather than reordering
+      // the menu around it.
+      expect(
+        inbox.compareDocumentPosition(agentTools) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('draws the utility group even with nothing hosted — Inbox is never hidden', async () => {
+      render(
+        <AuthGate>
+          <div data-testid="the-app">
+            <AccountMenu actor={DISPLAY_ACTOR} />
+          </div>
+        </AuthGate>,
+      );
+      const menu = await openMenu();
+      expect(within(menu).getByTestId('open-inbox')).toBeTruthy();
+    });
+  });
 });
