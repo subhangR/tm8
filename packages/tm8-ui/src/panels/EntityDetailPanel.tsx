@@ -26,6 +26,7 @@ import {
   ActionBar,
   PanelFooter,
   PanelHeader,
+  PanelIdentityItems,
   PanelOverflow,
   PanelWindowControls,
   TabStrip,
@@ -166,6 +167,37 @@ function controlsFor(config: KindConfig): boolean {
  * stays a SUBSET rather than growing an `EntityDetail` dependency, and so the
  * compiler checks the projection instead of a cast hiding a renamed field.
  */
+/**
+ * THE COMPLETION GATE, SAID ONLY WHEN IT SAYS SOMETHING.
+ *
+ * It used to ride the metadata grid as `Completion Gate none` on nearly every
+ * task, because the grid's generic loop prints any non-empty string and
+ * `'none'` is four characters. A gate that is not set is not a fact worth a
+ * row; a gate that IS set changes whether `complete` will be refused, so it
+ * belongs beside the status it constrains.
+ *
+ * NO KIND BRANCH: the field is read off state by name, so a kind that never
+ * carries one renders nothing and this file learns no kind literals (§15.2).
+ * The word comes from a table rather than the wire value — `pr_merged` is a
+ * machine token and this is a reading surface.
+ */
+const GATE_WORDS: Readonly<Record<string, string>> = { pr_merged: 'PR merged' };
+
+function gateChipFor(detail: EntityDetail): ReactNode {
+  const raw = (detail.state as unknown as Record<string, unknown>).completionGate;
+  if (typeof raw !== 'string' || raw === '' || raw === 'none') return null;
+  const word = GATE_WORDS[raw] ?? raw.replace(/_/g, ' ');
+  return (
+    <span
+      className="pn-gate"
+      data-testid="panel-completion-gate"
+      title={`Completion gate: ${word} — this task cannot be completed until that holds.`}
+    >
+      Gate · {word}
+    </span>
+  );
+}
+
 function subjectOf(detail: EntityDetail): ControlSubject {
   return {
     id: detail.id,
@@ -855,6 +887,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            format hint twice; see the prop's own note. Collapses only when
            BOTH are unset and both are actually writable. */
         collapseEmptyDates
+        /* The gate rides the metadata line now, and only when it is set. */
+        trailing={gateChipFor(detail)}
         /* Moved to `PanelOverflow` beside the window controls — see the prop's
            own note. The list's control card keeps its Archive; only this host
            opts out, because only this host has somewhere better to put it. */
@@ -1121,6 +1155,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 `onArchive`, same refusal vocabulary. */}
             {strip !== null ? (
               <PanelOverflow>
+                {/* The id and the link the metadata row used to spend a
+                    measured 41.8px stating on every task. */}
+                <PanelIdentityItems entityId={detail.id} />
+                <span className="pn-overflow__rule" />
                 <RowAction
                   ref_={detail.deletedAt != null ? 'restore' : 'archive'}
                   row={subjectOf(detail)}

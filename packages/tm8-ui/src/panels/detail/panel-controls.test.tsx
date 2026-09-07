@@ -440,3 +440,59 @@ describe('the strip does not duplicate what it replaced', () => {
     expect(queryByTestId('panel-tombstone')).not.toBeNull();
   });
 });
+
+/**
+ * WHERE THE ID WENT — the other half of the assertion inverted in
+ * `SubtreeBody.test.tsx`.
+ *
+ * The metadata grid stopped printing the entity id on 2026-09-07 (owner
+ * decision, option A of three). Deleting a tested behaviour and testing
+ * nothing in its place is how a capability quietly disappears, so the id's new
+ * home is held here: one click into the panel's overflow, beside the link.
+ */
+describe('the id and the completion gate left the metadata row', () => {
+  const openOverflow = (detail: EntityDetail) => {
+    const view = panel(detail, host());
+    fireEvent.click(view.getByTestId('panel-overflow-trigger'));
+    return view;
+  };
+
+  it('offers Copy ID and Copy link one click into the overflow', () => {
+    const { getByTestId } = openOverflow(TASK);
+    expect(getByTestId('panel-overflow-menu')).not.toBeNull();
+    expect(getByTestId('panel-copy-id').textContent).toBe('Copy ID');
+    expect(getByTestId('panel-copy-link').textContent).toBe('Copy link');
+  });
+
+  it('keeps the tombstone verb in that menu too, below a rule', () => {
+    const { getByTestId } = openOverflow(TASK);
+    const menu = getByTestId('panel-overflow-menu');
+    expect(menu.querySelector('.pn-overflow__rule')).not.toBeNull();
+    expect(menu.textContent).toContain('Archive');
+  });
+
+  /*
+   * THE GATE IS A FACT, NOT A DECORATION: it decides whether `complete` will
+   * be refused, so when it is set it must be visible beside the status it
+   * constrains — and when it is not set it must say nothing at all. The old
+   * grid got this backwards, printing `Completion Gate none` on nearly every
+   * task because `'none'` is a non-empty string.
+   */
+  it('says nothing when the gate is none', () => {
+    /* The shared fixture carries `pr_merged`, so the ABSENT case has to be
+       built explicitly — which is the case that matters, because `'none'` on
+       nearly every task is exactly what made the old grid row worthless. */
+    const ungated = {
+      ...TASK,
+      state: { ...TASK.state, completionGate: 'none' },
+    } as EntityDetail;
+    expect(panel(ungated, host()).queryByTestId('panel-completion-gate')).toBeNull();
+  });
+
+  it('states the gate on the metadata line when it is set, in words', () => {
+    const chip = panel(TASK, host()).getByTestId('panel-completion-gate');
+    expect(chip.textContent).toContain('PR merged');
+    // The wire token itself never reaches the eye.
+    expect(chip.textContent).not.toContain('pr_merged');
+  });
+});

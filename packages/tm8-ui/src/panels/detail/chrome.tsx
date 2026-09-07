@@ -1078,6 +1078,57 @@ export function PanelFooter({
  * archiving — the caller supplies the real control, so availability, refusal
  * text and the seam call all stay exactly where they were.
  */
+/**
+ * COPY, WITH AN HONEST FAILURE.
+ *
+ * `navigator.clipboard` is unavailable on an insecure origin and can be
+ * refused by permission policy, and both arrive as a rejected promise rather
+ * than an exception — so a naive handler reports success for a copy that
+ * never happened. This says which it was, in the button, for two seconds.
+ */
+function CopyItem({ value, label, testId }: { value: string; label: string; testId: string }) {
+  const [said, setSaid] = useState<'idle' | 'done' | 'failed'>('idle');
+  const say = useCallback((next: 'done' | 'failed') => {
+    setSaid(next);
+    setTimeout(() => setSaid('idle'), 2000);
+  }, []);
+  return (
+    <button
+      type="button"
+      className="pn-overflow__item"
+      role="menuitem"
+      data-testid={testId}
+      onClick={() => {
+        const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+        if (!clip?.writeText) {
+          say('failed');
+          return;
+        }
+        clip.writeText(value).then(() => say('done'), () => say('failed'));
+      }}
+    >
+      {said === 'done' ? 'Copied' : said === 'failed' ? 'Could not copy' : label}
+    </button>
+  );
+}
+
+/**
+ * The two verbs the metadata row used to spend 41.8px stating.
+ *
+ * The id moved here rather than being deleted (owner decision 2026-09-07): a
+ * developer who needs it is one click from it, and it goes where an id is
+ * actually useful — the clipboard — instead of being read off the screen.
+ */
+export function PanelIdentityItems({ entityId }: { entityId: string }) {
+  const href = typeof window !== 'undefined' ? `${window.location.origin}/e/${entityId}` : `/e/${entityId}`;
+  return (
+    <>
+      <CopyItem value={entityId} label="Copy ID" testId="panel-copy-id" />
+      <CopyItem value={href} label="Copy link" testId="panel-copy-link" />
+    </>
+  );
+}
+
 export function PanelOverflow({ children, label }: { children: ReactNode; label?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);

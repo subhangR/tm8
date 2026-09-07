@@ -585,6 +585,7 @@ export function EntityControlStrip({
   variant = 'lines',
   collapseEmptyDates = false,
   omitArchive = false,
+  trailing,
 }: {
   row: ControlSubject;
   props: ControlHost;
@@ -612,6 +613,15 @@ export function EntityControlStrip({
    * control card, which has no overflow of its own and must keep its Archive.
    */
   omitArchive?: boolean;
+  /**
+   * A read-only fact the HOST wants shown on this row, rendered last.
+   *
+   * Kept as an opaque node on purpose: this strip is registry-driven and may
+   * not learn per-kind facts of its own (§15.2 — no kind literals live in
+   * `panels/`). The host knows what it wants to say; this only knows where a
+   * chip goes.
+   */
+  trailing?: ReactNode;
 }) {
   const list = config.list;
   const control = list.stateControl;
@@ -779,6 +789,8 @@ export function EntityControlStrip({
             <RowMembershipControl row={row} props={props} control={list.membership} />,
           )
         : null}
+
+      {trailing}
 
       {omitArchive ? null : line(
         'Archive',

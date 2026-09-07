@@ -676,6 +676,41 @@
 /* The verb inside stretches to the menu, so the whole row is the target and
    a refusal caption has room to be a sentence rather than a tooltip. */
 .cv2-root .pn-overflow__menu .lp__rowaction { width: 100%; justify-content: flex-start; }
+.cv2-root .pn-overflow__item {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  padding: 5px var(--pn-space-2);
+  border-radius: var(--pn-r-xs);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+}
+.cv2-root .pn-overflow__item:hover { background: var(--pn-hover); color: var(--pn-ink); }
+/* Identity verbs above, the tombstone verb below — a hairline so a hurried
+   pointer does not slide from "Copy link" into "Archive". */
+.cv2-root .pn-overflow__rule { display: block; height: 1px; margin: 3px 0; background: var(--pn-line); }
+
+/* THE COMPLETION GATE, on the metadata line, only when it is set. Read-only:
+   no border and no hover, so it cannot be mistaken for one of the controls it
+   sits beside. */
+.cv2-root .pn-gate {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-wait-soft);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  white-space: nowrap;
+}
 .cv2-root .pn-tab {
   appearance: none;
   border: 0;
