@@ -991,7 +991,12 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // Nothing selected: exactly the trigger + the sort chip.
     expect(chips).toHaveLength(2);
     expect(chips.length).toBeLessThan(optionCount);
-    expect(getByTestId('filter-trigger').textContent).toBe('filter ▾');
+    /* The trigger is one chip carrying one word and its caret. The caret is a
+       separate `aria-hidden` span now (so it can be toned down independently
+       of the label) and the word is sentence case, so `textContent` runs them
+       together — the ASSERTION THAT MATTERS is the count above, which is what
+       this test is named for. */
+    expect(getByTestId('filter-trigger').textContent).toBe('Filter▾');
   });
 
   it('people filtering is membership-conditional and uses createdByIds', () => {

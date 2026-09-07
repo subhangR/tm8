@@ -40,8 +40,50 @@
   /* 6px 12px in the oracle; opened with the measured column. */
   gap: 10px 24px;
   font-size: 12px;
+  /* THE GRID IS ITS OWN QUERY CONTAINER — see the two blocks below. */
+  container-type: inline-size;
+  container-name: sb-grid;
 }
-/* One column when the panel floor approaches — labels + values need the room. */
+
+/* ONE COLUMN WHEN THE PANEL IS NARROW — not when the WINDOW is.
+
+   THE BUG THIS REPLACES. The rule below keyed on `max-width: 560px`, i.e. the
+   VIEWPORT. The metadata grid does not live in the viewport; it lives in a
+   detail panel that can be dragged down to a few hundred pixels beside a wide
+   list on a 2560px monitor. In exactly that case — the only case where two
+   columns of `LABEL value` actually break — the media query never fires, and
+   the grid stayed two-up in a column too narrow to hold it. Conversely a
+   phone-width window collapsed a panel that was already the whole screen and
+   had the room. The query was measuring the wrong box in both directions.
+
+   WHY THE CONTAINER IS THE GRID, NOT AN ANCESTOR. `.sb-grid` is a direct
+   child of `.sb-body`, so `.sb-body` is the only ancestor a rule in this sheet
+   could reach — and `container-type` applies LAYOUT CONTAINMENT, which makes
+   the element a containing block for `position: fixed` descendants. `.sb-body`
+   has three: the attachment lightbox (`.fn-lightbox`, `inset: 0`), the project
+   folder picker, and the phone's refusal tip (`.hon-tip`, anchored to the
+   frame above the tab bar). Containing those to the panel body would turn
+   three full-screen overlays into panel-sized ones — the exact trap already
+   recorded at `kit/useMenuAnchor.ts:14` and `panels.css:3868`. Making the GRID
+   the container costs nothing: its own descendants are spans and one button,
+   none positioned, and its inline size is set by the flex column above it
+   (`.pn-body` is `display:flex; flex-direction:column`), so inline-size
+   containment has nothing to collapse.
+
+   The CELLS are what respond, because an element cannot answer a query on its
+   own container. Every cell spanning `1 / -1` is one column by another route —
+   the tracks, the cells, their labels, their order and their visibility are
+   all untouched, which is the whole constraint on this change. */
+@container sb-grid (max-width: 560px) {
+  .cv2-root .sb-grid__cell {
+    grid-column: 1 / -1;
+  }
+}
+
+/* THE FALLBACK, kept verbatim, for an engine with no container queries. It is
+   the wrong box to measure — that is the bug above — but on such an engine a
+   viewport under 560px does imply a panel under 560px, so it is right where it
+   can still fire and silent where the container query has already answered. */
 @media (max-width: 560px) {
   .cv2-root .sb-grid {
     grid-template-columns: 1fr;

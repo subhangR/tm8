@@ -326,7 +326,14 @@
   font-size: 9px;
 }
 
-.ri-field__hint { color: var(--pn-ink-4); }
+/* 9px was BELOW THE READABILITY FLOOR. The uploads line is the only thing on
+   the field that says how a file gets in, and it was set two steps under the
+   smallest type on the scale. It reads at `--pn-fs-label` now; the colour is
+   unchanged, because quiet was never the problem — small was. */
+.ri-field__hint {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-4);
+}
 .ri-field__why { color: var(--pn-block); }
 
 .ri-field__why button {

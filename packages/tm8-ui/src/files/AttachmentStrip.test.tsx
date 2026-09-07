@@ -307,7 +307,7 @@ describe('removing an attachment cuts the LINK, not the file', () => {
 // ---------------------------------------------------------------------------
 
 describe('the ＋ tile', () => {
-  it('is an ICON on an empty anchor — one 28px paperclip, not a dashed tile and not nothing', () => {
+  it('is a LABELLED CHIP on an empty anchor — icon and word, not a 64px tile and not nothing', () => {
     // Owner ruling 2026-08-19, narrowing 2026-08-18. The addendum's "the ＋
     // tile IS the empty state" cost ~140px of dashed box on every entity that
     // never had a file, so it went; but what replaced it was DROP ALONE, and a
@@ -323,10 +323,16 @@ describe('the ＋ tile', () => {
       />,
     );
     const add = screen.getByTestId('attachment-add');
-    // Named for assistive tech, wordless on screen — no 'attach' label row,
-    // which is what made the tile tall.
+    // Named for assistive tech AND on screen (approved change, 2026-09-07).
+    // This used to assert `textContent === '📎'` — wordless was the point
+    // then, and wordless was the defect: the one control that says a file can
+    // go here said it only to a screen reader. The intent the old assertion
+    // carried is UNCHANGED and still asserted below it: the empty state must
+    // be its own small affordance and must NOT be the 64px dashed TILE, which
+    // is what made an entity that never had a file 140px taller.
     expect(add.getAttribute('aria-label')).toBe('Attach a file');
-    expect(add.textContent).toBe('📎');
+    expect(add.textContent).toContain('📎');
+    expect(add.textContent).toContain('Attach');
     expect(add.className).toContain('fn-tile--clip');
     expect(add.className).not.toContain('fn-tile--plus');
     expect(screen.queryByText(/no attachments/i)).toBeNull();
@@ -377,7 +383,9 @@ describe('the ＋ tile', () => {
     );
     const add = screen.getByTestId('attachment-add');
     expect(add.className).toContain('fn-tile--plus');
-    expect(add.textContent).toContain('attach');
+    // Capitalised with the idle chip, so one control says one word in both
+    // states rather than two casings of it.
+    expect(add.textContent).toContain('Attach');
   });
 
   it('comes back the moment the anchor has a file, and acts directly with one wired path', async () => {

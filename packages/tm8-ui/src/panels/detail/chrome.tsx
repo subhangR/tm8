@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail, EntityState } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
@@ -13,6 +13,7 @@ import {
   type UnavailableReason,
 } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
+import { useDismissable } from '../useDismissable';
 /*
  * DEF-001 — the phone arrangement of `.pn-panelbar`, which this file renders.
  *
@@ -82,11 +83,14 @@ export function PanelHeader({
   titlePlaceholder,
   autoFocusTitle,
   supplemental,
+  statusInControls,
 }: {
   detail: EntityDetail;
   config: KindConfig;
   breadcrumb?: string;
   liveness?: SessionLiveness;
+  /** The panel mounts a state control, so the header pill would restate it. */
+  statusInControls?: boolean;
   /**
    * THE TITLE IS REALLY EDITABLE NOW, or it does not look editable.
    *
@@ -153,7 +157,12 @@ export function PanelHeader({
           </span>
         )}
 
-        <StatusPillFor detail={detail} config={config} liveness={liveness} />
+        <StatusPillFor
+          detail={detail}
+          config={config}
+          liveness={liveness}
+          recordStatusShownElsewhere={statusInControls}
+        />
       </div>
       {supplemental ? <div className="pn-head__supplemental">{supplemental}</div> : null}
     </div>
@@ -238,11 +247,26 @@ export function StatusPillFor({
   detail,
   config,
   liveness,
+  recordStatusShownElsewhere,
 }: {
   detail: EntityDetail;
   config: KindConfig;
   /** The seam verdict, when this kind has one. */
   liveness?: SessionLiveness;
+  /**
+   * THE CONTROL STRIP IS ALREADY SAYING IT. When the panel mounts a state
+   * control, the strip renders `open` as a live SELECT two rows below this
+   * pill — so the header pill restates, in a read-only voice, a value the
+   * user can already see and change. Two right-aligned clusters in
+   * consecutive rows saying the same word is what read as one element
+   * hovering over another.
+   *
+   * ONLY THE RECORD'S OWN STATUS IS SUPPRESSED. The `deleted` pill and the
+   * liveness verdict below are NOT duplicates of any control — a stale
+   * session's select still says `running` — so they outrank this flag and
+   * still render.
+   */
+  recordStatusShownElsewhere?: boolean;
 }) {
   if (detail.deletedAt) {
     return (
@@ -273,6 +297,8 @@ export function StatusPillFor({
       </Pill>
     );
   }
+
+  if (recordStatusShownElsewhere) return null;
 
   const spec = config.panel.statusPill;
   if (!spec || spec.source === 'none') return null;
@@ -1025,6 +1051,56 @@ export function PanelFooter({
           </span>
           <span>{activeAgo}</span>
         </>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * THE PANEL'S OVERFLOW — where a rare or destructive verb lives.
+ *
+ * WHY THIS EXISTS AT ALL: `Archive` used to ride the control strip as its
+ * last chip, pushed to the far right by `margin-left: auto`. Two things fell
+ * out of that, both measured. It was the widest item in the row — the only
+ * one carrying a glyph AND a word — so it was the one flex-wrap ejected, and
+ * it wrapped onto its own line on any panel narrower than 778 on-screen px,
+ * which is very nearly every real panel. And once ejected it landed directly
+ * beneath the window controls, putting the one destructive verb on this panel
+ * a few pixels from `✕` Close, at the same size, in the same corner — the
+ * control a user reaches for when they are finished and no longer looking
+ * carefully.
+ *
+ * Behind a menu the verb costs one extra click, which is the right price for
+ * something you do rarely and cannot casually undo, and the row stops wrapping
+ * because its widest member is gone.
+ *
+ * PRESENTATIONAL ONLY. It renders whatever it is given and knows nothing about
+ * archiving — the caller supplies the real control, so availability, refusal
+ * text and the seam call all stay exactly where they were.
+ */
+export function PanelOverflow({ children, label }: { children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismissable(open, ref, useCallback(() => setOpen(false), []));
+  const name = label ?? 'More actions';
+  return (
+    <div className="pn-overflow" ref={ref}>
+      <button
+        type="button"
+        className="pn-overflow__trigger"
+        aria-label={name}
+        title={name}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-testid="panel-overflow-trigger"
+        onClick={() => setOpen((was) => !was)}
+      >
+        <span aria-hidden>⋯</span>
+      </button>
+      {open ? (
+        <div className="pn-overflow__menu" role="menu" data-testid="panel-overflow-menu">
+          {children}
+        </div>
       ) : null}
     </div>
   );

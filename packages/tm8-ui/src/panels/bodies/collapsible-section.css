@@ -27,11 +27,18 @@
   gap: var(--pn-space-2);
   padding: var(--pn-space-2) 0;
   font-family: var(--pn-mono);
-  font-size: 10px;
+  /* 10px / `--pn-ink-4` was the quietest combination in the sheet, on the row
+     that names the section. Raised one step to `--pn-fs-micro` and one shade
+     to `--pn-ink-3` (approved change, 2026-09-07): a heading a reader has to
+     lean in for is not restraint, and 10px is off the type scale entirely.
+     `text-transform: uppercase` STAYS — SubtreeBody's tests read the headings
+     as `SUBTREE` / `ACCEPTANCE` / `LINKED`, and this rule is where that casing
+     comes from. */
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
   letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
   text-align: left;
   cursor: pointer;
 }
@@ -71,10 +78,26 @@
   flex: 1;
 }
 
+/* A PILL BADGE, not a naked digit. Right-aligned against the empty half of
+   the row, an unframed number read as debris — and a section with nothing in
+   it drew a lone `0`, which reads as a rendering failure rather than as a
+   count. The zero case is now answered in the component (it renders no badge
+   at all); this rule answers the rest: the number gets a container, so it
+   reads as a tally of the row it sits on.
+
+   `letter-spacing` is reset because the head's `--pn-track-mega` is sized for
+   an uppercase mono EYEBROW; inside 7px of padding it pushes the digits off
+   their own centre. `text-transform` is inherited and harmless on digits, and
+   is left alone rather than restated. */
 .cv2-root .pn-fold__count {
   flex: none;
+  padding: 1px 7px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-active);
   color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
   font-weight: 500;
+  letter-spacing: 0;
 }
 
 /* No box around content — the fold body is plain flow, air supplied by gap. */
@@ -147,12 +170,21 @@
    (`width: 100%` and `align-self: stretch`), so an inline floor would be a
    number that could never bind.
 
-   THE TYPE IS LEFT AT 10px DELIBERATELY. DEF-048 — "a 44px button with 9.5px
-   text is tappable and unreadable" — is a real row and no threshold in this
-   program measures it, but it is filed to shell and it is about READABILITY,
-   not about this bar. Growing the type here would fix half of somebody else's
-   row invisibly and make the after-run diff on these two impossible to
-   attribute. Flagged, not silently bundled.
+   THE TYPE WAS LEFT AT 10px DELIBERATELY, AND HAS SINCE BEEN RAISED — by a
+   separate, named decision rather than as a silent side effect of this bar.
+   The note below is kept as the record of why it was NOT raised here.
+
+     "DEF-048 — 'a 44px button with 9.5px text is tappable and unreadable' —
+     is a real row and no threshold in this program measures it, but it is
+     filed to shell and it is about READABILITY, not about this bar. Growing
+     the type here would fix half of somebody else's row invisibly and make the
+     after-run diff on these two impossible to attribute. Flagged, not silently
+     bundled."
+
+   The 2026-09-07 panel-chrome pass is that separate decision: `.pn-fold__head`
+   now reads at `--pn-fs-micro` for every shell, desktop included. This block
+   still owns only the 44px floor, which is what it was written for.
+   `.pn-emptytoggle` is a different control and keeps its own type.
    =========================================================================== */
 .cv2-root[data-shell='mobile'] .pn-fold__head,
 .cv2-root[data-shell='mobile'] .pn-emptytoggle {

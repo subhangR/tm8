@@ -636,6 +636,46 @@
    a work session — costs the bar no box and no gap at all, and a filled one
    lets the switch's own flex row be the bar's child directly. */
 .cv2-root .pn-panelbar__surface { display: contents; }
+
+/* THE PANEL'S OVERFLOW — see `PanelOverflow` in detail/chrome.tsx for why the
+   tombstone verb moved behind it. The trigger is a window-control-sized
+   target; the menu hangs from the bar's right edge so it can never overhang
+   the panel. */
+.cv2-root .pn-overflow { position: relative; flex: none; display: flex; align-items: center; }
+.cv2-root .pn-overflow__trigger {
+  appearance: none;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  width: 22px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--pn-r-xs);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  line-height: 1;
+}
+.cv2-root .pn-overflow__trigger:hover { background: var(--pn-hover); border-color: var(--pn-line-2); color: var(--pn-ink); }
+.cv2-root .pn-overflow__menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 40;
+  min-width: 168px;
+  padding: var(--pn-space-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+}
+/* The verb inside stretches to the menu, so the whole row is the target and
+   a refusal caption has room to be a sentence rather than a tooltip. */
+.cv2-root .pn-overflow__menu .lp__rowaction { width: 100%; justify-content: flex-start; }
 .cv2-root .pn-tab {
   appearance: none;
   border: 0;
@@ -1548,6 +1588,10 @@
   border-radius: 8px;
   box-shadow: var(--pn-sh-pop);
 }
+/* `min-width: 0` on the children is load-bearing, not tidying: these are flex
+   items at the default `min-width: auto`, so a long person name or collection
+   title could not shrink and pushed the row past the menu's own width, giving
+   the popover a horizontal scrollbar. They ellipsize now instead. */
 .cv2-root .lp__kindopt {
   appearance: none;
   border: 0;
@@ -1555,15 +1599,19 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 8px;
-  border-radius: 5px;
+  gap: var(--pn-space-2);
+  padding: 3px var(--pn-space-3);
+  border-radius: 0;
   font: inherit;
-  font-size: 11.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  line-height: 1.35;
   color: var(--pn-ink-2);
   cursor: pointer;
   text-align: left;
 }
+.cv2-root .lp__kindopt > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cv2-root .lp__kindopt:disabled { color: var(--pn-ink-4); cursor: default; }
 .cv2-root .lp__kindopt:hover { background: var(--pn-hover); }
 .cv2-root .lp__kindopt--current { background: var(--pn-hover); font-weight: 600; color: var(--pn-ink); }
 
@@ -1611,36 +1659,56 @@
 }
 .cv2-root .lp__quick:hover { background: var(--pn-hover); }
 
-/*
- * `overflow: hidden` is kept deliberately: it is the floor guard that stops a
- * long chip from pushing the row wider than the panel. It is NOT the thing
- * that bounds the chip COUNT — the row is bounded by construction now (active
- * selections + one trigger), because relying on clipping to hide surplus
- * content is what turned ten chips into a silently truncated row.
- */
+/* `overflow: hidden` used to be the floor guard here, and what it actually
+   guarded was the RIGHTMOST chip — the sort control — which was clipped away
+   silently once a few filters were active. Wrapping is the honest failure
+   mode: the row grows a line instead of eating a control. */
 .cv2-root .lp__filters {
-  flex: none;
-  height: 32px;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--pn-line);
-  overflow: hidden;
+  gap: 6px;
 }
-.cv2-root .lp--compact .lp__filters { height: 28px; gap: 4px; padding: 0 8px; }
+.cv2-root .lp--compact .lp__filters { gap: 4px; }
+/* These read as terminal output — lowercase, monospace, an ASCII caret inside
+   the text — and every one measured 20.4px tall, under half the 44px touch
+   floor. Sentence case in the UI face at a real size makes them controls. */
 .cv2-root .lp__chip {
   flex: none;
   appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
-  padding: 2px 8px;
+  padding: 4px 8px;
+  min-height: 24px;
   cursor: pointer;
   white-space: nowrap;
+}
+.cv2-root .lp--compact .lp__chip { padding: 3px 7px; min-height: 22px; }
+.cv2-root .lp__chip-caret { color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
+.cv2-root .lp__chip-word { overflow: hidden; text-overflow: ellipsis; }
+/* An ACTIVE narrowing shows a count, not one dismissable chip per selection.
+   Four selections used to mean four chips competing with the triggers for a
+   row that then clipped; one badge says the same thing in fixed width. */
+.cv2-root .lp__chip-count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-variant-numeric: tabular-nums;
+  background: var(--pn-brand);
+  color: var(--pn-card);
+  border-radius: var(--pn-r-pill);
+  padding: 0 5px;
+  line-height: 1.5;
 }
 .cv2-root .lp__chip--person {
   display: inline-flex;
@@ -1689,20 +1757,41 @@
   appearance: none;
   border: 0;
   background: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 500;
+  line-height: 1.2;
   color: var(--pn-ink-3);
-  /* 7px, not 9px: four tabs at the 280px floor, and the padding is the only
-     part of the row that is not a ruled word. */
-  padding: 3px 5px;
+  padding: 4px 7px;
+  border-radius: var(--pn-r-xs);
   cursor: pointer;
-  border-left: 1px solid var(--pn-line);
   white-space: nowrap;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
 }
-.cv2-root .lp__tab:first-child { border-left: 0; }
-.cv2-root .lp__tab:hover { background: var(--pn-hover); }
-.cv2-root .lp__tab--active { font-weight: 600; color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .lp--compact .lp__tab { padding: 3px 5px; gap: 4px; }
+.cv2-root .lp__tab:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+/* Selection by ELEVATION, not by a faint tint that a tired eye loses against
+   the paper. The raised segment is the one place in this row that is card-white. */
+.cv2-root .lp__tab--active {
+  font-weight: 600;
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
+}
+.cv2-root .lp__tab-word { overflow: hidden; text-overflow: ellipsis; }
+/* Tabular figures so the row does not reflow as counts tick. */
+.cv2-root .lp__tab-count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-4);
+}
+.cv2-root .lp__tab--active .lp__tab-count { color: var(--pn-ink-3); }
 
 .cv2-root .lp__body {
   flex: 1 1 auto;
@@ -2697,30 +2786,70 @@
 /* Filter picker — the UNBOUNDED set lives here, where it can scroll, so the
    row above it stays bounded by construction: active chips + one trigger. */
 .cv2-root .lp__filterbar {
-  flex: none;
+  flex: 1 1 auto;
+  min-width: 0;
   position: relative;
+  display: flex;
+  align-items: center;
 }
+/* MEASURED: the old menu was a fixed 176px that never responded to the panel,
+   and it hung from `left: 8px` of the whole BAR — so the People and
+   Collections menus opened under the far-left edge no matter which chip was
+   clicked. It also blanketed 34-35% of the list body, covering the first
+   eight rows: you chose a filter without being able to see what you were
+   filtering. Anchoring to the bar's own left edge (which now begins where the
+   chips begin) and capping against its width means it can never overhang the
+   panel, and the denser rows below halve the height. */
 .cv2-root .lp__filtermenu {
   position: absolute;
-  top: 100%;
-  left: 8px;
+  top: calc(100% + 4px);
+  left: 0;
   z-index: 20;
-  width: 176px;
+  width: min(280px, 100%);
+  /* The old cap was 240px and the menu still ran to ~250 with its padding.
+     Holding the same envelope while the rows below get DENSER and larger is
+     the trade that matters: more of the option set visible per scroll, at a
+     size that can actually be read. Making the menu taller to avoid scrolling
+     would have made the covering-the-list complaint worse, not better. */
   max-height: 240px;
-  overflow: auto;
-  padding: 4px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--pn-space-1) 0;
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: 8px;
+  border-radius: var(--pn-r-md);
   box-shadow: var(--pn-sh-pop);
 }
 /* The sort menu hangs off the RIGHT end of the bar, under its own chip —
-   inheriting `left: 8px` would drop it under the filter trigger at the far
+   inheriting `left: 0` would drop it under the filter trigger at the far
    other end of the row. */
 .cv2-root .lp__filtermenu--sort {
   left: auto;
-  right: 8px;
+  right: 0;
 }
+/* Clearing was only ever reachable by hunting the chips that each active
+   option spawned. */
+.cv2-root .lp__filterfoot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: var(--pn-space-1);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .lp__filterclear {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  padding: 2px 4px;
+  border-radius: var(--pn-r-xs);
+}
+.cv2-root .lp__filterclear:hover { color: var(--pn-brand-2); background: var(--pn-hover); }
 /* The infinite-scroll sentinel. A real height, so an IntersectionObserver has
    something to observe and a keyboard user has something to reach. */
 .cv2-root .lp__more {
@@ -2744,12 +2873,14 @@
 }
 .cv2-root .lp__filtergroup {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--pn-ink-4);
-  padding: 6px 8px 3px;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+  padding: var(--pn-space-2) var(--pn-space-3) var(--pn-space-1);
 }
+/* A rule between groups, so four narrowings read as four things. */
+.cv2-root .lp__filtermenu > div + div .lp__filtergroup { border-top: 1px solid var(--pn-line); margin-top: var(--pn-space-1); padding-top: var(--pn-space-2); }
 .cv2-root .lp__filtercheck { margin-left: auto; color: var(--pn-brand-2); }
 
 /* The collection-lens honesty line: what the lens hides, in numbers from the
@@ -2767,13 +2898,14 @@
   border-radius: var(--pn-r-sm);
 }
 /* The sets menu's designed empty — a sentence, not a bare popover. */
+/* `max-width: 230px` inside what was a 176px box guaranteed a horizontal
+   overrun every time this empty state rendered. It wraps to the menu now. */
 .cv2-root .lp__filterempty {
   margin: 0;
-  padding: 4px 8px 7px;
-  font-size: 10.5px;
-  line-height: 1.5;
+  padding: var(--pn-space-1) var(--pn-space-3) var(--pn-space-2);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-3);
-  max-width: 230px;
 }
 
 /* --- in-panel search — T0-1's own bordered row (D36: focused by `f`) ------ */
@@ -2862,12 +2994,43 @@
 
 /* Lifecycle tier tabs — their OWN row (D41). Tabs are the lifecycle band;
    the filter chips below narrow within it. T0-1 draws both. */
-.cv2-root .lp__tierrow {
+/* ONE BAND FOR BOTH ROWS. The tier row and the filter row were siblings with
+   a measured 0.0px gap, so they read as one undifferentiated slab while
+   costing two rows of chrome. As flex children of a wrapping row they sit
+   side by side when there is room and fall onto two lines when there is not
+   — the responsive behaviour a fixed stack could not express — and the bottom
+   rule is drawn once, here, instead of once per row. */
+.cv2-root .lp__chromerow {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  padding: 0 10px 6px;
+  /* Row-gap is tighter than column-gap on purpose: when the band wraps to two
+     lines at a narrow panel, the vertical seam is the expensive one. */
+  gap: 5px var(--pn-space-2);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .lp--compact .lp__chromerow { gap: 4px 6px; padding: 5px 8px; }
+
+/* THE SEGMENTED CONTROL. Four buttons divided by hairlines with no enclosing
+   box read as debug chrome, not as a control; worse, the row had NO overflow
+   rule of its own (the `.lp__tabs` scroller its comment described is rendered
+   by nothing) so at real counts — To Do 227 · In Progress 166 · Done 130 ·
+   Cancelled 28 — it needed 305px inside a 277px box and silently truncated
+   "Cancelled" with no scrollbar and no ellipsis. One container, an elevated
+   active segment, and a count that is allowed to be quieter than its label
+   buys back the width that clipping was hiding. */
+.cv2-root .lp__tierrow {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px;
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
 }
 /* ---------------------------------------------------------------------------
    The inline launch flow (D44)
@@ -3419,6 +3582,64 @@
    Matches `--absent` above deliberately: same fact, same treatment. Italic is
    NOT applied — it would slant a date mask into near-illegibility at 10.5px. */
 .cv2-root .lp__datesel[data-empty='true'] { color: var(--pn-ink-4); }
+
+/* THE COLLAPSED DATE AFFORDANCE. Quiet by default — an absence should not
+   shout — and it earns a border only on hover, so it reads as an invitation
+   rather than as a third filled control competing with the two live pills
+   beside it. */
+/* THE FACES HAD NO BASE RULE REACHABLE FROM HERE. `.pn-badge`'s only
+   definition is tile-scoped (`.pn-tt .pn-badge` in maestro-task-tile.css), and
+   `.pn-controls` has no `.pn-tt` ancestor — so the assignee and collection
+   faces inherited a height and nothing else: no border, no radius, no padding,
+   no size. Beside two styled pills they read as raw body text at the wrong
+   weight, which is most of why this strip looked like three different
+   toolbars. One vocabulary for all four. */
+.cv2-root .lp__rowdetail--chips .pn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .lp__rowdetail--chips .lp__assignbtn:hover .pn-badge,
+.cv2-root .lp__rowdetail--chips .pn-badge:hover { background: var(--pn-hover); }
+
+.cv2-root .lp__dateadd {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  min-height: 24px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: none;
+  cursor: pointer;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+.cv2-root .lp__dateadd:hover {
+  border-style: solid;
+  border-color: rgba(var(--pn-brand-rgb), 0.5);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
 
 /* THE COLLAPSED TILE'S STATUS MARK, as a trigger.
    It must occupy the 16px square `.pn-tt__status` gives it and nothing more:

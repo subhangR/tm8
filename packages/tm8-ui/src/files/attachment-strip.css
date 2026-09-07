@@ -21,41 +21,80 @@
   min-width: 0;
 }
 
-/* NOTHING ATTACHED — one paperclip, and nothing else (owner ruling
-   2026-08-19). This row used to be `display:none`, which left DROP as the only
-   way to attach; a phone cannot drag a file onto a panel, so on mobile the
-   feature was simply unreachable. The idle row is now the width and height of
-   a single 28px icon: cheaper than the dashed ＋ tile that ruling deleted, and
-   tappable, which the silence was not. */
-.fn-tiles--idle { gap: 0; }
+/* NOTHING ATTACHED — one labelled control, and nothing else (owner ruling
+   2026-08-19, relabelled 2026-09-07). This row used to be `display:none`,
+   which left DROP as the only way to attach; a phone cannot drag a file onto a
+   panel, so on mobile the feature was simply unreachable. The 2026-08-19 fix
+   put a 28px paperclip back — tappable in principle, but WORDLESS and under
+   the touch floor, so the one control that says "a file can go here" said it
+   only to a screen reader. It now carries its word and a dashed frame. */
+.fn-tiles--idle { gap: var(--pn-space-1); }
 
-/* The idle affordance: an icon, not a tile. No name row, no dashed frame, no
-   64px column — it sits in the panel like any other quiet icon control, and
-   it is 28px so a thumb can hit it. */
+/* THE IDLE AFFORDANCE — a chip, not a tile and not a bare glyph. Icon AND
+   word on one line, inside the dashed frame that is this app's vocabulary for
+   "something can be dropped here" (`.fn-drophost--active`, `.fn-tile--plus`).
+   `width`/`flex-direction` are overrides: `.fn-tile` is a 64px column, and
+   this control is neither. */
 .fn-tile--clip {
-  width: 28px;
-  height: 28px;
+  width: auto;
   flex: none;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  border-radius: var(--pn-r-sm);
+  gap: var(--pn-space-1);
+  /* THE TOUCH FLOOR. This file carried NO minimum size rule at all, so the
+     28px square was the phone's tap target — under half the 44px floor on
+     area. 32px is the desktop floor; the phone rules at the foot of this file
+     take it the rest of the way. */
+  min-block-size: 32px;
+  padding: 0 var(--pn-space-2);
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
   color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
   cursor: pointer;
 }
 
-.fn-tile--clip:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.fn-tile--clip:hover,
+.fn-tile--clip:focus-visible {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  outline: none;
+}
+/* The tile grammar hangs its focus ring on `.fn-tile__face`; this variant has
+   no face box to hang it on, so the ring belongs to the control itself. */
+.fn-tile--clip:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.fn-tile--clip:focus-visible .fn-tile__face--clip { outline: none; }
 
 .fn-tile__face--clip {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  flex: none;
   border: 0;
   background: none;
   font-size: 14px;
   line-height: 1;
+}
+
+/* The chip's label is a WORD, not a truncated filename: the 64px cap and the
+   ellipsis that `.fn-tile__name` carries for tiles would clip it. */
+.fn-tile--clip .fn-tile__name {
+  max-width: none;
+  overflow: visible;
+  font-size: var(--pn-fs-label);
+  color: inherit;
+}
+
+/* THE TRAILING NOTE — the sentence that used to be a 9px paragraph above the
+   strip, beside the control instead of over it. */
+.fn-plus__note {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-4);
+  white-space: nowrap;
 }
 
 /* --- one tile -------------------------------------------------------------- */
@@ -137,21 +176,30 @@
 .fn-plus {
   position: relative;
   display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
 }
 .fn-tile--plus .fn-tile__face {
   border: 1px dashed var(--pn-line-2);
   background: transparent;
 }
-.fn-tile--plus:hover .fn-tile__face {
-  border-color: var(--pn-brand-2);
+.fn-tile--plus:hover .fn-tile__face,
+.fn-tile--plus:focus-visible .fn-tile__face {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
 }
 .fn-tile__face--plus {
   font-size: 18px;
   color: var(--pn-ink-4);
 }
-.fn-tile--plus:hover .fn-tile__face--plus {
+.fn-tile--plus:hover .fn-tile__face--plus,
+.fn-tile--plus:focus-visible .fn-tile__face--plus {
   color: var(--pn-brand-2);
 }
+/* The word beside the ＋, same label as the idle chip. It is the tile's name
+   row, so it keeps the tile's truncation — the word is short enough that the
+   cap never bites. */
+.fn-tile--plus .fn-tile__name { color: var(--pn-ink-3); }
 
 /* --- the two-item attach menu ---------------------------------------------- */
 
@@ -414,4 +462,29 @@
 .fn-lightbox__why {
   margin: 0;
   color: var(--pn-block);
+}
+
+/* ==========================================================================
+   THE TOUCH FLOOR.
+
+   This file had NO minimum-size rule of any kind and no phone block to follow,
+   so both mechanisms are stated here rather than one being inferred:
+
+   · `pointer: coarse` catches a real touch device whatever shell it renders,
+     which is the case the 28px paperclip actually failed on. It uses the
+     literal 44px because `--mobile-touch-min` is declared on `.mobile-frame`,
+     and a coarse pointer is not necessarily inside one.
+   · `[data-shell='mobile']` catches the SIMULATED phone — the harness that
+     the tap census measures runs on a mouse, where `pointer: coarse` never
+     matches. This is the package's own convention (rich-input.css,
+     list-root-header.css, collapsible-section.css) and it is the one place
+     this sheet reaches for `.cv2-root`: the mobile shell IS that root, so the
+     header's "a panel is not guaranteed to sit under `.cv2-root`" caveat
+     cannot bite here.
+   ========================================================================== */
+@media (pointer: coarse) {
+  .fn-tile--clip { min-block-size: 44px; }
+}
+.cv2-root[data-shell='mobile'] .fn-tile--clip {
+  min-block-size: var(--mobile-touch-min);
 }

@@ -26,6 +26,7 @@ import {
   ActionBar,
   PanelFooter,
   PanelHeader,
+  PanelOverflow,
   PanelWindowControls,
   TabStrip,
   panelActionContext,
@@ -51,7 +52,8 @@ import {
 import { ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import {
-  EntityControlStrip, stripHasLiveControl, type ControlHost, type ControlSubject,
+  BinIcon, EntityControlStrip, RestoreIcon, RowAction, stripHasLiveControl,
+  type ControlHost, type ControlSubject,
 } from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
@@ -849,6 +851,14 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         props={controlHost}
         config={config}
         variant="chips"
+        /* Two empty date boxes were 250px of the strip spent rendering a
+           format hint twice; see the prop's own note. Collapses only when
+           BOTH are unset and both are actually writable. */
+        collapseEmptyDates
+        /* Moved to `PanelOverflow` beside the window controls — see the prop's
+           own note. The list's control card keeps its Archive; only this host
+           opts out, because only this host has somewhere better to put it. */
+        omitArchive
       />
     ) : null;
 
@@ -898,6 +908,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         config={config}
         breadcrumb={breadcrumb}
         liveness={props.liveness}
+        /* The strip below renders this kind's state as a live select, so the
+           header's read-only pill would say the same word twice in two
+           consecutive right-aligned clusters. Suppress the record pill only —
+           `deleted` and the liveness verdict still outrank this. */
+        statusInControls={strip !== null && config.list.stateControl != null}
         /* THE TITLE is editable only where registry data and the seam both
            permit it. The visual treatment stays plain by user direction; the
            actual click/keyboard editor is still mounted only when writable. */
@@ -1097,6 +1112,29 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 is registered, so the single-server case never sees it. Kind
                 awareness lives in src/transfer, not here (§15.2). */}
             <TransferControl detail={detail} />
+            {/* THE TOMBSTONE VERB, ONE CLICK BACK. It used to ride the control
+                strip as the last chip and, being the widest item there, was
+                the one flex-wrap ejected — onto its own line, directly under
+                `✕`. A destructive verb should not be a same-size neighbour of
+                the control you press when you are done looking. The control
+                itself is unchanged: same `RowAction`, same host, same
+                `onArchive`, same refusal vocabulary. */}
+            {strip !== null ? (
+              <PanelOverflow>
+                <RowAction
+                  ref_={detail.deletedAt != null ? 'restore' : 'archive'}
+                  row={subjectOf(detail)}
+                  props={controlHost}
+                  onRun={controlHost.onArchive}
+                  variant="wide"
+                  /* The same drawn glyph the strip used, for the same reason:
+                     the def's `▢` is a typographic character that sits on its
+                     own baseline and lands at a different optical height from
+                     everything beside it. */
+                  glyph={detail.deletedAt != null ? <RestoreIcon /> : <BinIcon />}
+                />
+              </PanelOverflow>
+            ) : null}
             <PanelWindowControls
               onPromote={props.onPromote}
               onClose={onClose}

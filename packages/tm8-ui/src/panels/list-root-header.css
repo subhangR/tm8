@@ -66,6 +66,34 @@
   flex: none;
   padding: 4px 5px;
 }
+
+/* A SPLIT BUTTON, not two glyphs sharing an edge.
+
+   `＋` creates an entity; `▾` opens a menu. They sat flush, unseparated, and
+   the caret measured 17x26 — 438px², under a quarter of the 44x44 floor — so
+   the miss on a menu tap landed on CREATE. That is the worst shape a mis-tap
+   can have: it is not a no-op, it makes a task.
+
+   Two fixes, and neither touches type size (the glyph is 11px like its
+   siblings and stays there): a `--pn-line` hairline so the eye can see two
+   targets, and inline padding so the thumb has one. The left corners square
+   off against the divider — a rounded edge butted to a rule reads as a gap.
+
+   THE ARITHMETIC, because this package has NO `border-box` reset
+   (mobile/shell-contract.test.ts says so, and it is why a `min-inline-size`
+   here would be the wrong number): the glyph measured 7px of content inside
+   4px/5px padding, which is the 17px the census scored. `--pn-space-2` on the
+   inline axis makes it 7 + 8 + 8 + 1px of divider = 24px, so the floor is met
+   by padding alone — no width declaration to be misread as a content-box
+   measure, and nothing for the phone block below to fight. That block already
+   states the 44px floor for this control; the wider padding only raises it. */
+.tch-rootcell__caret {
+  border-inline-start: 1px solid var(--pn-line);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  justify-content: center;
+  padding-inline: var(--pn-space-2);
+}
 .tch-rootcell__plus[aria-disabled='true'] {
   opacity: 0.55;
   cursor: not-allowed;

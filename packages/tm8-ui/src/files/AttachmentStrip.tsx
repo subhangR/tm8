@@ -399,9 +399,18 @@ export function AttachmentStrip({
           the 2026-08-18 silence). Silence removed the 140px dashed box, and
           it also removed the only TAPPABLE way to attach: what remained was
           drop, and a phone cannot drag a file onto a panel. So the idle state
-          is one 28px paperclip — a twentieth of the tile it replaced, and a
+          is a small icon control — a fraction of the tile it replaced, and a
           real touch target — while a strip that already has tiles keeps the
           labelled ＋ tile that matches its neighbours.
+
+          IT CARRIES ITS WORD NOW (approved change, 2026-09-07). The idle form
+          was a BARE 📎 and nothing else: 28px square, no border, no label —
+          an accessible name only a screen reader could hear, and a hit area
+          under the touch floor. A control whose whole job is to say "a file
+          can go here" said it to nobody looking. Both states now render glyph
+          AND word, inside a dashed frame that reads as a drop target, and the
+          long sentence that used to sit above the strip as its own paragraph
+          rides the `title` instead.
 
           It is a class change, never a `display:none`: jsdom loads no
           stylesheets, so a button hidden by CSS is a button every test still
@@ -418,13 +427,13 @@ export function AttachmentStrip({
             className={idle ? 'fn-tile fn-tile--clip' : 'fn-tile fn-tile--plus'}
             data-testid="attachment-add"
             ref={plusRef}
-            /* THE ACCESSIBLE NAME IS EXPLICIT because the idle form has no
-               visible text — a paperclip glyph is decorative, and a button
-               named "📎" is a button screen readers cannot describe. */
+            /* THE ACCESSIBLE NAME STAYS EXPLICIT even though the control now
+               has visible text: the visible word is "Attach", and "Attach a
+               file" is the fuller name three suites already navigate by. */
             aria-label="Attach a file"
             aria-haspopup={startUpload && projectFolder ? 'menu' : undefined}
             aria-expanded={startUpload && projectFolder ? menuOpen : undefined}
-            title="Attach a file to this entity"
+            title="Attach a file to this entity — or drop or paste a file to insert it here"
             onClick={plusAct}
           >
             <span
@@ -433,8 +442,13 @@ export function AttachmentStrip({
             >
               {idle ? '📎' : '＋'}
             </span>
-            {idle ? null : <span className="fn-tile__name">attach</span>}
+            <span className="fn-tile__name">Attach</span>
           </button>
+          {/* The trailing note the ProseField paragraph used to carry, beside
+              the button rather than above the strip. Drawn only where drop and
+              paste actually land bytes — `startUpload` is that capability — so
+              it never promises a path this mount does not have. */}
+          {idle && startUpload ? <span className="fn-plus__note">or drop / paste</span> : null}
           {menuOpen && startUpload && projectFolder ? (
             <div className="fn-menu" role="menu" aria-label="Attach a file">
               <button type="button" className="fn-menu__item" role="menuitem" onClick={openUpload}>

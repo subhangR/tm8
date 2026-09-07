@@ -27,7 +27,16 @@ export interface CollapsibleSectionProps {
   id: string;
   /** Uppercase eyebrow text. */
   label: string;
-  /** Right-aligned count / summary. */
+  /**
+   * Right-aligned count / summary, drawn as a pill badge.
+   *
+   * A LITERAL `0` IS NOT DRAWN (approved change, 2026-09-07). A section with
+   * no children used to render a lone right-aligned `0` against an otherwise
+   * empty row, which reads as a rendering failure rather than as a fact. The
+   * section already states its own emptiness — through its body, or by leaving
+   * the flow entirely when `empty` is true — so the badge simply stands down.
+   * `undefined` (no count at all) and `0` therefore render identically.
+   */
   count?: ReactNode;
   /** No data rows. A live-but-unused affordance still counts as empty; a
       disabled-with-reason affordance NEVER does — see the header. */
@@ -213,7 +222,7 @@ export function CollapsibleSection({
         </span>
         <span className="pn-fold__label">{label}</span>
         <span className="pn-fold__spacer" />
-        {count != null ? <span className="pn-fold__count">{count}</span> : null}
+        {count != null && count !== 0 ? <span className="pn-fold__count">{count}</span> : null}
       </button>
       {open ? (
         <div className="pn-fold__body" id={bodyId} role="region" aria-labelledby={headId}>
