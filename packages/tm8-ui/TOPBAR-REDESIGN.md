@@ -1,4 +1,4 @@
-# Top bar redesign — design, before the build
+# Top bar redesign — the design, and what the build falsified
 
 **Task:** 01a07a56 "TM8 - Top Bar UI issues" · **Artifact:** 01a07a80-4c2c-7e7c-9db5-2463083672f6
 **Base:** `origin/main` 4790333c · **Package:** `packages/tm8-ui` (the product UI at `/`)
