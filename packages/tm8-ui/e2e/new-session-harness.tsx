@@ -65,11 +65,9 @@ function Harness() {
         spawn={spawn}
         launch={{
           teammates: LAUNCH_TEAMMATES,
-          projects: LAUNCH_PROJECTS.map((project) => ({
-            id: project.projectId,
-            name: project.name,
-            trusted: project.trusted,
-          })),
+          /* The full rows, verbatim: the composer's workdir menu renders each
+             project's detail (trust · path) and each untrusted row's reason. */
+          projects: LAUNCH_PROJECTS,
           capacity: LAUNCH_CAPACITY,
         }}
         onSessionReady={() => { /* the harness has nowhere to navigate to */ }}

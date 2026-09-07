@@ -93,7 +93,11 @@ import { relatedOfKind } from './list/related';
 import { RelatedGroup } from './list/RelatedGroup';
 import type { MessagePulse } from './list/useMessagePulses';
 import { TileFlightLayer, type ResolvedFlight } from './list/TileFlightLayer';
-import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
+import { type LaunchTeammateOption } from './launch/LaunchQuickConfig';
+/* The Run/Coordinate flow opens the canvas composer as a modal tile now —
+   design import 2026-09-07. `LaunchQuickConfig` remains the inline fallback
+   for surfaces not yet migrated (merge flow). */
+import { LaunchComposerPopup } from '../new-session';
 import { newLaunchMutationId } from '../domain/launch';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
@@ -486,6 +490,18 @@ export interface LaunchSources {
   profileFor?: (teamMemberId: string | null) => ProfileResolution | undefined;
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
   onFullOptions?: (entityId: string) => void;
+  /**
+   * The entity's current description, for the launch popup's body field —
+   * the popup EDITS the task's description, so it must open showing the real
+   * one, read fresh when the row's detail is not hydrated.
+   */
+  descriptionOf?: (entityId: string) => Promise<string | null>;
+  /**
+   * Persists title/description edited IN the launch popup back onto the
+   * entity, as one patch. Absent ⇒ the edits still shape the session (its
+   * title, the agent's briefing) but the entity keeps its own record.
+   */
+  onUpdateEntity?: (entityId: string, edits: { title?: string; description?: string }) => Promise<unknown> | void;
   /** Caller owns uniqueness of the optimistic-journal id. */
   mutationId: (entityId: string) => string;
 }
@@ -3408,27 +3424,29 @@ export function Tile({
 
         {flowRef ? (
           <div className="lp__flow lp__flow--control">
-            <LaunchQuickConfig
+            <LaunchComposerPopup
               subject={row}
               key={flowRef}
-            verbLabel={resolveAction(flowRef).label}
+              verbLabel={resolveAction(flowRef).label}
               {...(resolveAction(flowRef).launchMode
                 ? { mode: resolveAction(flowRef).launchMode }
                 : {})}
               spaceId={props.launch?.spaceId ?? props.ctx.spaceId ?? ''}
               teammates={props.launch?.teammates ?? []}
               projects={props.launch?.projects ?? []}
-              loadFor={props.launch?.loadFor}
               capacity={props.launch?.capacity}
-              profileFor={props.launch?.profileFor}
               onSpawn={props.launch?.onSpawn}
-              onFullOptions={
-                props.launch?.onFullOptions
-                  ? () => props.launch?.onFullOptions?.(row.id)
+              loadDescription={
+                props.launch?.descriptionOf
+                  ? () => props.launch!.descriptionOf!(row.id)
+                  : undefined
+              }
+              onSaveSubject={
+                props.launch?.onUpdateEntity
+                  ? (edits) => props.launch!.onUpdateEntity!(row.id, edits)
                   : undefined
               }
               onDismiss={() => setFlowRef(null)}
-              boundsRef={tileRef}
               newClientMutationId={() => props.launch?.mutationId(row.id) ?? newLaunchMutationId()}
             />
           </div>
@@ -3652,11 +3670,12 @@ export function Tile({
 
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}
 
-      {/* The config is an attached card section, not a popover: the subject
-          remains obvious while teammate/model choices are changed. */}
+      {/* The config pops as a modal tile now (canvas composer): the subject is
+          named IN the popup's verb strip, so it stays obvious while teammate
+          and model choices are changed. */}
       {flowRef ? (
         <div className="lp__flow" onClick={(e) => e.stopPropagation()}>
-          <LaunchQuickConfig
+          <LaunchComposerPopup
             subject={row}
             key={flowRef}
             verbLabel={resolveAction(flowRef).label}
@@ -3666,17 +3685,19 @@ export function Tile({
             spaceId={props.launch?.spaceId ?? props.ctx.spaceId ?? ''}
             teammates={props.launch?.teammates ?? []}
             projects={props.launch?.projects ?? []}
-            loadFor={props.launch?.loadFor}
             capacity={props.launch?.capacity}
-            profileFor={props.launch?.profileFor}
             onSpawn={props.launch?.onSpawn}
-            onFullOptions={
-              props.launch?.onFullOptions
-                ? () => props.launch?.onFullOptions?.(row.id)
+            loadDescription={
+              props.launch?.descriptionOf
+                ? () => props.launch!.descriptionOf!(row.id)
+                : undefined
+            }
+            onSaveSubject={
+              props.launch?.onUpdateEntity
+                ? (edits) => props.launch!.onUpdateEntity!(row.id, edits)
                 : undefined
             }
             onDismiss={() => setFlowRef(null)}
-            boundsRef={tileRef}
             newClientMutationId={() => props.launch?.mutationId(row.id) ?? newLaunchMutationId()}
           />
         </div>

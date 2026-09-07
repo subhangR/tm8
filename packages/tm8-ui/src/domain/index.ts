@@ -128,10 +128,15 @@ export {
   accessModeLabel,
   describeAccessMode,
   nextAccessMode,
+  AGENT_CREDENTIAL_PROVIDER,
+  CREDENTIAL_PROVIDER_LABEL,
+  EFFORT_LABELS,
+  effortLabel,
 } from './launch';
 export type {
   AgentToolDef,
   LaunchAccessMode,
+  LaunchCredentialSource,
   LaunchCapacity,
   LaunchConfig,
   LaunchMode,

@@ -337,8 +337,9 @@ export function HomeView(props: HomeViewProps) {
   );
 
   /* `onFullOptions` rides in when the shell wired `onLaunchOpen` — a task
-     row's Run then goes STRAIGHT to the launch sheet this screen mounts,
-     the same outranking the kind screens apply. */
+     row's Run pops the composer, and this is the popup's `full options ▸`
+     escape to the launch sheet this screen mounts (precedence flipped
+     2026-09-07: the popup outranks the sheet everywhere a flow can mount). */
   const launchPort = useLaunchPort(data, {
     ...(props.onSpawn ? { onSpawn: props.onSpawn } : {}),
     ...(props.onLaunchOpen

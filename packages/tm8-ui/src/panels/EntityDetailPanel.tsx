@@ -13,7 +13,9 @@ import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
 import { getKind, newLaunchMutationId, resolveAction } from '../domain';
-import { LaunchQuickConfig } from './launch/LaunchQuickConfig';
+/* The Run/Coordinate flow opens the canvas composer as a modal tile now —
+   design import 2026-09-07. */
+import { LaunchComposerPopup } from '../new-session';
 import type { LaunchSources } from './EntityListPanel';
 import {
   AuthoringHost,
@@ -1044,22 +1046,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     boundsRef={actionBarRef}
                   />
                 ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
-                  <LaunchQuickConfig
+                  <LaunchComposerPopup
                     subject={detail}
                     /* The mode is the VERB's, read off the registry — so
                        Coordinate commits a coordinator and not Run's worker,
                        and no component here has to name either verb. */
                     /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
-                       `mode` and `verbLabel` are props, but the config is STATE
-                       seeded once. Without this key, pressing Coordinate then
-                       Run reused the instance: the heading re-rendered to "Run
-                       configuration" over a config still holding
-                       mode:'coordinator', and Launch spawned a coordinator
-                       under a button labelled Run. The dismissal cannot save it
-                       either — the other verb's button is inside the same
-                       `actionBarRef` bounds as the card. Remounting also clears
-                       the refusal, pending and access-mode state, all of which
-                       are equally stale across a verb switch. */
+                       `mode` and `verbLabel` are props, but parts of the config
+                       are STATE seeded once. Without this key, pressing
+                       Coordinate then Run could reuse the instance over stale
+                       refusal/pending state; the popup ALSO treats the verb's
+                       mode as prop-authoritative, so the payload follows the
+                       pressed button either way. Belt and key. */
                     key={flowRef}
                     verbLabel={resolveAction(flowRef).label}
                     {...(resolveAction(flowRef).launchMode
@@ -1068,20 +1066,19 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     spaceId={props.launch.spaceId || ctx.spaceId}
                     teammates={props.launch.teammates}
                     projects={props.launch.projects}
-                    loadFor={props.launch.loadFor}
                     capacity={props.launch.capacity}
-                    profileFor={props.launch.profileFor}
                     onSpawn={props.launch.onSpawn}
-                    onFullOptions={
-                      props.launch.onFullOptions
-                        ? () => {
-                            props.launch?.onFullOptions?.(detail.id);
-                            setFlowRef(null);
-                          }
+                    loadDescription={
+                      props.launch.descriptionOf
+                        ? () => props.launch!.descriptionOf!(detail.id)
+                        : undefined
+                    }
+                    onSaveSubject={
+                      props.launch.onUpdateEntity
+                        ? (edits) => props.launch!.onUpdateEntity!(detail.id, edits)
                         : undefined
                     }
                     onDismiss={() => setFlowRef(null)}
-                    boundsRef={actionBarRef}
                     newClientMutationId={() =>
                       props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
                     }

@@ -17,9 +17,11 @@
  * the mechanism named, and never renders an enabled control over a refusal.
  */
 import type {
+  CredentialProviderName,
   EntityId,
   ExecutionSpawnInput,
   InteractionProfileStatus,
+  LaunchModelEffort,
   ProjectId,
   SpawnWorkdir,
 } from '@tm8/contract';
@@ -644,6 +646,64 @@ export function describeAccessMode(mode: LaunchAccessMode | null): string {
 export function nextAccessMode(mode: LaunchAccessMode | null): LaunchAccessMode | null {
   const at = ACCESS_MODE_CYCLE.indexOf(mode ?? null);
   return ACCESS_MODE_CYCLE[(at + 1) % ACCESS_MODE_CYCLE.length] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Credential sources and reasoning effort — shared launch-surface vocabulary
+// ---------------------------------------------------------------------------
+
+/** `CredentialSourceSchema` verbatim: whose credential the session injects. */
+export type LaunchCredentialSource = 'member' | 'node';
+
+/**
+ * The FILE-shaped providers an agent tool can consume. `github` is excluded
+ * because its credential injects universally rather than being chosen per tool.
+ *
+ * Moved here from `views/LaunchSheet.tsx` when the New Session composer became
+ * its second consumer — two private copies of a tool→provider map is exactly
+ * the copy-drift D34 names.
+ */
+export const AGENT_CREDENTIAL_PROVIDER: Readonly<Partial<Record<string, CredentialProviderName>>> = {
+  'claude-code': 'anthropic',
+  codex: 'openai',
+  gemini: 'gemini',
+  hermes: 'hermes',
+  cursor: 'cursor',
+};
+
+/**
+ * Vendor names, not product names: a credential picker is choosing WHOSE
+ * credential to inject. The home and settings tiles name the product instead.
+ */
+export const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  github: 'GitHub',
+  gemini: 'Google',
+  hermes: 'Nous',
+  cursor: 'Cursor',
+};
+
+/**
+ * The effort words, spelled once. `xhigh` renders as prose rather than as the
+ * wire token — a picker that says "xhigh" is showing the reader its plumbing.
+ */
+export const EFFORT_LABELS: Record<LaunchModelEffort, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+  ultra: 'Ultra',
+};
+
+/**
+ * Chip text for an effort stop. `null` follows `accessModeLabel`'s rule: an
+ * unpinned effort is the teammate/node default, and naming a stop it is not
+ * would pin a posture the viewer never chose.
+ */
+export function effortLabel(effort: LaunchModelEffort | null): string {
+  return effort ? EFFORT_LABELS[effort] : 'Default';
 }
 
 /** The launch defaults for a teammate — its recorded tool and model win. */

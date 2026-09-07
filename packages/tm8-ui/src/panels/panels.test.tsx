@@ -1691,7 +1691,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(
       within(view.getByTestId('panel-action-bar')).getByRole('button', { name: /^Run$/i }),
     );
-    expect(view.getByTestId('launch-quick-config').textContent).toContain(task.title);
+    // The subject's name is the title field's VALUE now (not chrome text).
+    expect((view.getByTestId('nsx-title') as HTMLInputElement).value).toBe(task.title);
 
     // The SAME instance, a different entity — exactly what a Back press does.
     view.rerender(
@@ -1762,13 +1763,13 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const bar = view.getByTestId('panel-action-bar');
     fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
-    expect(view.getByTestId('launch-heading').textContent).toBe('Coordinate configuration');
+    expect(view.getByTestId('launch-quick-config').getAttribute('aria-label')).toBe('Coordinate configuration');
 
     // Switch verbs WITHOUT closing the card — two clicks, no navigation.
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
-    expect(view.getByTestId('launch-heading').textContent).toBe('Run configuration');
+    expect(view.getByTestId('launch-quick-config').getAttribute('aria-label')).toBe('Run configuration');
 
-    fireEvent.click(view.getByTestId('launch-commit'));
+    fireEvent.click(view.getByTestId('nsx-send')); // the popup composer's Launch
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     // The payload must agree with the button that was actually pressed.
     expect(onSpawn.mock.calls[0]![0].mode).toBe('worker');
@@ -1788,7 +1789,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const bar = view.getByTestId('panel-action-bar');
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
     fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
-    fireEvent.click(view.getByTestId('launch-commit'));
+    fireEvent.click(view.getByTestId('nsx-send')); // the popup composer's Launch
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     expect(onSpawn.mock.calls[0]![0].mode).toBe('coordinator');
   });
