@@ -28,9 +28,19 @@ const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
  *     the mount path is baked into every asset URL at build time, so a `base`
  *     here would make every asset 404 at the root. The mounted bundle's base
  *     lives in `tm8_ui_2.0/vite.config.ts` and is duplicated in
- *     `packages/server/src/http/static.ts` (`UI_2_0_MOUNT_PATH`) and
- *     `tm8-ui/src/ui-version/mount.ts`; changing it means changing all three
- *     and rebuilding that bundle.
+ *     `packages/server/src/http/static.ts` (`UI_2_0_MOUNT_PATH`); changing it
+ *     means changing BOTH and rebuilding that bundle.
+ *
+ *     This used to name a third: `tm8-ui/src/ui-version/mount.ts`. That module
+ *     was deleted with the UI-2.0 switch (owner, 2026-09-07), so this package
+ *     no longer holds a copy of the mount path — but two things here still
+ *     HANDLE it deliberately and must not be swept as orphans of that removal:
+ *     `src/pwa/service-worker.js` (`isOtherUi`, so an offline navigation to
+ *     `/ui-2.0/` cannot boot THIS shell at that address) and
+ *     `vite.preview.config.ts` (proxies it to the server rather than letting
+ *     vite's SPA fallback serve this app there). Both are this bundle DECLINING
+ *     a path that is not its own, which is the opposite of a dangling
+ *     reference.
  *
  *  2. `build.outDir` is the default `dist`, and `TM8_UI_DIR` names it. The old
  *     `dist-1.0` override was a production interlock against a stale
