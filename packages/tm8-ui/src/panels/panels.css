@@ -2841,11 +2841,14 @@
   left: 0;
   z-index: 20;
   width: min(280px, 100%);
-  /* The old cap was 240px and the menu still ran to ~250 with its padding.
-     Holding the same envelope while the rows below get DENSER and larger is
-     the trade that matters: more of the option set visible per scroll, at a
-     size that can actually be read. Making the menu taller to avoid scrolling
-     would have made the covering-the-list complaint worse, not better. */
+  /* SAME ENVELOPE, MORE IN IT — and the numbers, because the first version of
+     this comment claimed a density win the code did not deliver.
+     Measured A/B at the same viewport, origin/main vs here: option rows
+     27.77px -> 24.41px, group headers 24.75px -> 21.08px, total content
+     449px -> 412px, and EIGHT options visible without scrolling instead of
+     seven. The box itself is unchanged at 274.8px on purpose: growing it to
+     avoid scrolling would worsen the complaint that started this — the menu
+     blanketing the list it filters — rather than fix it. */
   max-height: 240px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -2906,16 +2909,22 @@
   cursor: default;
   color: var(--pn-ink-4);
 }
+/* MEASURED, because the first version of this got it wrong: at 11px with
+   8px/4px padding these headings ran 31.3px against the old 24.8px, and five
+   of them more than swallowed the 1.4px per row the options below had gained.
+   Trimmed to roughly the old header height while keeping the larger, lighter
+   type — the legibility is the point, the extra air was not. */
 .cv2-root .lp__filtergroup {
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   font-weight: 600;
   letter-spacing: var(--pn-track-mega);
+  line-height: 1.2;
   color: var(--pn-ink-3);
-  padding: var(--pn-space-2) var(--pn-space-3) var(--pn-space-1);
+  padding: 4px var(--pn-space-3) 2px;
 }
 /* A rule between groups, so four narrowings read as four things. */
-.cv2-root .lp__filtermenu > div + div .lp__filtergroup { border-top: 1px solid var(--pn-line); margin-top: var(--pn-space-1); padding-top: var(--pn-space-2); }
+.cv2-root .lp__filtermenu > div + div .lp__filtergroup { border-top: 1px solid var(--pn-line); margin-top: 3px; padding-top: 5px; }
 .cv2-root .lp__filtercheck { margin-left: auto; color: var(--pn-brand-2); }
 
 /* The collection-lens honesty line: what the lens hides, in numbers from the
@@ -3055,7 +3064,17 @@
    Cancelled 28 — it needed 305px inside a 277px box and silently truncated
    "Cancelled" with no scrollbar and no ellipsis. One container, an elevated
    active segment, and a count that is allowed to be quieter than its label
-   buys back the width that clipping was hiding. */
+   buys back the width that clipping was hiding.
+
+   THE TRADE, STATED. Segments are `flex: 0 1 auto` with an ellipsis on the
+   word, so below roughly 310px of column all four still fit but the LABELS
+   shorten — `To… 227 · In Prog… 166`. That is deliberately the better of the
+   two failures: a shortened word is visibly shortened and its count is still
+   exact, whereas the old row hid an entire tab off an edge with no scrollbar
+   to reach it. If a scroller is ever preferred to shortening, it is one
+   declaration on `.lp__tierrow` — but it reintroduces a control whose fourth
+   position is reachable only by a horizontal flick inside a vertically
+   scrolling screen, which is what the phone branch below exists to avoid. */
 .cv2-root .lp__tierrow {
   flex: 0 1 auto;
   min-width: 0;
