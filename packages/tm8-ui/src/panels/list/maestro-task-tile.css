@@ -47,6 +47,27 @@
 }
 /* Streaming keeps the dot steady and pings a halo off it, so "alive" is
    legible without the mark itself blinking out of the row. */
+/* THE STATUS SLOT CONTAINS ITS MARK, EVEN WHEN THE MARK IS REFUSED.
+
+   When the state control has no backend or no permission it renders as
+   `DisabledWithReason`, whose tooltip form carries `padding: 3px 6px`
+   (`honesty/honesty.css`). Inside a fixed 16px grid cell that padding does not
+   pad — it OVERFLOWS: mark + 12px of padding, centred in 16px, hangs out both
+   sides and drags the mark off the column every other row lines up on.
+
+   PRE-EXISTING, AND THIS CHANGE MADE IT WORSE, which is why it is fixed here
+   rather than filed. At 8px the box was 20px in a 16px cell — 2px out each
+   side, small enough to read as antialiasing. At 11px it is 23px — 3.5px out
+   each side, which reads as a misaligned row.
+
+   The padding is a hit area, and this is the one place it buys nothing: the
+   control is DISABLED, so there is nothing to hit, and the live path's target
+   is `.lp__statedot`'s own 24px inset — not this. Scoped to the slot, so the
+   tooltip form keeps its padding everywhere it is a real trigger. */
+.cv2-root .pn-tt__status .hon-disabled--tooltip {
+  padding: 0;
+}
+
 /* THE TO-DO RING IS A TARGET, NOT A BULLET.
 
    8px was a hairline, and it is the primary action on every task row: the
