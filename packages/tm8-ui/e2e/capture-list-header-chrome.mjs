@@ -186,15 +186,31 @@ const report = await page.evaluate(() => {
          box is always ~0 and it is the TEXT that sits on the gutter.
          Measuring it like the others reported `1` forever and made
          `gutterCount` incapable of reaching 1 even when the stylesheet was
-         perfectly aligned — a check that cannot pass is not a check. */
+         perfectly aligned — a check that cannot pass is not a check.
+
+         MEASURED WITH A RANGE, NOT WITH COMPUTED PADDING, and that is a unit
+         bug worth not repeating. The first version of this added
+         `getBoundingClientRect().left` to `parseFloat(getComputedStyle()
+         .paddingLeft)`. Those are DIFFERENT UNITS: `.cv2-root` carries
+         `zoom: 1.1` (styles/app.css:43), so a client rect is in VISUAL pixels
+         while computed padding is in unscaled CSS pixels. Adding them put the
+         footer at 11 while the box rows read 12 — off by exactly the zoom
+         factor, and it would have drifted again at any other scale. A Range
+         over the element's contents reports the text's own box in the same
+         visual pixels as every other measurement here, so the comparison is
+         unit-consistent at any zoom. (Found by the lane that ran this green;
+         their captures dodged it only because both their panels rendered at
+         one zoom, so the mixing cancelled. This harness compares two
+         measurement METHODS, so it did not.) */
       const contentLeft = (el) => {
         if (!el) return null;
-        const cs = getComputedStyle(el);
-        return round(
-          el.getBoundingClientRect().left - pane.left
-            + parseFloat(cs.borderLeftWidth || '0')
-            + parseFloat(cs.paddingLeft || '0'),
-        );
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const box = range.getBoundingClientRect();
+        // A degenerate rect means there was no text to measure; say so rather
+        // than reporting a confident 0.
+        if (box.width === 0 && box.height === 0) return null;
+        return round(box.left - pane.left);
       };
       const gutters = {
         search: left(searchRow),
