@@ -333,22 +333,48 @@ const report = await page.evaluate(() => {
            control, so the button's box is what the criterion measures. */
         /* ABSENT IS NOT PASSING, and this field says so in words rather than
            returning `null`. `.lp__statedot` renders only where the kind
-           declares a `stateControl` AND the host wires `onSetState`; this
-           harness wires neither, so the button is not in the tree and the
-           24x24 fix is simply UNMEASURED here. The first version reported
-           `null`, which sat in the output next to real numbers and read as a
-           quiet pass. To actually measure it, mount the panel with
-           `onSetState` and a task-kind row. */
+           declares a `stateControl`, the host wires `onSetState`, AND
+           `capabilitiesOf` reports the action available — availability is
+           resolved BEFORE the wiring is checked, so an absent capabilities
+           record ("unknown ⇒ not permitted") refuses on its own. The harness
+           wires both; if this ever reads NOT MEASURED again, that is why.
+
+           MEASURED IN CSS PIXELS, WHICH IS THE UNIT THE 24px BAR IS WRITTEN
+           IN. The first version subtracted the pseudo-element's computed
+           insets (CSS px, unscaled) from `getBoundingClientRect()` (VISUAL px,
+           multiplied by `.cv2-root`'s `zoom: 1.1`) and printed 25.6 — a number
+           in neither unit, and one that reads as 23.3 CSS px, UNDER the very
+           bar this check exists to enforce. The third unit mix found in this
+           file, after the footer gutter and its own first fix.
+
+           So the arithmetic is done entirely in computed styles, which are all
+           CSS px, and no client rect enters it: the button's used width, minus
+           its ::before's left and right insets (negative, so this grows it).
+           The visual figure is reported alongside for anyone comparing against
+           a screenshot, explicitly labelled, and the verdict is stated rather
+           than left as a bare number for the reader to grade. */
         stateDotTarget: stateDot
           ? (() => {
               const b = stateDot.getBoundingClientRect();
+              const own = getComputedStyle(stateDot);
               const cs = getComputedStyle(stateDot, '::before');
-              const grown = cs.content !== 'none' && cs.position === 'absolute'
-                ? { w: round(b.width - parseFloat(cs.left || '0') * 2), h: round(b.height - parseFloat(cs.top || '0') * 2) }
-                : null;
-              return { w: round(b.width), h: round(b.height), hitArea: grown };
+              const cssW = parseFloat(own.width);
+              const cssH = parseFloat(own.height);
+              const px = (v) => (v && v !== 'auto' ? parseFloat(v) : 0);
+              const grown =
+                cs.content !== 'none' && cs.position === 'absolute'
+                  ? { w: round(cssW - px(cs.left) - px(cs.right)), h: round(cssH - px(cs.top) - px(cs.bottom)) }
+                  : null;
+              const BAR = 24;
+              return {
+                buttonCss: { w: round(cssW), h: round(cssH) },
+                hitAreaCss: grown,
+                hitAreaVisual: grown ? { w: round(b.width - px(cs.left) * (b.width / cssW) - px(cs.right) * (b.width / cssW)) } : null,
+                bar: BAR,
+                verdict: grown && grown.w >= BAR && grown.h >= BAR ? 'PASS' : 'FAIL',
+              };
             })()
-          : 'NOT MEASURED — no .lp__statedot in this harness (needs onSetState wired)',
+          : 'NOT MEASURED — no .lp__statedot in this row (needs onSetState AND capabilitiesOf)',
       };
     });
 });
@@ -363,7 +389,19 @@ for (const p of report) {
   console.log(` dead space in row  ${p.deadSpace}px`);
   console.log(` selected vs rail   ${JSON.stringify(p.selectedVsRail)}`);
   console.log(` hollow ring        ${JSON.stringify(p.ring)}  ${p.ring && p.ring.ratio >= 3 ? 'PASS' : 'FAIL'} (bar 3.0)`);
-  console.log(` state dot target   ${JSON.stringify(p.stateDotTarget)}`);
+  {
+    const t = p.stateDotTarget;
+    // The verdict is stated, not left as a bare number for the reader to grade
+    // against a bar they have to remember — and the unit is named, because the
+    // bug this line replaced was a figure in no unit at all.
+    console.log(
+      typeof t === 'string'
+        ? ` state dot target   ${t}`
+        : ` state dot target   button ${t.buttonCss.w}x${t.buttonCss.h} CSS px, hit area ` +
+          `${t.hitAreaCss ? `${t.hitAreaCss.w}x${t.hitAreaCss.h}` : 'none'} CSS px  ` +
+          `${t.verdict} (bar ${t.bar}, WCAG 2.2 SC 2.5.8)`,
+    );
+  }
   for (const [k, v] of Object.entries(p.contrast)) {
     if (!v) continue;
     const bar = k === 'chipCaret' ? 3.0 : 4.5;
