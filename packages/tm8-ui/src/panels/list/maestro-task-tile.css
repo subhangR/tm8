@@ -178,6 +178,12 @@
    session row that was not. */
 .cv2-root .pn-tt {
   --tt-indent: 0px;
+  /* THE SEAM BETWEEN THE STATUS MARK AND THE TITLE. A token, not a literal,
+     because FOUR rules have to agree on it: the margin itself, the desktop
+     badge and meta indents, and the phone's own badge indent in
+     `mobile-screens.css`. It was three literals for a while and the phone one
+     was derived, so a grep for the number could not find it. */
+  --tt-status-margin: 2px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -309,9 +315,10 @@
      pixel at the ring would have cost a pixel everywhere.
 
      IT MOVES THE TITLE, SO IT MOVES THE INDENT. `.pn-tt__badges` and
-     `.pn-tt__meta` are indented to the hand-computed title start; both are
-     updated in step below. Change this and you owe those two. */
-  margin-inline-end: 2px;
+     `.pn-tt__meta` are indented to the title start, and the PHONE has its own
+     derived indent in `mobile-screens.css`. All three read the same token, so
+     this number cannot drift from them. */
+  margin-inline-end: var(--tt-status-margin);
 }
 /* THE STATUS COLUMN IS 16px, WHATEVER IS IN IT. The mark is a live control, so
    while `capabilitiesOf(row.id)` is undefined it renders `CheckingPermission`,
@@ -383,9 +390,10 @@
    and session row-height parity stays untouched. */
 .cv2-root .pn-tt__badges {
   min-width: 0;
-  /* 7px row inset + 16px status mark + 2px status margin + 6px gap = title
-     start. The 2px is `.pn-tt__status`'s `margin-inline-end`; see it there. */
-  padding: 0 8px 5px 31px;
+  /* Row inset + status mark + status margin + row gap = title start. Written
+     as the sum, not as 31px, so it cannot drift from the parts it is made of
+     the way the old hard-coded 29px did. */
+  padding: 0 8px 5px calc(7px + 16px + var(--tt-status-margin) + 6px);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -616,7 +624,8 @@
 .cv2-root .pn-tt__ind--open svg { transform: rotate(180deg); }
 
 /* Expanded facts hang off the STATUS column, not the tile edge: 9px row pad +
-   16px caret + 8px gap. 31px is the title start (see `.pn-tt__badges`).
+   16px caret + 8px gap. The leading sum is the title start (see
+   `.pn-tt__badges`), restated from the same parts rather than repeated.
    The chips therefore start on the same vertical as the
    dot at every depth and every panel width (the indent and the narrow-container
    overrides move both together). */
@@ -624,7 +633,7 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 1px 10px 10px calc(31px + var(--tt-indent));
+  padding: 1px 10px 10px calc(7px + 16px + var(--tt-status-margin) + 6px + var(--tt-indent));
 }
 .cv2-root .pn-tt__metarow {
   display: flex;
