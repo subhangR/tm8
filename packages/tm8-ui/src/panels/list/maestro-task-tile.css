@@ -336,9 +336,14 @@
      pixel at the ring would have cost a pixel everywhere.
 
      IT MOVES THE TITLE, SO IT MOVES THE INDENT. `.pn-tt__badges` and
-     `.pn-tt__meta` are indented to the title start, and the PHONE has its own
-     derived indent in `mobile-screens.css`. All three read the same token, so
-     this number cannot drift from them. */
+     `.pn-tt__meta` are indented to the title start — at the base rule, at the
+     480px rung, at the 360px rung, and again in the PHONE's own derived rule
+     in `mobile-screens.css`. SEVEN sites, and the sum is a different NUMBER at
+     each rung because the row inset and gap change with it, which is why
+     hunting any one literal finds only some of them. They all read this token.
+
+     That there are seven is the argument for deriving the title start once,
+     which is real work and deliberately not in this change. */
   margin-inline-end: var(--tt-status-margin);
 }
 /* THE STATUS COLUMN IS 16px, WHATEVER IS IN IT. The mark is a live control, so
@@ -725,11 +730,15 @@
   /* Still hung off the status column — 7px pad + 16px caret + 7px gap. The
      chips must not jump to the tile edge just because the panel narrowed. */
   .cv2-root .pn-tt__meta {
-    padding-inline: calc(30px + var(--tt-indent)) 9px;
+    /* Title start AT THIS RUNG: this block's own row inset and gap, which are
+       7px and 7px above — not the base rule's. Restated as the sum for the
+       same reason the base rules are, and carrying the margin term the flat
+       `30px` predated. */
+    padding-inline: calc(7px + 16px + var(--tt-status-margin) + 7px + var(--tt-indent)) 9px;
   }
 
   .cv2-root .pn-tt__badges {
-    padding-inline: calc(30px + var(--tt-indent)) 9px;
+    padding-inline: calc(7px + 16px + var(--tt-status-margin) + 7px + var(--tt-indent)) 9px;
   }
 
 }
@@ -754,11 +763,14 @@
 
   /* 6px pad + 16px caret + 5px gap. */
   .cv2-root .pn-tt__meta {
-    padding-inline: calc(27px + var(--tt-indent)) 8px;
+    /* And again with THIS rung's parts: 6px inset, 5px gap. The constant is a
+       different number at every rung, which is precisely why hunting the
+       literal `29px` found neither of these. */
+    padding-inline: calc(6px + 16px + var(--tt-status-margin) + 5px + var(--tt-indent)) 8px;
   }
 
   .cv2-root .pn-tt__badges {
-    padding-inline: calc(27px + var(--tt-indent)) 8px;
+    padding-inline: calc(6px + 16px + var(--tt-status-margin) + 5px + var(--tt-indent)) 8px;
   }
 
   /* Depth costs title width, and at this size the title is all there is. */
