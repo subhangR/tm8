@@ -9,7 +9,7 @@ import type {
   SpaceId,
 } from '@tm8/contract';
 import { AttentionRequests } from './AttentionRequests';
-import { orderHistory, settlementLine, summarizeHistory } from './attention-history';
+import { leadPending, orderHistory, settlementLine, summarizeHistory } from './attention-history';
 import { attentionPortFromSeam, type AttentionPort } from './port';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture';
 
@@ -118,8 +118,8 @@ describe('AttentionRequests', () => {
     await waitFor(() => expect(container.querySelector('[data-testid="attention-requests"]')).toBeNull());
   });
 
-  it('shows SETTLED rows, which the badge can never show', async () => {
-    const { findByTestId, getByText } = render(
+  it('shows SETTLED rows, which the badge can never show — once the dock is opened', async () => {
+    const { findByTestId, getByTestId, getByText } = render(
       <AttentionRequests
         entityId={ENTITY}
         port={fakePort([])}
@@ -137,6 +137,11 @@ describe('AttentionRequests', () => {
         ]}
       />,
     );
+
+    // A settled-only history starts COLLAPSED — that is the whole point of the
+    // dock — so the record is behind one press.
+    await findByTestId('attention-bar');
+    fireEvent.click(getByTestId('attention-bar'));
 
     await findByTestId('attention-request-r1');
     expect(getByText('Nine design rulings needed')).toBeTruthy();
@@ -227,6 +232,180 @@ describe('AttentionRequests', () => {
     // THE ROW SURVIVES THE FAILED WRITE. Moving to an error phase would blank
     // a history that is still perfectly true.
     expect(queryByTestId('attention-request-open1')).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The dock — the pinned bar, and what it does and does not open by itself
+// ---------------------------------------------------------------------------
+
+describe('leadPending', () => {
+  it('picks the LOUDEST pending row, not the newest — a bar has room for one reason', () => {
+    const rows = [
+      req({ id: 'quiet', points: 20, status: 'open', createdAt: '2026-07-09T00:00:00.000Z' }),
+      req({ id: 'loud', points: 85, status: 'open', createdAt: '2026-07-01T00:00:00.000Z' }),
+    ];
+    // `orderHistory` would put `quiet` first (newest inside the pending group).
+    expect(orderHistory(rows)[0]!.id).toBe('quiet');
+    expect(leadPending(rows)!.id).toBe('loud');
+  });
+
+  it('breaks a tie on age — the one that has been waiting longer is the more embarrassing', () => {
+    const rows = [
+      req({ id: 'newer', points: 50, status: 'open', createdAt: '2026-07-09T00:00:00.000Z' }),
+      req({ id: 'older', points: 50, status: 'open', createdAt: '2026-07-01T00:00:00.000Z' }),
+    ];
+    expect(leadPending(rows)!.id).toBe('older');
+    // Stable whichever way the input arrives.
+    expect(leadPending([...rows].reverse())!.id).toBe('older');
+  });
+
+  it('ignores SETTLED rows however loud they are, and returns null when nothing is pending', () => {
+    const rows = [
+      req({ id: 'big', points: 100, status: 'resolved' }),
+      req({ id: 'small', points: 5, status: 'open' }),
+    ];
+    expect(leadPending(rows)!.id).toBe('small');
+    expect(leadPending([req({ id: 'done', points: 100, status: 'resolved' })])).toBeNull();
+  });
+});
+
+describe('the attention dock', () => {
+  it('starts COLLAPSED on a settled-only history — the case that produced this change', async () => {
+    const rows = [
+      req({ id: 'r1', points: 85, status: 'resolved' }),
+      req({ id: 'r2', points: 70, status: 'dismissed' }),
+    ];
+    const { findByTestId, queryByTestId, getByTestId } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows)} rows={rows} now={NOW} />,
+    );
+
+    const bar = await findByTestId('attention-bar');
+    expect(queryByTestId('attention-sheet')).toBeNull();
+    expect(bar.getAttribute('aria-expanded')).toBe('false');
+    // The counts are the whole promise of a collapsed bar.
+    expect(bar.textContent).toContain('2 settled');
+    // No reason is quoted: both rows are closed, and quoting one would read live.
+    expect(queryByTestId('attention-sheet')).toBeNull();
+
+    fireEvent.click(getByTestId('attention-bar'));
+    expect(getByTestId('attention-sheet')).toBeTruthy();
+    expect(getByTestId('attention-bar').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('OPENS itself when a row is still pending — the only part anyone can act on', async () => {
+    const rows = [
+      req({ id: 'open1', points: 85, status: 'open', reason: 'PR #600 needs an admin to merge' }),
+      req({ id: 'r2', points: 70, status: 'resolved' }),
+    ];
+    const { findByTestId } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows)} rows={rows} now={NOW} />,
+    );
+
+    await findByTestId('attention-sheet');
+    const bar = await findByTestId('attention-bar');
+    expect(bar.getAttribute('aria-expanded')).toBe('true');
+    // Counts are PENDING-only; the settled row must not inflate either number.
+    expect(bar.textContent).toContain('1 waiting');
+    expect(bar.textContent).toContain('85 pts');
+    // And the bar carries a fact, not just a number.
+    expect(bar.textContent).toContain('PR #600 needs an admin to merge');
+  });
+
+  it('a person can close a dock the data opened — the auto-open is a default, not a lock', async () => {
+    const rows = [req({ id: 'open1', points: 65, status: 'open' })];
+    const { findByTestId, getByTestId, queryByTestId } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows)} rows={rows} now={NOW} />,
+    );
+
+    await findByTestId('attention-sheet');
+    fireEvent.click(getByTestId('attention-bar'));
+    expect(queryByTestId('attention-sheet')).toBeNull();
+    // And it stays shut across re-renders — the effect must not re-open it.
+    expect(queryByTestId('attention-sheet')).toBeNull();
+  });
+
+  /**
+   * THE ONE-WAY LATCH, and the reason it exists. Settling the last pending row
+   * refetches, and a naive `open = pendingCount > 0` would mirror the new zero
+   * and slam the sheet shut — pulling the list out from under the click that
+   * settled it, and taking any write error with it.
+   */
+  it('stays OPEN after the last pending row is settled', async () => {
+    const pending = [req({ id: 'open1', points: 65, status: 'open', version: 1 })];
+    const settled = [req({ id: 'open1', points: 65, status: 'resolved', version: 2 })];
+    let served = pending;
+    const history = vi.fn(async () => ({ rows: served, truncated: false }));
+    const settle = vi.fn(async () => {
+      served = settled;
+      return { request: null, entity: null, affectedCount: 1 } as never;
+    });
+
+    const { findByTestId, getByTestId, queryByTestId } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(pending, { history, settle })} now={NOW} />,
+    );
+
+    await findByTestId('attention-request-open1');
+    fireEvent.click(getByTestId('attention-resolve-open1'));
+    fireEvent.click(getByTestId('attention-confirm-open1'));
+
+    await waitFor(() => expect(getByTestId('attention-bar').textContent).toContain('1 settled'));
+    // THE SHEET SURVIVES. The history it now shows is the record of what the
+    // click just did, and yanking it shut is the one thing that must not happen.
+    expect(queryByTestId('attention-sheet')).toBeTruthy();
+  });
+
+  it('re-opens when a refresh brings back something NEW to act on', async () => {
+    const settledOnly = [req({ id: 'r1', points: 40, status: 'resolved', version: 1 })];
+    const withPending = [
+      req({ id: 'r1', points: 40, status: 'resolved', version: 1 }),
+      req({ id: 'open2', points: 90, status: 'open', version: 1 }),
+    ];
+    let served = settledOnly;
+    const history = vi.fn(async () => ({ rows: served, truncated: false }));
+
+    const { findByTestId, queryByTestId, rerender } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(settledOnly, { history })} now={NOW} />,
+    );
+
+    await findByTestId('attention-bar');
+    expect(queryByTestId('attention-sheet')).toBeNull();
+
+    // A new entity re-arms the latch the way `attentionSurface`'s key does.
+    served = withPending;
+    rerender(
+      <AttentionRequests entityId={'ent-2' as EntityId} port={fakePort(withPending, { history })} now={NOW} />,
+    );
+    await waitFor(() => expect(queryByTestId('attention-sheet')).toBeTruthy());
+  });
+
+  it('the bar NAMES its action for a reader who cannot see which way the chevron points', async () => {
+    const rows = [req({ id: 'r1', points: 40, status: 'resolved' })];
+    const { findByTestId, getByTestId } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows)} rows={rows} now={NOW} />,
+    );
+
+    const bar = await findByTestId('attention-bar');
+    expect(bar.textContent).toContain('Show attention history');
+    // `aria-controls` has to point at a node that actually exists once open,
+    // or the disclosure is a lie to anything reading the tree.
+    fireEvent.click(getByTestId('attention-bar'));
+    expect(bar.getAttribute('aria-controls')).toBe(getByTestId('attention-sheet').id);
+    expect(bar.textContent).toContain('Hide attention history');
+  });
+
+  it('a failed FETCH is still a dock, not a card — chrome must not change silhouette on an error', async () => {
+    const history = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const { findByTestId, getByTestId } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort([], { history })} now={NOW} />,
+    );
+
+    const bar = await findByTestId('attention-bar');
+    expect(bar.textContent).toContain('Attention history unavailable');
+    fireEvent.click(getByTestId('attention-bar'));
+    expect(getByTestId('attention-sheet').textContent).toContain('boom');
   });
 });
 
