@@ -134,11 +134,44 @@ const report = await page.evaluate(() => {
     return acc ?? { r: 255, g: 255, b: 255, a: 1 };
   };
   const hex = (c) => '#' + [c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+  /* ANCESTOR `opacity` DIMS AT PAINT TIME AND IS NOT IN `color`.
+     This instrument composited ancestor BACKGROUNDS and ignored ancestor
+     OPACITY, which meant every ratio it printed described the TOKEN rather
+     than the pixels in its own screenshots. An instrument that grades the
+     token it was told about, rather than the pixel it produced, is the exact
+     failure this whole harness exists to prevent.
+
+     TO BE CLEAR ABOUT WHAT IS AND IS NOT A DEFECT: the case that exposed this
+     was a refused control drawn inside `.hon-disabled--tooltip`, which carries
+     `opacity: .55` light / `.7` dark. That dimming is CORRECT — the control is
+     inactive, WCAG 1.4.11 exempts inactive components, and the dimming is the
+     honest signal that it is unavailable. Nothing here proposes changing it.
+     The defect was only ever that this harness graded such a mark as if it
+     were painted at full strength. So the ratio is now reported as painted,
+     with `dimmedBy` naming the factor, and a reader can tell a deliberately
+     dimmed control from a mark that is simply too pale.
+     `opacity` multiplies down the ancestor chain, so the effective alpha is
+     the product of every ancestor's — and the element is composited against
+     the backdrop at that alpha. */
+  const opacityProduct = (el) => {
+    let node = el, acc = 1;
+    while (node && node.nodeType === 1) {
+      const o = parseFloat(getComputedStyle(node).opacity);
+      if (!Number.isNaN(o)) acc *= o;
+      node = node.parentElement;
+    }
+    return acc;
+  };
   const inkRatio = (el) => {
     const fg = parse(getComputedStyle(el).color);
     const bg = backdrop(el);
-    const composited = composite(fg, bg);
-    return { fg: hex(composited), bg: hex(bg), ratio: ratio(composited, bg) };
+    const alpha = opacityProduct(el);
+    const composited = composite({ ...fg, a: (fg.a ?? 1) * alpha }, bg);
+    const out = { fg: hex(composited), bg: hex(bg), ratio: ratio(composited, bg) };
+    // Say so when the number is not simply the token, so a reader can tell a
+    // dimmed mark from a pale one.
+    if (alpha < 0.999) out.dimmedBy = Math.round(alpha * 100) / 100;
+    return out;
   };
     const round = (n) => Math.round(n * 10) / 10;
 

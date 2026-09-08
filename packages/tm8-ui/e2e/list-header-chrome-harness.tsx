@@ -109,6 +109,13 @@ const SETS: readonly EntitySummary[] = [
   { ...TASK, id: 'set-2' as EntitySummary['id'], kind: 'container', title: 'UI 2.0' },
 ] as unknown as readonly EntitySummary[];
 
+/* Permissive capability truth, so the row's state control resolves as
+   available. The eight booleans are the whole flat interface. */
+const CAPS = {
+  canEdit: true, canDelete: true, canAddChild: true, canLink: true,
+  canPull: true, canReact: true, canGrantPoints: true, canComplete: true,
+};
+
 /** Home's floor and ceiling — `HOME_LIST_MIN` / `HOME_LIST_MAX`. */
 const WIDTHS = [240, 560] as const;
 
@@ -141,6 +148,26 @@ function Panel({ theme, width }: { theme: 'light' | 'dark'; width: number }) {
             pageStateOf={pageStateOf}
             members={MEMBERS}
             membershipSets={SETS}
+            /* WIRED SO THE ROWS RENDER THE LIVE STATE CONTROL, and this is a
+               measurement decision rather than a completeness one. Without an
+               `onSetState` the control refuses (`EntityControls`'s
+               NOT_WIRED_REASON) and the mark is drawn inside
+               `.hon-disabled--tooltip`, which carries `padding: 3px 6px` and
+               `opacity: .55` light / `.7` dark (honesty.css:30). That wrapper
+               pushes `.pn-stat` ~6.6px right of its 16px slot and dims it at
+               paint time, so a harness measuring the refusal path reports the
+               wrong ring-to-title air AND photographs a ring roughly half as
+               strong as its own contrast number claims. Wiring a no-op puts
+               `.lp__statedot` — the real button — in the tree, which is also
+               the only way `stateDotTarget` measures anything. */
+            onSetState={() => {}}
+            /* AND the capability truth, which is the second gate and the one
+               that is easy to miss: `EntityControls` resolves availability
+               from `capabilitiesOf` BEFORE it looks at `onSetState`, and an
+               absent capabilities record means "unknown ⇒ not permitted", so
+               the control still refuses. Both are required to put the live
+               button in the tree — verified in jsdom rather than assumed. */
+            capabilitiesOf={() => CAPS}
             ctx={ctx}
             compact={compactAt(width)}
           />
