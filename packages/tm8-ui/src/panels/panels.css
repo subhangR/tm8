@@ -2407,7 +2407,19 @@
    ring's colour was not where it looked like it lived. Both are kept (the
    other file owns the geometry, this one the default ink) but they now agree
    on --pn-ink-3, so the order no longer changes the pixels. See
-   `.pn-stat--idle` there for why the idle mark is ink and not --pn-idle. */
+   `.pn-stat--idle` there for why the idle mark is ink and not --pn-idle.
+
+   THE DEFAULT IS REACHABLE, and it is worth knowing by whom. The task tile's
+   glyph takes a `PillTone` — run/wait/block/info/idle/brand — and all six carry
+   their own colour, so it never lands here. `MaestroSessionTile` is the one
+   that does: it builds `pn-stat--${kind}` from a SESSION STATUS, and of those,
+   `completed` and `archived` have no colour rule anywhere and fall through to
+   this line. Both are solid shapes (a filled rect, a filled circle with a
+   check) on --pn-surface, so the move off --pn-idle takes them from 2.62:1 to
+   3.34:1 light and 3.76 to 4.77 dark — through the 3:1 bar for a non-text mark
+   rather than past it. That is the intended direction; it is named here so the
+   next reader does not assume, as two reviews of this change did, that the
+   base rule is dead. */
 .cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-ink-3); }
 .cv2-root .pn-stat--running, .cv2-root .pn-stat--working, .cv2-root .pn-stat--exited, .cv2-root .pn-stat--done { color: var(--pn-run); }
 .cv2-root .pn-stat--spawning, .cv2-root .pn-stat--pulled, .cv2-root .pn-stat--in_review { color: var(--pn-info); }
