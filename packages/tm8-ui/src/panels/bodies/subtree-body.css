@@ -42,7 +42,11 @@
   font-size: 12px;
 }
 /* One column when the panel floor approaches — labels + values need the room. */
-@media (max-width: 560px) {
+/* A CONTAINER QUERY, NOT A VIEWPORT ONE. This grid's one-column fallback keyed
+   on `@media (max-width: 560px)` — the WINDOW — so a narrow panel on a wide
+   monitor, which is the only case where two columns actually break, never got
+   the layout the rule was written for. The uuid simply wrapped instead. */
+@container panel (max-width: 560px) {
   .cv2-root .sb-grid {
     grid-template-columns: 1fr;
   }
