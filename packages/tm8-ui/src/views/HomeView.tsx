@@ -111,6 +111,23 @@ export const HOME_CENTER_MIN = 360;
 export const HOME_LIST_MIN = 240;
 export const HOME_LIST_DEFAULT = 340;
 export const HOME_LIST_MAX = 560;
+/** THE WIDTH BELOW WHICH A'S CHROME GOES COMPACT.
+
+    Home passed `compact` as a hardcoded literal, so the panel's header rows
+    were IDENTICAL at 240 and at 560: dragging the column changed the list and
+    nothing above it, and the row designed for the floor was also what a 560px
+    column got — ~274px of empty filter row between the last chip and the sort
+    control. `WorkspaceView` has derived the same prop from its measured width
+    since it gained one (`layout.left <= 220`); this is that rule for a column
+    whose floor is 240 rather than 200, which is why the number differs.
+
+    420 is where the filter row stops fitting WORDS. At `--pn-fs-micro` the
+    four controls it can carry at once — `Filter ▾`, `People ▾`,
+    `Collections ▾` and `↓ Recently modified`, the longest sort label the task
+    registry declares — need ~410px with their gaps and the row's two 10px
+    gutters. Below this the sort control collapses to its glyph (T0-3 frame 4)
+    and the row still fits; above it the row reads as words. */
+export const HOME_LIST_COMPACT_MAX = 420;
 /** A's separator track. It has no border of its own — unlike the aside, which
     is why this is 8 and `ASIDE_CHROME` is 9. */
 export const HOME_LIST_CHROME = 8;
@@ -676,12 +693,15 @@ export function HomeView(props: HomeViewProps) {
           launch={launchPort}
           onAction={listActions.onAction}
           wiredActions={listActions.wiredActions}
-          compact
+          /* MEASURED, not asserted. This was `compact` — a bare literal, true
+             at every one of the 320px this column drags through. See
+             `HOME_LIST_COMPACT_MAX`. */
+          compact={listWidth <= HOME_LIST_COMPACT_MAX}
         />
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, ctx, centerId, rowLifecycle, primaries, launchPort, listActions],
+    [data, ctx, centerId, rowLifecycle, primaries, launchPort, listActions, listWidth],
   );
 
   const regions: HomeChatRegions = {

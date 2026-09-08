@@ -1722,7 +1722,10 @@
  */
 .cv2-root .lp__filters {
   flex: none;
-  height: 32px;
+  /* 28px control + 3px of air above and below. It was 32 around a 26px chip;
+     the chip is the thing that grew, and the row grew with it so the controls
+     do not touch its edges. */
+  height: 34px;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1730,7 +1733,10 @@
   border-bottom: 1px solid var(--pn-line);
   overflow: hidden;
 }
-.cv2-root .lp--compact .lp__filters { height: 28px; gap: 4px; padding: 0 8px; }
+/* Compact tightens the GAP and nothing else. It used to also drop the row to
+   28px and the gutter to 8px — a second row height and a fourth left edge,
+   both introduced by a flag Home set at every width. */
+.cv2-root .lp--compact .lp__filters { gap: 4px; }
 /* ONE CHIP LANGUAGE FOR ALL FOUR. They were lowercase monospace with an ASCII
    caret inside the text, 20.4px tall — under half the 44px touch floor — and
    the sort control was a different shape again, so the row read as terminal
@@ -1745,8 +1751,16 @@
   color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  height: 26px;
+  /* A ROUNDED RECTANGLE, NOT A PILL — and this is what un-rounds the sort
+     control. Nothing in the source ever asked for a circle: the sort trigger
+     is THIS rule with a one-character label, and a 999px radius on a box whose
+     width has collapsed to its height IS a disc. Squaring the radius fixes the
+     circle at its cause instead of special-casing the one chip, and it draws
+     the line the rest of the panel keeps — rounded rects are controls, pills
+     are counts and statuses (`.lp__chip-count` below stays a pill). */
+  border-radius: var(--pn-r-sm);
+  /* One control height across the header: search row, lifecycle rail, chips. */
+  height: 28px;
   padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
@@ -1754,7 +1768,10 @@
   align-items: center;
   gap: 6px;
 }
-.cv2-root .lp__chip-caret { flex: none; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
+/* --pn-ink-3, not --pn-ink-4. The caret is aria-hidden decoration, so its bar
+   is 3:1 rather than 4.5:1 — and at ink-4 it made neither: 2.12 light / 2.59
+   dark. ink-3 clears it in both (3.49 / 4.47). */
+.cv2-root .lp__chip-caret { flex: none; color: var(--pn-ink-3); font-size: var(--pn-fs-tick); }
 /* A COUNT, NOT A CHIP PER SELECTION. Every active option used to spawn its own
    dismissable chip, which is what let this row grow past its container and made
    "clear" a hunt across four moving targets. */
@@ -1792,38 +1809,30 @@
 /* Category tabs are a segmented control, not chips: they are SHELVES a row
    moves between by living, not filters a viewer toggles.
 
-   PHASE 7 MADE THIS ROW OVERFLOW, AND A SCREENSHOT IS WHAT FOUND IT. Three
-   tabs became four and the two new words are the longest in the set, so at the
-   280px side-panel floor each tab shrank and its LABEL WRAPPED INSIDE ITSELF —
-   "In / Progress 2", "To Do / 2" — while the row stayed one line tall and
-   every numeric check passed. jsdom loads no stylesheets, so no assertion in
-   this package could see it, and the row-level wrap detector could not either:
-   the tabs still shared a top edge.
+   `nowrap` makes a tab's words indivisible, and the row SHRINKS the word
+   rather than clipping when four of them cannot fit. The words are ruled
+   (To Do · In Progress · Done · Cancelled) and abbreviating them here would be
+   this file overruling the design.
 
-   `nowrap` makes a tab's words indivisible, and the row SCROLLS rather than
-   clipping when four of them cannot fit. Scrolling is the honest failure: the
-   words are ruled (To Do · In Progress · Done · Cancelled) and abbreviating
-   them here would be this file overruling the design. */
-.cv2-root .lp__tabs {
-  flex: none;
-  display: inline-flex;
-  max-width: 100%;
-  border: 1px solid var(--pn-line-2);
-  border-radius: 6px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  background: var(--pn-card);
-}
-.cv2-root .lp__tabs::-webkit-scrollbar { display: none; }
+   THE `.lp__tabs` RULE THAT STOOD HERE IS GONE. #603 rebuilt this row as
+   `.lp__tierrow` and left the old container rule behind; `grep -r lp__tabs
+   src/**/*.tsx` returned zero, so it had been styling a class nothing rendered
+   ever since — including the `overflow-x: auto` its own comment claimed was
+   the fix for the row overflowing. The live container is `.lp__tierrow`, far
+   below. Deleted here rather than left as a comment because a dead rule that
+   LOOKS load-bearing is what sent this audit to the wrong element twice. */
 .cv2-root .lp__tab {
   appearance: none;
   border: 0;
   background: none;
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-micro);
-  color: var(--pn-ink-3);
-  padding: 4px 7px;
+  /* --pn-ink-3 on the rail is 3.04:1 light / 4.30:1 dark — this is a LABEL, so
+     the bar is 4.5 and it made neither. ink-2 clears both (6.35 / 7.84). */
+  color: var(--pn-ink-2);
+  /* Vertical padding is gone: the segment now stretches to the rail's inner
+     height (`align-items: stretch` above), so padding here would fight it. */
+  padding: 0 7px;
   cursor: pointer;
   white-space: nowrap;
   border-radius: var(--pn-r-xs);
@@ -1838,23 +1847,62 @@
   gap: 5px;
 }
 /* The word yields; the number does not. */
-.cv2-root .lp__tab-word { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cv2-root .lp__tab-word {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  /* THE HIERARCHY MOVED FROM INK TO SIZE AND WEIGHT, and it had to. #603 made
+     the count quieter than its label by drawing it four steps down the ink
+     ramp, but the count is the thing a reader scans for and --pn-ink-4 on the
+     rail is 1.84:1 — the palest ink in the system carrying the most-read
+     number. Once the count is promoted to ink-2 to clear AA it is the SAME
+     ink as the word, so "name then quantity" has to be said another way:
+     11px/600 for the word against 10px/400 for the number. That reading
+     survives a theme change and a contrast-boost setting, which the ink
+     version never did. */
+  font-weight: 600;
+}
 .cv2-root .lp__tab-count {
   flex: none;
   font-size: var(--pn-fs-fine);
-  color: var(--pn-ink-4);
+  /* 1.84:1 light / 2.49:1 dark at ink-4, against a 4.5 bar. ink-2 is 6.35 /
+     7.84. See `.lp__tab-word` for what carries the hierarchy now. */
+  color: var(--pn-ink-2);
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 .cv2-root .lp__tab:hover { background: var(--pn-card); color: var(--pn-ink-2); }
-/* RAISED, not tinted. A faint background made the selected tier hard to find;
-   elevation reads as "this one is in front" at any type size. */
+/* RAISED, not tinted — AND EDGED, because raised alone did not carry.
+
+   Measured, the white face separates from the rail it sits on by 1.15:1 in
+   light and 1.04:1 in dark, and the only thing drawing that boundary was a
+   5%-alpha shadow. Against a 3:1 bar for a state you have to be able to FIND,
+   that is not a near miss, it is no signal at all — which is why the selected
+   lifecycle tab reads as unfindable in a screenshot.
+
+   No fill in this palette can fix it: white on --pn-hover is 1.15, on
+   --pn-active 1.22, on --pn-line-2 1.49. The paper palette is deliberately
+   low-contrast and this is not the change that should re-tune it. So the state
+   gets a SECOND CHANNEL instead — the fill keeps saying "in front", and a 1px
+   brass edge says "this one", at 3.67:1 light and 7.34:1 dark.
+
+   `inset` box-shadow rather than a border: it costs no layout, so the segment
+   does not resize when it becomes the selected one and the rail does not
+   reflow on every tab click.
+
+   THE COST, STATED: an active filter chip already carries brass, so a brass
+   edge here puts the accent in two adjacent rows. The alternative — a 2px
+   brass underline — reads as a tab-bar rather than as the segmented control
+   this is, and the segmented reading is the one #603 chose deliberately. */
 .cv2-root .lp__tab--active {
-  font-weight: 600;
   color: var(--pn-ink);
   background: var(--pn-card);
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: inset 0 0 0 1px var(--pn-brand), var(--pn-sh-sm);
 }
-.cv2-root .lp__tab--active .lp__tab-count { color: var(--pn-ink-3); }
+/* 3.49:1 light / 4.47:1 dark at ink-3, against the same 4.5 bar the inactive
+   count is held to. The selected tab's count is not a different kind of text. */
+.cv2-root .lp__tab--active .lp__tab-count { color: var(--pn-ink-2); }
 
 .cv2-root .lp__body {
   flex: 1 1 auto;
@@ -1862,7 +1910,9 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  padding: 6px 8px 12px;
+  /* 10px sides — the stack's one gutter, so a tile's edge lines up with the
+     search box, the lifecycle rail, the filter chips and the footer. */
+  padding: 6px 10px 12px;
   scrollbar-width: thin;
   scrollbar-color: var(--pn-line-2) transparent;
 }
@@ -2350,7 +2400,15 @@
   /* Separates the pill from the face it sits on, in either theme. */
   box-shadow: 0 0 0 1.5px var(--pn-card);
 }
-.cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-idle); }
+/* `.cv2-root .pn-stat` IS DECLARED TWICE — here, and in
+   `list/maestro-task-tile.css`, which sets the 16px box and no colour while
+   this one sets the colour and no box. Equal specificity, so which wins is
+   decided by bundle order rather than by intent, and that is why the hollow
+   ring's colour was not where it looked like it lived. Both are kept (the
+   other file owns the geometry, this one the default ink) but they now agree
+   on --pn-ink-3, so the order no longer changes the pixels. See
+   `.pn-stat--idle` there for why the idle mark is ink and not --pn-idle. */
+.cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-ink-3); }
 .cv2-root .pn-stat--running, .cv2-root .pn-stat--working, .cv2-root .pn-stat--exited, .cv2-root .pn-stat--done { color: var(--pn-run); }
 .cv2-root .pn-stat--spawning, .cv2-root .pn-stat--pulled, .cv2-root .pn-stat--in_review { color: var(--pn-info); }
 .cv2-root .pn-stat--failed, .cv2-root .pn-stat--blocked { color: var(--pn-block); }
@@ -2946,7 +3004,10 @@
   align-items: center;
   gap: 5px;
   height: 28px;
-  margin: 5px 8px;
+  /* ONE GUTTER (10px) FOR EVERY ROW IN THE STACK — see `.lp__tierrow`. This
+     was 8, which put the search box two pixels inside the filter chips below
+     it and two outside the list body. */
+  margin: 5px 10px;
   padding: 0 8px;
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
@@ -3042,12 +3103,27 @@
   align-self: stretch;
   min-width: 0;
   display: flex;
-  align-items: center;
+  /* `stretch`, so the four segments FILL the rail's inner height instead of
+     centring at their own. That is what makes the rail one 28px control
+     rather than a 22px control inside a taller box. */
+  align-items: stretch;
   gap: 2px;
   padding: 2px;
   background: var(--pn-hover);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
+
+  /* THE GUTTER. This row alone had none: `align-self: stretch` ran it edge to
+     edge, so the lifecycle rail touched the panel border while the search box
+     above it sat at 8px and the filter chips below at 10px. Five stacked rows
+     on four different left edges is the single biggest reason the stack read
+     as unaligned, and this was the row that broke the line hardest. */
+  margin: 0 10px;
+  /* ONE CONTROL HEIGHT (28px) — the search row's, and now the chips'. The
+     border is inside the box so the rail measures 28px on the outside, which
+     is the number the other two rows are keeping. */
+  height: 28px;
+  box-sizing: border-box;
 }
 /* ---------------------------------------------------------------------------
    The inline launch flow (D44)
@@ -3617,6 +3693,32 @@
   background: none;
   color: inherit;
   cursor: pointer;
+  /* Positioning context for the hit area below. The menu this button opens is
+     portalled (`EntityControls.tsx`), so nothing was relying on it being
+     static. */
+  position: relative;
+}
+/* WCAG 2.2 SC 2.5.8 — A POINTER TARGET IS 24x24, AND THIS ONE IS 16.
+
+   The mark inside is `aria-hidden` decoration, which is what makes this easy
+   to file as "just a status dot" — it is not. `MaestroStatusGlyph` renders
+   inside a real `<button>` that opens the state menu, so the criterion applies
+   to the BUTTON's box, and 16x16 misses it by a third in each axis.
+
+   Grown with a pseudo-element rather than padding or a width, deliberately:
+   the docblock above is right that this row's height is pinned by its tallest
+   child, so anything that takes layout space here grows EVERY task row in
+   every list. An absolutely positioned `::before` takes none — the same reason
+   the hover affordance is a `box-shadow` rather than a ring with a size.
+
+   It is also not caught by `.lp__statedot > *` below: a pseudo-element is not
+   a child element, so it keeps the pointer events it needs and DEF-006's fix
+   (the decorative glyph must not eat its own button's clicks) still stands. */
+.cv2-root .lp__statedot::before {
+  content: '';
+  position: absolute;
+  /* 16 + 4 + 4 = 24 in both axes. */
+  inset: -4px;
 }
 .cv2-root .lp__statedot:hover { box-shadow: 0 0 0 3px var(--pn-hover); }
 .cv2-root .lp__statedot:focus-visible {
