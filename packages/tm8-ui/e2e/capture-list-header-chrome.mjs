@@ -22,6 +22,16 @@
 //   npx vite --port 4733 --strictPort        # in packages/tm8-ui
 //   OUT=/tmp/shots/before MODE=literal node e2e/capture-list-header-chrome.mjs
 //   OUT=/tmp/shots/after  MODE=derived node e2e/capture-list-header-chrome.mjs
+//
+// IF EVERY NAVIGATION LANDS AS `ERR_ABORTED`, IT IS NOT THIS SCRIPT.
+// `e2e/home-header-harness.tsx` imports `ListViewSwitcher`, removed in the
+// 2026-08-19 switcher removal. Vite scans every `e2e/*.html` as a dep-scan
+// entry, so that one dead import aborts optimization for the WHOLE package and
+// every page served from it fails to load with no useful error. Until that
+// import is repaired (its own task), scope the scan past it:
+//   optimizeDeps: { entries: ['e2e/list-header-chrome-harness.html'] }
+// Two runs on two different hosts have now hit this; it is the first thing to
+// check, not the last.
 import { chromium } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -165,13 +175,33 @@ const report = await page.evaluate(() => {
 
       /* THE LEFT EDGES. One gutter or several — the single biggest reason a
          stack of rows reads as unaligned. Measured from the panel's own box,
-         so it is independent of where the harness put the panel. */
+         so it is independent of where the harness put the panel.
+
+         THE FOOTER IS MEASURED AT ITS CONTENT EDGE, AND THE OTHERS ARE NOT.
+         That is not an inconsistency, it is the only way the comparison means
+         anything. Four of these rows are visible BOXES — the search field, the
+         tier rail, a chip, a tile — so the edge a reader's eye lines up is the
+         border box. The footer has no border and no fill; it is a bare div
+         spanning the full panel with its text inset by padding, so its border
+         box is always ~0 and it is the TEXT that sits on the gutter.
+         Measuring it like the others reported `1` forever and made
+         `gutterCount` incapable of reaching 1 even when the stylesheet was
+         perfectly aligned — a check that cannot pass is not a check. */
+      const contentLeft = (el) => {
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        return round(
+          el.getBoundingClientRect().left - pane.left
+            + parseFloat(cs.borderLeftWidth || '0')
+            + parseFloat(cs.paddingLeft || '0'),
+        );
+      };
       const gutters = {
         search: left(searchRow),
         lifecycle: left(tierRow),
         filters: chips.length ? left(chips[0]) : null,
         body: left(firstTile),
-        footer: left(foot),
+        footer: contentLeft(foot),
       };
       const distinctGutters = [...new Set(Object.values(gutters).filter((v) => v !== null))];
 
@@ -252,6 +282,14 @@ const report = await page.evaluate(() => {
         /* WCAG 2.2 SC 2.5.8 — 24x24 CSS px for a pointer target. The mark
            inside is aria-hidden decoration; the BUTTON around it is the
            control, so the button's box is what the criterion measures. */
+        /* ABSENT IS NOT PASSING, and this field says so in words rather than
+           returning `null`. `.lp__statedot` renders only where the kind
+           declares a `stateControl` AND the host wires `onSetState`; this
+           harness wires neither, so the button is not in the tree and the
+           24x24 fix is simply UNMEASURED here. The first version reported
+           `null`, which sat in the output next to real numbers and read as a
+           quiet pass. To actually measure it, mount the panel with
+           `onSetState` and a task-kind row. */
         stateDotTarget: stateDot
           ? (() => {
               const b = stateDot.getBoundingClientRect();
@@ -261,7 +299,7 @@ const report = await page.evaluate(() => {
                 : null;
               return { w: round(b.width), h: round(b.height), hitArea: grown };
             })()
-          : null,
+          : 'NOT MEASURED — no .lp__statedot in this harness (needs onSetState wired)',
       };
     });
 });
