@@ -52,22 +52,24 @@
    8px was a hairline, and it is the primary action on every task row: the
    thing you click to say a task is done. The audit measured it at 1.70:1
    against the row; the colour fix above answers the contrast, this answers
-   the SIZE. 14px is the smallest ring that still reads as an empty checkbox
-   rather than a bullet point.
+   the SIZE. 11px is the midpoint of the 8px that shipped and the 14px first
+   proposed: 14 cleared the target argument but filled its 16px slot almost to
+   the edge, leaving the ring reading as though it touched the title. 11 keeps
+   the checkbox reading and gives the halo back.
 
    SCOPED TO `.pn-tt__status`, AND THE SCOPE IS THE WHOLE POINT. `.pn-stat` is
    shared with `MaestroSessionTile` and `PanelStates`; sizing the shared rule
    would move marks on two surfaces that never asked for it. This is the task
    row's own slot and nothing else mounts it.
 
-   NO ROW GROWS. `.pn-stat` keeps its 16px box and `place-items: center`, so a
-   14px ring is drawn INSIDE the slot that already exists — the objection to
+   NO ROW GROWS. `.pn-stat` keeps its 16px box and `place-items: center`, so an
+   11px ring is drawn INSIDE the slot that already exists — the objection to
    14px was that it would change row height in three tile types, and scoping
    plus staying under the 16px box is what removes it. `--pn-listrow-h` is
    untouched and so is every `@container` rung below.
 
    HOLLOW ONLY, deliberately. Hollow means "not done yet" — you aim at it.
-   Solid means the state is settled — you read it, and a 14px filled disc
+   Solid means the state is settled — you read it, and a filled disc this size
    would be the loudest object in the row for a mark nobody needs to hit. The
    two sizes in one column are a hierarchy, not an inconsistency: big ring =
    open and actionable, small dot = decided.
@@ -77,8 +79,8 @@
    from the mark. Sized to 14px it would reach 30.8px and be clipped by
    `.pn-tt`'s `overflow: hidden` in a 29px row. */
 .cv2-root .pn-tt__status .pn-stat--hollow .pn-stat__dot {
-  width: 14px;
-  height: 14px;
+  width: 11px;
+  height: 11px;
 }
 
 .cv2-root .pn-stat--streaming::after {
@@ -300,6 +302,16 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
+  /* AIR AT THE ONE SEAM THAT LOST IT. A bigger ring eats its own halo: at 8px
+     the clear space to the title was (16-8)/2 + the row gap; at 11px the halo
+     alone drops 1.5px. This buys it back HERE rather than on `.pn-tt__main`'s
+     `gap`, which also spaces title, metas, badges and the action cluster — one
+     pixel at the ring would have cost a pixel everywhere.
+
+     IT MOVES THE TITLE, SO IT MOVES THE INDENT. `.pn-tt__badges` and
+     `.pn-tt__meta` are indented to the hand-computed title start; both are
+     updated in step below. Change this and you owe those two. */
+  margin-inline-end: 2px;
 }
 /* THE STATUS COLUMN IS 16px, WHATEVER IS IN IT. The mark is a live control, so
    while `capabilitiesOf(row.id)` is undefined it renders `CheckingPermission`,
@@ -371,8 +383,9 @@
    and session row-height parity stays untouched. */
 .cv2-root .pn-tt__badges {
   min-width: 0;
-  /* 7px row inset + 16px status mark + 6px gap = title start. */
-  padding: 0 8px 5px 29px;
+  /* 7px row inset + 16px status mark + 2px status margin + 6px gap = title
+     start. The 2px is `.pn-tt__status`'s `margin-inline-end`; see it there. */
+  padding: 0 8px 5px 31px;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -603,14 +616,15 @@
 .cv2-root .pn-tt__ind--open svg { transform: rotate(180deg); }
 
 /* Expanded facts hang off the STATUS column, not the tile edge: 9px row pad +
-   16px caret + 8px gap. The chips therefore start on the same vertical as the
+   16px caret + 8px gap. 31px is the title start (see `.pn-tt__badges`).
+   The chips therefore start on the same vertical as the
    dot at every depth and every panel width (the indent and the narrow-container
    overrides move both together). */
 .cv2-root .pn-tt__meta {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 1px 10px 10px calc(29px + var(--tt-indent));
+  padding: 1px 10px 10px calc(31px + var(--tt-indent));
 }
 .cv2-root .pn-tt__metarow {
   display: flex;
