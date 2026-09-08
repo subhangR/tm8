@@ -33,9 +33,15 @@ const MODE = process.env.MODE ?? 'literal';
 const LABEL = process.env.LABEL ?? MODE;
 mkdirSync(OUT, { recursive: true });
 
-/* `--no-zygote`: the zygote process segfaults on this host, taking the
-   renderer with it before the first frame. Everything else is stock. */
-const browser = await chromium.launch({ args: ['--no-zygote'] });
+/* THE FLAGS ARE NOT OPTIONAL, and each earns its place separately.
+   `--no-zygote`: the zygote process segfaults (signal 11) before the first
+   frame. `--single-process` + `--no-sandbox` + `--disable-dev-shm-usage`: the
+   set proven to render this harness green in the Playwright docker image
+   (mcr.microsoft.com/playwright:v1.58.2-noble, `--network host`); with
+   `--no-zygote` alone the renderer still dies part way through the module
+   graph. Override with CHROME_ARGS if your host needs less. */
+const ARGS = (process.env.CHROME_ARGS ?? '--no-zygote --no-sandbox --disable-dev-shm-usage --single-process').split(' ');
+const browser = await chromium.launch({ args: ARGS });
 /* A 1720px viewport at dsf 2 rasters ~3440px wide and crashes the renderer on
    this host. The harness grid wraps, so a narrower window stacks the four
    panels instead — and an element screenshot scrolls its target into view, so
@@ -76,10 +82,19 @@ const shot = async (name, locator) => {
 /* Everything the page needs to answer a contrast question about ITSELF:
    `getComputedStyle` hands back `rgba()`, so an alpha has to be composited
    against what is actually behind it before a ratio means anything. This is
-   the step that separates a token name from a pixel. */
-const PAGE_HELPERS = `
+   the step that separates a token name from a pixel.
+
+   DECLARED INSIDE THE EVALUATED FUNCTION, not injected as a string and
+   `eval`-ed. The first version did the latter and threw `parse is not defined`
+   on first use: `const` in a direct eval is block-scoped TO THE EVAL, so none
+   of these were visible to the code that called them. `page.evaluate`
+   serialises the whole callback anyway, so there was never a reason to pass
+   them separately. */
+
+const report = await page.evaluate(() => {
+
   const parse = (s) => {
-    const m = s.match(/rgba?\\(([^)]+)\\)/);
+    const m = s.match(/rgba?\(([^)]+)\)/);
     if (!m) return null;
     const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
     return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
@@ -115,12 +130,6 @@ const PAGE_HELPERS = `
     const composited = composite(fg, bg);
     return { fg: hex(composited), bg: hex(bg), ratio: ratio(composited, bg) };
   };
-`;
-
-const report = await page.evaluate(
-  ({ helpers }) => {
-    // eslint-disable-next-line no-eval
-    eval(helpers);
     const round = (n) => Math.round(n * 10) / 10;
 
     return [...document.querySelectorAll('.harness-panel')].map((panel) => {
@@ -255,9 +264,7 @@ const report = await page.evaluate(
           : null,
       };
     });
-  },
-  { helpers: PAGE_HELPERS },
-);
+});
 
 console.log(`\n===== ${LABEL.toUpperCase()} =====`);
 for (const p of report) {

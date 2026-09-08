@@ -1815,9 +1815,9 @@
    this file overruling the design.
 
    THE `.lp__tabs` RULE THAT STOOD HERE IS GONE. #603 rebuilt this row as
-   `.lp__tierrow` and left the old container rule behind; `grep -r lp__tabs
-   src/**/*.tsx` returned zero, so it had been styling a class nothing rendered
-   ever since — including the `overflow-x: auto` its own comment claimed was
+   `.lp__tierrow` and left the old container rule behind; grepping lp__tabs
+   across the tsx sources returned zero, so it had been styling a class nothing
+   rendered ever since — including the `overflow-x: auto` its own comment claimed was
    the fix for the row overflowing. The live container is `.lp__tierrow`, far
    below. Deleted here rather than left as a comment because a dead rule that
    LOOKS load-bearing is what sent this audit to the wrong element twice. */
