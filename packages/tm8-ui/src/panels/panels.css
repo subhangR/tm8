@@ -3121,8 +3121,17 @@
   margin: 0 10px;
   /* ONE CONTROL HEIGHT (28px) — the search row's, and now the chips'. The
      border is inside the box so the rail measures 28px on the outside, which
-     is the number the other two rows are keeping. */
-  height: 28px;
+     is the number the other two rows are keeping.
+
+     `min-height`, NOT `height`, and that is load-bearing rather than taste.
+     The phone puts a 44px touch floor on the SEGMENTS (`.lp__tab`'s
+     `min-block-size` in `mobile-screens.css`) and nothing on this rail, so a
+     fixed height here would pin the container at 28 while its own children
+     demanded 44 and overflowed it. As a minimum, the desktop rail still
+     measures exactly 28 (its content is shorter) and the phone's rail grows to
+     the ~50px its own budget comment already allots it. The other two rows do
+     not need this because the phone overrides each of them directly. */
+  min-height: 28px;
   box-sizing: border-box;
 }
 /* ---------------------------------------------------------------------------
