@@ -47,6 +47,40 @@
 }
 /* Streaming keeps the dot steady and pings a halo off it, so "alive" is
    legible without the mark itself blinking out of the row. */
+/* THE TO-DO RING IS A TARGET, NOT A BULLET.
+
+   8px was a hairline, and it is the primary action on every task row: the
+   thing you click to say a task is done. The audit measured it at 1.70:1
+   against the row; the colour fix above answers the contrast, this answers
+   the SIZE. 14px is the smallest ring that still reads as an empty checkbox
+   rather than a bullet point.
+
+   SCOPED TO `.pn-tt__status`, AND THE SCOPE IS THE WHOLE POINT. `.pn-stat` is
+   shared with `MaestroSessionTile` and `PanelStates`; sizing the shared rule
+   would move marks on two surfaces that never asked for it. This is the task
+   row's own slot and nothing else mounts it.
+
+   NO ROW GROWS. `.pn-stat` keeps its 16px box and `place-items: center`, so a
+   14px ring is drawn INSIDE the slot that already exists — the objection to
+   14px was that it would change row height in three tile types, and scoping
+   plus staying under the 16px box is what removes it. `--pn-listrow-h` is
+   untouched and so is every `@container` rung below.
+
+   HOLLOW ONLY, deliberately. Hollow means "not done yet" — you aim at it.
+   Solid means the state is settled — you read it, and a 14px filled disc
+   would be the loudest object in the row for a mark nobody needs to hit. The
+   two sizes in one column are a hierarchy, not an inconsistency: big ring =
+   open and actionable, small dot = decided.
+
+   `--streaming`'s ping is left at 8px on purpose. It starts inside the ring
+   and expands to 2.2x (17.6px), crossing it and fading — a pulse emanating
+   from the mark. Sized to 14px it would reach 30.8px and be clipped by
+   `.pn-tt`'s `overflow: hidden` in a 29px row. */
+.cv2-root .pn-tt__status .pn-stat--hollow .pn-stat__dot {
+  width: 14px;
+  height: 14px;
+}
+
 .cv2-root .pn-stat--streaming::after {
   content: '';
   position: absolute;
