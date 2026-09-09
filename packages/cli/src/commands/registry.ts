@@ -68,6 +68,7 @@ import { SERVER_COMMANDS } from './server.js';
 import { ARTIFACT_COMMANDS } from './artifact.js';
 import { VOICE_COMMANDS } from './voice.js';
 import { CONTAINER_COMMANDS } from './container.js';
+import { WORKSPACE_COMMANDS } from './workspace.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -105,6 +106,7 @@ const SEARCH_COMMANDS: CommandModule[] = [
 ];
 
 export const COMMANDS: CommandModule[] = [
+  ...WORKSPACE_COMMANDS,
   ...DISCOVERY_COMMANDS,
   ...HARNESS_COMMANDS,
   ...SEARCH_COMMANDS,

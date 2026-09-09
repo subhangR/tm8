@@ -161,6 +161,26 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
+  'workspaces.invites.create': { cmd: ['workspace', 'invite', 'create'], syn: 'tm8 workspace invite create --body <JSON>', sum: 'Invite a verified email to a space on your machine', authz: 'space', input: 'bound', tags: ['workspace', 'invite'] },
+  'workspaces.invites.list': { cmd: ['workspace', 'invite', 'list'], syn: 'tm8 workspace invite list', sum: 'List central invitations for spaces you administer', authz: 'space', input: 'none', tags: ['workspace', 'invite'] },
+  'workspaces.invites.revoke': { cmd: ['workspace', 'invite', 'revoke'], syn: 'tm8 workspace invite revoke <invitationId>', sum: 'Revoke a central space invitation', authz: 'space', input: 'bound', tags: ['workspace', 'invite'] },
+  'auth.github.start': { cmd: null, syn: 'Browser GitHub sign-in', sum: 'Start a browser-bound GitHub login or explicit account link', authz: 'server', input: 'bound', tags: ['auth', 'github'] },
+  'auth.github.callback': { cmd: null, syn: 'Browser OAuth callback', sum: 'Complete a single-use GitHub sign-in flow', authz: 'server', input: 'none', tags: ['auth', 'github'] },
+  'deployment.capabilities': { cmd: ['workspace', 'capabilities'], syn: 'tm8 workspace capabilities', sum: 'Read deployment and workspace capabilities', authz: 'server', input: 'none', tags: ['workspace', 'deployment'] },
+  'workspaces.me': { cmd: ['workspace', 'status'], syn: 'tm8 workspace status', sum: 'Read your private workspace status', authz: 'server', input: 'none', tags: ['workspace'] },
+  'workspaces.ensure': { cmd: ['workspace', 'ensure'], syn: 'tm8 workspace ensure', sum: 'Provision or retry your private Ubuntu workspace', authz: 'server', input: 'bound', tags: ['workspace'] },
+  'workspaces.projects.create': { cmd: ['workspace', 'project', 'create'], syn: 'tm8 workspace project create --body <JSON>', sum: 'Create a Git project in a space and your private checkout', authz: 'space', input: 'bound', tags: ['workspace', 'git'] },
+  'workspaces.projects.checkout': { cmd: ['workspace', 'checkout'], syn: 'tm8 workspace checkout <projectId>', sum: 'Create your private checkout of a shared project', authz: 'server', input: 'bound', tags: ['workspace', 'git'] },
+  'workspaces.files.list': { cmd: ['workspace', 'files'], syn: 'tm8 workspace files <projectId> [path]', sum: 'List files in your private checkout', authz: 'server', input: 'none', tags: ['workspace', 'files'] },
+  'workspaces.files.read': { cmd: ['workspace', 'read'], syn: 'tm8 workspace read <projectId> <path>', sum: 'Read a file from your private checkout', authz: 'server', input: 'none', tags: ['workspace', 'files'] },
+  'workspaces.files.write': { cmd: ['workspace', 'write'], syn: 'tm8 workspace write <projectId> --body <JSON>', sum: 'Write a file in your private checkout', authz: 'server', input: 'bound', tags: ['workspace', 'files'] },
+  'workspaces.git': { cmd: ['workspace', 'git'], syn: 'tm8 workspace git <projectId> <status|fetch|pull|push> [--remote tm8|origin]', sum: 'Synchronize committed code with tm8 or GitHub', authz: 'server', input: 'bound', tags: ['workspace', 'git'] },
+  'workspaces.git.commit': { cmd: ['workspace', 'commit'], syn: 'tm8 workspace commit <projectId> --message <message>', sum: 'Commit changes in your private project checkout', authz: 'server', input: 'bound', tags: ['workspace', 'git'] },
+  'workspaces.git.connect': { cmd: ['workspace', 'connect'], syn: 'tm8 workspace connect <projectId> <url>', sum: 'Connect a project to its HTTPS GitHub origin', authz: 'server', input: 'bound', tags: ['workspace', 'git'] },
+  'workspaces.github.credential': { cmd: ['workspace', 'github', 'credential'], syn: 'tm8 workspace github credential --body <JSON>', sum: 'Manage the GitHub credential in your private workspace', authz: 'server', input: 'bound', tags: ['workspace', 'github'] },
+  'workspaces.github.create': { cmd: ['workspace', 'github', 'create'], syn: 'tm8 workspace github create <projectId> --body <JSON>', sum: 'Create and connect a GitHub repository', authz: 'server', input: 'bound', tags: ['workspace', 'github'] },
+  'workspaces.terminal.start': { cmd: ['workspace', 'terminal'], syn: 'tm8 workspace terminal [--project <id>] [--command <command>]', sum: 'Start an interactive terminal in your private workspace', authz: 'server', input: 'bound', tags: ['workspace', 'terminal'] },
+  'auth.handoff': { cmd: null, syn: 'Browser sign-in handoff', sum: 'Redeem a single-use central login handoff on its assigned node', authz: 'server', input: 'bound', tags: ['auth', 'distributed'] },
   // ── identity & spaces ────────────────────────────────────────────────────
   'identity.get': {
     cmd: ['identity', 'get'],
@@ -2401,6 +2421,8 @@ const ROWS: Record<OperationName, Row> = {
  * collection` and `tm8 help task` both resolve.
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
+  workspaces: 'workspace',
+  deployment: 'workspace',
   identity: 'identity',
   auth: 'auth',
   serverConnections: 'server',
@@ -2495,17 +2517,7 @@ function exposureFor(operation: OperationName): Exposure {
  */
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
-export const CATALOG_DIGEST =
-  // Re-measured 141 (+ auth.password.change, auth.invite.signup,
-  // auth.claim.reissue) — read from the regenerated conformance manifest, never
-  // hand-derived.
-  // Re-measured 148 (+ the three spaces.workflows rows) — read from the
-  // regenerated conformance manifest, never hand-derived.
-  // Re-measured on the MERGED tree (176's chat.start rename + the 25
-  // containers.* rows). RECOMPUTED from JSON.stringify(OPERATIONS), never
-  // adjusted from either side of the merge — neither branch's value is
-  // correct once both landed.
-  'sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa';
+export const CATALOG_DIGEST = 'sha256:9bc7a730e5ab183143b5f654f01d4b292821baec073220f40a4532f1578d373a';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -3051,6 +3063,7 @@ export function isCommandPath(path: readonly string[]): boolean {
  * EVERY public noun, so these are deliberately short.
  */
 const NOUN_SUMMARY: Record<string, string> = {
+  workspace: 'Your private Ubuntu workspace, Git projects, files and terminals',
   identity: 'Who this process is calling as',
   auth: 'Local accounts: sign up, log in, log out, and inspect the current session',
   server: 'Named routes to other tm8 Servers',

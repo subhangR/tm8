@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa",
+  "catalogDigest": "sha256:9bc7a730e5ab183143b5f654f01d4b292821baec073220f40a4532f1578d373a",
   "catalog": {
-    "total": 197,
-    "v1": 195,
+    "total": 217,
+    "v1": 215,
     "reserved": 2,
-    "http": 195,
+    "http": 215,
     "ws": 1,
-    "registerableV1Http": 193,
+    "registerableV1Http": 213,
     "methods": {
-      "GET": 65,
-      "POST": 98,
+      "GET": 71,
+      "POST": 112,
       "PATCH": 12,
       "DELETE": 12,
       "PUT": 8,
       "WS": 2
     },
     "kinds": {
-      "read": 69,
-      "command": 126,
+      "read": 75,
+      "command": 140,
       "stream": 2
     },
-    "uniqueNames": 197,
-    "uniqueBindings": 196
+    "uniqueNames": 217,
+    "uniqueBindings": 216
   },
   "reservedOperations": [
     "search.query",
@@ -200,6 +200,41 @@
   ],
   "routes": {
     "http": [
+      {
+        "operation": "workspaces.invites.create",
+        "method": "POST",
+        "path": "/v2/workspaces/invitations",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.invites.list",
+        "method": "GET",
+        "path": "/v2/workspaces/invitations",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.invites.revoke",
+        "method": "POST",
+        "path": "/v2/workspaces/invitations/:invitationId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.github.start",
+        "method": "POST",
+        "path": "/v2/auth/github/start",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.github.callback",
+        "method": "GET",
+        "path": "/v2/auth/github/callback",
+        "status": "registered",
+        "source": "server-router"
+      },
       {
         "operation": "identity.get",
         "method": "GET",
@@ -722,6 +757,111 @@
         "operation": "projects.create",
         "method": "POST",
         "path": "/v2/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "deployment.capabilities",
+        "method": "GET",
+        "path": "/v2/deployment/capabilities",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.me",
+        "method": "GET",
+        "path": "/v2/workspaces/me",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.ensure",
+        "method": "POST",
+        "path": "/v2/workspaces/me/ensure",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.projects.create",
+        "method": "POST",
+        "path": "/v2/workspaces/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.projects.checkout",
+        "method": "POST",
+        "path": "/v2/workspaces/projects/:projectId/checkout",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.files.list",
+        "method": "GET",
+        "path": "/v2/workspaces/projects/:projectId/files",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.files.read",
+        "method": "GET",
+        "path": "/v2/workspaces/projects/:projectId/files/content",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.files.write",
+        "method": "POST",
+        "path": "/v2/workspaces/projects/:projectId/files/content",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.git",
+        "method": "POST",
+        "path": "/v2/workspaces/git",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.git.commit",
+        "method": "POST",
+        "path": "/v2/workspaces/projects/:projectId/git/commit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.git.connect",
+        "method": "POST",
+        "path": "/v2/workspaces/projects/:projectId/git/connect",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.github.credential",
+        "method": "POST",
+        "path": "/v2/workspaces/credentials/github",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.github.create",
+        "method": "POST",
+        "path": "/v2/workspaces/projects/:projectId/github",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspaces.terminal.start",
+        "method": "POST",
+        "path": "/v2/workspaces/terminals",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.handoff",
+        "method": "POST",
+        "path": "/v2/auth/handoff",
         "status": "registered",
         "source": "server-router"
       },
@@ -1783,7 +1923,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 165
+    "unimplementedV1Http": 185
   },
   "schemas": {
     "additive": {
@@ -1949,6 +2089,91 @@
   },
   "help": {
     "operations": [
+      {
+        "operation": "workspaces.invites.create",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.invites.create",
+        "intentTags": [
+          "workspaces",
+          "invites",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.invites.list",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.invites.list",
+        "intentTags": [
+          "workspaces",
+          "invites",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.invites.revoke",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.invites.revoke",
+        "intentTags": [
+          "workspaces",
+          "invites",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.github.start",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.github.start",
+        "intentTags": [
+          "auth",
+          "github",
+          "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.github.callback",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.github.callback",
+        "intentTags": [
+          "auth",
+          "github",
+          "callback"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
       {
         "operation": "identity.get",
         "noun": "identity",
@@ -3189,6 +3414,256 @@
           "create"
         ],
         "inputSchemaRef": "ProjectCreateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "deployment.capabilities",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/deployment.capabilities",
+        "intentTags": [
+          "deployment",
+          "capabilities"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.me",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.me",
+        "intentTags": [
+          "workspaces",
+          "me"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.ensure",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.ensure",
+        "intentTags": [
+          "workspaces",
+          "ensure"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.projects.create",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.projects.create",
+        "intentTags": [
+          "workspaces",
+          "projects",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.projects.checkout",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.projects.checkout",
+        "intentTags": [
+          "workspaces",
+          "projects",
+          "checkout"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.files.list",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.files.list",
+        "intentTags": [
+          "workspaces",
+          "files",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.files.read",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.files.read",
+        "intentTags": [
+          "workspaces",
+          "files",
+          "read"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.files.write",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.files.write",
+        "intentTags": [
+          "workspaces",
+          "files",
+          "write"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.git",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.git",
+        "intentTags": [
+          "workspaces",
+          "git"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.git.commit",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.git.commit",
+        "intentTags": [
+          "workspaces",
+          "git",
+          "commit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.git.connect",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.git.connect",
+        "intentTags": [
+          "workspaces",
+          "git",
+          "connect"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.github.credential",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.github.credential",
+        "intentTags": [
+          "workspaces",
+          "github",
+          "credential"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.github.create",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.github.create",
+        "intentTags": [
+          "workspaces",
+          "github",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspaces.terminal.start",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspaces.terminal.start",
+        "intentTags": [
+          "workspaces",
+          "terminal",
+          "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.handoff",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.handoff",
+        "intentTags": [
+          "auth",
+          "handoff"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,

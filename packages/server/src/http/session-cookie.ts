@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders } from 'node:http';
+import { CollabError } from '@tm8/contract';
 
 /** __Host- forbids Domain and requires Secure + Path=/ in supporting browsers. */
 export const TM8_SESSION_COOKIE = '__Host-tm8-session';
@@ -7,6 +8,9 @@ export function readTm8SessionCookie(headers: IncomingHttpHeaders): string | nul
   const header = headers.cookie;
   if (header === undefined) return null;
   const raw = Array.isArray(header) ? header.join(';') : header;
+  if (raw.split(';').filter(pair => pair.trim().startsWith(`${TM8_SESSION_COOKIE}=`)).length > 1) {
+    throw new CollabError('unauthenticated', 'Conflicting session cookies');
+  }
   for (const pair of raw.split(';')) {
     const equals = pair.indexOf('=');
     if (equals < 0) continue;

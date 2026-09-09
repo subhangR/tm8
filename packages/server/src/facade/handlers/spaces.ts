@@ -179,10 +179,10 @@ export function spacesCreate(deps: FacadeDeps): OperationHandler {
     // Seeded outside the create: the roster is a convenience, and losing the
     // space itself because a persona insert was refused would be the worse
     // trade. Boot repairs whatever is missing.
-    if (deps.config.launchBootstrap) {
+    if (deps.config.launchBootstrap || deps.config.workspace?.isolation) {
       try {
         await deps.db.tx(claimsFor(owner, ctx), (q) =>
-          ensureDefaultTeammates(q, result.space.id),
+          ensureDefaultTeammates(q, result.space.id, { automations: !deps.config.workspace?.isolation }),
         );
       } catch (error) {
         console.warn(

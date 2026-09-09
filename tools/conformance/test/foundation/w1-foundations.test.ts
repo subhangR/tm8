@@ -36,6 +36,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
   it('derives exact current catalog, router, status, method, and kind accounting', async () => {
     const manifest = await buildW1ConformanceManifest();
 
+    // Workspace architecture (2026-09-09): 20 operations, including 14 strict command bindings.
     // A21 (execution.liveness, GET read) is the +1 on each affected axis.
     // +4 more from the `credentials.*` family (Tier B, sub-doc 11 §D): one
     // GET/read, one DELETE/command and two POST/command. Every figure below was
@@ -65,23 +66,23 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // set, which is why they land on 195/1/196 rather than 196/2/197:
       // `containers.stream` re-declares `events.subscribe`'s socket so the
       // family is discoverable under its own name, and mounts nothing.
-      total: 197,
-      v1: 195,
+      total: 217,
+      v1: 215,
       reserved: 2,
-      http: 195,
+      http: 215,
       ws: 1,
-      registerableV1Http: 193,
-      methods: { GET: 65, POST: 98, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
-      kinds: { read: 69, command: 126, stream: 2 },
-      uniqueNames: 197,
-      uniqueBindings: 196,
+      registerableV1Http: 213,
+      methods: { GET: 71, POST: 112, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
+      kinds: { read: 75, command: 140, stream: 2 },
+      uniqueNames: 217,
+      uniqueBindings: 216,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(195); // +24 (177): the container HTTP rows
+    expect(manifest.routes.http).toHaveLength(215); // +24 (177): the container HTTP rows
     // BOTH WS rows are LISTED here even though only one is MOUNTED. `routes`
     // is what a discovering client reads to learn an operation's transport,
     // and `containers.stream` has one — the same socket, dispatched on the
@@ -126,7 +127,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // boundary, so it rises with every amendment EVEN THOUGH these three ops
     // are mounted — W2.C01's live inventory below is where that shows up.
     // 141 -> 165 (177): registerableV1Http 193 minus the frozen 28.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(165);
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(185);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -154,7 +155,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
       // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
       // 130 -> 132 upstream (unledgered); 132 -> 135 (W4/132).
-      unimplementedV1Http: 165, // +24 (177): registerableV1Http 193 minus the frozen 28
+      unimplementedV1Http: 185, // +24 (177): registerableV1Http 193 minus the frozen 28
     });
   });
 
@@ -206,7 +207,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(197); // +25 (177) containers
+    expect(manifest.help.operations).toHaveLength(217); // +25 (177) containers
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -436,6 +437,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // execution.terminal.start adds one more (merge 2026-08-13, #161).
     expect(handlers.execution).toHaveLength(11);
     expect(handlers.events).toHaveLength(2);
+    expect(handlers.workspaces).toHaveLength(20);
     // 124 -> 125 (2026-08-07): `execution.transcript` joins the execution
     // handler module, so both the execution count and the whole list move.
     // projects.branches.list adds exactly one facade handler.
@@ -446,7 +448,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* facade
     // handlers (facade/services/execution-git.ts).
     // 158 -> 160 upstream (unledgered); 160 -> 163 (W4/132).
-    expect(handlers.all).toHaveLength(193); // +24 (177): the container handlers
+    expect(handlers.all).toHaveLength(213); // +24 (177): the container handlers
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -462,7 +464,7 @@ describe('W2.C01 current mounted registry inventory', () => {
       // container handlers. It hashes the sorted NAME list, so neither
       // branch's value survives — each hashed a list missing the other's
       // handlers. Read out of the FAILING RUN's Received line.
-      .toBe('e8e04b4f42f0732521f97bbd38ce1f42ef7b4db9bc8dd674ad8a6a273c5468c4');
+      .toBe('de2f6bad96d1243a0a224c738b4fec9e6d14b3add8f0f2e868c81388e3c7a462');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -480,7 +482,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert;
     // RequiredCommandContextSchema binds .delete. `.list` is a READ and binds
     // nothing, which is why three ops move this by two.
-    expect(inputSchemas.bound).toHaveLength(118) // +19 (177): the container command bodies that bind;
+    expect(inputSchemas.bound).toHaveLength(132) // +19 (177): the container command bodies that bind;
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -509,7 +511,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 166 -> 169 (148): the three workflows routes, all mounted.
     // 169 -> 193 (2026-09-03): 24 of the 25 containers.* rows are registerable
     // v1 HTTP; the 25th is the WS alias, which mounts nothing. MEASURED.
-    expect(registerableV1Http).toHaveLength(193);
+    expect(registerableV1Http).toHaveLength(213);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

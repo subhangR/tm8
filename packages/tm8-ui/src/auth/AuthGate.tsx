@@ -88,6 +88,8 @@ export interface AuthGateProps {
    * in, the reason you were asked has stopped being news.
    */
   signedOutBanner?: ReactNode;
+  /** Product sign-in surface; historical frame fixtures may omit this. */
+  signedOutContent?: ReactNode;
 }
 
 export function AuthGate({
@@ -96,6 +98,7 @@ export function AuthGate({
   onSignedIn,
   initialFrame,
   signedOutBanner,
+  signedOutContent,
 }: AuthGateProps) {
   const session = useAuthSession({ resolveIdentity });
 
@@ -227,7 +230,7 @@ export function AuthGate({
   return (
     <AuthActionsContext.Provider value={actions}>
       {signedOutBanner}
-      <AuthFlow
+      {signedOutContent ?? <AuthFlow
         // KEYED ON THE DECISION. `initialFrame` seeds AuthFlow's internal
         // frame state and is read once at mount, so a claim answer that lands
         // after the flow is already on screen would be silently ignored — the
@@ -244,7 +247,7 @@ export function AuthGate({
           // session, and this component re-renders off that. Kept as the
           // AuthFlow contract's required prop, and deliberately inert here.
         }}
-      />
+      />}
     </AuthActionsContext.Provider>
   );
 }

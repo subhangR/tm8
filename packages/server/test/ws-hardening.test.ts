@@ -1,8 +1,10 @@
 import { Duplex } from 'node:stream';
+import type { IncomingMessage } from 'node:http';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { WsConnection } from '../src/events/ws-connection.js';
+import { createWsServer, WS_PATH } from '../src/events/ws-server.js';
 import { OPCODE } from '../src/events/ws-frame.js';
 import { PtyWsConnection, PTY_SOCKET_STATE } from '../src/pty/pty-ws-connection.js';
 
@@ -29,6 +31,24 @@ function maskedClientFrame(opcode: number, payload: Buffer): Buffer {
 afterEach(() => vi.useRealTimers());
 
 describe('WebSocket backpressure, timeouts and inbound caps', () => {
+  it('closes an authenticated socket when periodic authorization throws synchronously', async () => {
+    vi.useFakeTimers();
+    let revoked = false;
+    const server = createWsServer({ authorize: () => {
+      if (revoked) throw new Error('Session revoked');
+      return { kind: 'bearer', identityId: 'test-user', sessionId: 'test-session' };
+    } });
+    const socket = new FakeSocket();
+    const req = { url: WS_PATH, headers: { upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==' }, socket } as unknown as IncomingMessage;
+    await server.handleUpgrade(req, socket, Buffer.alloc(0));
+    expect(server.connectionCount()).toBe(1);
+    revoked = true;
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(socket.writableEnded).toBe(true);
+    socket.emit('close');
+    expect(server.connectionCount()).toBe(0);
+    expect(Buffer.concat(socket.chunks).includes(Buffer.from('Authorization expired'))).toBe(true);
+  });
   it('closes a slow event-stream consumer before its queued bytes exceed the cap', () => {
     const socket = new FakeSocket();
     Object.defineProperty(socket, 'writableLength', { configurable: true, get: () => 100 });

@@ -69,6 +69,8 @@ interface FakeAccount {
 }
 
 interface FakeAuthServer {
+  /** Simulated browser-managed HttpOnly cookie; never exposed to app storage. */
+  cookie: string;
   /** username → account. What `auth.signup` wrote. */
   accounts: Map<string, FakeAccount>;
   /** token → username. Live sessions; `auth.logout` deletes, reload verifies. */
@@ -125,6 +127,7 @@ function refusal(status: number, code: string, message: string): Response {
  */
 function installFakeAuthServer(): FakeAuthServer {
   const server: FakeAuthServer = {
+    cookie: '',
     accounts: new Map(),
     sessions: new Map(),
     requests: [],
@@ -140,7 +143,7 @@ function installFakeAuthServer(): FakeAuthServer {
     server.requests.push({ method, path });
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
     const auth = (init?.headers as Record<string, string> | undefined)?.authorization ?? '';
-    const bearer = auth.replace(/^Bearer\s+/i, '');
+    const bearer = auth.replace(/^Bearer\s+/i, '') || server.cookie;
 
     // `auth.claim.status` — claim-free, and the gate asks it before it can
     // know who anybody is. Claimed === any account exists.
@@ -180,6 +183,7 @@ function installFakeAuthServer(): FakeAuthServer {
       const sessionId = `sess_${minted}`;
       const token = `tm8s_${sessionId}.secret${minted}`;
       server.sessions.set(token, username);
+      server.cookie = token;
       return json(200, {
         data: {
           token,
@@ -220,6 +224,7 @@ function installFakeAuthServer(): FakeAuthServer {
       const sessionId = `sess_${minted}`;
       const token = `tm8s_${sessionId}.secret${minted}`;
       server.sessions.set(token, account.username);
+      server.cookie = token;
       return json(200, {
         data: {
           token,
@@ -239,6 +244,7 @@ function installFakeAuthServer(): FakeAuthServer {
       if (server.sessions.has(bearer)) {
         const sessionId = bearer.slice('tm8s_'.length).split('.')[0]!;
         server.sessions.delete(bearer);
+        server.cookie = '';
         return json(200, { data: { sessionId, revoked: true } });
       }
       // A named session with no bearer: the loopback auto-owner path — the
@@ -664,8 +670,9 @@ describe('leg 2 — create an account, and the app renders', () => {
     // lead's programme-wide credential-key ruling; 'local' → the page origin).
     const stored = JSON.parse(localStorage.getItem('tm8ui.auth.passes.v1') ?? '{}');
     const entry = stored[window.location.origin];
-    expect(String(entry?.token).startsWith('tm8s_')).toBe(true);
-    expect(server.sessions.has(entry.token)).toBe(true);
+    expect(entry?.token).toBe('');
+    expect(entry?.transport).toBe('cookie');
+    expect(server.sessions.has(server.cookie)).toBe(true);
   });
 
   it('refuses a password shorter than the 8 characters the server enforces', async () => {

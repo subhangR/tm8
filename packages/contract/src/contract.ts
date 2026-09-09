@@ -1980,6 +1980,8 @@ export interface CredentialConnectionView {
  * a node where the table exists.
  */
 export interface CredentialsStatusView {
+  /** Where provider commands run; absent on older nodes. */
+  runtime?: 'workspace';
   /** One entry per provider in `CredentialProviderName`, always all six. */
   providers: CredentialConnectionView[];
   /**
@@ -2052,6 +2054,8 @@ export interface CredentialsLoginSessionStartResult {
   expiresAt: string;
   /** The exact table entry that WAS launched. Recorded so a caller can assert it. */
   command: string;
+  /** Present when login runs in the owner's private workspace container. */
+  socketPath?: string;
 }
 
 /**
@@ -2080,7 +2084,7 @@ export interface CredentialsLoginSessionFinishResult {
   login: string | null;
   authMethod: string | null;
   status: 'active' | 'stale' | 'revoked';
-  /** True only when a metadata row was actually written. */
+  /** True when the connection was saved in the credential store or private workspace home. */
   stored: boolean;
   /** Whether this node's PTY was killed, as the PTY itself reported it. */
   terminated: boolean;

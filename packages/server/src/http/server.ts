@@ -391,7 +391,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
          * Every other operation keeps refusing: presenting an invalid token
          * to a session-bearing call is still a refusal, not a downgrade.
          */
-        const exchange = match.opName === 'auth.login' || match.opName === 'auth.signup';
+        const exchange = ['auth.login', 'auth.signup', 'auth.handoff', 'auth.github.start', 'auth.github.callback'].includes(match.opName);
         if (!exchange || !(err instanceof Error && (err as { code?: string }).code === 'unauthenticated')) {
           throw err;
         }

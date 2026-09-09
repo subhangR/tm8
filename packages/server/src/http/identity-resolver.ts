@@ -28,6 +28,7 @@ export interface SessionIdentityResolverOptions {
   readonly db: Db;
   /** The memoised node-owner resolver — the auto-owner arm's source. */
   readonly owner: () => Promise<LoopbackOwner>;
+  readonly authorizeSession?: (identity: import('./types.js').RequestIdentity) => Promise<void>;
 }
 
 /**
@@ -58,7 +59,7 @@ export function createSessionIdentityResolver(
     const raw = authorization || cookie;
     if (raw.startsWith(TOKEN_PREFIX)) {
       const session = await resolveBearerIdentity(db, raw);
-      return {
+      const identity: import('./types.js').RequestIdentity = {
         kind: 'bearer',
         identityId: session.identityId,
         nodeAdmin: session.isNodeAdmin,
@@ -79,6 +80,8 @@ export function createSessionIdentityResolver(
         // identity (sub-doc 14, channel C7).
         authKind: session.kind,
       };
+      await options.authorizeSession?.(identity);
+      return identity;
     }
 
     const fallback = await autoOwnerResolver(headers, context);

@@ -1,0 +1,7 @@
+{
+  "name": "@tm8/control-plane",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node src/main.mjs", "test": "node --test test/*.test.mjs" },
+  "dependencies": { "pg": "^8.22.0", "@tm8/contract": "workspace:*" }
+}

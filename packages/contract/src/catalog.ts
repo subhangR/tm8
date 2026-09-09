@@ -47,6 +47,11 @@ export interface OperationBinding {
 export const BASE_PATH = '/v2';
 
 export const OPERATIONS = [
+  { name: 'workspaces.invites.create', method: 'POST', path: '/v2/workspaces/invitations', kind: 'command', status: 'v1' },
+  { name: 'workspaces.invites.list', method: 'GET', path: '/v2/workspaces/invitations', kind: 'read', status: 'v1' },
+  { name: 'workspaces.invites.revoke', method: 'POST', path: '/v2/workspaces/invitations/:invitationId/revoke', kind: 'command', status: 'v1' },
+  { name: 'auth.github.start', method: 'POST', path: '/v2/auth/github/start', kind: 'command', status: 'v1' },
+  { name: 'auth.github.callback', method: 'GET', path: '/v2/auth/github/callback', kind: 'read', status: 'v1' },
   // identity & spaces
   { name: 'identity.get',            method: 'GET',    path: '/v2/identity',                                kind: 'read',    status: 'v1' },
   { name: 'serverConnections.list',  method: 'GET',    path: '/v2/server-connections',                      kind: 'read',    status: 'v1' },
@@ -151,6 +156,21 @@ export const OPERATIONS = [
   // projects — linked resources, space↔project M2M (AM-2 §1, T-D17)
   { name: 'projects.list',           method: 'GET',    path: '/v2/projects',                                kind: 'read',    status: 'v1' },
   { name: 'projects.create',         method: 'POST',   path: '/v2/projects',                                kind: 'command', status: 'v1' },
+  { name: 'deployment.capabilities', method: 'GET', path: '/v2/deployment/capabilities', kind: 'read', status: 'v1' },
+  { name: 'workspaces.me', method: 'GET', path: '/v2/workspaces/me', kind: 'read', status: 'v1' },
+  { name: 'workspaces.ensure', method: 'POST', path: '/v2/workspaces/me/ensure', kind: 'command', status: 'v1' },
+  { name: 'workspaces.projects.create', method: 'POST', path: '/v2/workspaces/projects', kind: 'command', status: 'v1' },
+  { name: 'workspaces.projects.checkout', method: 'POST', path: '/v2/workspaces/projects/:projectId/checkout', kind: 'command', status: 'v1' },
+  { name: 'workspaces.files.list', method: 'GET', path: '/v2/workspaces/projects/:projectId/files', kind: 'read', status: 'v1' },
+  { name: 'workspaces.files.read', method: 'GET', path: '/v2/workspaces/projects/:projectId/files/content', kind: 'read', status: 'v1' },
+  { name: 'workspaces.files.write', method: 'POST', path: '/v2/workspaces/projects/:projectId/files/content', kind: 'command', status: 'v1' },
+  { name: 'workspaces.git', method: 'POST', path: '/v2/workspaces/git', kind: 'command', status: 'v1' },
+  { name: 'workspaces.git.commit', method: 'POST', path: '/v2/workspaces/projects/:projectId/git/commit', kind: 'command', status: 'v1' },
+  { name: 'workspaces.git.connect', method: 'POST', path: '/v2/workspaces/projects/:projectId/git/connect', kind: 'command', status: 'v1' },
+  { name: 'workspaces.github.credential', method: 'POST', path: '/v2/workspaces/credentials/github', kind: 'command', status: 'v1' },
+  { name: 'workspaces.github.create', method: 'POST', path: '/v2/workspaces/projects/:projectId/github', kind: 'command', status: 'v1' },
+  { name: 'workspaces.terminal.start', method: 'POST', path: '/v2/workspaces/terminals', kind: 'command', status: 'v1' },
+  { name: 'auth.handoff', method: 'POST', path: '/v2/auth/handoff', kind: 'command', status: 'v1' },
   { name: 'projects.directories.list', method: 'GET',  path: '/v2/project-directories',                     kind: 'read',    status: 'v1' },
   { name: 'projects.get',            method: 'GET',    path: '/v2/projects/:projectId',                     kind: 'read',    status: 'v1' },
   { name: 'projects.contention',     method: 'GET',    path: '/v2/projects/:projectId/contention',          kind: 'read',    status: 'v1' },

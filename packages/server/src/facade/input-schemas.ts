@@ -19,6 +19,9 @@
  * or declare it body-less; an omission here is a to-do, not a decision.
  */
 import {
+  WorkspaceProjectCreateSchema, WorkspaceGitInputSchema, WorkspaceEmptyInputSchema, WorkspaceFileWriteSchema,
+  WorkspaceCommitSchema, WorkspaceConnectSchema, WorkspaceTerminalSchema, WorkspaceGithubCredentialSchema,
+  WorkspaceGithubCreateSchema, WorkspaceInvitationSchema, AuthHandoffSchema, AuthGithubStartSchema,
   ContainersAttachInputSchema,
   ContainersAttentionInputSchema,
   ContainersBrowserEndpointInputSchema,
@@ -154,6 +157,20 @@ const UndoCommandInputSchema = z.object({
 }).strict();
 
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
+  'auth.github.start': AuthGithubStartSchema,
+  'auth.handoff': AuthHandoffSchema,
+  'workspaces.ensure': WorkspaceEmptyInputSchema,
+  'workspaces.projects.create': WorkspaceProjectCreateSchema,
+  'workspaces.projects.checkout': WorkspaceEmptyInputSchema,
+  'workspaces.files.write': WorkspaceFileWriteSchema,
+  'workspaces.git': WorkspaceGitInputSchema,
+  'workspaces.git.commit': WorkspaceCommitSchema,
+  'workspaces.git.connect': WorkspaceConnectSchema,
+  'workspaces.github.credential': WorkspaceGithubCredentialSchema,
+  'workspaces.github.create': WorkspaceGithubCreateSchema,
+  'workspaces.terminal.start': WorkspaceTerminalSchema,
+  'workspaces.invites.create': WorkspaceInvitationSchema,
+  'workspaces.invites.revoke': WorkspaceEmptyInputSchema,
   // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
   // refuses an actor on the wire rather than ignoring it.
   'identity.profile.update': IdentityProfileUpdateInputSchema,

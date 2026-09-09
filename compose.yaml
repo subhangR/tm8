@@ -1,0 +1,108 @@
+name: tm8-ubuntu24
+
+services:
+  tm8:
+    image: tm8-ubuntu24:dev
+    build:
+      context: .
+    init: true
+    working_dir: /workspace/tm8
+    environment:
+      TM8_ENV: dev
+      TM8_DATA_DIR: /var/lib/tm8/.tm8-dev
+      TM8_DATABASE_MANAGED: external
+      TM8_PG_LOCALE: C.utf8
+      TM8_PG_PORT: "5442"
+      TM8_PORT: "4610"
+      TM8_UI_PORT: "4611"
+      TM8_PUBLIC_ORIGIN: "http://127.0.0.1:${TM8_DOCKER_UI_PORT:-4611}"
+      TM8_BIND: 127.0.0.1
+      TM8_GITHUB_CLIENT_ID: "${TM8_GITHUB_CLIENT_ID:-}"
+      TM8_GITHUB_CLIENT_SECRET: "${TM8_GITHUB_CLIENT_SECRET:-}"
+      TM8_DATABASE_URL: "postgres://tm8_runtime:${TM8_RUNTIME_DB_PASSWORD:?Run node deploy/docker/configure.mjs}@postgres:5442/tm8_dev"
+      TM8_DELIVERY_DATABASE_URL: "postgres://tm8_delivery_runtime:${TM8_DELIVERY_DB_PASSWORD:?Run node deploy/docker/configure.mjs}@postgres:5442/tm8_dev"
+      TM8_NODE_CONTROL_DATABASE_URL: "postgres://tm8_node_runtime:${TM8_ENROLLMENT_DB_PASSWORD:?Run node deploy/docker/configure.mjs}@postgres:5442/tm8_dev"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "500"
+    ports:
+      # Relays reach the application's existing loopback-only listeners.
+      - "127.0.0.1:${TM8_DOCKER_API_PORT:-4610}:14610"
+      - "127.0.0.1:${TM8_DOCKER_UI_PORT:-4611}:14611"
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace/tm8
+      - home:/var/lib/tm8
+      # Keep Linux dependencies, including native node-pty, off the Mac mount.
+      - node_modules:/workspace/tm8/node_modules
+      - cli_modules:/workspace/tm8/packages/cli/node_modules
+      - contract_modules:/workspace/tm8/packages/contract/node_modules
+      - execution_modules:/workspace/tm8/packages/execution/node_modules
+      - mcp_modules:/workspace/tm8/packages/mcp/node_modules
+      - prompt_modules:/workspace/tm8/packages/prompt/node_modules
+      - pty_modules:/workspace/tm8/packages/pty-protocol/node_modules
+      - server_modules:/workspace/tm8/packages/server/node_modules
+      - tm8_ui_modules:/workspace/tm8/packages/tm8-ui/node_modules
+      - tm8_ui_2_modules:/workspace/tm8/packages/tm8_ui_2.0/node_modules
+      - legacy_ui_modules:/workspace/tm8/packages/ui/node_modules
+      - conformance_modules:/workspace/tm8/tools/conformance/node_modules
+      - control_modules:/workspace/tm8/apps/control-plane/node_modules
+      - broker_modules:/workspace/tm8/apps/workspace-broker/node_modules
+    healthcheck:
+      test: ["CMD", "bash", "deploy/docker/healthcheck.sh"]
+      interval: 15s
+      timeout: 5s
+      start_period: 5m
+      retries: 4
+    stop_grace_period: 30s
+    networks: [default, database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: tm8-ubuntu24:dev
+    user: root
+    entrypoint: [bash, /workspace/tm8/deploy/docker/postgres-entrypoint.sh]
+    environment:
+      TM8_RUNTIME_DB_PASSWORD: "${TM8_RUNTIME_DB_PASSWORD:?Run node deploy/docker/configure.mjs}"
+      TM8_DELIVERY_DB_PASSWORD: "${TM8_DELIVERY_DB_PASSWORD:?Run node deploy/docker/configure.mjs}"
+      TM8_ENROLLMENT_DB_PASSWORD: "${TM8_ENROLLMENT_DB_PASSWORD:?Run node deploy/docker/configure.mjs}"
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace/tm8
+        read_only: true
+      - postgres_data:/var/lib/postgresql/data
+      - home:/legacy:ro
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, "test -f /tmp/tm8-pg/ready && /usr/lib/postgresql/16/bin/pg_isready -h 127.0.0.1 -p 5442 -U tm8 -d tm8_dev"]
+      interval: 5s
+      timeout: 3s
+      start_period: 2m
+      retries: 15
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  home:
+  node_modules:
+  cli_modules:
+  contract_modules:
+  execution_modules:
+  mcp_modules:
+  prompt_modules:
+  pty_modules:
+  server_modules:
+  tm8_ui_modules:
+  tm8_ui_2_modules:
+  legacy_ui_modules:
+  conformance_modules:
+  control_modules:
+  broker_modules:
+  postgres_data:
+
+networks:
+  database:
+    internal: true

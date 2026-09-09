@@ -12,6 +12,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
+import { NewWorkspaceSpaceDialog } from '../workspaces/NewWorkspaceSpaceDialog';
+import { useDeployment } from '../workspaces/DeploymentGate';
 import {
   MenuRail,
   NOTICE_TTL_MS,
@@ -290,6 +292,7 @@ export function screenKeyOfTarget(target: MenuTarget | null): ScreenKey | null {
 }
 
 export function GateApp(props: GateAppProps = {}) {
+  const SpaceProjectDialog = useDeployment()?.workspaceIsolation ? NewWorkspaceSpaceDialog : NewSpaceProjectDialog;
   // null when this GateApp is not inside an <AuthGate> — the shell tests, and
   // any host that has not mounted the gate.
   const authAccount = useAuthActions()?.account ?? null;
@@ -2739,7 +2742,7 @@ export function GateApp(props: GateAppProps = {}) {
           />
         ) : null}
         {projectOnboardingPort ? (
-          <NewSpaceProjectDialog
+          <SpaceProjectDialog
             key={activeServer.id}
             open={newSpaceOpen}
             nodeLabel={activeServer.label}

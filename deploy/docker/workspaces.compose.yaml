@@ -1,0 +1,61 @@
+# Use with: docker compose -f compose.yaml -f deploy/docker/workspaces.compose.yaml up -d --build
+services:
+  tm8:
+    environment:
+      TM8_WORKSPACE_ISOLATION: "true"
+      TM8_DISABLE_AUTO_OWNER: "true"
+      TM8_DISTRIBUTED_SYSTEM_FLAG: "${TM8_DISTRIBUTED_SYSTEM_FLAG:-false}"
+      TM8_MACHINE_ID: "${TM8_MACHINE_ID:-b0a1c7ea-7b10-4e55-a540-000000000001}"
+      TM8_WORKSPACE_BROKER_SOCKET: /run/tm8/workspace-broker.sock
+      TM8_MAX_USERS_PER_MACHINE: "${TM8_MAX_USERS_PER_MACHINE:-10}"
+    volumes:
+      - broker_socket:/run/tm8:ro
+    depends_on:
+      workspace-broker:
+        condition: service_started
+  workspace-broker:
+    image: tm8-workspace-broker:dev
+    build:
+      context: .
+      dockerfile: deploy/docker/broker.Dockerfile
+    environment:
+      TM8_MACHINE_ID: "${TM8_MACHINE_ID:-b0a1c7ea-7b10-4e55-a540-000000000001}"
+      TM8_RUNNER_IMAGE: tm8-workspace:ubuntu24
+      TM8_EGRESS_CONTAINER: tm8-workspace-egress
+      TM8_BROKER_GID: "1000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - broker_socket:/run/tm8
+      - broker_state:/var/lib/tm8-broker
+    network_mode: none
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    depends_on: [workspace-egress]
+  workspace-egress:
+    image: tm8-workspace-broker:dev
+    container_name: tm8-workspace-egress
+    command: [node, src/egress.mjs]
+    user: "1000:1000"
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    pids_limit: 64
+    networks: [workspace_egress]
+    restart: unless-stopped
+  workspace-image:
+    image: tm8-workspace:ubuntu24
+    build:
+      context: .
+      dockerfile: deploy/docker/runner.Dockerfile
+    profiles: [build-images]
+    command: ["true"]
+networks:
+  workspace_egress:
+volumes:
+  broker_socket:
+  broker_state:

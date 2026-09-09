@@ -8,6 +8,23 @@ Unified entity-graph rebuild of Maestro. Phase 1 (v1: the node) — one from-con
 
 ## Getting started
 
+**Ubuntu 24.04 in Docker:** run the setup below, then open
+**http://127.0.0.1:4611** once `docker compose ps` reports healthy. This directory
+is mounted into the container, so it runs your local code. See the
+[Docker development guide](deploy/docker/README.md) for shell access and details.
+
+```bash
+node deploy/docker/configure.mjs
+docker compose -f compose.yaml -f deploy/docker/workspaces.compose.yaml build workspace-image
+docker compose -f compose.yaml -f deploy/docker/workspaces.compose.yaml up --build -d
+```
+
+The [workspace architecture](docs/architecture/WORKSPACE-IMPLEMENTATION.md)
+adds private Ubuntu runners and optional central Supabase authentication under
+`TM8_DISTRIBUTED_SYSTEM_FLAG`. It supersedes the older no-Supabase rule for that
+mode. The current product UI is `packages/tm8-ui`; older execution instructions
+below describe the legacy host runtime while its runner adapters are completed.
+
 ```bash
 ./install.sh          # cluster, database, roles, migrations, build — then RUNS it
 ```

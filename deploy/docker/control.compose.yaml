@@ -1,0 +1,21 @@
+name: tm8-control
+services:
+  control:
+    image: tm8-control:ubuntu24
+    build:
+      context: ../..
+      dockerfile: deploy/docker/control.Dockerfile
+    env_file: ./control.env
+    environment:
+      TM8_SERVICE_ROLE: control
+      TM8_DISTRIBUTED_SYSTEM_FLAG: "true"
+      TM8_CONTROL_BIND: 0.0.0.0
+      TM8_CONTROL_PORT: "4620"
+    ports: ["127.0.0.1:4620:4620"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    pids_limit: 128
+    mem_limit: 1g
+    restart: unless-stopped

@@ -247,6 +247,21 @@ export async function verifyStoredSession(): Promise<SessionVerdict> {
   }
 }
 
+/** Recover only non-secret account metadata from a verified HttpOnly cookie. */
+export async function hydrateCookieSession(): Promise<boolean> {
+  const { client, serverId } = bareClientForActiveServer();
+  if (serverId !== LOCAL_SERVER_ID) return false;
+  try {
+    const result = await client.call<AuthSessionGetResult>('auth.session.get');
+    if (!result.session) return false;
+    const account = toGateAccount(result.account);
+    writeServerPass(serverId, { token: '', transport: 'cookie', account,
+      sessionId: result.session.sessionId, expiresAt: result.session.expiresAt, signedInAt: new Date().toISOString() });
+    notify();
+    return true;
+  } catch { return false; }
+}
+
 /* ── the three verbs ───────────────────────────────────────────────────── */
 
 function storePass(
@@ -255,7 +270,8 @@ function storePass(
 ): AuthResult<GateAccount> {
   const account = toGateAccount(login.account);
   const pass: ServerPass = {
-    token: login.token,
+    token: serverId === LOCAL_SERVER_ID ? '' : login.token,
+    ...(serverId === LOCAL_SERVER_ID ? { transport: 'cookie' as const } : {}),
     account,
     sessionId: login.session.sessionId,
     expiresAt: login.session.expiresAt,

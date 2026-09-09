@@ -1649,7 +1649,7 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
  * problem, and re-reading afterwards means the client sees the session as it
  * finally IS (status `running`) rather than mid-flight (`spawning`).
  */
-async function assembleCommandResult(
+export async function assembleCommandResult(
   db: Db,
   claims: DbClaims,
   raw: unknown,
@@ -1682,7 +1682,7 @@ async function assembleCommandResult(
  * two tasks for it. The array is a handful of ids; the round trips are cheap
  * next to the process spawn that follows.
  */
-async function resolveAssignmentAnchors(
+export async function resolveAssignmentAnchors(
   db: Db,
   claims: DbClaims,
   spaceId: string,

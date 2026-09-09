@@ -17,6 +17,7 @@ const SERVER_FILES = {
   facade: join(repositoryRoot, 'packages/server/src/facade/index.ts'),
   execution: join(repositoryRoot, 'packages/server/src/facade/execution-handlers.ts'),
   events: join(repositoryRoot, 'packages/server/src/events/handlers.ts'),
+  workspaces: join(repositoryRoot, 'packages/server/src/workspaces/handlers.ts'),
   inputSchemas: join(repositoryRoot, 'packages/server/src/facade/input-schemas.ts'),
 } as const;
 
@@ -24,6 +25,7 @@ export interface HandlerSourceInventory {
   readonly facade: readonly OperationName[];
   readonly execution: readonly OperationName[];
   readonly events: readonly OperationName[];
+  readonly workspaces: readonly OperationName[];
   readonly all: readonly OperationName[];
 }
 
@@ -226,14 +228,15 @@ function ensureUnique(names: readonly OperationName[], context: string): void {
 }
 
 export async function readHandlerSourceInventory(): Promise<HandlerSourceInventory> {
-  const [facade, execution, events] = await Promise.all([
+  const [facade, execution, events, workspaces] = await Promise.all([
     facadeRegisteredOperations(),
     registeredOperations(SERVER_FILES.execution),
     registeredOperations(SERVER_FILES.events),
+    registeredOperations(SERVER_FILES.workspaces),
   ]);
-  const all = [...facade, ...execution, ...events];
+  const all = [...facade, ...execution, ...events, ...workspaces];
   ensureUnique(all, 'semantic handler registry');
-  return { facade, execution, events, all: [...all].sort() };
+  return { facade, execution, events, workspaces, all: [...all].sort() };
 }
 
 function findVariable(source: ts.SourceFile, name: string): ts.Expression {

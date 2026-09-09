@@ -13,6 +13,7 @@
     "@tm8/execution": "workspace:*",
     "@tm8/prompt": "workspace:*",
     "pg": "^8.22.0",
+    "ws": "^8.18.0",
     "zod": "^3.23.0",
     "@tm8/mcp": "workspace:*"
   },
@@ -20,6 +21,7 @@
     "typescript": "^5.5.0",
     "vitest": "^2.0.0",
     "@types/node": "^20.14.0",
+    "@types/ws": "^8.18.0",
     "@types/pg": "^8.20.0"
   }
 }

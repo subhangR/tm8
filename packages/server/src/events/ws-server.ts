@@ -191,14 +191,37 @@ export function createWsServer(opts: WsServerOptions = {}): WsServer {
     });
 
     registry.add(conn);
+    let checkingIdentity = false;
+    const identityTimer = opts.authorize ? setInterval(() => {
+      if (checkingIdentity) return;
+      checkingIdentity = true;
+      void Promise.resolve().then(() => opts.authorize!(req)).then(current => {
+        if (current.identityId !== identity.identityId || current.sessionId !== identity.sessionId) conn.close(1008, 'Authorization changed');
+      }).catch(() => conn.close(1008, 'Authorization expired')).finally(() => { checkingIdentity = false; });
+    }, 1000) : undefined;
+    identityTimer?.unref();
     conn.onClose(() => {
+      if (identityTimer) clearInterval(identityTimer);
       lease.release();
       registry.remove(conn.id);
       opts.onDisconnect?.(conn.id);
     });
     if (opts.onClientMessage !== undefined) {
       const handler = opts.onClientMessage;
-      conn.onMessage((text) => handler(conn, text));
+      let pending = Promise.resolve(), queued = 0;
+      conn.onMessage((text) => {
+        if (!opts.authorize) { handler(conn, text); return; }
+        queued += Buffer.byteLength(text);
+        if (queued > 1024 * 1024) { conn.close(1008, 'Too many pending messages'); return; }
+        pending = pending.then(async () => {
+          if (!conn.isOpen) return;
+          if (opts.authorize) {
+            const current = await opts.authorize(req);
+            if (current.identityId !== identity.identityId || current.sessionId !== identity.sessionId) throw new Error('Identity changed');
+          }
+          if (conn.isOpen) await handler(conn, text);
+        }).catch(() => conn.close(1008, 'Authorization expired')).finally(() => { queued -= Buffer.byteLength(text); });
+      });
     }
     opts.onConnection?.(conn);
 

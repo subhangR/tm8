@@ -24,6 +24,9 @@ const RESERVED = new Set<string>(RESERVED_OPERATIONS.map((op) => op.name));
 
 export class HandlerRegistry {
   private readonly handlers = new Map<OperationName, OperationHandler>();
+  private boundary?: (name: OperationName) => void;
+
+  setBoundary(boundary: (name: OperationName) => void): void { this.boundary = boundary; }
 
   /**
    * Bind an implementation to a catalog operation.
@@ -61,11 +64,20 @@ export class HandlerRegistry {
   }
 
   get(name: OperationName): OperationHandler | undefined {
-    return this.handlers.get(name);
+    const handler = this.handlers.get(name);
+    if (!handler || !this.boundary) return handler;
+    return ctx => { this.boundary!(name); return handler(ctx); };
   }
 
   has(name: OperationName): boolean {
     return this.handlers.has(name);
+  }
+
+  /** Add deployment-specific behavior around an already registered operation. */
+  decorate(name: OperationName, wrap: (handler: OperationHandler) => OperationHandler): void {
+    const handler = this.handlers.get(name);
+    if (!handler) throw new Error(`cannot decorate missing operation ${name}`);
+    this.handlers.set(name, wrap(handler));
   }
 
   /** Operations with a handler — the honest answer to "what does this node do?". */

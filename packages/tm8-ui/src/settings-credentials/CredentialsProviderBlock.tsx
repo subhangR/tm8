@@ -12,6 +12,7 @@ import type {
   CredentialsStatusView,
 } from '@tm8/contract';
 import { LiveTerminal, TerminalHost, isLiveTerminalEnabled } from '../terminal';
+import { PrivateTerminal } from '../workspaces/PrivateTerminal';
 import { presentationOf } from './provider-presentation';
 import {
   disconnectVerdictOf,
@@ -33,6 +34,7 @@ interface PendingLogin {
   workSessionId: string;
   expiresAt: string;
   command: string;
+  socketPath?: string;
 }
 
 /** The last thing a write said, kept so the answer is never silently dropped. */
@@ -85,6 +87,7 @@ export function CredentialsProviderBlock({
         workSessionId: started.workSessionId,
         expiresAt: started.expiresAt,
         command: started.command,
+        socketPath: started.socketPath,
       });
     } catch (err) {
       setOutcome({ kind: 'error', provider, message: messageOf(err) });
@@ -111,6 +114,7 @@ export function CredentialsProviderBlock({
     setBusy(provider);
     try {
       const result = await port.disconnect(provider);
+      if (pending?.socketPath || pending?.provider === provider) setPending(null);
       setOutcome({ kind: 'disconnect', provider, result });
       await reload();
     } catch (err) {
@@ -123,9 +127,13 @@ export function CredentialsProviderBlock({
   return (
     <div className="cred-block" data-testid="credentials-provider-block">
       <p className="cred-intro">
-        Sign in once to let agents you launch use your account. These credentials are yours;
-        nobody else in this space can read or use them. Connecting opens a real terminal here.
+        Sign in to your coding tools. Each connection belongs to your account;
+        nobody else in this space can read or use it. Connecting opens a terminal here.
       </p>
+
+      {status?.runtime === 'workspace' ? <p className="cred-intro">
+        Connections are saved in your private workspace. Disconnecting closes its running terminals and tools; your files are preserved.
+      </p> : null}
 
       {loadError ? (
         <div className="cred-notice" data-testid="credentials-load-error">
@@ -161,7 +169,7 @@ export function CredentialsProviderBlock({
               key={entry.provider}
               entry={entry}
               gitCredentialStore={status.gitCredentialStore}
-              busy={busy === entry.provider}
+              busy={busy !== null || pending !== null}
               onConnect={() => void connect(entry.provider)}
               onDisconnect={() => void disconnect(entry.provider)}
             />
@@ -390,8 +398,15 @@ function LoginTerminalPanel({
       <span className="cred-notice__why" data-testid="credential-login-expiry">
         {`This terminal runs \`${login.command}\` and expires at ${login.expiresAt}.`}
       </span>
+      {login.socketPath ? <p className="cred-notice__why">
+        {login.provider === 'openai'
+          ? 'Open the link shown below and enter the device code. If device login is disabled, enable it in your ChatGPT security settings first.'
+          : 'Open the sign-in link shown below. After authorizing Claude Code, paste the returned code into this terminal if prompted.'}
+      </p> : null}
 
-      {isLiveTerminalEnabled() ? (
+      {login.socketPath ? (
+        <PrivateTerminal socketPath={login.socketPath} serverBaseUrl={serverBaseUrl} ariaLabel={`${provider.name} login terminal`} />
+      ) : isLiveTerminalEnabled() ? (
         <LiveTerminal
           sessionId={login.workSessionId}
           serverBaseUrl={serverBaseUrl}

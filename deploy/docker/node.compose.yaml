@@ -1,0 +1,10 @@
+# Add after compose.yaml and workspaces.compose.yaml for a registered node.
+services:
+  tm8:
+    environment:
+      TM8_DISTRIBUTED_SYSTEM_FLAG: "true"
+      TM8_SERVICE_ROLE: node
+      TM8_MACHINE_ID: "${TM8_MACHINE_ID:?Register this machine in the control app}"
+      TM8_MACHINE_CREDENTIAL: "${TM8_MACHINE_CREDENTIAL:?Use the one-time enrollment credential}"
+      TM8_CONTROL_ORIGIN: "${TM8_CONTROL_ORIGIN:?Set the central HTTPS origin}"
+      TM8_PUBLIC_ORIGIN: "${TM8_PUBLIC_ORIGIN:?Use the registered node HTTPS origin}"

@@ -13,11 +13,12 @@ import './servers/server.css';
 import './transfer/transfer.css';
 import './join/join.css';
 import { App } from './App';
+import { DeploymentGate } from './workspaces/DeploymentGate';
 import { registerServiceWorker } from './pwa/register';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <DeploymentGate><App /></DeploymentGate>
   </React.StrictMode>,
 );
 

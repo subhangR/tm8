@@ -10,12 +10,10 @@
  * caller exports `TM8_AGENT_TOKEN`); this file is the browser's answer to the
  * same problem and shares no storage with the CLI's.
  *
- * WHAT IS STORED: the pass, and the account the server said it belongs to.
- * NEVER the password — the server holds a scrypt hash and this browser holds
- * nothing derivable from it. localStorage is readable by anyone with this
- * browser profile, which is the same trust boundary a session cookie would
- * occupy; the pass is revocable server-side (`auth.logout`), which the old
- * local-account record never was.
+ * Local sessions store only account/session metadata and a cookie transport
+ * marker. Their credential stays in a host-only HttpOnly cookie. Legacy named
+ * server connections still use their existing bearer transport. Passwords are
+ * never stored here; all sessions remain revocable server-side.
  *
  * TWO RECORDS PER SERVER, NOT ONE — the pass and the known-accounts list are
  * separate, and it matters exactly as it did for the localStorage gate this
@@ -50,6 +48,7 @@ export interface GateAccount {
 }
 
 export interface ServerPass {
+  transport?: 'cookie';
   /** `tm8s_<sessionId>.<secret>` — shown by the server exactly once. */
   token: string;
   account: GateAccount;
@@ -130,7 +129,7 @@ function isPass(p: unknown): p is ServerPass {
   return (
     !!r &&
     typeof r.token === 'string' &&
-    r.token.length > 0 &&
+    (r.token.length > 0 || r.transport === 'cookie') &&
     !!r.account &&
     typeof r.account.handle === 'string'
   );

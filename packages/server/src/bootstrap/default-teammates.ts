@@ -32,6 +32,7 @@ export interface DefaultTeammateResult {
 export async function ensureDefaultTeammates(
   q: Querier,
   spaceId: string,
+  options: { automations?: boolean } = {},
 ): Promise<DefaultTeammateResult> {
   const rows = await q.query<TeammateRow>(
     `select entity_row.id::text id, entity_row.version, teammate.name,
@@ -81,6 +82,8 @@ export async function ensureDefaultTeammates(
       updated += 1;
     }
   }
+
+  if (options.automations === false) return { created, updated };
 
   // The Dreamer (D7/D8) — a worker teammate, not a fifth mode. Everything it
   // does is an ordinary graph write an ordinary worker can make; what makes it

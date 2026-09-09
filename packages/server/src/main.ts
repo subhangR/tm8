@@ -14,6 +14,7 @@ import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
+import { ensureDefaultTeammates } from './bootstrap/default-teammates.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
@@ -43,6 +44,11 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
+import { WorkspaceService } from './workspaces/service.js';
+import { NodeControlClient } from './workspaces/control-client.js';
+import { registerWorkspaceHandlers, workspaceBoundary } from './workspaces/handlers.js';
+import { createWorkspaceTerminal, isWorkspaceTerminal } from './workspaces/terminal.js';
+import { LocalGithubAuth } from './workspaces/github-auth.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import {
   dispatchSessionMessages,
@@ -199,7 +205,25 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
   const dataDir = config.dataDir ?? resolveServerDataDir();
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
-  const owner = db ? createLoopbackOwnerResolver(db) : undefined;
+  // Central nodes have no local owner account. This legacy fallback argument
+  // is never used for authority: every request must carry a verified bearer.
+  const owner = db ? config.workspace?.capabilities.distributedSystemFlag
+    ? async () => ({ identityId: `node:${config.workspace!.machineId}`, accountId: config.workspace!.machineId!, username: 'tm8', isNodeAdmin: false, isOwner: false })
+    : createLoopbackOwnerResolver(db) : undefined;
+  const isolated = config.workspace?.isolation === true;
+  const nodeControl = db && config.workspace?.capabilities.distributedSystemFlag
+    ? new NodeControlClient(config.workspace, db) : undefined;
+  if (nodeControl) await nodeControl.start();
+  const githubOptions = config.workspace?.github;
+  const localGithub = db && githubOptions && config.workspace?.enrollmentDatabaseUrl
+    ? new LocalGithubAuth(githubOptions.clientId, githubOptions.clientSecret, githubOptions.origin, config.workspace.enrollmentDatabaseUrl) : undefined;
+  const workspaceService = db && owner && config.workspace
+    ? new WorkspaceService({ db, config, owner }, config.workspace) : undefined;
+  if (db && owner && isolated && config.workspace?.machineId && !nodeControl) {
+    const nodeOwner = await owner();
+    await db.rpc({ identityId: nodeOwner.identityId, nodeAdmin: nodeOwner.isNodeAdmin, authKind: 'browser' },
+      'configure_workspace_limits', [config.workspace.machineId, config.workspace.capabilities.maxUsersPerMachine, JSON.stringify(config.workspace.limits)]);
+  }
   const blobStore = db ? createW2BlobStore({ dataDir, maxSizeBytes: fileMaxSizeBytes }) : undefined;
   // Node-local by construction: the directory hangs off THIS node's dataDir, so
   // a path minted here is only ever handed to a PTY this node owns.
@@ -218,7 +242,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * `http/identity-resolver.ts` so a test can reach it; this is the wiring.
    */
   const identityResolver: IdentityResolver | undefined = db
-    ? createSessionIdentityResolver({ db, owner: owner! })
+    ? createSessionIdentityResolver({ db, owner: owner!, ...(nodeControl ? { authorizeSession: identity => nodeControl.authorize(identity) } : {}) })
     : undefined;
 
   /**
@@ -235,7 +259,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * compounds. Hence `createExecutionRuntime` rather than a symmetrical
    * `registerExecutionHandlers` here.
    */
-  const execution = db ? createExecutionRuntime({ db, config, dataDir, owner }) : undefined;
+  const execution = db && !isolated ? createExecutionRuntime({ db, config, dataDir, owner }) : undefined;
 
   if (db && config.launchBootstrap) {
     const seeded = await ensureLaunchResources({
@@ -251,6 +275,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
   }
 
+  if (db && owner && isolated) {
+    const nodeOwner = await owner();
+    const claims = { identityId: nodeOwner.identityId, authKind: 'browser' };
+    const spaces = await db.query<{ id: string }>(claims,
+      "select s.id from public.spaces s join public.members m on m.space_id=s.id where m.identity_id=$1 and m.role in ('owner','admin')", [nodeOwner.identityId]);
+    for (const space of spaces) {
+      await db.tx(claims, q => ensureDefaultTeammates(q, space.id, { automations: false }));
+    }
+  }
+
   // Ephemeral presence (DEV-4): in-process, no table, dies with the process.
   // Declared before the registration block because `presence.get` is only
   // mounted when a presence source exists — see registerEventHandlers.
@@ -259,7 +293,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Factory callers get the composed context; block callers pass through
   // unchanged (every test harness injects the block form directly).
   const chatBlock: ChatBootstrapOptions | undefined =
-    db && opts.chat
+    db && opts.chat && !isolated
       ? typeof opts.chat === 'function'
         ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}` })
         : opts.chat
@@ -365,6 +399,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       registry,
       delivery ? { dispatchDelivery: delivery.messageDelivery } : {},
     );
+    if (workspaceService) registerWorkspaceHandlers(registry, workspaceService, nodeControl, localGithub);
+    registry.setBoundary(op => workspaceBoundary(op, isolated, config.workspace?.capabilities.distributedSystemFlag === true));
   }
 
   // NOT a stand-in for the durable sequence — that misreading is why this
@@ -385,6 +421,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     if (!identity.identityId || identity.kind === 'anonymous') {
       throw new CollabError('unauthenticated', 'authentication is required');
     }
+    await nodeControl?.authorize(identity);
     return { identityId: identity.identityId, nodeAdmin: identity.nodeAdmin === true };
   };
 
@@ -509,7 +546,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         logger: ptyAuditLogger,
       })
     : undefined;
-  const upgrades: UpgradeTarget = ptyWs
+  const legacyUpgrades: UpgradeTarget = ptyWs
     ? {
         handleUpgrade: (req, socket, head) =>
           isPtyUpgrade(req)
@@ -521,6 +558,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }
     : ws;
+  const workspaceTerminals = workspaceService && isolated ? createWorkspaceTerminal(workspaceService, resolveSocketIdentity) : undefined;
+  const upgrades: UpgradeTarget = {
+    handleUpgrade: (req, socket, head) => workspaceTerminals && isWorkspaceTerminal(req)
+      ? workspaceTerminals.handleUpgrade(req, socket, head) : legacyUpgrades.handleUpgrade(req, socket, head),
+    closeAll: () => { workspaceTerminals?.closeAll?.(); legacyUpgrades.closeAll?.(); },
+  };
 
   const rawUpload = db && blobStore
     ? createW2FileUploadRoute({ deps: { db, config, owner: owner! }, blobStore })
@@ -530,7 +573,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ? createClipboardUploadRoute({ deps: { db, config, owner: owner! }, store: clipboardStore })
     : undefined;
 
-  const remoteServerProxy = db && owner
+  const remoteServerProxy = db && owner && !isolated
     ? createRemoteServerProxy(async (name) => {
         const nodeOwner = await owner();
         const rows = await db.query<{ base_url: string }>(
@@ -634,6 +677,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       : {}),
   });
 
+  if (isolated) workspaceService?.execution.start();
+  if (nodeControl || localGithub || (workspaceService && isolated)) {
+    const close = server.close.bind(server);
+    server.close = async () => { workspaceService?.execution.close(); await nodeControl?.close(); await localGithub?.close(); await close(); };
+  }
+
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is
@@ -717,7 +766,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * The scheduler's timers are `unref`'d, so it cannot by itself keep the
    * process alive and shutdown needs no new coordination.
    */
-  if (db && owner && opts.startBackgroundJobs === true) {
+  if (db && owner && opts.startBackgroundJobs === true && !isolated) {
     // Loops (§4.4) join the same runner when this node has an execution block.
     // NO SIDECAR IS PASSED, deliberately: attaching one would register the
     // daily `pg_dump` and silently begin taking backups on nodes that have
@@ -881,7 +930,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // can actually click. A node with no credential on it cannot be signed into
   // at all, and its own output is the only channel to the person who just
   // installed it — see identity/node-claim-boot.ts.
-  if (db) {
+  if (db && !nodeControl) {
     await announceNodeClaim({
       db,
       dataDir,

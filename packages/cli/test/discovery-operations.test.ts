@@ -67,7 +67,8 @@ import { createOutput } from '../src/output.js';
 // containers.stream and containers.proxy — are deliberately commandless, which
 // is why the commandless subtraction below moves 25 -> 27. MEASURED on this
 // tree, not carried from the design.
-const EXPECTED_ROWS = 197;
+// Twenty workspace/deployment/auth operations added by the isolation migration.
+const EXPECTED_ROWS = 217;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -181,7 +182,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    expect(histogram).toEqual({ public: 193, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 213, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -195,6 +196,9 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
  * With the count derived, that whole class of drift cannot recur.
  */
 const COMMANDLESS_OPERATIONS = [
+      'auth.github.callback',
+      'auth.github.start',
+      'auth.handoff',
       'bridge.fetchBlob',
       // `chat.start` LEFT this set in Wave 2's CLI lane: it is `tm8 chat start`
       // now. It was here because chat v1 exposed the composer only, and the

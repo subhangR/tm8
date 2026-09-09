@@ -1759,6 +1759,7 @@ export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView>
 }).strict();
 
 export const CredentialsStatusViewSchema: z.ZodType<CredentialsStatusView> = z.object({
+  runtime: z.literal('workspace').optional(),
   providers: z.array(CredentialConnectionViewSchema),
   // The honest-degradation field. `absent` means the github entry's `connected`
   // is UNKNOWN, not measured false — 079 ships on the deployed staging line and
@@ -1818,6 +1819,7 @@ export const CredentialsLoginSessionStartResultSchema:
     provider: CredentialProviderNameSchema,
     expiresAt: IsoTimestamp,
     command: z.string().min(1),
+    socketPath: z.string().regex(/^\/v2\/workspaces\/terminals\/[0-9a-f-]+\/ws$/).optional(),
   }).strict();
 
 export const CredentialsLoginSessionFinishInputSchema:

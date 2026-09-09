@@ -144,7 +144,7 @@ export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise
   const claimUrl = `${opts.url.replace(/\/$/, '')}/#claim=${encodeURIComponent(token)}`;
   log('');
   log('  ┌─ THIS NODE IS UNCLAIMED ─────────────────────────────────────────');
-  log('  │  No account here has a password yet, so nobody can sign in.');
+  log('  │  Complete initial setup with your GitHub account.');
   log('  │  Claim it — from this machine or any other — at:');
   log('  │');
   log(`  │    ${claimUrl}`);

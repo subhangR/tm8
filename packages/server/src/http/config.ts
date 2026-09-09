@@ -16,8 +16,10 @@ import {
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
+import { loadWorkspaceConfiguration, type WorkspaceConfiguration } from '../workspaces/config.js';
 
 export interface ServerConfig {
+  readonly workspace?: WorkspaceConfiguration;
   /** Bind address. Loopback only — see S1 above. */
   readonly host: string;
   readonly port: number;
@@ -530,7 +532,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     CLIPBOARD_RETENTION_DAYS_DEFAULT,
   );
 
+  const workspace = loadWorkspaceConfiguration(env);
+  if (workspace.capabilities.role === 'control') throw new Error('Run apps/control-plane for the control role');
   return {
+    workspace,
     host,
     port,
     extraAllowedHostnames,
@@ -545,19 +550,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     clipboardDir,
     clipboardMaxBytes,
     clipboardRetentionDays,
-    launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
+    launchBootstrap: !workspace.isolation && env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
     containers,
     nodeMode,
     ...(publicOrigin ? { publicOrigin } : {}),
-    // `multi` implies the kill switch. The explicit env var still wins when it
-    // asks for MORE restriction (a hardened single-player node), and can never
-    // ask for less: `||` here means no combination of the two can produce a
-    // multiplayer node with a live auto-owner arm.
-    disableAutoOwner:
-      nodeMode === 'multi'
-      || envBoolean(env.TM8_DISABLE_AUTO_OWNER, 'TM8_DISABLE_AUTO_OWNER', false),
+    // GitHub proves every new user login, including local loopback access.
+    disableAutoOwner: true,
     authRateLimits: {
       // Non-negative, not positive: 0 is the documented "disable this
       // dimension" value and must not be rejected as garbage.

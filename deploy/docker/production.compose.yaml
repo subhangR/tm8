@@ -1,0 +1,20 @@
+# Add last. Build the server and product UI in the development container first.
+services:
+  tm8:
+    entrypoint: [bash, deploy/docker/production.sh]
+    environment:
+      TM8_ENV: prod
+      TM8_NODE_MODE: multi
+      TM8_UI_DIR: /workspace/tm8/packages/tm8-ui/dist
+      TM8_PREVIEW_ENABLED: "0"
+      TM8_PUBLIC_ORIGIN: "${TM8_PUBLIC_ORIGIN:?Set the published HTTPS origin}"
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace/tm8
+        read_only: true

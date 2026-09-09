@@ -39,6 +39,7 @@ import type {
   CredentialsStatusView,
 } from '@tm8/contract';
 import { LiveTerminal, TerminalHost, isLiveTerminalEnabled } from '../terminal';
+import { PrivateTerminal } from '../workspaces/PrivateTerminal';
 import { presentationOf } from './provider-presentation';
 import type { CredentialsPort } from './port';
 import {
@@ -72,6 +73,7 @@ type Stage =
       workSessionId: string;
       command: string;
       expiresAt: string;
+      socketPath?: string;
     }
   | { kind: 'done' };
 
@@ -171,10 +173,12 @@ export function CredentialsSetupDialog({
     setTerminalOpen(false);
     try {
       const started = await port.startLogin(provider);
+      setTerminalOpen(!!started.socketPath);
       setStage({
         kind: 'connecting',
         provider,
         workSessionId: started.workSessionId,
+        socketPath: started.socketPath,
         command: started.command,
         expiresAt: started.expiresAt,
       });
@@ -273,6 +277,7 @@ export function CredentialsSetupDialog({
             headingId={headingId}
             provider={stage.provider}
             workSessionId={stage.workSessionId}
+            socketPath={stage.socketPath}
             command={stage.command}
             expiresAt={stage.expiresAt}
             serverBaseUrl={serverBaseUrl}
@@ -281,7 +286,7 @@ export function CredentialsSetupDialog({
             terminalOpen={terminalOpen}
             onToggleTerminal={() => setTerminalOpen((v) => !v)}
             onFinish={() => void finishLogin(stage.workSessionId)}
-            onCancel={() => setStage({ kind: 'picking' })}
+            onCancel={() => stage.socketPath ? void finishLogin(stage.workSessionId) : setStage({ kind: 'picking' })}
           />
         ) : null}
 
@@ -449,6 +454,7 @@ function ConnectPane({
   headingId,
   provider,
   workSessionId,
+  socketPath,
   command,
   expiresAt,
   serverBaseUrl,
@@ -462,6 +468,7 @@ function ConnectPane({
   headingId: string;
   provider: CredentialProviderName;
   workSessionId: string;
+  socketPath?: string;
   command: string;
   expiresAt: string;
   serverBaseUrl?: string;
@@ -517,7 +524,9 @@ function ConnectPane({
               This runs <code>{command}</code> on this node, and expires at {expiresAt}. You can
               type into it.
             </p>
-            {isLiveTerminalEnabled() ? (
+            {socketPath ? (
+              <PrivateTerminal socketPath={socketPath} serverBaseUrl={serverBaseUrl} ariaLabel={`${presentation.name} login terminal`} />
+            ) : isLiveTerminalEnabled() ? (
               <LiveTerminal
                 sessionId={workSessionId}
                 serverBaseUrl={serverBaseUrl}

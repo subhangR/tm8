@@ -72,6 +72,9 @@ export const DEFAULT_AUTH_RATE_LIMITS: AuthRateLimits = {
  */
 export const RATE_LIMITED_AUTH_OPS: ReadonlySet<string> = new Set([
   'auth.login',
+  'auth.handoff',
+  'auth.github.start',
+  'auth.github.callback',
   'auth.signup',
   'auth.password.change',
   'auth.claim',

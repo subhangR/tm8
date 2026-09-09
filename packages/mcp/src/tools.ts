@@ -72,6 +72,10 @@ interface OperationGuide {
 }
 
 const READ_GUIDES = [
+  guide('workspaces.me', 'Read your private workspace and provisioning status.', {}),
+  guide('deployment.capabilities', 'Read standalone/distributed mode and workspace capabilities.', {}),
+  guide('workspaces.files.list', 'List files in your private project checkout.', { params: { projectId: '<project-id>' }, query: { path: '' } }),
+  guide('workspaces.files.read', 'Read a private checkout file (base64 content).', { params: { projectId: '<project-id>' }, query: { path: 'README.md' } }),
   guide('entities.context', 'Bounded orientation read with hierarchy, recent messages and allowed actions.', {
     params: { id: '<entity-id>' },
     query: { sections: 'summary,hierarchy,connections,messages,actions' },
@@ -101,6 +105,14 @@ const READ_GUIDES = [
 ] as const satisfies readonly OperationGuide[];
 
 const ACT_GUIDES = [
+  guide('workspaces.ensure', 'Provision or retry your private Ubuntu workspace.', { body: {} }),
+  guide('workspaces.projects.create', 'Create a Git-backed project in a space and your private checkout.', { body: { spaceId: '<space-id>', name: 'My project', source: { kind: 'init' }, clientMutationId: '<unique-mutation-id>' } }),
+  guide('workspaces.projects.checkout', 'Create your private checkout of an existing shared project.', { params: { projectId: '<project-id>' }, body: {} }),
+  guide('workspaces.files.write', 'Write base64 file content into your private checkout.', { params: { projectId: '<project-id>' }, body: { path: 'README.md', content: '<base64-content>' } }),
+  guide('workspaces.git', 'Status, fetch, fast-forward pull or push via tm8 or origin.', { body: { projectId: '<project-id>', action: 'status', remote: 'tm8' } }),
+  guide('workspaces.git.commit', 'Commit all current changes in your private checkout.', { params: { projectId: '<project-id>' }, body: { message: 'Describe changes' } }),
+  guide('workspaces.git.connect', 'Set the private checkout HTTPS GitHub origin.', { params: { projectId: '<project-id>' }, body: { url: 'https://github.com/owner/repository.git' } }),
+  guide('workspaces.terminal.start', 'Start a terminal in your private Ubuntu workspace.', { body: { projectId: '<project-id>' } }),
   /* `parentId` is advertised DELIBERATELY, and its absence was a real defect.
      The field has always been accepted (`CreateEntityInput`), but a template
      that never showed it is a field the model never sets — so every entity a

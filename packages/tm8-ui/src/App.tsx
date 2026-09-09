@@ -3,6 +3,8 @@ import { AuthGate } from './auth';
 import { JoinBanner, capturePendingJoin } from './join';
 import { GateApp } from './views/GateApp';
 import { useServerRegistry } from './servers';
+import { WorkspacePanel } from './workspaces/WorkspacePanel';
+import { GithubSignInScreen } from './workspaces/GithubSignIn';
 
 /**
  * THE GATE (R5): the complete T0-1 master screen, interactive on fixtures, in
@@ -45,10 +47,12 @@ export function App() {
    * `JoinBanner` for why the banner reads nothing.
    */
   const [pendingJoin] = useState<string | null>(() => capturePendingJoin());
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
 
   return (
-    <AuthGate signedOutBanner={<JoinBanner pending={pendingJoin !== null} />}>
-      <ConnectedGateApp pendingJoin={pendingJoin} />
+    <AuthGate signedOutBanner={<JoinBanner pending={pendingJoin !== null} />} signedOutContent={<GithubSignInScreen invitationCode={pendingJoin} />}>
+      <WorkspacePanel onGraphChanged={() => setWorkspaceRevision(value => value + 1)} />
+      <ConnectedGateApp key={workspaceRevision} pendingJoin={pendingJoin} />
     </AuthGate>
   );
 }
