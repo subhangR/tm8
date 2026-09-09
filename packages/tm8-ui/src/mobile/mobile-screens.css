@@ -611,9 +611,18 @@
    inset, the status column and the flex gap, each named where it is defined.
    `--tt-indent` stays in the sum because a nested row's whole anatomy shifts
    with it and the badge line has to shift too.
+
+   `--tt-status-margin` is the seam between the mark and the title, defined on
+   `.pn-tt` in `maestro-task-tile.css`. §7f overrides this column's SIZE and
+   not its margin, so the margin applies here exactly as it does on the
+   desktop and this sum owes it a term. It is read as a variable rather than
+   copied as a number because this rule is derived — a search for the literal
+   would never have found it.
    ========================================================================== */
 .cv2-root[data-shell='mobile'] .pn-tt__badges {
-  padding-inline-start: calc(7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + 6px);
+  padding-inline-start: calc(
+    7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + var(--tt-status-margin, 0px) + 6px
+  );
 }
 
 

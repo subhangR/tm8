@@ -47,6 +47,63 @@
 }
 /* Streaming keeps the dot steady and pings a halo off it, so "alive" is
    legible without the mark itself blinking out of the row. */
+/* THE STATUS SLOT CONTAINS ITS MARK, EVEN WHEN THE MARK IS REFUSED.
+
+   When the state control has no backend or no permission it renders as
+   `DisabledWithReason`, whose tooltip form carries `padding: 3px 6px`
+   (`honesty/honesty.css`). Inside a fixed 16px grid cell that padding does not
+   pad — it OVERFLOWS: mark + 12px of padding, centred in 16px, hangs out both
+   sides and drags the mark off the column every other row lines up on.
+
+   PRE-EXISTING, AND THIS CHANGE MADE IT WORSE, which is why it is fixed here
+   rather than filed. At 8px the box was 20px in a 16px cell — 2px out each
+   side, small enough to read as antialiasing. At 11px it is 23px — 3.5px out
+   each side, which reads as a misaligned row.
+
+   The padding is a hit area, and this is the one place it buys nothing: the
+   control is DISABLED, so there is nothing to hit, and the live path's target
+   is `.lp__statedot`'s own 24px inset — not this. Scoped to the slot, so the
+   tooltip form keeps its padding everywhere it is a real trigger. */
+.cv2-root .pn-tt__status .hon-disabled--tooltip {
+  padding: 0;
+}
+
+/* THE TO-DO RING IS A TARGET, NOT A BULLET.
+
+   8px was a hairline, and it is the primary action on every task row: the
+   thing you click to say a task is done. The audit measured it at 1.70:1
+   against the row; the colour fix above answers the contrast, this answers
+   the SIZE. 11px is the midpoint of the 8px that shipped and the 14px first
+   proposed: 14 cleared the target argument but filled its 16px slot almost to
+   the edge, leaving the ring reading as though it touched the title. 11 keeps
+   the checkbox reading and gives the halo back.
+
+   SCOPED TO `.pn-tt__status`, AND THE SCOPE IS THE WHOLE POINT. `.pn-stat` is
+   shared with `MaestroSessionTile` and `PanelStates`; sizing the shared rule
+   would move marks on two surfaces that never asked for it. This is the task
+   row's own slot and nothing else mounts it.
+
+   NO ROW GROWS. `.pn-stat` keeps its 16px box and `place-items: center`, so an
+   11px ring is drawn INSIDE the slot that already exists — the objection to
+   14px was that it would change row height in three tile types, and scoping
+   plus staying under the 16px box is what removes it. `--pn-listrow-h` is
+   untouched and so is every `@container` rung below.
+
+   HOLLOW ONLY, deliberately. Hollow means "not done yet" — you aim at it.
+   Solid means the state is settled — you read it, and a filled disc this size
+   would be the loudest object in the row for a mark nobody needs to hit. The
+   two sizes in one column are a hierarchy, not an inconsistency: big ring =
+   open and actionable, small dot = decided.
+
+   `--streaming`'s ping is left at 8px on purpose. It starts inside the ring
+   and expands to 2.2x (17.6px), crossing it and fading — a pulse emanating
+   from the mark. Sized to 14px it would reach 30.8px and be clipped by
+   `.pn-tt`'s `overflow: hidden` in a 29px row. */
+.cv2-root .pn-tt__status .pn-stat--hollow .pn-stat__dot {
+  width: 11px;
+  height: 11px;
+}
+
 .cv2-root .pn-stat--streaming::after {
   content: '';
   position: absolute;
@@ -142,6 +199,12 @@
    session row that was not. */
 .cv2-root .pn-tt {
   --tt-indent: 0px;
+  /* THE SEAM BETWEEN THE STATUS MARK AND THE TITLE. A token, not a literal,
+     because FOUR rules have to agree on it: the margin itself, the desktop
+     badge and meta indents, and the phone's own badge indent in
+     `mobile-screens.css`. It was three literals for a while and the phone one
+     was derived, so a grep for the number could not find it. */
+  --tt-status-margin: 2px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -266,6 +329,22 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
+  /* AIR AT THE ONE SEAM THAT LOST IT. A bigger ring eats its own halo: at 8px
+     the clear space to the title was (16-8)/2 + the row gap; at 11px the halo
+     alone drops 1.5px. This buys it back HERE rather than on `.pn-tt__main`'s
+     `gap`, which also spaces title, metas, badges and the action cluster — one
+     pixel at the ring would have cost a pixel everywhere.
+
+     IT MOVES THE TITLE, SO IT MOVES THE INDENT. `.pn-tt__badges` and
+     `.pn-tt__meta` are indented to the title start — at the base rule, at the
+     480px rung, at the 360px rung, and again in the PHONE's own derived rule
+     in `mobile-screens.css`. SEVEN sites, and the sum is a different NUMBER at
+     each rung because the row inset and gap change with it, which is why
+     hunting any one literal finds only some of them. They all read this token.
+
+     That there are seven is the argument for deriving the title start once,
+     which is real work and deliberately not in this change. */
+  margin-inline-end: var(--tt-status-margin);
 }
 /* THE STATUS COLUMN IS 16px, WHATEVER IS IN IT. The mark is a live control, so
    while `capabilitiesOf(row.id)` is undefined it renders `CheckingPermission`,
@@ -337,8 +416,10 @@
    and session row-height parity stays untouched. */
 .cv2-root .pn-tt__badges {
   min-width: 0;
-  /* 7px row inset + 16px status mark + 6px gap = title start. */
-  padding: 0 8px 5px 29px;
+  /* Row inset + status mark + status margin + row gap = title start. Written
+     as the sum, not as 31px, so it cannot drift from the parts it is made of
+     the way the old hard-coded 29px did. */
+  padding: 0 8px 5px calc(7px + 16px + var(--tt-status-margin) + 6px);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -569,14 +650,16 @@
 .cv2-root .pn-tt__ind--open svg { transform: rotate(180deg); }
 
 /* Expanded facts hang off the STATUS column, not the tile edge: 9px row pad +
-   16px caret + 8px gap. The chips therefore start on the same vertical as the
+   16px caret + 8px gap. The leading sum is the title start (see
+   `.pn-tt__badges`), restated from the same parts rather than repeated.
+   The chips therefore start on the same vertical as the
    dot at every depth and every panel width (the indent and the narrow-container
    overrides move both together). */
 .cv2-root .pn-tt__meta {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 1px 10px 10px calc(29px + var(--tt-indent));
+  padding: 1px 10px 10px calc(7px + 16px + var(--tt-status-margin) + 6px + var(--tt-indent));
 }
 .cv2-root .pn-tt__metarow {
   display: flex;
@@ -647,11 +730,15 @@
   /* Still hung off the status column — 7px pad + 16px caret + 7px gap. The
      chips must not jump to the tile edge just because the panel narrowed. */
   .cv2-root .pn-tt__meta {
-    padding-inline: calc(30px + var(--tt-indent)) 9px;
+    /* Title start AT THIS RUNG: this block's own row inset and gap, which are
+       7px and 7px above — not the base rule's. Restated as the sum for the
+       same reason the base rules are, and carrying the margin term the flat
+       `30px` predated. */
+    padding-inline: calc(7px + 16px + var(--tt-status-margin) + 7px + var(--tt-indent)) 9px;
   }
 
   .cv2-root .pn-tt__badges {
-    padding-inline: calc(30px + var(--tt-indent)) 9px;
+    padding-inline: calc(7px + 16px + var(--tt-status-margin) + 7px + var(--tt-indent)) 9px;
   }
 
 }
@@ -676,11 +763,14 @@
 
   /* 6px pad + 16px caret + 5px gap. */
   .cv2-root .pn-tt__meta {
-    padding-inline: calc(27px + var(--tt-indent)) 8px;
+    /* And again with THIS rung's parts: 6px inset, 5px gap. The constant is a
+       different number at every rung, which is precisely why hunting the
+       literal `29px` found neither of these. */
+    padding-inline: calc(6px + 16px + var(--tt-status-margin) + 5px + var(--tt-indent)) 8px;
   }
 
   .cv2-root .pn-tt__badges {
-    padding-inline: calc(27px + var(--tt-indent)) 8px;
+    padding-inline: calc(6px + 16px + var(--tt-status-margin) + 5px + var(--tt-indent)) 8px;
   }
 
   /* Depth costs title width, and at this size the title is all there is. */
