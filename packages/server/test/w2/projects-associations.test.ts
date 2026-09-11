@@ -146,7 +146,15 @@ describe('W2.G06 projects and association correction facade', () => {
   });
 
   it('lists only directories inside configured roots and creates one retry-safe child', async () => {
-    const scratch = await mkdtemp(join(tmpdir(), 'tm8-project-browser-'));
+    // CANONICAL, like the narrowed-roots case below already is. `mkdtemp` returns
+    // the path as given, and on macOS `tmpdir()` is `/var/folders/...` — a
+    // symlink to `/private/var/folders/...`. Everything this module returns is
+    // realpath-resolved, deliberately: containment is a security property and it
+    // is checked against the canonical path, which is what the `escape` symlink
+    // below exists to prove. So the expectations have to be canonical too, or
+    // they compare `/var/...` against `/private/var/...` and this test fails on
+    // macOS while passing on Linux, where `/tmp` is a real directory.
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-project-browser-')));
     const root = join(scratch, 'root');
     const outside = join(scratch, 'outside');
     try {
