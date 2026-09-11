@@ -20,6 +20,38 @@
   }
 }
 
+/* ==========================================================================
+   THE COLOUR BUDGET — accent is scarce, and scarcity is the whole mechanism.
+   (Von Restorff: a thing stands out only if it is the exception. Spend the
+   accent on forty pills and it marks nothing, including the one live row.)
+
+   The rule, in its narrowest useful form:
+
+       COLOUR IS FOR STATE THAT CHANGES WHAT YOU DO.
+
+   A count never is. It says HOW MUCH, never WHAT TO DO ABOUT IT, so a count
+   is always ink. That single sentence also yields the carve-outs without
+   special-casing them: `live`/`running` keeps its colour because it changes
+   what you do next; `block` keeps its colour for the same reason.
+
+   Accent (--pn-brand*) has exactly three sanctioned jobs in this kit:
+     1. WHERE YOU ARE      — focus rings, selection/underline indicators
+     2. WHAT YOU CAN ACT ON — primary action fills, active drag handles
+     3. nothing else.
+   Status hues (--pn-run/wait/block/info/idle) are a separate budget and are
+   spent on the WORD only, never on a fill — and never alone: every status
+   carries its word, so nothing depends on hue.
+
+   Rings and fills are different jobs. Give the accent to the ring; a fill
+   that is merely "present" competes with the one ring that means "here".
+
+   This is the width budget's sibling. There the compressible child surrenders
+   the deficit, so names die and numbers survive. Here the scarce resource is
+   ATTENTION, and it is spent on the least important number on the screen —
+   which is why the important thing has nothing left to be marked with.
+   Pinned by "the colour budget" contract in kit.test.tsx.
+   ========================================================================== */
+
 /* --- Pill — status token: neutral card + colored word (T0-4) ------------- */
 .cv2-root .kit-pill {
   box-sizing: border-box;
@@ -41,7 +73,40 @@
 .cv2-root .kit-pill--block  { color: var(--pn-block); }
 .cv2-root .kit-pill--info   { color: var(--pn-info); }
 .cv2-root .kit-pill--idle   { color: var(--pn-idle); }
-.cv2-root .kit-pill--brand  { color: var(--pn-brand-2); }
+/* KNOWN-INCOMPLETE — this rule ships only with the revision described below.
+   `brand` is the one tone that never named a STATE: run/wait/block/info/idle
+   all say what a thing IS, while "brand" says what colour it is. That much is
+   right, and it is why the tone is OVERLOADED across three different meanings.
+
+   The justification originally written here was wrong and is corrected in
+   place rather than deleted, because the wrong version is the instructive one.
+   It claimed "three call sites, two of them counts". That came from a literal
+   grep for tone="brand" — and Pill tones in this app are REGISTRY-DRIVEN
+   (domain/registry.ts maps status->tone; consumers pass tone={pill.tone}, e.g.
+   graph/GraphView.tsx:125 statusPill). The real emitters:
+
+     merged PULL REQUESTS   registry.ts:264/:1488/:1516, linked-pull-requests.ts:86
+     the OWNER role chip    registry.ts:1327/:1345, settings-space/port.ts:87
+     a home ACTIVITY row    home/home-activity.ts:132
+     and three literal sites, two of which are counts (`N unread`)
+   rendered across panels/, settings/, graph/ and home/ — so "brand is how
+   counts became accent" was never true.
+
+   Test it against the law above and the three meanings split:
+     unread  a COUNT — ink is right
+     owner   a ROLE  — ink is right
+     merged  a STATE, and open/draft/closed already hold run/wait/idle, so
+             merged takes the accent as the fourth. Sending it to ink DELETES a
+             status distinction, which is the one use of this tone the law
+             PROTECTS. That is a defect in this rule as written.
+   The fix is not to deprecate the tone: it is to give `merged` a status hue and
+   move only the role and count callers off it. That edits registry.ts and
+   pull-requests/, which are not kit's to change — it needs an owner assigned.
+   Until then this line is knowingly incomplete and is flagged as such in #554.
+
+   `merged` on a graph node card confirmed live by lane I; consumer list above
+   is theirs and lane F's, not a grep of mine. */
+.cv2-root .kit-pill--brand  { color: var(--pn-ink-2); }
 
 /* --- Filled — the DELTA badge ("2147 new", "9 live") ---------------------
    Soft fill AND a hairline in the same hue. Measured off the owner's Home
@@ -384,12 +449,28 @@
 .cv2-root .kit-avatar.kit-avatar--agent {
   border-radius: 5px;
 }
-.cv2-root .kit-avatar--tone-0 { --kit-avatar-tone: var(--pn-run); }
-.cv2-root .kit-avatar--tone-1 { --kit-avatar-tone: var(--pn-wait); }
-.cv2-root .kit-avatar--tone-2 { --kit-avatar-tone: var(--pn-block); }
-.cv2-root .kit-avatar--tone-3 { --kit-avatar-tone: var(--pn-info); }
-.cv2-root .kit-avatar--tone-4 { --kit-avatar-tone: var(--pn-brand); }
-.cv2-root .kit-avatar--tone-5 { --kit-avatar-tone: var(--pn-idle); }
+/* THE COLOUR BUDGET, applied to the most-repeated element in the product.
+   These six tones used to bind identity to the STATUS and ACCENT palettes —
+   tone-2 was `--pn-block`, tone-4 was `--pn-brand`. Two things were wrong with
+   that, and the second is worse than the budget:
+     1. An avatar sits beside every actor on every surface, so binding the
+        accent here spends blue on the single most repeated thing on screen —
+        which is precisely why the one ring that means "you are here" cannot
+        be seen. Scarcity is the mechanism; this was the biggest leak.
+     2. It made a ring say "blocked" when it meant "actor #2". Identity is not
+        state, and borrowing the state palette to express it is a collision,
+        not a shortcut.
+   Identity loses nothing by going neutral, because THE INITIALS ALREADY CARRY
+   IT — the ring was redundant with the glyph inside it. The classes stay
+   API-compatible (same contract as the `.k-tint-*` rules below) and
+   `--kit-avatar-tone` remains settable per surface, so anywhere that can
+   genuinely justify actor-colour opts in rather than inheriting it. */
+.cv2-root .kit-avatar--tone-0,
+.cv2-root .kit-avatar--tone-1,
+.cv2-root .kit-avatar--tone-2,
+.cv2-root .kit-avatar--tone-3,
+.cv2-root .kit-avatar--tone-4,
+.cv2-root .kit-avatar--tone-5 { --kit-avatar-tone: var(--pn-line-2); }
 /* Identity stays deterministic, but occupies one hairline instead of a tinted
    disc. The neutral surface is calmer and keeps initials readable in both
    themes; the stable actor tone remains available at the edge. */
