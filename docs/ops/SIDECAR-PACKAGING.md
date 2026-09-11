@@ -11,17 +11,35 @@
 
 ## 0. Context primer (read this if you have not read the architecture corpus)
 
-tm8 is a rebuild of Maestro as one entity-graph binary. **Per amendment AM-1/T-D21 there is no
-desktop app and no Tauri** — tm8 is **server + web only**. `tm8-server` (a Node process,
+tm8 is a rebuild of Maestro as one entity-graph binary. **There is no Tauri** — that half of
+AM-1/T-D21 stands. But **AM-7/T-D24 (2026-08-21) reversed the "no desktop app" half**: tm8 also
+ships an **Electron** shell (`apps/desktop/`, macOS, arm64 first). `tm8-server` (a Node process,
 port **4610**) serves the browser UI (Vite dev on **4611**, prod bundle served by tm8-server) and
-owns a **Postgres** database directly (no Supabase, no PostgREST in v1).
+owns a **Postgres** database directly (no Supabase, no PostgREST in v1). The Electron shell does
+not change that shape — it *forks the same `packages/server/dist/index.js`* under
+`ELECTRON_RUN_AS_NODE=1` on `TM8_PORT=0` and loads the resulting URL in a `BrowserWindow`, so the
+UI stays a pure browser bundle and the server-side PTY host stays the only spawn path.
+
+**What this means for THIS document:** every lifecycle mechanism below is unchanged and is what the
+desktop app runs. Two deltas apply to the desktop profile only, and neither is a redesign:
+
+- **§2's "unpack the tarball at first run" is wrong for a `.app`** and must be **unpack at *build*
+  time** instead — binaries materialised at runtime into a user directory carry no signature, and on
+  arm64 macOS an unsigned Mach-O will not execute at all. The desktop build ships the tree already
+  unpacked at `Contents/Resources/pg/<ver>/` and sets `TM8_PG_BIN_DIR` to it, which is
+  `binaries.ts` resolution **step 1** — so this costs **zero sidecar changes**. The archive path
+  (steps 2–3) stays for the server install.
+- **Desktop Postgres is unix-socket-only** (`listen_addresses = ''`), so the port number below names
+  only the socket file and the `5442` row in the table cannot collide with a developer's own node.
 
 Postgres is used *fully*: triggers, recursive CTEs, GIN indexes, row-level security (RLS),
 and native `uuidv7()` keys. PGlite (a WASM Postgres) cannot substitute in the general case — it is
 single-connection and weaker on extensions — so **the default local database is a real Postgres
-server run as a child process of tm8-server: the "sidecar."** With "install the app" gone, the
-product's install story is **one-command start**: `tm8-server` boots, starts the sidecar Postgres,
-runs migrations, serves the UI. Making that reliable — bundling the Postgres binary, starting it,
+server run as a child process of tm8-server: the "sidecar."** The product now has **two** install
+stories over that one mechanism: **one-command start** for a server install (`tm8-server` boots,
+starts the sidecar Postgres, runs migrations, serves the UI), and **double-click** for the macOS
+app (Electron main boots, does the identical sequence against a bundled Postgres, then shows the
+window). Making that reliable — bundling the Postgres binary, starting it,
 health-checking it, migrating it safely across versions, backing it up, and never letting two
 instances corrupt one data dir — is what this document specifies.
 
