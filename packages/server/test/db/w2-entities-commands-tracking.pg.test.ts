@@ -498,6 +498,64 @@ describe.sequential('W2.G02 entities, commands, and tracking PostgreSQL semantic
       [[prId], null, 'g02-refresh-outside']))).rejects.toMatchObject({ code: 'P0002' });
   });
 
+  // The commit projection returned repository/sha/message/committedAt and
+  // nothing else, while the pull_request arm twenty lines above it carried
+  // `url`, `fetchedAt` and `stale`. That is not a cosmetic asymmetry:
+  // GenericBody's LinkSummaryBlock is deliberately KIND-AGNOSTIC and reads
+  // `state.url` and `state.stale` for both kinds, so a commit could never render
+  // `open ↗` — although `public.commits.url` held the link — and the literal
+  // "stale — refetch to update" badge could never appear on a commit at all.
+  // The entity that "commits are not synced" was reported against had no way to
+  // say it was unsynced.
+  //
+  // Driven through the REAL projection against a REAL row, because the thing
+  // that was broken is the seam between `internal.entity_content` (which has
+  // always returned the whole commits row) and the arm that ignored most of it.
+  // A fixture asserting the object literal would have passed on the old code.
+  it('projects a commit with the url and staleness the panel reads, exactly as it does a PR', async () => {
+    const sha = 'cafe1234567890abcdef1234567890abcdef1234';
+    await asApp(database, fixture.identityId, (q) => q.rpc('link_commit',
+      [fixture.taskId, `https://github.com/acme/tm8/commit/${sha}`, 'github', 'acme/tm8', sha,
+        null, null, 'g02-projection-commit']));
+    const commitId = (await database.query<{ id: string }>(
+      `select entity_id::text id from public.commits where space_id=$1 and sha=$2`,
+      [fixture.spaceId, sha]))[0]!.id;
+
+    // A freshly linked mirror: message is the sha itself, nothing fetched.
+    const stub = await asApp(database, fixture.identityId, (q) =>
+      buildUniversalDetail(q, commitId, fixture.identityId));
+    expect(stub.state).toMatchObject({
+      kind: 'commit',
+      repository: 'acme/tm8',
+      sha,
+      url: `https://github.com/acme/tm8/commit/${sha}`,
+      author: null,
+      fetchedAt: null,
+      // THE ONE THAT WAS UNREACHABLE. `fetched_at` is stamped only by
+      // `apply_commit_facts`, so null means no provider has ever answered about
+      // this row — the exact placeholder state that was reported.
+      stale: true,
+    });
+    // Still a valid EntityDetail after the widening — the contract arm is
+    // `.strict()`, so an unlisted member would fail here rather than silently.
+    expect(() => EntityDetailSchema.parse(stub)).not.toThrow();
+
+    // ...and once the observer has applied facts, the same projection stops
+    // claiming staleness and carries the author.
+    await asApp(database, fixture.identityId, (q) => q.rpc('apply_commit_facts',
+      [commitId, 'feat: a real subject', 'a-real-author', '2026-08-21T09:00:00Z', null]));
+    const hydrated = await asApp(database, fixture.identityId, (q) =>
+      buildUniversalDetail(q, commitId, fixture.identityId));
+    expect(hydrated.state).toMatchObject({
+      kind: 'commit',
+      message: 'feat: a real subject',
+      author: 'a-real-author',
+      stale: false,
+    });
+    expect((hydrated.state as { fetchedAt?: string | null }).fetchedAt).toBeTruthy();
+    expect(() => EntityDetailSchema.parse(hydrated)).not.toThrow();
+  });
+
   it('projects live connections with fingerprinted keysets and omits tombstoned endpoints', async () => {
     await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
