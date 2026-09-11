@@ -1,0 +1,87 @@
+-- =============================================================================
+-- 155  THE FORGE WATCHER'S MISSING GRANT: `internal.repo_slug_from_url` must be
+--      executable by the role the SECURITY DEFINER doors RUN AS, not merely by
+--      the role that CALLS them.
+--
+-- Found in production, not in review. `tracking.forge-watcher` had been failing
+-- every ~90 seconds since 148 reached the box:
+--
+--     [scheduler] job "tracking.forge-watcher" FAILED (failure #5)
+--       CollabError: permission denied for function repo_slug_from_url
+--
+-- While it fails, PR state, CI status and mergeability stop refreshing. Nothing
+-- 500s and no user-facing request errors — the chips simply go stale and stay
+-- stale, which is why this survived a deploy that verified clean on every other
+-- axis.
+--
+-- ## Why 148's grant looked complete and was not
+--
+-- 148 introduced the function and closed it properly:
+--
+--     revoke all on function internal.repo_slug_from_url(text) from public;
+--     grant execute on function internal.repo_slug_from_url(text) to tm8_app;
+--
+-- `tm8_app` is the role the request path assumes (`set local role tm8_app`), so
+-- every interactive caller works, and 148's own header reasons that this is
+-- safe because "every caller is security definer". That sentence is true and it
+-- is the trap. A SECURITY DEFINER function does not execute as its caller — it
+-- executes as its OWNER. Every door the watcher calls
+--
+--     public.apply_pull_request_facts      owner tm8_graph_owner  secdef t
+--     public.apply_pr_check_facts          owner tm8_graph_owner  secdef t
+--     public.apply_pr_review_thread_facts  owner tm8_graph_owner  secdef t
+--     public.provider_etag_record          owner tm8_graph_owner  secdef t
+--
+-- therefore drops into `tm8_graph_owner` on entry. Inside, it reaches
+-- `internal.pr_owning_session`, which is `language sql stable` — SECURITY
+-- INVOKER, prosecdef = f — so it does NOT switch roles again, and its call to
+-- `internal.repo_slug_from_url` is made as `tm8_graph_owner`. That role was
+-- never granted. 42501, forever, on a 90-second timer.
+--
+-- The grant that was needed is not the grant that was written: the privilege has
+-- to follow the DEFINER'S OWNER through the invoker function, and `tm8_app`
+-- never appears on that path at all.
+--
+-- ## Why this is the whole fix and not the first of several
+--
+-- Verified against the live catalog rather than assumed. The set of `internal`
+-- functions that `tm8_app` may execute and `tm8_graph_owner` may not:
+--
+--     select n.nspname||'.'||p.proname
+--       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--      where n.nspname = 'internal' and p.prokind = 'f'
+--        and has_function_privilege('tm8_app', p.oid, 'EXECUTE')
+--        and not has_function_privilege('tm8_graph_owner', p.oid, 'EXECUTE');
+--
+-- returns exactly one row: `internal.repo_slug_from_url(p_url text)`. Every
+-- other internal helper a definer door might reach is already executable by the
+-- owner role, so this is a single missed grant in 148 and not a class of them.
+-- Run that query after this migration and it must return zero rows.
+--
+-- ## What this deliberately does NOT do
+--
+--   * It does not grant to `tm8_delivery_worker`. That role cannot even see the
+--     `internal` schema (`permission denied for schema internal`, a different
+--     error from the one above), it is narrow on purpose, and no path it owns
+--     reaches this function. Widening it to silence a symptom it does not cause
+--     would be strictly a loss.
+--   * It does not make `internal.pr_owning_session` SECURITY DEFINER. That would
+--     also stop the error, by making the function run as ITS owner — but
+--     `pr_owning_session` resolves which session owns a PR and is read under the
+--     caller's claims by design. Turning it into a definer would take that
+--     decision out of RLS's hands to fix a privilege bug, which is the wrong
+--     trade in the wrong direction.
+--   * It does not re-`revoke ... from public`. 148 already did, and repeating it
+--     here would be noise that reads like a second, different intent.
+--
+-- Idempotent: `grant` on an already-granted privilege is a no-op, so re-running
+-- the chain is safe.
+-- =============================================================================
+
+grant execute on function internal.repo_slug_from_url(text) to tm8_graph_owner;
+
+comment on function internal.repo_slug_from_url(text) is
+  'Extracts "owner/name" from a git remote URL, or NULL. Executable by tm8_app '
+  '(the request-path role) AND tm8_graph_owner (the owner every SECURITY '
+  'DEFINER door runs as, and therefore the role that actually reaches this '
+  'function from internal.pr_owning_session — see 155).';
