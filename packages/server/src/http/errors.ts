@@ -49,6 +49,14 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   '22023': 'invalid_input',
   '23514': 'invariant_violation',
   '23503': 'invariant_violation',
+  // A RESTRICT referential action, which PostgreSQL 18 reports under its own
+  // SQLSTATE. Through 17, `ri_ReportViolation` raised every RI failure as a
+  // plain 23503; 18 gives RESTRICT the standard's dedicated 23001, on the
+  // grounds that the foreign key may still be satisfiable and RESTRICT refuses
+  // regardless. Same refusal, same invariant, so the same taxonomy entry —
+  // unmapped it fell to the catch-all and became a retryable 503, exactly the
+  // failure the 22P02 note above describes.
+  '23001': 'invariant_violation',
   '23505': 'invariant_violation',
   '40001': 'version_conflict',
   '53400': 'limit_exceeded',
