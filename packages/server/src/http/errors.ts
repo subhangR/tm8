@@ -128,6 +128,25 @@ function logUnexpected(err: unknown, requestId: string): void {
 }
 
 /**
+ * A REFUSAL IS ALSO EVIDENCE, and until now this server threw it away.
+ *
+ * `logUnexpected` covers the crashes. Everything the taxonomy names —
+ * `invalid_input`, `forbidden`, `payload_too_large`, `unauthenticated` — went
+ * to the client and NOWHERE else, so a refusal was invisible from the node
+ * side. That is not a theoretical gap: a file-attachment failure was reported
+ * with "check the logs and you will see what happened", and the logs held
+ * nothing at all, for every refusal on that path, by construction.
+ *
+ * CODE, STATUS AND THE REQUEST ID ONLY. `details` is deliberately not logged —
+ * it carries entity payloads and `current: EntityDetail` on a version
+ * conflict — and the message is our own prose from the raise site, never
+ * client input. `warn`, not `error`: a refused request is the server working.
+ */
+function logRefusal(err: CollabError, status: number, requestId: string): void {
+  console.warn(`[tm8] refused (requestId=${requestId}) ${status} ${err.code}: ${err.message}`);
+}
+
+/**
  * `Retry-After` in whole seconds, or null when the error does not carry one.
  * Read from `details.retryAfterSeconds` so the raiser owns the number — the
  * writer has no idea what limit was tripped or when its window rolls.
@@ -141,8 +160,9 @@ function retryAfterSecondsOf(err: unknown): number | null {
 
 /** The one and only error writer. */
 export function sendWireError(res: ServerResponse, err: unknown, requestId: string): void {
-  if (!isCollabError(err)) logUnexpected(err, requestId);
   const { status, body } = toWireError(err, requestId);
+  if (isCollabError(err)) logRefusal(err, status, requestId);
+  else logUnexpected(err, requestId);
   if (res.headersSent) {
     res.end();
     return;

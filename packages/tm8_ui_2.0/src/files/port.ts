@@ -39,7 +39,7 @@ import type {
 import type { ConnectionState, LivenessSnapshot, Seam, Unsubscribe } from '../data/seam';
 import { allKinds } from '../domain';
 import { attachedFiles, enrich, rowFromAttachment, rowFromEntity, type FileRow } from './model';
-import { createFileUploadTask, type FileUploadTask } from './upload';
+import { createFileUploadTask, randomMutationId, type FileUploadTask } from './upload';
 
 // ---------------------------------------------------------------------------
 // The file kind, reached through REGISTRY DATA rather than typed
@@ -252,7 +252,7 @@ export function attachmentsFor(
  * is what keeps a duplicated edge from forming.
  */
 function newMutationId(): string {
-  return globalThis.crypto.randomUUID();
+  return randomMutationId();
 }
 
 // ---------------------------------------------------------------------------
