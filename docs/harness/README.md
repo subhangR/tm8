@@ -14,6 +14,17 @@ discover, and what it can orchestrate.
 | [`SESSION-SURFACE-ENGINEER-PROMPT.md`](SESSION-SURFACE-ENGINEER-PROMPT.md) | A worked persona, kept as an example of the shape a teammate prompt takes |
 | [`AGENT-COORDINATION-AND-POLLING.md`](AGENT-COORDINATION-AND-POLLING.md) | How sessions reach each other, and the five ways polling silently reports nothing |
 
+## Agent tooling — analysis and design
+
+Note the word "harness" carries two meanings in this directory. Above, it is the
+**prompt composition** an agent boots with. Below, it is an **adapter for one agent
+CLI**. The two are orthogonal: any flavor can run on any adapter.
+
+| Document | What it is |
+|---|---|
+| [`AO-VS-TM8-COMPONENT-ANALYSIS.md`](AO-VS-TM8-COMPONENT-ANALYSIS.md) | Component-by-component against agent-orchestrator: where tm8 is behind, where it leads, and what the capability gap actually costs |
+| [`HARNESS-REGISTRY-DESIGN.md`](HARNESS-REGISTRY-DESIGN.md) | **Design, not built.** Why the two-agent limit is a law violation rather than a missing feature, and the phased registry that ends it |
+
 ## [`reviews/`](reviews/)
 
 The harness plan was reviewed by three models and then reconciled. Read the
