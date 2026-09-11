@@ -32,6 +32,7 @@
 import {
   MAX_CONTROL_FRAME_SPACES,
   type DurableWorkspaceEvent,
+  type LivenessChangedEvent,
   type SpaceId,
   type WorkspaceControlAck,
   type WorkspaceControlFrame,
@@ -66,8 +67,15 @@ export const WS_OPEN = 1;
 export interface SocketHandlers {
   /** The socket reached OPEN. Nothing has been subscribed yet. */
   onOpen(): void;
-  /** A durable event arrived. Presence/typing never reach here (R8). */
+  /** A durable event arrived. Presence/typing/liveness never reach here (R8). */
   onEvent(event: DurableWorkspaceEvent): void;
+  /**
+   * The node's PTY map moved. EPHEMERAL: never advances the durable cursor,
+   * never replayed on `resume`, and legal to drop — every one of these carries
+   * the full live set for its space, so the next one repairs whatever the last
+   * one missed. Optional, so a host that does not care simply does not wire it.
+   */
+  onLiveness?(event: LivenessChangedEvent): void;
   /** C3 rich-turn frame; not part of the durable workspace seq spine. */
   onChatTurn?(frame: ChatTurnFrame): void;
   /** THE only ack. Never silent — a refused space must not look like a quiet one. */
@@ -121,6 +129,23 @@ export type ParsedFrame =
   | { kind: 'chat-turn'; frame: ChatTurnFrame }
   | { kind: 'refused'; ack: WorkspaceControlAck }
   | { kind: 'presence' }
+  /**
+   * `execution.liveness_changed` — ephemeral, and its own frame kind rather
+   * than an `event`.
+   *
+   * THIS SPLIT IS THE WHOLE SAFETY PROPERTY. A durable event's `seq` advances
+   * the client's per-space cursor (`connection.ts`'s dispatch), and this event
+   * carries a CHANNEL-LOCAL seq from a different counter that resets on every
+   * server restart (the server's `seq.ts`, S8). One ephemeral frame reaching
+   * that cursor would move it to a number the durable log has not issued, and
+   * every real event below it would then be silently dropped as "already
+   * seen" — a client that stops updating and reports no error.
+   *
+   * So it never becomes a `DurableWorkspaceEvent` on this path at all. It is a
+   * different kind, handled by a different handler, and there is no branch that
+   * could route one into the other.
+   */
+  | { kind: 'liveness'; event: LivenessChangedEvent }
   | { kind: 'malformed'; reason: string };
 
 export function parseFrame(raw: unknown): ParsedFrame {
@@ -147,6 +172,28 @@ export function parseFrame(raw: unknown): ParsedFrame {
   // server does not put these on the durable stream today; this is the belt
   // beside that brace, and it is one line.
   if (type === 'presence.changed' || type === 'typing.changed') return { kind: 'presence' };
+
+  /* Ephemeral liveness. Discriminated BEFORE the generic envelope check below,
+     because it has a `spaceId` and a `seq` and would otherwise be waved through
+     as a durable event — which is exactly the cursor poisoning the `liveness`
+     frame kind exists to prevent. The fields are validated here rather than
+     trusted: this is the untrusted wire, and a consumer that indexed into a
+     missing `liveEntityIds` would throw inside a socket callback. */
+  if (type === 'execution.liveness_changed') {
+    if (typeof raw.spaceId !== 'string') {
+      return { kind: 'malformed', reason: 'liveness event has no spaceId' };
+    }
+    if (typeof raw.nodeBootId !== 'string' || raw.nodeBootId === '') {
+      return { kind: 'malformed', reason: 'liveness event has no nodeBootId' };
+    }
+    if (!Array.isArray(raw.liveEntityIds) || raw.liveEntityIds.some((id) => typeof id !== 'string')) {
+      return { kind: 'malformed', reason: 'liveness event has no liveEntityIds' };
+    }
+    if (typeof raw.checkedAt !== 'string') {
+      return { kind: 'malformed', reason: 'liveness event has no checkedAt' };
+    }
+    return { kind: 'liveness', event: raw as unknown as LivenessChangedEvent };
+  }
 
   if (isChatTurnFrame(raw)) return { kind: 'chat-turn', frame: raw };
 
@@ -190,6 +237,7 @@ export function openSocket(
       case 'event': handlers.onEvent(frame.event); return;
       case 'chat-turn': handlers.onChatTurn?.(frame.frame); return;
       case 'refused': handlers.onRefused(frame.ack); return;
+      case 'liveness': handlers.onLiveness?.(frame.event); return;
       case 'presence': return;
       case 'malformed': handlers.onMalformed?.(parsed, frame.reason); return;
     }
