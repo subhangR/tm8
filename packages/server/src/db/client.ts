@@ -29,9 +29,16 @@
  * resolves membership and can_act_as from TABLES, so there is no fifth.
  */
 import pg from 'pg';
-import { CollabError } from '@tm8/contract';
+import {
+  CollabError,
+  DB_CONNECT_TIMEOUT_MS,
+  DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  DB_STATEMENT_TIMEOUT_MS,
+} from '@tm8/contract';
 import type { Db, DbClaims, Querier } from './types.js';
+import { createCancelChannel, type CancelChannel } from './cancel.js';
 import { translateDbError } from './errors.js';
+import { currentRequestScope } from './request-scope.js';
 
 /**
  * `node_admin` is bound as the string `'true'` / `'false'`.
@@ -162,17 +169,138 @@ function unwrapRpc<T>(result: pg.QueryResult): T {
   return result.rows as unknown as T;
 }
 
-function makeQuerier(client: pg.PoolClient): Querier {
+/** SQLSTATE `query_canceled` — what a cancelled statement raises. */
+const QUERY_CANCELED = '57014';
+
+/**
+ * The error a read raises when its caller has already hung up.
+ *
+ * `upstream_unavailable` because the closed taxonomy (contract §4) has no
+ * `cancelled` code and this IS the honest slot: the node produced no answer.
+ * Retryable, because the request was never refused on its merits — a client
+ * that asks again gets a real attempt. Nothing is expected to read it: by
+ * construction the socket it would be written to is gone.
+ */
+function abandonedRead(): CollabError {
+  return new CollabError('upstream_unavailable', 'the client stopped waiting for this read', {
+    retryable: true,
+    details: { abandoned: true },
+  });
+}
+
+/**
+ * ONE TRANSACTION'S RIGHT TO BE CANCELLED, and the gate on it.
+ *
+ * THE RULE, and it is the load-bearing one in this change: **a read is
+ * cancellable, a command is not.** `Querier.query` is raw parameterised SQL and
+ * is READS ONLY by the seam's own contract (`db/types.ts`); `Querier.rpc` is
+ * the only write path there is. So a transaction that has issued an `rpc` is
+ * SEALED — permanently, for the rest of its life — and nothing in it will be
+ * cancelled afterwards.
+ *
+ * WHY SEAL RATHER THAN RELY ON ROLLBACK. Cancelling mid-command could not
+ * corrupt anything: Postgres aborts the whole transaction, our catch rolls it
+ * back, and the write either happened entirely or not at all. Atomicity is not
+ * the risk. The risk is INTENT. A user who clicks send and closes the tab has
+ * sent a message; today that write lands, and silently converting it into a
+ * write that gets thrown away because their browser was quick about closing the
+ * socket would be a behaviour change nobody asked for and nobody could see. So
+ * the seal is not about safety from partial writes — it is about not quietly
+ * withdrawing work the caller already committed to.
+ *
+ * A read that runs BEFORE any rpc in the same transaction is still cancellable:
+ * if it is cancelled the transaction rolls back before the rpc is ever reached,
+ * so there is no write to lose.
+ */
+class TxCancellation {
+  private sealed = false;
+  private cancelled = false;
+  private listener: (() => void) | undefined;
+  /** Bumped on every arm and every disarm; see `armRead`. */
+  private epoch = 0;
+
+  constructor(
+    private readonly client: pg.PoolClient,
+    private readonly channel: CancelChannel,
+    private readonly signal: AbortSignal | undefined,
+  ) {}
+
+  /** A command ran. Nothing in this transaction may be cancelled from here on. */
+  seal(): void {
+    this.sealed = true;
+    this.disarm();
+  }
+
+  /**
+   * Called immediately before a READ statement goes on the wire.
+   *
+   * Throws when the caller is ALREADY gone, which is strictly better than
+   * cancelling: the statement never starts, so there is no window in which a
+   * CancelRequest could race a query that has not begun and cancel nothing.
+   */
+  armRead(): void {
+    if (this.sealed || this.signal === undefined || !this.channel.available) return;
+    if (this.signal.aborted) throw abandonedRead();
+    // Identity of the statement this arming covers. `stillWanted` below asks
+    // "is the SAME read still in flight?", which a boolean could not answer:
+    // by the time the cancel socket connects, this transaction may have moved
+    // on to a different statement on the same client.
+    const arming = ++this.epoch;
+    const fire = (): void => {
+      this.cancelled = true;
+      // Fire-and-forget by design (see cancel.ts): there is no answer to wait
+      // for, and the statement's own rejection is what unblocks the caller.
+      void this.channel.cancel(this.client, () => this.epoch === arming);
+    };
+    this.listener = fire;
+    this.signal.addEventListener('abort', fire, { once: true });
+  }
+
+  /** Called when a read statement settles, however it settled. */
+  disarm(): void {
+    // Invalidates any cancel already in flight for the statement that just
+    // ended — see `armRead`. Bumping FIRST means a `fire` racing this call
+    // still finds a stale epoch at send time.
+    this.epoch += 1;
+    if (this.listener && this.signal) {
+      this.signal.removeEventListener('abort', this.listener);
+    }
+    this.listener = undefined;
+  }
+
+  /**
+   * Rewrite a cancellation WE caused into the abandoned-read error.
+   *
+   * The two ways to see 57014 are our cancel and `statement_timeout`, and they
+   * mean opposite things — one is the system working, one is a query that
+   * overran its budget with someone still waiting. Postgres tells them apart
+   * only in the message text, which this layer does not read on principle
+   * (`db/errors.ts`). It does not have to: the guard KNOWS whether it fired.
+   */
+  translate(err: unknown): unknown {
+    if (!this.cancelled) return err;
+    const sqlState = (err as { code?: unknown } | null)?.code;
+    return sqlState === QUERY_CANCELED ? abandonedRead() : err;
+  }
+}
+
+function makeQuerier(client: pg.PoolClient, cancellation: TxCancellation): Querier {
   return {
     async query<R = Record<string, unknown>>(sql: string, params: readonly unknown[] = []): Promise<R[]> {
+      cancellation.armRead();
       try {
         const result = await client.query(sql, params as unknown[]);
         return result.rows as R[];
       } catch (err) {
-        throw translateDbError(err);
+        throw translateDbError(cancellation.translate(err));
+      } finally {
+        cancellation.disarm();
       }
     },
     async rpc<T = unknown>(fn: string, args: readonly unknown[] = []): Promise<T> {
+      // BEFORE the statement, not after: the seal must hold for the statement
+      // that establishes it, not merely for the ones that follow it.
+      cancellation.seal();
       const sql = rpcSql(fn, args.length);
       try {
         const result = await client.query(sql, args as unknown[]);
@@ -195,6 +323,13 @@ export interface PgDbOptions {
    * this pool serves complete in milliseconds; a statement still running after
    * this long is a bug, and without the ceiling it holds one of `max` clients
    * against every other request on the node.
+   *
+   * DEFAULTS TO `DB_STATEMENT_TIMEOUT_MS`, which `@tm8/contract`'s `timeouts.ts`
+   * owns along with the reasoning. Same 30s as the literal it replaces — this is
+   * a BACKSTOP for work with nobody waiting on it, and shortening it to fit
+   * inside the client's 15s was measured and rejected there. What actually stops
+   * an abandoned read is cancellation, below; do not reintroduce a literal here,
+   * and do not tighten this one without reading that file first.
    */
   readonly statementTimeoutMillis?: number;
   /**
@@ -236,19 +371,33 @@ const TX_WATCHDOG_MILLIS = 10_000;
 export class PgDb implements Db {
   private readonly pool: pg.Pool;
   private readonly role: string;
+  /**
+   * How an abandoned read is stopped. Built once per pool because it resolves
+   * the target address at construction — a cancel is issued when a request is
+   * already going badly, and is not the place to parse a URL.
+   */
+  private readonly cancelChannel: CancelChannel;
 
   constructor(options: PgDbOptions) {
     this.role = options.role ?? 'tm8_app';
+    this.cancelChannel = createCancelChannel(options.databaseUrl);
     this.pool = new pg.Pool({
       connectionString: options.databaseUrl,
       max: options.max ?? 8,
-      connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5_000,
+      // Both ceilings below live in `@tm8/contract`'s `timeouts.ts` with their
+      // reasoning, alongside the client's `REQUEST_TIMEOUT_MS` that they used to
+      // contradict — one file so a future change has to see all three at once.
+      // They are NOT two halves of one budget: waiting for a connection is
+      // bounded by the caller's patience, while a statement is bounded by the
+      // work it has to finish for callers who may already be gone.
+      connectionTimeoutMillis: options.connectionTimeoutMillis ?? DB_CONNECT_TIMEOUT_MS,
       idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
       // Startup parameters, applied by the server per connection — a stuck
       // statement or an abandoned transaction is killed by Postgres itself,
       // so no Node-side failure mode can wedge a pooled client permanently.
-      statement_timeout: options.statementTimeoutMillis ?? 30_000,
-      idle_in_transaction_session_timeout: options.idleInTransactionTimeoutMillis ?? 30_000,
+      statement_timeout: options.statementTimeoutMillis ?? DB_STATEMENT_TIMEOUT_MS,
+      idle_in_transaction_session_timeout:
+        options.idleInTransactionTimeoutMillis ?? DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
       options: `-c tm8.idempotency_enabled=${options.idempotencyEnabled === false ? 'off' : 'on'}`,
     });
     // An idle-client error (server restart, sidecar bounce) is emitted on the
@@ -261,6 +410,18 @@ export class PgDb implements Db {
   }
 
   async tx<T>(claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
+    // WHO, IF ANYONE, IS STILL WAITING — read before the pool is touched.
+    //
+    // `undefined` outside an HTTP request (the scheduler, boot, tests) and for
+    // work deliberately detached from one, and it means the same thing in every
+    // case: nothing here is cancellable. See db/request-scope.ts.
+    const signal = currentRequestScope()?.signal;
+    // Nobody is waiting and we have not spent anything yet. Checking out a
+    // client to run a read whose answer is already unwanted is the cheapest
+    // instance of exactly the waste this whole mechanism exists to remove — and
+    // under the load where it matters, that client is the scarce thing.
+    if (signal?.aborted === true) throw abandonedRead();
+
     const client = await this.pool.connect();
     // THE POOL GUARD IN THE CONSTRUCTOR DOES NOT COVER THIS CLIENT.
     //
@@ -305,6 +466,7 @@ export class PgDb implements Db {
       );
     }, TX_WATCHDOG_MILLIS);
     watchdog.unref?.();
+    const cancellation = new TxCancellation(client, this.cancelChannel, signal);
     try {
       await client.query('begin');
       // One round trip, immediately after BEGIN and before any other statement:
@@ -321,10 +483,20 @@ export class PgDb implements Db {
         this.role,
       ]);
 
-      const result = await fn(makeQuerier(client));
+      const result = await fn(makeQuerier(client, cancellation));
+      // COMMIT IS NEVER CANCELLABLE, and the seal below says so for the case
+      // that would otherwise be left open: a read-only transaction whose caller
+      // hangs up between the last statement and the commit. Cancelling there
+      // would abort a transaction that has already done all its work, to save
+      // nothing — a `commit` on a read is a round trip, not a workload.
+      cancellation.seal();
       await client.query('commit');
       return result;
     } catch (err) {
+      // BEFORE the rollback. A cancelled transaction is in aborted state and
+      // `rollback` is how it is recovered — arming a cancel against THAT would
+      // poison the client the recovery exists to save.
+      cancellation.seal();
       try {
         await client.query('rollback');
       } catch {
@@ -334,6 +506,12 @@ export class PgDb implements Db {
       }
       throw translateDbError(err);
     } finally {
+      // Belt and braces with the seals above: whatever path got here, no
+      // listener may outlive the transaction. The signal is the REQUEST's and
+      // outlives every one of its transactions, so a listener left attached
+      // would fire a CancelRequest at a pid the pool has since handed to
+      // somebody else — cancelling an unrelated caller's query.
+      cancellation.disarm();
       clearTimeout(watchdog);
       // BEFORE `release()`, and always. A pooled client is reused, so a listener
       // left attached would accumulate one per checkout on every long-lived

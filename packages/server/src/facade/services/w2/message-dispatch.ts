@@ -34,6 +34,7 @@ import {
   utf8Bytes,
   type SessionInputAttachment,
 } from '@tm8/prompt';
+import { runDetached } from '../../../db/request-scope.js';
 
 /**
  * Only the two fields the parent-excerpt render reads. Structural rather than
@@ -294,19 +295,27 @@ export async function dispatchSessionMessages(
         continue;
       }
       const content = render(reservation.deliveryId);
-      void delivery.adapter
-        .dispatch({
-          ...reservation,
-          content,
-          requestId,
-          principal: delivery.principalFor(reservation),
-        })
-        .catch((error) => {
-          // The durable row remains pending/dispatching for the existing
-          // maintenance owner to expire or recover. Stored-first means an
-          // adapter outage cannot roll back or disguise the message command.
-          logDispatchFailure(route, 'delivery dispatch failed', error);
-        });
+      // DETACHED (db/request-scope.ts): the reservation is already durable, so
+      // this dispatch is the node finishing a message the caller has already
+      // committed to — `record(...)` below reports `accepted` precisely because
+      // the outcome no longer belongs to this request. Letting the poster's
+      // disconnect reach in here would cancel a delivery that the durable row
+      // still says is happening.
+      runDetached(() => {
+        void delivery.adapter
+          .dispatch({
+            ...reservation,
+            content,
+            requestId,
+            principal: delivery.principalFor(reservation),
+          })
+          .catch((error) => {
+            // The durable row remains pending/dispatching for the existing
+            // maintenance owner to expire or recover. Stored-first means an
+            // adapter outage cannot roll back or disguise the message command.
+            logDispatchFailure(route, 'delivery dispatch failed', error);
+          });
+      });
       // `accepted`, not `delivered`: the reservation is durable and the write is
       // in flight. The terminal outcome settles on the row, and the row id is
       // handed back so a caller can follow it there.

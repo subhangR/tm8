@@ -35,7 +35,11 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { CollabError } from '@tm8/contract';
+import {
+  CollabError,
+  DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  DB_STATEMENT_TIMEOUT_MS,
+} from '@tm8/contract';
 import {
   W2MessageDeliveryAdapter,
   type Logger,
@@ -437,12 +441,23 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
   static fromConnectionString(connectionString: string, max = 4): PgW2DeliveryRpcPort {
     // Same guards as db/client.ts: a delivery transaction that wedges must be
     // killed by Postgres, not hold one of `max` clients until a restart.
+    //
+    // AND THE SAME SOURCE FOR THE NUMBER. This was a second, independent
+    // `30_000` — the third corner of a triangle in which no number named either
+    // of the others. Same value, now read from `@tm8/contract`'s `timeouts.ts`
+    // so a future change to the ceiling cannot reach two of the three and miss
+    // this one, which is how the triangle got out of step to begin with.
+    //
+    // What this pool does NOT get is cancellation: it is reached through a
+    // delivery intent, not through `Db`, and a delivery is a COMMAND — the
+    // poster closing their tab has not withdrawn the message. Same rule as
+    // db/client.ts's seal, arrived at from the other direction.
     return new PgW2DeliveryRpcPort(
       new Pool({
         connectionString,
         max,
-        statement_timeout: 30_000,
-        idle_in_transaction_session_timeout: 30_000,
+        statement_timeout: DB_STATEMENT_TIMEOUT_MS,
+        idle_in_transaction_session_timeout: DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
       }),
       true,
     );
