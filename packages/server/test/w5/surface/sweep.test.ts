@@ -966,7 +966,20 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // every search phrased in terms of the thing being added. Any branch that
     // adds a migration file touches this line, and the only reliable way to
     // find that out before CI does is to know it is here.
-    expect(server.appliedMigrations.length).toBe(172);
+    // 172 -> 173 (2026-09-12): ONE file, 185_artifact_preview_session_lookup.sql,
+    // and the number is MEASURED on the merged tree exactly as every row above
+    // instructs — not incremented from the branch's own side:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 172
+    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 173
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main had not moved under this branch, so the two measurements differ by
+    // exactly this branch's one file. And the row above was right about how
+    // this gets found: the fix that added 185 greps for 'preview' and
+    // 'artifact_preview_sessions', and this pin is a bare integer that names
+    // neither — it was invisible to every search phrased in terms of the thing
+    // being added, and surfaced only by running the suite.
+    expect(server.appliedMigrations.length).toBe(173);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

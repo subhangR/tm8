@@ -374,7 +374,15 @@ function scriptedDb(rows: ScriptedRows): PreviewDb & { calls: Array<{ claims: Db
     calls,
     async query<R>(claims: DbClaims, sql: string): Promise<R[]> {
       calls.push({ claims, sql });
-      if (sql.includes('artifact_preview_sessions')) return (rows.session ?? []) as R[];
+      // 185: the capability row is resolved through the SECURITY DEFINER
+      // function, never by selecting the RLS-gated table directly.
+      if (sql.includes('internal.resolve_artifact_preview')) return (rows.session ?? []) as R[];
+      if (sql.includes('artifact_preview_sessions')) {
+        throw new Error(
+          'the preview session must be resolved via internal.resolve_artifact_preview, ' +
+            'not by a direct select on the RLS-gated table (see migration 185)',
+        );
+      }
       if (sql.includes('from public.entities')) return (rows.visibility ?? []) as R[];
       if (sql.includes('artifact_bundle_entries')) return (rows.entry ?? []) as R[];
       throw new Error(`unscripted query: ${sql}`);

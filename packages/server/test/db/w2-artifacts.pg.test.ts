@@ -262,6 +262,86 @@ describe('W2 artifacts service (pg)', () => {
     expect(stored[0]!.token_hash).not.toBe(preview.token);
   });
 
+  it('185 — the session resolves for an identity that is NOT a member, because that is the identity the handler uses', async () => {
+    // The regression: `createArtifactPreviewHandler` resolves the capability
+    // row under the NODE OWNER's claims (the viewer is unknown until the row
+    // is found). On a node that does not auto-join its owner to new spaces,
+    // that identity has no `members` row here — and the 055 policy
+    // `entity_readable` requires one, so every preview outside the owner's own
+    // spaces answered 404 `no such preview` with a perfectly valid URL.
+    const html = await registerBytes('<!doctype html><title>outsider</title>');
+    const manifest: ArtifactManifest = {
+      schema: 'tm8.web-artifact/1',
+      runtime: 'web-static-v1',
+      entrypoint: 'index.html',
+      files: [{ path: 'index.html', mediaType: 'text/html', size: html.size, sha256: html.sha256 }],
+    };
+    const created = (await service.create(
+      ctx('artifacts.create', {}, {
+        clientMutationId: `create-${randomUUID()}`,
+        spaceId: fixture.spaceId,
+        name: 'Outsider Lookup',
+        manifest,
+      } satisfies ArtifactsCreateInput),
+    )) as CommandResult;
+    const preview = (await service.previewStart(
+      ctx('artifacts.preview.start', { artifactId: created.entity!.id }, {
+        clientMutationId: `prev-${randomUUID()}`,
+      }),
+    )) as { previewSessionId: string; token: string };
+    const tokenHash = sha256(Buffer.from(preview.token, 'utf8'));
+
+    // An identity with no `members` row in this space at all — the node owner's
+    // situation under TM8_DISABLE_AUTO_OWNER=1.
+    const outsider = `identity-no-membership-${randomUUID()}`;
+    const asOutsider = async <T>(
+      fn: (client: Parameters<Parameters<typeof database.transaction>[0]>[0]) => Promise<T>,
+    ): Promise<T> =>
+      database.transaction(async (client) => {
+        await client.query('set local role tm8_app');
+        await client.query(
+          `select set_config('tm8.identity_id', $1, true),
+                  set_config('tm8.actor_id', '', true),
+                  set_config('tm8.node_admin', 'false', true),
+                  set_config('tm8.request_id', 'w2-artifacts-185-pg', true)`,
+          [outsider],
+        );
+        return fn(client);
+      });
+
+    // The definer lookup answers — this is what unbreaks the preview.
+    const resolved = await asOutsider((client) =>
+      client.query<{ entrypoint_path: string; viewer_identity_id: string }>(
+        `select entrypoint_path, viewer_identity_id
+           from internal.resolve_artifact_preview($1, $2)`,
+        [preview.previewSessionId, tokenHash],
+      ),
+    );
+    expect(resolved.rows).toHaveLength(1);
+    expect(resolved.rows[0]!.entrypoint_path).toBe('index.html');
+    // It returns the recorded VIEWER, whom the handler then re-checks on every
+    // byte — the lookup hands back a row, it does not decide who may read.
+    expect(resolved.rows[0]!.viewer_identity_id).toBe(fixture.identityId);
+
+    // The token is still the secret: a wrong preimage resolves nothing.
+    const wrongToken = await asOutsider((client) =>
+      client.query(`select 1 from internal.resolve_artifact_preview($1, $2)`, [
+        preview.previewSessionId,
+        sha256(Buffer.from('not-the-token', 'utf8')),
+      ]),
+    );
+    expect(wrongToken.rows).toHaveLength(0);
+
+    // And the RLS policy on the table itself is deliberately UNCHANGED: a
+    // direct reader is still held to membership. Only the definer may bypass.
+    const direct = await asOutsider((client) =>
+      client.query(`select 1 from public.artifact_preview_sessions where id = $1`, [
+        preview.previewSessionId,
+      ]),
+    );
+    expect(direct.rows).toHaveLength(0);
+  });
+
   it('a1 — preview.start mints previewUrl at the app origin when config carries the same-origin default', async () => {
     // loadConfig with NO TM8_PREVIEW_* resolves preview to the app origin
     // (proven in artifact-preview.test.ts); this proves the service turns
