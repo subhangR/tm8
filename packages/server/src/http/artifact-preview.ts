@@ -248,20 +248,28 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
       return;
     }
 
-    // Capability resolution: the row is found by (id, sha256(token)) under
-    // the node owner's claims — the viewer is not known until the row is —
-    // then EVERY content read below re-runs as the viewer under ordinary RLS,
-    // so a viewer who lost access loses the preview mid-session (§9.5).
+    // Capability resolution: the row is found by (id, sha256(token)) — the
+    // viewer is not known until the row is — then EVERY content read below
+    // re-runs as the viewer under ordinary RLS, so a viewer who lost access
+    // loses the preview mid-session (§9.5).
+    //
+    // The lookup goes through a SECURITY DEFINER function (185) rather than a
+    // direct select, because the direct select was gated by
+    // `artifact_preview_sessions_select` -> `internal.entity_readable`, which
+    // demands a real `members` row and has no node_admin arm. That made the
+    // read depend on the node owner happening to be a member of the artifact's
+    // space, and every preview outside the owner's own spaces 404'd (found on
+    // a prod node 2026-09-12). Authorization did not live in this read anyway:
+    // minting already required membership, the token is the secret, and the
+    // viewer is re-checked on every byte below.
     const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
     const resolvedOwner = await owner();
     const ownerClaims: DbClaims = { identityId: resolvedOwner.identityId, nodeAdmin: resolvedOwner.isNodeAdmin };
     const sessions = await db.query<SessionRow>(
       ownerClaims,
-      `select s.artifact_entity_id, s.revision_id, s.space_id, s.viewer_identity_id,
-              s.revoked_at, s.expires_at, r.entrypoint_path
-         from public.artifact_preview_sessions s
-         join public.artifact_bundle_revisions r on r.id = s.revision_id
-        where s.id = $1 and s.token_hash = $2`,
+      `select artifact_entity_id, revision_id, space_id, viewer_identity_id,
+              revoked_at, expires_at, entrypoint_path
+         from internal.resolve_artifact_preview($1, $2)`,
       [sessionId, tokenHash],
     );
     const session = sessions[0];
