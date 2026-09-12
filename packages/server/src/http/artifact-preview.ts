@@ -203,7 +203,25 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
     'permissions-policy': PERMISSIONS_POLICY,
   };
 
-  function refuse(res: ServerResponse, status: number, message: string): void {
+  /**
+   * `reason` is an INTERNAL discriminator and never reaches the response.
+   *
+   * The body has to stay coarse: `no such preview` is returned both for a URL
+   * that is not shaped like the route and for a capability that resolves to no
+   * row, and those must be indistinguishable from outside or the refusal
+   * becomes an oracle for whether a given session id exists. The same holds for
+   * the two `no such asset` cases. But indistinguishable from outside is not a
+   * reason to be indistinguishable in the log: an RLS denial on the resolving
+   * lookup presents exactly as a routing miss, which is what made one read as
+   * the other and cost two investigations to separate. The discriminator
+   * therefore goes to the log, where the operator is already trusted, and the
+   * body stays exactly as coarse as it was.
+   */
+  function refuse(res: ServerResponse, status: number, message: string, reason: string): void {
+    // Never the URL, the token, or any request content — the reason is a fixed
+    // string chosen from the call sites below, so a log line cannot be made to
+    // carry a capability.
+    console.warn(`[tm8] artifact-preview refused ${status} (${reason})`);
     // Plain text, never HTML: a refusal must not be a document the browser
     // could interpret, and it must not reflect any request content.
     res.writeHead(status, { ...baseHeaders, 'content-type': 'text/plain; charset=utf-8' });
@@ -213,7 +231,7 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = req.method ?? 'GET';
     if (method !== 'GET' && method !== 'HEAD') {
-      refuse(res, 405, 'preview assets are read-only');
+      refuse(res, 405, 'preview assets are read-only', 'method-not-allowed');
       return;
     }
 
@@ -227,7 +245,7 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
       const host = req.headers.host;
       const hostname = host === undefined ? null : hostnameOf(host);
       if (hostname !== preview.host) {
-        refuse(res, 403, `this origin serves artifact previews only as ${preview.origin}`);
+        refuse(res, 403, `this origin serves artifact previews only as ${preview.origin}`, 'wrong-preview-host');
         return;
       }
     }
@@ -235,7 +253,7 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
     const pathname = new URL(req.url ?? '/', 'http://preview.invalid').pathname;
     const match = ROUTE.exec(pathname);
     if (!match) {
-      refuse(res, 404, 'no such preview');
+      refuse(res, 404, 'no such preview', 'route-shape-mismatch');
       return;
     }
     const [, sessionId, token, rawPath] = match as unknown as [string, string, string, string];
@@ -244,7 +262,7 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
     try {
       assetPath = decodeURIComponent(rawPath);
     } catch {
-      refuse(res, 404, 'no such asset');
+      refuse(res, 404, 'no such asset', 'undecodable-asset-path');
       return;
     }
 
@@ -266,15 +284,19 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
     );
     const session = sessions[0];
     if (!session) {
-      refuse(res, 404, 'no such preview');
+      // Zero rows here is BOTH "no such session" and "the node cannot read the
+      // row" — the resolving select runs under the node owner's claims, so an
+      // RLS policy without a node-admin arm lands exactly here (see
+      // db/migrations/194).
+      refuse(res, 404, 'no such preview', 'session-unresolved');
       return;
     }
     if (session.revoked_at !== null) {
-      refuse(res, 403, 'this preview has been revoked');
+      refuse(res, 403, 'this preview has been revoked', 'session-revoked');
       return;
     }
     if (new Date(session.expires_at).getTime() <= now().getTime()) {
-      refuse(res, 401, 'this preview has expired');
+      refuse(res, 401, 'this preview has expired', 'session-expired');
       return;
     }
 
@@ -289,7 +311,7 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
       [session.artifact_entity_id],
     );
     if (!visible[0]) {
-      refuse(res, 403, 'this preview is no longer available');
+      refuse(res, 403, 'this preview is no longer available', 'artifact-not-visible-to-viewer');
       return;
     }
 
@@ -304,7 +326,7 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
     );
     const entry = entries[0];
     if (!entry) {
-      refuse(res, 404, 'no such asset');
+      refuse(res, 404, 'no such asset', 'asset-not-in-revision');
       return;
     }
 
@@ -320,7 +342,7 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
   return (req, res) =>
     handle(req, res).catch(() => {
       try {
-        refuse(res, 500, 'preview unavailable');
+        refuse(res, 500, 'preview unavailable', 'unhandled');
       } catch {
         res.destroy();
       }
