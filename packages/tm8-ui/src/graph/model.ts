@@ -18,6 +18,8 @@
  *    from the seam's snapshot, R-UI-5 — the view gates the pulse).
  */
 import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
+import { heatOf, type Heat } from './heat';
+import { grouperFor, type GroupAssignment, type GroupById } from './grouping';
 import {
   DEFAULT_LENS,
   HUB_DEGREE,
@@ -30,12 +32,24 @@ import {
   type LensId,
 } from './relevance';
 
-export const NODE_W = 240;
-export const NODE_H = 124;
+/* The card carries two more registers than it used to — the relation it stands
+   in, and (when one is anchored to it) a conversation meter. It grew to fit
+   them rather than clamping the title harder: the canvas holds a fifth as many
+   cards now that conversation is volume, so the room is affordable, and the
+   extra width is width the layout was already leaving empty. */
+export const NODE_W = 264;
+export const NODE_H = 150;
 const H_GAP = 44;
 const V_GAP = 72;
 const ISLAND_GAP = 96;
 const MAX_ROW_W = 1900;
+
+/* Band chrome. The header is tall enough to carry a label row plus its rule
+   without crowding the first card; the pad is the frame's inner margin. */
+const GROUP_HEADER = 52;
+const GROUP_PAD = 24;
+const GROUP_GAP = 40;
+const GROUP_MIN_W = 320;
 const MARGIN = 32;
 
 /** Honest render budget: past this the model truncates AND SAYS SO. */
@@ -43,7 +57,9 @@ export const RENDER_CAP = 150;
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
-export type Heat = 'fresh' | 'warm' | 'rest';
+/* Heat moved to `./heat` ONLY to break the model↔grouping import cycle; both
+   names are re-exported here so every existing import site still resolves. */
+export { heatOf, type Heat } from './heat';
 
 // --------------------------------------------------------------------------
 // The time window — WHICH entities are on the canvas at all.
@@ -87,6 +103,39 @@ export function windowSpec(id: string): WindowSpec {
 export interface GraphModelInput {
   nodes: EntitySummary[];
   edges: EdgeView[];
+  /**
+   * THE CONTEXTUAL PARTITION. Topological islands answer "what is wired to
+   * what"; this answers "what is blocked / mine / still open" — questions a
+   * reader asks far more often, off signals the payload already carries
+   * (grouping.ts). Each band is laid out internally by the SAME layered
+   * component code, and bands pack into rows exactly as islands do. Edges
+   * between bands are still drawn: a thread that spans two statuses should
+   * look like one. Omitted = 'none' = islands, unchanged.
+   */
+  groupBy?: GroupById;
+  /** Band keys the reader has collapsed. Ignored when `groupBy` is 'none'. */
+  collapsedGroups?: ReadonlySet<string>;
+  /**
+   * ROLL CONVERSATION ONTO ITS ANCHOR instead of drawing every message.
+   *
+   * The rule is STRUCTURAL, not a kind literal (§15.2): a node whose `state`
+   * names an `anchorId` is a thing that BELONGS TO another entity, so it is
+   * drawn ON that entity rather than beside it. Nothing is dropped — the
+   * anchor's card carries the count, the voices and the recency, and the
+   * totals below account for every one.
+   *
+   * Why this matters: on a measured space 112 of 150 nodes were messages, and
+   * folding could never reach them because `foldLeaves` needs degree 1 while a
+   * message always carries two edges (`anchored_to` + `authored_from`). The
+   * canvas grew to 1932x5812 and opened at the zoom floor.
+   *
+   * A message the reader is POINTING AT — searched, selected, focused — stays a
+   * card: `pinnedIds` and `matchIds` are honored ahead of this pass, because a
+   * search that silently declines to draw its own hit is worse than clutter.
+   *
+   * Omitted = ON. Pass false to draw every message as its own card.
+   */
+  rollUpConversation?: boolean;
   /** null = no filter. Kind names are DATA here, never literals (§15.2). */
   kindFilter: ReadonlySet<string> | null;
   edgeTypeFilter: ReadonlySet<string> | null;
@@ -171,6 +220,44 @@ export interface PlacedNode {
    * why two visibly linked groups sit apart.
    */
   hub: boolean;
+  /** The contextual band this node sits in, or null when `groupBy` is 'none'. */
+  groupKey: string | null;
+  /**
+   * The conversation ANCHORED to this node, rolled up off the canvas.
+   *
+   * A message is not a card (see `rollUpConversation`): it is volume on the
+   * entity it was anchored to. The card renders this the way the fold badge
+   * renders a fold — as an accounting of something RELOCATED, never dropped.
+   */
+  conversation?: Conversation;
+}
+
+/** What a rolled-up thread contributes to its anchor's card. */
+export interface Conversation {
+  /** How many messages anchored here were rolled up. */
+  count: number;
+  /** Distinct authors among them — "2 voices" is a different fact from "93". */
+  voices: number;
+  /** The most recent `activityAt` among them, ISO. */
+  lastAt: string;
+}
+
+export interface GraphGroup {
+  key: string;
+  label: string;
+  /** Set when the band IS a kind — the view resolves icon + plural via the registry. */
+  kindRef?: string;
+  /** Set when the band IS an actor — the view draws the avatar. */
+  actorRef?: string;
+  /** The residual band ("Unassigned", "No status") — rendered quieter. */
+  residual: boolean;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** How many nodes belong to this band, whether or not it is collapsed. */
+  count: number;
+  collapsed: boolean;
 }
 
 export interface PlacedEdge {
@@ -238,6 +325,34 @@ export interface GraphModel {
    * 0 whenever `frozen` was omitted (a full re-layout moves everyone by design).
    */
   pendingRelayout: number;
+  /**
+   * The contextual bands, in display order. Empty when `groupBy` is 'none' —
+   * the canvas then draws islands exactly as it always has.
+   */
+  groups: GraphGroup[];
+  /** The dimension this model was partitioned on. */
+  groupBy: GroupById;
+  /**
+   * Messages rolled onto their anchor rather than drawn as cards. Reported so
+   * the toolbar can state the price of the declutter, the same way `foldedCount`
+   * does. These are NOT in `visibleTotal`'s placed/shelf/folded buckets — they
+   * left the canvas as cards and arrived on an anchor as volume.
+   */
+  rolledUpCount: number;
+  /**
+   * Rolled-up messages whose anchor is NOT on this canvas. They would have been
+   * drawn and now are not, and no card accounts for them — so the number is
+   * surfaced rather than absorbed. Normally 0: a message's anchor is what pulled
+   * it into the read in the first place.
+   */
+  rolledUpOrphans: number;
+  /**
+   * Nodes inside a band the reader COLLAPSED. Not placed, not dropped: the
+   * band header still carries the count, and the accounting law counts these
+   * here so `placed + shelf + folded + collapsed + truncated + outOfLens +
+   * outOfWindow === visibleTotal` still balances with bands shut.
+   */
+  collapsedCount: number;
 }
 
 /** Ported from the proven model: humanized type, hard/soft suffix for deps. */
@@ -252,13 +367,6 @@ export function isBlockedEdge(e: EdgeView): boolean {
   return e.type === 'depends_on' && e.hard !== false && e.resolved === false;
 }
 
-export function heatOf(activityAt: string, now: string): Heat {
-  const delta = Date.parse(now) - Date.parse(activityAt);
-  if (!Number.isFinite(delta)) return 'rest';
-  if (delta <= 2 * 60_000) return 'fresh';
-  if (delta <= 45 * 60_000) return 'warm';
-  return 'rest';
-}
 
 // --------------------------------------------------------------------------
 // Union-find (per-filter, rebuilt per compute — cheap at this scale, and a
@@ -385,6 +493,38 @@ function layoutComponent(ids: EntityId[], edges: PlacedEdge[]): ComponentLayout 
 
 // --------------------------------------------------------------------------
 // Layout stability: freeze known positions, place arrivals around them without
+/**
+ * Lay out ONE band: its islands packed left-to-right exactly the way the
+ * ungrouped canvas packs islands, wrapping at the same budget. Returns local
+ * coordinates — the caller offsets them by the band's own origin.
+ */
+function layoutBand(
+  islands: EntityId[][],
+  edges: PlacedEdge[],
+): { pos: Map<EntityId, { x: number; y: number }>; w: number; h: number } {
+  const pos = new Map<EntityId, { x: number; y: number }>();
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowH = 0;
+  let widest = 0;
+  for (const island of islands) {
+    const layout = layoutComponent(island, edges);
+    if (cursorX > 0 && cursorX + layout.w > MAX_ROW_W) {
+      cursorX = 0;
+      cursorY += rowH + ISLAND_GAP;
+      rowH = 0;
+    }
+    for (const id of island) {
+      const p = layout.pos.get(id)!;
+      pos.set(id, { x: cursorX + p.x, y: cursorY + p.y });
+    }
+    cursorX += layout.w + ISLAND_GAP;
+    rowH = Math.max(rowH, layout.h);
+    widest = Math.max(widest, cursorX - ISLAND_GAP);
+  }
+  return { pos, w: widest, h: cursorY + rowH };
+}
+
 // perturbing anyone frozen. The collision grid is NODE_W/NODE_H rectangles
 // snapped to the existing NODE_W+H_GAP / NODE_H+V_GAP spacing.
 // --------------------------------------------------------------------------
@@ -425,7 +565,10 @@ function placeWithFrozen(
   now: string,
   decorate: (
     entity: EntitySummary,
-  ) => Pick<PlacedNode, 'interest' | 'degree' | 'hub'> & { folded?: FoldedInto },
+  ) => Pick<PlacedNode, 'interest' | 'degree' | 'hub' | 'groupKey'> & {
+    folded?: FoldedInto;
+    conversation?: Conversation;
+  },
 ): { placed: PlacedNode[]; pendingRelayout: number } {
   const placedIds: EntityId[] = [];
   const componentOf = new Map<EntityId, number>();
@@ -597,15 +740,62 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
   const outOfWindow = kindVisible.length - inWindow.length;
 
   // ------------------------------------------------------------------------
+  // CONVERSATION ROLL-UP. Runs BEFORE relevance, deliberately: a rolled-up
+  // message must not spend a slot of the render budget, and must not inflate
+  // its anchor's degree — 93 message edges would make every busy task a "hub"
+  // and drive the island partition off a fact about chat volume.
+  //
+  // The rule is a STRUCTURAL read of `state`, never a kind literal (§15.2): a
+  // node that names an `anchorId` is a thing that belongs to another entity.
+  // Same idiom as `STATUS_FIELD` in the view — key off the shape the contract
+  // declares, not off the kind that happens to have it today.
+  // ------------------------------------------------------------------------
+  const rollUp = input.rollUpConversation ?? true;
+  const conversations = new Map<string, { count: number; voices: Set<string>; lastAt: string }>();
+  const rolledIds = new Set<string>();
+  let rolledUpOrphans = 0;
+  if (rollUp) {
+    const present = new Set(inWindow.map((n) => n.id));
+    for (const n of inWindow) {
+      const anchorId = (n.state as { anchorId?: unknown } | undefined)?.anchorId;
+      if (typeof anchorId !== 'string') continue;
+      // POINTED AT WINS. A searched, selected or focused message stays a card:
+      // a search that declines to draw its own hit is worse than clutter.
+      if (exempt(n.id)) continue;
+      rolledIds.add(n.id);
+      if (!present.has(anchorId)) {
+        // Its anchor is off-canvas, so no card can account for it. Surfaced
+        // rather than absorbed — see `rolledUpOrphans`.
+        rolledUpOrphans += 1;
+        continue;
+      }
+      const row = conversations.get(anchorId) ?? { count: 0, voices: new Set<string>(), lastAt: '' };
+      row.count += 1;
+      const author = (n.state as { author?: { id?: unknown } } | undefined)?.author?.id;
+      if (typeof author === 'string') row.voices.add(author);
+      if (n.activityAt > row.lastAt) row.lastAt = n.activityAt;
+      conversations.set(anchorId, row);
+    }
+  }
+  const onCanvas = rolledIds.size > 0 ? inWindow.filter((n) => !rolledIds.has(n.id)) : inWindow;
+  const rolledUpCount = rolledIds.size;
+
+  // ------------------------------------------------------------------------
   // RELEVANCE PASS. Score, fold, then select — before any layout runs, so the
   // layout only ever sees the subgraph that earned the canvas. This replaces
   // the old behavior of laying out EVERYTHING and cutting by island order.
   // ------------------------------------------------------------------------
   const scopeEdges = input.edges.filter(
-    (e) => edgeTypeFilter === null || edgeTypeFilter.has(e.type),
+    (e) =>
+      (edgeTypeFilter === null || edgeTypeFilter.has(e.type)) &&
+      // An edge to a rolled-up message would union-find its anchor to a node
+      // that is not on the canvas, so the partition would be computed off
+      // cards nobody can see.
+      !rolledIds.has(e.source.id) &&
+      !rolledIds.has(e.target.id),
   );
   const relevance = computeRelevance({
-    nodes: inWindow,
+    nodes: onCanvas,
     edges: scopeEdges,
     liveIds,
     matchIds,
@@ -616,10 +806,10 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
 
   const fold = input.fold ?? true;
   const folds = fold
-    ? foldLeaves(inWindow, relevance)
+    ? foldLeaves(onCanvas, relevance)
     : { groups: new Map<string, FoldedInto>(), foldedIds: new Set<string>() };
 
-  const unfolded = inWindow.filter((n) => !folds.foldedIds.has(n.id));
+  const unfolded = onCanvas.filter((n) => !folds.foldedIds.has(n.id));
   const seeds = seedsFor(lens, unfolded, liveIds);
   const selection = selectByInterest(
     unfolded.map((n) => n.id),
@@ -740,19 +930,179 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
   // onto it, and the interest that won it its place.
   const decorate = (
     entity: EntitySummary,
-  ): Pick<PlacedNode, 'interest' | 'degree' | 'hub'> & { folded?: FoldedInto } => {
+  ): Pick<PlacedNode, 'interest' | 'degree' | 'hub' | 'groupKey'> & {
+    folded?: FoldedInto;
+    conversation?: Conversation;
+  } => {
     const group = folds.groups.get(entity.id);
+    const thread = conversations.get(entity.id);
     return {
       interest: relevance.doi.get(entity.id) ?? 0,
       degree: degreeOf(entity.id),
       hub: isHub(entity.id),
+      groupKey: null,
       ...(group ? { folded: group } : {}),
+      ...(thread
+        ? {
+            conversation: {
+              count: thread.count,
+              voices: thread.voices.size,
+              lastAt: thread.lastAt,
+            },
+          }
+        : {}),
     };
   };
 
+  // ------------------------------------------------------------------------
+  // THE CONTEXTUAL PARTITION.
+  //
+  // Runs over every VISIBLE node, not just the connected ones: with a band to
+  // belong to, a singleton is no longer loose, so the shelf empties into the
+  // bands and the reader stops having to look in two places for one entity.
+  //
+  // Grouping forces a FULL layout — a frozen position is a promise about where
+  // a node sits, and changing the partition is exactly the event that
+  // invalidates it. Freezing across a group change would strand cards outside
+  // their own band's frame, which is worse than the movement it avoids.
+  // ------------------------------------------------------------------------
+  const groupBy = input.groupBy ?? 'none';
+  const grouping = groupBy !== 'none';
+  const collapsedGroups = input.collapsedGroups ?? EMPTY_SET;
+  const componentIndex = new Map<EntityId, number>();
+  for (const [i, component] of placedComponents.entries()) {
+    for (const id of component) componentIndex.set(id, i);
+  }
+
   let placed: PlacedNode[];
   let pendingRelayout = 0;
-  if (input.frozen) {
+  const groups: GraphGroup[] = [];
+  let collapsedCount = 0;
+  let groupedShelf: EntitySummary[] | null = null;
+
+  if (grouping) {
+    const grouper = grouperFor(groupBy, { now, edges: input.edges, nodes: input.nodes });
+    const assign = new Map<EntityId, GroupAssignment>();
+    const members = new Map<string, EntityId[]>();
+    for (const n of visible) {
+      const a = grouper(n);
+      assign.set(n.id, a);
+      if (!members.has(a.key)) members.set(a.key, []);
+      members.get(a.key)!.push(n.id);
+    }
+
+    // Band order: the dimension's own rank first (workflow order, priority
+    // order, signal precedence), then the biggest band, then the label — and
+    // the residual band last whatever its size, because "nothing to say about
+    // these" is a footnote even when it is the largest footnote.
+    const keys = [...members.keys()].sort((a, b) => {
+      const A = assign.get(members.get(a)![0])!;
+      const B = assign.get(members.get(b)![0])!;
+      if (A.residual !== B.residual) return A.residual ? 1 : -1;
+      return (
+        A.rank - B.rank ||
+        members.get(b)!.length - members.get(a)!.length ||
+        A.label.localeCompare(B.label)
+      );
+    });
+
+    // MEASURE every band, then PACK — two passes, because a band's width is not
+    // known until its islands are laid out, and packing needs every width before
+    // it can decide what shares a row. Stacking one band per row wastes the
+    // canvas: a one-node band would reserve a whole row.
+    interface MeasuredBand {
+      key: string;
+      meta: GroupAssignment;
+      ids: EntityId[];
+      collapsed: boolean;
+      pos: Map<EntityId, { x: number; y: number }> | null;
+      w: number;
+      h: number;
+    }
+
+    const measured: MeasuredBand[] = keys.map((key) => {
+      const ids = members.get(key)!;
+      const meta = assign.get(ids[0])!;
+      if (collapsedGroups.has(key)) {
+        collapsedCount += ids.length;
+        return { key, meta, ids, collapsed: true, pos: null, w: GROUP_MIN_W, h: GROUP_HEADER };
+      }
+      // Islands WITHIN the band: the same roots the topological pass found,
+      // restricted to this band's members. A node whose island straddles two
+      // bands appears in each band as the part that belongs there — the edge
+      // between the parts is still drawn, now crossing the frames, which is the
+      // honest picture of a thread that spans two statuses.
+      const byRoot = new Map<string, EntityId[]>();
+      for (const id of ids) {
+        const root = connected.has(id) ? rootFor(id) : `solo:${id}`;
+        if (!byRoot.has(root)) byRoot.set(root, []);
+        byRoot.get(root)!.push(id);
+      }
+      const islands = [...byRoot.values()].sort(
+        (a, b) => b.length - a.length || (byId.get(a[0])!.title < byId.get(b[0])!.title ? -1 : 1),
+      );
+      const laid = layoutBand(islands, edges);
+      return {
+        key,
+        meta,
+        ids,
+        collapsed: false,
+        pos: laid.pos,
+        w: Math.max(laid.w + GROUP_PAD * 2, GROUP_MIN_W),
+        h: GROUP_HEADER + laid.h + GROUP_PAD,
+      };
+    });
+
+    placed = [];
+    let cursorX = MARGIN;
+    let cursorY = MARGIN;
+    let rowH = 0;
+    for (const band of measured) {
+      if (cursorX > MARGIN && cursorX + band.w > MAX_ROW_W) {
+        cursorX = MARGIN;
+        cursorY += rowH + GROUP_GAP;
+        rowH = 0;
+      }
+      const bandX = cursorX;
+      const bandY = cursorY;
+      if (!band.collapsed) {
+        const contentX = bandX + GROUP_PAD;
+        const contentY = bandY + GROUP_HEADER;
+        for (const id of band.ids) {
+          const pos = band.pos!.get(id)!;
+          const entity = byId.get(id)!;
+          placed.push({
+            entity,
+            x: contentX + pos.x,
+            y: contentY + pos.y,
+            heat: heatOf(entity.activityAt, now),
+            onBlockedPath: blockedIds.has(id),
+            ghost: entity.deletedAt !== null,
+            componentId: componentIndex.get(id) ?? 0,
+            ...decorate(entity),
+            groupKey: band.key,
+          });
+        }
+      }
+      groups.push({
+        key: band.key,
+        label: band.meta.label,
+        ...(band.meta.kindRef ? { kindRef: band.meta.kindRef } : {}),
+        ...(band.meta.actorRef ? { actorRef: band.meta.actorRef } : {}),
+        residual: band.meta.residual,
+        x: bandX,
+        y: bandY,
+        w: band.w,
+        h: band.h,
+        count: band.ids.length,
+        collapsed: band.collapsed,
+      });
+      cursorX += band.w + GROUP_GAP;
+      rowH = Math.max(rowH, band.h);
+    }
+    // Every visible node now lives in a band, so nothing is loose.
+    groupedShelf = [];
+  } else if (input.frozen) {
     const r = placeWithFrozen(placedComponents, edges, byId, blockedIds, input.frozen, now, decorate);
     placed = r.placed;
     pendingRelayout = r.pendingRelayout;
@@ -796,7 +1146,7 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
   return {
     placed,
     edges: drawableEdges,
-    shelf,
+    shelf: groupedShelf ?? shelf,
     width,
     height,
     componentCount: placedComponents.length,
@@ -812,8 +1162,16 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     // the window (`outOfWindow`). Nothing is ever dropped silently, and each
     // bucket names the REASON it is in — three exclusions that read alike on a
     // count and have three different remedies.
-    visibleTotal: kindVisible.length,
+    visibleTotal: kindVisible.length - rolledUpCount,
     lens,
     pendingRelayout,
+    groups,
+    groupBy,
+    // The declutter states its own price, always — the same duty `foldedCount`
+    // discharges. A number nobody can account for is the thing this whole pass
+    // exists to remove.
+    rolledUpCount,
+    rolledUpOrphans,
+    collapsedCount,
   };
 }

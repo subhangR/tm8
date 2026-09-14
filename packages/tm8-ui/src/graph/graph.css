@@ -261,6 +261,12 @@
 
 .gv-node {
   position: absolute;
+  /* BORDER-BOX, deliberately: this package has no global reset, so the inline
+     `width: NODE_W` was the CONTENT width and every card actually painted 26px
+     wider and 18px taller than the layout believed. Edges anchor at
+     `x + NODE_W / 2` (edgePath), so they were attaching 13px left of the card's
+     visual centre. Now the constant means the footprint. */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-1);
@@ -750,4 +756,212 @@
 .gv-select__label {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* == contextual bands ======================================================
+   A band is a GROUND, never an object: one hairline frame and a header, no
+   fill that could compete with the cards inside it. Drawn before the edges in
+   source order so nothing a band paints can occlude a node.
+   ======================================================================== */
+
+.gv-band {
+  position: absolute;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-surface);
+  pointer-events: none;
+}
+
+/* The residual band — "we have nothing to say about these twelve" is a
+   different statement from "these twelve are open", so it reads quieter. */
+.gv-band--residual {
+  border-style: dashed;
+  background: transparent;
+}
+
+.gv-band__head {
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  pointer-events: auto;
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+  color: var(--pn-ink-2);
+}
+
+.gv-band__head:hover { background: var(--pn-hover); }
+.gv-band__head:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.gv-band__glyph { color: var(--pn-ink-3); display: flex; flex: none; }
+
+.gv-band__label {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+}
+
+.gv-band--residual .gv-band__label { color: var(--pn-ink-3); }
+
+.gv-band__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  color: var(--pn-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.gv-band__chev { font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
+
+/* == the relation line =====================================================
+   What edge this card stands in, in words. A title alone does not identify a
+   node — a session is titled after its task — so this is what tells four
+   identically-titled cards apart.
+   ======================================================================== */
+
+.gv-node__rel {
+  display: block;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-2);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  flex: none;
+}
+
+.gv-node__relverb {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+/* Blocked never disappears (honesty law) — it wins the slot and says so. */
+.gv-node__rel--blocked { color: var(--pn-block); }
+.gv-node__rel--blocked .gv-node__relverb { color: var(--pn-block); }
+
+/* == the conversation meter ================================================
+   What the messages anchored here became. The same accounting duty the fold
+   badge discharges: relocated, never dropped. The NUMBER is the value; the bar
+   is only the comparison against the busiest thread on the canvas.
+   ======================================================================== */
+
+.gv-node__conv {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 3px var(--pn-space-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  flex: none;
+  min-width: 0;
+}
+
+.gv-node__conv-n {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  color: var(--pn-brand-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gv-node__conv-bar {
+  flex: 1;
+  min-width: 16px;
+  height: 4px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-line-2);
+  overflow: hidden;
+}
+
+.gv-node__conv-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+  opacity: 0.75;
+}
+
+.gv-node__conv-v {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+/* == semantic zoom =========================================================
+   Below LOD_FAR_BELOW a card sheds every register the scale cannot carry. The
+   words it drops move into the card's `title` attribute — colour + word-in-
+   title, which is how Minimap already resolves this for a 4px rect. FIT_FLOOR
+   stops the canvas CHOOSING a scale this small, so far mode is only ever
+   something the reader asked for.
+   ======================================================================== */
+
+.gv-canvas[data-lod='far'] .gv-node__head,
+.gv-canvas[data-lod='far'] .gv-node__foot,
+.gv-canvas[data-lod='far'] .gv-node__rel,
+.gv-canvas[data-lod='far'] .gv-node__conv,
+.gv-canvas[data-lod='far'] .gv-node__focus {
+  display: none;
+}
+
+.gv-canvas[data-lod='far'] .gv-node {
+  justify-content: center;
+  padding: var(--pn-space-3) var(--pn-space-4);
+  border-left-width: 4px;
+}
+
+.gv-canvas[data-lod='far'] .gv-node__title {
+  font-size: var(--pn-fs-h3);
+  -webkit-line-clamp: 3;
+  flex: 0 1 auto;
+}
+
+/* The liveness mark survives every zoom, and the live/stale distinction does
+   not depend on resolving a hue at this size: live is a FILLED pulsing dot,
+   stale is a HOLLOW ring. */
+.gv-canvas[data-lod='far'] .gv-node[data-live='live']::after,
+.gv-canvas[data-lod='far'] .gv-node[data-live='stale']::after {
+  content: "";
+  position: absolute;
+  top: var(--pn-space-3);
+  right: var(--pn-space-3);
+  width: 10px;
+  height: 10px;
+  border-radius: var(--pn-r-pill);
+}
+
+.gv-canvas[data-lod='far'] .gv-node[data-live='live']::after {
+  background: var(--pn-run);
+  animation: gv-pulse 2.4s var(--pn-ease-standard) infinite;
+}
+
+.gv-canvas[data-lod='far'] .gv-node[data-live='stale']::after {
+  background: transparent;
+  border: 2px solid var(--pn-wait);
+}
+
+@keyframes gv-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gv-canvas[data-lod='far'] .gv-node[data-live='live']::after { animation: none; }
 }
