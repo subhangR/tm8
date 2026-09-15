@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa",
+  "catalogDigest": "sha256:bf52c19e79f891bff06cf56b30b83bd987bb9816d60553782e278f4a2880101d",
   "catalog": {
-    "total": 197,
-    "v1": 195,
+    "total": 199,
+    "v1": 197,
     "reserved": 2,
-    "http": 195,
+    "http": 197,
     "ws": 1,
-    "registerableV1Http": 193,
+    "registerableV1Http": 195,
     "methods": {
       "GET": 65,
-      "POST": 98,
+      "POST": 100,
       "PATCH": 12,
       "DELETE": 12,
       "PUT": 8,
       "WS": 2
     },
     "kinds": {
-      "read": 69,
+      "read": 71,
       "command": 126,
       "stream": 2
     },
-    "uniqueNames": 197,
-    "uniqueBindings": 196
+    "uniqueNames": 199,
+    "uniqueBindings": 198
   },
   "reservedOperations": [
     "search.query",
@@ -705,6 +705,13 @@
         "source": "server-router"
       },
       {
+        "operation": "memories.search",
+        "method": "POST",
+        "path": "/v2/memories/search",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "search.query",
         "method": "GET",
         "path": "/v2/search",
@@ -953,6 +960,13 @@
         "operation": "execution.terminal.start",
         "method": "POST",
         "path": "/v2/execution/terminal",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.memoryPreview",
+        "method": "POST",
+        "path": "/v2/execution/memory-preview",
         "status": "registered",
         "source": "server-router"
       },
@@ -1783,7 +1797,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 165
+    "unimplementedV1Http": 167
   },
   "schemas": {
     "additive": {
@@ -3148,6 +3162,22 @@
         "publicComposite": null
       },
       {
+        "operation": "memories.search",
+        "noun": "memory",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/memories.search",
+        "intentTags": [
+          "memories",
+          "search"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "search.query",
         "noun": "search",
         "exposure": "reserved",
@@ -3756,6 +3786,23 @@
           "execution",
           "terminal",
           "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.memoryPreview",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.memoryPreview",
+        "intentTags": [
+          "execution",
+          "memory",
+          "preview"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -97,8 +97,13 @@ describe('W1 adopted catalog target', () => {
     // never carried: `OPERATIONS.length` = 197, `V1_OPERATIONS.length` = 195.
     // The Design's PROSE says 27 rows and is wrong; §4.1's list is 25 and the
     // coordinator ruled on it.
-    expect(OPERATIONS).toHaveLength(197);
-    expect(V1_OPERATIONS).toHaveLength(195);
+    // 197 -> 198 (2026-09-15, 186): memories.search, one POST read (kind read),
+    // so 195 -> 196 v1 rows and 193 -> 194 mounted v1 HTTP. MEASURED on this tree.
+    // 198 -> 199 (2026-09-15, launch memory preview): execution.memoryPreview,
+    // one POST read (kind read), so 196 -> 197 v1 rows and 194 -> 195 mounted
+    // v1 HTTP. MEASURED on this tree.
+    expect(OPERATIONS).toHaveLength(199);
+    expect(V1_OPERATIONS).toHaveLength(197);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -133,7 +138,9 @@ describe('W1 adopted catalog target', () => {
     // under its own name; it carries `aliasOf` and is excluded from
     // MOUNTED_OPERATIONS, so nothing mounts a second socket. Counting rows and
     // counting mounts are different questions and this pin asks the first.
-    }).toEqual({ GET: 65, POST: 98, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 });
+    // 186: POST 98->99 (memories.search). MEASURED.
+    // launch memory preview: POST 99->100 (execution.memoryPreview). MEASURED.
+    }).toEqual({ GET: 65, POST: 100, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -142,7 +149,9 @@ describe('W1 adopted catalog target', () => {
     // 141: command 101->104 (three new commands). MEASURED.
     // 148: read 64->65, command 104->106. MEASURED.
     // Containers: read 65->69, command 106->126, stream 1->2. MEASURED.
-    }).toEqual({ read: 69, command: 126, stream: 2 });
+    // 186: read 69->70 (memories.search). MEASURED.
+    // launch memory preview: read 70->71 (execution.memoryPreview). MEASURED.
+    }).toEqual({ read: 71, command: 126, stream: 2 });
   });
 });
 

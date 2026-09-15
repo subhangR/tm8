@@ -198,6 +198,10 @@ describe('W5.C generator proof', () => {
     // schema would refuse every legitimate upload — it is enumerated in
     // UNBOUND_COMMAND_OPERATIONS instead. The family's five reads bind nothing,
     // as reads do. MEASURED.
-    expect(ENTRIES).toHaveLength(118);
+    // +1 (188): memories.search is a POST READ with a body, and it binds
+    // MemorySearchInputSchema the way collections.query and graph.query do.
+    // +1 (launch memory preview): execution.memoryPreview binds
+    // ExecutionMemoryPreviewInputSchema, a POST read with a body, the same way.
+    expect(ENTRIES).toHaveLength(120);
   });
 });
