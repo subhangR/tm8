@@ -28,6 +28,21 @@ const upload = vi.mocked(uploadClipboardFile);
 
 const SESSION = '01900000-0000-7000-8000-0000000000a1';
 
+/**
+ * `findBy*` for a fake-timer test: settle the tree without leaving the clock.
+ *
+ * A single `advanceTimersByTimeAsync(0)` drains one round of microtasks, which
+ * was enough while React flushed a resolved promise's setState in the same
+ * round. Under React 19 the resolution and the render it causes are separate
+ * rounds, so a `getBy*` on the next line reads a tree that has not painted the
+ * first window yet — a miss that looks exactly like the component failing to
+ * render the control. The cases below cannot use `findBy*` instead: it polls
+ * on a timer this test owns.
+ */
+async function settleFake(rounds = 4): Promise<void> {
+  for (let i = 0; i < rounds; i += 1) await vi.advanceTimersByTimeAsync(0);
+}
+
 const NODE_PATH = '/Users/agent/.tm8/clipboard/shot.png';
 
 function uploaded(path = NODE_PATH, filename = 'shot.png') {
@@ -286,11 +301,11 @@ describe('the Transcript surface', () => {
         });
         const seam = { transcript, commands: { prompt: vi.fn() } } as never;
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
         fireEvent.click(screen.getByTestId('transcript-load-older'));
         await vi.advanceTimersByTimeAsync(5_000);
         release!();
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
 
         // The window landed rather than being discarded...
         expect(screen.getByText('the middle turn')).toBeTruthy();
@@ -352,10 +367,10 @@ describe('the Transcript surface', () => {
           opts?.before === undefined ? Promise.resolve(tail) : Promise.resolve(stuck));
         const seam = { transcript, commands: { prompt: vi.fn() } } as never;
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
 
         fireEvent.click(screen.getByTestId('transcript-load-older'));
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
         expect(screen.getByTestId('transcript-stalled')).toBeTruthy();
 
         // The poll never paused — no window was ever held — so the tail moves.
@@ -363,7 +378,7 @@ describe('the Transcript surface', () => {
         await vi.advanceTimersByTimeAsync(5_000);
 
         // The poll's render and the lift it triggers are separate rounds.
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
 
         // A different cursor is on offer, so the refusal no longer applies.
         expect(screen.queryByTestId('transcript-stalled')).toBeNull();
@@ -385,9 +400,9 @@ describe('the Transcript surface', () => {
       try {
         const { seam, transcript } = pagingSeam(windows());
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
         fireEvent.click(screen.getByTestId('transcript-load-older'));
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
 
         const afterWalk = transcript.mock.calls.length;
         await vi.advanceTimersByTimeAsync(30_000);
@@ -398,7 +413,7 @@ describe('the Transcript surface', () => {
         // Resuming drops the walk and re-reads the tail — the one refresh that
         // cannot leave a gap.
         fireEvent.click(screen.getByRole('button', { name: /back to the newest turns/i }));
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
         expect(transcript.mock.calls.length).toBeGreaterThan(afterWalk);
         expect(screen.queryByTestId('transcript-poll-paused')).toBeNull();
         expect(screen.queryByText('the middle turn')).toBeNull();

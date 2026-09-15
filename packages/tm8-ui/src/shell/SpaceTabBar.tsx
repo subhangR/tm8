@@ -34,10 +34,11 @@
  *     `DisabledAction` renders its reason as inline prose, 618 CSS px at 1920
  *     and 168 px TALL inside a 36 px bar, spilling down over the page at every
  *     width. An intermediate revision kept it and clamped the prose; the owner
- *     saw that and still wanted it out. `packages/tm8_ui_2.0` keeps its own
- *     `UiVersionReturn` ("Back to UI 1.0"), so anyone who reaches `/ui-2.0/` by
- *     typing the URL can still click their way back — the forward door is
- *     removed, never the way out.
+ *     saw that and still wanted it out. The alternate package kept its own
+ *     `UiVersionReturn` ("Back to UI 1.0") so anyone who reached `/ui-2.0/` by
+ *     typing the URL could still click their way back — the forward door was
+ *     removed, never the way out. Both are moot since 2026-09-15: that package
+ *     is deleted and `/ui-2.0/` is an ordinary 404.
  *
  * REVISION 20 (Help/top-tab ruling, 2026-08-20): the shipped row is exactly
  * Home | Work | Board | Craft | Graph | Settings | Help. Board is the client-

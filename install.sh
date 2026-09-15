@@ -721,8 +721,8 @@ if [[ "$MODE" == status ]]; then
   [[ -f "$TM8_ENV_CHECKOUT/packages/server/dist/index.js" ]] \
     && ok "server build present" || warn "no server build (packages/server/dist/index.js)"
   if (( BUILD_UI )); then
-    [[ -f "$TM8_ENV_CHECKOUT/packages/tm8_ui_2.0/dist/index.html" ]] \
-      && ok "UI bundle present" || warn "no UI bundle (packages/tm8_ui_2.0/dist/index.html)"
+    [[ -f "$TM8_ENV_CHECKOUT/packages/tm8-ui/dist/index.html" ]] \
+      && ok "UI bundle present" || warn "no UI bundle (packages/tm8-ui/dist/index.html)"
   fi
 
   if command -v systemctl >/dev/null && systemctl list-unit-files "$UNIT_NAME" >/dev/null 2>&1; then
@@ -1221,10 +1221,10 @@ if (( DO_BUILD )); then
   # error anywhere — the classic silent half-deploy.
   if (( BUILD_UI )); then
     info "vite build (a SEPARATE build — \`bun run build\` does not touch the UI) …"
-    act_sh "cd '$TM8_ENV_CHECKOUT/packages/tm8_ui_2.0' && bun run build" \
+    act_sh "cd '$TM8_ENV_CHECKOUT/packages/tm8-ui' && bun run build" \
       || die "vite build failed"
-    (( DRY_RUN )) || [[ -f packages/tm8_ui_2.0/dist/index.html ]] \
-      || die "vite build reported success but packages/tm8_ui_2.0/dist/index.html is missing"
+    (( DRY_RUN )) || [[ -f packages/tm8-ui/dist/index.html ]] \
+      || die "vite build reported success but packages/tm8-ui/dist/index.html is missing"
     did "UI bundle built"
   else
     dim "$SLOT serves the UI with vite dev against source — no bundle needed"

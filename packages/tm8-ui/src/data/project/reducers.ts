@@ -3,7 +3,7 @@
  * the normalized domain state (LLD §7). Framework-free: every function takes
  * immutable records and returns a `Partial<DomainState>` patch usable inside
  * any store's `set()`. Semantics mirror the proven collab-v2 graph-store
- * switch (packages/ui/src/collab-v2/stores/graph.ts).
+ * switch (the deleted packages/ui, src/collab-v2/stores/graph.ts).
  *
  * Dedupe/ordering is NOT handled here: the seam guarantees strictly
  * increasing seq per space with no duplicates (seam.ts `onEvent`), so

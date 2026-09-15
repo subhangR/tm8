@@ -61,7 +61,7 @@ export const VIEW_REF_SCREENS = {
      rather than a silent fallthrough. Deleting an unreachable row would trade
      that guarantee for tidiness. */
   channels: 'unbuilt',
-  /* UNBUILT, and truthfully so: CodeBrain landed in `tm8_ui_2.0` after this
+  /* UNBUILT, and truthfully so: CodeBrain landed in the alternate UI after this
      package was frozen, and no screen for it was ever transplanted here. That
      is precisely the state this table exists to record — a viewer who reaches
      it in the 1.0 UI is told the build has no screen rather than shown a blank

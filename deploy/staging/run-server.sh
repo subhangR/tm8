@@ -3,9 +3,8 @@
 #
 # scripts/dev.mjs does the reload half: `tsc -b --watch` over
 # packages/{contract,server}/src and a SIGTERM+restart of the server whenever
-# its dist changes. --server-only because dev.mjs's UI branch points at
-# packages/ui (the legacy oracle); the product UI is packages/tm8_ui_2.0 and is
-# started by run-ui.sh instead.
+# its dist changes. --server-only because staging starts its UI through
+# run-ui.sh (its own port and flags), not through dev.mjs's UI branch.
 #
 # dev.mjs resolves env with the real process environment winning over every
 # .env file and built-in default, so sourcing env.sh is sufficient to move it

@@ -299,8 +299,7 @@ describe('§9.3 — the S2/S3 partition on the app socket (second-origin mode on
     host: '127.0.0.1',
     port: 4610,
     uiDir: undefined,
-    ui20Dir: undefined,
-    maxBodyBytes: 1024,
+      maxBodyBytes: 1024,
     databaseUrl: undefined,
     preview: {
       host: 'localhost',
@@ -577,8 +576,7 @@ describe('the same-origin /p/ route on the app socket', () => {
       host: '127.0.0.1',
       port: 0,
       uiDir: undefined,
-      ui20Dir: undefined,
-      maxBodyBytes: 1024 * 1024,
+          maxBodyBytes: 1024 * 1024,
       databaseUrl: undefined,
       preview: {
         host: '127.0.0.1',
