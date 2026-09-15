@@ -56,6 +56,7 @@ import { HelpScreen } from '../help';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
 import { MobileDrawer, anyUnseen } from '../mobile/MobileDrawer';
+import { MobileThreadsSheet } from '../mobile/MobileThreadsSheet';
 import type { GateData } from './useGateData';
 
 export interface MobileShellProps {
@@ -394,7 +395,25 @@ export function MobileShell(props: MobileShellProps) {
    * settle in one round rather than ringing.
    */
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /*
+   * THE CONVERSATION LIST'S OWN SURFACE (task 01a0a5f2).
+   *
+   * It used to be the drawer's first section, rendered inline, and it grew
+   * until every entity kind in the app sat below it. `MobileThreadsSheet`'s
+   * head carries the reasoning; what matters here is that the state is the
+   * SHELL'S, like `drawerOpen` and `accountOpen` beside it, so the sheet is a
+   * sibling of the screen rather than a child and survives the screen changing
+   * underneath it.
+   */
+  const [chatsOpen, setChatsOpen] = useState(false);
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
+  /*
+   * HAS THE CHAT SCREEN ANSWERED YET? `threads` cannot say: `[]` is both "no
+   * conversations" and "not asked yet", and the drawer's counter has to tell
+   * them apart or it will draw a `0` on every boot until the first publish
+   * lands. Absent is not zero, one more time.
+   */
+  const [threadsKnown, setThreadsKnown] = useState(false);
   const [threadId, setThreadId] = useState<EntityId | null>(null);
   const onChatScreen = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
 
@@ -546,7 +565,10 @@ export function MobileShell(props: MobileShellProps) {
           {screenFor(props, {
             soloConversation: true,
             routeThreadId: threadId,
-            onThreadsChange: setThreads,
+            onThreadsChange: (next) => {
+              setThreads(next);
+              setThreadsKnown(true);
+            },
             onSelectionChange: setThreadId,
           })}
           {/* THE DRAWER. Rendered beside the screen rather than inside it,
@@ -579,13 +601,12 @@ export function MobileShell(props: MobileShellProps) {
                   />
                 )
               }
-              threads={threads}
-              selectedThreadId={threadId}
-              onSelectThread={(id) => {
-                setThreadId(id);
-                if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
-                setDrawerOpen(false);
-              }}
+              /* ABSENT UNTIL THE CHAT SCREEN HAS PUBLISHED. `threads` starts
+                 `[]` here and is filled by `onThreadsChange`, so a `0` before
+                 that first publish would state a fact nobody established —
+                 the same absent-is-not-zero rule the kind counters follow. */
+              {...(threadsKnown ? { chatCount: threads.length } : {})}
+              onOpenChats={() => setChatsOpen(true)}
               onNewThread={() => {
                 setThreadId(null);
                 if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
@@ -614,6 +635,30 @@ export function MobileShell(props: MobileShellProps) {
             controls honest — the exact failure this file's switch docblock
             documents below for `onOpenEntity`. Absent stays absent.
           */}
+          {/* THE CONVERSATION LIST. A sibling of the screen for the drawer's
+              own reason — it must survive the screen changing, because picking
+              a conversation from the Docs screen IS a screen change. */}
+          {chatsOpen ? (
+            <MobileThreadsSheet
+              threads={threads}
+              selectedThreadId={threadId}
+              onSelectThread={(id) => {
+                setThreadId(id);
+                /* PICKING ALSO NAVIGATES. Thread selection is shell state
+                   (there is still no `?thread=` route), so a conversation
+                   picked from the Docs screen has to send the viewer to the
+                   chat screen or the pick would silently do nothing visible. */
+                if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
+                setChatsOpen(false);
+              }}
+              onNewThread={() => {
+                setThreadId(null);
+                if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
+                setChatsOpen(false);
+              }}
+              onDismiss={() => setChatsOpen(false)}
+            />
+          ) : null}
           {accountOpen && props.viewerActor ? (
             <MobileAccountSheet
               actor={props.viewerActor}
