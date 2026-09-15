@@ -295,6 +295,53 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
     expect(drawer).not.toContain('EntityListPanel');
   });
 
+  it('holds no population of its own, conversations included', () => {
+    /*
+     * RULING 7, APPLIED TO THE ONE SECTION THAT WAS EXEMPT FROM IT.
+     *
+     * The Chats section shipped as the thread list rendered INLINE — the exact
+     * two-pane shape the rule above refuses, tolerated because nothing else
+     * could hold it. At eight conversations it put all nineteen entity kinds
+     * below a population that grows without bound (owner report 2026-09-15,
+     * task 01a0a5f2). The list is `MobileThreadsSheet` now and the drawer keeps
+     * two fixed rows: the verb, and a door.
+     *
+     * Asserted as the ABSENCE of the thread map, because that is the thing that
+     * grows. A row count would pass while the list crept back in beside it.
+     */
+    expect(drawer).not.toMatch(/props\.threads\.map/);
+    expect(drawer).not.toContain('ChatThreadSummary');
+    expect(drawer).toContain('onOpenChats');
+    expect(drawer).toContain('data-testid="mobile-drawer-chats"');
+
+    // The door is still FIRST (ruling 3): Chats, then Destinations.
+    const order = ['"Chats"', '"Destinations"'].map((label) => drawer.indexOf(label));
+    expect(order[0]).toBeGreaterThan(-1);
+    expect(order[0]).toBeLessThan(order[1]!);
+
+    /*
+     * A CONVERSATION IS NOT A KIND, and the row must not dress as one. Chats
+     * live outside `collectionKinds()` on purpose — messages are
+     * `strategy: 'anchored'`, which is why `CHATS_ROOT` is a sentinel — while
+     * `channel` IS a collection kind with its own row in the Entities band.
+     * Borrowing the channel mark here would read as one population drawn twice.
+     */
+    expect(drawer).toContain('CHAT_ART');
+    expect(drawer).not.toMatch(/KindIcon kind="channel"/);
+
+    // ABSENT IS NOT ZERO: the shell only knows the count once the chat screen
+    // has published, so the counter is spread, not defaulted.
+    const shell = read('../views/MobileShell.tsx');
+    expect(shell).toContain('threadsKnown');
+    expect(shell).toMatch(/\{\.\.\.\(threadsKnown \? \{ chatCount: threads\.length \} : \{\}\)\}/);
+
+    // And the sheet is a SIBLING of the screen, like the drawer and the account
+    // sheet — a list that unmounted with its screen could not survive the
+    // screen change that picking a conversation causes.
+    expect(shell).toContain('<MobileThreadsSheet');
+    expect(shell).toContain('setChatsOpen');
+  });
+
   it('grows its targets with real geometry, never a pseudo-element', () => {
     // The audit measures `getBoundingClientRect()` OF THE ELEMENT, so an
     // `::after` hit area scores as fixed while the thumb still misses. Same
