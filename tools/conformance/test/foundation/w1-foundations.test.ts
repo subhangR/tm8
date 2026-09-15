@@ -70,23 +70,28 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // registerableV1Http 193 -> 194, POST 98 -> 99, read 69 -> 70,
       // uniqueNames 197 -> 198, uniqueBindings 196 -> 197. READ OUT OF THE
       // REGENERATED MANIFEST, never delta-arithmetic.
-      total: 198,
-      v1: 196,
+      // 198 -> 199 (2026-09-15, launch memory preview): execution.memoryPreview,
+      // one POST read mounted at /v2/execution/memory-preview — so v1 196 -> 197,
+      // http 196 -> 197, registerableV1Http 194 -> 195, POST 99 -> 100,
+      // read 70 -> 71, uniqueNames 198 -> 199, uniqueBindings 197 -> 198. READ
+      // OUT OF THE REGENERATED MANIFEST, never delta-arithmetic.
+      total: 199,
+      v1: 197,
       reserved: 2,
-      http: 196,
+      http: 197,
       ws: 1,
-      registerableV1Http: 194,
-      methods: { GET: 65, POST: 99, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
-      kinds: { read: 70, command: 126, stream: 2 },
-      uniqueNames: 198,
-      uniqueBindings: 197,
+      registerableV1Http: 195,
+      methods: { GET: 65, POST: 100, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
+      kinds: { read: 71, command: 126, stream: 2 },
+      uniqueNames: 199,
+      uniqueBindings: 198,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(196); // +24 (177): the container HTTP rows; +1 (186) memories.search
+    expect(manifest.routes.http).toHaveLength(197); // +24 (177): the container HTTP rows; +1 (186) memories.search; +1 execution.memoryPreview
     // BOTH WS rows are LISTED here even though only one is MOUNTED. `routes`
     // is what a discovering client reads to learn an operation's transport,
     // and `containers.stream` has one — the same socket, dispatched on the
@@ -132,7 +137,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // are mounted — W2.C01's live inventory below is where that shows up.
     // 141 -> 165 (177): registerableV1Http 193 minus the frozen 28.
     // 165 -> 166 (186): registerableV1Http 194 minus the frozen 28.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(166);
+    // 166 -> 167 (launch memory preview): registerableV1Http 195 minus the frozen 28.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(167);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -160,7 +166,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
       // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
       // 130 -> 132 upstream (unledgered); 132 -> 135 (W4/132).
-      unimplementedV1Http: 166, // +24 (177): registerableV1Http 193 minus the frozen 28; +1 (186)
+      unimplementedV1Http: 167, // +24 (177): registerableV1Http 193 minus the frozen 28; +1 (186); +1 execution.memoryPreview
     });
   });
 
@@ -212,7 +218,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(198); // +25 (177) containers; +1 (186) memories.search
+    expect(manifest.help.operations).toHaveLength(199); // +25 (177) containers; +1 (186) memories.search; +1 execution.memoryPreview
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -431,7 +437,9 @@ describe('W2.C01 current mounted registry inventory', () => {
     // registered whatever the feature gate says — an unregistered v1 row
     // answers 404, and 404 claims the operation does not exist.
     // 180 -> 181 (2026-09-15, 186): memories.search, mounted by
-    // facade/handlers/memories.ts. MEASURED.
+    // facade/handlers/memories.ts. MEASURED. It does NOT move again for the
+    // launch memory preview: `execution.memoryPreview` is registered inside
+    // facade/execution-handlers.ts, so it lands in the EXECUTION arm below.
     expect(handlers.facade).toHaveLength(181);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
@@ -442,7 +450,11 @@ describe('W2.C01 current mounted registry inventory', () => {
     // live list reproduces the tranche-v4 sha efd55f5b…58229d byte-for-byte.
     // execution.dispatch adds one execution-module handler (merge 2026-08-09).
     // execution.terminal.start adds one more (merge 2026-08-13, #161).
-    expect(handlers.execution).toHaveLength(11);
+    // 11 -> 12 (2026-09-15, launch memory preview): execution.memoryPreview is
+    // registered beside the rest of the execution family, in
+    // facade/execution-handlers.ts, because it calls the same
+    // `selectAgentMemories` the spawn path calls. MEASURED.
+    expect(handlers.execution).toHaveLength(12);
     expect(handlers.events).toHaveLength(2);
     // 124 -> 125 (2026-08-07): `execution.transcript` joins the execution
     // handler module, so both the execution count and the whole list move.
@@ -456,7 +468,9 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 158 -> 160 upstream (unledgered); 160 -> 163 (W4/132).
     // 193 -> 194 (2026-09-15, 186): memories.search, mounted by
     // facade/handlers/memories.ts. MEASURED.
-    expect(handlers.all).toHaveLength(194); // +24 (177): the container handlers
+    // 194 -> 195 (2026-09-15, launch memory preview): execution.memoryPreview,
+    // mounted by facade/execution-handlers.ts. MEASURED.
+    expect(handlers.all).toHaveLength(195); // +24 (177): the container handlers
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -474,7 +488,10 @@ describe('W2.C01 current mounted registry inventory', () => {
       // handlers. Read out of the FAILING RUN's Received line.
       // Re-measured 186: memories.search joins the facade list. Read out of the
       // FAILING RUN's Received line, never typed from memory.
-      .toBe('021ec1029ec8ef87838baa245868ecaef4fe1f06b68b559bdc3717902326414a');
+      // Re-measured for the launch memory preview: execution.memoryPreview
+      // joins the execution list. Same rule — read out of the FAILING RUN's
+      // Received line, never typed from memory.
+      .toBe('ea05337c2b05bf632944afd5c914fa18b6ca69caac1db91820a591a2ff1d5c62');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -494,7 +511,9 @@ describe('W2.C01 current mounted registry inventory', () => {
     // nothing, which is why three ops move this by two.
     // +1 (186): MemorySearchInputSchema binds memories.search, a POST read
     // with a body, the way collections.query and graph.query bind.
-    expect(inputSchemas.bound).toHaveLength(119) // +19 (177): the container command bodies that bind;
+    // +1 (launch memory preview): ExecutionMemoryPreviewInputSchema binds
+    // execution.memoryPreview, a POST read with a body, the same way.
+    expect(inputSchemas.bound).toHaveLength(120) // +19 (177): the container command bodies that bind;
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -524,7 +543,8 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 169 -> 193 (2026-09-03): 24 of the 25 containers.* rows are registerable
     // v1 HTTP; the 25th is the WS alias, which mounts nothing. MEASURED.
     // 193 -> 194 (2026-09-15, 186): memories.search. MEASURED.
-    expect(registerableV1Http).toHaveLength(194);
+    // 194 -> 195 (2026-09-15, launch memory preview): execution.memoryPreview. MEASURED.
+    expect(registerableV1Http).toHaveLength(195);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

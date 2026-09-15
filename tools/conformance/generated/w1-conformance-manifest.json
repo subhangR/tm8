@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:278432e9fa53df392567d1a1e855427e65b35f6ae864d72c1c7360cc63272f39",
+  "catalogDigest": "sha256:bf52c19e79f891bff06cf56b30b83bd987bb9816d60553782e278f4a2880101d",
   "catalog": {
-    "total": 198,
-    "v1": 196,
+    "total": 199,
+    "v1": 197,
     "reserved": 2,
-    "http": 196,
+    "http": 197,
     "ws": 1,
-    "registerableV1Http": 194,
+    "registerableV1Http": 195,
     "methods": {
       "GET": 65,
-      "POST": 99,
+      "POST": 100,
       "PATCH": 12,
       "DELETE": 12,
       "PUT": 8,
       "WS": 2
     },
     "kinds": {
-      "read": 70,
+      "read": 71,
       "command": 126,
       "stream": 2
     },
-    "uniqueNames": 198,
-    "uniqueBindings": 197
+    "uniqueNames": 199,
+    "uniqueBindings": 198
   },
   "reservedOperations": [
     "search.query",
@@ -964,6 +964,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.memoryPreview",
+        "method": "POST",
+        "path": "/v2/execution/memory-preview",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.prompt",
         "method": "POST",
         "path": "/v2/entities/:id/commands/prompt",
@@ -1790,7 +1797,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 166
+    "unimplementedV1Http": 167
   },
   "schemas": {
     "additive": {
@@ -3779,6 +3786,23 @@
           "execution",
           "terminal",
           "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.memoryPreview",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.memoryPreview",
+        "intentTags": [
+          "execution",
+          "memory",
+          "preview"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

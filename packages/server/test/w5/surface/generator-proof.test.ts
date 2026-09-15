@@ -200,6 +200,8 @@ describe('W5.C generator proof', () => {
     // as reads do. MEASURED.
     // +1 (186): memories.search is a POST READ with a body, and it binds
     // MemorySearchInputSchema the way collections.query and graph.query do.
-    expect(ENTRIES).toHaveLength(119);
+    // +1 (launch memory preview): execution.memoryPreview binds
+    // ExecutionMemoryPreviewInputSchema, a POST read with a body, the same way.
+    expect(ENTRIES).toHaveLength(120);
   });
 });

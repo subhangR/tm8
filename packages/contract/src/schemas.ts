@@ -75,6 +75,7 @@ import type {
   InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkedPullRequestBadge, LinkPrInput,
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
   MemorySearchInput, MemorySearchItem, MemorySearchResult,
+  ExecutionMemoryPreview, ExecutionMemoryPreviewEntry, ExecutionMemoryPreviewInput,
   Mention, MessageBatchResult, MessageDeliveryDisposition,
   MessageDeliveryQuery, MessageDeliveryRecord,
   MessageChatTurnRecord, MessageDeliveryView, MessagePart, MessageView, MoveEntityInput,
@@ -2776,6 +2777,40 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
   cols: TerminalDimSchema,
   rows: TerminalDimSchema,
+}).strict();
+
+/**
+ * `execution.memoryPreview` — the read behind "What this agent will be told".
+ *
+ * Bound at the frame, and bound to the SAME shapes `execution.spawn` binds:
+ * the same uuid rule for every id and the same ceiling of 32 picks. A preview
+ * that accepted a body spawn would refuse would be answering a question nobody
+ * can act on, which is a worse lie than refusing.
+ *
+ * `.strict()` for the reason every read with a body is strict here: a field
+ * this operation does not read must be REFUSED rather than silently dropped,
+ * so nobody can believe they previewed something they did not.
+ */
+export const ExecutionMemoryPreviewInputSchema: z.ZodType<ExecutionMemoryPreviewInput> = z.object({
+  spaceId: SpawnUuidSchema,
+  teamMemberId: SpawnUuidSchema,
+  taskIds: z.array(SpawnUuidSchema).optional(),
+  projectId: SpawnUuidSchema.nullable().optional(),
+  memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+}).strict();
+
+export const ExecutionMemoryPreviewEntrySchema: z.ZodType<ExecutionMemoryPreviewEntry> = z.object({
+  id: EntityIdSchema,
+  statement: z.string(),
+  marks: z.array(z.string()),
+  source: z.enum(['own', 'task', 'learned', 'picked']),
+}).strict();
+
+export const ExecutionMemoryPreviewSchema: z.ZodType<ExecutionMemoryPreview> = z.object({
+  entries: z.array(ExecutionMemoryPreviewEntrySchema),
+  shown: z.number().int().min(0),
+  omitted: z.number().int().min(0),
+  roomUsedPercent: z.number().int().min(0),
 }).strict();
 
 /**

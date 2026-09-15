@@ -20,7 +20,7 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   // 136 -> 137 (2026-08-09): execution.dispatch. NOTE this counts ROUTES, not
   // catalog rows — the catalog is 138, of which `events.subscribe` is WS and
   // never becomes an HTTP route.
-  expect(h.operations).toBe(196) /* 195→196 2026-09-15 186: memories.search — one POST route, MEASURED off /health */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */; // +3 W4/132 — ROUTES, not catalog rows
+  expect(h.operations).toBe(197) /* 196→197 2026-09-15 launch memory preview: execution.memoryPreview — one POST route, MEASURED off /health */ /* 195→196 2026-09-15 186: memories.search — one POST route, MEASURED off /health */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */; // +3 W4/132 — ROUTES, not catalog rows
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });

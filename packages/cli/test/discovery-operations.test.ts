@@ -68,7 +68,8 @@ import { createOutput } from '../src/output.js';
 // is why the commandless subtraction below moves 25 -> 27. MEASURED on this
 // tree, not carried from the design.
 // 197 -> 198 (2026-09-15, 186): memories.search, a commandless row (below). MEASURED.
-const EXPECTED_ROWS = 198;
+// 198 -> 199 (2026-09-15): execution.memoryPreview, also commandless (below). MEASURED.
+const EXPECTED_ROWS = 199;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -173,7 +174,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('194 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('195 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
@@ -183,7 +184,8 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
     // 193 -> 194 public (2026-09-15, 186): memories.search. MEASURED.
-    expect(histogram).toEqual({ public: 194, composite: 1, internal: 1, reserved: 2 });
+    // 194 -> 195 public (2026-09-15): execution.memoryPreview. MEASURED.
+    expect(histogram).toEqual({ public: 195, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -228,6 +230,10 @@ const COMMANDLESS_OPERATIONS = [
       'execution.gitRollback',
       'execution.gitStash',
       'execution.gitStatus',
+      // The launch screen's preview read. No verb of its own: at a terminal the
+      // shorter answer is to launch and read `tm8 session launch`, and one
+      // action must not have two names.
+      'execution.memoryPreview',
       'execution.prompt',
       // 2026-08-13 (merge): execution.terminal.start is UI-only on main.
       'execution.terminal.start',

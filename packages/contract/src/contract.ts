@@ -2430,6 +2430,92 @@ export interface MemorySearchResult {
   items: MemorySearchItem[];
 }
 
+/**
+ * `execution.memoryPreview` (POST /v2/execution/memory-preview) — WHAT THIS
+ * AGENT WILL BE TOLD, before it is told.
+ *
+ * A launch can hand a teammate memories, and until this read existed nobody
+ * could see what the teammate would actually receive. Three sets ride along on
+ * their own: what the teammate already carries, what the work it is being
+ * pointed at carries, and what it found out in earlier sessions — and a fixed
+ * amount of room drops whatever does not fit. So a person picking memories on
+ * a launch screen was picking blind: they could pick something already on its
+ * way, or add a tenth memory to a hand-off that had room for six.
+ *
+ * THE ANSWER IS THE HAND-OFF, NOT A DESCRIPTION OF IT. The node runs the
+ * launch's own selection to answer — the same function, in the same order,
+ * with the same room — so this cannot drift from what the agent gets. Give it
+ * the same teammate, work and picks a launch would carry and it returns the
+ * same memories a launch would carry.
+ *
+ * IT CHANGES NOTHING. No session is started, nothing is remembered, nothing is
+ * recorded; ask it as often as the choices change. And it sees only what the
+ * asker is allowed to see.
+ */
+export interface ExecutionMemoryPreviewInput {
+  spaceId: SpaceId;
+  /** The teammate that would be launched. */
+  teamMemberId: EntityId;
+  /** The work it would be pointed at. Omit when there is none. */
+  taskIds?: EntityId[];
+  /**
+   * The project the launch would run in, when it names one.
+   *
+   * Carried for one reason: a project can hold memories of its own, and a
+   * launch into that project hands them over. A preview that left this out
+   * would quietly show a shorter list than the launch it is previewing — the
+   * exact blindness this read exists to end.
+   */
+  projectId?: EntityId | null;
+  /** The memories picked by hand for this launch. At most 32, as a launch allows. */
+  memoryIds?: EntityId[];
+}
+
+/**
+ * Where one memory came from, in the words a launch screen shows:
+ *
+ *   'own'      the teammate carries it already
+ *   'task'     the work reached it — a task, a task above it, or the project
+ *   'learned'  the teammate found it out in an earlier session, or wrote it
+ *   'picked'   somebody named it for this launch
+ */
+export type ExecutionMemoryPreviewSource = 'own' | 'task' | 'learned' | 'picked';
+
+export interface ExecutionMemoryPreviewEntry {
+  id: EntityId;
+  /** The claim, as the agent will read it — already shortened if it was long. */
+  statement: string;
+  /**
+   * What is on record against this memory, in plain words: 'superseded',
+   * 'disputed', 'basis deleted', 'basis changed', 'verified'. An empty list
+   * means nobody has marked it, which is NOT the same as verified.
+   *
+   * Unlike an entity summary's staleness badge, this list CAN say 'verified':
+   * it is read from the same mark edges the launch itself reads, so it says
+   * exactly what the agent will be shown beside the claim.
+   */
+  marks: string[];
+  source: ExecutionMemoryPreviewSource;
+}
+
+export interface ExecutionMemoryPreview {
+  /** In the order the agent reads them. */
+  entries: ExecutionMemoryPreviewEntry[];
+  /** How many memories would be handed over — `entries.length`, said as a number. */
+  shown: number;
+  /**
+   * How many more were in the running and did not fit. The agent is told they
+   * exist and can search for them; they are never dropped silently.
+   */
+  omitted: number;
+  /**
+   * How much of the room set aside for memories this hand-off uses, as a
+   * percentage. Picked memories are handed over whether or not there is room,
+   * so this can exceed 100 — and saying so is the point.
+   */
+  roomUsedPercent: number;
+}
+
 /** POST /v2/entities/:id/commands/gate — 083's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
 export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
 

@@ -27,7 +27,9 @@ describe('W1 stub route and honesty oracle', () => {
     // 162 -> 165 (W4/132): the three spaces.taskWorkflows routes.
     // 171 -> 195 (2026-09-03): the 24 HTTP containers.* rows. MEASURED.
     // 195 -> 196 (2026-09-15, 186): memories.search, POST /v2/memories/search. MEASURED.
-    expect(http).toHaveLength(196);
+    // 196 -> 197 (2026-09-15, launch memory preview): execution.memoryPreview,
+    // POST /v2/execution/memory-preview. MEASURED.
+    expect(http).toHaveLength(197);
 
     for (const operation of http) {
       const response = await fetch(new URL(fixturePath(operation.path), baseUrl), {

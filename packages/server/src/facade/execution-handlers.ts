@@ -66,6 +66,8 @@ import type {
   ExecutionDispatchInput,
   ExecutionDispatchResult,
   ExecutionLiveness,
+  ExecutionMemoryPreview,
+  ExecutionMemoryPreviewInput,
   ExecutionPromptInput,
   ExecutionResumeInput,
   ExecutionSpawnInput,
@@ -81,7 +83,7 @@ import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
-import type { Db, DbClaims } from '../db/types.js';
+import type { Db, DbClaims, Querier } from '../db/types.js';
 import { PgDurableSeqSource } from '../events/seq.js';
 import { DbAgentCredentialHome } from '../credentials/agent-credential-injection.js';
 import { DbGitHubCredentialStore } from '../credentials/github-credential-store.js';
@@ -176,14 +178,27 @@ const MAX_HIERARCHY_DEPTH = 16;
 /**
  * One row of `internal.select_agent_memories` (migration 185): the automatic
  * memory set for this spawn, already selected, ranked, budgeted and rendered
- * by the graph (design §7.2–§7.4). Only the columns the injector consumes are
- * read; the function also returns the clipped fields, marks, route and
- * truncation flags for a renderer that wants them.
+ * by the graph (design §7.2–§7.4).
+ *
+ * `in_working_set` is NOT one of the function's columns — it is joined on in
+ * the query below. See `AgentMemorySource` for why it is asked.
  */
 interface SelectedMemoryRow {
   entity_id: string;
   /** The prompt line, `<statement> [marks] (mem:<id>)`, at most 512 bytes. */
   entry: string;
+  /** Bytes that line adds to the prompt — the graph's own count, not a re-measure. */
+  entry_bytes: number | string;
+  /** The claim alone, clipped for display (240 characters / 960 bytes). */
+  statement: string;
+  /** The plain-word marks the agent will see, in display precedence. */
+  marks: string[] | null;
+  /** Which route reached it: 'persona' | 'subject' | 'project' | 'worktree'. */
+  route: string;
+  /** The superseded memories whose place this one took, if any. */
+  replaces: string[] | null;
+  /** Whether the teammate (or the member it belongs to) carries this in its own working set. */
+  in_working_set: boolean;
   /** Ranked candidates that did not fit the budget — the same on every row. */
   omitted_ids: string[] | null;
 }
@@ -192,6 +207,9 @@ interface SelectedMemoryRow {
 interface RequestedMemoryRow {
   entity_id: string;
   entry: string;
+  entry_bytes: number | string;
+  statement: string;
+  marks: string[] | null;
 }
 
 /**
@@ -208,6 +226,225 @@ interface RequestedMemoryRow {
 const MEMORY_SECTION_BUDGET_BYTES = 4096;
 
 /**
+ * WHERE ONE MEMORY CAME FROM, in the four words a launch screen can show.
+ *
+ * The graph's selector answers a ROUTE — 'persona', 'subject', 'project',
+ * 'worktree' (migration 185) — which is the right vocabulary for ranking and
+ * the wrong one for a person. These four are the reading:
+ *
+ *   'own'      the teammate carries it in its own working set today
+ *   'learned'  it reached the teammate through one of its earlier sessions, or
+ *              the teammate wrote it — the persona route with no working-set
+ *              edge behind it
+ *   'task'     the work reached it: an assigned task, a task above it, the
+ *              project, or the worktree
+ *   'picked'   whoever is launching named it on the way in
+ *
+ * WHY 'own' AND 'learned' NEED AN EXTRA QUESTION. The selector folds all of
+ * C1 into one 'persona' route — the working-set edge, the past sessions' edges
+ * and authorship — because for ranking they are the same tier. They are not
+ * the same thing to read: "the teammate already carries this" and "the
+ * teammate worked this out last time" are different facts about the same
+ * agent. So the query below asks the one extra question the selector does not
+ * answer — is there a `remembers` edge from this teammate (or from the member
+ * it belongs to) — and asks it about the ids the selector already chose. It
+ * cannot change WHICH memories are selected or their order; it only labels
+ * them.
+ *
+ * WHY 'task' ALSO COVERS project AND worktree. All three mean "the work at
+ * hand reached this", and a reader asked to hold four routes in mind to read
+ * one line is being handed the selector's vocabulary instead of an answer.
+ */
+export type AgentMemorySource = 'own' | 'task' | 'learned' | 'picked';
+
+/** One memory as the agent will receive it, plus what a person needs to read it. */
+export interface AgentMemoryEntry {
+  id: string;
+  /** The prompt line verbatim — the bytes the agent gets. */
+  entry: string;
+  /** Bytes that line adds to the prompt. */
+  bytes: number;
+  /** The claim alone, clipped for display. */
+  statement: string;
+  /** The graph's plain-word marks. Empty means nobody has marked it — not "verified". */
+  marks: string[];
+  source: AgentMemorySource;
+}
+
+/**
+ * THE SPAWN'S MEMORY HAND-OFF, selected once.
+ *
+ * This is the shape `selectAgentMemories` answers and the ONLY thing either
+ * caller reads: the spawn injector renders it into prompt lines, and the
+ * launch screen's preview renders it into rows a person can read. Two renders,
+ * one selection — which is the whole reason the selection was lifted out of
+ * `loadSpawnContext` in the first place. A preview that ran its own query
+ * would be a second opinion about what the agent gets, and the day the two
+ * disagreed the screen would be the more convincing of the pair.
+ */
+export interface AgentMemorySet {
+  /** The graph's automatic set in its rank order, minus anything also picked. */
+  automatic: AgentMemoryEntry[];
+  /** The picks, in the caller's order, each named once. */
+  picked: AgentMemoryEntry[];
+  /** Ranked candidates the room could not take, minus anything picked anyway. */
+  omitted: number;
+  /** Bytes every entry above adds, and the room set aside for them. */
+  usedBytes: number;
+  budgetBytes: number;
+}
+
+export interface SelectAgentMemoriesInput {
+  spaceId: string;
+  teamMemberId: string;
+  taskIds?: readonly string[] | undefined;
+  /** The `public.projects` id, not its entity projection — the query resolves that. */
+  projectId?: string | null | undefined;
+  memoryIds?: readonly string[] | undefined;
+}
+
+/**
+ * THE MEMORY HAND-OFF, SELECTED — the one place that decides which memories a
+ * fresh agent starts with.
+ *
+ * Called by `loadSpawnContext` (inside the pre-spawn transaction, so the set
+ * describes the same instant as the persona beside it) and by the launch
+ * screen's preview (inside a transaction of its own, which writes nothing).
+ * Both hand it a `Querier` rather than a `Db` precisely so the caller owns the
+ * transaction and this function cannot open a second one behind the first.
+ *
+ * The automatic set is SELECTED BY THE GRAPH — migration 185,
+ * internal.select_agent_memories, design §7.2–§7.4: the persona's own working
+ * set and authored memories, the assigned tasks' and their ancestors'
+ * memories, the project's; every superseded entry replaced by its chain head;
+ * ranked by epistemic state; bounded on the way in. The project's entity
+ * projection is resolved in the same statement. The worktree slot is null: a
+ * worktree is provisioned AFTER the spawn read (SpawnService.spawn), so that
+ * route waits for a caller that knows its worktree.
+ *
+ * Requested `memoryIds` (D3a) are validated HARD — a caller that names a
+ * memory it cannot read, or that is not a memory, is refused rather than
+ * quietly given less than it asked for. They are rendered through the same
+ * graph line as the automatic set, marks included: the caller named THAT
+ * memory, so a superseded one is shown as superseded rather than
+ * second-guessed into its successor.
+ */
+export async function selectAgentMemories(
+  q: Querier,
+  input: SelectAgentMemoriesInput,
+): Promise<AgentMemorySet> {
+  const requestedIds = input.memoryIds ?? [];
+  const taskIds = input.taskIds ?? [];
+  const selectedRows = await q.query<SelectedMemoryRow>(
+    `select s.entity_id, s.entry, s.entry_bytes, s.statement, s.marks, s.route,
+            s.replaces, s.omitted_ids,
+            exists (
+              select 1
+                from public.edges r
+               where r.type = 'remembers' and r.space_id = $1::uuid
+                 -- OR the memory this one replaced: a superseded entry hands
+                 -- its place to its chain head, and the working-set edge stays
+                 -- on the predecessor (056's edges are append-only). Asking
+                 -- about the head alone would report the teammate's own
+                 -- corrected memory as something it merely learned elsewhere.
+                 and (r.dst_id = s.entity_id
+                      or r.dst_id = any(coalesce(s.replaces, '{}'::uuid[])))
+                 and (r.src_id = $2::uuid
+                      or r.src_id = (select tm.owner_member_id
+                                       from public.team_members tm
+                                      where tm.entity_id = $2::uuid))
+            ) as in_working_set
+       from internal.select_agent_memories(
+              $1::uuid, $2::uuid, $3::uuid[],
+              (select pe.id
+                 from public.project_projection_details ppd
+                 join public.entities pe on pe.id = ppd.entity_id
+                where ppd.project_id = $4::uuid
+                  and pe.space_id = $1::uuid and pe.deleted_at is null
+                order by pe.id
+                limit 1),
+              null::uuid,
+              $5::integer) s`,
+    [input.spaceId, input.teamMemberId, taskIds, input.projectId ?? null, MEMORY_SECTION_BUDGET_BYTES],
+  );
+
+  const requestedRows =
+    requestedIds.length === 0
+      ? []
+      : await q.query<RequestedMemoryRow>(
+          `select m.entity_id,
+                  internal.agent_memory_entry(m.entity_id, m.statement, mk.marks) as entry,
+                  octet_length(internal.agent_memory_entry(m.entity_id, m.statement, mk.marks))
+                    as entry_bytes,
+                  internal.clip_text(m.statement, 240, 960) as statement,
+                  mk.marks
+             from public.memories m
+             join public.entities e
+               on e.id = m.entity_id and e.space_id = $1::uuid and e.deleted_at is null
+             join internal.memory_marks($2::uuid[]) mk on mk.entity_id = m.entity_id
+            where m.entity_id = any($2::uuid[])`,
+          [input.spaceId, requestedIds],
+        );
+  const foundIds = new Set(requestedRows.map((r) => r.entity_id));
+  const missing = requestedIds.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) {
+    throw fail(
+      'not_found',
+      `memoryIds not found in this space (or not memory entities): ${missing.join(', ')}`,
+    );
+  }
+
+  // A picked memory is held back from the automatic tier and shown in the
+  // caller's own tail, so nothing is listed twice and the caller's order for
+  // its own picks survives.
+  const wanted = new Set(requestedIds);
+  const automatic: AgentMemoryEntry[] = [];
+  for (const row of selectedRows) {
+    if (wanted.has(row.entity_id)) continue;
+    automatic.push({
+      id: row.entity_id,
+      entry: row.entry,
+      bytes: Number(row.entry_bytes),
+      statement: row.statement,
+      marks: row.marks ?? [],
+      source: row.route === 'persona' ? (row.in_working_set ? 'own' : 'learned') : 'task',
+    });
+  }
+
+  const picked: AgentMemoryEntry[] = [];
+  const named = new Set<string>();
+  for (const id of requestedIds) {
+    if (named.has(id)) continue; // the same memory named twice is still one memory
+    const row = requestedRows.find((r) => r.entity_id === id);
+    if (!row) continue; // absence already refused above
+    named.add(id);
+    picked.push({
+      id,
+      entry: row.entry,
+      bytes: Number(row.entry_bytes),
+      statement: row.statement,
+      marks: row.marks ?? [],
+      source: 'picked',
+    });
+  }
+
+  // What the graph left out, minus anything the picked tier shows anyway.
+  const omittedIds = new Set(selectedRows[0]?.omitted_ids ?? []);
+  for (const id of requestedIds) omittedIds.delete(id);
+
+  return {
+    automatic,
+    picked,
+    omitted: omittedIds.size,
+    // The picks are exempt from the budget (see `renderMemoryLines`), so they
+    // are counted here and the total is allowed to exceed the room. A figure
+    // that stopped at 100% would hide exactly the case worth seeing.
+    usedBytes: [...automatic, ...picked].reduce((total, entry) => total + entry.bytes, 0),
+    budgetBytes: MEMORY_SECTION_BUDGET_BYTES,
+  };
+}
+
+/**
  * The injected memory strings, in the order the agent reads them:
  *
  *   1. the automatic set, in the graph's rank order — minus any id the caller
@@ -222,36 +459,41 @@ const MEMORY_SECTION_BUDGET_BYTES = 4096;
  *
  * Every line is the graph's own rendering (`internal.agent_memory_entry`), so
  * the bytes the budget counted are the bytes the prompt carries.
+ *
+ * Exported so the preview's suite can prove the equality this lane exists for:
+ * render the PREVIEW's set and it must equal, line for line, what
+ * `loadSpawnContext` injected for the same inputs.
  */
-function renderMemories(
-  selected: readonly SelectedMemoryRow[],
-  requested: readonly RequestedMemoryRow[],
-  requestedIds: readonly string[],
-): string[] {
-  const out: string[] = [];
-  const shown = new Set<string>();
-  const wanted = new Set(requestedIds);
-  for (const row of selected) {
-    if (wanted.has(row.entity_id)) continue;
-    out.push(row.entry);
-    shown.add(row.entity_id);
-  }
-  // What the graph left out, minus anything the requested tier shows anyway.
-  const omitted = new Set(selected[0]?.omitted_ids ?? []);
-  for (const id of requestedIds) omitted.delete(id);
-  if (omitted.size > 0) {
+export function renderMemoryLines(set: AgentMemorySet): string[] {
+  const out = set.automatic.map((entry) => entry.entry);
+  if (set.omitted > 0) {
     out.push(
-      `[${omitted.size} further ${omitted.size === 1 ? 'memory' : 'memories'} not shown — there was not room for them here; use memory_search to find the rest]`,
+      `[${set.omitted} further ${set.omitted === 1 ? 'memory' : 'memories'} not shown — there was not room for them here; use memory_search to find the rest]`,
     );
   }
-  for (const id of requestedIds) {
-    if (shown.has(id)) continue;
-    const row = requested.find((r) => r.entity_id === id);
-    if (!row) continue; // absence already refused upstream
-    out.push(row.entry);
-    shown.add(id);
-  }
+  for (const entry of set.picked) out.push(entry.entry);
   return out;
+}
+
+/**
+ * The hand-off, said in the words the launch screen shows.
+ *
+ * Nothing is re-selected, re-ordered or re-counted here: the entries are the
+ * set's own, in the set's own order, and `shown` is simply how many there are.
+ */
+export function memoryPreviewOf(set: AgentMemorySet): ExecutionMemoryPreview {
+  const entries = [...set.automatic, ...set.picked];
+  return {
+    entries: entries.map((entry) => ({
+      id: entry.id,
+      statement: entry.statement,
+      marks: entry.marks,
+      source: entry.source,
+    })),
+    shown: entries.length,
+    omitted: set.omitted,
+    roomUsedPercent: Math.round((set.usedBytes / set.budgetBytes) * 100),
+  };
 }
 
 export class DbGraphPort implements GraphPort {
@@ -279,6 +521,49 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
+   * WHAT THIS AGENT WILL BE TOLD — the memory hand-off `loadSpawnContext`
+   * would make, worked out without making it (`execution.memoryPreview`).
+   *
+   * IT IS THE SAME SELECTION, not a description of it: the one call below is
+   * `selectAgentMemories`, which is also the only thing `loadSpawnContext`
+   * calls for its memories. Hand both the same space, teammate, tasks, project
+   * and picks and they answer the same memories in the same order, because
+   * there is only one answer to give. The launch screen exists to end blind
+   * picking, and a preview free to disagree with the launch would be blindness
+   * with a progress bar.
+   *
+   * IT WRITES NOTHING. No session, no edge, no ledger row — a person may ask
+   * it every time they change their mind. One transaction all the same, for
+   * the reason `loadSpawnContext` uses one: the automatic set and the named
+   * picks must describe the same instant, or the screen shows a hand-off that
+   * never existed.
+   *
+   * THE PERSONA IS CHECKED FIRST, with `loadSpawnContext`'s own words, so a
+   * teammate the caller cannot read is refused here exactly as it would be
+   * refused at launch rather than answering an empty, innocent-looking list.
+   *
+   * Takes `DbClaims` rather than `GraphAuth` and is deliberately NOT on the
+   * `GraphPort` interface: the spawn service has no business previewing, and
+   * a fake graph in SpawnService's tests must not have to grow a method it
+   * never calls.
+   */
+  async previewMemories(claims: DbClaims, input: SelectAgentMemoriesInput): Promise<AgentMemorySet> {
+    return this.db.tx(claims, async (q) => {
+      const members = await q.query<{ entity_id: string }>(
+        `select tm.entity_id
+           from public.team_members tm
+           join public.entities e on e.id = tm.entity_id
+          where tm.entity_id = $1 and e.space_id = $2 and e.deleted_at is null`,
+        [input.teamMemberId, input.spaceId],
+      );
+      if (!members[0]) {
+        throw fail('not_found', `team member ${input.teamMemberId} not found in this space`);
+      }
+      return selectAgentMemories(q, input);
+    });
+  }
+
+  /**
    * The pre-spawn reads, in ONE transaction.
    *
    * One transaction rather than three round trips because the three answers must
@@ -302,61 +587,19 @@ export class DbGraphPort implements GraphPort {
         throw fail('not_found', `team member ${input.teamMemberId} not found in this space`);
       }
 
-      // The automatic memory set is SELECTED BY THE GRAPH — migration 185,
-      // internal.select_agent_memories, design §7.2–§7.4: the persona's own
-      // working set and authored memories, the assigned tasks' and their
-      // ancestors' memories, the project's; every superseded entry replaced by
-      // its chain head; ranked by epistemic state; bounded on the way in. Read
-      // here, inside the transaction, so the set describes the same instant as
-      // the persona beside it. The project's entity projection is resolved in
-      // the same statement. The worktree slot is null: a worktree is
-      // provisioned AFTER this read (SpawnService.spawn), so that route waits
-      // for a caller that knows its worktree.
-      const requestedIds = input.memoryIds ?? [];
-      const spawnTaskIds = input.taskIds ?? [];
-      const selectedRows = await q.query<SelectedMemoryRow>(
-        `select s.entity_id, s.entry, s.omitted_ids
-           from internal.select_agent_memories(
-                  $1::uuid, $2::uuid, $3::uuid[],
-                  (select pe.id
-                     from public.project_projection_details ppd
-                     join public.entities pe on pe.id = ppd.entity_id
-                    where ppd.project_id = $4::uuid
-                      and pe.space_id = $1::uuid and pe.deleted_at is null
-                    order by pe.id
-                    limit 1),
-                  null::uuid,
-                  $5::integer) s`,
-        [input.spaceId, input.teamMemberId, spawnTaskIds, input.projectId ?? null, MEMORY_SECTION_BUDGET_BYTES],
-      );
-      // Requested `memoryIds` (D3a) are validated hard — a spawn that names a
-      // memory the caller cannot read, or that is not a memory, must refuse
-      // rather than quietly inject less than was asked. They render through
-      // the same graph line as the automatic set, marks included: the caller
-      // named THAT memory, so a superseded one is shown as superseded rather
-      // than second-guessed into its successor.
-      const requestedRows =
-        requestedIds.length === 0
-          ? []
-          : await q.query<RequestedMemoryRow>(
-              `select m.entity_id,
-                      internal.agent_memory_entry(m.entity_id, m.statement, mk.marks) as entry
-                 from public.memories m
-                 join public.entities e
-                   on e.id = m.entity_id and e.space_id = $1::uuid and e.deleted_at is null
-                 join internal.memory_marks($2::uuid[]) mk on mk.entity_id = m.entity_id
-                where m.entity_id = any($2::uuid[])`,
-              [input.spaceId, requestedIds],
-            );
-      const foundIds = new Set(requestedRows.map((r) => r.entity_id));
-      const missing = requestedIds.filter((id) => !foundIds.has(id));
-      if (missing.length > 0) {
-        throw fail(
-          'not_found',
-          `memoryIds not found in this space (or not memory entities): ${missing.join(', ')}`,
-        );
-      }
-      const injectedMemories = renderMemories(selectedRows, requestedRows, requestedIds);
+      // The memory hand-off is `selectAgentMemories`'s — the SAME function the
+      // launch screen's preview calls, so what a person is shown before a
+      // launch and what the agent is told by it cannot drift apart. Read here,
+      // inside this transaction, so the set describes the same instant as the
+      // persona beside it.
+      const memorySet = await selectAgentMemories(q, {
+        spaceId: input.spaceId,
+        teamMemberId: input.teamMemberId,
+        taskIds: input.taskIds,
+        projectId: input.projectId,
+        memoryIds: input.memoryIds,
+      });
+      const injectedMemories = renderMemoryLines(memorySet);
 
       // 176 — WHAT THE PARENT IS, not merely that there is one.
       //
@@ -2387,6 +2630,36 @@ function registerHandlers(
     }
 
     return json(await readSessionJournal(dataDir, sessionId, limit, before));
+  });
+  /**
+   * execution.memoryPreview — WHAT THIS AGENT WILL BE TOLD, before it is told.
+   *
+   * A READ that starts nothing. It answers the memory hand-off a launch with
+   * this configuration WOULD make, by running the launch's own selection
+   * (`selectAgentMemories`, via `graph.previewMemories`) and rendering the
+   * result instead of injecting it. That sharing is the operation's only real
+   * guarantee: without it, this would be a second implementation of "which
+   * memories reach a fresh agent", and the screen would be the more
+   * convincing of the two on the day they disagreed.
+   *
+   * NO PERMISSION OF ITS OWN. The body is bound by
+   * `ExecutionMemoryPreviewInputSchema` at the frame, and everything past that
+   * runs under the caller's claims: the persona read, the selector and the
+   * picked-memory read are all SECURITY INVOKER, so row-level security decides
+   * what is visible exactly as it does on the spawn path. A caller who could
+   * not launch this teammate cannot preview it either.
+   */
+  registry.register('execution.memoryPreview', async (ctx) => {
+    const owner = await resolveOwner();
+    const input = ctx.body as ExecutionMemoryPreviewInput;
+    const set = await graph.previewMemories(claimsFor(owner, ctx), {
+      spaceId: input.spaceId,
+      teamMemberId: input.teamMemberId,
+      taskIds: input.taskIds,
+      projectId: input.projectId,
+      memoryIds: input.memoryIds,
+    });
+    return json(memoryPreviewOf(set));
   });
   /**
    * execution.launch — the session's stored spawn configuration.
