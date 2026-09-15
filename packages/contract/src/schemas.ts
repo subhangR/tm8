@@ -74,6 +74,7 @@ import type {
   InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
   InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkedPullRequestBadge, LinkPrInput,
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
+  MemorySearchInput, MemorySearchItem, MemorySearchResult,
   Mention, MessageBatchResult, MessageDeliveryDisposition,
   MessageDeliveryQuery, MessageDeliveryRecord,
   MessageChatTurnRecord, MessageDeliveryView, MessagePart, MessageView, MoveEntityInput,
@@ -1031,6 +1032,31 @@ export const GraphResultSchema: z.ZodType<GraphResult> = z.lazy(() => z.object({
   clusters: z.array(z.object({ parentId: EntityIdSchema, childIds: z.array(EntityIdSchema) }).strict()),
   layout: z.record(z.object({ x: z.number(), y: z.number() }).strict()).optional(),
 }).strict());
+
+// `memories.search` (186). The query is bounded so a pasted document cannot be
+// handed to the parser as a search, and it must carry at least one
+// non-blank character — a blank query is a request for nothing, refused here
+// rather than answered with an empty list that reads as "no memories match".
+export const MemorySearchInputSchema: z.ZodType<MemorySearchInput> = z.object({
+  spaceId: SpaceIdSchema,
+  query: z.string().max(1000).refine((value) => value.trim().length > 0, {
+    message: 'query needs at least one word to look for',
+  }),
+  limit: z.number().int().min(1).max(200).optional(),
+}).strict();
+
+export const MemorySearchItemSchema: z.ZodType<MemorySearchItem> = z.object({
+  id: EntityIdSchema,
+  statement: z.string(),
+  subjectScope: z.string(),
+  doesNotEstablish: z.string(),
+  rank: z.number(),
+  marks: z.array(z.string()),
+}).strict();
+
+export const MemorySearchResultSchema: z.ZodType<MemorySearchResult> = z.object({
+  items: z.array(MemorySearchItemSchema),
+}).strict();
 
 // ---------------------------------------------------------------------------
 // Threads, activity, presence, channel tabs

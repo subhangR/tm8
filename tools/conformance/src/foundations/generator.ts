@@ -207,6 +207,8 @@ function nounForOperation(operation: OperationName): string {
     case 'messages': return 'message';
     case 'collections': return 'collection';
     case 'graph': return 'graph';
+    // 186: `memories.search`. The CLI noun is `memory` (`NOUN_BY_FAMILY.memories`).
+    case 'memories': return 'memory';
     case 'placements': return 'placement';
     case 'commands': return 'undo';
     case 'search': return 'search';
@@ -367,14 +369,16 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // incremented.
   // 172 -> 197 (2026-09-03, TM8-CONTAINERS-DESIGN §4.1): the 25 `containers.*`
   // rows. MEASURED, never carried.
-  assertEqual(names.length, 197, 'catalog total');
+  // 197 -> 198 (2026-09-15, 186): memories.search, one POST read. MEASURED.
+  assertEqual(names.length, 198, 'catalog total');
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
   // 164 -> 167 (141): the three account-lifecycle ops are v1.
   // 167 -> 170 (148): the three workflows rows are v1.
   // 170 -> 195 (177): all 25 container rows are v1. MEASURED.
-  assertEqual(V1_OPERATIONS.length, 195, 'v1 total');
+  // 195 -> 196 (186): memories.search is v1. MEASURED.
+  assertEqual(V1_OPERATIONS.length, 196, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
@@ -400,17 +404,20 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 148: GET 60->61, POST 79->80, DELETE 11->12.
   // 177: GET 61->65, POST 80->98, PATCH 11->12, PUT 7->8, WS 1->2. MEASURED.
   // WS is 2 ROWS and still 1 MOUNT — see `router.ws` below.
-  assertEqual(methods, { GET: 65, POST: 98, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 }, 'method accounting');
+  // 186: POST 98 -> 99 (memories.search). MEASURED.
+  assertEqual(methods, { GET: 65, POST: 99, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 }, 'method accounting');
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
   // 177: read 65->69, command 106->126, stream 1->2. MEASURED.
-  assertEqual(kinds, { read: 69, command: 126, stream: 2 }, 'kind accounting');
+  // 186: read 69 -> 70 (memories.search). MEASURED.
+  assertEqual(kinds, { read: 70, command: 126, stream: 2 }, 'kind accounting');
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
   // 148: 168 -> 171, the three workflows routes.
   // 171 -> 195 (177): 24 of the 25 container rows are HTTP; the 25th is the
   // WS alias, which mounts nothing. MEASURED.
-  assertEqual(router.http.length, 195, 'server router HTTP total');
+  // 195 -> 196 (186): memories.search mounts as POST /v2/memories/search. MEASURED.
+  assertEqual(router.http.length, 196, 'server router HTTP total');
   // STILL 1, and that is the whole point of `aliasOf`: `containers.stream`
   // adds a discoverable NAME for the existing socket, not a second socket.
   assertEqual(router.ws.length, 1, 'server router WS total');

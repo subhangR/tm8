@@ -306,9 +306,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
     // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(193);
-    expect(rows).toHaveLength(193);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(193);
+    // 193 -> 194 (2026-09-15, 186): memories.search, one POST read. MEASURED.
+    expect(SURFACE).toHaveLength(194);
+    expect(rows).toHaveLength(194);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(194);
   });
 
   /**
@@ -967,17 +968,20 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // adds a migration file touches this line, and the only reliable way to
     // find that out before CI does is to know it is here.
     //
-    // 172 -> 173 (2026-09-15): ONE file, 185_select_agent_memories.sql, and the
-    // number is MEASURED on the tree exactly as every row above instructs —
-    // not incremented from the branch's own side:
+    // 172 -> 174 (2026-09-15): TWO files, one from each of two sibling memory
+    // lanes merged here — 185_select_agent_memories.sql from
+    // feat/memory-select-agent-memories and 186_memory_fulltext_search.sql from
+    // feat/memory-fulltext-search. BOTH sides of this conflict said 173, each
+    // counting only its own file, and that is exactly the arithmetic every row
+    // above forbids: NEITHER side is the answer. MEASURED on the merged tree:
     //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 172
-    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 173
+    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 174
     //   duplicate prefixes                                                      -> 0
-    //   git rev-list --count HEAD..origin/main                                  -> 0
-    // Main had not moved under this branch, so the two measurements differ by
-    // exactly this branch's one file. A migration landing on main first makes
-    // this line a conflict BY CONSTRUCTION — RE-MEASURE, do not add.
-    expect(server.appliedMigrations.length).toBe(173);
+    // The two lanes differing by value (rather than making the identical edit)
+    // is why git asked at all — the good outcome this block has argued for
+    // seven times. A third memory lane lands one more migration on top of this
+    // merge, and the row below is that re-measurement.
+    expect(server.appliedMigrations.length).toBe(174);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

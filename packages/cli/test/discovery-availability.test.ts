@@ -44,10 +44,12 @@ describe('the default is unknown, and unknown is never upgraded', () => {
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. MEASURED.
-    expect(rows).toHaveLength(197);
+    // 197 -> 198 (2026-09-15, 186): memories.search. MEASURED.
+    expect(rows).toHaveLength(198);
     expect(unavailable.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     // 170 -> 195: all 25 containers.* rows are non-reserved. MEASURED.
-    expect(unknown).toHaveLength(195);
+    // 195 -> 196 (186): memories.search is a v1 row.
+    expect(unknown).toHaveLength(196);
     // The point of the field: NOTHING is optimistically available.
     expect(rows.filter((r) => r.availability === 'available')).toHaveLength(0);
   });
@@ -170,7 +172,8 @@ describe('/health is a cache-invalidation EPOCH, never a per-operation claim', (
     // Knowing 28 handlers exist tells you nothing about WHICH 28.
     expect(rows.every((r) => r.availability === 'unknown')).toBe(true);
     // 170 -> 195: all 25 containers.* rows are non-reserved. MEASURED.
-    expect(rows).toHaveLength(195);
+    // 195 -> 196 (186): memories.search.
+    expect(rows).toHaveLength(196);
   });
 
   it('the implementation epoch key is distinctly prefixed and cannot read as a capabilityEpoch', () => {

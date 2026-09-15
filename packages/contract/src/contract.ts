@@ -2388,6 +2388,48 @@ export interface ContentionReport {
   pairs: ContentionPair[];
 }
 
+/**
+ * `memories.search` (POST /v2/memories/search) — full-text search over one
+ * Space's memories, answered by `public.search_memories` (186).
+ *
+ * Every part of a memory is searched — what it claims, how that was
+ * established, what it applies to, and what it does NOT prove — so a memory is
+ * found by its boundary as readily as by its statement. `query` uses plain
+ * search-box syntax: words are all required, "quoted words" are a phrase,
+ * `or` widens, `-word` excludes. A query with no searchable words answers an
+ * empty list, never an error. Results are ranked in the database (a hit in the
+ * statement outranks the same word in the boundary), and a memory that has
+ * been replaced is answered as its latest version, once, so a corrected fact
+ * never appears under two wordings. Rows the caller cannot read are never
+ * returned — the read runs under the caller's own row-level security.
+ */
+export interface MemorySearchInput {
+  spaceId: SpaceId;
+  query: string;
+  /** Default 20, at most 200. */
+  limit?: number;
+}
+
+export interface MemorySearchItem {
+  id: EntityId;
+  statement: string;
+  subjectScope: string;
+  doesNotEstablish: string;
+  /** Relevance for ordering only; higher is a better match. Not comparable across queries. */
+  rank: number;
+  /**
+   * The memory's current standing, in plain words, in display precedence:
+   * 'disputed', 'basis deleted', 'basis changed', 'verified' (and 'superseded',
+   * which a resolved result never carries). Empty means nobody has marked it —
+   * which is not the same as verified.
+   */
+  marks: string[];
+}
+
+export interface MemorySearchResult {
+  items: MemorySearchItem[];
+}
+
 /** POST /v2/entities/:id/commands/gate — 083's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
 export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
 

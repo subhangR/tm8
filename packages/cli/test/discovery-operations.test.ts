@@ -67,7 +67,8 @@ import { createOutput } from '../src/output.js';
 // containers.stream and containers.proxy — are deliberately commandless, which
 // is why the commandless subtraction below moves 25 -> 27. MEASURED on this
 // tree, not carried from the design.
-const EXPECTED_ROWS = 197;
+// 197 -> 198 (2026-09-15, 186): memories.search, a commandless row (below). MEASURED.
+const EXPECTED_ROWS = 198;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -172,7 +173,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('193 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('194 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
@@ -181,7 +182,8 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    expect(histogram).toEqual({ public: 193, composite: 1, internal: 1, reserved: 2 });
+    // 193 -> 194 public (2026-09-15, 186): memories.search. MEASURED.
+    expect(histogram).toEqual({ public: 194, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -229,6 +231,10 @@ const COMMANDLESS_OPERATIONS = [
       'execution.prompt',
       // 2026-08-13 (merge): execution.terminal.start is UI-only on main.
       'execution.terminal.start',
+      // 186: `memories.search` carries no verb of its own — `tm8 memory search`
+      // is an alias the memory noun registers through the command index, and
+      // one action must not have two names.
+      'memories.search',
       'projects.directories.list',
       'projects.files.archive',
       'projects.files.attach',
