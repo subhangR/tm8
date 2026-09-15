@@ -26,6 +26,15 @@ files to answer one structural question measured **40% more expensive and half a
 as one graph call, and the graph run named fourteen transitive dependents the file-reading
 run never reached.
 
+**When the graph answers, that IS the answer. Stop.** Do not re-check it by grepping. It is
+an AST index built from the same files you would have opened, not a guess, and every edge it
+reports is extracted rather than inferred. Measured: agents that queried the graph and then
+grepped anyway paid for both and saved nothing, while the one run that let the graph finish
+the job used 3 tool calls instead of 14 and cost 63% less.
+
+**One or two queries should settle a structural question.** If three have not, the question
+is not structural — stop querying and read the file.
+
 **Where it does not help.** Reading code to understand or change it. The graph answers
 structure, not intent. Open the file for that.
 

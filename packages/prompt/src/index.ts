@@ -426,7 +426,10 @@ export const COMMAND_SURFACE_INSTRUCTION =
   'where does this path lead) from an AST index in one bounded call. Measured ' +
   'against grepping and opening candidate files on the same three questions: ' +
   '40% cheaper, half the tool calls, and it named transitive dependents the ' +
-  'file-reading run never reached. Read the files themselves when you need to ' +
+  'file-reading run never reached. When the graph answers, that IS the answer — ' +
+  'do not re-check it by grepping: it is an AST index of the same files, not a ' +
+  'guess. One or two queries settle a structural question; if three have not, ' +
+  'the question is not structural. Read the files themselves when you need to ' +
   'understand or change code — the graph answers structure, not intent.';
 
 /**
