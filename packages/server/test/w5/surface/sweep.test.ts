@@ -977,7 +977,20 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // Main had not moved under this branch, so the two differ by exactly its
     // one file. A migration landing on main first makes this a conflict BY
     // CONSTRUCTION — RE-MEASURE, do not add.
-    expect(server.appliedMigrations.length).toBe(173);
+    //
+    // 173 -> 174 (2026-09-15): ONE file, 186_menu_codebrain_tab_removed.sql
+    // (the CodeBrain tab and its ref leave the menu), MEASURED the same way on
+    // the merged tree rather than incremented:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 173
+    //   ls db/migrations/*.sql | wc -l                                          -> 174
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main had not moved under this branch either, so the two again differ by
+    // exactly its one file. The prose above is right that this pin is a bare
+    // integer invisible to any grep phrased as the thing being added — it was
+    // found here by running the suite, which is the other way it says to find
+    // it. RE-MEASURE, do not add.
+    expect(server.appliedMigrations.length).toBe(174);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

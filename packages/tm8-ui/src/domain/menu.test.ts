@@ -195,7 +195,14 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(23);
+    // 24 since 2026-09-15 (migration 186): the CodeBrain group left the spine
+    // and the ref left the contract union with it — #610 had already deleted
+    // the only package carrying a CodeBrain screen. A revision that did not
+    // move with the groups is the drift `SHIPPED_DEFAULT_MENU_REVISION` exists
+    // to catch. The server's seeder parity test pins the GROUP LIST against the
+    // contract spine rather than this number, so the two move together only if
+    // this line is edited deliberately — which is why it is pinned at all.
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(24);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

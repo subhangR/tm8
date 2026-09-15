@@ -108,7 +108,19 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // the duplicate. So this is not a reversal of 22's reasoning, it is 22's
 // reasoning applied to the right surface — and the no-kind-rows law of 17
 // holds again, with the group cap back down to seven of eight.
-export const SHIPPED_DEFAULT_MENU_REVISION = 23;
+// 23 → 24 (2026-09-15, CodeBrain removed / migration 186): the CodeBrain
+// group leaves, and this time the ref goes with it —
+//   Home | Work | Craft | Graph | Settings | Help
+// (plus GateApp's route-only Board v2 seat after Work), which is migration
+// 164's spine again, exactly.
+// 21 seated the tab while the screen lived in the 2.0 UI package. #610 then
+// deleted that package, and the ref was left behind pointing at nothing:
+// `view-ref-screens.ts` has carried `codebrain: 'unbuilt'` ever since, so the
+// shipped row has held a tab that can only tell a viewer the build has no
+// screen for it. A tab with no screen in ANY build is not a tab, so the ref
+// leaves the contract union, the registry and this default together — unlike
+// 20's Files and Board, which kept their refs BECAUSE their screens survived.
+export const SHIPPED_DEFAULT_MENU_REVISION = 24;
 
 /**
  * The menu half of the revision-20 tab shell. These GROUPS become top-row
@@ -203,18 +215,6 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // childless view item — the chat and the canvas are the navigation.
     { id: 'craft', label: 'Craft', items: [{ type: 'view', ref: 'craft' }] },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
-    // CodeBrain (2026-09-01, migration 173): the delivery pipeline's own tab.
-    // Present here because this default is PINNED to the contract's
-    // DEFAULT_MENU_GROUP_SPINE — the one truth the client default and the
-    // server seeder (migration 140) both answer to — and the spine gained the
-    // group. A default that quietly omitted it would disagree with the menu
-    // every real space is seeded with, which is the class of drift the spine
-    // exists to prevent.
-    //
-    // This snapshot has no CodeBrain SCREEN. That is stated once, in
-    // `view-ref-screens.ts`, and the tab says so honestly rather than being
-    // omitted here and disagreeing with the server.
-    { id: 'codebrain', label: 'CodeBrain', items: [{ type: 'view', ref: 'codebrain' }] },
     // RETIRED FROM THE SHIPPED TAB SPINE (revision 20). The Files explorer,
     // route, palette row and menu-editor eligibility remain intact.
     // { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
