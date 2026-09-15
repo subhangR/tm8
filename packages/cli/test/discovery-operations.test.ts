@@ -282,8 +282,26 @@ describe('the CLI command projection', () => {
     expect(NOUNS.length).toBeGreaterThanOrEqual(26);
     for (const noun of NOUNS) {
       const rows = DISCOVERY.filter((d) => d.noun === noun || d.command?.[0] === noun);
-      expect(rows.length, noun).toBeGreaterThan(0);
+      // A noun may be made ONLY of aliases (`memory` is the first): no catalog
+      // row carries it, so `DISCOVERY` — the per-OPERATION projection — has no
+      // row for it, and its commands are reachable only through the command
+      // index. The invariant is unchanged: a noun in the index must lead
+      // somewhere. What counts as "somewhere" now includes an alias command.
+      const resolves = rows.length > 0 || commandsForNoun(noun).length > 0;
+      expect(resolves, noun).toBe(true);
     }
+  });
+
+  it('`memory` is a noun made only of aliases, and still resolves everywhere a noun must', () => {
+    expect(NOUNS).toContain('memory');
+    expect(DISCOVERY.filter((d) => d.noun === 'memory' || d.command?.[0] === 'memory')).toEqual([]);
+    expect(commandsForNoun('memory').map((c) => c.command)).toEqual([
+      'memory record',
+      'memory list',
+      'memory show',
+      'memory supersede',
+      'memory search',
+    ]);
   });
 
   it('the family noun `collection` is indexed even though its command is `entity query`', () => {

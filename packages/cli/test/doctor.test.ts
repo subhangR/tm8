@@ -184,7 +184,9 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // Neither branch's number survives: main counts chat's five and not the
     // container paths, my branch the reverse. Summing them would be arithmetic
     // over two partial views.
-    expect(COMMAND_PATHS).toHaveLength(188);
+    // 188 -> 193 (2026-09-15): the five `memory` aliases (record|list|show|
+    // supersede|search) over existing operations — catalog rows unmoved.
+    expect(COMMAND_PATHS).toHaveLength(193);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {
