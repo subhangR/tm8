@@ -47,7 +47,10 @@
 -- REPLACED BY ITS CHAIN HEAD, never merely dropped — serving a body the graph
 -- already knows to be replaced is serving rot, and dropping it silently loses
 -- the correction too. If the head is already a candidate, the predecessor is
--- dropped and the head keeps the better of the two routes. A chain the walk
+-- dropped and the head keeps the better of the two routes. Only LIVE
+-- successors count: delete the correction and the original stands again,
+-- unmarked, rather than disappearing behind a head that no longer exists (§2
+-- carries the rule and the joins that enforce it). A chain the walk
 -- cannot resolve within 32 hops (the read bound entity-read.ts also uses) is
 -- treated as unresolved and its predecessor is left out. Disputed,
 -- basis-changed and basis-deleted memories are NEVER excluded: they are shown
@@ -121,12 +124,24 @@ $$;
 
 -- -----------------------------------------------------------------------------
 -- 2. The epistemic state of a set of memories, derived at read time from the
---    mark edges exactly as `badges.staleness` derives it (entity-read.ts):
+--    same mark edges `badges.staleness` reads (entity-read.ts), with ONE
+--    deliberate difference, recorded here because it is the whole point of the
+--    `deleted_at is null` joins below: a SOFT-DELETED successor is not a
+--    successor. `badges.staleness` answers "what does the graph say replaced
+--    this", so a deleted successor still counts there; this function answers
+--    "what should the agent be told", and pointing an agent at a memory
+--    somebody deleted, or hiding the surviving original behind it, is the one
+--    thing §7.2 says must never happen. When every successor has been deleted
+--    the predecessor is its own head again and is shown, unmarked.
 --
---      superseded    an inbound `supersedes` exists; the chain head is the
---                    deepest reachable successor, latest branch first, bounded
---                    at 32 hops (head_id is null and head_truncated true when
---                    the bound is hit — a wrong head is worse than none)
+--      superseded    a LIVE inbound `supersedes` exists; the chain head is the
+--                    deepest reachable LIVE successor, and where a chain forks
+--                    the newest successor at that depth wins — the same
+--                    tie-break 186's `public.search_memories` uses, so the
+--                    prompt and `tm8 memory search` name the same current
+--                    version of one corrected fact. Bounded at 32 hops:
+--                    head_id is null and head_truncated true when the bound is
+--                    hit, because a wrong head is worse than none.
 --      disputed      an inbound `disputes` with no answering `verifies` — one
 --                    that names the dispute in props.answers AND pins the
 --                    memory's CURRENT version; a clear of version N stops
@@ -160,20 +175,34 @@ returns table (
       from public.entities e
      where e.id = any(coalesce(p_ids, '{}'::uuid[])) and e.kind = 'memory'
   ),
+  -- Walk up the LIVE successors only, at both ends of the union: a deleted
+  -- successor ends the chain where it stands rather than handing the reader a
+  -- head that no longer exists. Without the join at the BASE step a memory
+  -- whose only correction was deleted came back superseded with a dead head,
+  -- and §4's `final` then dropped it — the original claim vanished from every
+  -- agent's prompt, uncounted, while search still answered it.
   chain as (
     select s.dst_id as origin, s.src_id as head, 1 as depth
       from public.edges s
+      join public.entities se
+        on se.id = s.src_id and se.kind = 'memory' and se.deleted_at is null
      where s.type = 'supersedes' and s.dst_id in (select t.id from target t)
     union all
     select c.origin, s.src_id, c.depth + 1
       from chain c
       join public.edges s on s.type = 'supersedes' and s.dst_id = c.head
+      join public.entities se
+        on se.id = s.src_id and se.kind = 'memory' and se.deleted_at is null
      where c.depth < 32
   ),
+  -- Deepest wins; where two corrections fork off the same memory at the same
+  -- depth the NEWEST wins. Ids are uuidv7, so `head desc` is "newest" — the
+  -- identical clause 186 uses, because two reads of one graph disagreeing about
+  -- which correction is current is worse than either answer alone.
   head as (
     select distinct on (c.origin) c.origin, c.head, c.depth
       from chain c
-     order by c.origin, c.depth desc, c.head
+     order by c.origin, c.depth desc, c.head desc
   ),
   verification as (
     select v.dst_id as id,
@@ -283,9 +312,13 @@ create or replace function internal.select_agent_memories(
   omitted_ids uuid[]
 ) language plpgsql stable set search_path = public, internal, pg_temp as $$
 begin
+  -- The floor is 512 bytes because §3 caps one rendered entry at exactly that,
+  -- so anything smaller could not hold a single memory. The refusal says that
+  -- in words: this is a server constant, so whoever reads this is configuring
+  -- the prompt, not debugging the database.
   if p_budget_bytes is null or p_budget_bytes < 512 then
-    raise exception 'memory budget must allow at least one 512-byte entry (got %)',
-      coalesce(p_budget_bytes::text, 'null') using errcode = '22023';
+    raise exception 'the memory section is too small to show even one memory'
+      using errcode = '22023';
   end if;
 
   -- Every column reference below is table-qualified: the output columns are

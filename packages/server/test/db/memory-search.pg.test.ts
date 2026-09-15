@@ -359,6 +359,36 @@ describe('a superseded memory resolves to its chain head', () => {
     expect(rows.map((r) => r.entity_id)).toEqual([original]);
     expect(rows[0]!.marks).toEqual([]);
   });
+
+  /**
+   * TWO READS, ONE ANSWER. Nothing in the database stops two sessions from
+   * superseding the same memory, so a chain can fork — and then it matters
+   * that this search and the spawn selector (185, `internal.memory_marks`)
+   * pick the SAME branch, or the launch prompt carries one correction while
+   * a search for the same fact answers the other. Both order a fork newest-
+   * first; ids are uuidv7, so that is `desc` on the id in both files.
+   */
+  it('names the same head the spawn prompt would, when the chain forks', async () => {
+    const word = unique('forkword');
+    const original = await mintMemory({ statement: `${word} the original claim` });
+    const older = await mintMemory({ statement: 'the older correction' });
+    const newer = await mintMemory({ statement: 'the newer correction' });
+    // The premise, asserted rather than assumed: minted later means a larger id.
+    expect(newer > older).toBe(true);
+    await drawEdge(older, original, 'supersedes', { reason: 'one writer' });
+    await drawEdge(newer, original, 'supersedes', { reason: 'another writer, same fact' });
+
+    const searched = (await searchAs(MEMBER, fixture.spaceId, word)).map((r) => r.entity_id);
+    const spawned = (await asOwner(async (client) => (
+      await client.query<{ head_id: string | null }>(
+        `select head_id::text as head_id from internal.memory_marks(array[$1::uuid])`,
+        [original],
+      )
+    ).rows))[0]!.head_id;
+
+    expect(searched).toEqual([newer]);
+    expect(spawned).toBe(newer);
+  });
 });
 
 describe('marks ride along', () => {

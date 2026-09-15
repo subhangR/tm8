@@ -393,6 +393,20 @@ async function selectFor(
   });
 }
 
+/** One memory's epistemic state, straight from `internal.memory_marks` (185 §2). */
+async function marksOf(id: string): Promise<{
+  superseded: boolean; head_id: string | null; head_truncated: boolean; marks: string[];
+}> {
+  return database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    return (await client.query(
+      `select superseded, head_id::text as head_id, head_truncated, marks
+         from internal.memory_marks(array[$1::uuid])`,
+      [id],
+    )).rows[0] as { superseded: boolean; head_id: string | null; head_truncated: boolean; marks: string[] };
+  });
+}
+
 /** A foreign author (see mintMemory). Minted once the chain is applied. */
 let stranger: string;
 
@@ -819,6 +833,103 @@ describe('185 — a superseded memory is replaced by its chain head', () => {
 });
 
 /**
+ * 185 — A DELETED CORRECTION IS NOT A CORRECTION.
+ *
+ * `supersedes` runs successor → predecessor and a read resolves a superseded
+ * memory to its chain head. Deleting the successor leaves the edge behind —
+ * 056's edges are append-only — so a walk that never asks whether the successor
+ * still exists hands back a head that is gone, and §4's `final` join, which
+ * keeps live entities only, then drops the whole row. The surviving original
+ * disappeared from every agent's prompt: not shown, not replaced by anything,
+ * and not counted in `omitted`. That is the one case where "superseded memories
+ * are replaced by their chain head, not merely dropped" (§7.2) and "it emits
+ * what it dropped" (§7.3) were both false at once, and it is reachable by an
+ * ordinary `tm8 entity delete` on a correction somebody thought better of.
+ *
+ * The walk now follows LIVE successors only, at BOTH ends of its union — the
+ * base step matters as much as the recursive one — so a deleted correction ends
+ * the chain where it stands and the predecessor is its own head again. This is
+ * the same rule 186's search already applied (see memory-search.pg.test.ts,
+ * "does not follow a deleted successor").
+ */
+describe('185 — a memory whose correction was deleted comes back rather than vanishing', () => {
+  it('shows the original, unmarked, once its only successor is deleted', async () => {
+    const actor = await mintTeammate('Retracted');
+    const original = await mintMemory('retracted: the original claim', false, { createdBy: actor });
+    const correction = await mintMemory('retracted: the correction', false, { createdBy: stranger });
+    await drawEdge(correction, original, 'supersedes', { reason: 'remeasured' });
+
+    // While the correction is alive it stands in for the original, as always.
+    expect((await selectFor(actor, 4096)).map((r) => r.entity_id)).toEqual([correction]);
+
+    await ownerSql('update public.entities set deleted_at = now() where id = $1', [correction]);
+
+    const rows = await selectFor(actor, 4096);
+    expect(rows.map((r) => r.entity_id)).toEqual([original]);
+    expect(rows[0]).toMatchObject({ marks: [], replaces: [], omitted: 0, omitted_ids: [] });
+    expect(rows[0]!.entry).toBe(`retracted: the original claim (mem:${original})`);
+  });
+
+  it('stops at the last LIVE link of a longer chain', async () => {
+    const actor = await mintTeammate('PartlyRetracted');
+    const first = await mintMemory('partly: first claim', false, { createdBy: actor });
+    const second = await mintMemory('partly: second claim', false, { createdBy: stranger });
+    const third = await mintMemory('partly: third claim', false, { createdBy: stranger });
+    await drawEdge(second, first, 'supersedes', { reason: 'step one' });
+    await drawEdge(third, second, 'supersedes', { reason: 'step two' });
+    await ownerSql('update public.entities set deleted_at = now() where id = $1', [third]);
+
+    const rows = await selectFor(actor, 4096);
+    expect(rows.map((r) => r.entity_id)).toEqual([second]);
+    expect(rows[0]).toMatchObject({ replaces: [first] });
+  });
+
+  it('leaves no `superseded` mark and no dangling head behind', async () => {
+    const actor = await mintTeammate('Unmarked');
+    const original = await mintMemory('unmarked: the original claim', false, { createdBy: actor });
+    const correction = await mintMemory('unmarked: the correction', false, { createdBy: stranger });
+    await drawEdge(correction, original, 'supersedes', { reason: 'remeasured' });
+    await ownerSql('update public.entities set deleted_at = now() where id = $1', [correction]);
+
+    expect(await marksOf(original)).toMatchObject({
+      superseded: false, head_id: null, head_truncated: false, marks: [],
+    });
+  });
+});
+
+/**
+ * 185 — WHERE A CHAIN FORKS, THE NEWEST CORRECTION WINS.
+ *
+ * Nothing in the database stops two sessions from superseding the same memory:
+ * the CLI's pre-flight is a client-side read-then-write, and no trigger or
+ * unique index stands behind it. When that happens the chain forks and the read
+ * has to pick a branch. It does not matter much WHICH branch, but it matters
+ * enormously that every reader picks the SAME one — otherwise the agent's
+ * prompt carries correction #1 while `tm8 memory search` answers correction #2
+ * and nothing anywhere says the fact has two current versions.
+ *
+ * Ids are uuidv7 (001), so ordering the branches by id descending is ordering
+ * them newest-first. That is the clause 186 already used; 185 used the same
+ * one ascending, which silently made the prompt prefer the OLDER correction.
+ */
+describe('185 — a forked chain resolves to the newest correction', () => {
+  it('prefers the branch written later, and shows it once', async () => {
+    const actor = await mintTeammate('Forked');
+    const original = await mintMemory('fork: the original claim', false, { createdBy: actor });
+    const older = await mintMemory('fork: the older correction', false, { createdBy: stranger });
+    const newer = await mintMemory('fork: the newer correction', false, { createdBy: stranger });
+    // The premise, asserted rather than assumed: minted later means a larger id.
+    expect(newer > older).toBe(true);
+    await drawEdge(older, original, 'supersedes', { reason: 'one writer' });
+    await drawEdge(newer, original, 'supersedes', { reason: 'another writer, same fact' });
+
+    const rows = await selectFor(actor, 4096);
+    expect(rows.map((r) => r.entity_id)).toEqual([newer]);
+    expect(await marksOf(original)).toMatchObject({ superseded: true, head_id: newer });
+  });
+});
+
+/**
  * 185 — THE SUBJECT ROUTES (design §7.2, C2 and C3).
  *
  * A memory about an epic concerns every task under it, so the subject route
@@ -1019,7 +1130,11 @@ describe('185 — select_agent_memories ranks, stops and reports', () => {
   });
 
   it('refuses a budget too small for a single entry rather than showing nothing quietly', async () => {
-    await expect(selectFor(ranked.actor, 100)).rejects.toThrow(/at least one 512-byte entry/);
+    // The refusal is phrased for whoever is configuring the prompt, not for
+    // whoever is reading a stack trace: no byte counts, no database vocabulary.
+    // The 512-byte floor itself lives in the comment above the raise.
+    await expect(selectFor(ranked.actor, 100))
+      .rejects.toThrow('the memory section is too small to show even one memory');
   });
 
   it('a memory the owning member remembers reaches their teammate (persona route)', async () => {

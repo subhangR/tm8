@@ -1193,6 +1193,24 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     // required regardless of the write-side cycle guard: prevent_edge_cycle's
     // own CTE bounds at 256, so a longer chain can exist without detection.
     // Hitting the bound reports headId null rather than a wrong head.
+    //
+    // WHERE A CHAIN FORKS, THE NEWEST CORRECTION WINS — `head desc` over
+    // uuidv7 ids. Two writers can supersede the same entity (nothing in the
+    // database forbids it), and three readers resolve that fork: this one,
+    // `internal.memory_marks` (185) behind the spawn prompt, and
+    // `public.search_memories` (186). They must all name the same head, or a
+    // corrected fact reads as one version on screen and a different one in the
+    // agent's prompt. All three now order the same way.
+    //
+    // WHAT THIS READ DOES NOT DO, on purpose: it does not skip successors that
+    // have been soft-deleted. 185 and 186 do, because their question is "what
+    // should be shown as current"; this badge's question is "what does the
+    // graph say replaced this", and it answers for every kind, not just
+    // memories. Bringing liveness here would change what `badges.staleness`
+    // means for docs and tasks too, and it needs its own change with its own
+    // tests — see the PR that introduced 185 for the one user-visible
+    // consequence (`tm8 memory supersede` still refuses a memory whose only
+    // successor was deleted).
     const chainRows = await q.query<{ origin: string; head: string; depth: number }>(
       `with recursive chain as (
          select e.dst_id as origin, e.src_id as head, 1 as depth
@@ -1206,7 +1224,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
        )
        select distinct on (origin) origin, head, depth
          from chain
-        order by origin, depth desc, head`,
+        order by origin, depth desc, head desc`,
       [[...supersededBy.keys()]],
     );
     const headByOrigin = new Map(chainRows.map((r) => [r.origin, r]));
