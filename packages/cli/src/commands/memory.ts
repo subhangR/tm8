@@ -70,7 +70,7 @@
  */
 import { requireSpace } from '../context.js';
 import { ApiError } from '../errors.js';
-import { CliError, EXIT_CONFLICT, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { CliError, EXIT_ALREADY_CORRECTED, EXIT_CONFLICT, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { UUID_PATTERN, deriveMutationId, refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { commandDiscovery } from '../discovery/operations.js';
@@ -503,6 +503,61 @@ async function memoryShow(cmd: CommandContext): Promise<ExitCode> {
 
 // ── supersede ──────────────────────────────────────────────────────────────
 
+/**
+ * The refusal this pre-flight gives, worded and CODED to match the one the
+ * database gives on the wire.
+ *
+ * 190 made "a memory keeps one correction" an invariant the storage engine
+ * enforces, and `write_edge` answers a second correction with a sentence
+ * quoting the first one. This pre-flight meets the SAME situation one round
+ * trip earlier — the ordinary case, where somebody corrected this memory days
+ * ago and no race is involved — so it has to give the same answer. If it did
+ * not, the exit code a script branches on would depend on whether the rival
+ * correction landed a millisecond ago or last week: timing, not truth.
+ *
+ * The pre-flight is still worth keeping in front of the invariant. Without it
+ * the corrected memory is created first and only then fails to mark anything,
+ * leaving an orphan the caller has to find; with it, a refused correction
+ * writes nothing at all.
+ *
+ * The second read runs only on this path, and only to fetch the WORDS. The
+ * staleness badge carries the other correction's id and nothing else, and an
+ * id tells a reader nothing they can judge; the words tell them in one glance
+ * whether it already covers what they were about to say.
+ */
+async function alreadyCorrected(cmd: CommandContext, headId: string | undefined): Promise<CliError> {
+  let correction: string | undefined;
+  if (headId !== undefined) {
+    try {
+      const head = await readMemory(cmd, headId);
+      const statement = head.content?.statement ?? head.excerpt;
+      if (typeof statement === 'string' && statement.trim().length > 0) correction = statement.trim();
+    } catch {
+      // Their correction can have been deleted or moved out of reach since the
+      // mark was derived. Not being able to quote it is no reason to refuse
+      // worse, and inventing a quote would be worse still.
+      correction = undefined;
+    }
+  }
+  // Shortened on the same rule the database uses, so the two doors read
+  // identically: this is one stderr line, and the whole correction can be
+  // read with the command on the hint line.
+  const quoted = correction === undefined
+    ? ''
+    : ` Their correction says: "${correction.length > 200 ? `${correction.slice(0, 200)}\u2026` : correction}".`;
+  return new CliError(
+    'Someone else corrected this memory first, and a memory keeps only one correction '
+      + `so everyone reads the same answer.${quoted} If that is still wrong, correct their `
+      + 'version instead of this one — corrections are meant to stack up in a single line.',
+    EXIT_ALREADY_CORRECTED,
+    {
+      hint: headId === undefined
+        ? undefined
+        : `read their correction with \`tm8 memory show ${headId}\`, then run this same command against it`,
+    },
+  );
+}
+
 async function memorySupersede(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['reason', ...FIELD_OPTIONS, 'mutation-id']);
   const oldId = requireArg(cmd, 0, '<memory-id>');
@@ -519,11 +574,7 @@ async function memorySupersede(cmd: CommandContext): Promise<ExitCode> {
   const alreadyBy = old.badges?.staleness?.superseded;
   if (alreadyBy !== undefined) {
     const head = alreadyBy.headId ?? alreadyBy.byId;
-    throw new CliError(
-      `${oldId} has already been replaced${head ? ` by ${String(head)}` : ''}`,
-      EXIT_CONFLICT,
-      { hint: head ? `supersede ${String(head)} instead, so the chain of corrections stays one line` : undefined },
-    );
+    throw await alreadyCorrected(cmd, typeof head === 'string' ? head : undefined);
   }
 
   const mutationId = resolveMutationId(cmd.options.value('mutation-id'));

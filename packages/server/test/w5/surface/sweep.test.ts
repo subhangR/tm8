@@ -1001,7 +1001,33 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // numbers first, so the incoming side moves. Nothing derives behaviour
     // from a migration's number and the pg suites resolve their fixtures by
     // filename SUFFIX, so the rename costs nothing but this ledger entry.
-    expect(server.appliedMigrations.length).toBe(177);
+    //
+    // 177 -> 178 (2026-09-15): ONE more file, and a SECOND duplicate-prefix
+    // collision in the same afternoon on the same branch. The sibling lane
+    // feat/memory-supersede-constraint forked from main while main's highest
+    // prefix was 186, so it correctly authored 187 — and by the time it merged
+    // here, 187 was taken, because the row above had just moved this branch's
+    // three files up into 187/188/189. Git merged the file ADD silently again.
+    // MEASURED on the merged tree, never derived:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 174
+    //   git ls-tree -r --name-only \
+    //     origin/feat/memory-supersede-constraint db/migrations | grep -c '.sql$' -> 175
+    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 178
+    //   duplicate prefixes                                                      -> 0
+    //   tools/ci/migrations-check.sh against a scratch database                 -> clean
+    //
+    // The incoming file moved to 190, not this branch's three back down. The
+    // row above renumbered on the rule "the trunk published first"; that rule
+    // does not decide between two branches neither of which has landed, so the
+    // tie-break here is cost: one rename and four comment references against
+    // three renames and a dozen ledger notes rewritten a third time. The two
+    // rules agree on the outcome anyway — the incoming side moves.
+    //
+    // Worth saying plainly because it is now the pattern rather than the
+    // accident: this block has been wrong about a merged tree four times, and
+    // every single time the cause was a lane counting its own side. There is
+    // no arithmetic that gets this right. Count the merged tree.
+    expect(server.appliedMigrations.length).toBe(178);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

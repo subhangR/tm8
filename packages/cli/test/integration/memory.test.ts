@@ -225,14 +225,20 @@ describe('tm8 memory — the door an agent in a work session uses to save what i
     const listed = await tm8(['memory', 'list']);
     expect(listed.stdout).toContain(`${memoryId}  The production node needs a reload after a config change, not a restart  v1  [replaced by ${successorId}]`);
 
-    // Superseding an already-replaced memory is refused BEFORE any write,
-    // pointing at the head — the chain of corrections stays one line.
+    // Correcting an already-corrected memory is refused BEFORE any write, in
+    // the other person's own words — the same sentence and the same exit code
+    // the database itself gives when two corrections race (190). The chain of
+    // corrections stays one line either way.
     const again = await tm8([
       'memory', 'supersede', memoryId,
       '--reason', 'r', '--statement', 's', '--mechanism', 'm', '--scope', 'sc', '--does-not-establish', 'd',
     ]);
-    expect(again.code).toBe(6);
-    expect(again.stderr).toContain(`${memoryId} has already been replaced by ${successorId}`);
+    expect(again.code).toBe(15);
+    expect(again.stderr).toContain('Someone else corrected this memory first');
+    expect(again.stderr).toContain(
+      'Their correction says: "The production node needs a restart after a config change since the init upgrade"',
+    );
+    expect(again.stderr).toContain(`tm8 memory show ${successorId}`);
     const count = json<{ page: { items: unknown[] } }>((await tm8(['memory', 'list', '--format', 'json'])).stdout).page.items.length;
     expect(count).toBe(4); // three records + one successor; the refused one wrote nothing
   });

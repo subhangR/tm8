@@ -582,14 +582,50 @@ describe('memory supersede', () => {
     expect(err()).toContain('is a doc, not a memory');
   });
 
-  it('refuses before ANY write when the old memory was already replaced, pointing at the chain head', async () => {
-    reply = (s) => (s.path === GET_MEMORY
-      ? envelope(memoryDetail({ badges: { staleness: { reasons: ['superseded'], superseded: { byId: SUCCESSOR, headId: HEAD, depthTruncated: false } } } }))
-      : chain()(s));
-    expect(await run(['memory', 'supersede', MEMORY, ...CORRECTED])).toBe(6);
-    expect(seen.map((s) => s.method)).toEqual(['GET']);
-    expect(err()).toContain(`${MEMORY} has already been replaced by ${HEAD}`);
-    expect(err()).toContain(`supersede ${HEAD} instead`);
+  // 190 made "a memory keeps one correction" an invariant the database
+  // enforces, and this pre-flight now has to agree with it. Same exit code,
+  // same sentence, and the other correction quoted in THEIR words rather than
+  // named by id — otherwise the answer a script reads would depend on whether
+  // the rival correction landed a millisecond ago (the database refuses, 15)
+  // or last week (this pre-flight refuses, used to be 6).
+  it('refuses before ANY write when the old memory was already corrected, in the same words and with the same exit code as the database', async () => {
+    const GET_HEAD = bindPath('entities.get', { id: HEAD });
+    reply = (s) => {
+      if (s.path === GET_MEMORY) {
+        return envelope(memoryDetail({ badges: { staleness: { reasons: ['superseded'], superseded: { byId: SUCCESSOR, headId: HEAD, depthTruncated: false } } } }));
+      }
+      if (s.path === GET_HEAD) {
+        return envelope(memoryDetail({ id: HEAD, content: { kind: 'memory', statement: 'the port is 5432 on the upgraded node', measuredAt: null } }));
+      }
+      return chain()(s);
+    };
+    expect(await run(['memory', 'supersede', MEMORY, ...CORRECTED])).toBe(15);
+    // Two reads and NOT ONE WRITE: the second read only fetches the words to
+    // quote. A refused correction leaves nothing behind to clean up.
+    expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual([`GET ${GET_MEMORY}`, `GET ${GET_HEAD}`]);
+    expect(err()).toContain('Someone else corrected this memory first');
+    expect(err()).toContain('a memory keeps only one correction');
+    expect(err()).toContain('Their correction says: "the port is 5432 on the upgraded node"');
+    expect(err()).toContain('correct their version instead of this one');
+    expect(err()).toContain(`tm8 memory show ${HEAD}`);
+    // No id is used to EXPLAIN the refusal; the only id on screen is inside a
+    // command the reader can run.
+    expect(err()).not.toContain(`${MEMORY} has already been replaced`);
+  });
+
+  it('still refuses when the other correction cannot be read, without inventing a quote', async () => {
+    const GET_HEAD = bindPath('entities.get', { id: HEAD });
+    reply = (s) => {
+      if (s.path === GET_MEMORY) {
+        return envelope(memoryDetail({ badges: { staleness: { reasons: ['superseded'], superseded: { byId: SUCCESSOR, headId: HEAD, depthTruncated: false } } } }));
+      }
+      if (s.path === GET_HEAD) return refusal(404, 'not_found', 'no such entity');
+      return chain()(s);
+    };
+    expect(await run(['memory', 'supersede', MEMORY, ...CORRECTED])).toBe(15);
+    expect(seen.map((s) => s.method)).toEqual(['GET', 'GET']);
+    expect(err()).toContain('Someone else corrected this memory first');
+    expect(err()).not.toContain('Their correction says');
   });
 
   it('needs --reason and all four parts, before the wire', async () => {
