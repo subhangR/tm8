@@ -547,8 +547,9 @@ async function memorySupersede(cmd: CommandContext): Promise<ExitCode> {
     cmd.out.data({ ...(created as object), supersedes: { memoryId: oldId, edgeId: null } }, renderSuperseded);
     throw withHint(
       err,
-      `the corrected memory was saved as ${newId}, but ${oldId} was not marked as replaced. ` +
-        `Finish with: tm8 edge create ${newId} supersedes ${oldId} --props '${JSON.stringify({ reason })}'`,
+      'the corrected memory was saved, but the old one is not marked as replaced yet — ' +
+        'until it is, both of them read as current. Run this to finish marking it, reason and all: ' +
+        `tm8 edge create ${newId} supersedes ${oldId} --props '${JSON.stringify({ reason })}'`,
     );
   }
 }

@@ -2401,7 +2401,11 @@ export interface ContentionReport {
  * statement outranks the same word in the boundary), and a memory that has
  * been replaced is answered as its latest version, once, so a corrected fact
  * never appears under two wordings. Rows the caller cannot read are never
- * returned — the read runs under the caller's own row-level security.
+ * returned: `public.search_memories` is SECURITY DEFINER — it has to be, or its
+ * index is unusable — so it carries the visibility rule in its own body, where
+ * every hit and every chain head must pass `internal.entity_readable`, the
+ * predicate the row-level policies are themselves made of. It fails closed:
+ * with no identity bound the search answers nothing.
  */
 export interface MemorySearchInput {
   spaceId: SpaceId;

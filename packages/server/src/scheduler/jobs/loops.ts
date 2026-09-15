@@ -113,7 +113,7 @@ export interface LoopsJobOptions {
 }
 
 /**
- * The sweep door (185). A direct read of `public.loops` here is scoped by
+ * The sweep door (187). A direct read of `public.loops` here is scoped by
  * `loops_select` to the spaces the sweep's identity belongs to, which is how
  * every loop outside the owner's own space went unfired on production. The
  * door is node-admin-only and returns, beside each due loop, who may fire it.
@@ -177,9 +177,10 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
           // it, and leaves the row untouched for a human to repair. It will be
           // reported again next tick; that is the point.
           ctx.logger.warn(
-            `loop ${loop.entityId} ("${loop.title}") cannot run: nobody in its space owns a teammate `
+            `the scheduled loop "${loop.title}" cannot run: nobody in its space owns a teammate `
             + 'for it to run as — it names no teammate and the space has no dispatcher, '
-            + 'or the person who owned that teammate has left the space',
+            + 'or the person who owned that teammate has left the space '
+            + `(${loop.entityId})`,
           );
           failed += 1;
           continue;

@@ -468,7 +468,8 @@ export function renderMemoryLines(set: AgentMemorySet): string[] {
   const out = set.automatic.map((entry) => entry.entry);
   if (set.omitted > 0) {
     out.push(
-      `[${set.omitted} further ${set.omitted === 1 ? 'memory' : 'memories'} not shown — there was not room for them here; use memory_search to find the rest]`,
+      `[${set.omitted} further ${set.omitted === 1 ? 'memory' : 'memories'} not shown — there was not room for them here; `
+        + 'search your memories with `tm8 memory search <words>` to find the rest]',
     );
   }
   for (const entry of set.picked) out.push(entry.entry);

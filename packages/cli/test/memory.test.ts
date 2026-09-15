@@ -609,7 +609,7 @@ describe('memory supersede', () => {
     expect(await run(['memory', 'supersede', MEMORY, ...CORRECTED])).toBe(6);
     expect(out()).toContain(SUCCESSOR);
     expect(out()).toContain(`does NOT yet replace ${MEMORY}`);
-    expect(err()).toContain(`the corrected memory was saved as ${SUCCESSOR}`);
+    expect(err()).toContain('the corrected memory was saved, but the old one is not marked as replaced yet');
     expect(err()).toContain(`tm8 edge create ${SUCCESSOR} supersedes ${MEMORY} --props '{"reason":"checked the cluster"}'`);
   });
 });

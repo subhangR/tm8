@@ -1069,14 +1069,16 @@ const ROWS: Record<OperationName, Row> = {
   // is the invocation and that lane points it at this operation. This row
   // exists because the table is exhaustive by type over the catalog: the
   // operation must be discoverable the moment it exists, with or without a
-  // verb of its own.
+  // verb of its own. It gets no `cmd` of its own so that one action does not
+  // end up with two names — that is the design reason, and it belongs here
+  // rather than in the `reason` string, which is help text a person reads.
   'memories.search': {
     cmd: null,
     sum: 'Search a Space\'s memories by words, over everything a memory says: what it claims, how that was established, what it applies to, and what it does not prove',
     authz: 'space',
     input: 'bound',
     tags: ['memory', 'search', 'find', 'lookup', 'text', 'recall'],
-    reason: 'use `tm8 memory search` — the memory commands are the way in; this operation has no separate command of its own, so one action does not get two names',
+    reason: 'use `tm8 memory search` — that is how you search memories',
     notes: [
       'results are ranked by relevance; a memory that has been replaced is answered as its latest version, once',
       'plain search-box syntax: all words must match, "quoted words" are a phrase, `or` widens, a leading minus excludes a word',

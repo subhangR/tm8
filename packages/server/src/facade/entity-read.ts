@@ -1207,10 +1207,12 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     // should be shown as current"; this badge's question is "what does the
     // graph say replaced this", and it answers for every kind, not just
     // memories. Bringing liveness here would change what `badges.staleness`
-    // means for docs and tasks too, and it needs its own change with its own
-    // tests — see the PR that introduced 185 for the one user-visible
-    // consequence (`tm8 memory supersede` still refuses a memory whose only
-    // successor was deleted).
+    // means for docs and tasks too, and that needs its own change with its own
+    // tests. The one user-visible consequence of leaving it, recorded so the
+    // next reader does not have to rediscover it: `tm8 memory supersede` reads
+    // this badge as its pre-flight, so it still refuses to correct a memory
+    // whose only successor has been deleted, and names that deleted successor
+    // in the refusal.
     const chainRows = await q.query<{ origin: string; head: string; depth: number }>(
       `with recursive chain as (
          select e.dst_id as origin, e.src_id as head, 1 as depth

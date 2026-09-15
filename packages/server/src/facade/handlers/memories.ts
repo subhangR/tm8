@@ -4,12 +4,20 @@
  * The whole search lives in the database: `public.search_memories` (186)
  * parses the query, matches it against the indexed document built from all
  * four fields of a memory, ranks with `ts_rank_cd`, resolves a superseded hit
- * to its live chain head, derives the marks from the mark edges, and runs as
- * the caller so row-level security decides what is visible. This handler only
- * carries the request to that function under the caller's claims and renders
- * the rows into the contract's shape. Nothing is filtered, ranked or
- * re-ordered here — a second opinion on relevance in TypeScript is exactly the
- * split the JavaScript substring search used to be.
+ * to its live chain head, and derives the marks from the mark edges. This
+ * handler only carries the request to that function under the caller's claims
+ * and renders the rows into the contract's shape. Nothing is filtered, ranked
+ * or re-ordered here — a second opinion on relevance in TypeScript is exactly
+ * the split the JavaScript substring search used to be.
+ *
+ * WHAT KEEPS THIS READ HONEST IS NOT RLS. `public.search_memories` is SECURITY
+ * DEFINER and therefore bypasses every SELECT policy, by design — under RLS the
+ * GIN index is unusable and every search becomes a full scan (186's header
+ * measures it). The visibility rule is written INTO the function body instead:
+ * every hit and every resolved chain head must pass `internal.entity_readable`,
+ * the same predicate `memories_select` is made of, and it fails closed when no
+ * identity is bound. Those two calls are not belt-and-braces, they ARE the
+ * belt — do not remove one as redundant, and add one to any new join.
  *
  * Space membership is not checked separately: a caller outside the space
  * simply matches nothing, which is the same answer `collections.query` gives
