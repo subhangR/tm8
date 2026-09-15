@@ -82,6 +82,7 @@ import {
   GateTaskInputSchema,
   GrantPointsInputSchema,
   GraphQuerySchema,
+  MemorySearchInputSchema,
   IdentityProfileUpdateInputSchema,
   InboxMarkReadInputSchema,
   LinkCommitInputSchema,
@@ -259,6 +260,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // only the command envelope.
   'collections.removeItem': RequiredCommandContextSchema,
   'graph.query': GraphQuerySchema,
+  // memories (186). A POST read with a body, bound like the two above so a
+  // blank or oversized query is refused at the frame rather than parsed.
+  'memories.search': MemorySearchInputSchema,
   'placements.apply': PlacementInputSchema,
   'commands.undo': UndoCommandInputSchema,
 

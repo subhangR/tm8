@@ -75,15 +75,17 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 131 -> 135: credentials.*; all four are mounted.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows,
     // all mounted.
-    expect(OPERATIONS).toHaveLength(197); // +25 (177) containers
-    // 171 -> 195: 24 container HTTP rows. The 25th is the WS alias.
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(195);
+    // 197 -> 198 (2026-09-15, 186): memories.search, one POST read (kind read),
+    // so 195 -> 196 v1 rows and 193 -> 194 mounted v1 HTTP. MEASURED on this tree.
+    expect(OPERATIONS).toHaveLength(198); // +25 (177) containers, +1 (186) memories.search
+    // 171 -> 195: 24 container HTTP rows. The 25th is the WS alias. 195 -> 196 (186).
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(196);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 195, // +24 (177): the container HTTP rows
-      implemented: 193, // +24 (177): all registered, all mounted
+      operations: 196, // +24 (177): the container HTTP rows; +1 (186) memories.search
+      implemented: 194, // +24 (177): all registered, all mounted; +1 (186) memories.search, mounted
     });
   });
 
@@ -150,7 +152,8 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // five residual container reads answer 501 — so 188 answer for real.
     // 193 - 5 = 188, and the residual membership asserted above is what makes
     // that subtraction checkable rather than a fudge.
-    expect(implemented).toHaveLength(188);
+    // 188 -> 189 (2026-09-15, 186): memories.search answers for real — 194 - 5.
+    expect(implemented).toHaveLength(189);
   });
 
   /**

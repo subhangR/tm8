@@ -369,6 +369,71 @@ describe('direct repository tools', () => {
  * had no way to predict from the schema — the reason the memory corpus stayed
  * in the dozens. These pin the schema to what the graph actually accepts.
  */
+describe('memory_search asks the database, not the summary', () => {
+  const tool = DIRECT_TOOLS.find((t) => t.name === 'memory_search')!;
+
+  it('keeps the tool input shape: spaceId and query required, limit optional', () => {
+    const schema = tool.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
+    expect(schema.required).toEqual(['spaceId', 'query']);
+    expect(Object.keys(schema.properties ?? {})).toEqual(['spaceId', 'query', 'limit']);
+  });
+
+  it('invokes memories.search with the words as typed and hands back the ranked items', async () => {
+    const calls: Array<{ operation: string; options: unknown }> = [];
+    const item = {
+      id: '019f0000-0000-7000-8000-000000000201',
+      statement: 'the cluster listens on 5442',
+      subjectScope: 'this node',
+      doesNotEstablish: 'the port for any other node',
+      rank: 0.1,
+      marks: ['verified'],
+    };
+    const recording: CatalogTransport = {
+      invoke: async (operation, options) => {
+        calls.push({ operation, options });
+        return { items: [item] };
+      },
+    };
+    const router = new Tm8ToolRouter(recording, { mode: 'build', spaceId: SPACE });
+    const out = await router.call('memory_search', { spaceId: SPACE, query: '  pg_hba reload ', limit: 5 });
+    // ONE call, to the search operation, carrying the trimmed words and the
+    // limit — no `collections.query` page fetch and no local re-ranking.
+    expect(calls).toEqual([{
+      operation: 'memories.search',
+      options: { body: { spaceId: SPACE, query: 'pg_hba reload', limit: 5 } },
+    }]);
+    expect(out.isError).toBeUndefined();
+    expect(out.structuredContent).toMatchObject({
+      tool: 'memory_search', query: 'pg_hba reload', items: [item],
+    });
+  });
+
+  it('defaults the limit to 10 and refuses a Space outside the thread', async () => {
+    const calls: Array<{ operation: string; options: unknown }> = [];
+    const recording: CatalogTransport = {
+      invoke: async (operation, options) => { calls.push({ operation, options }); return { items: [] }; },
+    };
+    const router = new Tm8ToolRouter(recording, { mode: 'build', spaceId: SPACE });
+    await router.call('memory_search', { spaceId: SPACE, query: 'deploy' });
+    expect(calls).toEqual([{
+      operation: 'memories.search',
+      options: { body: { spaceId: SPACE, query: 'deploy', limit: 10 } },
+    }]);
+
+    await expect(router.call('memory_search', {
+      spaceId: '00000000-0000-7000-8000-0000000000bb', query: 'deploy',
+    })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'forbidden' } } });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('refuses a blank query locally rather than asking the server for nothing', async () => {
+    const router = new Tm8ToolRouter(transport, { mode: 'build', spaceId: SPACE });
+    await expect(router.call('memory_search', { spaceId: SPACE, query: '   ' })).resolves.toMatchObject({
+      isError: true, structuredContent: { error: { code: 'invalid_input' } },
+    });
+  });
+});
+
 describe('memory_write declares what the graph demands', () => {
   const tool = DIRECT_TOOLS.find((t) => t.name === 'memory_write')!;
 

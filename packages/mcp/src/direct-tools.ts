@@ -225,7 +225,14 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   // refusal the caller had no way to anticipate, which is why the corpus is
   // measured in dozens. The schema now states what the graph actually demands.
   { name: 'memory_write', description: 'Write a durable Space memory graph entity. A memory must say what it claims, how that was established, what it applies to, and what it does NOT prove — all four are required.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('The decision or fact to remember (1-4000 chars).'), mechanism: stringProp('How it was established — the measurement, test, document or observation behind it (1-1000 chars).'), subjectScope: stringProp('What the statement applies to, and where it stops (1-1000 chars).'), doesNotEstablish: stringProp('The explicit boundary of the claim — what a reader must NOT conclude from it (1-1000 chars).') }, ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']), annotations: annotations(false) },
-  { name: 'memory_search', description: 'Search recent Space memories by words in their title/excerpt.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), query: stringProp('Words to match.'), limit: integerProp('Maximum results.', 1, 50) }, ['spaceId', 'query']), annotations: annotations(true) },
+  // `memory_search` is the server's `memories.search`: the database searches
+  // every part of every memory in the Space (statement, mechanism, subject
+  // scope and boundary), ranks the hits, and answers a replaced memory as its
+  // latest version. The old tool fetched the 100 most recent memories and
+  // substring-matched the summary's title and excerpt in JavaScript — about
+  // the first 11% of an average statement, and never the three fields that say
+  // what a claim rests on and where it stops.
+  { name: 'memory_search', description: 'Search this Space\'s memories for words. Every part of a memory is searched: what it claims, how that was established, what it applies to, and what it does not prove. A memory that has been replaced is answered as its latest version. Use quotes for an exact phrase, "or" to widen, and a leading minus to exclude a word.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), query: stringProp('Words to look for.'), limit: integerProp('Maximum results.', 1, 50) }, ['spaceId', 'query']), annotations: annotations(true) },
   { name: 'git_branch', description: 'Read branch, upstream, head and remote for the chat checkout.', inputSchema: objectSchema({}), annotations: annotations(true) },
   { name: 'git_status', description: 'Read git status for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.') }), annotations: annotations(true) },
   { name: 'git_diff', description: 'Read a capped diff for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.'), maxBytes: integerProp('Maximum diff bytes.', 1024, 500_000) }), annotations: annotations(true) },
@@ -1200,20 +1207,16 @@ async function memoryWrite(args: Record<string, unknown>, context: DirectToolCon
 }
 
 async function memorySearch(args: Record<string, unknown>, context: DirectToolContext) {
-  const query = requiredString(args.query, 'query').toLowerCase();
+  const query = boundedString(args.query, 'query', 1_000).trim();
   const limit = integer(args.limit, 'limit', 1, 50) ?? 10;
   const spaceId = requiredString(args.spaceId, 'spaceId');
   assertThreadSpace(context, spaceId);
-  const data = await context.transport.invoke('collections.query', { body: {
-    spaceId, kinds: ['memory'], sort: 'updatedAt_desc', limit: 100,
-  } });
-  const page = data as { page?: { items?: Array<Record<string, unknown>> } };
-  const terms = query.split(/\s+/).filter(Boolean);
-  const hits = (page.page?.items ?? []).map((item) => {
-    const haystack = `${String(item.title ?? '')} ${String(item.excerpt ?? '')}`.toLowerCase();
-    return { item, score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
-  }).filter((hit) => hit.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
-  return result('memory_search', { query, items: hits.map((hit) => hit.item) });
+  // The database does the whole search — parsing, matching over all four
+  // fields, ranking, chain-head resolution and row-level security — so the
+  // tool's only job is to carry the request and hand back what came back.
+  const data = await context.transport.invoke('memories.search', { body: { spaceId, query, limit } });
+  const items = (data as { items?: unknown[] } | null)?.items ?? [];
+  return result('memory_search', { query, items });
 }
 
 async function gitBranch(context: DirectToolContext) {

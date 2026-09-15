@@ -306,9 +306,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
     // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(193);
-    expect(rows).toHaveLength(193);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(193);
+    // 193 -> 194 (2026-09-15, 186): memories.search, one POST read. MEASURED.
+    expect(SURFACE).toHaveLength(194);
+    expect(rows).toHaveLength(194);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(194);
   });
 
   /**
@@ -966,7 +967,17 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // every search phrased in terms of the thing being added. Any branch that
     // adds a migration file touches this line, and the only reliable way to
     // find that out before CI does is to know it is here.
-    expect(server.appliedMigrations.length).toBe(172);
+    //
+    // 172 -> 173 (2026-09-15): ONE file, 186_memory_fulltext_search.sql, MEASURED
+    // on this tree exactly as the rows above instruct:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 172
+    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 173
+    //   duplicate prefixes                                                      -> 0
+    // A sibling memory lane (feat/memory-select-agent-memories) adds ITS one
+    // file, 185_select_agent_memories.sql, and moves this same line to 173 —
+    // the identical edit the paragraph below warns about. Whoever integrates
+    // the second of the two must RE-MEASURE this line to 174, not merge it.
+    expect(server.appliedMigrations.length).toBe(173);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

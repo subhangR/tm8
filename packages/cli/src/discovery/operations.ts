@@ -1062,6 +1062,28 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
 
+  // ── memories ─────────────────────────────────────────────────────────────
+  // NO COMMAND HERE, ON PURPOSE. The `memory` noun's verbs (record, list, show,
+  // supersede, search) are aliases the CLI's memory lane owns and registers
+  // through the command index, not through this table; `tm8 memory search`
+  // is the invocation and that lane points it at this operation. This row
+  // exists because the table is exhaustive by type over the catalog: the
+  // operation must be discoverable the moment it exists, with or without a
+  // verb of its own.
+  'memories.search': {
+    cmd: null,
+    sum: 'Search a Space\'s memories by words, over everything a memory says: what it claims, how that was established, what it applies to, and what it does not prove',
+    authz: 'space',
+    input: 'bound',
+    tags: ['memory', 'search', 'find', 'lookup', 'text', 'recall'],
+    reason: 'use `tm8 memory search` — the memory commands are the way in; this operation has no separate command of its own, so one action does not get two names',
+    notes: [
+      'results are ranked by relevance; a memory that has been replaced is answered as its latest version, once',
+      'plain search-box syntax: all words must match, "quoted words" are a phrase, `or` widens, a leading minus excludes a word',
+      'only memories you can read are searched; nothing outside your Spaces is ever matched',
+    ],
+  },
+
   // ── search — reserved ────────────────────────────────────────────────────
   'search.query': {
     cmd: ['search', 'query'],
@@ -2413,6 +2435,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   messages: 'message',
   collections: 'collection',
   graph: 'graph',
+  memories: 'memory',
   placements: 'placement',
   commands: 'undo',
   search: 'search',
@@ -2505,7 +2528,9 @@ export const CATALOG_DIGEST =
   // containers.* rows). RECOMPUTED from JSON.stringify(OPERATIONS), never
   // adjusted from either side of the merge — neither branch's value is
   // correct once both landed.
-  'sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa';
+  // Re-measured 186 (+ memories.search) — read from the regenerated conformance
+  // manifest, never hand-derived.
+  'sha256:278432e9fa53df392567d1a1e855427e65b35f6ae864d72c1c7360cc63272f39';
 
 export const GRAMMAR_VERSION = '2';
 
