@@ -361,12 +361,22 @@ describe('a superseded memory resolves to its chain head', () => {
   });
 
   /**
-   * TWO READS, ONE ANSWER. Nothing in the database stops two sessions from
-   * superseding the same memory, so a chain can fork — and then it matters
-   * that this search and the spawn selector (185, `internal.memory_marks`)
-   * pick the SAME branch, or the launch prompt carries one correction while
-   * a search for the same fact answers the other. Both order a fork newest-
-   * first; ids are uuidv7, so that is `desc` on the id in both files.
+   * TWO READS, ONE ANSWER. A chain can fork when two sessions correct the same
+   * memory, and then it matters that this search and the spawn selector (187,
+   * `internal.memory_marks`) pick the SAME branch, or the launch prompt
+   * carries one correction while a search for the same fact answers the other.
+   * Both order a fork newest-first; ids are uuidv7, so that is `desc` on the
+   * id in both files.
+   *
+   * 190 made a fork impossible to WRITE — a unique index on the target of a
+   * `supersedes` edge — but not impossible to MEET: a database restored from
+   * before the index, or a bulk load done with it dropped, still has one, and
+   * these two reads still have to agree about it. So the fixture stands the
+   * index down inside a transaction that is rolled back, which also means the
+   * two reads have to happen on that same connection: outside it there is no
+   * fork to disagree about. The role is switched back and forth deliberately —
+   * the search must be answered under the product's own `tm8_app` posture, not
+   * the owner's, because what it picks is only interesting if RLS was live.
    */
   it('names the same head the spawn prompt would, when the chain forks', async () => {
     const word = unique('forkword');
@@ -375,19 +385,67 @@ describe('a superseded memory resolves to its chain head', () => {
     const newer = await mintMemory({ statement: 'the newer correction' });
     // The premise, asserted rather than assumed: minted later means a larger id.
     expect(newer > older).toBe(true);
-    await drawEdge(older, original, 'supersedes', { reason: 'one writer' });
-    await drawEdge(newer, original, 'supersedes', { reason: 'another writer, same fact' });
 
-    const searched = (await searchAs(MEMBER, fixture.spaceId, word)).map((r) => r.entity_id);
-    const spawned = (await asOwner(async (client) => (
-      await client.query<{ head_id: string | null }>(
-        `select head_id::text as head_id from internal.memory_marks(array[$1::uuid])`,
-        [original],
-      )
-    ).rows))[0]!.head_id;
+    class Rollback extends Error {}
+    let searched: string[] | undefined;
+    let spawned: string | null | undefined;
+    try {
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query('drop index public.edges_supersedes_target_idx');
+        for (const [src, reason] of [[older, 'one writer'], [newer, 'another writer, same fact']] as const) {
+          await client.query(
+            `insert into public.edges(space_id, src_id, dst_id, type, props, created_by)
+             values ($1, $2, $3, 'supersedes', $4, $5)`,
+            [fixture.spaceId, src, original, JSON.stringify({ reason }), fixture.memberId],
+          );
+        }
+        spawned = (await client.query<{ head_id: string | null }>(
+          `select head_id::text as head_id from internal.memory_marks(array[$1::uuid])`,
+          [original],
+        )).rows[0]!.head_id;
+
+        // The product's posture for the search half. `set local role` is
+        // checked against the session user, so stepping down to tm8_app and
+        // back up is legal inside one transaction.
+        await client.query('set local role tm8_app');
+        await client.query(
+          `select set_config('tm8.identity_id', $1, true),
+                  set_config('tm8.actor_id', '', true),
+                  set_config('tm8.node_admin', 'false', true),
+                  set_config('tm8.request_id', 'memory-search-pg', true),
+                  set_config('tm8.auth_kind', '', true)`,
+          [MEMBER],
+        );
+        searched = (await client.query<SearchRow>(
+          `select entity_id, statement, subject_scope, does_not_establish, rank, marks
+             from public.search_memories($1, $2, $3)`,
+          [fixture.spaceId, word, 20],
+        )).rows.map((r) => r.entity_id);
+
+        await client.query('set local role tm8_graph_owner');
+        throw new Rollback();
+      });
+    } catch (error) {
+      if (!(error instanceof Rollback)) throw error;
+    }
 
     expect(searched).toEqual([newer]);
     expect(spawned).toBe(newer);
+  });
+
+  it('and a rival correction is refused rather than forking the chain', async () => {
+    const word = unique('unforkable');
+    const original = await mintMemory({ statement: `${word} the original claim` });
+    const first = await mintMemory({ statement: 'the first correction' });
+    const second = await mintMemory({ statement: 'the rival correction' });
+    await drawEdge(first, original, 'supersedes', { reason: 'one writer' });
+
+    // The guard the test above disables to do its job, asserted here so both
+    // halves of the story live in one file: refused when written, resolved
+    // when found.
+    await expect(drawEdge(second, original, 'supersedes', { reason: 'another writer' }))
+      .rejects.toThrow(/edges_supersedes_target_idx/);
   });
 });
 

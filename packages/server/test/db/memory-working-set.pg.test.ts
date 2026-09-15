@@ -898,21 +898,30 @@ describe('185 — a memory whose correction was deleted comes back rather than v
 });
 
 /**
- * 185 — WHERE A CHAIN FORKS, THE NEWEST CORRECTION WINS.
+ * 187 — WHERE A CHAIN FORKS, THE NEWEST CORRECTION WINS.
  *
- * Nothing in the database stops two sessions from superseding the same memory:
- * the CLI's pre-flight is a client-side read-then-write, and no trigger or
- * unique index stands behind it. When that happens the chain forks and the read
- * has to pick a branch. It does not matter much WHICH branch, but it matters
- * enormously that every reader picks the SAME one — otherwise the agent's
- * prompt carries correction #1 while `tm8 memory search` answers correction #2
- * and nothing anywhere says the fact has two current versions.
+ * A fork happens when two sessions correct the same memory. When it does, the
+ * read has to pick a branch. It does not matter much WHICH branch, but it
+ * matters enormously that every reader picks the SAME one — otherwise the
+ * agent's prompt carries correction #1 while `tm8 memory search` answers
+ * correction #2 and nothing anywhere says the fact has two current versions.
  *
  * Ids are uuidv7 (001), so ordering the branches by id descending is ordering
- * them newest-first. That is the clause 186 already used; 185 used the same
- * one ascending, which silently made the prompt prefer the OLDER correction.
+ * them newest-first. That is the clause 188's search already used; 187 used
+ * the same one ascending, which silently made the prompt prefer the OLDER
+ * correction.
+ *
+ * THIS TEST SURVIVED THE CONSTRAINT, AND HAD TO. 190 put a unique index on the
+ * target of a `supersedes` edge, so a fork can no longer be WRITTEN — which is
+ * why the fixture below stands the index down to build one. Deleting this test
+ * along with the fork would have been the wrong reading of that change: 190
+ * stops a fork being CREATED, it does not stop one EXISTING. A database
+ * restored from a backup taken before the index, or a bulk load done with it
+ * dropped, still presents one, and a reader that answered a fork by throwing
+ * would turn recoverable history into an outage. So the resolution stays, and
+ * this is what still proves it.
  */
-describe('185 — a forked chain resolves to the newest correction', () => {
+describe('187 — a forked chain resolves to the newest correction', () => {
   it('prefers the branch written later, and shows it once', async () => {
     const actor = await mintTeammate('Forked');
     const original = await mintMemory('fork: the original claim', false, { createdBy: actor });
@@ -920,12 +929,57 @@ describe('185 — a forked chain resolves to the newest correction', () => {
     const newer = await mintMemory('fork: the newer correction', false, { createdBy: stranger });
     // The premise, asserted rather than assumed: minted later means a larger id.
     expect(newer > older).toBe(true);
-    await drawEdge(older, original, 'supersedes', { reason: 'one writer' });
-    await drawEdge(newer, original, 'supersedes', { reason: 'another writer, same fact' });
 
-    const rows = await selectFor(actor, 4096);
-    expect(rows.map((r) => r.entity_id)).toEqual([newer]);
-    expect(await marksOf(original)).toMatchObject({ superseded: true, head_id: newer });
+    // The index is dropped INSIDE a transaction that is then rolled back, so
+    // neither the drop nor the fork outlives this test and no later test
+    // inherits either. DDL is transactional in Postgres, which is the whole
+    // reason this is safe. The reads have to run on the same connection for
+    // the same reason — outside it, neither the fork nor the drop exists.
+    class Rollback extends Error {}
+    let rows: SelectedRow[] | undefined;
+    let marks: { superseded: boolean; head_id: string | null } | undefined;
+    try {
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query('drop index public.edges_supersedes_target_idx');
+        for (const [src, reason] of [[older, 'one writer'], [newer, 'another writer, same fact']] as const) {
+          await client.query(
+            `insert into public.edges(space_id,src_id,dst_id,type,props,created_by)
+             values($1,$2,$3,'supersedes',$4,$5)`,
+            [fixture.spaceId, src, original, JSON.stringify({ reason }), fixture.teamMemberId],
+          );
+        }
+        rows = (await client.query(
+          `select * from internal.select_agent_memories($1,$2,$3::uuid[],$4,$5,$6)`,
+          [fixture.spaceId, actor, [], null, null, 4096],
+        )).rows as SelectedRow[];
+        marks = (await client.query(
+          `select superseded, head_id::text as head_id
+             from internal.memory_marks(array[$1::uuid])`,
+          [original],
+        )).rows[0] as { superseded: boolean; head_id: string | null };
+        throw new Rollback();
+      });
+    } catch (error) {
+      if (!(error instanceof Rollback)) throw error;
+    }
+
+    expect(rows!.map((r) => r.entity_id)).toEqual([newer]);
+    expect(marks).toMatchObject({ superseded: true, head_id: newer });
+  });
+
+  it('and the fork cannot be written in the first place', async () => {
+    const actor = await mintTeammate('Unforkable');
+    const original = await mintMemory('unforkable: the original claim', false, { createdBy: actor });
+    const first = await mintMemory('unforkable: the first correction', false, { createdBy: stranger });
+    const second = await mintMemory('unforkable: the rival correction', false, { createdBy: stranger });
+    await drawEdge(first, original, 'supersedes', { reason: 'one writer' });
+
+    // The guard the test above has to disable to do its job. Asserting it here
+    // keeps the two halves of the story in one file: a fork is refused when
+    // written, and resolved when found.
+    await expect(drawEdge(second, original, 'supersedes', { reason: 'another writer' }))
+      .rejects.toThrow(/edges_supersedes_target_idx/);
   });
 });
 
