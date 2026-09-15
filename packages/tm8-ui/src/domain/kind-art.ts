@@ -320,7 +320,7 @@ export const VIEW_ART = {
     'M9.4 4l2.6 2.6',
   ],
   /* CodeBrain — a node on a wire into a closing angle bracket. Copied
-     verbatim from `tm8_ui_2.0`'s table so the two packages draw one view one
+     verbatim from the alternate UI's table so the two packages drew one view one
      way; this snapshot has no CodeBrain SCREEN, but a ref the rail can be
      asked to render still needs a mark. */
   codebrain: [

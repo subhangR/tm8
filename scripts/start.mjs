@@ -93,8 +93,8 @@ if (!existsSync(SERVER_ENTRY)) {
 
 if (!uiBundleExists()) {
   log.warn(
-    "no web UI bundle at packages/ui/dist — tm8-server will serve the API only " +
-      "(expected until W3/M2 lands the UI transplant).",
+    "no web UI bundle at packages/tm8-ui/dist — tm8-server will serve the API " +
+      "only. Run `bun run build` in packages/tm8-ui.",
   );
 }
 

@@ -172,8 +172,14 @@ describe('the pivots', () => {
   it('Priority: four columns in descending urgency, written through the version-guarded patch', async () => {
     const view = await mountBoard();
     fireEvent.click(view.getByTestId('bd-pivot-priority'));
-    await waitFor(() => expect(columnKeys(view)).toEqual(['urgent', 'high', 'medium', 'low']));
-    expect(column(view, 'medium').getByText(GUIDE)).toBeTruthy();
+    /* THE COLUMNS AND THE CARDS ARRIVE IN SEPARATE ROUNDS. The pivot swaps the
+       column set first and re-buckets the cards after, so waiting only on the
+       keys and then reading a card synchronously catches the board half
+       pivoted — an empty `medium` that is early, not wrong. */
+    await waitFor(() => {
+      expect(columnKeys(view)).toEqual(['urgent', 'high', 'medium', 'low']);
+      expect(column(view, 'medium').getByText(GUIDE)).toBeTruthy();
+    });
 
     /* The write path is DIFFERENT here — a content patch that needs the
        detail's version, hydrated on demand — so it gets its own commit

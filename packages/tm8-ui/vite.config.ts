@@ -15,56 +15,30 @@ import { pwaShell } from './vite-plugin-pwa-shell';
 const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
 
 /**
- * THIS PACKAGE IS THE PRODUCT UI, served at `/`. It was the frozen 1.0 snapshot
- * between 2026-08-29 and 2026-09-03; on 2026-09-03 the owner reversed that and
- * the pair swapped roles. `packages/tm8_ui_2.0` is now the ALTERNATE UI behind
- * the version switch, at `/ui-2.0/`; see `scripts/lib/ui.mjs`, the pointer every
- * launcher, doctor and deploy path reads.
+ * THIS PACKAGE IS THE PRODUCT UI, served at `/`, and since 2026-09-15 it is the
+ * ONLY UI in this repo. The Astryx redesign (`packages/tm8_ui_2.0`, the
+ * alternate at `/ui-2.0/`) and the legacy collab-v2 oracle (`packages/ui`) were
+ * both deleted; see `scripts/lib/ui.mjs`, the pointer every launcher, doctor
+ * and deploy path reads.
+ *
+ * THE `/ui-2.0` MOUNT IS GONE IN BOTH ITS CHAINS. It is recorded here because
+ * the shape of it is the thing to recognise if a second bundle is ever wanted
+ * again: the path STRING lived in five places (the server's mount constant, the
+ * alternate bundle's `base`, this package's service worker, and two vite
+ * proxies), while the directory POINTER `TM8_UI_2_0_DIR` was a SEPARATE chain
+ * through `deploy/prod/env.sh`, `deploy/utho/deploy.sh`, the server's `ui20Dir`
+ * and `main.ts`. The two chains met only in `main.ts` — which is why `/ui-2.0/`
+ * spent its last weeks 404ing on prod with every path string perfectly correct:
+ * the env value named a directory that did not exist. A second mount that ever
+ * returns needs both chains, and needs a test that fails when only one is done
+ * (`packages/server/test/static-ui.test.ts` holds that line today).
  *
  * Three things follow from being the ROOT bundle, and each was the opposite
  * while this package was the mounted one:
  *
  *  1. NO `base`. Vite's default `/` is correct and must stay implicit-correct:
- *     the mount path is baked into every asset URL at build time, so a `base`
+ *     a mount path is baked into every asset URL at build time, so a `base`
  *     here would make every asset 404 at the root.
- *
- *     `/ui-2.0` IS DUPLICATED IN FIVE PLACES. This comment used to name three,
- *     one of which (`tm8-ui/src/ui-version/mount.ts`) was deleted with the
- *     UI-2.0 switch on 2026-09-07 — so it was both stale AND undercounting.
- *     Enumerated, because the hazard here is that someone works from the list.
- *     Line numbers are a hint and drift; the symbol names do not:
- *
- *       packages/server/src/http/static.ts:71   UI_2_0_MOUNT_PATH   [SHIPS — server]
- *       packages/tm8_ui_2.0/vite.config.ts      that bundle's base  [SHIPS in 2.0]
- *       src/pwa/service-worker.js:130           isOtherUi()         [SHIPS in 1.0]
- *       vite.preview.config.ts:35               proxy               [preview only]
- *       THIS FILE, the `server.proxy` block below   proxy           [dev only]
- *
- *     THE LAST THREE ARE NOT DOORS AND NOT ORPHANS of the deleted switch —
- *     they are this bundle DECLINING a path that is not its own, and a cleanup
- *     that greps `ui-2.0`, finds the switch gone and removes them would be
- *     invisible until someone repairs `TM8_UI_2_0_DIR`.
- *
- *     THREE OF THE FIVE REACH A USER — measured against the built trees prod
- *     is serving, not against source: `static.js` (4 hits), `sw.js` (3), and
- *     `tm8_ui_2.0/dist-2.0/index.html` (6, because the base is baked into every
- *     asset URL at build time, exactly as that file warns). The two vite
- *     proxies appear in no `dist` at all — prod runs no vite; tm8-server serves
- *     `TM8_UI_DIR` through `static.ts`. So breaking a proxy is a local-dev
- *     annoyance; breaking any of the other three reaches production. Marking
- *     everything at equal weight trains the next reader to discount the list,
- *     and understating which ones ship is the direction that gets them deleted.
- *
- *     AND THIS LIST IS ONE OF TWO CHAINS. The five above are the literal path
- *     STRING. `TM8_UI_2_0_DIR` — the directory POINTER — is independent:
- *     `deploy/prod/env.sh:92`, `deploy/utho/deploy.sh` (the seeder and the
- *     anchored repair), `packages/server/src/http/config.ts` (`ui20Dir`),
- *     `packages/server/src/main.ts` (`createStaticHandler(config.ui20Dir, …)`)
- *     and `scripts/lib/ui.mjs`. The two chains meet in `main.ts`, which is why
- *     `/ui-2.0/` can 404 with every path-string site above perfectly correct —
- *     and why it DOES 404 on prod today: the env value names a directory that
- *     does not exist, while `dist-2.0` is built and fine. If you are here to
- *     repair `/ui-2.0/`, this list is the wrong chain.
  *
  *  2. `build.outDir` is the default `dist`, and `TM8_UI_DIR` names it. The old
  *     `dist-1.0` override was a production interlock against a stale
@@ -75,9 +49,7 @@ const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
  *  3. `pwaShell` IS INSTALLED. A service worker belongs to whichever bundle
  *     holds the root scope, and that is this one; `src/pwa/register.ts` guards
  *     on `BASE_URL === '/'` so a mounted build of this package would still
- *     register nothing. `tm8_ui_2.0` drops the plugin for the matching reason
- *     on its side — two workers racing over one origin is not something the
- *     alternate UI needs to be worth having.
+ *     register nothing.
  */
 export default defineConfig({
   plugins: [
@@ -116,12 +88,6 @@ export default defineConfig({
     proxy: {
       '/v2': { target, changeOrigin: false, ws: true },
       '/health': { target, changeOrigin: false },
-      /* The alternate 2.0 UI is served by tm8-server (TM8_UI_2_0_DIR), not by
-         vite — so the version switch's destination has to be proxied like the
-         API is. Without this line `/ui-2.0/` falls to vite's own SPA fallback
-         and answers with THIS app's index.html: the switch would appear to
-         work and change nothing. */
-      '/ui-2.0': { target, changeOrigin: false },
     },
   },
   test: {

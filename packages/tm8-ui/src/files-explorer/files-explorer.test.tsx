@@ -147,16 +147,25 @@ describe('roots, breadcrumbs, modes', () => {
 
   it('gallery mode draws image tiles from the port href and no <img> for non-images', async () => {
     render(<FilesExplorerScreen port={stubPort()} />);
+    /* The listing is async, and the mode toggle only re-renders what has
+       already arrived. Clicking on the empty first paint puts gallery mode up
+       with nothing to draw, and the query below then reads zero tiles off a
+       screen that is merely early rather than wrong. */
+    await screen.findByText('a.txt');
     fireEvent.click(await screen.findByRole('button', { name: 'gallery' }));
-    const imgs = document.querySelectorAll('img.fx-thumb');
-    expect(imgs).toHaveLength(1);
+    const imgs = await waitFor(() => {
+      const found = document.querySelectorAll('img.fx-thumb');
+      expect(found).toHaveLength(1);
+      return found;
+    });
     expect((imgs[0] as HTMLImageElement).src).toContain('/v2/files/e:b.png/download');
   });
 
   it('tree mode renders a real tree role', async () => {
     render(<FilesExplorerScreen port={stubPort()} />);
+    await screen.findByText('a.txt');
     fireEvent.click(await screen.findByRole('button', { name: 'tree' }));
-    expect(screen.getByRole('tree', { name: 'Folder tree' })).toBeTruthy();
+    expect(await screen.findByRole('tree', { name: 'Folder tree' })).toBeTruthy();
     expect(screen.getAllByRole('treeitem')).toHaveLength(2);
   });
 });
@@ -287,6 +296,11 @@ describe('conflict preflight dialog', () => {
     });
     render(<FilesExplorerScreen port={port} />);
     const input = (await screen.findByTestId('fx-file-input')) as HTMLInputElement;
+    /* THE COLLISION IS COMPUTED AGAINST THE LOADED LISTING. The file input is
+       in the tree from the first paint, so picking files before the directory
+       has arrived finds nothing to collide with and uploads both silently —
+       which is the dialog's absence below, not a missing dialog. */
+    await screen.findByText('a.txt');
     Object.defineProperty(input, 'files', { value: [new File(['1'], 'a.txt'), new File(['2'], 'new.txt')] });
     fireEvent.change(input);
     const dialog = await screen.findByTestId('fx-conflict-dialog');

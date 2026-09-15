@@ -13,8 +13,9 @@ import { defineConfig } from 'vite';
  * deployed directory) so a snapshot of the tree actually carries it — the UI
  * supervisor crash-loops on "Could not resolve vite.preview.config.ts" without it.
  *
- * It moved here from `packages/tm8_ui_2.0` on 2026-09-03, when this package
- * became the product UI again and 2.0 became the alternate at `/ui-2.0/`.
+ * It moved here from the Astryx redesign package on 2026-09-03, when this
+ * package became the product UI again; that package was deleted on 2026-09-15
+ * and this is now the only bundle prod serves.
  */
 const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:7778';
 const port = Number(process.env.TM8_UI_PORT ?? 7777);
@@ -27,12 +28,6 @@ export default defineConfig({
     proxy: {
       '/v2': { target, changeOrigin: false, ws: true },
       '/health': { target, changeOrigin: false },
-      /* The alternate 2.0 UI is served by tm8-server (TM8_UI_2_0_DIR), not by
-         vite — so the version switch's destination has to be proxied like the
-         API is. Without this line `/ui-2.0/` falls to vite's own SPA fallback
-         and answers with THIS app's index.html: the switch would appear to
-         work and change nothing. */
-      '/ui-2.0': { target, changeOrigin: false },
     },
   },
 });
