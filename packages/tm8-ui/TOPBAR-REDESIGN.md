@@ -311,7 +311,7 @@ asked for a bigger mark, and 38 would deliver a compromise nobody asked for. Tri
 | keep | tm8 mark → conversations | left zone, 11.5 → 16 px | click the mark; `aria-label` unchanged |
 | keep | space ⋄ server switcher | left zone, ~150 px, one line | same popover, same spaces, same `+ new space` / `+ add server` |
 | keep | server name on the trigger | popover header + trigger `title` | hover, or open the popover — where it already appears |
-| keep | Home Work Board Craft Graph CodeBrain Settings Help | centre zone, all eight at every built width | same tabs, still derived from the resolved `MenuConfig` groups. The designed fold to `Home ▾` was not built — measured unnecessary |
+| keep | Home Work Board Craft Graph Settings Help | centre zone, all seven at every built width | same tabs, still derived from the resolved `MenuConfig` groups. The designed fold to `Home ▾` was not built — measured unnecessary. CodeBrain was an eighth tab here until migration 186 (2026-09-15) removed the ref |
 | **cut** | ⇄ Switch to UI 2.0 | **removed entirely** — control, prop, CSS and the `ui-version/` module | the owner ruled twice: kept after the first pass, then deleted after seeing the overflow fixed. Nothing is stranded — `tm8_ui_2.0` keeps its own "Back to UI 1.0" return door, and the rollback was never this control |
 | **move** | prompts | card row "System prompts" | profile menu, and `⌘K` |
 | keep | / palette · ⌘K | right zone; `⌘K` under 1240 | unchanged, plus the shortcut it names |

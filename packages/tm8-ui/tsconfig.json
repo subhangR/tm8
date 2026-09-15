@@ -1,5 +1,5 @@
 {
-  "//": "Mirrors packages/ui/tsconfig.json (the gate-verified browser config) minus the react-mentions pin this package does not need. Tests are compiled and run by Vitest, not tsc — test-only imports of node builtins (node:fs for the tokens byte-equality test) must not leak into the browser build, and app code stays guarded against accidental node imports because `types` omits @types/node.",
+  "//": "Derived from the deleted packages/ui browser config, minus the react-mentions pin this package does not need. Tests are compiled and run by Vitest, not tsc — test-only imports of node builtins (node:fs for the tokens byte-equality test) must not leak into the browser build, and app code stays guarded against accidental node imports because `types` omits @types/node.",
   "compilerOptions": {
     "target": "ES2021",
     "useDefineForClassFields": true,

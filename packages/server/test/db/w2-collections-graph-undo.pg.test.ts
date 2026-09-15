@@ -207,6 +207,31 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect(outsider.page.items).toEqual([]);
   });
 
+  it('filters memories by any term across all four text columns, past the 200-char excerpt window', async () => {
+    // The key phrase sits ~340 chars into the statement: outside the 120-char
+    // title AND the 200-char excerpt a summary carries, which is exactly the
+    // text the MCP tool used to scan. Nothing else in the fixture is a memory.
+    const statement = `${'A long preamble that says nothing. '.repeat(10)}The build uses scoped tsc.`;
+    const memoryId = await asApp(database, fixture.identityId, async (_q, client) => (await client.query<{ result: { entity: { id: string } } }>(
+      `select public.create_memory($1, $2, 'timed on the launch node', 'packages/server builds',
+              'nothing about vite', null, $3, null, null, null) as result`,
+      [fixture.spaceId, statement, fixture.memberId],
+    )).rows[0]!.result.entity.id);
+    const search = (terms: string[]) => asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, filters: { terms } },
+      fixture.identityId,
+    ));
+    const body = await search(['SCOPED']);
+    expect(body.page.items.map((item) => item.id)).toEqual([memoryId]);
+    expect(body.page.total).toBe(1);
+    // Any-of, and the scope columns count: 'vite' lives only in does_not_establish.
+    expect((await search(['absent', 'vite'])).page.items.map((item) => item.id)).toEqual([memoryId]);
+    expect((await search(['absent'])).page.items).toEqual([]);
+    // No `kinds` was given, yet the fixture's tasks never match: memory-narrowing.
+    expect((await search(['Root'])).page.items).toEqual([]);
+  });
+
   it('filters and groups tasks by priority (Board tab wave)', async () => {
     // Fixture priorities: Root=medium, Child=high, Sibling=low, Deleted=urgent (soft-deleted).
     const high = await asApp(database, fixture.identityId, (q) => queryCollection(

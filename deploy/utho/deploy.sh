@@ -29,8 +29,7 @@
 # THE FIVE THINGS THAT MAKE THE OBVIOUS RECIPE WRONG
 #
 #  1. STAGING HAS NO UI BUILD; PROD'S IS SEPARATE. `bun run build` is `tsc -b`
-#     only. Prod serves TM8_UI_DIR=packages/tm8-ui/dist (plus the alternate 2.0
-#     bundle at packages/tm8_ui_2.0/dist-2.0), so prod needs a second,
+#     only. Prod serves TM8_UI_DIR=packages/tm8-ui/dist, so prod needs a second,
 #     explicit `vite build` — skip it and you ship a stale UI against a new server
 #     with no error anywhere. Staging runs vite DEV against source, so the
 #     checkout alone updates its UI and a build there is wasted work.
@@ -321,82 +320,53 @@ if [[ "$BUILD_UI" == 1 ]]; then
   # Prod only. `bun run build` above is tsc -b and does NOT touch the UI; prod
   # serves packages/tm8-ui/dist, so skipping this ships a stale UI, silently.
   #
-  # TWO BUNDLES SINCE 2026-09-03. packages/tm8-ui is the product UI at `/`;
-  # packages/tm8_ui_2.0 is the alternate at `/ui-2.0/`, from `dist-2.0`.
+  # ONE BUNDLE SINCE 2026-09-15. packages/tm8-ui is the only UI package; the
+  # alternate at /ui-2.0/ and the legacy oracle were both deleted.
   #
-  # STALE SYMLINKS FIRST. Both of these have existed on this box: tm8-ui/dist
-  # pointed at ../tm8_ui_2.0/dist while a root-owned env named the old path, and
-  # tm8_ui_2.0/dist was pointed at a hand-built root bundle during the 2026-09-03
-  # zero-restart swap. Either one makes a vite build write THROUGH it into the
-  # other package. Remove them before building; idempotent, and a no-op on a box
-  # that never had one.
-  for stale in "$DIR/packages/tm8-ui/dist" "$DIR/packages/tm8_ui_2.0/dist"; do
-    if [[ -L "$stale" ]]; then
-      rm -f "$stale"
-      rok "removed stale symlink $stale -> (gone)"
-    fi
-  done
+  # STALE SYMLINK FIRST. packages/tm8-ui/dist has been a symlink into the (now
+  # deleted) alternate package on this box, while a root-owned env named the old
+  # path. That makes a vite build write THROUGH it, outside the package. Remove
+  # it before building; idempotent, and a no-op on a box that never had one.
+  if [[ -L "$DIR/packages/tm8-ui/dist" ]]; then
+    rm -f "$DIR/packages/tm8-ui/dist"
+    rok "removed stale symlink $DIR/packages/tm8-ui/dist -> (gone)"
+  fi
 
-  say "building the product UI bundle (separate vite build — prod serves dist)"
+  say "building the UI bundle (separate vite build — prod serves dist)"
   runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8-ui' && umask 022 && bun run build >/dev/null" \
     || rdie "vite build failed — nothing has been stopped"
   [[ -f "$DIR/packages/tm8-ui/dist/index.html" ]] || rdie "vite build reported success but dist/index.html is missing"
-  rok "product UI bundle built"
-
-  # NOT `rdie` ON FAILURE, unlike the product UI: this bundle is optional. A
-  # deploy that cannot build the alternate UI must still ship the product one —
-  # failing the whole rollout over a rollback affordance would make the
-  # affordance more dangerous than the thing it exists to protect against.
-  say "building the alternate 2.0 UI bundle (/ui-2.0/, from dist-2.0)"
-  if runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8_ui_2.0' && umask 022 && bun run build >/dev/null" \
-     && [[ -f "$DIR/packages/tm8_ui_2.0/dist-2.0/index.html" ]]; then
-    rok "alternate UI bundle built"
-  else
-    say "! 2.0 UI build failed — shipping without it; the version switch will report it unavailable"
-  fi
+  rok "UI bundle built"
 
   # /etc/tm8/prod.env is 0600 root:root, so the checkout update alone cannot move
-  # these pointers — and a stale TM8_UI_DIR serves the WRONG UI with every other
-  # check green. Fix them here, where we are root anyway. Both edits are
-  # idempotent: no-ops once the env file already points right.
-  # ANCHORED TO THE TM8_UI_DIR LINE (2026-09-07). It was not, and the
-  # unanchored form rewrote TM8_UI_2_0_DIR as collateral while aiming at
-  # TM8_UI_DIR: `.../packages/tm8_ui_2.0/dist-2.0` became
-  # `.../packages/tm8-ui/dist-2.0`, a directory that does not exist. The mount
-  # then registered nothing and /ui-2.0/ answered "no operation bound", which is
-  # why the top bar has been saying "this server does not serve the 2.0 UI" on a
-  # box that builds the bundle every deploy.
+  # these pointers — and a stale TM8_UI_DIR serves the WRONG UI, or since the
+  # deletion NO UI, with every other check green. Fix them here, where we are
+  # root anyway. Both edits are idempotent: no-ops once the env file is right.
   #
-  # The seeder below could not repair it, because it only appends when the key
-  # is ABSENT and the key was present-and-wrong. The two together were a
-  # one-way ratchet into the broken state, and the header comment above claiming
-  # idempotence is why nobody looked: it is true only AFTER the damage, because
-  # the grep then stops matching. Measured on prod 2026-09-07 via
-  # /proc/<pid>/environ.
+  # ANCHORED TO THE TM8_UI_DIR LINE (2026-09-07). It was not, and the unanchored
+  # form rewrote TM8_UI_2_0_DIR as collateral while aiming at TM8_UI_DIR,
+  # pointing it at a directory that did not exist; the mount then registered
+  # nothing and /ui-2.0/ answered "no operation bound" on a box that rebuilt the
+  # bundle every deploy. The seeder could not repair it either, because it
+  # appended only when the key was ABSENT and the key was present-and-wrong. The
+  # pair were a one-way ratchet into the broken state. Both of those blocks are
+  # gone with the mount; the ANCHOR stays, because the hazard it fixes is the
+  # unanchored sed, not the variable it damaged.
   #
-  # A HAND-FIX OF $ENVFILE IS NOT DURABLE WITHOUT THIS ANCHOR: restore the
-  # correct value and the next deploy's unanchored sed re-mangles it.
+  # THIS REPAIR IS NOW LOAD-BEARING, not defensive: a box whose TM8_UI_DIR still
+  # names the deleted package has no bundle to fall back to, so the site serves
+  # the API and nothing else.
   if grep -q "^TM8_UI_DIR=.*packages/tm8_ui_2.0/dist" "$ENVFILE"; then
     sed -i '/^TM8_UI_DIR=/ s|packages/tm8_ui_2.0/dist|packages/tm8-ui/dist|' "$ENVFILE"
     rok "TM8_UI_DIR moved to packages/tm8-ui/dist in $ENVFILE"
   fi
-  # Repair a TM8_UI_2_0_DIR already mangled by the unanchored form above. The
-  # seeder cannot: it appends only when the key is missing.
-  if grep -q "^TM8_UI_2_0_DIR=.*packages/tm8-ui/dist-2.0" "$ENVFILE"; then
-    sed -i '/^TM8_UI_2_0_DIR=/ s|packages/tm8-ui/dist-2.0|packages/tm8_ui_2.0/dist-2.0|' "$ENVFILE"
-    rok "TM8_UI_2_0_DIR repaired to packages/tm8_ui_2.0/dist-2.0 in $ENVFILE"
-  fi
-  # The mount is opt-in. Seed it rather than leaving it to be noticed; without
-  # it /ui-2.0/ 404s and the switch refuses with its reason — correct, but not
-  # what the swap asked for.
-  #
-  # ("this box has never had the variable" was true when written and is not now:
-  #  prod has it, and had it mangled by the sed above. Repairing a present key
-  #  is the block above's job, not this one's — this one appends only.)
-  if ! grep -q '^TM8_UI_2_0_DIR=' "$ENVFILE"; then
-    sed -i '/^TM8_UI_1_0_DIR=/d' "$ENVFILE"
-    printf 'TM8_UI_2_0_DIR=%s/packages/tm8_ui_2.0/dist-2.0\n' "$DIR" >> "$ENVFILE"
-    rok "TM8_UI_2_0_DIR seeded in $ENVFILE (the /ui-2.0/ mount)"
+  # The second-mount pointers are dead: the server stopped reading them when the
+  # alternate package was deleted. They are inert rather than harmful, but a
+  # deployed env naming a package that no longer exists is exactly the kind of
+  # thing the next reader spends an hour on. Strip them.
+  if grep -qE '^TM8_UI_(1|2)_0_DIR=' "$ENVFILE"; then
+    sed -i -E '/^TM8_UI_(1|2)_0_DIR=/d' "$ENVFILE"
+    rok "removed the dead TM8_UI_1_0_DIR/TM8_UI_2_0_DIR pointers from $ENVFILE"
   fi
 else
   say "staging runs vite DEV against source — no UI build (the checkout already updated it)"

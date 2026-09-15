@@ -990,6 +990,29 @@ export interface CollectionQuery {
      */
     category?: StatusCategory[];
     deleted?: 'exclude'|'only'|'include';
+    /**
+     * Additive (2026-09-15): memories whose statement, mechanism, subject
+     * scope or does-not-establish text contains ANY of these terms as a
+     * case-insensitive substring — any-of, like every other array filter
+     * here. Same kind-narrowing semantics as `status`: the four columns live
+     * on the memory arm only, so while present the query returns memories
+     * exclusively.
+     *
+     * It was added because the MCP `memory_search` tool scanned a summary's
+     * title/excerpt — a ~200-char prefix of a statement that averages 1,752
+     * chars on the launch node — and so could not reach 71% of the words it
+     * held. That tool now asks `memories.search` instead, which ranks, follows
+     * a superseded memory to its replacement, and understands quoted phrases:
+     * a plain substring filter could do none of those. This one stays because
+     * it is the only way to narrow a COLLECTION by memory text — `collections
+     * .query` still answers board, tree and feed layouts that the search read
+     * does not — and removing published contract surface is not a merge's job.
+     * If a later change finds no caller at all, retire it deliberately.
+     *
+     * Memory-only on purpose: nothing searches another kind's text yet, and a
+     * predicate over columns nobody asked for is a feature, not a fix.
+     */
+    terms?: string[];
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
@@ -2390,7 +2413,7 @@ export interface ContentionReport {
 
 /**
  * `memories.search` (POST /v2/memories/search) — full-text search over one
- * Space's memories, answered by `public.search_memories` (186).
+ * Space's memories, answered by `public.search_memories` (188).
  *
  * Every part of a memory is searched — what it claims, how that was
  * established, what it applies to, and what it does NOT prove — so a memory is
@@ -2725,7 +2748,7 @@ export type InvitePreview =
  * so its default door is a control on the tab bar (the `inbox` precedent). The
  * registry row exists all the same, because an operator who places Help in
  * their own menu must not be refused by the server validator. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft' | 'help' | 'codebrain';
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft' | 'help';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -2997,11 +3020,15 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // edit here if the pending position ruling says otherwise.
   { serverId: 'craft', clientId: 'craft' },
   { serverId: 'graph', clientId: 'graph' },
-  // 2026-09-01 (CodeBrain, migration 173): the delivery pipeline's own tab,
-  // seated after Graph and before the utility tabs. This constant is the ONE
-  // place both parity tests read, so the group cannot land on one side alone
-  // — the 059 lesson this spine exists to encode.
-  { serverId: 'codebrain', clientId: 'codebrain' },
+  // 2026-09-15 (CodeBrain removed, migration 186): the tab 173 seated here is
+  // gone, and `codebrain` has left the MenuViewRef union above with it. #610
+  // deleted the 2.0 UI package that held the only CodeBrain SCREEN, which left
+  // the ref addressable but unrenderable — `view-ref-screens.ts` marked it
+  // `unbuilt`, and the shipped row carried a tab that could only report its own
+  // absence. Files and Board (commented out around this line) kept their refs
+  // when they left the spine because their screens still exist; this one has
+  // none to keep. The registry row and the check-constraint entry go in 186.
+  // { serverId: 'codebrain', clientId: 'codebrain' },
   // Files is no longer a shipped tab, but remains a legal customized-menu ref.
   // { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
@@ -4269,6 +4296,17 @@ export interface ExecutionSpawnInput extends CommandContext {
   agentTool?: string | null;
   reasoningEffort?: LaunchReasoningEffort;
   accessMode?: LaunchAccessMode;
+  /**
+   * The conversation size, in tokens, at which Claude Code auto-compacts:
+   * an integer in 100_000..1_000_000. Omitted = the node default (200_000).
+   * Honoured only by `claude-code` launches, which receive it as
+   * `CLAUDE_CODE_AUTO_COMPACT_WINDOW`; the harness clamps it to the model's
+   * own window, so a value at or above that window changes nothing. A token
+   * count rather than a percentage because tm8 launches 200k and 1M models
+   * from one catalog. See `DEFAULT_AUTOCOMPACT_WINDOW_TOKENS` in
+   * `packages/execution/src/spawn/manifest.ts` for the measurement.
+   */
+  autocompactWindowTokens?: number;
   /** Independent source selection per vendor. An absent key means auto. */
   credentialSources?: LaunchCredentialSources;
   /**

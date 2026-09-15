@@ -261,6 +261,13 @@ describe('R15 — a cold entry steps UP, and up is a replace', () => {
     const target = createMemoryTarget(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('entity-view'));
+    /* SETTLE BEFORE THE FIRST STEP, exactly as the sibling case above does.
+       `waitFor` returns as soon as the entity view is in the tree, which is
+       before the router has finished writing the boot entry; stepping up into
+       that window spends the cold-entry concession against a history that is
+       still being established, and both later navigations then coalesce into
+       replaces. The assertion below is about what happens AFTER boot. */
+    await settle();
     await act(async () => {
       screenStackStore.getState().pop(screenKeyOf.kind('task'));
     });

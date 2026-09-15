@@ -7,8 +7,8 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ArtifactManifestSchema } from '@tm8/contract';
 import type { CatalogTransport } from '../src/catalog-client.js';
-import { Tm8ToolRouter } from '../src/tools.js';
 import { DIRECT_TOOLS } from '../src/direct-tools.js';
+import { Tm8ToolRouter } from '../src/tools.js';
 
 const transport: CatalogTransport = { invoke: async () => ({ ok: true }) };
 const SPACE = '00000000-0000-7000-8000-0000000000aa';
@@ -359,15 +359,15 @@ describe('direct repository tools', () => {
 });
 
 /**
- * The memory write door.
+ * The memory read door.
  *
- * `create_memory` raises SQLSTATE 22023 unless statement, mechanism,
- * subject_scope AND does_not_establish are each 1..1000 chars after trim
- * (db/migrations/090_memory_any_holder.sql §2). The tool used to declare only
- * `['spaceId','statement']` as required and drop the rest when absent, so the
- * documented minimal call was a guaranteed server-side refusal that the caller
- * had no way to predict from the schema — the reason the memory corpus stayed
- * in the dozens. These pin the schema to what the graph actually accepts.
+ * The tool used to fetch the 100 most recently updated memories and substring-
+ * match the query's words, in JavaScript, against a summary's 120-char title
+ * and 200-char excerpt — roughly the first tenth of an average statement, and
+ * never the three fields that say what a claim rests on and where it stops.
+ * It now asks `memories.search`, which matches, ranks and resolves chains in
+ * the database. These pin that the tool carries the request and nothing more:
+ * a second opinion on relevance in TypeScript is the split being removed.
  */
 describe('memory_search asks the database, not the summary', () => {
   const tool = DIRECT_TOOLS.find((t) => t.name === 'memory_search')!;
@@ -434,6 +434,17 @@ describe('memory_search asks the database, not the summary', () => {
   });
 });
 
+/**
+ * The memory write door.
+ *
+ * `create_memory` raises SQLSTATE 22023 unless statement, mechanism,
+ * subject_scope AND does_not_establish are each 1..1000 chars after trim
+ * (db/migrations/090_memory_any_holder.sql §2). The tool used to declare only
+ * `['spaceId','statement']` as required and drop the rest when absent, so the
+ * documented minimal call was a guaranteed server-side refusal that the caller
+ * had no way to predict from the schema — the reason the memory corpus stayed
+ * in the dozens. These pin the schema to what the graph actually accepts.
+ */
 describe('memory_write declares what the graph demands', () => {
   const tool = DIRECT_TOOLS.find((t) => t.name === 'memory_write')!;
 
@@ -444,28 +455,46 @@ describe('memory_write declares what the graph demands', () => {
     );
   });
 
-  it('refuses a statement-only call locally, naming the missing field', async () => {
-    const router = new Tm8ToolRouter(transport, { mode: 'build', spaceId: SPACE });
+  it('refuses a statement-only call locally, naming the missing field, without asking the server', async () => {
     // The router answers with a structured error envelope rather than
     // throwing. What matters is that the refusal happens HERE, names the
-    // field, and never reaches Postgres as an unpredictable 22023.
+    // field, and never reaches Postgres as an unpredictable 22023 — so the
+    // transport is counted, not just stubbed.
+    let invoked = 0;
+    const counting: CatalogTransport = { invoke: async () => { invoked += 1; return { ok: true }; } };
+    const router = new Tm8ToolRouter(counting, { mode: 'build', spaceId: SPACE });
     await expect(router.call('memory_write', {
       spaceId: SPACE, statement: 'a fact with no provenance',
     })).resolves.toMatchObject({
+      isError: true,
       structuredContent: {
-        error: { code: 'invalid_input', message: expect.stringContaining('mechanism') },
+        error: { code: 'invalid_input', message: 'mechanism must be a non-empty string' },
       },
     });
+    // Present but blank is the same refusal: `create_memory` trims before it
+    // measures, so whitespace is not provenance either.
+    await expect(router.call('memory_write', {
+      spaceId: SPACE,
+      statement: 'a fact with no provenance',
+      mechanism: 'probed both ports',
+      subjectScope: 'this deployment only',
+      doesNotEstablish: '   ',
+    })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } });
+    expect(invoked).toBe(0);
   });
 
-  it('accepts a call carrying all four', async () => {
-    const router = new Tm8ToolRouter(transport, { mode: 'build', spaceId: SPACE });
-    await expect(router.call('memory_write', {
+  it('accepts a call carrying all four, and only then reaches the server', async () => {
+    let invoked = 0;
+    const counting: CatalogTransport = { invoke: async () => { invoked += 1; return { ok: true }; } };
+    const router = new Tm8ToolRouter(counting, { mode: 'build', spaceId: SPACE });
+    const ok = await router.call('memory_write', {
       spaceId: SPACE,
       statement: 'the cluster listens on 5442, not 5432',
       mechanism: 'probed both ports from this host on 2026-09-15',
       subjectScope: 'this deployment only',
       doesNotEstablish: 'it does not establish the port for any other node',
-    })).resolves.toBeDefined();
+    });
+    expect(ok.isError).toBeUndefined();
+    expect(invoked).toBe(1);
   });
 });

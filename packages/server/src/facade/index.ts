@@ -178,7 +178,7 @@ export function registerFacadeHandlers(
   registerW2ProjectsAssociationsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
-  // Memory search (186): one read over `public.search_memories`, registered
+  // Memory search (188): one read over `public.search_memories`, registered
   // unconditionally because its only dependency is the database every other
   // seam here already has.
   registerMemoryHandlers(registry, facade);

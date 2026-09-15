@@ -46,7 +46,7 @@ describe.sequential('W3 production-Server public harness', () => {
       // +24 (177): the container family's HTTP rows. The catalog grew by 25;
       // the 25th is the WS alias, which is a discoverable NAME for the
       // existing socket and not a route. MEASURED off /health.
-      // +1 (186): memories.search, mounted. MEASURED off /health.
+      // +1 (188): memories.search, mounted. MEASURED off /health.
       // +1 (launch memory preview): execution.memoryPreview, mounted. MEASURED
       // off /health.
       operations: 197,
@@ -67,7 +67,7 @@ describe.sequential('W3 production-Server public harness', () => {
     // Tier 4 adds two facade handlers.
     // 134 -> 135 (2026-08-09, merge): execution.dispatch's facade handler.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    // 193 -> 194 (2026-09-15, 186): memories.search's facade handler. MEASURED.
+    // 193 -> 194 (2026-09-15, 188): memories.search's facade handler. MEASURED.
     // 194 -> 195 (2026-09-15): execution.memoryPreview's handler, registered
     // beside the rest of the execution family. MEASURED.
     expect(body.implemented).toBe(195); // +24 (177): the container handlers

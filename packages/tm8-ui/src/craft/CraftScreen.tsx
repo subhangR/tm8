@@ -283,6 +283,25 @@ export function CraftScreen({
    * are no-ops when nothing changed, so this cannot cycle with the publish
    * effect that calls it.
    */
+  /**
+   * THE HOST DRIVING ITS OWN SELECTION — the picker's rows and ＋.
+   *
+   * BOTH HALVES MOVE HERE, and that is not a duplicate of `adoptSelection`
+   * below. The chat screen SUPPRESSES its selection publish when the thread it
+   * resolved is the one the host just pushed down (the echo guard in
+   * `ChatHomeScreen`), so a host-driven change is exactly the case that never
+   * comes back — and `activeThreadId` is what the picker reads for its label.
+   *
+   * Setting only `requestedThreadId` therefore steered the chat correctly and
+   * left the picker naming the thread it had just left: ＋ opened the composer
+   * while the row above it still said "Draft the blueprint.". Waiting for the
+   * echo cannot fix that, because the echo is deliberately not sent.
+   */
+  const requestThread = useCallback((id: EntityId | null) => {
+    setRequestedThreadId(id);
+    setActiveThreadId(id);
+  }, []);
+
   const adoptSelection = useCallback((id: EntityId | null) => {
     setActiveThreadId(id);
     /* `undefined` is left alone. It means "nothing asked yet", and the mount
@@ -490,8 +509,8 @@ export function CraftScreen({
             threads={threads}
             aboutSelected={aboutSelected}
             selectedId={activeThreadId}
-            onSelect={(id) => setRequestedThreadId(id)}
-            onNewChat={() => setRequestedThreadId(null)}
+            onSelect={requestThread}
+            onNewChat={() => requestThread(null)}
           />
           <div className="crf-chat__body">
             <ChatHomeSurface

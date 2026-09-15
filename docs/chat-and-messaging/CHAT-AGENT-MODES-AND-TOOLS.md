@@ -121,7 +121,7 @@ at `ask` or `deny`.
 | `doc_update` | `entities.patch` with an expected version |
 | `artifact_create` | `artifacts.create` |
 | `memory_write` | `entities.create(kind=memory)` |
-| `memory_search` | bounded Space memory query plus local text ranking |
+| `memory_search` | `collections.query(kinds=memory, filters.terms)` — any-term match server-side over statement/mechanism/subject_scope/does_not_establish, plus local ranking |
 | `git_branch`, `git_status`, `git_diff` | thread checkout or `execution.git*` for a named worker |
 | `git_pr` | PR entities connected to the work session / checkout branch |
 

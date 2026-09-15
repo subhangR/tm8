@@ -311,7 +311,7 @@ The Collab V2 workspace is wired to the real server. Start the server as in
 §2.2, then in a second terminal:
 
 ```bash
-cd ~/Desktop/Projects/tm8/packages/ui
+cd ~/Desktop/Projects/tm8/packages/tm8-ui
 bunx vite --port 4611 --strictPort
 ```
 

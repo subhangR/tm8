@@ -1040,7 +1040,7 @@ describe('memory section budget', () => {
  * Each scenario gets its own teammate so the candidate set is exactly what the
  * test seeds — the fixture teammate has accumulated dozens of memories by now.
  */
-describe('185 — select_agent_memories ranks, stops and reports', () => {
+describe('187 — select_agent_memories ranks, stops and reports', () => {
   interface RankScenario { actor: string; task: string; expectedOrder: string[] }
   let ranked: RankScenario;
 

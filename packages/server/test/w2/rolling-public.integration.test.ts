@@ -278,7 +278,7 @@ const WORKFLOW_NET_NEW_OPERATIONS = [
 ] as const;
 
 /**
- * 186: memory search, one POST read over `public.search_memories`, mounted
+ * 188: memory search, one POST read over `public.search_memories`, mounted
  * unconditionally by facade/handlers/memories.ts. Net-new — it replaces
  * nothing; the MCP tool that used to substring-match `collections.query`
  * pages now calls this.
@@ -542,7 +542,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
     // 152 -> 176 (177): the 24 HTTP rows of the containers family. MEASURED.
-    // 176 -> 177 (2026-09-15, 186): memories.search. MEASURED.
+    // 176 -> 177 (2026-09-15, 188): memories.search. MEASURED.
     expect(registry.size).toBe(177);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
@@ -720,7 +720,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 99 -> 118 (177): nineteen container command bodies bind. The family has
     // twenty commands; `containers.files.put` carries a tar stream, not JSON,
     // and is enumerated in UNBOUND_COMMAND_OPERATIONS instead. MEASURED.
-    // 118 -> 119 (186): MemorySearchInputSchema binds memories.search, a POST
+    // 118 -> 119 (188): MemorySearchInputSchema binds memories.search, a POST
     // read with a body, the way collections.query and graph.query bind.
     // 119 -> 120 (launch memory preview): ExecutionMemoryPreviewInputSchema
     // binds execution.memoryPreview, a POST read with a body, the same way.
@@ -890,7 +890,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // catalog grew by 25 and the router by 24 — the 25th is the WS alias,
     // which adds a discoverable NAME for the existing socket, not a route.
     // MEASURED off /health.
-    // +1 (186): memories.search, mounted and registered. MEASURED off /health.
+    // +1 (188): memories.search, mounted and registered. MEASURED off /health.
     // +1 (launch memory preview): execution.memoryPreview, mounted and
     // registered beside the rest of the execution family. MEASURED off /health.
     expect(health).toMatchObject({ ok: true, operations: 197, implemented: 195 });
@@ -915,7 +915,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 169 -> 193 (177): the 24 HTTP container rows. MEASURED.
-    // 193 -> 194 (186): memories.search. MEASURED.
+    // 193 -> 194 (188): memories.search. MEASURED.
     // 194 -> 195 (launch memory preview): execution.memoryPreview. MEASURED.
     expect(registered.size + residual.length).toBe(195);
     expect(residual).not.toContain('search.query');

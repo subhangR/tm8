@@ -16,6 +16,7 @@
 
 import type { CredentialProviderName } from '@tm8/contract';
 import type { CoordinatorKind } from '@tm8/prompt';
+import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
 export type { CoordinatorKind };
 
@@ -591,6 +592,23 @@ export interface GraphPort {
     input: { sessionId: string; clientMutationId: string | null; nodeId: string | null },
   ): Promise<ResumeWorkSessionResult>;
   /**
+   * `public.record_work_session_usage` (185) — the whole-conversation provider
+   * usage read from the agent's own transcript once its process is gone.
+   *
+   * NOT a transition and never on the transition path: it is written AFTER
+   * the ending is recorded, best-effort, by a caller that swallows its own
+   * failure. A session whose transcript was already deleted, or lives on
+   * another node, simply keeps `usage = NULL` — which the column comment says
+   * must render as "never measured", not as zero. Resolves whether a row was
+   * written (false = the session row was gone).
+   */
+  recordWorkSessionUsage(
+    auth: GraphAuth,
+    sessionId: string,
+    usage: WorkSessionUsage,
+    source: WorkSessionUsageSource,
+  ): Promise<boolean>;
+  /**
    * `public.execution_record_native_session` — write-once native-id capture.
    * Resolves `false` when the row already held a DIFFERENT id, which is a
    * capture bug upstream and must be surfaced, never swallowed.
@@ -774,6 +792,14 @@ export interface Tm8Manifest {
     accessMode: AccessMode;
     reasoningEffort: ReasoningEffort | null;
     /**
+     * The auto-compaction window the session was launched with, in tokens
+     * (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`; the harness clamps it to the model's
+     * own window). Optional because manifests written before it existed are
+     * still read back for posture inheritance; absent means "whatever the
+     * harness's own default was", not zero.
+     */
+    autocompactWindowTokens?: number;
+    /**
      * Deprecated common source. Null when providers differ or run in auto.
      */
     credentialSource: CredentialSource | null;
@@ -849,6 +875,8 @@ export interface SpawnRequest {
   agentTool?: string | null;
   reasoningEffort?: ReasoningEffort | null;
   accessMode?: AccessMode | null;
+  /** Auto-compaction window in tokens (100k..1M, clamped to the model window by the harness). Null/absent = node default. */
+  autocompactWindowTokens?: number | null;
   /** Deprecated global compatibility carrier; provider keys below win. */
   credentialSource?: CredentialSource | null;
   /**

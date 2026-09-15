@@ -224,7 +224,7 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   // documented minimal call — spaceId + statement — a guaranteed server-side
   // refusal the caller had no way to anticipate, which is why the corpus is
   // measured in dozens. The schema now states what the graph actually demands.
-  { name: 'memory_write', description: 'Write a durable Space memory graph entity. A memory must say what it claims, how that was established, what it applies to, and what it does NOT prove — all four are required.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('The decision or fact to remember (1-4000 chars).'), mechanism: stringProp('How it was established — the measurement, test, document or observation behind it (1-1000 chars).'), subjectScope: stringProp('What the statement applies to, and where it stops (1-1000 chars).'), doesNotEstablish: stringProp('The explicit boundary of the claim — what a reader must NOT conclude from it (1-1000 chars).') }, ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']), annotations: annotations(false) },
+  { name: 'memory_write', description: 'Save something this Space should remember for good. A memory must say what it claims, how that was established, what it applies to, and what it does NOT prove — all four are required.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('The decision or fact to remember (1-4000 chars).'), mechanism: stringProp('How it was established — the measurement, test, document or observation behind it (1-1000 chars).'), subjectScope: stringProp('What the statement applies to, and where it stops (1-1000 chars).'), doesNotEstablish: stringProp('The explicit boundary of the claim — what a reader must NOT conclude from it (1-1000 chars).') }, ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']), annotations: annotations(false) },
   // `memory_search` is the server's `memories.search`: the database searches
   // every part of every memory in the Space (statement, mechanism, subject
   // scope and boundary), ranks the hits, and answers a replaced memory as its
@@ -1193,6 +1193,10 @@ async function memoryWrite(args: Record<string, unknown>, context: DirectToolCon
   // Refuse HERE, with the field name, rather than letting Postgres refuse with
   // 22023 after a round trip. Omitting any of these never produced a memory —
   // it produced an error the caller could not have predicted from the schema.
+  //
+  // Nothing is defaulted, deliberately. These three fields are what search and
+  // staleness read, so a placeholder written to get past the check would
+  // persist as if it were provenance. Better a refusal the caller can fix.
   const content: Record<string, unknown> = {
     statement,
     mechanism: requiredString(args.mechanism, 'mechanism'),
@@ -1214,6 +1218,14 @@ async function memorySearch(args: Record<string, unknown>, context: DirectToolCo
   // The database does the whole search — parsing, matching over all four
   // fields, ranking, chain-head resolution and row-level security — so the
   // tool's only job is to carry the request and hand back what came back.
+  //
+  // This replaces an earlier server-side substring filter that matched the same
+  // four columns through `collections.query` (`filters.terms`, still part of the
+  // collections contract and still tested there). Both fixes chased the same
+  // defect — a local scan of a 200-char excerpt could not see the statement
+  // body — and this one goes further: it ranks, it answers a superseded memory
+  // as its live replacement, and it understands quoted phrases, `or` and a
+  // leading minus. One search path, not two.
   const data = await context.transport.invoke('memories.search', { body: { spaceId, query, limit } });
   const items = (data as { items?: unknown[] } | null)?.items ?? [];
   return result('memory_search', { query, items });

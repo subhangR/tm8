@@ -1197,13 +1197,13 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     // WHERE A CHAIN FORKS, THE NEWEST CORRECTION WINS — `head desc` over
     // uuidv7 ids. Two writers can supersede the same entity (nothing in the
     // database forbids it), and three readers resolve that fork: this one,
-    // `internal.memory_marks` (185) behind the spawn prompt, and
-    // `public.search_memories` (186). They must all name the same head, or a
+    // `internal.memory_marks` (187) behind the spawn prompt, and
+    // `public.search_memories` (188). They must all name the same head, or a
     // corrected fact reads as one version on screen and a different one in the
     // agent's prompt. All three now order the same way.
     //
     // WHAT THIS READ DOES NOT DO, on purpose: it does not skip successors that
-    // have been soft-deleted. 185 and 186 do, because their question is "what
+    // have been soft-deleted. 187 and 188 do, because their question is "what
     // should be shown as current"; this badge's question is "what does the
     // graph say replaced this", and it answers for every kind, not just
     // memories. Bringing liveness here would change what `badges.staleness`

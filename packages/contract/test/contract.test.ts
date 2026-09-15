@@ -224,6 +224,11 @@ describe('DTO schemas', () => {
       },
     }).success).toBe(true);
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['sleeping'] } }).success).toBe(false);
+    // Memory text terms: any-of like every array filter; a blank term or an
+    // empty array is refused rather than matching everything.
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: ['scoped', 'tsc'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: [] } }).success).toBe(false);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: ['   '] } }).success).toBe(false);
 
     // …but the kind-disjoint PAIR is refused, not silently empty: no row is
     // both a task and a work_session, so the conjunction could only ever
@@ -383,6 +388,15 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       expect(ExecutionSpawnInputSchema.safeParse({ ...ok, model: 'gpt-6-astra', reasoningEffort }).success).toBe(true);
     }
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, reasoningEffort: 'extreme' }).success).toBe(false);
+    // autocompactWindowTokens is an integer token count, 100k..1M — the bounds
+    // Claude Code enforces for CLAUDE_CODE_AUTO_COMPACT_WINDOW. Anything the
+    // harness would silently raise or cap is refused here instead.
+    for (const autocompactWindowTokens of [100_000, 200_000, 1_000_000]) {
+      expect(ExecutionSpawnInputSchema.safeParse({ ...ok, autocompactWindowTokens }).success).toBe(true);
+    }
+    for (const autocompactWindowTokens of [0, 99_999, 1_000_001, 12.5, 200_000.5, '200000', null]) {
+      expect(ExecutionSpawnInputSchema.safeParse({ ...ok, autocompactWindowTokens }).success).toBe(false);
+    }
     expect(ExecutionSpawnInputSchema.safeParse({
       ...ok, parentSessionId: '55555555-5555-4555-8555-555555555555',
     }).success).toBe(true);

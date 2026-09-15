@@ -131,12 +131,12 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
     // gitMerge (POST commands).
     // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge, one POST command.
-    // 197 -> 198 (2026-09-15, 186): memories.search, one POST read (kind read),
+    // 197 -> 198 (2026-09-15, 188): memories.search, one POST read (kind read),
     // so 195 -> 196 v1 rows and 193 -> 194 mounted v1 HTTP. MEASURED on this tree.
     // 198 -> 199 (2026-09-15, launch memory preview): execution.memoryPreview,
     // one POST read (kind read), so 196 -> 197 v1 rows and 194 -> 195 mounted
     // v1 HTTP. MEASURED on this tree.
-    expect(OPERATIONS).toHaveLength(199); // +25 (177) containers, +1 (186) memories.search, +1 execution.memoryPreview, MEASURED
+    expect(OPERATIONS).toHaveLength(199); // +25 (177) containers, +1 (188) memories.search, +1 execution.memoryPreview, MEASURED
     expect(V1_OPERATIONS).toHaveLength(197);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
@@ -144,7 +144,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     ]);
     // TWO WS ROWS now, one mounted socket: `containers.stream` re-declares
     // `events.subscribe`'s binding under the container family's own name.
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(197); // +1 (186); +1 execution.memoryPreview
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(197); // +1 (188); +1 execution.memoryPreview
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
       // The alias, and it must declare itself as one: `aliasOf` is what keeps
@@ -164,7 +164,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // auth.claim.reissue) — 163 -> 166.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(195); // 169 -> 193 (177): the container handlers; 193 -> 194 (186): memories.search; 194 -> 195: execution.memoryPreview
+    )).toHaveLength(195); // 169 -> 193 (177): the container handlers; 193 -> 194 (188): memories.search; 194 -> 195: execution.memoryPreview
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

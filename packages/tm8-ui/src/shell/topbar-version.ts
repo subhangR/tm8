@@ -13,13 +13,14 @@
  *     picked up live and never needs the service restarted.
  *   · THE BUILD IS FINE AND THE BAR IS UNWANTED. That is this file.
  *
- * WHY NOT THE UI-2.0 SWITCH, which already looks like this control. Because it
- * does not do this job: `/ui-2.0/` serves `packages/tm8_ui_2.0`, a package 280
- * of 976 files and ~35,600 lines divergent from this one and missing about
- * twenty commits of product work. "Switch back" there returns a DIFFERENT,
- * STALER PRODUCT, not the bar you had ten minutes ago. That control is a door
- * to the alternate UI and it is kept and described as one; it is not a rollback
- * and must not be sold as one.
+ * WHY NOT THE UI-2.0 SWITCH, which used to look like this control. Because it
+ * never did this job: `/ui-2.0/` served a whole separate package, ~35,600 lines
+ * divergent from this one and missing about twenty commits of product work.
+ * "Switch back" there returned a DIFFERENT, STALER PRODUCT, not the bar you had
+ * ten minutes ago. It was a door to an alternate UI, never a rollback, and it
+ * was never sold as one. The alternate package was deleted on 2026-09-15 and
+ * the door with it; THIS remains the only per-device rollback, and the reason
+ * it has to be a separate mechanism is the paragraph above, not the door.
  *
  * PER DEVICE, NOT PER ACCOUNT — the same rule `mobile/useShellKind` follows for
  * the shell override, and for the same reason: a preference set on a laptop
@@ -69,7 +70,7 @@ export function topBarVersion(): TopBarVersion {
  * The caller reloads. Both bars are mounted by `GateApp` at the top of the
  * tree, above the router, and swapping them under a live tree would remount
  * every screen below; a reload is the honest way to change something this
- * structural, and it is what the UI-2.0 door does for the same reason.
+ * structural, and it is what the UI-2.0 door did for the same reason.
  */
 export function setTopBarVersion(next: TopBarVersion): void {
   if (typeof window === 'undefined') return;

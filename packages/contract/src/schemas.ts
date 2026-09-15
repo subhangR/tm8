@@ -965,6 +965,11 @@ const CollectionFiltersSchema = z.object({
   // encode this phase's incompleteness as a permanent law.
   category: z.array(StatusCategorySchema).optional(),
   deleted: z.enum(['exclude', 'only', 'include']).optional(),
+  // Memory text terms, any-of (collections.ts). Each term is trimmed and must
+  // survive it: a blank term is a substring of everything, the
+  // confident-EVERYTHING twin of the confident-zero the refinements below
+  // refuse. An empty array is refused for the same reason.
+  terms: z.array(z.string().trim().min(1)).min(1).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
   // row is both a task and a work_session), so their conjunction can only
@@ -1034,7 +1039,7 @@ export const GraphResultSchema: z.ZodType<GraphResult> = z.lazy(() => z.object({
   layout: z.record(z.object({ x: z.number(), y: z.number() }).strict()).optional(),
 }).strict());
 
-// `memories.search` (186). The query is bounded so a pasted document cannot be
+// `memories.search` (188). The query is bounded so a pasted document cannot be
 // handed to the parser as a search, and it must carry at least one
 // non-blank character — a blank query is a request for nothing, refused here
 // rather than answered with an empty list that reads as "no memories match".
@@ -2332,7 +2337,7 @@ export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.o
 // `board` widened 2026-08-16 in the same lockstep (the task kanban tab).
 // `help` widened 2026-08-19 in the same lockstep (the Help shelf). Menu-eligible
 // but not in the shipped default spine — see the type for why.
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board', 'craft', 'help', 'codebrain']);
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board', 'craft', 'help']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection
@@ -2769,6 +2774,11 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   agentTool: z.string().nullable().optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
   accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']).optional(),
+  // An integer token count inside the bounds Claude Code itself enforces for
+  // CLAUDE_CODE_AUTO_COMPACT_WINDOW (it raises anything below 100k to 100k and
+  // caps at 1M); the contract refuses those instead of letting the harness
+  // silently rewrite the number the manifest recorded.
+  autocompactWindowTokens: z.number().int().min(100_000).max(1_000_000).optional(),
   credentialSources: CredentialSourcesSchema.optional(),
   // Deprecated compatibility carrier. Provider-specific keys above win.
   credentialSource: CredentialSourceSchema.optional(),

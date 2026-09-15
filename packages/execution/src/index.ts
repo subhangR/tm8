@@ -98,9 +98,22 @@ export {
 // journal (which holds no model output at all).
 export {
   encodeClaudeProjectDir,
+  locateTranscript,
   readSessionTranscript,
+  type LocateTranscriptOptions,
   type ReadTranscriptOptions,
 } from './transcript/read-transcript.js';
+// The exit-time instrument (185): the whole conversation's provider usage,
+// de-duplicated per API message, beside the harness's own cost-state — two
+// provenances, persisted on work_sessions.usage, never merged.
+export {
+  readSessionUsage,
+  type HarnessUsage,
+  type ReadSessionUsageResult,
+  type UsageTally,
+  type WorkSessionUsage,
+  type WorkSessionUsageSource,
+} from './transcript/session-usage.js';
 export { knownAgentConfigDirs } from './transcript/agent-config-dirs.js';
 
 export const EXECUTION_PACKAGE = '@tm8/execution';

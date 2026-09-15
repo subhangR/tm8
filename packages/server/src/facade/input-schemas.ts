@@ -266,7 +266,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // preview that accepted a body a launch would refuse would be answering a
   // question nobody can act on.
   'execution.memoryPreview': ExecutionMemoryPreviewInputSchema,
-  // memories (186). A POST read with a body, bound like the two above so a
+  // memories (188). A POST read with a body, bound like the two above so a
   // blank or oversized query is refused at the frame rather than parsed.
   'memories.search': MemorySearchInputSchema,
   'placements.apply': PlacementInputSchema,

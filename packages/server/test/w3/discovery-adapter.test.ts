@@ -29,7 +29,7 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // NOTE `http` and `ws` are MOUNT counts: 24 of the 25 are HTTP, and
         // the 25th (`containers.stream`) re-declares `events.subscribe`'s
         // socket, so it adds a discoverable NAME and no mount — `ws` stays 1.
-        // -> {198/196/196/194} (2026-09-15, 186): memories.search, one POST
+        // -> {198/196/196/194} (2026-09-15, 188): memories.search, one POST
         // read mounted at /v2/memories/search. MEASURED.
         // -> {199/197/197/195} (2026-09-15, launch memory preview):
         // execution.memoryPreview, one POST read mounted at

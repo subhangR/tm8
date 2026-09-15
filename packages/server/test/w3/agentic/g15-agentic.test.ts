@@ -38,7 +38,7 @@ import {
 // neither branch's value survives the merge, because each saw only its own
 // half of the catalog. The CLI's CATALOG_DIGEST and the generated conformance
 // manifest carry the same value and all three must agree.
-// Re-measured 186 (+ memories.search) — read from the regenerated conformance
+// Re-measured 188 (+ memories.search) — read from the regenerated conformance
 // manifest (tools/conformance/generated), never hand-derived.
 // Re-measured again (+ execution.memoryPreview, the launch screen's preview
 // read) — same rule, read from the regenerated manifest.
@@ -115,9 +115,9 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    // 197 -> 198 (2026-09-15, 186): memories.search. MEASURED on this tree.
+    // 197 -> 198 (2026-09-15, 188): memories.search. MEASURED on this tree.
     // 198 -> 199 (2026-09-15): execution.memoryPreview. MEASURED on this tree.
-    expect(root.catalog.total).toBe(199); // +3 141, +3 148, +25 177 containers, +1 186, +1 preview
+    expect(root.catalog.total).toBe(199); // +3 141, +3 148, +25 177 containers, +1 188, +1 preview
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

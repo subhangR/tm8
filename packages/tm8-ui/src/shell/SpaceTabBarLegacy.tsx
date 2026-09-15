@@ -8,13 +8,14 @@
  * same 21 commits of product work behind it.
  *
  * WHY THIS AND NOT THE UI-2.0 SWITCH. The obvious rollback looked like the door
- * to `/ui-2.0/` that already existed. It is not one: that path serves
- * `packages/tm8_ui_2.0`, which is 280 of 976 source files and ~35,600 lines
- * divergent from this package and missing roughly twenty commits of product
- * work. Sending someone there to "get the old bar back" would land them in a
- * different, staler product — a detour wearing a rollback's label. A rollback
- * has to return the thing that was there, and the only way to promise that is
- * to keep the thing that was there.
+ * to `/ui-2.0/` that existed at the time. It was not one: that path served a
+ * separate package, ~35,600 lines divergent from this one and missing roughly
+ * twenty commits of product work. Sending someone there to "get the old bar
+ * back" would have landed them in a different, staler product — a detour
+ * wearing a rollback's label. A rollback has to return the thing that was
+ * there, and the only way to promise that is to keep the thing that was there.
+ * (That package was deleted on 2026-09-15; the argument is kept because it is
+ * the argument for THIS file continuing to exist.)
  *
  * ITS LIFETIME IS ONE RELEASE. Two bar implementations in one bundle is
  * duplication this package refuses everywhere else, and it is accepted here for

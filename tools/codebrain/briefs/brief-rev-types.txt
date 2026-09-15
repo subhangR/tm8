@@ -7,7 +7,7 @@ Read the phases before you on this task anchor. Where an explorer named files, R
 not their summary.
 
 Build/verify commands for this repo:
-    bun run typecheck:core && bun run typecheck:tm8-ui-2.0     # ORDER IS LOAD-BEARING
+    bun run typecheck:core && bun run typecheck:ui              # ORDER IS LOAD-BEARING
     bun x vitest run <path>                                    # `bun x`, not `bunx`
 Never run a bare `tsc -p packages/... --noEmit` — the contract's dist/ is gitignored, so a
 fresh worktree gives ~558 FALSE type errors until typecheck:core has run.

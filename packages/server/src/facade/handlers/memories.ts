@@ -1,7 +1,7 @@
 /**
  * `memories.search` — full-text search over one Space's memories.
  *
- * The whole search lives in the database: `public.search_memories` (186)
+ * The whole search lives in the database: `public.search_memories` (188)
  * parses the query, matches it against the indexed document built from all
  * four fields of a memory, ranks with `ts_rank_cd`, resolves a superseded hit
  * to its live chain head, and derives the marks from the mark edges. This
@@ -12,7 +12,7 @@
  *
  * WHAT KEEPS THIS READ HONEST IS NOT RLS. `public.search_memories` is SECURITY
  * DEFINER and therefore bypasses every SELECT policy, by design — under RLS the
- * GIN index is unusable and every search becomes a full scan (186's header
+ * GIN index is unusable and every search becomes a full scan (188's header
  * measures it). The visibility rule is written INTO the function body instead:
  * every hit and every resolved chain head must pass `internal.entity_readable`,
  * the same predicate `memories_select` is made of, and it fails closed when no

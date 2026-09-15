@@ -94,7 +94,7 @@ const asRecord = (v: unknown): Line | null =>
 
 // ── dialect sniffing ────────────────────────────────────────────────────────
 
-function isCodexLine(line: unknown): boolean {
+export function isCodexLine(line: unknown): boolean {
   const rec = asRecord(line);
   if (!rec) return false;
   const type = rec.type;
@@ -151,7 +151,7 @@ function extractCodexEventText(payload: unknown): string | null {
   return typeof message === 'string' && message.trim() !== '' ? message.trim() : null;
 }
 
-function isCodexToolCall(line: unknown): boolean {
+export function isCodexToolCall(line: unknown): boolean {
   const rec = asRecord(line);
   if (!rec) return false;
   if (CODEX_TOOL_CALL_TYPES.has(String(rec.type ?? ''))) return true;
@@ -159,7 +159,7 @@ function isCodexToolCall(line: unknown): boolean {
   return rec.type === 'response_item' && CODEX_TOOL_CALL_TYPES.has(String(payload?.type ?? ''));
 }
 
-function codexToolName(line: unknown): string | null {
+export function codexToolName(line: unknown): string | null {
   const rec = asRecord(line);
   if (!rec) return null;
   const payload = asRecord(rec.payload) ?? rec;
@@ -416,8 +416,16 @@ function collectStats(
   const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   const add = (acc: number | null, v: number | null): number | null =>
     v === null ? acc : (acc ?? 0) + v;
+  // Claude usage is keyed by API MESSAGE, and summed once per message AFTER
+  // the loop. The harness writes one record per content block, and every
+  // record of a streamed message repeats the same cumulative `usage` —
+  // measured on 311 files: 67,552 usage records for 32,396 distinct
+  // message.ids, byte-identical usage on every duplicate. Summing per record
+  // reported 2.09x the real numbers. Last record wins; a record with no id
+  // (a synthetic turn) is its own message.
+  const claudeUsage = new Map<string, Line>();
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const rec = asRecord(line);
     if (!rec) continue;
 
@@ -458,15 +466,20 @@ function collectStats(
           if (b?.type === 'tool_use') addTool(typeof b.name === 'string' ? b.name : null);
         }
       }
-      // Claude reports usage PER TURN, so these sum.
       const usage = asRecord(message?.usage);
       if (usage) {
-        inputTokens = add(inputTokens, num(usage.input_tokens));
-        outputTokens = add(outputTokens, num(usage.output_tokens));
-        cacheReadTokens = add(cacheReadTokens, num(usage.cache_read_input_tokens));
-        cacheCreationTokens = add(cacheCreationTokens, num(usage.cache_creation_input_tokens));
+        const id = typeof message?.id === 'string' ? message.id : `record:${index}`;
+        claudeUsage.set(id, usage);
       }
     }
+  }
+
+  // Claude reports usage per API message, so distinct messages sum.
+  for (const usage of claudeUsage.values()) {
+    inputTokens = add(inputTokens, num(usage.input_tokens));
+    outputTokens = add(outputTokens, num(usage.output_tokens));
+    cacheReadTokens = add(cacheReadTokens, num(usage.cache_read_input_tokens));
+    cacheCreationTokens = add(cacheCreationTokens, num(usage.cache_creation_input_tokens));
   }
 
   return {
@@ -667,9 +680,12 @@ export function encodeClaudeProjectDir(cwd: string): string {
     .join('');
 }
 
-// ── entry point ─────────────────────────────────────────────────────────────
+// ── locating the file ───────────────────────────────────────────────────────
 
-export interface ReadTranscriptOptions {
+/** The row facts that name a transcript. Shared by the page reader and the
+ *  exit-time usage reader (session-usage.ts) so the two can never disagree
+ *  about which file a session's numbers came from. */
+export interface LocateTranscriptOptions {
   sessionId: string;
   /** `work_sessions.agent_tool`. Anything else is `unsupported_agent_tool`. */
   agentTool: string | null;
@@ -682,6 +698,77 @@ export interface ReadTranscriptOptions {
   agentConfigDir?: string | null;
   /** Bounded historical candidates (known identity homes plus the node home). */
   fallbackAgentConfigDirs?: string[];
+}
+
+export type LocatedTranscript =
+  | { found: true; path: string; agentTool: 'claude-code' | 'codex'; searchedPaths: string[] }
+  | {
+      found: false;
+      reason: NonNullable<SessionTranscriptPage['unavailableReason']>;
+      agentTool: SessionTranscriptPage['agentTool'];
+      searchedPaths: string[];
+    };
+
+/**
+ * Resolve the one file a session's transcript lives in, from its row facts.
+ *
+ * THE PATH NEVER COMES FROM THE REQUEST — see `readSessionTranscript`. For
+ * claude the path is derived (config dir + encoded cwd + native id) and the
+ * first candidate that exists wins, the first candidate standing in when none
+ * does so the caller's ENOENT names a real place. For codex the file is found
+ * by its ownership marker, because codex mints its own rollout id.
+ */
+export async function locateTranscript(opts: LocateTranscriptOptions): Promise<LocatedTranscript> {
+  const providerDefault =
+    opts.agentTool === 'claude-code' ? join(opts.home, '.claude') : join(opts.home, '.codex');
+  const configDirs = [...new Set([
+    ...(opts.agentConfigDir ? [opts.agentConfigDir] : []),
+    ...(opts.fallbackAgentConfigDirs ?? []),
+    providerDefault,
+  ])];
+  const searchedPaths: string[] = [];
+
+  if (opts.agentTool === 'claude-code') {
+    const agentTool = 'claude-code';
+    if (!opts.nativeSessionId) return { found: false, reason: 'no_native_session_id', agentTool, searchedPaths };
+    if (!opts.cwd) return { found: false, reason: 'no_transcript_file', agentTool, searchedPaths };
+    const candidates = configDirs.map((dir) =>
+      join(dir, 'projects', encodeClaudeProjectDir(opts.cwd!), `${opts.nativeSessionId}.jsonl`));
+    searchedPaths.push(...candidates);
+    let path = candidates[0]!;
+    for (const candidate of candidates) {
+      try {
+        await stat(candidate);
+        path = candidate;
+        break;
+      } catch { /* try the next bounded candidate */ }
+    }
+    return { found: true, path, agentTool, searchedPaths };
+  }
+  if (opts.agentTool === 'codex') {
+    const agentTool = 'codex';
+    // Codex mints its own rollout id, so the file is found by the ownership
+    // marker rather than by name — the same scan resume already relies on.
+    let rollout = null;
+    for (const configDir of configDirs) {
+      searchedPaths.push(join(configDir, 'sessions'));
+      rollout = await resolveCodexRollout({
+        home: opts.home,
+        configDir,
+        tm8SessionId: opts.sessionId,
+        cwd: opts.cwd,
+      });
+      if (rollout) break;
+    }
+    if (!rollout) return { found: false, reason: 'no_transcript_file', agentTool, searchedPaths };
+    return { found: true, path: rollout.path, agentTool, searchedPaths };
+  }
+  return { found: false, reason: 'unsupported_agent_tool', agentTool: null, searchedPaths };
+}
+
+// ── entry point ─────────────────────────────────────────────────────────────
+
+export interface ReadTranscriptOptions extends LocateTranscriptOptions {
   last?: number;
   /**
    * Read the window ENDING at this byte instead of at EOF — the page-back
@@ -746,52 +833,11 @@ export async function readSessionTranscript(
     hasOlder: false,
   });
 
-  let path: string;
-  let agentTool: 'claude-code' | 'codex';
-  const providerDefault =
-    opts.agentTool === 'claude-code' ? join(opts.home, '.claude') : join(opts.home, '.codex');
-  const configDirs = [...new Set([
-    ...(opts.agentConfigDir ? [opts.agentConfigDir] : []),
-    ...(opts.fallbackAgentConfigDirs ?? []),
-    providerDefault,
-  ])];
-  const searchedPaths: string[] = [];
-
-  if (opts.agentTool === 'claude-code') {
-    agentTool = 'claude-code';
-    if (!opts.nativeSessionId) return unavailable('no_native_session_id', agentTool);
-    if (!opts.cwd) return unavailable('no_transcript_file', agentTool);
-    const candidates = configDirs.map((dir) =>
-      join(dir, 'projects', encodeClaudeProjectDir(opts.cwd!), `${opts.nativeSessionId}.jsonl`));
-    searchedPaths.push(...candidates);
-    path = candidates[0]!;
-    for (const candidate of candidates) {
-      try {
-        await stat(candidate);
-        path = candidate;
-        break;
-      } catch { /* try the next bounded candidate */ }
-    }
-  } else if (opts.agentTool === 'codex') {
-    agentTool = 'codex';
-    // Codex mints its own rollout id, so the file is found by the ownership
-    // marker rather than by name — the same scan resume already relies on.
-    let rollout = null;
-    for (const configDir of configDirs) {
-      searchedPaths.push(join(configDir, 'sessions'));
-      rollout = await resolveCodexRollout({
-        home: opts.home,
-        configDir,
-        tm8SessionId: opts.sessionId,
-        cwd: opts.cwd,
-      });
-      if (rollout) break;
-    }
-    if (!rollout) return unavailable('no_transcript_file', agentTool, searchedPaths);
-    path = rollout.path;
-  } else {
-    return unavailable('unsupported_agent_tool');
+  const located = await locateTranscript(opts);
+  if (!located.found) {
+    return unavailable(located.reason, located.agentTool, located.searchedPaths);
   }
+  const { path, agentTool, searchedPaths } = located;
 
   const pagingBack = opts.before !== undefined;
   let tail: TailResult;

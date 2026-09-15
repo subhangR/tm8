@@ -306,7 +306,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
     // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
-    // 193 -> 194 (2026-09-15, 186): memories.search, one POST read. MEASURED.
+    // 193 -> 194 (2026-09-15, 188): memories.search, one POST read. MEASURED.
     // 194 -> 195 (2026-09-15, launch memory preview): execution.memoryPreview,
     // one POST read. MEASURED.
     expect(SURFACE).toHaveLength(195);
@@ -971,34 +971,37 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // find that out before CI does is to know it is here.
     //
     // 172 -> 174 (2026-09-15): TWO files, one from each of two sibling memory
-    // lanes merged here — 185_select_agent_memories.sql from
-    // feat/memory-select-agent-memories and 186_memory_fulltext_search.sql from
-    // feat/memory-fulltext-search. BOTH sides of this conflict said 173, each
+    // lanes merged here — select_agent_memories from
+    // feat/memory-select-agent-memories and memory_fulltext_search from
+    // feat/memory-fulltext-search. BOTH sides of that conflict said 173, each
     // counting only its own file, and that is exactly the arithmetic every row
-    // above forbids: NEITHER side is the answer. MEASURED on the merged tree:
-    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 172
-    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 174
-    //   duplicate prefixes                                                      -> 0
-    // The two lanes differing by value (rather than making the identical edit)
-    // is why git asked at all — the good outcome this block has argued for
-    // seven times. A third lane, the due-loop sweep fix, lands one more
-    // migration on top of this merge; the row below is that re-measurement.
-    // 174 -> 175 (2026-09-15): ONE more file on top of the merge above,
-    // 187_due_loops_sweep.sql from fix/dreamer-loops-never-run — the third and
-    // last lane of this integration. It was AUTHORED as 185, the number that was
-    // free on the base all four lanes forked from, and RENUMBERED to 187 at this
-    // merge because the two memory lanes above took 185 and 186. That rename is
-    // the failure the assertion below exists to catch, arriving for the first
-    // time as three sibling branches rather than two: git merges a file ADD with
-    // no conflict at all, so nothing but this suite would have noticed three
-    // lanes claiming two numbers. MEASURED on the merged tree, not added to it:
-    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 172
-    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 175
+    // above forbids: NEITHER side was the answer.
+    // 174 -> 175 (2026-09-15): ONE more file on top of that merge,
+    // due_loops_sweep from fix/dreamer-loops-never-run — the third and last
+    // lane of this integration.
+    //
+    // 175 -> 177 (2026-09-15): MAIN MOVED, and this is the case the paragraph
+    // above only predicted. Seven commits landed on main under this branch,
+    // two of them carrying a migration of their own: 185_work_session_usage
+    // and 186_menu_codebrain_tab_removed. Both sides of THIS conflict were
+    // wrong and in opposite directions — this branch said 175 counting only
+    // its own three, main said 174 counting only its own two — and the answer
+    // is neither, it is the union. MEASURED on the merged tree:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 174
+    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 177
     //   duplicate prefixes                                                      -> 0
     //   tools/ci/migrations-check.sh against a scratch database                 -> clean
-    // That last line is the end-to-end proof the renumbered chain still applies:
-    // 001 through 187 on a fresh database, in order, with no duplicate number.
-    expect(server.appliedMigrations.length).toBe(175);
+    //
+    // The duplicate prefixes were REAL this time, not hypothetical. Main and
+    // this branch both authored a 185 and a 186, git merged four file ADDs
+    // with no conflict whatsoever, and the tree that came out had two of each
+    // number — the silent failure the block below was written for, arriving
+    // exactly as described. The three files from this branch were renumbered
+    // to 187/188/189 to resolve it: main is the trunk and published its
+    // numbers first, so the incoming side moves. Nothing derives behaviour
+    // from a migration's number and the pg suites resolve their fixtures by
+    // filename SUFFIX, so the rename costs nothing but this ledger entry.
+    expect(server.appliedMigrations.length).toBe(177);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

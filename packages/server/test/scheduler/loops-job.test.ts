@@ -151,7 +151,7 @@ describe('two firings of one loop are two distinct commands (B1)', () => {
   });
 });
 
-describe('whose authority a firing runs under (187)', () => {
+describe('whose authority a firing runs under (189)', () => {
   it('reads the due set through the node-admin sweep door, capped at the tick limit', async () => {
     // The regression: a plain read of public.loops under the sweep's claims is
     // scoped by RLS to the spaces that identity belongs to. On production that
