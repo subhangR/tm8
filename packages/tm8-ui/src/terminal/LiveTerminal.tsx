@@ -14,6 +14,7 @@ import { ptyTransport } from './pty/ptyTransport.js';
 import { mintPtyAttachGrant } from './pty/ptyGrant.js';
 import { readActivePass } from '../auth/pass-store';
 import { registerTerminal } from './pty/runtime.js';
+import { attachTouchScroll } from './touchScroll.js';
 import {
   clientFittedSessions,
   measureSpawnTerminalSize,
@@ -658,6 +659,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         event.stopPropagation();
       }
     };
+    // xterm ships no touch support, and `.xterm-viewport` is a SIBLING of the
+    // `.xterm-screen` that receives the touch rather than its ancestor, so no
+    // amount of `touch-action` can make the browser pan it — see touchScroll.ts.
+    const detachTouchScroll = attachTouchScroll(container);
     container.addEventListener('paste', handlePaste, true);
     container.addEventListener('dragover', handleDragOver);
     container.addEventListener('drop', handleDrop);
@@ -700,6 +705,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     return () => {
       for (const timer of fontReflowTimers) window.clearTimeout(timer);
       resizeObserver.disconnect();
+      detachTouchScroll();
       container.removeEventListener('paste', handlePaste, true);
       container.removeEventListener('dragover', handleDragOver);
       container.removeEventListener('drop', handleDrop);
