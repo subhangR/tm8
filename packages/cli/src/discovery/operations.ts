@@ -2908,6 +2908,83 @@ const COMMAND_ALIASES = new Map<string, {
     // carry a `<placeholder>` (help.test.ts) — a zero-arg command has none.
     examples: [],
   }],
+  // The five memory verbs are ALIASES for the reason `chat list|show|send|
+  // turns` are: every graph act each one performs is an operation that already
+  // exists. The memory design (docs/features/memory/MEMORY-DESIGN-FINAL.md
+  // §5.2, §6.5) says so in as many words — `create_memory` joins the
+  // `entities.create` ledger label "so the catalog gains nothing", and "no new
+  // read operation is proposed and none is needed". A `memories.record` row
+  // would have opened the catalog for a door that already exists.
+  //
+  // `memory` is the first noun made ONLY of aliases (no catalog family is named
+  // `memories`), which is why `NOUNS` below unions alias nouns in: without that
+  // the commands were wired and documented while `tm8 help memory` answered
+  // "no help for memory" — the exact gap this noun closes.
+  //
+  // The prose here is what an agent reads in a PTY, so it says what each
+  // command does for the reader and keeps the mechanism (which operation, which
+  // edge, which migration) in `commands/memory.ts`.
+  ['memory record', {
+    path: ['memory', 'record'],
+    syntax: 'tm8 memory record --statement <text> --mechanism <text> --scope <text> --does-not-establish <text> [--about <entity-id>...] [--mutation-id <id>]',
+    summary: 'Save something you learned as a memory: what is true, how you found out, where it applies, and what it does not prove',
+    notes: [
+      'all four parts are required; a memory missing one is refused before anything is sent, with the missing parts named',
+      'run inside a work session, the memory is recorded as learned in that session, and later sessions of the same teammate see it without being told',
+      '--about links the memory to the things it is about, so it can be found from them later; a link that cannot be drawn is reported after the memory is saved, and the memory itself is kept',
+      'a memory that later turns out wrong is replaced with `tm8 memory supersede`, never edited',
+    ],
+    examples: [
+      "tm8 memory record --statement '<claim>' --mechanism '<how-it-was-found-out>' --scope '<where-it-applies>' --does-not-establish '<what-it-does-not-prove>'",
+      "tm8 memory record --statement '<claim>' --mechanism '<how-it-was-found-out>' --scope '<where-it-applies>' --does-not-establish '<what-it-does-not-prove>' --about <task-id>",
+    ],
+  }],
+  ['memory list', {
+    path: ['memory', 'list'],
+    syntax: 'tm8 memory list [--holder <entity-id>] [--limit <count>] [--cursor <cursor>]',
+    summary: 'The memories in this Space, newest first — or only those a teammate, session or task has been given to remember',
+    notes: [
+      'each line shows the memory, its version, and any marks against it: replaced, disputed, or resting on something that has since changed or been deleted',
+      'with --holder, only memories that holder has been given to remember are listed; a teammate’s own memories reach its later sessions even without such a link, so use the plain list to see everything',
+      'a replaced memory names its replacement; read that one instead',
+    ],
+    examples: ['tm8 memory list --limit <count>', 'tm8 memory list --holder <teammate-id>'],
+  }],
+  ['memory show', {
+    path: ['memory', 'show'],
+    syntax: 'tm8 memory show <memory-id>',
+    summary: 'Read one memory in full: its four parts, when and by whom it was recorded, and whether it has been replaced or disputed',
+    notes: [
+      'shows the four parts every memory carries — what is true, how it was found out, where it applies, and what it does not prove',
+      'an id that names something other than a memory is refused by name rather than rendered as one',
+      '"nothing is marked against this memory" means exactly that; it does not mean the memory has been checked',
+    ],
+    examples: ['tm8 memory show <memory-id>'],
+  }],
+  ['memory supersede', {
+    path: ['memory', 'supersede'],
+    syntax: 'tm8 memory supersede <memory-id> --reason <text> --statement <text> --mechanism <text> --scope <text> --does-not-establish <text> [--mutation-id <id>]',
+    summary: 'Replace a memory that turned out wrong with a corrected one, keeping the old one as history',
+    notes: [
+      'writes the corrected memory first, then marks the old one as replaced by it with your reason; readers of the old memory are pointed to the new one, and it stops being handed to new sessions',
+      'the old memory must exist, be a memory, and not already be replaced — all checked before anything is written; if it was already replaced, supersede its replacement instead',
+      'the replacement mark cannot be taken back; to reverse it, supersede the new memory in turn',
+    ],
+    examples: [
+      "tm8 memory supersede <memory-id> --reason '<why-the-old-claim-is-wrong>' --statement '<corrected-claim>' --mechanism '<how-it-was-found-out>' --scope '<where-it-applies>' --does-not-establish '<what-it-does-not-prove>'",
+    ],
+  }],
+  ['memory search', {
+    path: ['memory', 'search'],
+    syntax: 'tm8 memory search <query> [--limit <count>]',
+    summary: 'Find memories that mention your words, in any of their four parts',
+    notes: [
+      'each of your words is matched against all four parts of a memory, ignoring letter case; memories rank by how many of your words they contain',
+      'today this looks through the 100 most recently updated memories in this Space, and says so when older ones were left unsearched; `tm8 memory list` pages through everything',
+      '--limit <count> caps how many matches are shown (10 unless given)',
+    ],
+    examples: ["tm8 memory search '<words>' --limit <count>"],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -2980,6 +3057,20 @@ COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages
 COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
+// The memory verbs: availability = the weakest of the operations each one
+// actually puts on the wire. The CREATE leads `record` and `supersede` because
+// the help header derives side-effect and versioning traits from the FIRST
+// operation, and a durable write is what those two commands ARE. `list` is one
+// `collections.query` in both of its forms (the --holder form is the same query
+// under an edge filter, not an edge list). `search` names only the query it
+// makes today — when a `memories.search` operation exists, the seam in
+// `commands/memory.ts` is where it lands, and this entry moves with it.
+COMMAND_OPS.set('memory record', ['entities.create', 'edges.create']);
+COMMAND_OPS.set('memory list', ['collections.query']);
+COMMAND_OPS.set('memory show', ['entities.get']);
+COMMAND_OPS.set('memory supersede', ['entities.create', 'edges.create', 'entities.get']);
+COMMAND_OPS.set('memory search', ['collections.query']);
+COMMAND_ORDER.push('memory record', 'memory list', 'memory show', 'memory supersede', 'memory search');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that
@@ -3085,11 +3176,27 @@ const NOUN_SUMMARY: Record<string, string> = {
   voice: 'Mint LiveKit room-join grants for voice channels',
   artifact: 'Versioned, viewable static-web bundles: publish, revisions, preview, export',
   container: 'Machines an agent runs in or drives: create, lifecycle, exec, surfaces, ports',
+  memory: 'Memories: save what you learned, list and search them, read one, and replace one that turned out wrong',
 };
 
-/** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */
+/**
+ * Family nouns ∪ command nouns ∪ alias nouns, sorted. All resolve through
+ * `tm8 help <noun>`.
+ *
+ * Alias nouns are unioned in because a noun can now be made ONLY of aliases
+ * (`memory`: five commands, every one sugar over an existing operation, no
+ * catalog family named `memories`). Derived from `BASE` alone, such a noun was
+ * absent here while its commands were fully wired: `isNoun` said no, so
+ * `tm8 help memory` answered "no help for memory", root help never listed it,
+ * and completion never offered it — documented and built, and unreachable
+ * from every discovery surface at once.
+ */
 export const NOUNS: readonly string[] = [
-  ...new Set([...BASE.map((r) => r.noun), ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : []))]),
+  ...new Set([
+    ...BASE.map((r) => r.noun),
+    ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : [])),
+    ...[...COMMAND_ALIASES.values()].map((a) => a.path[0] as string),
+  ]),
 ].sort();
 
 export function isNoun(noun: string): boolean {

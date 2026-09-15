@@ -154,7 +154,12 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // Neither branch's number survives: main counts chat's five and not the
     // container paths, my branch the reverse. Summing them would be arithmetic
     // over two partial views.
-    expect(COMMAND_PATHS).toHaveLength(188);
+    // 188 -> 193 (2026-09-15): the `memory` noun — record|list|show|supersede|
+    // search, five ALIASES over entities.create, collections.query, entities.get
+    // and edges.create. ZERO new catalog rows, by the memory design's own rule
+    // (§5.2: create_memory joins the entities.create label "so the catalog
+    // gains nothing"). The command-path count moves and the CATALOG does not.
+    expect(COMMAND_PATHS).toHaveLength(193);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);
