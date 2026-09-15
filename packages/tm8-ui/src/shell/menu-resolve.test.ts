@@ -45,12 +45,11 @@ describe('the shipped default menu', () => {
       // studio joins between Board and Graph, railless like both.
       'Craft',
       'Graph',
-      // CodeBrain (2026-09-01, migration 173) — the first spine widening this
-      // snapshot took after it was frozen. It is here because the shipped
-      // default is pinned to the contract's DEFAULT_MENU_GROUP_SPINE, which
-      // the server seeder answers to as well; a client default that omitted
-      // the group would disagree with every seeded space.
-      'CodeBrain',
+      // CodeBrain sat here from 2026-09-01 (migration 173) to 2026-09-15
+      // (migration 186). It was pinned here by the contract's
+      // DEFAULT_MENU_GROUP_SPINE while a screen for it existed in the 2.0 UI
+      // package; #610 deleted that package, and 186 removed the ref rather
+      // than keep shipping a tab that could only report its own absence.
       'Settings',
       'Help',
     ]);
@@ -163,12 +162,13 @@ describe('the shipped default menu', () => {
     // (the task kanban tab), same posture; `craft` the same day (the
     // blueprint studio, Craft P1), same posture again. `help` joined
     // 2026-08-19 and entered the shipped spine in revision 20. `codebrain`
-    // joined 2026-09-01 (migration 173) — the first widening this snapshot took
-    // AFTER it was frozen as the 1.0 UI, and the one that proves the point of
-    // gating it again: the union widened, four exhaustive tables here stopped
-    // compiling, and nothing said so for three days because nothing looked.
+    // joined 2026-09-01 (migration 173) and LEFT 2026-09-15 (migration 186) —
+    // the one ref this union has ever NARROWED by. It is the mirror of the
+    // widening lesson: #610 deleted the package holding its screen, the ref
+    // outlived it by five days as a tab that could only say "unbuilt", and the
+    // exhaustive tables here are what made removing it a mechanical edit.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['board', 'channels', 'codebrain', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
+      ['board', 'channels', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );
   });
 });

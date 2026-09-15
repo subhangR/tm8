@@ -52,7 +52,6 @@ const TABS = [
   { id: 'board', label: 'Board' },
   { id: 'craft', label: 'Craft' },
   { id: 'graph', label: 'Graph' },
-  { id: 'codebrain', label: 'CodeBrain' },
   { id: 'settings', label: 'Settings' },
   { id: 'help', label: 'Help' },
 ];
