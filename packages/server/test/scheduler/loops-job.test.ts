@@ -30,18 +30,24 @@ function dueLoop(over: Partial<DueLoop> = {}): DueLoop {
     prompt: 'do it',
     config: null,
     version: 1,
+    runAsIdentityId: 'teammate-owner',
+    runAsNodeAdmin: false,
     ...over,
   };
 }
 
 interface Recorded {
-  rpcs: Array<{ fn: string; args: readonly unknown[] }>;
-  fired: Array<{ loopId: string; firedAt: string }>;
+  /** Every call to the sweep door, with the claims it was read under. */
+  sweeps: Array<{ claims: DbClaims; limit: unknown }>;
+  rpcs: Array<{ fn: string; args: readonly unknown[]; claims: DbClaims }>;
+  fired: Array<{ loopId: string; firedAt: string; claims: DbClaims }>;
 }
 
 /**
- * A Db whose only read is the due-loop query, plus an edge-existence read for
- * the overlap guard. Everything else is recorded rather than executed.
+ * A Db whose only reads are the sweep door (`list_due_loops`, answered from
+ * `opts.due`) and the edge-existence probe for the overlap guard. Everything
+ * else is recorded rather than executed, along with the claims it ran under —
+ * WHO a write runs as is half of what this file asserts.
  */
 function harness(opts: {
   due: DueLoop[];
@@ -49,21 +55,27 @@ function harness(opts: {
   liveFiringSrcIds?: string[];
   fire?: LoopExecutorPort['fire'];
 }): { db: Db; port: LoopExecutorPort; rec: Recorded } {
-  const rec: Recorded = { rpcs: [], fired: [] };
+  const rec: Recorded = { sweeps: [], rpcs: [], fired: [] };
   const db = {
+    rpc: async <R>(claims: DbClaims, fn: string, args: readonly unknown[] = []): Promise<R> => {
+      if (fn === 'public.list_due_loops') {
+        rec.sweeps.push({ claims, limit: args[0] });
+        return opts.due as unknown as R;
+      }
+      throw new Error(`unexpected rpc: ${fn}`);
+    },
     query: async <R>(_c: DbClaims, sql: string): Promise<R[]> => {
-      if (sql.includes('from public.loops')) return opts.due as unknown as R[];
       // The overlap guard's `triggered_by` probe.
       if (sql.includes("type = 'triggered_by'")) {
         return (opts.liveFiringSrcIds ?? []).map((id) => ({ id })) as unknown as R[];
       }
       throw new Error(`unexpected query: ${sql}`);
     },
-    tx: async <T>(_c: DbClaims, fn: (q: unknown) => Promise<T>): Promise<T> =>
+    tx: async <T>(claims: DbClaims, fn: (q: unknown) => Promise<T>): Promise<T> =>
       fn({
         query: async () => [],
         rpc: async (fnName: string, args: readonly unknown[] = []) => {
-          rec.rpcs.push({ fn: fnName, args });
+          rec.rpcs.push({ fn: fnName, args, claims });
           return {};
         },
       }),
@@ -73,8 +85,8 @@ function harness(opts: {
     claimsFor: async () => CLAIMS,
     liveSessionIds: () => opts.live ?? [],
     fire: opts.fire
-      ?? (async (loop, _claims, firedAt) => {
-        rec.fired.push({ loopId: loop.entityId, firedAt: firedAt.toISOString() });
+      ?? (async (loop, claims, firedAt) => {
+        rec.fired.push({ loopId: loop.entityId, firedAt: firedAt.toISOString(), claims });
         return { taskId: 'task-1', sessionId: `session-${rec.fired.length}` };
       }),
   };
@@ -136,6 +148,58 @@ describe('two firings of one loop are two distinct commands (B1)', () => {
     expect(seen).toHaveLength(2);
     expect(seen[0]).not.toBe(seen[1]);
     expect(new Set(seen).size).toBe(2);
+  });
+});
+
+describe('whose authority a firing runs under (185)', () => {
+  it('reads the due set through the node-admin sweep door, capped at the tick limit', async () => {
+    // The regression: a plain read of public.loops under the sweep's claims is
+    // scoped by RLS to the spaces that identity belongs to. On production that
+    // was 1 of 21 loops, and 16 due loops never fired. The door is the read.
+    const { db, port, rec } = harness({ due: [dueLoop()] });
+    await createLoopsJob({ db, port, maxPerTick: 7 }).run(ctx());
+    expect(rec.sweeps).toHaveLength(1);
+    expect(rec.sweeps[0]).toMatchObject({ claims: CLAIMS, limit: 7 });
+  });
+
+  it('binds the firing AND its write-back to the identity the row names, not the sweep\'s', async () => {
+    const { db, port, rec } = harness({
+      due: [dueLoop({ runAsIdentityId: 'other-user', runAsNodeAdmin: false })],
+    });
+    await createLoopsJob({ db, port }).run(ctx());
+
+    // `execution_spawn` admits a persona only to the owner of its teammate,
+    // and `update_loop` only to a member of the loop's space. The sweep's
+    // owner claims satisfy neither for a loop in someone else's space.
+    expect(rec.fired[0]!.claims).toMatchObject({ identityId: 'other-user', nodeAdmin: false });
+    expect(rec.fired[0]!.claims.identityId).not.toBe(CLAIMS.identityId);
+    const update = rec.rpcs.find((r) => r.fn === 'update_loop')!;
+    expect(update.claims).toMatchObject({ identityId: 'other-user', nodeAdmin: false });
+  });
+
+  it('carries the node-admin flag from the row rather than from the sweep', async () => {
+    const { db, port, rec } = harness({
+      due: [dueLoop({ runAsIdentityId: 'an-admin', runAsNodeAdmin: true })],
+    });
+    await createLoopsJob({ db, port }).run(ctx());
+    expect(rec.fired[0]!.claims).toMatchObject({ identityId: 'an-admin', nodeAdmin: true });
+  });
+
+  it('reports a loop nobody may run: counted as failed, never fired, nothing written', async () => {
+    const warnings: string[] = [];
+    const { db, port, rec } = harness({
+      due: [dueLoop({ entityId: 'orphan', runAsIdentityId: null }), dueLoop({ entityId: 'loop-2' })],
+    });
+    const logger = { debug: () => {}, info: () => {}, warn: (m: string) => { warnings.push(m); }, error: () => {} };
+    const outcome = await createLoopsJob({ db, port }).run({ ...ctx(), logger: logger as never });
+
+    // Never fired: there is no identity that could spawn for it. Nothing
+    // written: there is no identity entitled to record the error on it either.
+    // But REPORTED — a due loop that quietly never fires is the defect itself.
+    expect(rec.fired.map((f) => f.loopId)).toEqual(['loop-2']);
+    expect(rec.rpcs.filter((r) => r.fn === 'update_loop')).toHaveLength(1);
+    expect(outcome).toMatchObject({ detail: { due: 2, fired: 1, failed: 1 } });
+    expect(warnings.some((m) => m.includes('orphan'))).toBe(true);
   });
 });
 
@@ -216,8 +280,8 @@ describe('abort', () => {
     const controller = new AbortController();
     const { db, port, rec } = harness({
       due: [dueLoop(), dueLoop({ entityId: 'loop-2' })],
-      fire: async (loop, _c, firedAt) => {
-        rec.fired.push({ loopId: loop.entityId, firedAt: firedAt.toISOString() });
+      fire: async (loop, claims, firedAt) => {
+        rec.fired.push({ loopId: loop.entityId, firedAt: firedAt.toISOString(), claims });
         controller.abort();
         return { taskId: 't', sessionId: 's' };
       },
