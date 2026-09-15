@@ -966,7 +966,18 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // every search phrased in terms of the thing being added. Any branch that
     // adds a migration file touches this line, and the only reliable way to
     // find that out before CI does is to know it is here.
-    expect(server.appliedMigrations.length).toBe(172);
+    //
+    // 172 -> 173 (2026-09-15): ONE file, 185_work_session_usage.sql (the
+    // exit-time usage instrument on work_sessions), MEASURED on the merged
+    // tree as every row above instructs:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 172
+    //   ls db/migrations/*.sql | wc -l                                          -> 173
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main had not moved under this branch, so the two differ by exactly its
+    // one file. A migration landing on main first makes this a conflict BY
+    // CONSTRUCTION — RE-MEASURE, do not add.
+    expect(server.appliedMigrations.length).toBe(173);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

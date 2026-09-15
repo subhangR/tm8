@@ -42,6 +42,7 @@ import {
 import { detectCheckoutBranch } from './checkout-branch.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
+import { readSessionUsage } from '../transcript/session-usage.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
 import {
   agentCredentialProviderFor,
@@ -231,6 +232,9 @@ async function isDirectory(path: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Per-session bound on the usage read inside `recordShutdown`. See there. */
+const SHUTDOWN_USAGE_READ_MS = 2_000;
 
 /**
  * Turn a {@link PtyExitInfo} into the honest, human-readable statement that
@@ -2132,8 +2136,84 @@ export class SpawnService {
       endedReason: opts.endedReason ?? 'Stopped by request.',
     });
 
+    // The instrument, AFTER the ending is on record. A kill does not wait for
+    // the exit event (see `error` above), so the harness may still be writing
+    // its last records when this reads — a `cost-state` written after this
+    // point is missed, and the transcript half is what the process had
+    // flushed. Best-effort by contract; a later exit read overwrites with
+    // more. Ghost reconciliation reuses this path, so a session killed with a
+    // previous instance of the node is measured here too.
+    await this.recordUsageAfterExit(auth, sessionId);
+
     this.logger?.info('SpawnService: session terminated', { sessionId, outcome, status });
     return { outcome, commandResult };
+  }
+
+  /**
+   * THE USAGE INSTRUMENT (185) — read the whole transcript once the process
+   * is gone, and persist what it says.
+   *
+   * WHY HERE AND WHY NOW. The agent's own transcript is the only place its
+   * provider usage exists — PTY-hosted agents emit no `result` event, unlike
+   * the headless chat runtime — and the file is transient: measured 2026-09-15,
+   * 46.8% of ended claude-code sessions' transcripts were already gone. The
+   * exit is the one moment the whole conversation is certainly on disk, so
+   * every exit path calls this AFTER it has written the ending.
+   *
+   * NEVER ON THE TRANSITION PATH, NEVER THROWS. `handlePtyExit`'s loud-failure
+   * contract is about the status write; a usage read that fails must not join
+   * it. A session with no transcript (predates native-id capture, ran on
+   * another node, file deleted) simply keeps `usage = NULL`, which renders as
+   * "never measured" — the honest answer, and the one 171's rule requires.
+   *
+   * The cwd is re-derived exactly as `execution.transcript` derives it — the
+   * scratch path from the data dir and the session id, the project or
+   * worktree path from the row — so the exit read and the live page can never
+   * name different files for one session.
+   */
+  private async recordUsageAfterExit(auth: GraphAuth, sessionId: string): Promise<void> {
+    try {
+      const info = await this.graph.loadWorkSessionForResume(auth, sessionId);
+      const cwd =
+        info.workdirMode === 'scratch' ? join(this.dataDir, 'scratch', sessionId) : info.workdirPath;
+      const home = this.env.HOME ?? homedir();
+      const fallbackAgentConfigDirs = await knownAgentConfigDirs({
+        agentTool: info.agentTool,
+        dataDir: this.dataDir,
+        home,
+      });
+      const read = await readSessionUsage({
+        sessionId,
+        agentTool: info.agentTool,
+        nativeSessionId: info.nativeSessionId,
+        cwd,
+        home,
+        agentConfigDir: info.agentConfigDir,
+        fallbackAgentConfigDirs,
+      });
+      if (!read.available) {
+        this.logger?.debug('SpawnService: no transcript to record usage from', {
+          sessionId,
+          reason: read.reason,
+          searchedPaths: read.searchedPaths,
+        });
+        return;
+      }
+      await this.graph.recordWorkSessionUsage(auth, sessionId, read.usage, read.source);
+      this.logger?.info('SpawnService: recorded session usage', {
+        sessionId,
+        source: read.source,
+        messages: read.usage.transcript.messages,
+        transcriptBytes: read.usage.transcriptBytes,
+      });
+    } catch (error) {
+      // Logged, never thrown: the ending is already recorded and nothing that
+      // follows this may fail because a measurement did.
+      this.logger?.warn?.('SpawnService: could not record session usage', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**
@@ -2330,6 +2410,16 @@ export class SpawnService {
             'it can be resumed to pick up where it left off.',
         });
         annotated += 1;
+        // The usage read, BOUNDED. This handler's contract is "bounded and
+        // never throws", and a whole-file parse of a 30 MB transcript (456 ms
+        // measured) times eight live sessions is inside a shutdown window; a
+        // stalled read is not. Two seconds per session, then move on — the
+        // rows this misses are countable (`ended_kind = 'server_restart' and
+        // usage is null`), which is what would justify a boot-time sweep.
+        await Promise.race([
+          this.recordUsageAfterExit(sessionAuth, sessionId),
+          new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_USAGE_READ_MS).unref()),
+        ]);
       } catch (error) {
         this.logger?.warn?.('SpawnService: could not record shutdown for session', {
           sessionId,
@@ -2440,6 +2530,10 @@ export class SpawnService {
         ...(status === 'failed' ? { error: describePtyExit(exitInfo) } : {}),
         ...endingFromPtyExit(status, exitInfo, killedForMemory),
       });
+      // The one path with a real exit event, and so the one moment the file
+      // is complete — the process that wrote it has exited. Runs after the
+      // transition and inside its own catch; see the method.
+      await this.recordUsageAfterExit(auth, sessionId);
     } catch (error) {
       // LOUD, always, even with no logger injected.
       //

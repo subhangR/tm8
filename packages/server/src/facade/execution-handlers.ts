@@ -51,6 +51,8 @@ import {
   type WorkdirMode,
   type WorkSessionResumeInfo,
   type WorkSessionStatus,
+  type WorkSessionUsage,
+  type WorkSessionUsageSource,
   WorktreeManager,
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
@@ -917,6 +919,30 @@ export class DbGraphPort implements GraphPort {
         nativeSessionId,
         null, // p_actor_id — derived from claims
       ],
+    );
+    return stored === true;
+  }
+
+  /**
+   * The usage instrument (185). A SEPARATE RPC from `work_session_transition`
+   * on purpose: that function is R29's single writer of status, and 171/177
+   * show what a signature change there costs (DROP + CREATE, five positional
+   * callers, a re-armed PUBLIC grant). This writes only the three usage
+   * columns, which 001's status guard does not cover, and bumps
+   * `entities.version` so the fact reaches clients the way 107's does. The
+   * document goes over as text: `rpc` binds it as a parameter and Postgres
+   * casts it to the function's jsonb argument, exactly as `record_session_manifest`.
+   */
+  async recordWorkSessionUsage(
+    auth: GraphAuth,
+    sessionId: string,
+    usage: WorkSessionUsage,
+    source: WorkSessionUsageSource,
+  ): Promise<boolean> {
+    const stored = await this.db.rpc<boolean>(
+      this.claims(auth),
+      'public.record_work_session_usage',
+      [sessionId, JSON.stringify(usage), source],
     );
     return stored === true;
   }
@@ -2604,6 +2630,7 @@ function registerHandlers(
       agentTool: input.agentTool ?? null,
       reasoningEffort: input.reasoningEffort ?? null,
       accessMode: input.accessMode ?? null,
+      autocompactWindowTokens: input.autocompactWindowTokens ?? null,
       credentialSources: input.credentialSources ?? null,
       credentialSource: input.credentialSource ?? null,
       title: input.title ?? null,

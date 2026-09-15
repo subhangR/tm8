@@ -28,6 +28,7 @@ import type {
   WorktreeAllocationRow,
   WorktreeAllocationState,
 } from '../src/spawn/types.js';
+import type { WorkSessionUsage, WorkSessionUsageSource } from '../src/transcript/session-usage.js';
 
 export interface FakeGraphOptions {
   workingDir: string;
@@ -311,6 +312,7 @@ export class FakeGraph implements GraphPort {
     sessionId: string,
   ): Promise<WorkSessionResumeInfo> {
     this.authSeen.push(auth);
+    if (this.resumeLookupHangs) return new Promise<never>(() => {});
     if (!this.resumeInfo || this.resumeInfo.sessionId !== sessionId) {
       throw new Error(`work session ${sessionId} not found`);
     }
@@ -337,6 +339,40 @@ export class FakeGraph implements GraphPort {
     this.authSeen.push(auth);
     this.nativeIds.push({ sessionId, nativeSessionId });
     return this.nativeIdWriteAccepted;
+  }
+
+  // --- usage instrument seam (185) --------------------------------------------
+
+  /** Usage documents recorded, in order. `afterTransitions` is how many
+   *  transitions THIS session had at the moment of the write — the instrument
+   *  must land after the ending, never before it or instead of it. */
+  readonly usageRecords: Array<{
+    sessionId: string;
+    usage: WorkSessionUsage;
+    source: WorkSessionUsageSource;
+    afterTransitions: number;
+  }> = [];
+  /** Set to make the usage write throw — every exit path must survive it. */
+  usageError: Error | null = null;
+  /** Set true to make `loadWorkSessionForResume` never answer — the stalled
+   *  reader the shutdown sweep must not wait on. */
+  resumeLookupHangs = false;
+
+  async recordWorkSessionUsage(
+    auth: GraphAuth,
+    sessionId: string,
+    usage: WorkSessionUsage,
+    source: WorkSessionUsageSource,
+  ): Promise<boolean> {
+    this.authSeen.push(auth);
+    if (this.usageError) throw this.usageError;
+    this.usageRecords.push({
+      sessionId,
+      usage,
+      source,
+      afterTransitions: this.transitions.filter((t) => t.sessionId === sessionId).length,
+    });
+    return true;
   }
 
   /** Lane facts recorded (107), in order. */

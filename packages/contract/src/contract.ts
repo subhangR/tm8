@@ -4152,6 +4152,17 @@ export interface ExecutionSpawnInput extends CommandContext {
   agentTool?: string | null;
   reasoningEffort?: LaunchReasoningEffort;
   accessMode?: LaunchAccessMode;
+  /**
+   * The conversation size, in tokens, at which Claude Code auto-compacts:
+   * an integer in 100_000..1_000_000. Omitted = the node default (200_000).
+   * Honoured only by `claude-code` launches, which receive it as
+   * `CLAUDE_CODE_AUTO_COMPACT_WINDOW`; the harness clamps it to the model's
+   * own window, so a value at or above that window changes nothing. A token
+   * count rather than a percentage because tm8 launches 200k and 1M models
+   * from one catalog. See `DEFAULT_AUTOCOMPACT_WINDOW_TOKENS` in
+   * `packages/execution/src/spawn/manifest.ts` for the measurement.
+   */
+  autocompactWindowTokens?: number;
   /** Independent source selection per vendor. An absent key means auto. */
   credentialSources?: LaunchCredentialSources;
   /**
